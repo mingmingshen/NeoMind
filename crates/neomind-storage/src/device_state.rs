@@ -152,8 +152,7 @@ pub struct ConfigSpec {
 }
 
 /// Device filter for queries.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct DeviceFilter {
     /// Filter by device type
     pub device_types: Vec<String>,
@@ -258,11 +257,7 @@ impl DeviceStateStore {
     /// Save or update device state.
     pub async fn save_state(&self, state: &DeviceState) -> Result<()> {
         let device_id = state.device_id.clone();
-        let old_online = self
-            .get_state(&device_id)
-            .await
-            .ok()
-            .map(|s| s.online);
+        let old_online = self.get_state(&device_id).await.ok().map(|s| s.online);
         let old_type = self
             .get_state(&device_id)
             .await
@@ -289,13 +284,14 @@ impl DeviceStateStore {
         {
             let cache = self.cache.read().await;
             if let Some(entry) = cache.get(device_id)
-                && entry.cached_at.elapsed() < self.cache_ttl {
-                    // Clone state before dropping cache
-                    let state = entry.state.clone();
-                    drop(cache);
-                    self.update_access_count(device_id).await;
-                    return Ok(state);
-                }
+                && entry.cached_at.elapsed() < self.cache_ttl
+            {
+                // Clone state before dropping cache
+                let state = entry.state.clone();
+                drop(cache);
+                self.update_access_count(device_id).await;
+                return Ok(state);
+            }
         }
 
         // Load from storage
@@ -575,12 +571,13 @@ impl DeviceStateStore {
         // Update type index
         let mut type_index = self.type_index.write().await;
         if let Some(old_type) = old_type
-            && old_type != state.device_type {
-                type_index
-                    .entry(old_type.to_string())
-                    .or_insert_with(HashSet::new)
-                    .remove(device_id);
-            }
+            && old_type != state.device_type
+        {
+            type_index
+                .entry(old_type.to_string())
+                .or_insert_with(HashSet::new)
+                .remove(device_id);
+        }
         type_index
             .entry(state.device_type.clone())
             .or_insert_with(HashSet::new)
@@ -634,24 +631,28 @@ impl DeviceFilter {
         }
 
         if let Some(online) = self.online
-            && state.online != online {
-                return false;
-            }
+            && state.online != online
+        {
+            return false;
+        }
 
         if let Some(min_last_seen) = self.min_last_seen
-            && state.last_seen < min_last_seen {
-                return false;
-            }
+            && state.last_seen < min_last_seen
+        {
+            return false;
+        }
 
         if let Some(max_last_seen) = self.max_last_seen
-            && state.last_seen > max_last_seen {
-                return false;
-            }
+            && state.last_seen > max_last_seen
+        {
+            return false;
+        }
 
         if let Some(metric_name) = &self.has_metric
-            && !state.metrics.contains_key(metric_name) {
-                return false;
-            }
+            && !state.metrics.contains_key(metric_name)
+        {
+            return false;
+        }
 
         true
     }
@@ -722,7 +723,6 @@ impl DeviceState {
         now - self.last_seen > 300_000 // 5 minutes
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -441,7 +441,7 @@ mod tests {
 
     #[test]
     fn test_llm_params_default() {
-        let params = LlmPluginParams {
+        let _params = LlmPluginParams {
             max_tokens: 0,
             temperature: 0.0,
             top_p: None,
@@ -465,8 +465,7 @@ mod tests {
     #[tokio::test]
     async fn test_registry() {
         let sandbox = Arc::new(
-            Sandbox::new(SandboxConfig::default())
-                .expect("Failed to create sandbox for test"),
+            Sandbox::new(SandboxConfig::default()).expect("Failed to create sandbox for test"),
         );
         let registry = WasmLlmPluginRegistry::new(sandbox);
         assert_eq!(registry.list().await.len(), 0);

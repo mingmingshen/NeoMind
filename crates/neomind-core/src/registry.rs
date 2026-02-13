@@ -194,12 +194,13 @@ mod tests {
         };
 
         for i in 0..5 {
-            registry.add(TestItem {
-                id: format!("test-{}", i),
-                name: format!("Test Item {}", i),
-            })
-            .await
-            .unwrap();
+            registry
+                .add(TestItem {
+                    id: format!("test-{}", i),
+                    name: format!("Test Item {}", i),
+                })
+                .await
+                .unwrap();
         }
 
         registry.clear().await;

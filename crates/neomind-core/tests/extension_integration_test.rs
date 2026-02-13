@@ -9,8 +9,8 @@
 #[cfg(test)]
 mod integration_tests {
     use neomind_core::extension::{
-        loader::NativeExtensionLoader,
         Extension, ExtensionError, ExtensionMetricValue, ParamMetricValue,
+        loader::NativeExtensionLoader,
     };
     use std::sync::Arc;
     use tokio::sync::RwLock;
@@ -121,10 +121,11 @@ mod integration_tests {
                 }
 
                 // Test command execution
-                let result = ext.read().await.execute_command(
-                    "example_command",
-                    &serde_json::json!({"input": "test"}),
-                ).await;
+                let result = ext
+                    .read()
+                    .await
+                    .execute_command("example_command", &serde_json::json!({"input": "test"}))
+                    .await;
                 assert!(result.is_ok());
             }
             Err(e) => {
@@ -166,10 +167,11 @@ mod integration_tests {
                 }
 
                 // Test command execution
-                let result = ext.read().await.execute_command(
-                    "query_weather",
-                    &serde_json::json!({"city": "Tokyo"}),
-                ).await;
+                let result = ext
+                    .read()
+                    .await
+                    .execute_command("query_weather", &serde_json::json!({"city": "Tokyo"}))
+                    .await;
                 assert!(result.is_ok());
 
                 let data = result.unwrap();
@@ -220,10 +222,11 @@ mod integration_tests {
         let loaded = loader.load(&path).unwrap();
 
         let ext = &loaded.extension;
-        let result = ext.read().await.execute_command(
-            "nonexistent_command",
-            &serde_json::json!({}),
-        ).await;
+        let result = ext
+            .read()
+            .await
+            .execute_command("nonexistent_command", &serde_json::json!({}))
+            .await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -295,10 +298,14 @@ mod integration_tests {
         let loaded = loader.load(&path).unwrap();
 
         let ext = &loaded.extension;
-        let result = ext.read().await.execute_command(
-            "query_weather",
-            &serde_json::json!({}),  // Use default city
-        ).await;
+        let result = ext
+            .read()
+            .await
+            .execute_command(
+                "query_weather",
+                &serde_json::json!({}), // Use default city
+            )
+            .await;
 
         assert!(result.is_ok());
         let data = result.unwrap();
@@ -331,9 +338,13 @@ mod integration_tests {
         };
 
         for produced in &metrics {
-            let descriptor = descriptors.iter()
+            let descriptor = descriptors
+                .iter()
                 .find(|d| d.name == produced.name)
-                .expect(&format!("Metric {} not found in descriptors", produced.name));
+                .expect(&format!(
+                    "Metric {} not found in descriptors",
+                    produced.name
+                ));
 
             match descriptor.data_type {
                 neomind_core::extension::system::MetricDataType::Float => {
@@ -359,7 +370,9 @@ mod integration_tests {
 mod event_publishing_tests {
     use super::*;
     use neomind_core::EventBus;
-    use neomind_core::extension::{DynExtension, Extension, ExtensionError, ExtensionMetricValue, ParamMetricValue};
+    use neomind_core::extension::{
+        DynExtension, Extension, ExtensionError, ExtensionMetricValue, ParamMetricValue,
+    };
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::RwLock;
@@ -401,9 +414,9 @@ mod event_publishing_tests {
 
         // Load extension using NativeExtensionLoader
         let loader = neomind_core::extension::loader::NativeExtensionLoader::new();
-        let loaded = loader.load(&extension_dir).map_err(|e|
-            Box::new(e) as Box<dyn std::error::Error>
-        )?;
+        let loaded = loader
+            .load(&extension_dir)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
 
         Ok(loaded.extension)
     }
@@ -433,15 +446,18 @@ mod event_publishing_tests {
 
         // Execute increment command
         let ext_guard = extension.read().await;
-        let result: ExtensionResult<serde_json::Value> = ext_guard.execute_command(
-            "increment",
-            &serde_json::json!({}),
-        ).await;
+        let result: ExtensionResult<serde_json::Value> = ext_guard
+            .execute_command("increment", &serde_json::json!({}))
+            .await;
 
         // Verify command succeeded
         assert!(result.is_ok(), "Command execution failed: {:?}", result);
 
-        let counter_value_before = result.unwrap().get("counter").and_then(|v: &serde_json::Value| v.as_i64()).unwrap_or(0);
+        let counter_value_before = result
+            .unwrap()
+            .get("counter")
+            .and_then(|v: &serde_json::Value| v.as_i64())
+            .unwrap_or(0);
 
         // Give time for event to be published
         sleep(Duration::from_millis(200)).await;
@@ -451,7 +467,8 @@ mod event_publishing_tests {
         let current_value = ext_guard.produce_metrics().unwrap();
         assert!(!current_value.is_empty(), "No metrics produced");
 
-        let counter_value_after = current_value.iter()
+        let counter_value_after = current_value
+            .iter()
             .find(|m| m.name == "counter")
             .and_then(|m| match &m.value {
                 ParamMetricValue::Integer(v) => Some(v),
@@ -465,8 +482,13 @@ mod event_publishing_tests {
         let after_value = counter_value_after.unwrap();
 
         // The counter should have been incremented
-        assert_eq!(*after_value, counter_value_before + 1,
-            "Counter was not incremented: before={}, after={}", counter_value_before, after_value);
+        assert_eq!(
+            *after_value,
+            counter_value_before + 1,
+            "Counter was not incremented: before={}, after={}",
+            counter_value_before,
+            after_value
+        );
 
         // Clean up
         drop(ext_guard);
@@ -483,10 +505,9 @@ mod event_publishing_tests {
 
         // Execute get_counter command
         let ext_guard = extension.read().await;
-        let result: ExtensionResult<serde_json::Value> = ext_guard.execute_command(
-            "get_counter",
-            &serde_json::json!({}),
-        ).await;
+        let result: ExtensionResult<serde_json::Value> = ext_guard
+            .execute_command("get_counter", &serde_json::json!({}))
+            .await;
 
         assert!(result.is_ok(), "get_counter failed");
 
@@ -495,7 +516,10 @@ mod event_publishing_tests {
 
         // Check that counter field exists and is a number
         assert!(data.get("counter").is_some(), "counter field missing");
-        assert!(data.get("counter").unwrap().is_i64(), "counter is not a number");
+        assert!(
+            data.get("counter").unwrap().is_i64(),
+            "counter is not a number"
+        );
     }
 
     #[tokio::test]
@@ -508,10 +532,9 @@ mod event_publishing_tests {
 
         // Execute reset_counter command
         let ext_guard = extension.read().await;
-        let result: ExtensionResult<serde_json::Value> = ext_guard.execute_command(
-            "reset_counter",
-            &serde_json::json!({}),
-        ).await;
+        let result: ExtensionResult<serde_json::Value> = ext_guard
+            .execute_command("reset_counter", &serde_json::json!({}))
+            .await;
 
         assert!(result.is_ok(), "reset_counter failed");
         drop(ext_guard);

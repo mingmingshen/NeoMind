@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use crate::discovery::*;
 use crate::error::{AutomationError, Result};
-use neomind_core::{LlmRuntime, Message, GenerationParams};
 use neomind_core::llm::backend::LlmInput;
+use neomind_core::{GenerationParams, LlmRuntime, Message};
 use serde_json::json;
 
 /// Device type generator for auto-generating MDL definitions
@@ -31,7 +31,7 @@ pub struct GenerationConfig {
 impl Default for GenerationConfig {
     fn default() -> Self {
         Self {
-            min_coverage: 0.0,  // Include all fields by default
+            min_coverage: 0.0,   // Include all fields by default
             min_confidence: 0.0, // Include all metrics by default
         }
     }
@@ -54,7 +54,13 @@ impl DeviceTypeGenerator {
         manufacturer: Option<&str>,
         samples: &[DeviceSample],
     ) -> Result<GeneratedDeviceType> {
-        self.generate_device_type_with_config(device_id, manufacturer, samples, GenerationConfig::default()).await
+        self.generate_device_type_with_config(
+            device_id,
+            manufacturer,
+            samples,
+            GenerationConfig::default(),
+        )
+        .await
     }
 
     /// Generate a device type definition from samples with custom configuration
@@ -67,13 +73,18 @@ impl DeviceTypeGenerator {
     ) -> Result<GeneratedDeviceType> {
         if samples.is_empty() {
             return Err(AutomationError::IntentAnalysisFailed(
-                "No samples provided for device type generation".into()
+                "No samples provided for device type generation".into(),
             ));
         }
 
         // Step 1: Extract all paths
-        let paths = self.path_extractor.extract_paths(samples).await
-            .map_err(|e| AutomationError::IntentAnalysisFailed(format!("Path extraction failed: {}", e)))?;
+        let paths = self
+            .path_extractor
+            .extract_paths(samples)
+            .await
+            .map_err(|e| {
+                AutomationError::IntentAnalysisFailed(format!("Path extraction failed: {}", e))
+            })?;
 
         // Step 2: Infer device category
         let context = InferenceContext {
@@ -129,7 +140,8 @@ impl DeviceTypeGenerator {
         context: &InferenceContext,
     ) -> Result<DeviceCategory> {
         // Count semantic types from paths
-        let mut semantic_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut semantic_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
 
         for path in paths {
             for value in &path.sample_values {
@@ -144,7 +156,8 @@ impl DeviceTypeGenerator {
         }
 
         // Use LLM for category inference
-        let metrics_summary = semantic_counts.iter()
+        let metrics_summary = semantic_counts
+            .iter()
             .map(|(k, v)| format!("{}: {}", k, v))
             .collect::<Vec<_>>()
             .join(", ");
@@ -167,7 +180,9 @@ Respond with a JSON object:
 
         let input = LlmInput {
             messages: vec![
-                Message::system("You are an IoT device classifier. Determine device categories based on detected capabilities. Respond ONLY with valid JSON."),
+                Message::system(
+                    "You are an IoT device classifier. Determine device categories based on detected capabilities. Respond ONLY with valid JSON.",
+                ),
                 Message::user(prompt),
             ],
             params: GenerationParams {
@@ -185,7 +200,8 @@ Respond with a JSON object:
         let result: serde_json::Value = serde_json::from_str(&json_str)
             .map_err(|e| AutomationError::IntentAnalysisFailed(format!("Invalid JSON: {}", e)))?;
 
-        let category_str = result.get("category")
+        let category_str = result
+            .get("category")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
 
@@ -225,10 +241,16 @@ Respond with a JSON object:
             let field_name = Self::extract_field_name(&path.path);
 
             // Check if field name suggests write capability
-            if field_name.contains("set_") || field_name.contains("command") || field_name.contains("control") {
+            if field_name.contains("set_")
+                || field_name.contains("command")
+                || field_name.contains("control")
+            {
                 commands.push(DiscoveredCommand {
                     name: field_name.clone(),
-                    display_name: format!("Set {}", field_name.replace("set_", "").replace("_", " ")),
+                    display_name: format!(
+                        "Set {}",
+                        field_name.replace("set_", "").replace("_", " ")
+                    ),
                     description: format!("Command to set {}", field_name),
                     parameters: vec![],
                 });
@@ -256,22 +278,37 @@ Respond with a JSON object:
     }
 
     /// Infer device capabilities
-    fn infer_capabilities(&self, metrics: &[DiscoveredMetric], commands: &[DiscoveredCommand]) -> DeviceCapabilities {
+    fn infer_capabilities(
+        &self,
+        metrics: &[DiscoveredMetric],
+        commands: &[DiscoveredCommand],
+    ) -> DeviceCapabilities {
         DeviceCapabilities {
             readable: !metrics.is_empty(),
             writable: !commands.is_empty(),
-            supports_telemetry: metrics.iter().any(|m| m.semantic_type != SemanticType::Switch),
+            supports_telemetry: metrics
+                .iter()
+                .any(|m| m.semantic_type != SemanticType::Switch),
             supports_commands: !commands.is_empty(),
             supports_state_change: metrics.iter().any(|m| {
-                matches!(m.semantic_type,
-                    SemanticType::Switch | SemanticType::Motion |
-                    SemanticType::Status | SemanticType::Alarm)
+                matches!(
+                    m.semantic_type,
+                    SemanticType::Switch
+                        | SemanticType::Motion
+                        | SemanticType::Status
+                        | SemanticType::Alarm
+                )
             }),
         }
     }
 
     /// Generate a device name
-    fn generate_device_name(&self, device_id: &str, category: &DeviceCategory, manufacturer: Option<&str>) -> String {
+    fn generate_device_name(
+        &self,
+        device_id: &str,
+        category: &DeviceCategory,
+        manufacturer: Option<&str>,
+    ) -> String {
         let category_name = category.display_name();
         let mfr = manufacturer.unwrap_or("Generic");
 
@@ -283,10 +320,16 @@ Respond with a JSON object:
     }
 
     /// Generate a description
-    fn generate_description(&self, category: &DeviceCategory, metrics: &[DiscoveredMetric], manufacturer: Option<&str>) -> String {
+    fn generate_description(
+        &self,
+        category: &DeviceCategory,
+        metrics: &[DiscoveredMetric],
+        manufacturer: Option<&str>,
+    ) -> String {
         let mfr = manufacturer.unwrap_or("Generic");
 
-        let metric_summary: String = metrics.iter()
+        let metric_summary: String = metrics
+            .iter()
             .take(5)
             .map(|m| m.display_name.clone())
             .collect::<Vec<_>>()
@@ -296,7 +339,11 @@ Respond with a JSON object:
             "{} {} device. Supports monitoring of: {}.",
             mfr,
             category.display_name(),
-            if metric_summary.is_empty() { "various metrics".to_string() } else { metric_summary }
+            if metric_summary.is_empty() {
+                "various metrics".to_string()
+            } else {
+                metric_summary
+            }
         )
     }
 
@@ -339,7 +386,9 @@ Respond with a JSON object:
 
     /// Generate an MDL JSON definition
     pub fn generate_mdl(&self, device_type: &GeneratedDeviceType) -> String {
-        let metrics_json: Vec<serde_json::Value> = device_type.metrics.iter()
+        let metrics_json: Vec<serde_json::Value> = device_type
+            .metrics
+            .iter()
             .map(|m| {
                 json!({
                     "name": m.name,
@@ -355,7 +404,9 @@ Respond with a JSON object:
             })
             .collect();
 
-        let commands_json: Vec<serde_json::Value> = device_type.commands.iter()
+        let commands_json: Vec<serde_json::Value> = device_type
+            .commands
+            .iter()
             .map(|c| {
                 json!({
                     "name": c.name,
@@ -421,10 +472,12 @@ pub struct ValidationResult {
 }
 
 fn extract_json_from_response(response: &str) -> Result<String> {
-    let start = response.find('{')
+    let start = response
+        .find('{')
         .ok_or_else(|| AutomationError::IntentAnalysisFailed("No JSON object found".into()))?;
 
-    let end = response.rfind('}')
+    let end = response
+        .rfind('}')
         .ok_or_else(|| AutomationError::IntentAnalysisFailed("Incomplete JSON object".into()))?;
 
     Ok(response[start..=end].to_string())
@@ -545,16 +598,25 @@ mod tests {
     }
 
     // Helper functions to avoid needing the full struct
-    fn infer_capabilities_direct(metrics: &[DiscoveredMetric], commands: &[DiscoveredCommand]) -> DeviceCapabilities {
+    fn infer_capabilities_direct(
+        metrics: &[DiscoveredMetric],
+        commands: &[DiscoveredCommand],
+    ) -> DeviceCapabilities {
         DeviceCapabilities {
             readable: !metrics.is_empty(),
             writable: !commands.is_empty(),
-            supports_telemetry: metrics.iter().any(|m| m.semantic_type != SemanticType::Switch),
+            supports_telemetry: metrics
+                .iter()
+                .any(|m| m.semantic_type != SemanticType::Switch),
             supports_commands: !commands.is_empty(),
             supports_state_change: metrics.iter().any(|m| {
-                matches!(m.semantic_type,
-                    SemanticType::Switch | SemanticType::Motion |
-                    SemanticType::Status | SemanticType::Alarm)
+                matches!(
+                    m.semantic_type,
+                    SemanticType::Switch
+                        | SemanticType::Motion
+                        | SemanticType::Status
+                        | SemanticType::Alarm
+                )
             }),
         }
     }

@@ -355,7 +355,6 @@ pub enum TransformOperation {
     },
 
     // ========== New Expression-Based Operations ==========
-
     /// Extract data using JSONPath and output as a metric
     Extract {
         /// JSONPath expression to locate data
@@ -442,7 +441,6 @@ pub enum TransformOperation {
     },
 
     // ========== Advanced Data Processing ==========
-
     /// GroupBy - group array elements by key and aggregate
     /// Example: [{box, cls}] → {"fish": 12, "shrimp": 5}
     GroupBy {
@@ -514,14 +512,19 @@ impl TransformOperation {
         match self {
             // Legacy operations
             TransformOperation::Single { output_metric, .. } => vec![output_metric.clone()],
-            TransformOperation::ArrayAggregation { output_metric, .. } => vec![output_metric.clone()],
-            TransformOperation::TimeSeriesAggregation { output_metric, .. } => vec![output_metric.clone()],
+            TransformOperation::ArrayAggregation { output_metric, .. } => {
+                vec![output_metric.clone()]
+            }
+            TransformOperation::TimeSeriesAggregation { output_metric, .. } => {
+                vec![output_metric.clone()]
+            }
             TransformOperation::Reference { output_metric, .. } => vec![output_metric.clone()],
             TransformOperation::Custom { output_metrics, .. } => output_metrics.clone(),
             TransformOperation::Extension { output_metrics, .. } => output_metrics.clone(),
-            TransformOperation::MultiOutput { operations } => {
-                operations.iter().flat_map(|op| op.output_metrics()).collect()
-            }
+            TransformOperation::MultiOutput { operations } => operations
+                .iter()
+                .flat_map(|op| op.output_metrics())
+                .collect(),
 
             // New expression-based operations
             TransformOperation::Extract { output, .. } => vec![output.clone()],
@@ -556,9 +559,11 @@ impl TransformOperation {
             TransformOperation::Reference { .. } => 1,
             TransformOperation::Custom { .. } => 4,
             TransformOperation::Extension { .. } => 3,
-            TransformOperation::MultiOutput { operations } => {
-                operations.iter().map(|op| op.complexity_score()).sum::<u8>().min(5)
-            }
+            TransformOperation::MultiOutput { operations } => operations
+                .iter()
+                .map(|op| op.complexity_score())
+                .sum::<u8>()
+                .min(5),
 
             // New expression-based operations
             TransformOperation::Extract { .. } => 1,
@@ -568,11 +573,19 @@ impl TransformOperation {
             TransformOperation::Compute { .. } => 2,
             TransformOperation::Pipeline { steps, .. } => {
                 // Pipeline complexity is based on number of steps
-                steps.iter().map(|op| op.complexity_score()).sum::<u8>().min(5)
+                steps
+                    .iter()
+                    .map(|op| op.complexity_score())
+                    .sum::<u8>()
+                    .min(5)
             }
             TransformOperation::Fork { branches } => {
                 // Fork complexity based on branches
-                branches.iter().map(|op| op.complexity_score()).sum::<u8>().min(5)
+                branches
+                    .iter()
+                    .map(|op| op.complexity_score())
+                    .sum::<u8>()
+                    .min(5)
             }
             TransformOperation::If { then, else_, .. } => {
                 // If complexity is 2 + branch complexity
@@ -596,13 +609,28 @@ impl TransformOperation {
             TransformOperation::Extract { from, output, .. } => {
                 format!("Extract from '{}' to '{}'", from, output)
             }
-            TransformOperation::Map { over, template, output, .. } => {
-                format!("Map over '{}' with template '{}' to '{}'", over, template, output)
+            TransformOperation::Map {
+                over,
+                template,
+                output,
+                ..
+            } => {
+                format!(
+                    "Map over '{}' with template '{}' to '{}'",
+                    over, template, output
+                )
             }
-            TransformOperation::Reduce { over, using, output, .. } => {
+            TransformOperation::Reduce {
+                over,
+                using,
+                output,
+                ..
+            } => {
                 format!("Reduce '{}' using {} to '{}'", over, using.as_str(), output)
             }
-            TransformOperation::Format { template, output, .. } => {
+            TransformOperation::Format {
+                template, output, ..
+            } => {
                 format!("Format '{}' to '{}'", template, output)
             }
             TransformOperation::Compute { expression, output } => {
@@ -617,16 +645,36 @@ impl TransformOperation {
             TransformOperation::If { condition, .. } => {
                 format!("If condition: {}", condition)
             }
-            TransformOperation::GroupBy { over, key, using, output, .. } => {
-                format!("Group '{}' by {} using {} to '{}'", over, key, using.as_str(), output)
+            TransformOperation::GroupBy {
+                over,
+                key,
+                using,
+                output,
+                ..
+            } => {
+                format!(
+                    "Group '{}' by {} using {} to '{}'",
+                    over,
+                    key,
+                    using.as_str(),
+                    output
+                )
             }
-            TransformOperation::Decode { from, format, output } => {
+            TransformOperation::Decode {
+                from,
+                format,
+                output,
+            } => {
                 format!("Decode {} from '{:?}' to '{}'", from, format, output)
             }
-            TransformOperation::Encode { from, format, output } => {
+            TransformOperation::Encode {
+                from,
+                format,
+                output,
+            } => {
                 format!("Encode {} as '{:?}' to '{}'", from, format, output)
             }
-            _ => format!("{:?}", self)
+            _ => format!("{:?}", self),
         }
     }
 }
@@ -792,9 +840,7 @@ impl TransformAutomation {
 
         // Legacy: compute from operations
         if let Some(ref ops) = self.operations {
-            ops.iter()
-                .flat_map(|op| op.output_metrics())
-                .collect()
+            ops.iter().flat_map(|op| op.output_metrics()).collect()
         } else {
             vec![self.output_prefix.clone()]
         }
@@ -872,10 +918,7 @@ impl RuleAutomation {
 
     /// Convert to simplified DSL representation
     pub fn to_dsl(&self) -> String {
-        let mut dsl = format!(
-            "RULE \"{}\"\n",
-            self.metadata.name.replace('"', r#"\""#)
-        );
+        let mut dsl = format!("RULE \"{}\"\n", self.metadata.name.replace('"', r#"\""#));
 
         // Add trigger/condition
         match &self.trigger.r#type {
@@ -909,7 +952,10 @@ impl RuleAutomation {
         for action in &self.actions {
             match action {
                 Action::Notify { message } => {
-                    dsl.push_str(&format!("    NOTIFY \"{}\"\n", message.replace('"', r#"\""#)));
+                    dsl.push_str(&format!(
+                        "    NOTIFY \"{}\"\n",
+                        message.replace('"', r#"\""#)
+                    ));
                 }
                 Action::ExecuteCommand {
                     device_id,
@@ -944,7 +990,11 @@ impl RuleAutomation {
                     }
                     dsl.push('\n');
                 }
-                Action::CreateAlert { title, message, severity } => {
+                Action::CreateAlert {
+                    title,
+                    message,
+                    severity,
+                } => {
                     dsl.push_str(&format!(
                         "    ALERT {} \"{}\" \"{}\"\n",
                         severity, title, message
@@ -1438,7 +1488,12 @@ mod tests {
         let rule = RuleAutomation::new("test-id", "High Temp Alert")
             .with_description("Alert when temperature is high")
             .with_trigger(Trigger::device_state("sensor-1", "temperature"))
-            .with_condition(Condition::new("sensor-1", "temperature", ComparisonOperator::GreaterThan, 30.0))
+            .with_condition(Condition::new(
+                "sensor-1",
+                "temperature",
+                ComparisonOperator::GreaterThan,
+                30.0,
+            ))
             .with_action(Action::Notify {
                 message: "Temperature is too high!".to_string(),
             });
@@ -1454,8 +1509,8 @@ mod tests {
         let rule = RuleAutomation::new("test", "Test");
         assert_eq!(rule.complexity_score(), 1);
 
-        let transform = TransformAutomation::new("test", "Test", TransformScope::Global)
-            .with_complexity(2);
+        let transform =
+            TransformAutomation::new("test", "Test", TransformScope::Global).with_complexity(2);
         assert_eq!(transform.complexity_score(), 2);
     }
 }

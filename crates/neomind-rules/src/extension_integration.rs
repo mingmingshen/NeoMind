@@ -5,10 +5,10 @@
 //! 1. Query extension data sources as conditions
 //! 2. Execute extension commands as actions
 
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use async_trait::async_trait;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -294,17 +294,17 @@ impl ExtensionActionExecutor {
     }
 
     /// Execute an extension command action.
-    pub async fn execute(&self, action: &ExtensionCommandAction) -> Result<ExecutionResult, String> {
+    pub async fn execute(
+        &self,
+        action: &ExtensionCommandAction,
+    ) -> Result<ExecutionResult, String> {
         // Check if extension exists
         if !self
             .extension_registry
             .has_extension(&action.extension_id)
             .await
         {
-            return Err(format!(
-                "Extension not found: {}",
-                action.extension_id
-            ));
+            return Err(format!("Extension not found: {}", action.extension_id));
         }
 
         let start = std::time::Instant::now();
@@ -384,7 +384,11 @@ pub fn try_parse_extension_action(action: &RuleAction) -> Option<ExtensionComman
                         // Has command.field format - use the command from field_path if provided command is empty
                         return Some(ExtensionCommandAction {
                             extension_id: ds_id.source_id.clone(),
-                            command: if command.is_empty() { cmd.to_string() } else { command.clone() },
+                            command: if command.is_empty() {
+                                cmd.to_string()
+                            } else {
+                                command.clone()
+                            },
                             args: serde_json::to_value(params).unwrap_or_default(),
                             timeout_ms: None,
                         });
@@ -405,7 +409,11 @@ pub fn try_parse_extension_action(action: &RuleAction) -> Option<ExtensionComman
                 if let Some((ext_id, cmd, _field)) = ds_id.as_extension_command_parts() {
                     return Some(ExtensionCommandAction {
                         extension_id: ext_id.to_string(),
-                        command: if command.is_empty() { cmd.to_string() } else { command.clone() },
+                        command: if command.is_empty() {
+                            cmd.to_string()
+                        } else {
+                            command.clone()
+                        },
                         args: serde_json::to_value(params).unwrap_or_default(),
                         timeout_ms: None,
                     });
@@ -450,10 +458,16 @@ mod tests {
 
         // Test typed DataSourceId return
         let ds_id = condition.data_source_id();
-        assert_eq!(ds_id.source_type, neomind_core::datasource::DataSourceType::Extension);
+        assert_eq!(
+            ds_id.source_type,
+            neomind_core::datasource::DataSourceType::Extension
+        );
         assert_eq!(ds_id.source_id, "neomind.weather.live");
         assert_eq!(ds_id.field_path, "get_current_weather.temperature_c");
-        assert_eq!(ds_id.storage_key(), "extension:neomind.weather.live:get_current_weather.temperature_c");
+        assert_eq!(
+            ds_id.storage_key(),
+            "extension:neomind.weather.live:get_current_weather.temperature_c"
+        );
     }
 
     #[test]

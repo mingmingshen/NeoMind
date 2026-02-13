@@ -7,15 +7,15 @@
 //! - Command execution rates
 //! - Performance metrics under load
 
+use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
+use neomind_core::{EventBus, MetricValue, NeoMindEvent};
+use neomind_llm::backends::ollama::{OllamaConfig, OllamaRuntime};
+use neomind_storage::{
+    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, LongTermMemory,
+    ScheduleType, ShortTermMemory, WorkingMemory,
+};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use neomind_core::{EventBus, MetricValue, NeoMindEvent};
-use neomind_storage::{
-    AgentStore, AgentSchedule, AgentStats, AgentStatus, AiAgent, AgentMemory,
-    WorkingMemory, ShortTermMemory, LongTermMemory, ScheduleType,
-};
-use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
-use neomind_llm::backends::ollama::{OllamaRuntime, OllamaConfig};
 
 // ============================================================================
 // Test Metrics
@@ -44,8 +44,11 @@ impl TestMetrics {
         println!("设备数量: {}", self.total_devices);
         println!("指标总数: {}", self.total_metrics);
         println!("执行次数: {}", self.total_executions);
-        println!("成功执行: {} ({:.1}%)", self.successful_executions,
-            (self.successful_executions as f64 / self.total_executions as f64) * 100.0);
+        println!(
+            "成功执行: {} ({:.1}%)",
+            self.successful_executions,
+            (self.successful_executions as f64 / self.total_executions as f64) * 100.0
+        );
         println!("失败执行: {}", self.failed_executions);
         println!("\n执行时间统计:");
         println!("  平均: {}ms", self.avg_execution_time_ms);
@@ -57,7 +60,9 @@ impl TestMetrics {
         println!("  处理的数据点: {}", self.total_data_points_processed);
 
         if self.avg_execution_time_ms > 0 {
-            let throughput = (self.total_data_points_processed as f64 / self.avg_execution_time_ms as f64) * 1000.0;
+            let throughput = (self.total_data_points_processed as f64
+                / self.avg_execution_time_ms as f64)
+                * 1000.0;
             println!("  吞吐量: {:.1} 数据点/秒", throughput);
         }
         println!("{}", "=".repeat(70));
@@ -150,7 +155,10 @@ impl LoadTestContext {
                 model: "qwen2.5:3b".to_string(),
                 timeout_secs: 120,
             };
-            Some(Arc::new(OllamaRuntime::new(ollama_config)?) as Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>)
+            Some(Arc::new(OllamaRuntime::new(ollama_config)?)
+                as Arc<
+                    dyn neomind_core::llm::backend::LlmRuntime + Send + Sync,
+                >)
         } else {
             None
         };
@@ -177,11 +185,7 @@ impl LoadTestContext {
         })
     }
 
-    async fn create_test_agent(
-        &self,
-        name: &str,
-        user_prompt: &str,
-    ) -> anyhow::Result<AiAgent> {
+    async fn create_test_agent(&self, name: &str, user_prompt: &str) -> anyhow::Result<AiAgent> {
         let now = chrono::Utc::now().timestamp();
 
         let agent = AiAgent {
@@ -327,7 +331,10 @@ async fn test_hundreds_of_devices_metrics() -> anyhow::Result<()> {
     // Calculate total metrics
     let metrics_per_device = 3;
     let total_metrics = device_count * metrics_per_device;
-    println!("每设备 {} 个指标，总共 {} 个指标", metrics_per_device, total_metrics);
+    println!(
+        "每设备 {} 个指标，总共 {} 个指标",
+        metrics_per_device, total_metrics
+    );
 
     // Inject metrics in batches
     let batches = 10;
@@ -348,7 +355,10 @@ async fn test_hundreds_of_devices_metrics() -> anyhow::Result<()> {
     println!("\n性能指标:");
     println!("  总耗时: {:?}", elapsed);
     println!("  平均每批: {:?}", elapsed / batches as u32);
-    println!("  指标注入速率: {:.0} 指标/秒", total_metrics as f64 / elapsed.as_secs_f64());
+    println!(
+        "  指标注入速率: {:.0} 指标/秒",
+        total_metrics as f64 / elapsed.as_secs_f64()
+    );
 
     assert!(ctx.devices.len() == device_count);
     assert!(elapsed.as_secs() < 5, "Should complete within 5 seconds");
@@ -368,10 +378,16 @@ async fn test_agent_with_large_dataset() -> anyhow::Result<()> {
     ctx.generate_devices(device_count);
 
     // Create a monitor agent
-    let agent = ctx.create_test_agent(
-        "大规模数据监控Agent",
-        &format!("监控所有 {} 个设备的 {} 个指标，检测异常值", device_count, device_count * 3),
-    ).await?;
+    let agent = ctx
+        .create_test_agent(
+            "大规模数据监控Agent",
+            &format!(
+                "监控所有 {} 个设备的 {} 个指标，检测异常值",
+                device_count,
+                device_count * 3
+            ),
+        )
+        .await?;
 
     println!("创建 Agent: {}", agent.name);
 
@@ -391,7 +407,13 @@ async fn test_agent_with_large_dataset() -> anyhow::Result<()> {
         times.push(elapsed);
 
         if i % 5 == 0 {
-            println!("  执行 {}/{}: {:?} - 状态: {:?}", i + 1, executions, elapsed, record.status);
+            println!(
+                "  执行 {}/{}: {:?} - 状态: {:?}",
+                i + 1,
+                executions,
+                elapsed,
+                record.status
+            );
         }
     }
 
@@ -425,10 +447,9 @@ async fn test_conversation_history_under_load() -> anyhow::Result<()> {
 
     ctx.generate_devices(50);
 
-    let agent = ctx.create_test_agent(
-        "压力测试Agent",
-        "分析所有设备数据，生成报告",
-    ).await?;
+    let agent = ctx
+        .create_test_agent("压力测试Agent", "分析所有设备数据，生成报告")
+        .await?;
 
     let agent_id = agent.id.clone();
     let execution_count = 50;
@@ -443,7 +464,12 @@ async fn test_conversation_history_under_load() -> anyhow::Result<()> {
 
         if (i + 1) % 10 == 0 {
             let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-            println!("  进度: {}/{} - 历史记录: {}", i + 1, execution_count, agent.conversation_history.len());
+            println!(
+                "  进度: {}/{} - 历史记录: {}",
+                i + 1,
+                execution_count,
+                agent.conversation_history.len()
+            );
         }
     }
 
@@ -452,18 +478,26 @@ async fn test_conversation_history_under_load() -> anyhow::Result<()> {
     // Verify history was saved (capped at MAX_CONVERSATION_TURNS)
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
     let expected_history = execution_count.min(20); // MAX_CONVERSATION_TURNS = 20
-    assert_eq!(agent.conversation_history.len(), expected_history,
-        "History should be capped at MAX_CONVERSATION_TURNS (20)");
+    assert_eq!(
+        agent.conversation_history.len(),
+        expected_history,
+        "History should be capped at MAX_CONVERSATION_TURNS (20)"
+    );
 
     // Verify conversation history order
     for i in 1..agent.conversation_history.len() {
-        assert!(agent.conversation_history[i].timestamp >= agent.conversation_history[i-1].timestamp,
-            "Conversation history should be in chronological order");
+        assert!(
+            agent.conversation_history[i].timestamp >= agent.conversation_history[i - 1].timestamp,
+            "Conversation history should be in chronological order"
+        );
     }
 
     println!("\n结果:");
     println!("  总执行: {}", execution_count);
-    println!("  历史记录: {} (capped at 20)", agent.conversation_history.len());
+    println!(
+        "  历史记录: {} (capped at 20)",
+        agent.conversation_history.len()
+    );
     println!("  总耗时: {:?}", elapsed);
     println!("  平均每次: {:?}", elapsed / execution_count as u32);
 
@@ -505,7 +539,11 @@ async fn test_multi_agent_concurrent_execution() -> anyhow::Result<()> {
     }
 
     let execution_rounds = 10;
-    println!("\n并发执行 {} 轮，每轮 {} 个 Agent...", execution_rounds, agents.len());
+    println!(
+        "\n并发执行 {} 轮，每轮 {} 个 Agent...",
+        execution_rounds,
+        agents.len()
+    );
 
     let start = Instant::now();
     let mut all_times: Vec<Duration> = Vec::new();
@@ -522,8 +560,13 @@ async fn test_multi_agent_concurrent_execution() -> anyhow::Result<()> {
             let elapsed = agent_start.elapsed();
             all_times.push(elapsed);
 
-            println!("  Agent{} ({}): {:?} - 状态: {:?}",
-                i + 1, name, elapsed, record.status);
+            println!(
+                "  Agent{} ({}): {:?} - 状态: {:?}",
+                i + 1,
+                name,
+                elapsed,
+                record.status
+            );
         }
     }
 
@@ -541,13 +584,21 @@ async fn test_multi_agent_concurrent_execution() -> anyhow::Result<()> {
     println!("  平均每次: {:?}", avg_time);
     println!("  最快: {:?}", min_time);
     println!("  最慢: {:?}", max_time);
-    println!("  吞吐量: {:.2} Agent执行/秒", total_executions as f64 / total_elapsed.as_secs_f64());
+    println!(
+        "  吞吐量: {:.2} Agent执行/秒",
+        total_executions as f64 / total_elapsed.as_secs_f64()
+    );
 
     // Verify all agents have correct history
     println!("\n验证对话历史:");
     for (i, (agent_id, name)) in agent_ids.iter().enumerate() {
         let agent = ctx.store.get_agent(agent_id).await?.unwrap();
-        println!("  Agent{} ({}): {} 条历史记录", i + 1, name, agent.conversation_history.len());
+        println!(
+            "  Agent{} ({}): {} 条历史记录",
+            i + 1,
+            name,
+            agent.conversation_history.len()
+        );
         assert_eq!(agent.conversation_history.len(), execution_rounds);
     }
 
@@ -564,10 +615,12 @@ async fn test_command_execution_simulation() -> anyhow::Result<()> {
     ctx.generate_devices(50);
 
     // Create an Executor agent that should make decisions
-    let agent = ctx.create_test_agent(
-        "自动控制Agent",
-        "当温度超过30度时，打开风扇。当温度低于20度时，关闭风扇",
-    ).await?;
+    let agent = ctx
+        .create_test_agent(
+            "自动控制Agent",
+            "当温度超过30度时，打开风扇。当温度低于20度时，关闭风扇",
+        )
+        .await?;
 
     let agent_id = agent.id.clone();
     println!("创建: {}", agent.name);
@@ -588,8 +641,13 @@ async fn test_command_execution_simulation() -> anyhow::Result<()> {
         decision_counts.push(decision_count);
 
         if (i + 1) % 10 == 0 {
-            println!("  执行 {}/{}: 决策数={}, 状态={:?}",
-                i + 1, execution_count, decision_count, record.status);
+            println!(
+                "  执行 {}/{}: 决策数={}, 状态={:?}",
+                i + 1,
+                execution_count,
+                decision_count,
+                record.status
+            );
         }
 
         ctx.wait_for_events(5).await;
@@ -606,9 +664,11 @@ async fn test_command_execution_simulation() -> anyhow::Result<()> {
     println!("  总决策数: {}", total_decisions);
     println!("  平均每次决策数: {:.2}", avg_decisions);
     println!("  单次最大决策数: {}", max_decisions);
-    println!("  有决策的执行: {} ({:.1}%)",
+    println!(
+        "  有决策的执行: {} ({:.1}%)",
         executions_with_decisions,
-        (executions_with_decisions as f64 / execution_count as f64) * 100.0);
+        (executions_with_decisions as f64 / execution_count as f64) * 100.0
+    );
 
     // Calculate decision execution rate
     let decision_rate = if total_decisions > 0 {
@@ -636,7 +696,7 @@ async fn test_real_llm_with_large_dataset() -> anyhow::Result<()> {
     // Check if Ollama is available
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 11434));
     match std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(2)) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(_) => {
             println!("⚠️  Ollama 未运行，跳过测试");
             return Ok(());
@@ -652,9 +712,15 @@ async fn test_real_llm_with_large_dataset() -> anyhow::Result<()> {
 
     // Create multiple agents
     let test_cases = vec![
-        ("温度监控Agent", "监控所有温度传感器，超过35度告警，低于10度告警"),
+        (
+            "温度监控Agent",
+            "监控所有温度传感器，超过35度告警，低于10度告警",
+        ),
         ("综合分析Agent", "分析所有设备的综合数据趋势，识别异常模式"),
-        ("自动控制Agent", "当温度超过30度时启动降温，低于15度时启动加热"),
+        (
+            "自动控制Agent",
+            "当温度超过30度时启动降温，低于15度时启动加热",
+        ),
     ];
 
     for (name, prompt) in test_cases {
@@ -675,9 +741,13 @@ async fn test_real_llm_with_large_dataset() -> anyhow::Result<()> {
             let elapsed = start.elapsed();
             times.push(elapsed);
 
-            println!("  执行 {}/{}: {:?} - 分析长度: {} 字符",
-                i + 1, executions, elapsed,
-                record.decision_process.situation_analysis.len());
+            println!(
+                "  执行 {}/{}: {:?} - 分析长度: {} 字符",
+                i + 1,
+                executions,
+                elapsed,
+                record.decision_process.situation_analysis.len()
+            );
         }
 
         let avg_time = times.iter().sum::<Duration>() / executions as u32;
@@ -709,16 +779,21 @@ async fn test_performance_benchmark() -> anyhow::Result<()> {
     for scale in scales {
         ctx.generate_devices(scale);
 
-        let agent = ctx.create_test_agent(
-            &format!("性能测试Agent_{}", scale),
-            &format!("监控 {} 个设备", scale),
-        ).await?;
+        let agent = ctx
+            .create_test_agent(
+                &format!("性能测试Agent_{}", scale),
+                &format!("监控 {} 个设备", scale),
+            )
+            .await?;
 
         let start = Instant::now();
         let record = ctx.executor.execute_agent(agent.clone()).await?;
         let elapsed = start.elapsed();
 
-        println!("  {} 设备: {:?} - 状态: {:?}", scale, elapsed, record.status);
+        println!(
+            "  {} 设备: {:?} - 状态: {:?}",
+            scale, elapsed, record.status
+        );
         metrics.total_devices = scale;
     }
 
@@ -726,7 +801,9 @@ async fn test_performance_benchmark() -> anyhow::Result<()> {
     println!("\n[测试2] 吞吐量测试");
     ctx.generate_devices(100);
 
-    let agent = ctx.create_test_agent("吞吐量测试Agent", "监控所有设备").await?;
+    let agent = ctx
+        .create_test_agent("吞吐量测试Agent", "监控所有设备")
+        .await?;
 
     let iterations = 50;
     let start = Instant::now();
@@ -754,7 +831,11 @@ async fn test_performance_benchmark() -> anyhow::Result<()> {
 
         if (i + 1) % 5 == 0 {
             let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
-            println!("  执行 {}: 历史记录 = {} 条", i + 1, agent.conversation_history.len());
+            println!(
+                "  执行 {}: 历史记录 = {} 条",
+                i + 1,
+                agent.conversation_history.len()
+            );
         }
     }
 
@@ -766,10 +847,9 @@ async fn test_performance_benchmark() -> anyhow::Result<()> {
 
     let mut agent_ids = Vec::new();
     for i in 0..concurrent_agents {
-        let agent = ctx.create_test_agent(
-            &format!("并发Agent_{}", i),
-            "监控设备",
-        ).await?;
+        let agent = ctx
+            .create_test_agent(&format!("并发Agent_{}", i), "监控设备")
+            .await?;
         agent_ids.push(agent.id);
     }
 
@@ -785,14 +865,20 @@ async fn test_performance_benchmark() -> anyhow::Result<()> {
     let elapsed = start.elapsed();
     let total_concurrent_executions = concurrent_agents * executions_per_agent;
 
-    println!("  {} 个Agent x {} 次执行 = {} 次总执行",
-        concurrent_agents, executions_per_agent, total_concurrent_executions);
+    println!(
+        "  {} 个Agent x {} 次执行 = {} 次总执行",
+        concurrent_agents, executions_per_agent, total_concurrent_executions
+    );
     println!("  总耗时: {:?}", elapsed);
-    println!("  平均每次: {:?}", elapsed / total_concurrent_executions as u32);
+    println!(
+        "  平均每次: {:?}",
+        elapsed / total_concurrent_executions as u32
+    );
 
     metrics.total_executions = total_concurrent_executions;
     metrics.successful_executions = total_concurrent_executions;
-    metrics.avg_execution_time_ms = (elapsed / total_concurrent_executions as u32).as_millis() as u64;
+    metrics.avg_execution_time_ms =
+        (elapsed / total_concurrent_executions as u32).as_millis() as u64;
 
     metrics.print_summary();
 

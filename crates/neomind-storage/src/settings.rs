@@ -87,6 +87,14 @@ pub enum LlmBackendType {
     Google,
     /// xAI (Grok) API.
     XAi,
+    /// Qwen (通义千问) API.
+    Qwen,
+    /// DeepSeek API.
+    DeepSeek,
+    /// GLM (智谱) API.
+    GLM,
+    /// MiniMax API.
+    MiniMax,
 }
 
 /// LLM settings persisted to database.
@@ -190,6 +198,10 @@ impl LlmSettings {
             LlmBackendType::Anthropic => "anthropic",
             LlmBackendType::Google => "google",
             LlmBackendType::XAi => "xai",
+            LlmBackendType::Qwen => "qwen",
+            LlmBackendType::DeepSeek => "deepseek",
+            LlmBackendType::GLM => "glm",
+            LlmBackendType::MiniMax => "minimax",
         }
     }
 
@@ -201,6 +213,10 @@ impl LlmSettings {
             "anthropic" => LlmBackendType::Anthropic,
             "google" => LlmBackendType::Google,
             "xai" => LlmBackendType::XAi,
+            "qwen" => LlmBackendType::Qwen,
+            "deepseek" => LlmBackendType::DeepSeek,
+            "glm" => LlmBackendType::GLM,
+            "minimax" => LlmBackendType::MiniMax,
             _ => return None,
         };
 
@@ -356,7 +372,11 @@ fn default_external_broker_enabled() -> bool {
 fn default_external_broker_subscribe_topics() -> Vec<String> {
     // Note: Many public brokers (EMQX, HiveMQ, etc.) reject "#" for security.
     // Use common topic prefixes instead. User can customize as needed.
-    vec!["sensor/#".to_string(), "device/#".to_string(), "tele/#".to_string()]
+    vec![
+        "sensor/#".to_string(),
+        "device/#".to_string(),
+        "tele/#".to_string(),
+    ]
 }
 
 fn is_default_subscribe_topics(topics: &[String]) -> bool {
@@ -548,9 +568,10 @@ impl SettingsStore {
         {
             let singleton = SETTINGS_STORE_SINGLETON.lock().unwrap();
             if let Some(store) = singleton.as_ref()
-                && store.path == path_str {
-                    return Ok(store.clone());
-                }
+                && store.path == path_str
+            {
+                return Ok(store.clone());
+            }
         }
 
         // Create a new store
@@ -672,9 +693,10 @@ impl SettingsStore {
         for result in iter {
             let (_, data) = result?;
             if let Ok(entry) = serde_json::from_slice::<ConfigChangeEntry>(data.value())
-                && entry.config_key == config_key {
-                    entries.push(entry);
-                }
+                && entry.config_key == config_key
+            {
+                entries.push(entry);
+            }
         }
 
         // Sort by timestamp descending (newest first)
@@ -769,25 +791,27 @@ impl SettingsStore {
     pub fn import_settings(&self, import: serde_json::Value, source: &str) -> Result<(), Error> {
         // Import LLM settings
         if let Some(llm_value) = import.get("llm")
-            && let Ok(llm_settings) = serde_json::from_value::<LlmSettings>(llm_value.clone()) {
-                self.save_llm_settings_tracked(&llm_settings, source)?;
-            }
+            && let Ok(llm_settings) = serde_json::from_value::<LlmSettings>(llm_value.clone())
+        {
+            self.save_llm_settings_tracked(&llm_settings, source)?;
+        }
 
         // Import MQTT settings
         if let Some(mqtt_value) = import.get("mqtt")
-            && let Ok(mqtt_settings) = serde_json::from_value::<MqttSettings>(mqtt_value.clone()) {
-                self.save_mqtt_settings_tracked(&mqtt_settings, source)?;
-            }
+            && let Ok(mqtt_settings) = serde_json::from_value::<MqttSettings>(mqtt_value.clone())
+        {
+            self.save_mqtt_settings_tracked(&mqtt_settings, source)?;
+        }
 
         // Import external brokers
         if let Some(brokers_value) = import.get("external_brokers")
             && let Ok(brokers) =
                 serde_json::from_value::<Vec<ExternalBroker>>(brokers_value.clone())
-            {
-                for broker in brokers {
-                    self.save_external_broker(&broker)?;
-                }
+        {
+            for broker in brokers {
+                self.save_external_broker(&broker)?;
             }
+        }
 
         Ok(())
     }
@@ -808,7 +832,11 @@ impl SettingsStore {
             LlmBackendType::OpenAi
             | LlmBackendType::Anthropic
             | LlmBackendType::Google
-            | LlmBackendType::XAi => {
+            | LlmBackendType::XAi
+            | LlmBackendType::Qwen
+            | LlmBackendType::DeepSeek
+            | LlmBackendType::GLM
+            | LlmBackendType::MiniMax => {
                 if settings.api_key.as_ref().is_none_or(|k| k.is_empty()) {
                     return Err(format!("{:?} requires an API key", settings.backend));
                 }

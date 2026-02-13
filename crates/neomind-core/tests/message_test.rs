@@ -7,9 +7,7 @@
 //! - Content part utilities
 //! - Image detail levels
 
-use neomind_core::{
-    message::{Content, ContentPart, ImageDetail, Message, MessageRole},
-};
+use neomind_core::message::{Content, ContentPart, ImageDetail, Message, MessageRole};
 use serde_json;
 
 #[test]
@@ -108,8 +106,8 @@ fn test_message_from_parts() {
 
 #[test]
 fn test_message_with_part() {
-    let msg = Message::user("Hello")
-        .with_part(ContentPart::image_url("http://example.com/image.jpg"));
+    let msg =
+        Message::user("Hello").with_part(ContentPart::image_url("http://example.com/image.jpg"));
 
     assert!(msg.has_images());
 
@@ -201,8 +199,10 @@ fn test_multimodal_text_extraction() {
 #[test]
 fn test_content_part_image_detail_variants() {
     let low = ContentPart::image_url_with_detail("http://example.com/image.jpg", ImageDetail::Low);
-    let high = ContentPart::image_url_with_detail("http://example.com/image.jpg", ImageDetail::High);
-    let auto = ContentPart::image_url_with_detail("http://example.com/image.jpg", ImageDetail::Auto);
+    let high =
+        ContentPart::image_url_with_detail("http://example.com/image.jpg", ImageDetail::High);
+    let auto =
+        ContentPart::image_url_with_detail("http://example.com/image.jpg", ImageDetail::Auto);
 
     // All should be images
     assert!(low.is_image());

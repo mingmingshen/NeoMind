@@ -58,6 +58,22 @@ const LLM_PROVIDER_CONFIG: Record<string, {
     icon: <Server className="h-6 w-6" />,
     iconBg: 'bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400',
   },
+  qwen: {
+    icon: <Server className="h-6 w-6" />,
+    iconBg: 'bg-violet-100 text-violet-700 dark:bg-violet-900/20 dark:text-violet-400',
+  },
+  deepseek: {
+    icon: <Server className="h-6 w-6" />,
+    iconBg: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-400',
+  },
+  glm: {
+    icon: <Server className="h-6 w-6" />,
+    iconBg: 'bg-pink-100 text-pink-700 dark:bg-pink-900/20 dark:text-pink-400',
+  },
+  minimax: {
+    icon: <Server className="h-6 w-6" />,
+    iconBg: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400',
+  },
 }
 
 /**
@@ -65,7 +81,7 @@ const LLM_PROVIDER_CONFIG: Record<string, {
  */
 function getLlmProviderInfo(providerType: string, t: (key: string) => string) {
   const config = LLM_PROVIDER_CONFIG[providerType] || LLM_PROVIDER_CONFIG.ollama
-  const i18nKey = `llm.providers.${providerType}`
+  const i18nKey = `common:llm.providers.${providerType}`
 
   return {
     name: t(i18nKey),

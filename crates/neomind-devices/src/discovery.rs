@@ -221,7 +221,8 @@ impl DeviceDiscovery {
         _discovered: &DiscoveredDevice,
         _name: String,
         _metrics: Vec<MetricDefinition>,
-    ) -> Result<serde_json::Value, DiscoveryError> {  // Changed from MqttDevice
+    ) -> Result<serde_json::Value, DiscoveryError> {
+        // Changed from MqttDevice
         Err(DiscoveryError::Protocol(
             "MQTT device creation should use DeviceService with MqttAdapter. See adapters::mqtt module.".to_string()
         ))

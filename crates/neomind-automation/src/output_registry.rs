@@ -16,11 +16,11 @@
 //! - Rules can use Transform outputs as conditions
 //! - AI Agents can query Transform outputs in their reasoning
 
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
-use chrono::Utc;
 
 use crate::transform::TransformedMetric;
 
@@ -133,10 +133,7 @@ impl TransformOutputRegistry {
         let mut transform_metrics = self.transform_metrics.write().await;
 
         // Track metric names for this transform
-        let metric_names: Vec<String> = metrics
-            .iter()
-            .map(|m| m.metric.clone())
-            .collect();
+        let metric_names: Vec<String> = metrics.iter().map(|m| m.metric.clone()).collect();
         transform_metrics.insert(transform_id.to_string(), metric_names);
 
         // Register each metric as a data source
@@ -323,12 +320,9 @@ mod tests {
         let registry = TransformOutputRegistry::new();
         let metrics = create_test_metrics();
 
-        registry.register_outputs(
-            "transform1",
-            "Temp Converter",
-            &metrics,
-            true,
-        ).await;
+        registry
+            .register_outputs("transform1", "Temp Converter", &metrics, true)
+            .await;
 
         // Check count
         assert_eq!(registry.count().await, 2);
@@ -338,10 +332,16 @@ mod tests {
         assert_eq!(outputs.len(), 2);
 
         // Check first output
-        let temp_output = outputs.iter().find(|o| o.metric_name == "temperature_f").unwrap();
+        let temp_output = outputs
+            .iter()
+            .find(|o| o.metric_name == "temperature_f")
+            .unwrap();
         assert_eq!(temp_output.transform_id, "transform1");
         assert_eq!(temp_output.transform_name, "Temp Converter");
-        assert_eq!(temp_output.data_source_id, "transform:transform1:temperature_f");
+        assert_eq!(
+            temp_output.data_source_id,
+            "transform:transform1:temperature_f"
+        );
     }
 
     #[tokio::test]
@@ -349,7 +349,9 @@ mod tests {
         let registry = TransformOutputRegistry::new();
         let metrics = create_test_metrics();
 
-        registry.register_outputs("transform1", "Test Transform", &metrics, true).await;
+        registry
+            .register_outputs("transform1", "Test Transform", &metrics, true)
+            .await;
 
         let outputs = registry.get_transform_outputs("transform1").await;
         assert_eq!(outputs.len(), 2);
@@ -361,7 +363,9 @@ mod tests {
         let registry = TransformOutputRegistry::new();
         let metrics = create_test_metrics();
 
-        registry.register_outputs("transform1", "Test", &metrics, true).await;
+        registry
+            .register_outputs("transform1", "Test", &metrics, true)
+            .await;
         assert_eq!(registry.count().await, 2);
 
         registry.unregister_transform("transform1").await;
@@ -373,12 +377,17 @@ mod tests {
         let registry = TransformOutputRegistry::new();
         let metrics = create_test_metrics();
 
-        registry.register_outputs("transform1", "Temp Converter", &metrics, true).await;
+        registry
+            .register_outputs("transform1", "Temp Converter", &metrics, true)
+            .await;
 
         let data_sources = registry.list_as_data_sources().await;
         assert_eq!(data_sources.len(), 2);
 
-        let temp_ds = data_sources.iter().find(|ds| ds.metric_name == "temperature_f").unwrap();
+        let temp_ds = data_sources
+            .iter()
+            .find(|ds| ds.metric_name == "temperature_f")
+            .unwrap();
         assert_eq!(temp_ds.transform_id, "transform1");
         assert_eq!(temp_ds.transform_name, "Temp Converter");
         assert_eq!(temp_ds.data_type, "float");
@@ -390,7 +399,9 @@ mod tests {
         let metrics = create_test_metrics();
 
         // Register as disabled
-        registry.register_outputs("transform1", "Test", &metrics, false).await;
+        registry
+            .register_outputs("transform1", "Test", &metrics, false)
+            .await;
 
         let data_sources = registry.list_as_data_sources().await;
         // Disabled transforms should not be in the list
@@ -402,12 +413,19 @@ mod tests {
         let registry = TransformOutputRegistry::new();
         let metrics = create_test_metrics();
 
-        registry.register_outputs("transform1", "Test", &metrics, true).await;
+        registry
+            .register_outputs("transform1", "Test", &metrics, true)
+            .await;
 
         // Update timestamp
-        registry.update_metric("transform1", "temperature_f", 99999).await;
+        registry
+            .update_metric("transform1", "temperature_f", 99999)
+            .await;
 
-        let output = registry.get_output("transform:transform1:temperature_f").await.unwrap();
+        let output = registry
+            .get_output("transform:transform1:temperature_f")
+            .await
+            .unwrap();
         assert_eq!(output.last_update, Some(99999));
     }
 }

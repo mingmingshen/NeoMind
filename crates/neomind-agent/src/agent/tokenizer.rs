@@ -128,26 +128,40 @@ pub fn calculate_message_importance(
 
     // 2. Role-based priority
     match msg.role.as_str() {
-        "system" => score += 0.3,  // System messages are critical
-        "user" => score += 0.2,     // User intent is high priority
+        "system" => score += 0.3,    // System messages are critical
+        "user" => score += 0.2,      // User intent is high priority
         "assistant" => score += 0.0, // Neutral
-        "tool" => score -= 0.1,    // Tool results already handled separately
+        "tool" => score -= 0.1,      // Tool results already handled separately
         _ => {}
     }
 
     // 3. Content-based boosts
     let content = msg.content.to_lowercase();
-    if content.contains("错误") || content.contains("失败") || content.contains("error") || content.contains("fail") {
+    if content.contains("错误")
+        || content.contains("失败")
+        || content.contains("error")
+        || content.contains("fail")
+    {
         score += 0.15; // Error messages are important for debugging
     }
 
     // 4. Tool call indication
-    if msg.tool_calls.as_ref().map(|t| !t.is_empty()).unwrap_or(false) {
+    if msg
+        .tool_calls
+        .as_ref()
+        .map(|t| !t.is_empty())
+        .unwrap_or(false)
+    {
         score += 0.1; // Active tool calls are important
     }
 
     // 5. Thinking content (slight boost for reasoning)
-    if msg.thinking.as_ref().map(|t| !t.is_empty()).unwrap_or(false) {
+    if msg
+        .thinking
+        .as_ref()
+        .map(|t| !t.is_empty())
+        .unwrap_or(false)
+    {
         score += 0.05;
     }
 
@@ -178,10 +192,7 @@ pub fn select_messages_with_importance(
     let total_messages = messages.len();
 
     // If all messages fit, return all
-    let total_tokens: usize = messages
-        .iter()
-        .map(estimate_message_tokens)
-        .sum();
+    let total_tokens: usize = messages.iter().map(estimate_message_tokens).sum();
     if total_tokens <= max_tokens {
         return messages.iter().collect();
     }
@@ -197,7 +208,8 @@ pub fn select_messages_with_importance(
     }
 
     // Calculate importance for remaining messages
-    let mut scored_messages: Vec<(f32, usize, &crate::agent::AgentMessage)> = messages[..recent_start]
+    let mut scored_messages: Vec<(f32, usize, &crate::agent::AgentMessage)> = messages
+        [..recent_start]
         .iter()
         .enumerate()
         .map(|(i, msg)| {
@@ -209,8 +221,7 @@ pub fn select_messages_with_importance(
 
     // Sort by importance (descending), then by position (recent first)
     scored_messages.sort_by(|a, b| {
-        b.0
-            .partial_cmp(&a.0)
+        b.0.partial_cmp(&a.0)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| b.1.cmp(&a.1))
     });

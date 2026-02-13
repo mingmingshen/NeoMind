@@ -3,19 +3,20 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde_json::Value;
 use base64::{Engine as _, engine::general_purpose};
+use serde_json::Value;
 
 use super::error::Result;
-use super::tool::{Tool, ToolDefinition, ToolOutput, number_property, object_schema, string_property};
 use super::error::ToolError;
-use neomind_core::tools::{ToolExample, UsageScenario, ToolRelationships};
+use super::tool::{
+    Tool, ToolDefinition, ToolOutput, number_property, object_schema, string_property,
+};
+use neomind_core::tools::{ToolExample, ToolRelationships, UsageScenario};
 
 pub type ToolResult<T> = std::result::Result<T, ToolError>;
 
 use neomind_devices::{DeviceService, TimeSeriesStorage};
 use neomind_rules::RuleEngine;
-
 
 /// Tool for querying time series data using real storage.
 pub struct QueryDataTool {
@@ -50,15 +51,16 @@ impl QueryDataTool {
 
     /// 检查数据新鲜度
     /// 返回 (is_stale, latest_timestamp, age_seconds)
-    fn check_data_freshness(&self, data_points: &[neomind_devices::DataPoint]) -> (bool, Option<i64>, Option<i64>) {
+    fn check_data_freshness(
+        &self,
+        data_points: &[neomind_devices::DataPoint],
+    ) -> (bool, Option<i64>, Option<i64>) {
         if data_points.is_empty() {
             return (false, None, None);
         }
 
         // 获取最新的数据点时间戳
-        let latest_timestamp = data_points.iter()
-            .map(|p| p.timestamp)
-            .max();
+        let latest_timestamp = data_points.iter().map(|p| p.timestamp).max();
 
         if let Some(latest) = latest_timestamp {
             let now = chrono::Utc::now().timestamp();
@@ -133,7 +135,9 @@ impl Tool for QueryDataTool {
                 UsageScenario {
                     description: "查询设备指标历史数据".to_string(),
                     example_query: "查看ne101温度数据".to_string(),
-                    suggested_call: Some(r#"{"device_id": "ne101", "metric": "temperature"}"#.to_string()),
+                    suggested_call: Some(
+                        r#"{"device_id": "ne101", "metric": "temperature"}"#.to_string(),
+                    ),
                 },
                 UsageScenario {
                     description: "查询所有指标".to_string(),
@@ -144,7 +148,11 @@ impl Tool for QueryDataTool {
             relationships: ToolRelationships {
                 // 建议先获取设备列表，确认设备存在
                 call_after: vec!["device_discover".to_string()],
-                output_to: vec!["device_analyze".to_string(), "export_to_csv".to_string(), "generate_report".to_string()],
+                output_to: vec![
+                    "device_analyze".to_string(),
+                    "export_to_csv".to_string(),
+                    "generate_report".to_string(),
+                ],
                 exclusive_with: vec![],
             },
             deprecated: false,
@@ -216,7 +224,7 @@ impl Tool for QueryDataTool {
                 .map(|dt| dt.timestamp())
                 .unwrap_or(end_time - 86400)
         } else {
-            end_time - 86400  // Default 24 hours
+            end_time - 86400 // Default 24 hours
         };
 
         // Query the data from real storage
@@ -289,10 +297,6 @@ impl Tool for QueryDataTool {
         Ok(ToolOutput::success_with_metadata(result, metadata))
     }
 }
-
-
-
-
 
 /// Tool for creating rules using real rule engine.
 pub struct CreateRuleTool {
@@ -524,32 +528,28 @@ END
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("dsl must be a string".to_string()))?;
 
-        let rule_id = self
-            .engine
-            .add_rule_from_dsl(dsl)
-            .await
-            .map_err(|e| {
-                // 检测是否是解析错误
-                let error_str = e.to_string();
-                if error_str.contains("Parse error")
-                    || error_str.contains("WHEN clause")
-                    || error_str.contains("DO clause")
-                    || error_str.contains("unexpected token")
-                {
-                    // 返回简洁的错误，引导 LLM 追问用户而非展示格式
-                    ToolError::Execution(
-                        "规则DSL格式错误。请向用户确认以下信息后重新生成规则：
+        let rule_id = self.engine.add_rule_from_dsl(dsl).await.map_err(|e| {
+            // 检测是否是解析错误
+            let error_str = e.to_string();
+            if error_str.contains("Parse error")
+                || error_str.contains("WHEN clause")
+                || error_str.contains("DO clause")
+                || error_str.contains("unexpected token")
+            {
+                // 返回简洁的错误，引导 LLM 追问用户而非展示格式
+                ToolError::Execution(
+                    "规则DSL格式错误。请向用户确认以下信息后重新生成规则：
 1. 监控哪个设备？（设备ID，如 ne101）
 2. 监控什么指标？（如 battery_percent、temperature）
 3. 触发条件是什么？（如 < 50、> 30）
 4. 要执行什么动作？（发送通知、创建告警、执行设备命令）
 5. 如果是执行设备命令，具体命令是什么？"
-                            .to_string(),
-                    )
-                } else {
-                    ToolError::Execution(format!("Failed to create rule: {}", error_str))
-                }
-            })?;
+                        .to_string(),
+                )
+            } else {
+                ToolError::Execution(format!("Failed to create rule: {}", error_str))
+            }
+        })?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "rule_id": rule_id.to_string(),
@@ -601,17 +601,19 @@ impl Tool for ListRulesTool {
                 description: "列出所有自动化规则".to_string(),
             }),
             category: neomind_core::tools::ToolCategory::Rule,
-            scenarios: vec![
-                UsageScenario {
-                    description: "列出所有规则".to_string(),
-                    example_query: "有哪些规则".to_string(),
-                    suggested_call: Some(r#"{}"#.to_string()),
-                },
-            ],
+            scenarios: vec![UsageScenario {
+                description: "列出所有规则".to_string(),
+                example_query: "有哪些规则".to_string(),
+                suggested_call: Some(r#"{}"#.to_string()),
+            }],
             relationships: ToolRelationships {
                 call_after: vec![],
                 // 输出规则列表，供后续工具使用
-                output_to: vec!["create_rule".to_string(), "delete_rule".to_string(), "query_rule_history".to_string()],
+                output_to: vec![
+                    "create_rule".to_string(),
+                    "delete_rule".to_string(),
+                    "query_rule_history".to_string(),
+                ],
                 exclusive_with: vec![],
             },
             deprecated: false,
@@ -708,13 +710,11 @@ impl Tool for DeleteRuleTool {
                 description: "删除指定的自动化规则".to_string(),
             }),
             category: neomind_core::tools::ToolCategory::Rule,
-            scenarios: vec![
-                UsageScenario {
-                    description: "删除规则".to_string(),
-                    example_query: "删除高温告警规则".to_string(),
-                    suggested_call: Some(r#"{"rule_id": "rule_123"}"#.to_string()),
-                },
-            ],
+            scenarios: vec![UsageScenario {
+                description: "删除规则".to_string(),
+                example_query: "删除高温告警规则".to_string(),
+                suggested_call: Some(r#"{"rule_id": "rule_123"}"#.to_string()),
+            }],
             relationships: ToolRelationships {
                 // 建议先查看规则列表，确认规则ID
                 call_after: vec!["list_rules".to_string()],
@@ -752,8 +752,9 @@ impl Tool for DeleteRuleTool {
             .ok_or_else(|| ToolError::InvalidArguments("rule_id must be a string".to_string()))?;
 
         // Parse the rule ID
-        let id = neomind_rules::RuleId::from_string(rule_id)
-            .map_err(|_| ToolError::InvalidArguments(format!("Invalid rule ID format: {}", rule_id)))?;
+        let id = neomind_rules::RuleId::from_string(rule_id).map_err(|_| {
+            ToolError::InvalidArguments(format!("Invalid rule ID format: {}", rule_id))
+        })?;
 
         // Get rule name before deletion for the message
         let rule_name = self
@@ -837,13 +838,11 @@ impl Tool for QueryRuleHistoryTool {
                 description: "查询指定规则的执行历史".to_string(),
             }),
             category: neomind_core::tools::ToolCategory::Data,
-            scenarios: vec![
-                UsageScenario {
-                    description: "查询规则执行历史".to_string(),
-                    example_query: "查看高温告警规则的执行历史".to_string(),
-                    suggested_call: Some(r#"{"rule_id": "rule_1", "limit": 10}"#.to_string()),
-                },
-            ],
+            scenarios: vec![UsageScenario {
+                description: "查询规则执行历史".to_string(),
+                example_query: "查看高温告警规则的执行历史".to_string(),
+                suggested_call: Some(r#"{"rule_id": "rule_1", "limit": 10}"#.to_string()),
+            }],
             relationships: ToolRelationships {
                 // 建议先查看规则列表，确认规则ID
                 call_after: vec!["list_rules".to_string()],
@@ -935,13 +934,22 @@ async fn resolve_device_id(service: &DeviceService, param: &str) -> Option<Strin
     let param_lower = param.to_lowercase();
     let devices = service.list_devices().await;
     // Prefer exact name match, then name contains, then id contains
-    if let Some(d) = devices.iter().find(|d| d.name.to_lowercase() == param_lower) {
+    if let Some(d) = devices
+        .iter()
+        .find(|d| d.name.to_lowercase() == param_lower)
+    {
         return Some(d.device_id.clone());
     }
-    if let Some(d) = devices.iter().find(|d| d.name.to_lowercase().contains(&param_lower)) {
+    if let Some(d) = devices
+        .iter()
+        .find(|d| d.name.to_lowercase().contains(&param_lower))
+    {
         return Some(d.device_id.clone());
     }
-    if let Some(d) = devices.iter().find(|d| d.device_id.to_lowercase().contains(&param_lower)) {
+    if let Some(d) = devices
+        .iter()
+        .find(|d| d.device_id.to_lowercase().contains(&param_lower))
+    {
         return Some(d.device_id.clone());
     }
     None
@@ -1013,18 +1021,20 @@ impl Tool for GetDeviceDataTool {
                 description: "获取设备的所有当前数据".to_string(),
             }),
             category: neomind_core::tools::ToolCategory::Data,
-            scenarios: vec![
-                UsageScenario {
-                    description: "获取设备所有当前数据".to_string(),
-                    example_query: "ne101当前状态".to_string(),
-                    suggested_call: Some(r#"{"device_id": "ne101"}"#.to_string()),
-                },
-            ],
+            scenarios: vec![UsageScenario {
+                description: "获取设备所有当前数据".to_string(),
+                example_query: "ne101当前状态".to_string(),
+                suggested_call: Some(r#"{"device_id": "ne101"}"#.to_string()),
+            }],
             relationships: ToolRelationships {
                 // 建议先获取设备列表，确认设备存在
                 call_after: vec!["device_discover".to_string()],
                 // 输出设备数据，供分析和导出使用
-                output_to: vec!["device_analyze".to_string(), "export_to_csv".to_string(), "export_to_json".to_string()],
+                output_to: vec![
+                    "device_analyze".to_string(),
+                    "export_to_csv".to_string(),
+                    "export_to_json".to_string(),
+                ],
                 exclusive_with: vec![],
             },
             deprecated: false,
@@ -1099,13 +1109,20 @@ impl Tool for GetDeviceDataTool {
                         neomind_devices::MetricValue::Boolean(v) => serde_json::json!(v),
                         neomind_devices::MetricValue::Array(ref a) => {
                             // Convert array to JSON
-                            let json_arr: Vec<serde_json::Value> = a.iter().map(|v| match v {
-                                neomind_devices::MetricValue::String(s) => serde_json::json!(s),
-                                neomind_devices::MetricValue::Integer(i) => serde_json::json!(i),
-                                neomind_devices::MetricValue::Float(f) => serde_json::json!(f),
-                                neomind_devices::MetricValue::Boolean(b) => serde_json::json!(b),
-                                _ => serde_json::json!(null),
-                            }).collect();
+                            let json_arr: Vec<serde_json::Value> = a
+                                .iter()
+                                .map(|v| match v {
+                                    neomind_devices::MetricValue::String(s) => serde_json::json!(s),
+                                    neomind_devices::MetricValue::Integer(i) => {
+                                        serde_json::json!(i)
+                                    }
+                                    neomind_devices::MetricValue::Float(f) => serde_json::json!(f),
+                                    neomind_devices::MetricValue::Boolean(b) => {
+                                        serde_json::json!(b)
+                                    }
+                                    _ => serde_json::json!(null),
+                                })
+                                .collect();
                             serde_json::json!(json_arr)
                         }
                         neomind_devices::MetricValue::Binary(ref v) => {
@@ -1121,7 +1138,7 @@ impl Tool for GetDeviceDataTool {
                             "unit": metric_def.unit,
                             "display_name": metric_def.display_name,
                             "timestamp": point.timestamp,
-                        })
+                        }),
                     );
                 } else {
                     // No data available for this metric
@@ -1132,7 +1149,7 @@ impl Tool for GetDeviceDataTool {
                             "unit": metric_def.unit,
                             "display_name": metric_def.display_name,
                             "status": "no_data"
-                        })
+                        }),
                     );
                 }
             }
@@ -1141,12 +1158,15 @@ impl Tool for GetDeviceDataTool {
             if let Ok(actual_metrics) = self.storage.list_metrics(&device_id).await {
                 if !actual_metrics.is_empty() {
                     for metric_name in actual_metrics {
-                        if let Ok(Some(point)) = self.storage.latest(&device_id, &metric_name).await {
+                        if let Ok(Some(point)) = self.storage.latest(&device_id, &metric_name).await
+                        {
                             let value_json = match point.value {
                                 neomind_devices::MetricValue::Float(v) => serde_json::json!(v),
                                 neomind_devices::MetricValue::Integer(v) => serde_json::json!(v),
                                 neomind_devices::MetricValue::String(ref v) => {
-                                    if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(v) {
+                                    if let Ok(json_val) =
+                                        serde_json::from_str::<serde_json::Value>(v)
+                                    {
                                         json_val
                                     } else {
                                         serde_json::json!(v)
@@ -1157,16 +1177,30 @@ impl Tool for GetDeviceDataTool {
                                     serde_json::json!(general_purpose::STANDARD.encode(v))
                                 }
                                 neomind_devices::MetricValue::Array(ref arr) => {
-                                    let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
-                                        neomind_devices::MetricValue::Float(f) => serde_json::json!(f),
-                                        neomind_devices::MetricValue::Integer(i) => serde_json::json!(i),
-                                        neomind_devices::MetricValue::String(s) => serde_json::json!(s),
-                                        neomind_devices::MetricValue::Boolean(b) => serde_json::json!(b),
-                                        neomind_devices::MetricValue::Null => serde_json::json!(null),
-                                        neomind_devices::MetricValue::Array(_) | neomind_devices::MetricValue::Binary(_) => {
-                                            serde_json::json!(null)
-                                        }
-                                    }).collect();
+                                    let json_arr: Vec<serde_json::Value> = arr
+                                        .iter()
+                                        .map(|v| match v {
+                                            neomind_devices::MetricValue::Float(f) => {
+                                                serde_json::json!(f)
+                                            }
+                                            neomind_devices::MetricValue::Integer(i) => {
+                                                serde_json::json!(i)
+                                            }
+                                            neomind_devices::MetricValue::String(s) => {
+                                                serde_json::json!(s)
+                                            }
+                                            neomind_devices::MetricValue::Boolean(b) => {
+                                                serde_json::json!(b)
+                                            }
+                                            neomind_devices::MetricValue::Null => {
+                                                serde_json::json!(null)
+                                            }
+                                            neomind_devices::MetricValue::Array(_)
+                                            | neomind_devices::MetricValue::Binary(_) => {
+                                                serde_json::json!(null)
+                                            }
+                                        })
+                                        .collect();
                                     serde_json::json!(json_arr)
                                 }
                                 neomind_devices::MetricValue::Null => serde_json::json!(null),
@@ -1177,7 +1211,7 @@ impl Tool for GetDeviceDataTool {
                                 serde_json::json!({
                                     "value": value_json,
                                     "timestamp": point.timestamp,
-                                })
+                                }),
                             );
                         }
                     }
@@ -1231,26 +1265,22 @@ mod tests {
         let now = chrono::Utc::now().timestamp();
 
         // Test with fresh data (1 minute old)
-        let fresh_data = vec![
-            DataPoint {
-                timestamp: now - 60,
-                value: MetricValue::Float(22.5),
-                quality: None,
-            }
-        ];
+        let fresh_data = vec![DataPoint {
+            timestamp: now - 60,
+            value: MetricValue::Float(22.5),
+            quality: None,
+        }];
         let (is_stale, latest_ts, age) = tool.check_data_freshness(&fresh_data);
         assert!(!is_stale, "Fresh data should not be marked as stale");
         assert_eq!(latest_ts, Some(now - 60));
         assert_eq!(age, Some(60));
 
         // Test with stale data (10 minutes old, > 5 minute threshold)
-        let stale_data = vec![
-            DataPoint {
-                timestamp: now - 600,
-                value: MetricValue::Float(22.5),
-                quality: None,
-            }
-        ];
+        let stale_data = vec![DataPoint {
+            timestamp: now - 600,
+            value: MetricValue::Float(22.5),
+            quality: None,
+        }];
         let (is_stale, latest_ts, age) = tool.check_data_freshness(&stale_data);
         assert!(is_stale, "Stale data should be marked as stale");
         assert_eq!(age, Some(600));
@@ -1271,13 +1301,11 @@ mod tests {
         let now = chrono::Utc::now().timestamp();
 
         // Data 2 minutes old should be stale with 1 minute threshold
-        let data = vec![
-            DataPoint {
-                timestamp: now - 120,
-                value: MetricValue::Float(22.5),
-                quality: None,
-            }
-        ];
+        let data = vec![DataPoint {
+            timestamp: now - 120,
+            value: MetricValue::Float(22.5),
+            quality: None,
+        }];
         let (is_stale, _, _) = tool.check_data_freshness(&data);
         assert!(is_stale, "Data older than threshold should be stale");
     }

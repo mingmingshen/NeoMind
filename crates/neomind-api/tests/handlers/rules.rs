@@ -1,11 +1,11 @@
 //! Tests for rules handlers.
 
-use neomind_api::handlers::rules::*;
-use neomind_api::handlers::ServerState;
-use neomind_api::models::ErrorResponse;
-use axum::extract::{Path, Query, State};
 use axum::Json;
-use neomind_rules::{CompiledRule, RuleCondition, ComparisonOperator, RuleStatus};
+use axum::extract::{Path, Query, State};
+use neomind_api::handlers::ServerState;
+use neomind_api::handlers::rules::*;
+use neomind_api::models::ErrorResponse;
+use neomind_rules::{ComparisonOperator, CompiledRule, RuleCondition, RuleStatus};
 use serde_json::json;
 
 async fn create_test_server_state() -> ServerState {
@@ -56,12 +56,8 @@ mod tests {
             "name": "Updated Name",
             "enabled": true
         });
-        let result = update_rule_handler(
-            State(state),
-            Path("invalid_id".to_string()),
-            Json(req),
-        )
-        .await;
+        let result =
+            update_rule_handler(State(state), Path("invalid_id".to_string()), Json(req)).await;
         assert!(result.is_err());
     }
 
@@ -76,12 +72,8 @@ mod tests {
     async fn test_set_rule_status_handler_invalid_id() {
         let state = create_test_server_state().await;
         let req = SetRuleStatusRequest { enabled: true };
-        let result = set_rule_status_handler(
-            State(state),
-            Path("invalid_id".to_string()),
-            Json(req),
-        )
-        .await;
+        let result =
+            set_rule_status_handler(State(state), Path("invalid_id".to_string()), Json(req)).await;
         assert!(result.is_err());
     }
 
@@ -92,7 +84,8 @@ mod tests {
             State(state),
             Path("invalid_id".to_string()),
             Query(std::collections::HashMap::new()),
-        ).await;
+        )
+        .await;
         assert!(result.is_err());
     }
 
@@ -112,5 +105,4 @@ mod tests {
         let err = result.unwrap_err();
         assert!(err.message.contains("Missing 'dsl' field"));
     }
-
 }

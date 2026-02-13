@@ -6,10 +6,10 @@
 //! - Connection reuse for better performance
 
 use neomind_core::llm::backend::LlmRuntime;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, Semaphore};
-use serde::{Deserialize, Serialize};
 
 /// Configuration for the LLM runtime pool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,9 +119,9 @@ impl LlmRuntimePool {
     ) -> Result<PooledRuntimeGuard, crate::error::NeoMindError> {
         // Wait for semaphore permit (limits total concurrent acquisitions)
         let mut pools = self.pools.write().await;
-        let pool = pools.entry(key.clone()).or_insert_with(|| {
-            BackendPool::new(self.config.max_instances_per_backend)
-        });
+        let pool = pools
+            .entry(key.clone())
+            .or_insert_with(|| BackendPool::new(self.config.max_instances_per_backend));
 
         // Try to get an available runtime
         if let Some(idx) = pool.available.iter().position(|r| !r.busy) {
@@ -182,7 +182,7 @@ impl LlmRuntimePool {
             // For simplicity, we'll just return an error here
             // A more sophisticated implementation would wait on a condition variable
             Err(crate::NeoMindError::Llm(
-                "LLM runtime pool is at maximum capacity".to_string()
+                "LLM runtime pool is at maximum capacity".to_string(),
             ))
         }
     }
@@ -227,9 +227,8 @@ impl LlmRuntimePool {
         let mut pools = self.pools.write().await;
         for pool in pools.values_mut() {
             let initial_len = pool.available.len();
-            pool.available.retain(|r| {
-                now - r.last_used_at < self.config.idle_timeout_secs as i64
-            });
+            pool.available
+                .retain(|r| now - r.last_used_at < self.config.idle_timeout_secs as i64);
             evicted += initial_len - pool.available.len();
         }
 
@@ -239,9 +238,7 @@ impl LlmRuntimePool {
         // Update metrics
         if self.config.enable_metrics && evicted > 0 {
             let mut metrics = self.metrics.write().await;
-            metrics.current_instances = pools.values()
-                .map(|p| p.total_instances())
-                .sum();
+            metrics.current_instances = pools.values().map(|p| p.total_instances()).sum();
         }
 
         evicted

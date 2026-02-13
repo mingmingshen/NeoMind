@@ -20,9 +20,9 @@ pub async fn create_router() -> Router {
 /// Create the application router with a specific state.
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
-        agents, automations, auth as auth_handlers, auth_users, basic, bulk, commands, config,
-        dashboards, devices, events, extensions, llm_backends, memory, message_channels, messages, mqtt, rules,
-        search, sessions, settings, setup, stats, suggestions, test_data, tools,
+        agents, auth as auth_handlers, auth_users, automations, basic, bulk, commands, config,
+        dashboards, devices, events, extensions, llm_backends, memory, message_channels, messages,
+        mqtt, rules, search, sessions, settings, setup, stats, suggestions, test_data, tools,
     };
 
     // Public routes (no authentication required)
@@ -39,53 +39,146 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/auth/register", post(auth_users::register_handler))
         // Setup endpoints (public - only available when no users exist)
         .route("/api/setup/status", get(setup::setup_status_handler))
-        .route("/api/setup/initialize", post(setup::initialize_admin_handler))
+        .route(
+            "/api/setup/initialize",
+            post(setup::initialize_admin_handler),
+        )
         .route("/api/setup/complete", post(setup::complete_setup_handler))
-        .route("/api/setup/llm-config", post(setup::save_llm_config_handler))
+        .route(
+            "/api/setup/llm-config",
+            post(setup::save_llm_config_handler),
+        )
         // LLM Backends Types API (public - read-only metadata)
-        .route("/api/llm-backends/types", get(llm_backends::list_backend_types_handler))
-        .route("/api/llm-backends/types/:type/schema", get(llm_backends::get_backend_schema_handler))
+        .route(
+            "/api/llm-backends/types",
+            get(llm_backends::list_backend_types_handler),
+        )
+        .route(
+            "/api/llm-backends/types/:type/schema",
+            get(llm_backends::get_backend_schema_handler),
+        )
         // LLM Backends (public - read-only for viewing)
-        .route("/api/llm-backends", get(llm_backends::list_backends_handler))
-        .route("/api/llm-backends/:id", get(llm_backends::get_backend_handler))
-        .route("/api/llm-backends/stats", get(llm_backends::get_backend_stats_handler))
+        .route(
+            "/api/llm-backends",
+            get(llm_backends::list_backends_handler),
+        )
+        .route(
+            "/api/llm-backends/:id",
+            get(llm_backends::get_backend_handler),
+        )
+        .route(
+            "/api/llm-backends/stats",
+            get(llm_backends::get_backend_stats_handler),
+        )
         // Ollama models API (public - fetch available models with capabilities)
-        .route("/api/llm-backends/ollama/models", get(llm_backends::list_ollama_models_handler))
+        .route(
+            "/api/llm-backends/ollama/models",
+            get(llm_backends::list_ollama_models_handler),
+        )
         // Messages Channel Types API (public - read-only metadata)
-        .route("/api/messages/channels/types", get(message_channels::list_channel_types_handler))
-        .route("/api/messages/channels/types/:type/schema", get(message_channels::get_channel_type_schema_handler))
+        .route(
+            "/api/messages/channels/types",
+            get(message_channels::list_channel_types_handler),
+        )
+        .route(
+            "/api/messages/channels/types/:type/schema",
+            get(message_channels::get_channel_type_schema_handler),
+        )
         // Messages Channels (public - read-only for viewing)
-        .route("/api/messages/channels", get(message_channels::list_channels_handler))
-        .route("/api/messages/channels/:name", get(message_channels::get_channel_handler))
-        .route("/api/messages/channels/stats", get(message_channels::get_channel_stats_handler))
+        .route(
+            "/api/messages/channels",
+            get(message_channels::list_channels_handler),
+        )
+        .route(
+            "/api/messages/channels/:name",
+            get(message_channels::get_channel_handler),
+        )
+        .route(
+            "/api/messages/channels/stats",
+            get(message_channels::get_channel_stats_handler),
+        )
         // Extensions API (public - read-only endpoints for viewing dynamic extensions)
         .route("/api/extensions", get(extensions::list_extensions_handler))
-        .route("/api/extensions/types", get(extensions::list_extension_types_handler))
-        .route("/api/extensions/:id", get(extensions::get_extension_handler))
-        .route("/api/extensions/:id/health", get(extensions::extension_health_handler))
-        .route("/api/extensions/:id/stats", get(extensions::get_extension_stats_handler))
-        .route("/api/extensions/:id/commands", get(extensions::list_extension_commands_handler))
-        .route("/api/extensions/:id/data-sources", get(extensions::list_extension_data_sources_handler))
-        .route("/api/extensions/:id/metrics/:metric/data", get(extensions::query_extension_metric_data_handler))
-        .route("/api/extensions/capabilities", get(extensions::list_extension_capabilities_handler))
+        .route(
+            "/api/extensions/types",
+            get(extensions::list_extension_types_handler),
+        )
+        .route(
+            "/api/extensions/:id",
+            get(extensions::get_extension_handler),
+        )
+        .route(
+            "/api/extensions/:id/health",
+            get(extensions::extension_health_handler),
+        )
+        .route(
+            "/api/extensions/:id/stats",
+            get(extensions::get_extension_stats_handler),
+        )
+        .route(
+            "/api/extensions/:id/commands",
+            get(extensions::list_extension_commands_handler),
+        )
+        .route(
+            "/api/extensions/:id/data-sources",
+            get(extensions::list_extension_data_sources_handler),
+        )
+        .route(
+            "/api/extensions/:id/metrics/:metric/data",
+            get(extensions::query_extension_metric_data_handler),
+        )
+        .route(
+            "/api/extensions/capabilities",
+            get(extensions::list_extension_capabilities_handler),
+        )
         // Discover extensions (public - scans filesystem for available extensions)
-        .route("/api/extensions/discover", post(extensions::discover_extensions_handler))
+        .route(
+            "/api/extensions/discover",
+            post(extensions::discover_extensions_handler),
+        )
         // Extension streaming API (public)
-        .route("/api/extensions/:id/stream", get(extensions::stream_extension_handler))
+        .route(
+            "/api/extensions/:id/stream",
+            get(extensions::stream_extension_handler),
+        )
         // Test data generation (public - for development)
-        .route("/api/test-data/alerts", post(test_data::generate_test_alerts_handler))
-        .route("/api/test-data/all", post(test_data::generate_test_data_handler))
+        .route(
+            "/api/test-data/alerts",
+            post(test_data::generate_test_alerts_handler),
+        )
+        .route(
+            "/api/test-data/all",
+            post(test_data::generate_test_data_handler),
+        )
         // Stats API (public - system stats for dashboard components)
         .route("/api/stats/system", get(stats::get_system_stats_handler))
         // Suggestions API (public - provides intelligent input suggestions)
-        .route("/api/suggestions", get(suggestions::get_suggestions_handler))
-        .route("/api/suggestions/categories", get(suggestions::get_suggestions_categories_handler))
+        .route(
+            "/api/suggestions",
+            get(suggestions::get_suggestions_handler),
+        )
+        .route(
+            "/api/suggestions/categories",
+            get(suggestions::get_suggestions_categories_handler),
+        )
         // Device Types Cloud API (public - read-only for browsing cloud repository)
-        .route("/api/device-types/cloud/list", get(devices::list_cloud_device_types_handler))
+        .route(
+            "/api/device-types/cloud/list",
+            get(devices::list_cloud_device_types_handler),
+        )
         // Extension Marketplace API (public - read-only for browsing marketplace)
-        .route("/api/extensions/market/list", get(extensions::list_marketplace_extensions_handler))
-        .route("/api/extensions/market/:id", get(extensions::get_marketplace_extension_handler))
-        .route("/api/extensions/market/updates", get(extensions::check_marketplace_updates_handler))
+        .route(
+            "/api/extensions/market/list",
+            get(extensions::list_marketplace_extensions_handler),
+        )
+        .route(
+            "/api/extensions/market/:id",
+            get(extensions::get_marketplace_extension_handler),
+        )
+        .route(
+            "/api/extensions/market/updates",
+            get(extensions::check_marketplace_updates_handler),
+        )
         // API documentation (public)
         .merge(crate::openapi::swagger_ui());
 
@@ -258,8 +351,14 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         )
         // Draft Devices API - auto-onboarding
         .route("/api/devices/drafts", get(devices::list_draft_devices))
-        .route("/api/devices/drafts/:device_id", get(devices::get_draft_device))
-        .route("/api/devices/drafts/:device_id", put(devices::update_draft_device))
+        .route(
+            "/api/devices/drafts/:device_id",
+            get(devices::get_draft_device),
+        )
+        .route(
+            "/api/devices/drafts/:device_id",
+            put(devices::update_draft_device),
+        )
         .route(
             "/api/devices/drafts/:device_id/approve",
             post(devices::approve_draft_device),
@@ -280,14 +379,26 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/devices/drafts/:device_id/suggest-types",
             get(devices::suggest_device_types),
         )
-        .route("/api/devices/drafts/cleanup", post(devices::cleanup_draft_devices))
+        .route(
+            "/api/devices/drafts/cleanup",
+            post(devices::cleanup_draft_devices),
+        )
         .route(
             "/api/devices/drafts/type-signatures",
             get(devices::get_type_signatures),
         )
-        .route("/api/devices/drafts/config", get(devices::get_onboard_config))
-        .route("/api/devices/drafts/config", put(devices::update_onboard_config))
-        .route("/api/devices/drafts/upload", post(devices::upload_device_data))
+        .route(
+            "/api/devices/drafts/config",
+            get(devices::get_onboard_config),
+        )
+        .route(
+            "/api/devices/drafts/config",
+            put(devices::update_onboard_config),
+        )
+        .route(
+            "/api/devices/drafts/upload",
+            post(devices::upload_device_data),
+        )
         // Rules API - specific routes first, then parameterized routes
         .route("/api/rules", get(rules::list_rules_handler))
         .route("/api/rules", post(rules::create_rule_handler))
@@ -295,7 +406,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/rules/import", post(rules::import_rules_handler))
         .route("/api/rules/resources", get(rules::get_resources_handler))
         .route("/api/rules/validate", post(rules::validate_rule_handler))
-
         .route("/api/rules/:id", get(rules::get_rule_handler))
         .route("/api/rules/:id", put(rules::update_rule_handler))
         .route("/api/rules/:id", delete(rules::delete_rule_handler))
@@ -313,18 +423,45 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/messages", post(messages::create_message_handler))
         .route("/api/messages/stats", get(messages::message_stats_handler))
         .route("/api/messages/cleanup", post(messages::cleanup_handler))
-        .route("/api/messages/acknowledge", post(messages::bulk_acknowledge_handler))
-        .route("/api/messages/resolve", post(messages::bulk_resolve_handler))
+        .route(
+            "/api/messages/acknowledge",
+            post(messages::bulk_acknowledge_handler),
+        )
+        .route(
+            "/api/messages/resolve",
+            post(messages::bulk_resolve_handler),
+        )
         .route("/api/messages/delete", post(messages::bulk_delete_handler))
         .route("/api/messages/:id", get(messages::get_message_handler))
-        .route("/api/messages/:id", delete(messages::delete_message_handler))
-        .route("/api/messages/:id/acknowledge", post(messages::acknowledge_message_handler))
-        .route("/api/messages/:id/resolve", post(messages::resolve_message_handler))
-        .route("/api/messages/:id/archive", post(messages::archive_message_handler))
+        .route(
+            "/api/messages/:id",
+            delete(messages::delete_message_handler),
+        )
+        .route(
+            "/api/messages/:id/acknowledge",
+            post(messages::acknowledge_message_handler),
+        )
+        .route(
+            "/api/messages/:id/resolve",
+            post(messages::resolve_message_handler),
+        )
+        .route(
+            "/api/messages/:id/archive",
+            post(messages::archive_message_handler),
+        )
         // Messages Channels API (write operations - protected)
-        .route("/api/messages/channels", post(message_channels::create_channel_handler))
-        .route("/api/messages/channels/:name", delete(message_channels::delete_channel_handler))
-        .route("/api/messages/channels/:name/test", post(message_channels::test_channel_handler))
+        .route(
+            "/api/messages/channels",
+            post(message_channels::create_channel_handler),
+        )
+        .route(
+            "/api/messages/channels/:name",
+            delete(message_channels::delete_channel_handler),
+        )
+        .route(
+            "/api/messages/channels/:name/test",
+            post(message_channels::test_channel_handler),
+        )
         // LLM Generation API (one-shot, no session)
         .route("/api/llm/generate", post(settings::llm_generate_handler))
         // Global Timezone Settings API
@@ -332,19 +469,58 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/settings/timezone", put(settings::update_timezone))
         .route("/api/settings/timezones", get(settings::list_timezones))
         // Unified Automations API
-        .route("/api/automations", get(automations::list_automations_handler))
-        .route("/api/automations", post(automations::create_automation_handler))
-        .route("/api/automations/export", get(automations::export_automations_handler))
-        .route("/api/automations/import", post(automations::import_automations_handler))
-        .route("/api/automations/analyze-intent", post(automations::analyze_intent_handler))
-        .route("/api/automations/templates", get(automations::list_templates_handler))
-        .route("/api/automations/:id", get(automations::get_automation_handler))
-        .route("/api/automations/:id", put(automations::update_automation_handler))
-        .route("/api/automations/:id", delete(automations::delete_automation_handler))
-        .route("/api/automations/:id/enable", post(automations::set_automation_status_handler))
-        .route("/api/automations/:id/convert", post(automations::convert_automation_handler))
-        .route("/api/automations/:id/conversion-info", get(automations::get_conversion_info_handler))
-        .route("/api/automations/:id/executions", get(automations::get_automations_executions_handler))
+        .route(
+            "/api/automations",
+            get(automations::list_automations_handler),
+        )
+        .route(
+            "/api/automations",
+            post(automations::create_automation_handler),
+        )
+        .route(
+            "/api/automations/export",
+            get(automations::export_automations_handler),
+        )
+        .route(
+            "/api/automations/import",
+            post(automations::import_automations_handler),
+        )
+        .route(
+            "/api/automations/analyze-intent",
+            post(automations::analyze_intent_handler),
+        )
+        .route(
+            "/api/automations/templates",
+            get(automations::list_templates_handler),
+        )
+        .route(
+            "/api/automations/:id",
+            get(automations::get_automation_handler),
+        )
+        .route(
+            "/api/automations/:id",
+            put(automations::update_automation_handler),
+        )
+        .route(
+            "/api/automations/:id",
+            delete(automations::delete_automation_handler),
+        )
+        .route(
+            "/api/automations/:id/enable",
+            post(automations::set_automation_status_handler),
+        )
+        .route(
+            "/api/automations/:id/convert",
+            post(automations::convert_automation_handler),
+        )
+        .route(
+            "/api/automations/:id/conversion-info",
+            get(automations::get_conversion_info_handler),
+        )
+        .route(
+            "/api/automations/:id/executions",
+            get(automations::get_automations_executions_handler),
+        )
         // Transform API (data processing)
         .route(
             "/api/automations/transforms/process",
@@ -387,18 +563,36 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/agents/:id", delete(agents::delete_agent))
         .route("/api/agents/:id/execute", post(agents::execute_agent))
         .route("/api/agents/:id/status", post(agents::set_agent_status))
-        .route("/api/agents/:id/executions", get(agents::get_agent_executions))
-        .route("/api/agents/:id/executions/:execution_id", get(agents::get_execution))
+        .route(
+            "/api/agents/:id/executions",
+            get(agents::get_agent_executions),
+        )
+        .route(
+            "/api/agents/:id/executions/:execution_id",
+            get(agents::get_execution),
+        )
         .route("/api/agents/:id/memory", get(agents::get_agent_memory))
         .route("/api/agents/:id/memory", delete(agents::clear_agent_memory))
         .route("/api/agents/:id/stats", get(agents::get_agent_stats))
-        .route("/api/agents/validate-cron", post(agents::validate_cron_expression))
-        .route("/api/agents/validate-llm", post(agents::validate_llm_backend))
+        .route(
+            "/api/agents/validate-cron",
+            post(agents::validate_cron_expression),
+        )
+        .route(
+            "/api/agents/validate-llm",
+            post(agents::validate_llm_backend),
+        )
         // User messages API
         .route("/api/agents/:id/messages", get(agents::get_user_messages))
         .route("/api/agents/:id/messages", post(agents::add_user_message))
-        .route("/api/agents/:id/messages", delete(agents::clear_user_messages))
-        .route("/api/agents/:id/messages/:message_id", delete(agents::delete_user_message))
+        .route(
+            "/api/agents/:id/messages",
+            delete(agents::clear_user_messages),
+        )
+        .route(
+            "/api/agents/:id/messages/:message_id",
+            delete(agents::delete_user_message),
+        )
         // Memory API
         .route("/api/memory/stats", get(memory::get_memory_stats_handler))
         .route("/api/memory/query", get(memory::query_memory_handler))
@@ -557,10 +751,22 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         )
         // Dashboards API
         .route("/api/dashboards", get(dashboards::list_dashboards_handler))
-        .route("/api/dashboards", post(dashboards::create_dashboard_handler))
-        .route("/api/dashboards/:id", get(dashboards::get_dashboard_handler))
-        .route("/api/dashboards/:id", put(dashboards::update_dashboard_handler))
-        .route("/api/dashboards/:id", delete(dashboards::delete_dashboard_handler))
+        .route(
+            "/api/dashboards",
+            post(dashboards::create_dashboard_handler),
+        )
+        .route(
+            "/api/dashboards/:id",
+            get(dashboards::get_dashboard_handler),
+        )
+        .route(
+            "/api/dashboards/:id",
+            put(dashboards::update_dashboard_handler),
+        )
+        .route(
+            "/api/dashboards/:id",
+            delete(dashboards::delete_dashboard_handler),
+        )
         .route(
             "/api/dashboards/:id/default",
             post(dashboards::set_default_dashboard_handler),
@@ -581,25 +787,73 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             delete(auth_handlers::delete_key_handler),
         )
         // Extensions API (write operations - protected)
-        .route("/api/extensions", post(extensions::register_extension_handler))
-        .route("/api/extensions/register-all", post(extensions::register_all_discovered_handler))
-        .route("/api/extensions/:id", delete(extensions::unregister_extension_handler))
-        .route("/api/extensions/:id/start", post(extensions::start_extension_handler))
-        .route("/api/extensions/:id/stop", post(extensions::stop_extension_handler))
-        .route("/api/extensions/:id/command", post(extensions::execute_extension_command_handler))
-        .route("/api/extensions/:id/invoke", post(extensions::invoke_extension_handler))
+        .route(
+            "/api/extensions",
+            post(extensions::register_extension_handler),
+        )
+        .route(
+            "/api/extensions/register-all",
+            post(extensions::register_all_discovered_handler),
+        )
+        .route(
+            "/api/extensions/:id",
+            delete(extensions::unregister_extension_handler),
+        )
+        .route(
+            "/api/extensions/:id/start",
+            post(extensions::start_extension_handler),
+        )
+        .route(
+            "/api/extensions/:id/stop",
+            post(extensions::stop_extension_handler),
+        )
+        .route(
+            "/api/extensions/:id/command",
+            post(extensions::execute_extension_command_handler),
+        )
+        .route(
+            "/api/extensions/:id/invoke",
+            post(extensions::invoke_extension_handler),
+        )
         // Extension Configuration (protected)
-        .route("/api/extensions/:id/config", get(extensions::get_extension_config_handler))
-        .route("/api/extensions/:id/config", put(extensions::update_extension_config_handler))
-        .route("/api/extensions/:id/reload", post(extensions::reload_extension_handler))
+        .route(
+            "/api/extensions/:id/config",
+            get(extensions::get_extension_config_handler),
+        )
+        .route(
+            "/api/extensions/:id/config",
+            put(extensions::update_extension_config_handler),
+        )
+        .route(
+            "/api/extensions/:id/reload",
+            post(extensions::reload_extension_handler),
+        )
         // Extension Marketplace (install endpoint - protected)
-        .route("/api/extensions/market/install", post(extensions::install_marketplace_extension_handler))
+        .route(
+            "/api/extensions/market/install",
+            post(extensions::install_marketplace_extension_handler),
+        )
         // LLM Backends API (write operations - protected)
-        .route("/api/llm-backends", post(llm_backends::create_backend_handler))
-        .route("/api/llm-backends/:id", put(llm_backends::update_backend_handler))
-        .route("/api/llm-backends/:id", delete(llm_backends::delete_backend_handler))
-        .route("/api/llm-backends/:id/activate", post(llm_backends::activate_backend_handler))
-        .route("/api/llm-backends/:id/test", post(llm_backends::test_backend_handler))
+        .route(
+            "/api/llm-backends",
+            post(llm_backends::create_backend_handler),
+        )
+        .route(
+            "/api/llm-backends/:id",
+            put(llm_backends::update_backend_handler),
+        )
+        .route(
+            "/api/llm-backends/:id",
+            delete(llm_backends::delete_backend_handler),
+        )
+        .route(
+            "/api/llm-backends/:id/activate",
+            post(llm_backends::activate_backend_handler),
+        )
+        .route(
+            "/api/llm-backends/:id/test",
+            post(llm_backends::test_backend_handler),
+        )
         // Apply rate limiting middleware to all protected routes
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -645,8 +899,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
                 .allow_headers(tower_http::cors::Any),
         );
 
-    let router = public_routes
-        .merge(websocket_routes); // WebSocket routes with custom auth
+    let router = public_routes.merge(websocket_routes); // WebSocket routes with custom auth
 
     #[cfg(debug_assertions)]
     let router = router.merge(debug_routes);

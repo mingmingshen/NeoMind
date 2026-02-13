@@ -51,9 +51,10 @@ fn instance_to_llm_backend(instance: &LlmBackendInstance) -> Result<LlmBackend> 
         },
         LlmBackendType::Google => LlmBackend::OpenAi {
             api_key: instance.api_key.clone().unwrap_or_default(),
-            endpoint: instance.endpoint.clone().unwrap_or_else(|| {
-                "https://generativelanguage.googleapis.com/v1beta".to_string()
-            }),
+            endpoint: instance
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string()),
             model: instance.model.clone(),
         },
         LlmBackendType::XAi => LlmBackend::OpenAi {
@@ -62,6 +63,38 @@ fn instance_to_llm_backend(instance: &LlmBackendInstance) -> Result<LlmBackend> 
                 .endpoint
                 .clone()
                 .unwrap_or_else(|| "https://api.x.ai/v1".to_string()),
+            model: instance.model.clone(),
+        },
+        LlmBackendType::Qwen => LlmBackend::OpenAi {
+            api_key: instance.api_key.clone().unwrap_or_default(),
+            endpoint: instance
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string()),
+            model: instance.model.clone(),
+        },
+        LlmBackendType::DeepSeek => LlmBackend::OpenAi {
+            api_key: instance.api_key.clone().unwrap_or_default(),
+            endpoint: instance
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "https://api.deepseek.com".to_string()),
+            model: instance.model.clone(),
+        },
+        LlmBackendType::GLM => LlmBackend::OpenAi {
+            api_key: instance.api_key.clone().unwrap_or_default(),
+            endpoint: instance
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "https://open.bigmodel.cn/api/paas/v4".to_string()),
+            model: instance.model.clone(),
+        },
+        LlmBackendType::MiniMax => LlmBackend::OpenAi {
+            api_key: instance.api_key.clone().unwrap_or_default(),
+            endpoint: instance
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "https://api.minimax.chat/v1".to_string()),
             model: instance.model.clone(),
         },
     })
@@ -84,8 +117,8 @@ impl Default for SessionCleanupConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            max_age_seconds: 7 * 24 * 3600, // 7 days
-            cleanup_interval_seconds: 3600,  // 1 hour
+            max_age_seconds: 7 * 24 * 3600,   // 7 days
+            cleanup_interval_seconds: 3600,   // 1 hour
             max_empty_age_seconds: 24 * 3600, // 1 day for empty sessions
         }
     }
@@ -209,7 +242,10 @@ impl SessionManager {
         });
 
         if !session_ids.is_empty() {
-            tracing::info!(count = session_ids.len(), "Found persisted sessions, will restore lazily");
+            tracing::info!(
+                count = session_ids.len(),
+                "Found persisted sessions, will restore lazily"
+            );
         }
 
         tracing::info!(message = "SessionManager initialized with persistent storage");
@@ -250,9 +286,10 @@ impl SessionManager {
                             });
                             // Add result field if present
                             if let Some(ref result) = call.result
-                                && let Some(obj_map) = obj.as_object_mut() {
-                                    obj_map.insert("result".to_string(), result.clone());
-                                }
+                                && let Some(obj_map) = obj.as_object_mut()
+                            {
+                                obj_map.insert("result".to_string(), result.clone());
+                            }
                             obj
                         })
                         .collect()
@@ -294,12 +331,21 @@ impl SessionManager {
             .map_err(|e| NeoMindError::Storage(format!("Failed to load history: {}", e)))?;
 
         // Debug: Log loaded messages
-        tracing::debug!(" Loaded {} messages from DB for session {}", session_messages.len(), session_id);
+        tracing::debug!(
+            " Loaded {} messages from DB for session {}",
+            session_messages.len(),
+            session_id
+        );
         for (i, sm) in session_messages.iter().enumerate() {
             if sm.role == "assistant" {
-                tracing::debug!(" Message {}: role={}, content_len={}, has_thinking={}, tool_calls_count={}",
-                    i, sm.role, sm.content.len(), sm.thinking.is_some(),
-                    sm.tool_calls.as_ref().map_or(0, |c| c.len()));
+                tracing::debug!(
+                    " Message {}: role={}, content_len={}, has_thinking={}, tool_calls_count={}",
+                    i,
+                    sm.role,
+                    sm.content.len(),
+                    sm.thinking.is_some(),
+                    sm.tool_calls.as_ref().map_or(0, |c| c.len())
+                );
             }
         }
 
@@ -386,8 +432,6 @@ impl SessionManager {
     /// Configure LLM using the LlmBackendInstanceManager.
     /// This fetches the active backend from the instance manager and configures it for all sessions.
     pub async fn configure_llm_from_instance_manager(&self) -> Result<()> {
-        
-
         // Get the instance manager
         let manager = get_instance_manager()
             .map_err(|e| NeoMindError::Llm(format!("Failed to get instance manager: {}", e)))?;
@@ -411,7 +455,8 @@ impl SessionManager {
             .map_err(|e| NeoMindError::Llm(format!("Failed to get instance manager: {}", e)))?;
 
         // Get the instance by ID using the public method
-        let instance = manager.get_instance(backend_id)
+        let instance = manager
+            .get_instance(backend_id)
             .ok_or_else(|| NeoMindError::Llm(format!("Backend '{}' not found", backend_id)))?;
 
         instance_to_llm_backend(&instance)
@@ -447,11 +492,7 @@ impl SessionManager {
         let tool_registry = self.tool_registry.read().await.clone();
 
         let agent = if let Some(tools) = tool_registry {
-            Agent::with_tools(
-                self.default_config.clone(),
-                session_id.clone(),
-                tools,
-            )
+            Agent::with_tools(self.default_config.clone(), session_id.clone(), tools)
         } else {
             Agent::new(self.default_config.clone(), session_id.clone())
         };
@@ -508,16 +549,9 @@ impl SessionManager {
         let tool_registry = self.tool_registry.read().await.clone();
 
         let agent = if let Some(tools) = tool_registry {
-            Agent::with_tools(
-                self.default_config.clone(),
-                session_id.to_string(),
-                tools,
-            )
+            Agent::with_tools(self.default_config.clone(), session_id.to_string(), tools)
         } else {
-            Agent::new(
-                self.default_config.clone(),
-                session_id.to_string(),
-            )
+            Agent::new(self.default_config.clone(), session_id.to_string())
         };
 
         // Configure LLM if a default backend is set
@@ -609,9 +643,8 @@ impl SessionManager {
                     } else {
                         // Create a new session
                         tracing::info!(session_id = %id, message = "Session not found in database, creating new session");
-                        
-                        self
-                            .create_session()
+
+                        self.create_session()
                             .await
                             .unwrap_or_else(|_| Uuid::new_v4().to_string())
                     }
@@ -682,7 +715,9 @@ impl SessionManager {
 
         self.store
             .save_session_metadata(session_id, &metadata)
-            .map_err(|e| NeoMindError::Storage(format!("Failed to save session metadata: {}", e)))?;
+            .map_err(|e| {
+                NeoMindError::Storage(format!("Failed to save session metadata: {}", e))
+            })?;
 
         Ok(())
     }
@@ -832,7 +867,9 @@ impl SessionManager {
     ) -> Result<super::agent::AgentResponse> {
         // If a specific backend is requested, configure the agent with it
         if let Some(backend) = backend_id {
-            let _ = self.configure_agent_by_backend_id(session_id, backend).await;
+            let _ = self
+                .configure_agent_by_backend_id(session_id, backend)
+                .await;
         }
         self.process_message(session_id, message).await
     }
@@ -856,7 +893,9 @@ impl SessionManager {
     ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
         // If a specific backend is requested, configure the agent with it
         if let Some(backend) = backend_id {
-            let _ = self.configure_agent_by_backend_id(session_id, backend).await;
+            let _ = self
+                .configure_agent_by_backend_id(session_id, backend)
+                .await;
         }
         self.process_message_events(session_id, message).await
     }
@@ -901,7 +940,9 @@ impl SessionManager {
     ) -> Result<super::agent::AgentResponse> {
         // If a specific backend is requested, configure the agent with it
         if let Some(backend) = backend_id {
-            let _ = self.configure_agent_by_backend_id(session_id, backend).await;
+            let _ = self
+                .configure_agent_by_backend_id(session_id, backend)
+                .await;
         }
 
         // Check if images are provided and model supports vision
@@ -909,12 +950,14 @@ impl SessionManager {
             let agent = self.get_session(session_id).await?;
             if !agent.llm_interface().supports_multimodal().await {
                 return Err(super::error::NeoMindError::Validation(
-                    "当前模型不支持图像输入。请选择支持视觉的模型（如 qwen3-vl）或移除图片后重试。".to_string()
+                    "当前模型不支持图像输入。请选择支持视觉的模型（如 qwen3-vl）或移除图片后重试。"
+                        .to_string(),
                 ));
             }
         }
 
-        self.process_message_multimodal(session_id, message, images).await
+        self.process_message_multimodal(session_id, message, images)
+            .await
     }
 
     /// Process a multimodal message (text + images) with streaming response and optional backend override.
@@ -927,7 +970,9 @@ impl SessionManager {
     ) -> Result<Pin<Box<dyn Stream<Item = super::agent::AgentEvent> + Send>>> {
         // If a specific backend is requested, configure the agent with it
         if let Some(backend) = backend_id {
-            let _ = self.configure_agent_by_backend_id(session_id, backend).await;
+            let _ = self
+                .configure_agent_by_backend_id(session_id, backend)
+                .await;
         }
 
         // Check if images are provided and model supports vision
@@ -935,12 +980,14 @@ impl SessionManager {
             let agent = self.get_session(session_id).await?;
             if !agent.llm_interface().supports_multimodal().await {
                 return Err(super::error::NeoMindError::Validation(
-                    "当前模型不支持图像输入。请选择支持视觉的模型（如 qwen3-vl）或移除图片后重试。".to_string()
+                    "当前模型不支持图像输入。请选择支持视觉的模型（如 qwen3-vl）或移除图片后重试。"
+                        .to_string(),
                 ));
             }
         }
 
-        self.process_message_multimodal_stream(session_id, message, images).await
+        self.process_message_multimodal_stream(session_id, message, images)
+            .await
     }
 
     /// Process a multimodal message (text + images) with streaming response.
@@ -955,12 +1002,15 @@ impl SessionManager {
             let agent = self.get_session(session_id).await?;
             if !agent.llm_interface().supports_multimodal().await {
                 return Err(super::error::NeoMindError::Validation(
-                    "当前模型不支持图像输入。请选择支持视觉的模型（如 qwen3-vl）或移除图片后重试。".to_string()
+                    "当前模型不支持图像输入。请选择支持视觉的模型（如 qwen3-vl）或移除图片后重试。"
+                        .to_string(),
                 ));
             }
         }
         let agent = self.get_session(session_id).await?;
-        agent.process_multimodal_stream_events(message, images).await
+        agent
+            .process_multimodal_stream_events(message, images)
+            .await
     }
 
     /// Get conversation history for a session.
@@ -981,7 +1031,10 @@ impl SessionManager {
                 // Try to load history directly from storage as a fallback
                 match self.load_history(session_id) {
                     Ok(messages) => {
-                        tracing::debug!(count = messages.len(), "Successfully loaded messages via direct load");
+                        tracing::debug!(
+                            count = messages.len(),
+                            "Successfully loaded messages via direct load"
+                        );
                         Ok(messages)
                     }
                     Err(load_err) => {
@@ -1190,7 +1243,7 @@ impl SessionManager {
                                 }
                             }
                             Ok(None) => true, // No timestamp = corrupted, remove
-                            Err(_) => true,  // Error = corrupted, remove
+                            Err(_) => true,   // Error = corrupted, remove
                         };
 
                         if should_remove {
@@ -1208,7 +1261,10 @@ impl SessionManager {
                     }
 
                     if removed_count > 0 {
-                        tracing::info!("Session cleanup completed: removed {} sessions", removed_count);
+                        tracing::info!(
+                            "Session cleanup completed: removed {} sessions",
+                            removed_count
+                        );
                     }
                 }
 
@@ -1262,7 +1318,9 @@ impl SessionManager {
         let mut total_removed = 0;
 
         // Clean up inactive sessions from memory
-        total_removed += self.cleanup_inactive(self.cleanup_config.max_age_seconds).await;
+        total_removed += self
+            .cleanup_inactive(self.cleanup_config.max_age_seconds)
+            .await;
 
         // Clean up invalid/empty sessions from database
         total_removed += self.cleanup_invalid_sessions().await;

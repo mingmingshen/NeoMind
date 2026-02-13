@@ -10,12 +10,12 @@ pub mod webhook;
 pub mod email;
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
-use super::{Message, Result, Error};
+use super::{Error, Message, Result};
 
 pub use console::{ConsoleChannel, ConsoleChannelFactory};
 pub use memory::{MemoryChannel, MemoryChannelFactory};
@@ -103,12 +103,7 @@ impl ChannelRegistry {
 
     /// List all channel names.
     pub async fn list_names(&self) -> Vec<String> {
-        self.channels
-            .read()
-            .await
-            .keys()
-            .cloned()
-            .collect()
+        self.channels.read().await.keys().cloned().collect()
     }
 
     /// Get the number of channels.

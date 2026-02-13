@@ -6,7 +6,7 @@ const mockFetch = vi.fn()
 
 describe('API Utilities', () => {
   beforeEach(() => {
-    global.fetch = mockFetch
+    globalThis.fetch = mockFetch as any
   })
 
   afterEach(() => {

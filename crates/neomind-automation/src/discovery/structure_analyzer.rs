@@ -163,7 +163,14 @@ impl StructureAnalyzer {
             Value::Array(arr) => {
                 for (idx, val) in arr.iter().enumerate() {
                     let path = format!("$[{}]", idx);
-                    self.update_path_info(path_data, &path, val, sample_idx, true, Some("$[*]".to_string()));
+                    self.update_path_info(
+                        path_data,
+                        &path,
+                        val,
+                        sample_idx,
+                        true,
+                        Some("$[*]".to_string()),
+                    );
                     self.extract_paths_recursive(path_data, &path, val, sample_idx, true);
                 }
             }
@@ -195,7 +202,14 @@ impl StructureAnalyzer {
             Value::Array(arr) => {
                 for (idx, val) in arr.iter().enumerate() {
                     let path = format!("{}[{}]", parent_path, idx);
-                    self.update_path_info(path_data, &path, val, sample_idx, in_array, Some(format!("{}[*]", parent_path)));
+                    self.update_path_info(
+                        path_data,
+                        &path,
+                        val,
+                        sample_idx,
+                        in_array,
+                        Some(format!("{}[*]", parent_path)),
+                    );
                     self.extract_paths_recursive(path_data, &path, val, sample_idx, true);
                 }
             }
@@ -215,13 +229,15 @@ impl StructureAnalyzer {
         is_array_element: bool,
         array_path: Option<String>,
     ) {
-        let entry = path_data.entry(path.to_string()).or_insert_with(|| PathTypeInfo {
-            data_types: HashSet::new(),
-            presence: HashSet::new(),
-            is_array_element,
-            array_path: array_path.clone(),
-            values: vec![],
-        });
+        let entry = path_data
+            .entry(path.to_string())
+            .or_insert_with(|| PathTypeInfo {
+                data_types: HashSet::new(),
+                presence: HashSet::new(),
+                is_array_element,
+                array_path: array_path.clone(),
+                values: vec![],
+            });
 
         entry.presence.insert(sample_idx);
 
@@ -373,7 +389,11 @@ mod tests {
         assert_eq!(result.paths.len(), 2);
 
         // Check temperature path
-        let temp_path = result.paths.iter().find(|p| p.path == "$.temperature").unwrap();
+        let temp_path = result
+            .paths
+            .iter()
+            .find(|p| p.path == "$.temperature")
+            .unwrap();
         assert!(matches!(temp_path.data_type, InferredType::Float));
         assert!(temp_path.always_present);
     }
@@ -397,9 +417,7 @@ mod tests {
     #[test]
     fn test_analyze_array_at_root() {
         let analyzer = StructureAnalyzer::new();
-        let samples = vec![
-            json!([23.5, 24.1, 22.8]),
-        ];
+        let samples = vec![json!([23.5, 24.1, 22.8])];
 
         let result = analyzer.analyze(&samples);
 
@@ -423,8 +441,8 @@ mod tests {
         // Inconsistent structure
         let inconsistent = vec![
             json!({"temp": 20, "hum": 50}),
-            json!({"temp": 21, "pressure": 101}),  // different field
-            json!({"co2": 400}),  // completely different
+            json!({"temp": 21, "pressure": 101}), // different field
+            json!({"co2": 400}),                  // completely different
         ];
         let result2 = analyzer.analyze(&inconsistent);
         // Should still mark as somewhat consistent since 'temp' is common

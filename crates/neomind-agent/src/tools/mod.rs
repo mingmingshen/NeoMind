@@ -18,9 +18,7 @@ pub use event_integration::{
     ToolRetryConfig,
 };
 
-pub use interaction::{
-    AskUserTool, ClarifyIntentTool, ConfirmActionTool,
-};
+pub use interaction::{AskUserTool, ClarifyIntentTool, ConfirmActionTool};
 
 pub use mdl::{
     DeviceExplanation, DeviceTypeSummary, ExplainDeviceTypeTool, GetDeviceTypeTool,
@@ -41,6 +39,4 @@ pub use tool_search::{ToolSearchResult, ToolSearchTool};
 
 pub use think::{ThinkStorage, ThinkTool, ThoughtRecord};
 
-pub use mapper::{
-    ToolNameMapper, get_mapper, map_tool_parameters, resolve_tool_name,
-};
+pub use mapper::{ToolNameMapper, get_mapper, map_tool_parameters, resolve_tool_name};

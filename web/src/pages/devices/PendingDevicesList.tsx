@@ -33,9 +33,19 @@ import type { DraftDevice, SuggestedDeviceType } from "@/types"
 
 interface PendingDevicesListProps {
   onRefresh?: () => void
+  page?: number
+  onPageChange?: (page: number) => void
+  itemsPerPage?: number
+  onDraftsCountChange?: (count: number) => void
 }
 
-export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
+export function PendingDevicesList({
+  onRefresh,
+  page: externalPage,
+  onPageChange: externalOnPageChange,
+  itemsPerPage: externalItemsPerPage,
+  onDraftsCountChange
+}: PendingDevicesListProps) {
   const { t } = useTranslation(['common', 'devices'])
   const { handleError } = useErrorHandler()
   const { toast } = useToast()
@@ -43,9 +53,11 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
   const [drafts, setDrafts] = useState<DraftDevice[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Pagination state
-  const [page, setPage] = useState(1)
-  const itemsPerPage = 10
+  // Use external pagination state if provided, otherwise use internal state
+  const [internalPage, setInternalPage] = useState(externalPage || 1)
+  const page = externalPage ?? internalPage
+  const setPage = externalOnPageChange ?? setInternalPage
+  const itemsPerPage = externalItemsPerPage || 10
 
   const [processing, setProcessing] = useState<string | null>(null)
 
@@ -100,10 +112,17 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
     page * itemsPerPage
   )
 
-  // Reset pagination when data changes
+  // Reset pagination when data changes (only if using internal pagination)
   useEffect(() => {
-    setPage(1)
-  }, [activeDrafts.length])
+    if (!externalOnPageChange) {
+      setPage(1)
+    }
+  }, [activeDrafts.length, externalOnPageChange])
+
+  // Notify parent component of drafts count
+  useEffect(() => {
+    onDraftsCountChange?.(activeDrafts.length)
+  }, [activeDrafts.length, onDraftsCountChange])
 
   // Fetch drafts
   const fetchDrafts = useCallback(async () => {

@@ -9,11 +9,11 @@
 use std::sync::Arc;
 
 use neomind_core::EventBus;
+use neomind_devices::mdl_format::{MetricDefinition, ParameterDefinition};
 use neomind_devices::{
     CommandDefinition, ConnectionConfig, DeviceConfig, DeviceDiscovery, DeviceRegistry,
     DeviceService, DeviceTypeTemplate, DiscoveredDevice, MetricDataType,
 };
-use neomind_devices::mdl_format::{MetricDefinition, ParameterDefinition};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -156,11 +156,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Scan for MQTT devices on common port
     println!("Scanning for MQTT devices on localhost...");
-    match discovery.scan_ports("localhost", vec![1883, 8883], 500).await {
+    match discovery
+        .scan_ports("localhost", vec![1883, 8883], 500)
+        .await
+    {
         Ok(ports) => {
             println!("Found {} open ports", ports.len());
             for port in ports {
-                println!("  - Port {}: {}", port, if port == 1883 { "MQTT" } else { "MQTTS" });
+                println!(
+                    "  - Port {}: {}",
+                    port,
+                    if port == 1883 { "MQTT" } else { "MQTTS" }
+                );
             }
         }
         Err(e) => {

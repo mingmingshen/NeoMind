@@ -146,31 +146,52 @@ impl ConversationContext {
     fn cleanup_old_entities(&mut self, keep_recent_turns: usize) {
         // 清理设备引用 - 只保留最近的
         self.mentioned_devices.retain(|entity| {
-            entity.last_mentioned_turn > 0 && self.turn_count.saturating_sub(entity.last_mentioned_turn) <= keep_recent_turns
+            entity.last_mentioned_turn > 0
+                && self.turn_count.saturating_sub(entity.last_mentioned_turn) <= keep_recent_turns
         });
 
         // 清理位置引用 - 只保留最近的
         self.mentioned_locations.retain(|entity| {
-            entity.last_mentioned_turn > 0 && self.turn_count.saturating_sub(entity.last_mentioned_turn) <= keep_recent_turns
+            entity.last_mentioned_turn > 0
+                && self.turn_count.saturating_sub(entity.last_mentioned_turn) <= keep_recent_turns
         });
 
         // 如果当前设备/位置不在引用列表中，清空它们
         if let Some(ref device) = self.current_device
-            && !self.mentioned_devices.iter().any(|e| &e.name == device) {
-                self.current_device = None;
-            }
+            && !self.mentioned_devices.iter().any(|e| &e.name == device)
+        {
+            self.current_device = None;
+        }
         if let Some(ref location) = self.current_location
-            && !self.mentioned_locations.iter().any(|e| &e.name == location) {
-                self.current_location = None;
-            }
+            && !self.mentioned_locations.iter().any(|e| &e.name == location)
+        {
+            self.current_location = None;
+        }
     }
 
     /// 提取位置信息
     fn extract_location(&self, input: &str) -> Option<String> {
         let locations = [
-            "客厅", "卧室", "主卧", "次卧", "厨房", "餐厅", "卫生间", "浴室",
-            "书房", "阳台", "玄关", "车库", "花园", "地下室",
-            "living room", "bedroom", "kitchen", "bathroom", "study", "balcony",
+            "客厅",
+            "卧室",
+            "主卧",
+            "次卧",
+            "厨房",
+            "餐厅",
+            "卫生间",
+            "浴室",
+            "书房",
+            "阳台",
+            "玄关",
+            "车库",
+            "花园",
+            "地下室",
+            "living room",
+            "bedroom",
+            "kitchen",
+            "bathroom",
+            "study",
+            "balcony",
         ];
 
         let lower = input.to_lowercase();
@@ -195,13 +216,25 @@ impl ConversationContext {
     fn extract_device(&self, input: &str) -> Option<String> {
         // 常见设备类型
         let device_types = [
-            "灯", "light", "照明",
-            "空调", "ac", "air conditioner",
-            "插座", "socket", "outlet",
-            "窗帘", "curtain", "blind",
-            "门锁", "lock", "door lock",
-            "传感器", "sensor",
-            "开关", "switch",
+            "灯",
+            "light",
+            "照明",
+            "空调",
+            "ac",
+            "air conditioner",
+            "插座",
+            "socket",
+            "outlet",
+            "窗帘",
+            "curtain",
+            "blind",
+            "门锁",
+            "lock",
+            "door lock",
+            "传感器",
+            "sensor",
+            "开关",
+            "switch",
         ];
 
         let lower = input.to_lowercase();
@@ -212,7 +245,8 @@ impl ConversationContext {
                 let pattern = format!("{}{}", location, device_type);
                 let pattern_en = format!("{} {}", location, device_type);
                 if lower.contains(&pattern.to_lowercase())
-                    || lower.contains(&pattern_en.to_lowercase()) {
+                    || lower.contains(&pattern_en.to_lowercase())
+                {
                     return Some(format!("{}{}", location, device_type));
                 }
             }
@@ -279,18 +313,44 @@ impl ConversationContext {
         let lower = input.to_lowercase();
 
         // 控制类关键词
-        let control_keywords = ["打开", "关闭", "开启", "控制", "调节", "设置", "turn on", "turn off", "control"];
+        let control_keywords = [
+            "打开", "关闭", "开启", "控制", "调节", "设置", "turn on", "turn off", "control",
+        ];
         // 查询类关键词
-        let query_keywords = ["查询", "多少", "状态", "温度", "湿度", "query", "status", "temperature"];
+        let query_keywords = [
+            "查询",
+            "多少",
+            "状态",
+            "温度",
+            "湿度",
+            "query",
+            "status",
+            "temperature",
+        ];
         // 规则创建关键词
-        let rule_keywords = ["创建", "添加", "规则", "自动化", "create", "add", "rule", "automation"];
+        let rule_keywords = [
+            "创建",
+            "添加",
+            "规则",
+            "自动化",
+            "create",
+            "add",
+            "rule",
+            "automation",
+        ];
         // 工作流关键词
         let workflow_keywords = ["工作流", "流程", "workflow"];
 
-        let control_count = control_keywords.iter().filter(|k| lower.contains(*k)).count();
+        let control_count = control_keywords
+            .iter()
+            .filter(|k| lower.contains(*k))
+            .count();
         let query_count = query_keywords.iter().filter(|k| lower.contains(*k)).count();
         let rule_count = rule_keywords.iter().filter(|k| lower.contains(*k)).count();
-        let workflow_count = workflow_keywords.iter().filter(|k| lower.contains(*k)).count();
+        let workflow_count = workflow_keywords
+            .iter()
+            .filter(|k| lower.contains(*k))
+            .count();
 
         // 根据关键词数量判断主题
         if rule_count > 0 {
@@ -325,7 +385,8 @@ impl ConversationContext {
         // LRU 驱逐：移除最久未提到的设备，而非最旧的
         const MAX_DEVICES: usize = 10;
         if self.mentioned_devices.len() > MAX_DEVICES {
-            let oldest_idx = self.mentioned_devices
+            let oldest_idx = self
+                .mentioned_devices
                 .iter()
                 .enumerate()
                 .min_by_key(|(_, e)| e.last_mentioned_turn)
@@ -338,7 +399,11 @@ impl ConversationContext {
     /// 添加位置到上下文
     pub fn add_location(&mut self, location: String) {
         // 使用 position() 避免借用冲突
-        if let Some(pos) = self.mentioned_locations.iter().position(|l| l.name == location) {
+        if let Some(pos) = self
+            .mentioned_locations
+            .iter()
+            .position(|l| l.name == location)
+        {
             self.mentioned_locations[pos].last_mentioned_turn = self.turn_count;
         } else {
             self.mentioned_locations.push(EntityReference {
@@ -352,7 +417,8 @@ impl ConversationContext {
         // LRU 驱逐：移除最久未提到的位置，而非最旧的
         const MAX_LOCATIONS: usize = 5;
         if self.mentioned_locations.len() > MAX_LOCATIONS {
-            let oldest_idx = self.mentioned_locations
+            let oldest_idx = self
+                .mentioned_locations
                 .iter()
                 .enumerate()
                 .min_by_key(|(_, e)| e.last_mentioned_turn)
@@ -400,7 +466,8 @@ impl ConversationContext {
         }
 
         if !self.mentioned_devices.is_empty() {
-            let devices: Vec<&str> = self.mentioned_devices
+            let devices: Vec<&str> = self
+                .mentioned_devices
                 .iter()
                 .rev()
                 .take(5)
@@ -410,7 +477,8 @@ impl ConversationContext {
         }
 
         if !self.mentioned_locations.is_empty() {
-            let locations: Vec<&str> = self.mentioned_locations
+            let locations: Vec<&str> = self
+                .mentioned_locations
                 .iter()
                 .rev()
                 .take(3)
@@ -430,16 +498,19 @@ impl ConversationContext {
         let pronouns = ["它", "这个", "那个", "它的", "这个的", "那个的"];
         for pronoun in &pronouns {
             if enhanced.contains(pronoun)
-                && let Some(resolved) = self.resolve_pronoun(pronoun) {
-                    enhanced = enhanced.replace(pronoun, &resolved);
-                }
+                && let Some(resolved) = self.resolve_pronoun(pronoun)
+            {
+                enhanced = enhanced.replace(pronoun, &resolved);
+            }
         }
 
         // 如果没有指定位置但有当前上下文位置，添加上下文
         if self.current_location.is_some()
             && !self.has_location_reference(&enhanced)
-            && (enhanced.contains("打开") || enhanced.contains("关闭")
-                || enhanced.contains("温度") || enhanced.contains("湿度"))
+            && (enhanced.contains("打开")
+                || enhanced.contains("关闭")
+                || enhanced.contains("温度")
+                || enhanced.contains("湿度"))
         {
             // 不强制添加，让用户明确
         }
@@ -449,9 +520,22 @@ impl ConversationContext {
 
     /// 检查是否包含位置引用
     fn has_location_reference(&self, input: &str) -> bool {
-        let locations = ["客厅", "卧室", "厨房", "卫生间", "浴室", "书房",
-            "living room", "bedroom", "kitchen", "bathroom", "study"];
-        locations.iter().any(|loc| input.to_lowercase().contains(loc))
+        let locations = [
+            "客厅",
+            "卧室",
+            "厨房",
+            "卫生间",
+            "浴室",
+            "书房",
+            "living room",
+            "bedroom",
+            "kitchen",
+            "bathroom",
+            "study",
+        ];
+        locations
+            .iter()
+            .any(|loc| input.to_lowercase().contains(loc))
     }
 
     /// 解析模糊输入 - 当用户说"打开"时补充完整
@@ -470,15 +554,17 @@ impl ConversationContext {
 
         // "关闭"
         if (lower == "关闭" || lower == "关")
-            && let Some(device) = &self.current_device {
-                return Some(format!("关闭{}", device));
-            }
+            && let Some(device) = &self.current_device
+        {
+            return Some(format!("关闭{}", device));
+        }
 
         // "温度多少" -> 补充位置
         if (lower == "温度" || lower == "温度多少")
-            && let Some(location) = &self.current_location {
-                return Some(format!("{}的温度", location));
-            }
+            && let Some(location) = &self.current_location
+        {
+            return Some(format!("{}的温度", location));
+        }
 
         None
     }
@@ -497,9 +583,18 @@ mod tests {
     fn test_extract_location() {
         let ctx = ConversationContext::new();
 
-        assert_eq!(ctx.extract_location("客厅温度多少"), Some("客厅".to_string()));
-        assert_eq!(ctx.extract_location("打开卧室的灯"), Some("卧室".to_string()));
-        assert_eq!(ctx.extract_location("kitchen light"), Some("kitchen".to_string()));
+        assert_eq!(
+            ctx.extract_location("客厅温度多少"),
+            Some("客厅".to_string())
+        );
+        assert_eq!(
+            ctx.extract_location("打开卧室的灯"),
+            Some("卧室".to_string())
+        );
+        assert_eq!(
+            ctx.extract_location("kitchen light"),
+            Some("kitchen".to_string())
+        );
     }
 
     #[test]
@@ -515,9 +610,15 @@ mod tests {
     fn test_detect_topic() {
         let ctx = ConversationContext::new();
 
-        assert_eq!(ctx.detect_topic("打开客厅灯"), ConversationTopic::DeviceControl);
+        assert_eq!(
+            ctx.detect_topic("打开客厅灯"),
+            ConversationTopic::DeviceControl
+        );
         assert_eq!(ctx.detect_topic("温度多少"), ConversationTopic::DataQuery);
-        assert_eq!(ctx.detect_topic("创建一个规则"), ConversationTopic::RuleCreation);
+        assert_eq!(
+            ctx.detect_topic("创建一个规则"),
+            ConversationTopic::RuleCreation
+        );
     }
 
     #[test]
@@ -548,8 +649,14 @@ mod tests {
         let mut ctx = ConversationContext::new();
         ctx.current_location = Some("客厅".to_string());
 
-        assert_eq!(ctx.resolve_ambiguous_command("打开"), Some("打开客厅的设备".to_string()));
-        assert_eq!(ctx.resolve_ambiguous_command("温度"), Some("客厅的温度".to_string()));
+        assert_eq!(
+            ctx.resolve_ambiguous_command("打开"),
+            Some("打开客厅的设备".to_string())
+        );
+        assert_eq!(
+            ctx.resolve_ambiguous_command("温度"),
+            Some("客厅的温度".to_string())
+        );
     }
 
     #[test]

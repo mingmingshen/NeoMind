@@ -3,11 +3,7 @@
 //! Provides endpoints for initial system setup when no users exist.
 //! This allows customers to create their admin account during first launch.
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::Json,
-};
+use axum::{extract::State, http::StatusCode, response::Json};
 use serde::{Deserialize, Serialize};
 
 use crate::auth_users::UserRole;
@@ -104,7 +100,8 @@ pub async fn initialize_admin_handler(
         return Err(ErrorResponse {
             status: StatusCode::FORBIDDEN,
             code: "SETUP_ALREADY_COMPLETED".to_string(),
-            message: "System has already been initialized. Use /api/auth/login to sign in.".to_string(),
+            message: "System has already been initialized. Use /api/auth/login to sign in."
+                .to_string(),
             request_id: None,
         });
     }
@@ -143,7 +140,8 @@ pub async fn initialize_admin_handler(
 
     // Create admin user
     let (user_info, token) = state
-        .auth.user_state
+        .auth
+        .user_state
         .register(&req.username, &req.password, UserRole::Admin)
         .await
         .map_err(|e| ErrorResponse {

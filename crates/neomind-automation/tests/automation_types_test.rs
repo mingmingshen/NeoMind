@@ -3,12 +3,11 @@
 //! Tests the core types that are shared across transforms and rules.
 
 use neomind_automation::{
-    Automation, AutomationMetadata, AutomationType, TransformScope,
-    TransformAutomation, TransformOperation, AggregationFunc,
-    RuleAutomation, Trigger, TriggerType, Condition, ComparisonOperator,
-    Action,
+    Action, AggregationFunc, Automation, AutomationMetadata, AutomationType, ComparisonOperator,
+    Condition, RuleAutomation, TransformAutomation, TransformOperation, TransformScope, Trigger,
+    TriggerType,
 };
-use serde_json::{to_value, from_value};
+use serde_json::{from_value, to_value};
 
 #[test]
 fn test_automation_type_display() {
@@ -67,14 +66,23 @@ fn test_automation_metadata_touch() {
 #[test]
 fn test_transform_scope_as_str() {
     assert_eq!(TransformScope::Global.as_str(), "global");
-    assert_eq!(TransformScope::DeviceType("sensor".to_string()).as_str(), "device_type:sensor");
-    assert_eq!(TransformScope::Device("dev-1".to_string()).as_str(), "device:dev-1");
+    assert_eq!(
+        TransformScope::DeviceType("sensor".to_string()).as_str(),
+        "device_type:sensor"
+    );
+    assert_eq!(
+        TransformScope::Device("dev-1".to_string()).as_str(),
+        "device:dev-1"
+    );
 }
 
 #[test]
 fn test_transform_scope_priority() {
     assert_eq!(TransformScope::Global.priority(), 0);
-    assert_eq!(TransformScope::DeviceType("sensor".to_string()).priority(), 1);
+    assert_eq!(
+        TransformScope::DeviceType("sensor".to_string()).priority(),
+        1
+    );
     assert_eq!(TransformScope::Device("dev-1".to_string()).priority(), 2);
 }
 
@@ -94,8 +102,12 @@ fn test_aggregation_func_as_str() {
 #[test]
 fn test_aggregation_func_serialization() {
     let funcs = vec![
-        AggregationFunc::Sum, AggregationFunc::Mean, AggregationFunc::Min,
-        AggregationFunc::Max, AggregationFunc::Count, AggregationFunc::Median,
+        AggregationFunc::Sum,
+        AggregationFunc::Mean,
+        AggregationFunc::Min,
+        AggregationFunc::Max,
+        AggregationFunc::Count,
+        AggregationFunc::Median,
     ];
 
     for func in funcs {
@@ -116,7 +128,9 @@ fn test_comparison_operator() {
 #[test]
 fn test_automation_transform() {
     let transform = Automation::Transform(TransformAutomation::new(
-        "t1", "Transform 1", TransformScope::Global,
+        "t1",
+        "Transform 1",
+        TransformScope::Global,
     ));
 
     assert_eq!(transform.id(), "t1");
@@ -129,7 +143,9 @@ fn test_automation_transform() {
 #[test]
 fn test_automation_serialization_transform() {
     let transform = TransformAutomation::new(
-        "t1", "Transform 1", TransformScope::DeviceType("sensor".to_string()),
+        "t1",
+        "Transform 1",
+        TransformScope::DeviceType("sensor".to_string()),
     )
     .with_description("Test transform");
 
@@ -186,7 +202,12 @@ fn test_trigger_serialization() {
 
 #[test]
 fn test_condition_new() {
-    let condition = Condition::new("device1", "temperature", ComparisonOperator::GreaterThan, 30.0);
+    let condition = Condition::new(
+        "device1",
+        "temperature",
+        ComparisonOperator::GreaterThan,
+        30.0,
+    );
     assert_eq!(condition.device_id, "device1");
     assert_eq!(condition.metric, "temperature");
     assert_eq!(condition.operator, ComparisonOperator::GreaterThan);
@@ -206,7 +227,12 @@ fn test_condition_evaluate() {
 
 #[test]
 fn test_condition_serialization() {
-    let condition = Condition::new("device1", "temperature", ComparisonOperator::GreaterThan, 30.0);
+    let condition = Condition::new(
+        "device1",
+        "temperature",
+        ComparisonOperator::GreaterThan,
+        30.0,
+    );
     let serialized = to_value(&condition).unwrap();
     let deserialized: Condition = from_value(serialized).unwrap();
 
@@ -256,7 +282,9 @@ fn test_action_serialization() {
     let deserialized: Action = from_value(serialized).unwrap();
 
     match deserialized {
-        Action::ExecuteCommand { device_id, command, .. } => {
+        Action::ExecuteCommand {
+            device_id, command, ..
+        } => {
             assert_eq!(device_id, "device1");
             assert_eq!(command, "turn_on");
         }
@@ -269,14 +297,17 @@ fn test_rule_automation() {
     let rule = RuleAutomation {
         metadata: AutomationMetadata::new("rule1", "Test Rule"),
         trigger: Trigger::event("data.received"),
-        condition: Condition::new("sensor1", "temperature", ComparisonOperator::GreaterThan, 30.0),
-        actions: vec![
-            Action::CreateAlert {
-                severity: neomind_automation::AlertSeverity::Warning,
-                title: "High temp".to_string(),
-                message: "Temperature is high".to_string(),
-            },
-        ],
+        condition: Condition::new(
+            "sensor1",
+            "temperature",
+            ComparisonOperator::GreaterThan,
+            30.0,
+        ),
+        actions: vec![Action::CreateAlert {
+            severity: neomind_automation::AlertSeverity::Warning,
+            title: "High temp".to_string(),
+            message: "Temperature is high".to_string(),
+        }],
     };
 
     assert_eq!(rule.metadata.id, "rule1");
@@ -290,14 +321,17 @@ fn test_rule_automation_dsl_generation() {
     let rule = RuleAutomation {
         metadata: AutomationMetadata::new("rule1", "Temperature Alert"),
         trigger: Trigger::event("temperature.reading"),
-        condition: Condition::new("sensor1", "temperature", ComparisonOperator::GreaterThan, 30.0),
-        actions: vec![
-            Action::CreateAlert {
-                severity: neomind_automation::AlertSeverity::Critical,
-                title: "High temperature".to_string(),
-                message: "Temperature exceeded threshold".to_string(),
-            },
-        ],
+        condition: Condition::new(
+            "sensor1",
+            "temperature",
+            ComparisonOperator::GreaterThan,
+            30.0,
+        ),
+        actions: vec![Action::CreateAlert {
+            severity: neomind_automation::AlertSeverity::Critical,
+            title: "High temperature".to_string(),
+            message: "Temperature exceeded threshold".to_string(),
+        }],
     };
 
     let dsl = rule.to_dsl();
@@ -309,11 +343,8 @@ fn test_rule_automation_dsl_generation() {
 
 #[test]
 fn test_transform_automation_builder() {
-    let transform = TransformAutomation::new(
-        "test-transform",
-        "Test Transform",
-        TransformScope::Global,
-    );
+    let transform =
+        TransformAutomation::new("test-transform", "Test Transform", TransformScope::Global);
 
     assert_eq!(transform.metadata.id, "test-transform");
     assert_eq!(transform.metadata.name, "Test Transform");
@@ -333,7 +364,10 @@ fn test_transform_automation_with_js_code() {
 
     assert_eq!(transform.metadata.id, "test-transform");
     assert_eq!(transform.intent, Some("Count the items".to_string()));
-    assert_eq!(transform.js_code, Some("return input.detections.length;".to_string()));
+    assert_eq!(
+        transform.js_code,
+        Some("return input.detections.length;".to_string())
+    );
 }
 
 #[test]

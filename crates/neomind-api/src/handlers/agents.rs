@@ -6,12 +6,11 @@ use axum::{
 };
 use serde_json::{Value, json};
 
-use neomind_storage::{
-    AiAgent, AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentExecutionRecord,
-    AgentFilter, ScheduleType, ResourceType,
-    UserMessage,
-};
 use neomind_llm::instance_manager::get_instance_manager;
+use neomind_storage::{
+    AgentExecutionRecord, AgentFilter, AgentMemory, AgentSchedule, AgentStats, AgentStatus,
+    AiAgent, ResourceType, ScheduleType, UserMessage,
+};
 
 use super::{
     ServerState,
@@ -503,7 +502,7 @@ pub struct UpdateAgentRequest {
 #[derive(Debug, serde::Deserialize)]
 pub struct AgentResourceRequest {
     pub resource_id: String,
-    pub resource_type: String,  // "Device", "Metric", "Command", etc.
+    pub resource_type: String, // "Device", "Metric", "Command", etc.
     pub name: String,
     #[serde(default)]
     pub config: Option<serde_json::Value>,
@@ -566,57 +565,94 @@ impl From<&AiAgent> for AgentDetailDto {
                     created_at: format_datetime(agent.memory.working.created_at),
                 },
                 short_term: ShortTermMemoryDto {
-                    summaries: agent.memory.short_term.summaries.iter().map(|s| MemorySummaryDto {
-                        timestamp: format_datetime(s.timestamp),
-                        execution_id: s.execution_id.clone(),
-                        situation: s.situation.clone(),
-                        conclusion: s.conclusion.clone(),
-                        decisions: s.decisions.clone(),
-                        success: s.success,
-                    }).collect(),
+                    summaries: agent
+                        .memory
+                        .short_term
+                        .summaries
+                        .iter()
+                        .map(|s| MemorySummaryDto {
+                            timestamp: format_datetime(s.timestamp),
+                            execution_id: s.execution_id.clone(),
+                            situation: s.situation.clone(),
+                            conclusion: s.conclusion.clone(),
+                            decisions: s.decisions.clone(),
+                            success: s.success,
+                        })
+                        .collect(),
                     max_summaries: agent.memory.short_term.max_summaries,
-                    last_archived_at: agent.memory.short_term.last_archived_at.map(format_datetime),
+                    last_archived_at: agent
+                        .memory
+                        .short_term
+                        .last_archived_at
+                        .map(format_datetime),
                 },
                 long_term: LongTermMemoryDto {
-                    memories: agent.memory.long_term.memories.iter().map(|m| ImportantMemoryDto {
-                        id: m.id.clone(),
-                        memory_type: m.memory_type.clone(),
-                        content: m.content.clone(),
-                        importance: m.importance,
-                        created_at: format_datetime(m.created_at),
-                        access_count: m.access_count,
-                    }).collect(),
-                    patterns: agent.memory.long_term.patterns.iter().map(|p| LearnedPatternDto {
+                    memories: agent
+                        .memory
+                        .long_term
+                        .memories
+                        .iter()
+                        .map(|m| ImportantMemoryDto {
+                            id: m.id.clone(),
+                            memory_type: m.memory_type.clone(),
+                            content: m.content.clone(),
+                            importance: m.importance,
+                            created_at: format_datetime(m.created_at),
+                            access_count: m.access_count,
+                        })
+                        .collect(),
+                    patterns: agent
+                        .memory
+                        .long_term
+                        .patterns
+                        .iter()
+                        .map(|p| LearnedPatternDto {
+                            id: p.id.clone(),
+                            pattern_type: p.pattern_type.clone(),
+                            description: p.description.clone(),
+                            confidence: p.confidence,
+                            learned_at: format_datetime(p.learned_at),
+                        })
+                        .collect(),
+                    max_memories: agent.memory.long_term.max_memories,
+                    min_importance: agent.memory.long_term.min_importance,
+                },
+                state_variables: serde_json::to_value(&agent.memory.state_variables)
+                    .unwrap_or(json!({})),
+                learned_patterns: agent
+                    .memory
+                    .learned_patterns
+                    .iter()
+                    .map(|p| LearnedPatternDto {
                         id: p.id.clone(),
                         pattern_type: p.pattern_type.clone(),
                         description: p.description.clone(),
                         confidence: p.confidence,
                         learned_at: format_datetime(p.learned_at),
-                    }).collect(),
-                    max_memories: agent.memory.long_term.max_memories,
-                    min_importance: agent.memory.long_term.min_importance,
-                },
-                state_variables: serde_json::to_value(&agent.memory.state_variables).unwrap_or(json!({})),
-                learned_patterns: agent.memory.learned_patterns.iter().map(|p| LearnedPatternDto {
-                    id: p.id.clone(),
-                    pattern_type: p.pattern_type.clone(),
-                    description: p.description.clone(),
-                    confidence: p.confidence,
-                    learned_at: format_datetime(p.learned_at),
-                }).collect(),
-                trend_data: agent.memory.trend_data.iter().map(|t| TrendPointDto {
-                    timestamp: t.timestamp,
-                    metric: t.metric.clone(),
-                    value: t.value,
-                    context: t.context.clone(),
-                }).collect(),
+                    })
+                    .collect(),
+                trend_data: agent
+                    .memory
+                    .trend_data
+                    .iter()
+                    .map(|t| TrendPointDto {
+                        timestamp: t.timestamp,
+                        metric: t.metric.clone(),
+                        value: t.value,
+                        context: t.context.clone(),
+                    })
+                    .collect(),
                 updated_at: format_datetime(agent.memory.updated_at),
             }),
-            resources: agent.resources.iter().map(|r| AgentResourceDto {
-                resource_type: resource_type_to_string(&r.resource_type).to_string(),
-                resource_id: r.resource_id.clone(),
-                name: r.name.clone(),
-            }).collect(),
+            resources: agent
+                .resources
+                .iter()
+                .map(|r| AgentResourceDto {
+                    resource_type: resource_type_to_string(&r.resource_type).to_string(),
+                    resource_id: r.resource_id.clone(),
+                    name: r.name.clone(),
+                })
+                .collect(),
             schedule: AgentScheduleDto {
                 schedule_type: schedule_type_to_string(&agent.schedule.schedule_type).to_string(),
                 interval_seconds: agent.schedule.interval_seconds,
@@ -670,7 +706,10 @@ impl From<AgentExecutionRecord> for AgentExecutionDetailDto {
             error: record.error,
             decision_process: Some(DecisionProcessDto {
                 situation_analysis: record.decision_process.situation_analysis,
-                data_collected: record.decision_process.data_collected.into_iter()
+                data_collected: record
+                    .decision_process
+                    .data_collected
+                    .into_iter()
                     .map(|d| DataCollectedDto {
                         source: d.source,
                         data_type: d.data_type,
@@ -678,7 +717,10 @@ impl From<AgentExecutionRecord> for AgentExecutionDetailDto {
                         timestamp: d.timestamp,
                     })
                     .collect(),
-                reasoning_steps: record.decision_process.reasoning_steps.into_iter()
+                reasoning_steps: record
+                    .decision_process
+                    .reasoning_steps
+                    .into_iter()
                     .map(|s| ReasoningStepDto {
                         step_number: s.step_number,
                         description: s.description,
@@ -688,7 +730,10 @@ impl From<AgentExecutionRecord> for AgentExecutionDetailDto {
                         confidence: s.confidence,
                     })
                     .collect(),
-                decisions: record.decision_process.decisions.into_iter()
+                decisions: record
+                    .decision_process
+                    .decisions
+                    .into_iter()
                     .map(|d| DecisionDto {
                         decision_type: d.decision_type,
                         description: d.description,
@@ -701,13 +746,20 @@ impl From<AgentExecutionRecord> for AgentExecutionDetailDto {
                 confidence: record.decision_process.confidence,
             }),
             result: record.result.map(|r| ExecutionResultDto {
-                actions_executed: r.actions_executed.into_iter()
+                actions_executed: r
+                    .actions_executed
+                    .into_iter()
                     .map(|a| ActionExecutedDto {
                         action_type: a.action_type,
                         target: a.target,
                         description: a.description,
                         success: a.success,
-                        parameters: if a.parameters.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
+                        parameters: if a
+                            .parameters
+                            .as_object()
+                            .map(|o| !o.is_empty())
+                            .unwrap_or(false)
+                        {
                             Some(a.parameters)
                         } else {
                             None
@@ -716,7 +768,9 @@ impl From<AgentExecutionRecord> for AgentExecutionDetailDto {
                     })
                     .collect(),
                 report: r.report.map(|rep| rep.content),
-                notifications_sent: r.notifications_sent.into_iter()
+                notifications_sent: r
+                    .notifications_sent
+                    .into_iter()
                     .map(|n| NotificationSentDto {
                         channel: n.channel,
                         recipient: n.recipient,
@@ -743,11 +797,11 @@ fn format_datetime(ts: i64) -> String {
 // ============================================================================
 
 /// List all AI Agents.
-pub async fn list_agents(
-    State(state): State<ServerState>,
-) -> HandlerResult<Value> {
+pub async fn list_agents(State(state): State<ServerState>) -> HandlerResult<Value> {
     let store = &state.agents.agent_store;
-    let agents = store.query_agents(AgentFilter::default()).await
+    let agents = store
+        .query_agents(AgentFilter::default())
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to query agents: {}", e)))?;
 
     let dtos: Vec<AgentDto> = agents.into_iter().map(AgentDto::from).collect();
@@ -764,7 +818,9 @@ pub async fn get_agent(
     Path(id): Path<String>,
 ) -> HandlerResult<Value> {
     let store = &state.agents.agent_store;
-    let agent = store.get_agent(&id).await
+    let agent = store
+        .get_agent(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
@@ -783,7 +839,12 @@ pub async fn create_agent(
         "interval" => ScheduleType::Interval,
         "cron" => ScheduleType::Cron,
         "event" => ScheduleType::Event,
-        _ => return Err(ErrorResponse::bad_request(format!("Invalid schedule type: {}", request.schedule.schedule_type))),
+        _ => {
+            return Err(ErrorResponse::bad_request(format!(
+                "Invalid schedule type: {}",
+                request.schedule.schedule_type
+            )));
+        }
     };
 
     let schedule = AgentSchedule {
@@ -842,9 +903,10 @@ pub async fn create_agent(
 
         // Merge data_collection config if provided
         if let Some(ref metric_config) = metric.config
-            && let Some(data_collection) = metric_config.get("data_collection") {
-                config_json["data_collection"] = data_collection.clone();
-            }
+            && let Some(data_collection) = metric_config.get("data_collection")
+        {
+            config_json["data_collection"] = data_collection.clone();
+        }
 
         resources.push(AgentResource {
             resource_type: ResourceType::Metric,
@@ -895,7 +957,9 @@ pub async fn create_agent(
 
     // Save to storage
     let store = &state.agents.agent_store;
-    store.save_agent(&agent).await
+    store
+        .save_agent(&agent)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to save agent: {}", e)))?;
 
     // Schedule the agent if it's interval/cron type (not event-triggered)
@@ -935,7 +999,9 @@ pub async fn update_agent(
     let store = &state.agents.agent_store;
 
     // Get existing agent
-    let mut agent = store.get_agent(&id).await
+    let mut agent = store
+        .get_agent(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
@@ -957,14 +1023,20 @@ pub async fn update_agent(
             "active" => AgentStatus::Active,
             "paused" => AgentStatus::Paused,
             "error" => AgentStatus::Error,
-            _ => return Err(ErrorResponse::bad_request(format!("Invalid status: {}", status_str))),
+            _ => {
+                return Err(ErrorResponse::bad_request(format!(
+                    "Invalid status: {}",
+                    status_str
+                )));
+            }
         };
     }
 
     // Check if we need to update resources
     let has_schedule_update = request.schedule.is_some();
     let has_resources_update = request.resources.is_some();
-    let has_old_format = request.device_ids.is_some() || request.metrics.is_some() || request.commands.is_some();
+    let has_old_format =
+        request.device_ids.is_some() || request.metrics.is_some() || request.commands.is_some();
 
     // Update schedule if provided
     if let Some(schedule) = request.schedule {
@@ -972,7 +1044,12 @@ pub async fn update_agent(
             "interval" => neomind_storage::ScheduleType::Interval,
             "cron" => neomind_storage::ScheduleType::Cron,
             "event" => neomind_storage::ScheduleType::Event,
-            _ => return Err(ErrorResponse::bad_request(format!("Invalid schedule_type: {}", schedule.schedule_type))),
+            _ => {
+                return Err(ErrorResponse::bad_request(format!(
+                    "Invalid schedule_type: {}",
+                    schedule.schedule_type
+                )));
+            }
         };
 
         agent.schedule = neomind_storage::AgentSchedule {
@@ -1031,9 +1108,10 @@ pub async fn update_agent(
                     "device_id": metric.device_id,
                 });
                 if let Some(ref config) = metric.config
-                    && let Some(data_collection) = config.get("data_collection") {
-                        config_json["data_collection"] = data_collection.clone();
-                    }
+                    && let Some(data_collection) = config.get("data_collection")
+                {
+                    config_json["data_collection"] = data_collection.clone();
+                }
                 let display_name = if metric.display_name.is_empty() {
                     &metric.metric_name
                 } else {
@@ -1091,7 +1169,9 @@ pub async fn update_agent(
     agent.updated_at = chrono::Utc::now().timestamp();
 
     // Save
-    store.save_agent(&agent).await
+    store
+        .save_agent(&agent)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update agent: {}", e)))?;
 
     // Reschedule the agent if schedule changed or if agent is active (interval/cron type)
@@ -1103,7 +1183,8 @@ pub async fn update_agent(
 
             // Then reschedule with the new configuration (if active and not event-triggered)
             if agent.status == neomind_storage::AgentStatus::Active
-                && agent.schedule.schedule_type != neomind_storage::ScheduleType::Event {
+                && agent.schedule.schedule_type != neomind_storage::ScheduleType::Event
+            {
                 if let Err(e) = manager.scheduler().schedule_agent(agent.clone()).await {
                     tracing::warn!(
                         agent_id = %agent.id,
@@ -1136,7 +1217,9 @@ pub async fn delete_agent(
     let store = &state.agents.agent_store;
 
     // Check if agent exists
-    let _agent = store.get_agent(&id).await
+    let _agent = store
+        .get_agent(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
@@ -1146,11 +1229,15 @@ pub async fn delete_agent(
     // 2. Preventing event-triggered agents from executing
     if let Ok(manager) = state.get_or_init_agent_manager().await {
         // Use the manager's delete_agent which properly unschedules
-        manager.delete_agent(&id).await
+        manager
+            .delete_agent(&id)
+            .await
             .map_err(|e| ErrorResponse::internal(format!("Failed to unschedule agent: {}", e)))?;
     } else {
         // Fallback: just delete from storage if manager is not available
-        store.delete_agent(&id).await
+        store
+            .delete_agent(&id)
+            .await
             .map_err(|e| ErrorResponse::internal(format!("Failed to delete agent: {}", e)))?;
     }
 
@@ -1168,11 +1255,15 @@ pub async fn execute_agent(
     Json(_request): Json<ExecuteAgentRequest>,
 ) -> HandlerResult<Value> {
     // Get or initialize the agent manager
-    let agent_manager = state.get_or_init_agent_manager().await
+    let agent_manager = state
+        .get_or_init_agent_manager()
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get agent manager: {}", e)))?;
 
     // Execute the agent using the manager (this does full execution with data collection, analysis, and actions)
-    let summary = agent_manager.execute_agent_now(&id).await
+    let summary = agent_manager
+        .execute_agent_now(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to execute agent: {}", e)))?;
 
     tracing::info!(
@@ -1202,15 +1293,22 @@ pub async fn get_agent_executions(
     let store = &state.agents.agent_store;
 
     // Check if agent exists
-    let _agent = store.get_agent(&id).await
+    let _agent = store
+        .get_agent(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
     // Get executions
-    let executions = store.get_agent_executions(&id, 50).await
+    let executions = store
+        .get_agent_executions(&id, 50)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get executions: {}", e)))?;
 
-    let dtos: Vec<AgentExecutionDto> = executions.into_iter().map(AgentExecutionDto::from).collect();
+    let dtos: Vec<AgentExecutionDto> = executions
+        .into_iter()
+        .map(AgentExecutionDto::from)
+        .collect();
 
     ok(json!({
         "agent_id": id,
@@ -1227,12 +1325,17 @@ pub async fn get_execution(
     let store = &state.agents.agent_store;
 
     // Get execution
-    let executions = store.get_agent_executions(&id, 100).await
+    let executions = store
+        .get_agent_executions(&id, 100)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get executions: {}", e)))?;
 
-    let execution = executions.into_iter()
+    let execution = executions
+        .into_iter()
         .find(|e| e.id == execution_id)
-        .ok_or_else(|| ErrorResponse::not_found(format!("Execution not found: {}", execution_id)))?;
+        .ok_or_else(|| {
+            ErrorResponse::not_found(format!("Execution not found: {}", execution_id))
+        })?;
 
     let dto = AgentExecutionDetailDto::from(execution);
 
@@ -1245,7 +1348,8 @@ pub async fn set_agent_status(
     Path(id): Path<String>,
     Json(request): Json<Value>,
 ) -> HandlerResult<Value> {
-    let status_str = request.get("status")
+    let status_str = request
+        .get("status")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorResponse::bad_request("Missing status field"))?;
 
@@ -1253,11 +1357,18 @@ pub async fn set_agent_status(
         "active" => AgentStatus::Active,
         "paused" => AgentStatus::Paused,
         "error" => AgentStatus::Error,
-        _ => return Err(ErrorResponse::bad_request(format!("Invalid status: {}", status_str))),
+        _ => {
+            return Err(ErrorResponse::bad_request(format!(
+                "Invalid status: {}",
+                status_str
+            )));
+        }
     };
 
     let store = &state.agents.agent_store;
-    store.update_agent_status(&id, new_status, None).await
+    store
+        .update_agent_status(&id, new_status, None)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update status: {}", e)))?;
 
     tracing::info!("Updated AI Agent {} status to: {}", id, status_str);
@@ -1275,7 +1386,9 @@ pub async fn get_agent_memory(
 ) -> HandlerResult<Value> {
     let store = &state.agents.agent_store;
 
-    let agent = store.get_agent(&id).await
+    let agent = store
+        .get_agent(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
@@ -1287,51 +1400,83 @@ pub async fn get_agent_memory(
             created_at: format_datetime(agent.memory.working.created_at),
         },
         short_term: ShortTermMemoryDto {
-            summaries: agent.memory.short_term.summaries.iter().map(|s| MemorySummaryDto {
-                timestamp: format_datetime(s.timestamp),
-                execution_id: s.execution_id.clone(),
-                situation: s.situation.clone(),
-                conclusion: s.conclusion.clone(),
-                decisions: s.decisions.clone(),
-                success: s.success,
-            }).collect(),
+            summaries: agent
+                .memory
+                .short_term
+                .summaries
+                .iter()
+                .map(|s| MemorySummaryDto {
+                    timestamp: format_datetime(s.timestamp),
+                    execution_id: s.execution_id.clone(),
+                    situation: s.situation.clone(),
+                    conclusion: s.conclusion.clone(),
+                    decisions: s.decisions.clone(),
+                    success: s.success,
+                })
+                .collect(),
             max_summaries: agent.memory.short_term.max_summaries,
-            last_archived_at: agent.memory.short_term.last_archived_at.map(format_datetime),
+            last_archived_at: agent
+                .memory
+                .short_term
+                .last_archived_at
+                .map(format_datetime),
         },
         long_term: LongTermMemoryDto {
-            memories: agent.memory.long_term.memories.iter().map(|m| ImportantMemoryDto {
-                id: m.id.clone(),
-                memory_type: m.memory_type.clone(),
-                content: m.content.clone(),
-                importance: m.importance,
-                created_at: format_datetime(m.created_at),
-                access_count: m.access_count,
-            }).collect(),
-            patterns: agent.memory.long_term.patterns.iter().map(|p| LearnedPatternDto {
-                id: p.id.clone(),
-                pattern_type: p.pattern_type.clone(),
-                description: p.description.clone(),
-                confidence: p.confidence,
-                learned_at: format_datetime(p.learned_at),
-            }).collect(),
+            memories: agent
+                .memory
+                .long_term
+                .memories
+                .iter()
+                .map(|m| ImportantMemoryDto {
+                    id: m.id.clone(),
+                    memory_type: m.memory_type.clone(),
+                    content: m.content.clone(),
+                    importance: m.importance,
+                    created_at: format_datetime(m.created_at),
+                    access_count: m.access_count,
+                })
+                .collect(),
+            patterns: agent
+                .memory
+                .long_term
+                .patterns
+                .iter()
+                .map(|p| LearnedPatternDto {
+                    id: p.id.clone(),
+                    pattern_type: p.pattern_type.clone(),
+                    description: p.description.clone(),
+                    confidence: p.confidence,
+                    learned_at: format_datetime(p.learned_at),
+                })
+                .collect(),
             max_memories: agent.memory.long_term.max_memories,
             min_importance: agent.memory.long_term.min_importance,
         },
         // Legacy fields (backward compatibility)
         state_variables: serde_json::to_value(&agent.memory.state_variables).unwrap_or(json!({})),
-        learned_patterns: agent.memory.learned_patterns.iter().map(|p| LearnedPatternDto {
-            id: p.id.clone(),
-            pattern_type: p.pattern_type.clone(),
-            description: p.description.clone(),
-            confidence: p.confidence,
-            learned_at: format_datetime(p.learned_at),
-        }).collect(),
-        trend_data: agent.memory.trend_data.iter().map(|t| TrendPointDto {
-            timestamp: t.timestamp,
-            metric: t.metric.clone(),
-            value: t.value,
-            context: t.context.clone(),
-        }).collect(),
+        learned_patterns: agent
+            .memory
+            .learned_patterns
+            .iter()
+            .map(|p| LearnedPatternDto {
+                id: p.id.clone(),
+                pattern_type: p.pattern_type.clone(),
+                description: p.description.clone(),
+                confidence: p.confidence,
+                learned_at: format_datetime(p.learned_at),
+            })
+            .collect(),
+        trend_data: agent
+            .memory
+            .trend_data
+            .iter()
+            .map(|t| TrendPointDto {
+                timestamp: t.timestamp,
+                metric: t.metric.clone(),
+                value: t.value,
+                context: t.context.clone(),
+            })
+            .collect(),
         updated_at: format_datetime(agent.memory.updated_at),
     };
 
@@ -1346,7 +1491,9 @@ pub async fn clear_agent_memory(
     let store = &state.agents.agent_store;
 
     // Check if agent exists
-    let mut agent = store.get_agent(&id).await
+    let mut agent = store
+        .get_agent(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
@@ -1354,7 +1501,9 @@ pub async fn clear_agent_memory(
     agent.memory = AgentMemory::default();
     agent.updated_at = chrono::Utc::now().timestamp();
 
-    store.save_agent(&agent).await
+    store
+        .save_agent(&agent)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update agent: {}", e)))?;
 
     tracing::info!("Cleared memory for AI Agent: {}", id);
@@ -1371,7 +1520,9 @@ pub async fn get_agent_stats(
 ) -> HandlerResult<Value> {
     let store = &state.agents.agent_store;
 
-    let agent = store.get_agent(&id).await
+    let agent = store
+        .get_agent(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
@@ -1427,7 +1578,9 @@ pub async fn add_user_message(
 ) -> HandlerResult<Value> {
     let store = &state.agents.agent_store;
 
-    let message = store.add_user_message(&id, request.content, request.message_type).await
+    let message = store
+        .add_user_message(&id, request.content, request.message_type)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to add message: {}", e)))?;
 
     tracing::info!("Added user message {} to agent {}", message.id, id);
@@ -1444,10 +1597,17 @@ pub async fn get_user_messages(
 ) -> HandlerResult<Value> {
     let store = &state.agents.agent_store;
 
-    let messages = store.get_user_messages(&id, Some(50)).await
+    let messages = store
+        .get_user_messages(&id, Some(50))
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get messages: {}", e)))?;
 
-    ok(json!(messages.into_iter().map(UserMessageDto::from).collect::<Vec<_>>()))
+    ok(json!(
+        messages
+            .into_iter()
+            .map(UserMessageDto::from)
+            .collect::<Vec<_>>()
+    ))
 }
 
 /// Delete a specific user message.
@@ -1459,11 +1619,16 @@ pub async fn delete_user_message(
 ) -> HandlerResult<Value> {
     let store = &state.agents.agent_store;
 
-    let deleted = store.delete_user_message(&id, &message_id).await
+    let deleted = store
+        .delete_user_message(&id, &message_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete message: {}", e)))?;
 
     if !deleted {
-        return Err(ErrorResponse::not_found(format!("Message not found: {}", message_id)));
+        return Err(ErrorResponse::not_found(format!(
+            "Message not found: {}",
+            message_id
+        )));
     }
 
     tracing::info!("Deleted user message {} from agent {}", message_id, id);
@@ -1480,7 +1645,9 @@ pub async fn clear_user_messages(
 ) -> HandlerResult<Value> {
     let store = &state.agents.agent_store;
 
-    let count = store.clear_user_messages(&id).await
+    let count = store
+        .clear_user_messages(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to clear messages: {}", e)))?;
 
     tracing::info!("Cleared {} user messages from agent {}", count, id);
@@ -1535,8 +1702,11 @@ pub async fn validate_cron_expression(
         Ok(manager) => manager,
         Err(_e) => {
             // Create a temporary scheduler for validation
-            let scheduler = AgentScheduler::new(SchedulerConfig::default()).await
-                .map_err(|e| ErrorResponse::internal(format!("Failed to create scheduler: {}", e)))?;
+            let scheduler = AgentScheduler::new(SchedulerConfig::default())
+                .await
+                .map_err(|e| {
+                    ErrorResponse::internal(format!("Failed to create scheduler: {}", e))
+                })?;
             return validate_with_scheduler(&scheduler, &request);
         }
     };
@@ -1567,17 +1737,14 @@ fn validate_with_scheduler(
                 description,
             }))
         }
-        Err(e) => {
-            ok(json!(ValidateCronResponse {
-                valid: false,
-                error: Some(e.to_string()),
-                next_executions: None,
-                description: None,
-            }))
-        }
+        Err(e) => ok(json!(ValidateCronResponse {
+            valid: false,
+            error: Some(e.to_string()),
+            next_executions: None,
+            description: None,
+        })),
     }
 }
-
 
 /// Validate that an LLM backend is available and working.
 ///
@@ -1586,16 +1753,18 @@ pub async fn validate_llm_backend(
     State(_state): State<ServerState>,
     Json(request): Json<ValidateLlmRequest>,
 ) -> HandlerResult<Value> {
-    let manager = get_instance_manager()
-        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+    let manager = get_instance_manager().map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     // Determine which backend to test
     let backend_id = if let Some(id) = &request.backend_id {
         id.clone()
     } else {
         // Use the active backend
-        let active = manager.get_active_instance()
-            .ok_or_else(|| ErrorResponse::bad_request("No LLM backend configured. Please add an LLM backend first.".to_string()))?;
+        let active = manager.get_active_instance().ok_or_else(|| {
+            ErrorResponse::bad_request(
+                "No LLM backend configured. Please add an LLM backend first.".to_string(),
+            )
+        })?;
         active.id.clone()
     };
 
@@ -1620,12 +1789,10 @@ pub async fn validate_llm_backend(
                 }))
             }
         }
-        Err(e) => {
-            ok(json!({
-                "valid": false,
-                "error": e.to_string(),
-            }))
-        }
+        Err(e) => ok(json!({
+            "valid": false,
+            "error": e.to_string(),
+        })),
     }
 }
 
@@ -1644,7 +1811,7 @@ fn describe_cron_expression(expr: &str) -> Option<String> {
     // Support both 5-field and 6-field cron formats
     let fields = if parts.len() >= 6 {
         // 6-field format: sec min hour day month weekday
-        &parts[1..]  // Skip seconds field
+        &parts[1..] // Skip seconds field
     } else {
         &parts[..]
     };
@@ -1653,7 +1820,8 @@ fn describe_cron_expression(expr: &str) -> Option<String> {
         return Some(format!("Custom cron: {}", expr));
     }
 
-    let (minute, hour, day, month, weekday) = (fields[0], fields[1], fields[2], fields[3], fields[4]);
+    let (minute, hour, day, month, weekday) =
+        (fields[0], fields[1], fields[2], fields[3], fields[4]);
 
     // Check for common patterns
     match (minute, hour, day, month, weekday) {

@@ -358,16 +358,17 @@ impl LongTermMemoryStore {
                 memory.access_count += 1;
 
                 if let Ok(updated) = serde_json::to_vec(&memory)
-                    && let Ok(txn) = db.begin_write() {
-                        {
-                            let mut table = match txn.open_table(MEMORY_TABLE) {
-                                Ok(t) => t,
-                                Err(_) => return,
-                            };
-                            let _ = table.insert(&*id, &*updated);
-                        } // table dropped here
-                        let _ = txn.commit();
-                    }
+                    && let Ok(txn) = db.begin_write()
+                {
+                    {
+                        let mut table = match txn.open_table(MEMORY_TABLE) {
+                            Ok(t) => t,
+                            Err(_) => return,
+                        };
+                        let _ = table.insert(&*id, &*updated);
+                    } // table dropped here
+                    let _ = txn.commit();
+                }
             }
         });
     }
@@ -382,13 +383,15 @@ impl LongTermMemoryStore {
         for result in table.iter()? {
             let (_key, value) = result?;
             if let Ok(memory) = serde_json::from_slice::<MemoryEntry>(value.value())
-                && self.matches_filter(&memory, filter) {
-                    results.push(memory);
-                    if let Some(limit) = filter.limit
-                        && results.len() >= limit {
-                            break;
-                        }
+                && self.matches_filter(&memory, filter)
+            {
+                results.push(memory);
+                if let Some(limit) = filter.limit
+                    && results.len() >= limit
+                {
+                    break;
                 }
+            }
         }
 
         Ok(results)
@@ -456,27 +459,28 @@ impl LongTermMemoryStore {
         if removed {
             // Update indexes
             if let Some(data) = memory_data
-                && let Ok(memory) = serde_json::from_slice::<MemoryEntry>(&data) {
-                    // Update type index
-                    let mut type_index = self.type_index.write().await;
-                    if let Some(count) = type_index.get_mut(&memory.memory_type) {
-                        *count = count.saturating_sub(1);
-                        if *count == 0 {
-                            type_index.remove(&memory.memory_type);
-                        }
+                && let Ok(memory) = serde_json::from_slice::<MemoryEntry>(&data)
+            {
+                // Update type index
+                let mut type_index = self.type_index.write().await;
+                if let Some(count) = type_index.get_mut(&memory.memory_type) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        type_index.remove(&memory.memory_type);
                     }
+                }
 
-                    // Update keyword index
-                    let mut keyword_index = self.keyword_index.write().await;
-                    for keyword in &memory.keywords {
-                        if let Some(ids) = keyword_index.get_mut(keyword) {
-                            ids.remove(&id.to_string());
-                            if ids.is_empty() {
-                                keyword_index.remove(keyword);
-                            }
+                // Update keyword index
+                let mut keyword_index = self.keyword_index.write().await;
+                for keyword in &memory.keywords {
+                    if let Some(ids) = keyword_index.get_mut(keyword) {
+                        ids.remove(&id.to_string());
+                        if ids.is_empty() {
+                            keyword_index.remove(keyword);
                         }
                     }
                 }
+            }
         }
 
         txn.commit()?;
@@ -495,9 +499,10 @@ impl LongTermMemoryStore {
             let (key, value) = result?;
             if let Ok(memory) = serde_json::from_slice::<MemoryEntry>(value.value())
                 && let Some(expires_at) = memory.expires_at()
-                    && expires_at < now {
-                        ids_to_delete.push(key.value().to_string());
-                    }
+                && expires_at < now
+            {
+                ids_to_delete.push(key.value().to_string());
+            }
         }
         drop(table);
 
@@ -598,21 +603,24 @@ impl LongTermMemoryStore {
 
         // Check source
         if let Some(ref source) = filter.source
-            && &memory.source != source {
-                return false;
-            }
+            && &memory.source != source
+        {
+            return false;
+        }
 
         // Check session
         if let Some(ref session_id) = filter.session_id
-            && memory.session_id.as_ref() != Some(session_id) {
-                return false;
-            }
+            && memory.session_id.as_ref() != Some(session_id)
+        {
+            return false;
+        }
 
         // Check importance
         if let Some(min_importance) = filter.min_importance
-            && memory.importance < min_importance {
-                return false;
-            }
+            && memory.importance < min_importance
+        {
+            return false;
+        }
 
         // Check keywords
         if !filter.keywords.is_empty() {
@@ -627,13 +635,15 @@ impl LongTermMemoryStore {
 
         // Check time range
         if let Some(start) = filter.start_time
-            && memory.created_at < start {
-                return false;
-            }
+            && memory.created_at < start
+        {
+            return false;
+        }
         if let Some(end) = filter.end_time
-            && memory.created_at > end {
-                return false;
-            }
+            && memory.created_at > end
+        {
+            return false;
+        }
 
         true
     }

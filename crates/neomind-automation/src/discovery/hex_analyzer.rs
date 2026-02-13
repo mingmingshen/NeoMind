@@ -8,9 +8,24 @@ use std::collections::HashSet;
 
 /// Field name hints that suggest hex-encoded data
 pub const FIELD_HEX_HINTS: &[&str] = &[
-    "raw", "hex", "payload", "data", "packet", "buffer", "bytes",
-    "binary", "state", "status", "register", "value_raw", "original",
-    "encoded", "frame", "message", "command", "response",
+    "raw",
+    "hex",
+    "payload",
+    "data",
+    "packet",
+    "buffer",
+    "bytes",
+    "binary",
+    "state",
+    "status",
+    "register",
+    "value_raw",
+    "original",
+    "encoded",
+    "frame",
+    "message",
+    "command",
+    "response",
 ];
 
 /// Probability level that a value is hex-encoded
@@ -202,7 +217,8 @@ impl HexAnalyzer {
 
         // 2. Format checks (up to 40 points)
         let chars: Vec<char> = value.chars().collect();
-        let valid_hex_count = chars.iter()
+        let valid_hex_count = chars
+            .iter()
             .filter(|c: &&char| c.is_ascii_hexdigit())
             .count();
 
@@ -282,7 +298,13 @@ impl HexAnalyzer {
         let suggested_type = if hex_info.is_hex {
             if let Some(int_val) = hex_info.decoded_integer {
                 // Check if decoded value is reasonable
-                if int_val < 100_000 && !stats.unit_hint.as_ref().map(|u| u.contains("°C")).unwrap_or(false) {
+                if int_val < 100_000
+                    && !stats
+                        .unit_hint
+                        .as_ref()
+                        .map(|u| u.contains("°C"))
+                        .unwrap_or(false)
+                {
                     SuggestedType::HexInteger { decoded: int_val }
                 } else {
                     SuggestedType::HexBytes
@@ -372,9 +394,7 @@ impl HexAnalyzer {
 
         (0..clean.len())
             .step_by(2)
-            .map(|i| {
-                u8::from_str_radix(&clean[i..i+2], 16).ok()
-            })
+            .map(|i| u8::from_str_radix(&clean[i..i + 2], 16).ok())
             .collect()
     }
 }
@@ -463,7 +483,8 @@ pub fn compute_stats(values: &[Value]) -> ValueStats {
         for s in &string_values {
             *counts.entry(s.clone()).or_insert(0) += 1;
         }
-        counts.into_iter()
+        counts
+            .into_iter()
             .max_by_key(|(_, count)| *count)
             .map(|(s, _)| s)
     } else {
@@ -478,7 +499,8 @@ pub fn compute_stats(values: &[Value]) -> ValueStats {
         None
     };
 
-    let hex_like = !string_values.is_empty() && (hex_count as f64) / (string_values.len() as f64) > 0.5;
+    let hex_like =
+        !string_values.is_empty() && (hex_count as f64) / (string_values.len() as f64) > 0.5;
     let boolean_like = !values.is_empty() && (boolean_count as f64) / (values.len() as f64) > 0.8;
 
     // Detect unit hints from values
@@ -509,10 +531,11 @@ fn detect_unit_hint(numeric: &[f64], strings: &[String]) -> Option<String> {
     // Check for percentage ranges (0-100)
     if let Some(max_val) = numeric.iter().cloned().reduce(f64::max)
         && (0.0..=100.0).contains(&max_val)
-            && let Some(min_val) = numeric.iter().cloned().reduce(f64::min)
-                && min_val >= 0.0 {
-                    return Some("%".to_string());
-                }
+        && let Some(min_val) = numeric.iter().cloned().reduce(f64::min)
+        && min_val >= 0.0
+    {
+        return Some("%".to_string());
+    }
 
     // Check string values for units
     for s in strings {
@@ -591,11 +614,7 @@ mod tests {
 
     #[test]
     fn test_compute_stats() {
-        let values = vec![
-            json!("0x1A3F"),
-            json!("0x2B4F"),
-            json!("0x3C5F"),
-        ];
+        let values = vec![json!("0x1A3F"), json!("0x2B4F"), json!("0x3C5F")];
 
         let stats = compute_stats(&values);
         assert!(stats.hex_like);

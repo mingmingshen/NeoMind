@@ -31,16 +31,14 @@
 //! }
 //! ```
 
-use crate::adapter::{
-    AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent,
-};
+use crate::adapter::{AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent};
 use crate::mdl::MetricValue;
 use crate::registry::DeviceRegistry;
 use crate::telemetry::TimeSeriesStorage;
 use crate::unified_extractor::UnifiedExtractor;
 use async_trait::async_trait;
-use neomind_core::EventBus;
 use futures::Stream;
+use neomind_core::EventBus;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -212,16 +210,8 @@ impl WebhookAdapter {
         if let Some(ref expected_key) = self.config.api_key {
             match provided_api_key {
                 Some(key) if key == expected_key => {}
-                Some(_) => {
-                    return Err(AdapterError::Connection(
-                        "Invalid API key".to_string(),
-                    ))
-                }
-                None => {
-                    return Err(AdapterError::Connection(
-                        "Missing API key".to_string(),
-                    ))
-                }
+                Some(_) => return Err(AdapterError::Connection("Invalid API key".to_string())),
+                None => return Err(AdapterError::Connection("Missing API key".to_string())),
             }
         }
 
@@ -238,15 +228,16 @@ impl WebhookAdapter {
 
         // Check IP whitelist (if configured)
         if !self.config.allowed_ips.is_empty()
-            && let Some(ip) = remote_ip {
-                let ip_str = ip.to_string();
-                if !self.config.allowed_ips.contains(&ip_str) {
-                    return Err(AdapterError::Connection(format!(
-                        "IP {} not in whitelist",
-                        ip_str
-                    )));
-                }
+            && let Some(ip) = remote_ip
+        {
+            let ip_str = ip.to_string();
+            if !self.config.allowed_ips.contains(&ip_str) {
+                return Err(AdapterError::Connection(format!(
+                    "IP {} not in whitelist",
+                    ip_str
+                )));
             }
+        }
 
         Ok(())
     }
@@ -263,9 +254,7 @@ impl WebhookAdapter {
             let (count, _) = counts.entry(device_id.to_string()).or_insert((0, now));
 
             if *count >= limit {
-                return Err(AdapterError::Connection(
-                    "Rate limit exceeded".to_string(),
-                ));
+                return Err(AdapterError::Connection("Rate limit exceeded".to_string()));
             }
 
             *count += 1;
@@ -286,9 +275,9 @@ impl WebhookAdapter {
         // Check rate limit
         self.check_rate_limit(&device_id).await?;
 
-        let timestamp = payload.timestamp.unwrap_or_else(|| {
-            chrono::Utc::now().timestamp()
-        });
+        let timestamp = payload
+            .timestamp
+            .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
         // Get device type from registry for template-driven extraction
         let device_type = self
@@ -321,7 +310,10 @@ impl WebhookAdapter {
         let mut metrics_count = 0;
 
         // Use UnifiedExtractor for consistent data processing
-        let result = self.extractor.extract(&device_id, &device_type, &payload.data).await;
+        let result = self
+            .extractor
+            .extract(&device_id, &device_type, &payload.data)
+            .await;
 
         // Emit all extracted metrics
         for metric in result.metrics {
@@ -332,7 +324,10 @@ impl WebhookAdapter {
 
         // Log warnings if any
         for warning in &result.warnings {
-            warn!("Extraction warning for webhook device '{}': {}", device_id, warning);
+            warn!(
+                "Extraction warning for webhook device '{}': {}",
+                device_id, warning
+            );
         }
 
         info!(
@@ -388,13 +383,16 @@ impl WebhookAdapter {
                 MetricValue::Boolean(b) => neomind_core::MetricValue::Boolean(*b),
                 MetricValue::Array(arr) => {
                     // Convert array to JSON
-                    let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
-                        MetricValue::Integer(i) => serde_json::json!(*i),
-                        MetricValue::Float(f) => serde_json::json!(*f),
-                        MetricValue::String(s) => serde_json::json!(s),
-                        MetricValue::Boolean(b) => serde_json::json!(*b),
-                        _ => serde_json::json!(null),
-                    }).collect();
+                    let json_arr: Vec<serde_json::Value> = arr
+                        .iter()
+                        .map(|v| match v {
+                            MetricValue::Integer(i) => serde_json::json!(*i),
+                            MetricValue::Float(f) => serde_json::json!(*f),
+                            MetricValue::String(s) => serde_json::json!(s),
+                            MetricValue::Boolean(b) => serde_json::json!(*b),
+                            _ => serde_json::json!(null),
+                        })
+                        .collect();
                     neomind_core::MetricValue::Json(serde_json::json!(json_arr))
                 }
                 MetricValue::Binary(_) => neomind_core::MetricValue::Json(serde_json::json!(null)),
@@ -429,10 +427,7 @@ impl DeviceAdapter for WebhookAdapter {
     }
 
     fn is_running(&self) -> bool {
-        self.running
-            .try_read()
-            .map(|r| *r)
-            .unwrap_or(false)
+        self.running.try_read().map(|r| *r).unwrap_or(false)
     }
 
     async fn start(&self) -> AdapterResult<()> {
@@ -472,10 +467,7 @@ impl DeviceAdapter for WebhookAdapter {
     }
 
     fn device_count(&self) -> usize {
-        self.devices
-            .try_read()
-            .map(|d| d.len())
-            .unwrap_or(0)
+        self.devices.try_read().map(|d| d.len()).unwrap_or(0)
     }
 
     fn list_devices(&self) -> Vec<String> {
@@ -555,9 +547,11 @@ pub fn create_webhook_adapter(
 ) -> Arc<WebhookAdapter> {
     let event_bus_arc = Arc::new(event_bus.clone());
 
-    Arc::new(
-        WebhookAdapter::new(config, Some(event_bus_arc), device_registry)
-    )
+    Arc::new(WebhookAdapter::new(
+        config,
+        Some(event_bus_arc),
+        device_registry,
+    ))
 }
 
 #[cfg(test)]
@@ -591,11 +585,7 @@ mod tests {
     #[test]
     fn test_unified_extractor_conversion() {
         let config = WebhookAdapterConfig::new("test");
-        let adapter = WebhookAdapter::new(
-            config,
-            None,
-            Arc::new(DeviceRegistry::new()),
-        );
+        let adapter = WebhookAdapter::new(config, None, Arc::new(DeviceRegistry::new()));
 
         use serde_json::json;
 
@@ -627,11 +617,7 @@ mod tests {
     #[test]
     fn test_get_webhook_url() {
         let config = WebhookAdapterConfig::new("test");
-        let adapter = WebhookAdapter::new(
-            config,
-            None,
-            Arc::new(DeviceRegistry::new()),
-        );
+        let adapter = WebhookAdapter::new(config, None, Arc::new(DeviceRegistry::new()));
 
         let url = adapter.get_webhook_url("http://localhost:3000", "sensor01");
         assert_eq!(url, "http://localhost:3000/api/devices/webhook/sensor01");

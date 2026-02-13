@@ -14,13 +14,12 @@
 //! let confirm_tool = ConfirmActionTool::new();
 //! ```
 
-
 use async_trait::async_trait;
 use serde_json::Value;
 
+use neomind_core::tools::ToolCategory;
 use neomind_tools::tool::{array_property, object_schema, string_property};
 use neomind_tools::{Tool, ToolDefinition, ToolOutput};
-use neomind_core::tools::ToolCategory;
 
 /// Ask User Tool - enables LLM to request information from users.
 ///
@@ -46,7 +45,8 @@ impl AskUserTool {
     fn format_question(&self, question: &str, options: Option<&[String]>) -> String {
         let mut result = format!("❓ {}", question);
         if let Some(opts) = options
-            && !opts.is_empty() {
+            && !opts.is_empty()
+        {
             result.push_str("\n\n可选答案:\n");
             for (i, opt) in opts.iter().enumerate() {
                 result.push_str(&format!("  {}. {}\n", i + 1, opt));
@@ -197,12 +197,19 @@ impl ConfirmActionTool {
     /// Check if an action requires confirmation.
     pub fn requires_confirmation(&self, action_name: &str) -> bool {
         let dangerous_actions = [
-            "delete", "remove", "clear", "reset", "format",
-            "关闭所有", "全部关闭", "删除所有", "批量删除",
+            "delete",
+            "remove",
+            "clear",
+            "reset",
+            "format",
+            "关闭所有",
+            "全部关闭",
+            "删除所有",
+            "批量删除",
         ];
-        dangerous_actions.iter().any(|&danger| {
-            action_name.to_lowercase().contains(danger)
-        })
+        dangerous_actions
+            .iter()
+            .any(|&danger| action_name.to_lowercase().contains(danger))
     }
 }
 
@@ -259,9 +266,7 @@ impl Tool for ConfirmActionTool {
         })?;
 
         let description = args["description"].as_str();
-        let risk_level = args["risk_level"]
-            .as_str()
-            .unwrap_or("medium");
+        let risk_level = args["risk_level"].as_str().unwrap_or("medium");
 
         let formatted = self.format_confirmation(action, description);
 
@@ -357,11 +362,12 @@ impl Tool for ClarifyIntentTool {
             neomind_tools::ToolError::InvalidArguments("question must be a string".to_string())
         })?;
 
-        let possible_intents: Option<Vec<String>> = args["possible_intents"].as_array().map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        });
+        let possible_intents: Option<Vec<String>> =
+            args["possible_intents"].as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            });
 
         let formatted = if let Some(intents) = &possible_intents {
             let mut result = format!("🤔 {}", question);
@@ -440,7 +446,12 @@ mod tests {
 
         let result = tool.execute(args).await.unwrap();
         assert!(result.success);
-        assert!(result.data["formatted"].as_str().unwrap().contains("客厅灯"));
+        assert!(
+            result.data["formatted"]
+                .as_str()
+                .unwrap()
+                .contains("客厅灯")
+        );
     }
 
     #[tokio::test]

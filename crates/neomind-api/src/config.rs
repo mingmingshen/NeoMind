@@ -40,14 +40,15 @@ impl ConfigSource {
     /// Priority: redb > TOML > Env
     fn detect() -> Self {
         // Try redb database first (highest priority - Web UI saved settings)
-        if let Ok(store) = get_settings_store()
-            && store.has_llm_settings() {
+        if let Ok(store) = get_settings_store() {
+            if store.get_llm_settings().model != "default" {
                 info!(
                     category = "config",
                     "Loading config from: {} (redb database)", SETTINGS_DB_PATH
                 );
                 return ConfigSource::Database;
             }
+        }
 
         // Try TOML second
         if let Ok(content) = std::fs::read_to_string("config.toml") {
@@ -107,7 +108,7 @@ impl ConfigSource {
                     .unwrap_or_else(|| endpoints::ANTHROPIC.to_string());
                 let api_key = settings.api_key.unwrap_or_default();
                 info!(category = "ai", backend = "anthropic", endpoint = %endpoint, model = %settings.model, "DB config: Anthropic");
-                Some(LlmBackend::OpenAi {
+                Some(LlmBackend::Anthropic {
                     api_key,
                     endpoint,
                     model: settings.model,
@@ -119,7 +120,7 @@ impl ConfigSource {
                     .unwrap_or_else(|| endpoints::GOOGLE.to_string());
                 let api_key = settings.api_key.unwrap_or_default();
                 info!(category = "ai", backend = "google", endpoint = %endpoint, model = %settings.model, "DB config: Google");
-                Some(LlmBackend::OpenAi {
+                Some(LlmBackend::Google {
                     api_key,
                     endpoint,
                     model: settings.model,
@@ -131,7 +132,55 @@ impl ConfigSource {
                     .unwrap_or_else(|| endpoints::XAI.to_string());
                 let api_key = settings.api_key.unwrap_or_default();
                 info!(category = "ai", backend = "xai", endpoint = %endpoint, model = %settings.model, "DB config: xAI");
-                Some(LlmBackend::OpenAi {
+                Some(LlmBackend::XAi {
+                    api_key,
+                    endpoint,
+                    model: settings.model,
+                })
+            }
+            LlmBackendType::Qwen => {
+                let endpoint = settings
+                    .endpoint
+                    .unwrap_or_else(|| endpoints::QWEN.to_string());
+                let api_key = settings.api_key.unwrap_or_default();
+                info!(category = "ai", backend = "qwen", endpoint = %endpoint, model = %settings.model, "DB config: Qwen");
+                Some(LlmBackend::Qwen {
+                    api_key,
+                    endpoint,
+                    model: settings.model,
+                })
+            }
+            LlmBackendType::DeepSeek => {
+                let endpoint = settings
+                    .endpoint
+                    .unwrap_or_else(|| endpoints::DEEPSEEK.to_string());
+                let api_key = settings.api_key.unwrap_or_default();
+                info!(category = "ai", backend = "deepseek", endpoint = %endpoint, model = %settings.model, "DB config: DeepSeek");
+                Some(LlmBackend::DeepSeek {
+                    api_key,
+                    endpoint,
+                    model: settings.model,
+                })
+            }
+            LlmBackendType::GLM => {
+                let endpoint = settings
+                    .endpoint
+                    .unwrap_or_else(|| endpoints::GLM.to_string());
+                let api_key = settings.api_key.unwrap_or_default();
+                info!(category = "ai", backend = "glm", endpoint = %endpoint, model = %settings.model, "DB config: GLM");
+                Some(LlmBackend::GLM {
+                    api_key,
+                    endpoint,
+                    model: settings.model,
+                })
+            }
+            LlmBackendType::MiniMax => {
+                let endpoint = settings
+                    .endpoint
+                    .unwrap_or_else(|| endpoints::MINIMAX.to_string());
+                let api_key = settings.api_key.unwrap_or_default();
+                info!(category = "ai", backend = "minimax", endpoint = %endpoint, model = %settings.model, "DB config: MiniMax");
+                Some(LlmBackend::MiniMax {
                     api_key,
                     endpoint,
                     model: settings.model,
@@ -222,7 +271,7 @@ pub fn load_llm_config() -> Option<LlmBackend> {
 pub async fn save_llm_settings(settings: &LlmSettings) -> Result<(), Box<dyn std::error::Error>> {
     let store = neomind_storage::SettingsStore::open(SETTINGS_DB_PATH)?;
     store.save_llm_settings(settings)?;
-    info!(category = "ai", backend = %settings.backend_name(), model = %settings.model, "Saved LLM settings to database");
+    info!(category = "ai", backend = format_args!("{:?}", settings.backend), model = %settings.model, "Saved LLM settings to database");
     Ok(())
 }
 
@@ -230,7 +279,7 @@ pub async fn save_llm_settings(settings: &LlmSettings) -> Result<(), Box<dyn std
 pub async fn load_llm_settings_from_db() -> Result<Option<LlmSettings>, Box<dyn std::error::Error>>
 {
     let store = get_settings_store()?;
-    Ok(store.load_llm_settings()?)
+    Ok(Some(store.get_llm_settings()))
 }
 
 /// Get the settings store (for advanced usage).
@@ -301,8 +350,24 @@ pub struct LlmSettingsRequest {
 impl LlmSettingsRequest {
     /// Convert to LlmSettings.
     pub fn to_llm_settings(&self) -> LlmSettings {
-        let backend = LlmSettings::from_backend_name(&self.backend).unwrap_or_default();
-
+        use neomind_storage::LlmBackendType;
+        // Parse backend string to LlmBackendType
+        let backend_type = match self.backend.as_str() {
+            "ollama" => LlmBackendType::Ollama,
+            "openai" => LlmBackendType::OpenAi,
+            "anthropic" => LlmBackendType::Anthropic,
+            "google" => LlmBackendType::Google,
+            "xai" => LlmBackendType::XAi,
+            "qwen" => LlmBackendType::Qwen,
+            "deepseek" => LlmBackendType::DeepSeek,
+            "glm" => LlmBackendType::GLM,
+            "minimax" => LlmBackendType::MiniMax,
+            _ => LlmBackendType::Ollama, // default
+        };
+        let backend = LlmSettings {
+            backend: backend_type,
+            ..Default::default()
+        };
         LlmSettings {
             backend: backend.backend,
             endpoint: self.endpoint.clone(),
@@ -389,15 +454,33 @@ struct TomlMemoryConfig {
     bm25_weight: f32,
 }
 
-fn default_max_short_term_messages() -> usize { 100 }
-fn default_max_short_term_tokens() -> usize { 4000 }
-fn default_max_mid_term_entries() -> usize { 1000 }
-fn default_max_long_term_knowledge() -> usize { 10000 }
-fn default_embedding_dim() -> usize { 64 }
-fn default_embedding_provider() -> String { "simple".to_string() }
-fn default_use_hybrid_search() -> bool { true }
-fn default_semantic_weight() -> f32 { 0.7 }
-fn default_bm25_weight() -> f32 { 0.3 }
+fn default_max_short_term_messages() -> usize {
+    100
+}
+fn default_max_short_term_tokens() -> usize {
+    4000
+}
+fn default_max_mid_term_entries() -> usize {
+    1000
+}
+fn default_max_long_term_knowledge() -> usize {
+    10000
+}
+fn default_embedding_dim() -> usize {
+    64
+}
+fn default_embedding_provider() -> String {
+    "simple".to_string()
+}
+fn default_use_hybrid_search() -> bool {
+    true
+}
+fn default_semantic_weight() -> f32 {
+    0.7
+}
+fn default_bm25_weight() -> f32 {
+    0.3
+}
 
 /// Load memory configuration from config.toml.
 ///
@@ -419,9 +502,9 @@ pub fn load_memory_config() -> Option<TieredMemoryConfig> {
     // Build embedding config from TOML settings
     let embedding_config = match memory.embedding_provider.as_str() {
         "ollama" => {
-            let model = memory.embedding_model.unwrap_or_else(|| {
-                "nomic-embed-text".to_string()
-            });
+            let model = memory
+                .embedding_model
+                .unwrap_or_else(|| "nomic-embed-text".to_string());
             let mut config = EmbeddingConfig::ollama(&model);
             if let Some(endpoint) = memory.embedding_endpoint {
                 config = config.with_endpoint(&endpoint);
@@ -430,9 +513,9 @@ pub fn load_memory_config() -> Option<TieredMemoryConfig> {
         }
         "openai" => {
             let api_key = memory.embedding_api_key?;
-            let model = memory.embedding_model.unwrap_or_else(|| {
-                "text-embedding-3-small".to_string()
-            });
+            let model = memory
+                .embedding_model
+                .unwrap_or_else(|| "text-embedding-3-small".to_string());
             let mut config = EmbeddingConfig::openai(&model, &api_key);
             if let Some(endpoint) = memory.embedding_endpoint {
                 config = config.with_endpoint(&endpoint);
@@ -535,7 +618,10 @@ embedding_model = "nomic-embed-text"
         let memory = config.memory.unwrap();
 
         assert_eq!(memory.embedding_provider, "ollama");
-        assert_eq!(memory.embedding_endpoint, Some("http://localhost:11434".to_string()));
+        assert_eq!(
+            memory.embedding_endpoint,
+            Some("http://localhost:11434".to_string())
+        );
         assert_eq!(memory.embedding_model, Some("nomic-embed-text".to_string()));
     }
 
@@ -552,6 +638,9 @@ embedding_model = "text-embedding-3-small"
 
         assert_eq!(memory.embedding_provider, "openai");
         assert_eq!(memory.embedding_api_key, Some("sk-test123".to_string()));
-        assert_eq!(memory.embedding_model, Some("text-embedding-3-small".to_string()));
+        assert_eq!(
+            memory.embedding_model,
+            Some("text-embedding-3-small".to_string())
+        );
     }
 }

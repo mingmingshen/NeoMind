@@ -26,16 +26,14 @@
 //! data_path = "$.temperature"  # JSONPath to extract value
 //! ```
 
-use crate::adapter::{
-    AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent,
-};
+use crate::adapter::{AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent};
 use crate::mdl::MetricValue;
 use crate::registry::DeviceRegistry;
 use crate::telemetry::TimeSeriesStorage;
 use crate::unified_extractor::UnifiedExtractor;
 use async_trait::async_trait;
-use neomind_core::EventBus;
 use futures::Stream;
+use neomind_core::EventBus;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -259,7 +257,7 @@ impl HttpAdapter {
                 return Err(AdapterError::Configuration(format!(
                     "Unsupported HTTP method: {}",
                     device.method
-                )))
+                )));
             }
         };
 
@@ -326,14 +324,18 @@ impl HttpAdapter {
                 // Convert JSONPath-style path to dot notation for UnifiedExtractor
                 // $.data.temperature -> data.temperature
                 let dot_path = path.replace("$.", "").replace("$.", "");
-                match self.extractor.extract_by_path(&json, &dot_path, 0)
-                    .map_err(|e| AdapterError::Communication(format!("Path extraction failed: {}", e)))? {
+                match self
+                    .extractor
+                    .extract_by_path(&json, &dot_path, 0)
+                    .map_err(|e| {
+                        AdapterError::Communication(format!("Path extraction failed: {}", e))
+                    })? {
                     Some(v) => v,
                     None => {
                         return Err(AdapterError::Communication(format!(
                             "Data path '{}' not found in response",
                             path
-                        )))
+                        )));
                     }
                 }
             } else {
@@ -407,14 +409,17 @@ impl HttpAdapter {
                 let telemetry_storage = storage_guard.as_ref().cloned();
 
                 tokio::spawn(async move {
-                    match adapter.poll_device(&HttpPollingTask {
-                        device_id: device_id.clone(),
-                        config: config.clone(),
-                        last_poll: Instant::now(),
-                        next_poll: Instant::now(),
-                        error_count: 0,
-                        is_running: true,
-                    }).await {
+                    match adapter
+                        .poll_device(&HttpPollingTask {
+                            device_id: device_id.clone(),
+                            config: config.clone(),
+                            last_poll: Instant::now(),
+                            next_poll: Instant::now(),
+                            error_count: 0,
+                            is_running: true,
+                        })
+                        .await
+                    {
                         Ok(events) => {
                             for event in events {
                                 // Publish to event channel
@@ -434,15 +439,15 @@ impl HttpAdapter {
                                         value,
                                         timestamp,
                                     } = event
-                                    {
-                                        use crate::telemetry::DataPoint;
-                                        let data_point = DataPoint {
-                                            timestamp,
-                                            value: value.clone(),
-                                            quality: None,
-                                        };
-                                        let _ = storage.write(&device_id, &metric, data_point).await;
-                                    }
+                                {
+                                    use crate::telemetry::DataPoint;
+                                    let data_point = DataPoint {
+                                        timestamp,
+                                        value: value.clone(),
+                                        quality: None,
+                                    };
+                                    let _ = storage.write(&device_id, &metric, data_point).await;
+                                }
                             }
                         }
                         Err(e) => {
@@ -470,10 +475,7 @@ impl DeviceAdapter for HttpAdapter {
 
     fn is_running(&self) -> bool {
         // Use try_read to avoid blocking in async runtime
-        self.running
-            .try_read()
-            .map(|r| *r)
-            .unwrap_or(false)
+        self.running.try_read().map(|r| *r).unwrap_or(false)
     }
 
     async fn start(&self) -> AdapterResult<()> {
@@ -488,7 +490,11 @@ impl DeviceAdapter for HttpAdapter {
         *tasks = self.init_polling_tasks();
         drop(tasks);
 
-        info!("HTTP adapter '{}' started with {} devices", self.name, self.config.devices.len());
+        info!(
+            "HTTP adapter '{}' started with {} devices",
+            self.name,
+            self.config.devices.len()
+        );
 
         // Start polling loop - spawn a background task for polling
         // We need to clone Arc references to use in the spawned task
@@ -556,10 +562,7 @@ impl DeviceAdapter for HttpAdapter {
             .ok_or_else(|| AdapterError::DeviceNotFound(device_id.to_string()))?;
 
         // Use command_url if specified, otherwise use device URL
-        let url = device
-            .command_url
-            .as_ref()
-            .unwrap_or(&device.url);
+        let url = device.command_url.as_ref().unwrap_or(&device.url);
 
         // Build request
         let mut request = match device.command_method.as_str() {
@@ -569,7 +572,7 @@ impl DeviceAdapter for HttpAdapter {
                 return Err(AdapterError::Configuration(format!(
                     "Unsupported command method: {}",
                     device.command_method
-                )))
+                )));
             }
         };
 
@@ -627,24 +630,36 @@ impl DeviceAdapter for HttpAdapter {
             // Extract HTTP-specific config from connection_config.extra
             let cc = &device.connection_config;
 
-            let url = cc.extra.get("url")
+            let url = cc
+                .extra
+                .get("url")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| AdapterError::Configuration("Missing url in connection_config".to_string()))?;
+                .ok_or_else(|| {
+                    AdapterError::Configuration("Missing url in connection_config".to_string())
+                })?;
 
-            let method = cc.extra.get("method")
+            let method = cc
+                .extra
+                .get("method")
                 .and_then(|v| v.as_str())
                 .unwrap_or("GET")
                 .to_string();
 
-            let poll_interval = cc.extra.get("poll_interval")
+            let poll_interval = cc
+                .extra
+                .get("poll_interval")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(60);
 
-            let data_path = cc.extra.get("data_path")
+            let data_path = cc
+                .extra
+                .get("data_path")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
-            let timeout = cc.extra.get("timeout")
+            let timeout = cc
+                .extra
+                .get("timeout")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(10);
 
@@ -663,10 +678,14 @@ impl DeviceAdapter for HttpAdapter {
                 content_type: "json".to_string(),
                 timeout,
                 device_type: Some(device.device_type.clone()),
-                command_url: cc.extra.get("command_url")
+                command_url: cc
+                    .extra
+                    .get("command_url")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                command_method: cc.extra.get("command_method")
+                command_method: cc
+                    .extra
+                    .get("command_method")
                     .and_then(|v| v.as_str())
                     .unwrap_or("POST")
                     .to_string(),
@@ -733,7 +752,11 @@ pub fn create_http_adapter(
     // Convert &EventBus to Arc<EventBus>
     let event_bus_arc = Arc::new(event_bus.clone());
 
-    Arc::new(HttpAdapter::new(config, Some(event_bus_arc), device_registry))
+    Arc::new(HttpAdapter::new(
+        config,
+        Some(event_bus_arc),
+        device_registry,
+    ))
 }
 
 #[cfg(test)]
@@ -756,7 +779,10 @@ mod tests {
             .with_header("X-API-Key", "test123")
             .with_auth("token456");
 
-        assert_eq!(config.headers.get("X-API-Key"), Some(&"test123".to_string()));
+        assert_eq!(
+            config.headers.get("X-API-Key"),
+            Some(&"test123".to_string())
+        );
         assert_eq!(config.auth_token, Some("token456".to_string()));
     }
 
@@ -776,7 +802,9 @@ mod tests {
         });
 
         // Test dot notation extraction (UnifiedExtractor)
-        let result = adapter.extractor.extract_by_path(&json, "data.temperature", 0);
+        let result = adapter
+            .extractor
+            .extract_by_path(&json, "data.temperature", 0);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Some(json!(25.5)));
 

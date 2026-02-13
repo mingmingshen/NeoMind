@@ -223,8 +223,7 @@ impl Default for ToolExecutionHistory {
 }
 
 /// Statistics about tool executions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ToolExecutionStats {
     /// Total number of executions
     pub total_count: usize,
@@ -237,8 +236,6 @@ pub struct ToolExecutionStats {
     /// Average execution duration in milliseconds
     pub avg_duration_ms: u64,
 }
-
-
 
 /// Configuration for tool execution retry behavior.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -597,9 +594,7 @@ impl EventIntegratedToolRegistry {
         }
 
         // Should not reach here, but handle the case
-        Err(last_error.unwrap_or(ToolError::Execution(
-            "Unknown error".to_string(),
-        )))
+        Err(last_error.unwrap_or(ToolError::Execution("Unknown error".to_string())))
     }
 
     /// Publish tool execution start event.
@@ -813,7 +808,7 @@ impl ToolErrorExt for ToolError {
 mod tests {
     use super::*;
     use neomind_tools::ToolRegistryBuilder;
-    use neomind_tools::tool::{Tool, ToolOutput, ToolCategory};
+    use neomind_tools::tool::{Tool, ToolCategory, ToolOutput};
     use std::sync::Arc;
 
     /// Simple mock tool for testing
@@ -845,7 +840,10 @@ mod tests {
             })
         }
 
-        async fn execute(&self, _args: serde_json::Value) -> Result<ToolOutput, neomind_tools::ToolError> {
+        async fn execute(
+            &self,
+            _args: serde_json::Value,
+        ) -> Result<ToolOutput, neomind_tools::ToolError> {
             Ok(ToolOutput {
                 success: true,
                 data: serde_json::json!({"status": "ok"}),
@@ -974,7 +972,10 @@ mod tests {
     async fn test_event_integrated_registry() {
         let registry = ToolRegistryBuilder::new()
             .with_tool(Arc::new(MockTool::new("query_data", "Query data tool")))
-            .with_tool(Arc::new(MockTool::new("control_device", "Control device tool")))
+            .with_tool(Arc::new(MockTool::new(
+                "control_device",
+                "Control device tool",
+            )))
             .with_tool(Arc::new(MockTool::new("list_devices", "List devices tool")))
             .with_tool(Arc::new(MockTool::new("create_rule", "Create rule tool")))
             .with_tool(Arc::new(MockTool::new("list_rules", "List rules tool")))

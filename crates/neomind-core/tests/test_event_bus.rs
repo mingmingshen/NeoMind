@@ -1,5 +1,5 @@
 //! Simple standalone test for EventBus functionality
-use neomind_core::{EventBus, event::NeoMindEvent, MetricValue};
+use neomind_core::{EventBus, MetricValue, event::NeoMindEvent};
 
 #[tokio::main]
 async fn main() {
@@ -15,10 +15,12 @@ async fn main() {
         let mut count = 0;
         while let Some((event, _meta)) = receiver.recv().await {
             count += 1;
-            println!("[{}] Event #{}: {}",
+            println!(
+                "[{}] Event #{}: {}",
                 std::any::type_name::<NeoMindEvent>(),
                 count,
-                event.type_name());
+                event.type_name()
+            );
         }
         println!("Total events received: {}", count);
     });

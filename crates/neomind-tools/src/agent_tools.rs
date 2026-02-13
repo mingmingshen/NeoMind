@@ -13,12 +13,18 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use super::error::Result;
-use super::tool::{Tool, ToolDefinition, ToolOutput, object_schema, string_property, boolean_property, number_property};
 use super::error::ToolError;
-use neomind_core::tools::{ToolExample, UsageScenario, ToolCategory, ToolRelationships};
+use super::tool::{
+    Tool, ToolDefinition, ToolOutput, boolean_property, number_property, object_schema,
+    string_property,
+};
+use neomind_core::tools::{ToolCategory, ToolExample, ToolRelationships, UsageScenario};
 
 use neomind_storage::AgentStore;
-use neomind_storage::agents::{AgentFilter, AgentStatus, ScheduleType, LearnedPattern, ParsedIntent, IntentType, AgentResource, ResourceType};
+use neomind_storage::agents::{
+    AgentFilter, AgentResource, AgentStatus, IntentType, LearnedPattern, ParsedIntent,
+    ResourceType, ScheduleType,
+};
 
 // Optional dependency for device resolution
 use neomind_devices::DeviceService;
@@ -56,7 +62,7 @@ impl Tool for ListAgentsTool {
                 "schedule_type": string_property("可选，按调度类型过滤：event, cron, interval, once"),
                 "limit": number_property("可选，限制返回数量，默认20")
             }),
-            vec![]
+            vec![],
         )
     }
 
@@ -91,18 +97,29 @@ impl Tool for ListAgentsTool {
                 UsageScenario {
                     description: "查看所有活跃Agent".to_string(),
                     example_query: "有哪些正在运行的Agent？".to_string(),
-                    suggested_call: Some(r#"{"tool": "list_agents", "arguments": {"status": "active"}}"#.to_string()),
+                    suggested_call: Some(
+                        r#"{"tool": "list_agents", "arguments": {"status": "active"}}"#.to_string(),
+                    ),
                 },
                 UsageScenario {
                     description: "查看事件触发的Agent".to_string(),
                     example_query: "哪些Agent是事件触发的？".to_string(),
-                    suggested_call: Some(r#"{"tool": "list_agents", "arguments": {"schedule_type": "event"}}"#.to_string()),
+                    suggested_call: Some(
+                        r#"{"tool": "list_agents", "arguments": {"schedule_type": "event"}}"#
+                            .to_string(),
+                    ),
                 },
             ],
             relationships: ToolRelationships {
                 call_after: vec![],
                 // 输出智能体列表，供后续工具使用
-                output_to: vec!["get_agent".to_string(), "execute_agent".to_string(), "control_agent".to_string(), "get_agent_executions".to_string(), "create_agent".to_string()],
+                output_to: vec![
+                    "get_agent".to_string(),
+                    "execute_agent".to_string(),
+                    "control_agent".to_string(),
+                    "get_agent_executions".to_string(),
+                    "create_agent".to_string(),
+                ],
                 exclusive_with: vec![],
             },
             deprecated: false,
@@ -149,7 +166,10 @@ impl Tool for ListAgentsTool {
         }
 
         // Query agents
-        let agents = self.agent_store.query_agents(filter).await
+        let agents = self
+            .agent_store
+            .query_agents(filter)
+            .await
             .map_err(|e| ToolError::Execution(format!("Failed to query agents: {}", e)))?;
 
         // Convert to response format
@@ -209,7 +229,7 @@ impl Tool for GetAgentTool {
             serde_json::json!({
                 "agent_id": string_property("Agent的唯一ID")
             }),
-            vec!["agent_id".to_string()]
+            vec!["agent_id".to_string()],
         )
     }
 
@@ -244,13 +264,13 @@ impl Tool for GetAgentTool {
                 description: "获取Agent详细信息".to_string(),
             }),
             category: ToolCategory::Agent,
-            scenarios: vec![
-                UsageScenario {
-                    description: "查看Agent详情".to_string(),
-                    example_query: "温度监控Agent的详细配置是什么？".to_string(),
-                    suggested_call: Some(r#"{"tool": "get_agent", "arguments": {"agent_id": "agent_1"}}"#.to_string()),
-                },
-            ],
+            scenarios: vec![UsageScenario {
+                description: "查看Agent详情".to_string(),
+                example_query: "温度监控Agent的详细配置是什么？".to_string(),
+                suggested_call: Some(
+                    r#"{"tool": "get_agent", "arguments": {"agent_id": "agent_1"}}"#.to_string(),
+                ),
+            }],
             relationships: ToolRelationships {
                 call_after: vec!["list_agents".to_string()],
                 output_to: vec!["execute_agent".to_string(), "control_agent".to_string()],
@@ -274,7 +294,10 @@ impl Tool for GetAgentTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("agent_id is required".to_string()))?;
 
-        let agent = self.agent_store.get_agent(agent_id).await
+        let agent = self
+            .agent_store
+            .get_agent(agent_id)
+            .await
             .map_err(|e| ToolError::Execution(format!("Failed to get agent: {}", e)))?
             .ok_or_else(|| ToolError::Execution(format!("Agent '{}' not found", agent_id)))?;
 
@@ -355,7 +378,7 @@ impl Tool for ExecuteAgentTool {
                 "agent_id": string_property("要执行的Agent ID"),
                 "force": boolean_property("是否强制执行（忽略Agent状态），默认false")
             }),
-            vec!["agent_id".to_string()]
+            vec!["agent_id".to_string()],
         )
     }
 
@@ -379,13 +402,14 @@ impl Tool for ExecuteAgentTool {
                 description: "手动执行温度监控Agent".to_string(),
             }),
             category: ToolCategory::Agent,
-            scenarios: vec![
-                UsageScenario {
-                    description: "立即执行Agent".to_string(),
-                    example_query: "立即执行温度检查".to_string(),
-                    suggested_call: Some(r#"{"tool": "execute_agent", "arguments": {"agent_id": "agent_1"}}"#.to_string()),
-                },
-            ],
+            scenarios: vec![UsageScenario {
+                description: "立即执行Agent".to_string(),
+                example_query: "立即执行温度检查".to_string(),
+                suggested_call: Some(
+                    r#"{"tool": "execute_agent", "arguments": {"agent_id": "agent_1"}}"#
+                        .to_string(),
+                ),
+            }],
             relationships: ToolRelationships {
                 call_after: vec!["list_agents".to_string(), "get_agent".to_string()],
                 output_to: vec!["agent_memory".to_string()],
@@ -412,7 +436,10 @@ impl Tool for ExecuteAgentTool {
         let force = args["force"].as_bool().unwrap_or(false);
 
         // Check if agent exists
-        let agent = self.agent_store.get_agent(agent_id).await
+        let agent = self
+            .agent_store
+            .get_agent(agent_id)
+            .await
             .map_err(|e| ToolError::Execution(format!("Failed to get agent: {}", e)))?
             .ok_or_else(|| ToolError::Execution(format!("Agent '{}' not found", agent_id)))?;
 
@@ -470,7 +497,7 @@ impl Tool for ControlAgentTool {
                 "agent_id": string_property("要控制的Agent ID"),
                 "action": string_property("操作类型：pause（暂停）、resume（恢复）、delete（删除）")
             }),
-            vec!["agent_id".to_string(), "action".to_string()]
+            vec!["agent_id".to_string(), "action".to_string()],
         )
     }
 
@@ -533,13 +560,18 @@ impl Tool for ControlAgentTool {
             .ok_or_else(|| ToolError::InvalidArguments("action is required".to_string()))?;
 
         // Verify agent exists
-        let agent = self.agent_store.get_agent(agent_id).await
+        let agent = self
+            .agent_store
+            .get_agent(agent_id)
+            .await
             .map_err(|e| ToolError::Execution(format!("Failed to get agent: {}", e)))?
             .ok_or_else(|| ToolError::Execution(format!("Agent '{}' not found", agent_id)))?;
 
         match action {
             "pause" => {
-                self.agent_store.update_agent_status(agent_id, AgentStatus::Paused, None).await
+                self.agent_store
+                    .update_agent_status(agent_id, AgentStatus::Paused, None)
+                    .await
                     .map_err(|e| ToolError::Execution(format!("Failed to pause agent: {}", e)))?;
                 Ok(ToolOutput::success(serde_json::json!({
                     "agent_id": agent_id,
@@ -550,7 +582,9 @@ impl Tool for ControlAgentTool {
                 })))
             }
             "resume" => {
-                self.agent_store.update_agent_status(agent_id, AgentStatus::Active, None).await
+                self.agent_store
+                    .update_agent_status(agent_id, AgentStatus::Active, None)
+                    .await
                     .map_err(|e| ToolError::Execution(format!("Failed to resume agent: {}", e)))?;
                 Ok(ToolOutput::success(serde_json::json!({
                     "agent_id": agent_id,
@@ -561,7 +595,9 @@ impl Tool for ControlAgentTool {
                 })))
             }
             "delete" => {
-                self.agent_store.delete_agent(agent_id).await
+                self.agent_store
+                    .delete_agent(agent_id)
+                    .await
                     .map_err(|e| ToolError::Execution(format!("Failed to delete agent: {}", e)))?;
                 Ok(ToolOutput::success(serde_json::json!({
                     "agent_id": agent_id,
@@ -571,12 +607,10 @@ impl Tool for ControlAgentTool {
                     "message": "Agent已删除"
                 })))
             }
-            _ => {
-                Err(ToolError::InvalidArguments(format!(
-                    "Unknown action: {}. Must be pause, resume, or delete",
-                    action
-                )))
-            }
+            _ => Err(ToolError::InvalidArguments(format!(
+                "Unknown action: {}. Must be pause, resume, or delete",
+                action
+            ))),
         }
     }
 }
@@ -634,7 +668,7 @@ impl Tool for CreateAgentTool {
                 "description": string_property("Agent功能的自然语言描述"),
                 "name": string_property("可选，Agent名称。如果不提供，会自动生成")
             }),
-            vec!["description".to_string()]
+            vec!["description".to_string()],
         )
     }
 
@@ -692,9 +726,7 @@ impl Tool for CreateAgentTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("description is required".to_string()))?;
 
-        let name = args["name"].as_str()
-            .unwrap_or("新建Agent")
-            .to_string();
+        let name = args["name"].as_str().unwrap_or("新建Agent").to_string();
 
         // Generate new agent ID
         let agent_id = format!("agent_{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
@@ -704,7 +736,8 @@ impl Tool for CreateAgentTool {
 
         // Step 2: Resolve device names to actual device IDs (if device service available)
         let resolved_resources = if let Some(device_service) = &self.device_service {
-            self.resolve_device_resources(device_service, &resources).await?
+            self.resolve_device_resources(device_service, &resources)
+                .await?
         } else {
             resources
         };
@@ -738,11 +771,13 @@ impl Tool for CreateAgentTool {
             context_window_size: 10,
             error_message: None,
             enable_tool_chaining: false, // Default disabled for backward compatibility
-            max_chain_depth: 3, // Default max depth
+            max_chain_depth: 3,          // Default max depth
         };
 
         // Save the agent
-        self.agent_store.save_agent(&new_agent).await
+        self.agent_store
+            .save_agent(&new_agent)
+            .await
             .map_err(|e| ToolError::Execution(format!("Failed to save agent: {}", e)))?;
 
         // Build response with parsed intent details
@@ -788,7 +823,14 @@ impl Tool for CreateAgentTool {
 
 impl CreateAgentTool {
     /// Parse intent using keyword-based parsing.
-    fn parse_intent(&self, description: &str) -> Result<(ParsedIntent, Vec<AgentResource>, Option<neomind_storage::agents::AgentSchedule>)> {
+    fn parse_intent(
+        &self,
+        description: &str,
+    ) -> Result<(
+        ParsedIntent,
+        Vec<AgentResource>,
+        Option<neomind_storage::agents::AgentSchedule>,
+    )> {
         let prompt_lower = description.to_lowercase();
 
         // Detect intent type
@@ -821,9 +863,19 @@ impl CreateAgentTool {
         let words: Vec<&str> = description.split_whitespace().collect();
         for word in words {
             // Check if it looks like a device ID (alphanumeric, 4-20 chars)
-            if word.len() >= 3 && word.len() <= 20 && word.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+            if word.len() >= 3
+                && word.len() <= 20
+                && word
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            {
                 // Skip common words
-                if !["每", "分", "钟", "小", "时", "天", "周", "月", "度", "超", "过", "低", "于", "高", "于"].contains(&word) {
+                if ![
+                    "每", "分", "钟", "小", "时", "天", "周", "月", "度", "超", "过", "低", "于",
+                    "高", "于",
+                ]
+                .contains(&word)
+                {
                     resources.push(AgentResource {
                         resource_type: ResourceType::Device,
                         resource_id: word.to_string(),
@@ -851,28 +903,70 @@ impl CreateAgentTool {
     }
 
     /// Parse schedule hint from description to determine execution frequency.
-    fn parse_schedule_hint_from_description(&self, description: &str) -> Option<neomind_storage::agents::AgentSchedule> {
+    fn parse_schedule_hint_from_description(
+        &self,
+        description: &str,
+    ) -> Option<neomind_storage::agents::AgentSchedule> {
         let hint = description.to_lowercase();
 
-        let (schedule_type, interval_seconds, cron_expression) = if hint.contains("每5分钟") || hint.contains("5分钟") {
-            (neomind_storage::agents::ScheduleType::Interval, Some(300), None)
+        let (schedule_type, interval_seconds, cron_expression) = if hint.contains("每5分钟")
+            || hint.contains("5分钟")
+        {
+            (
+                neomind_storage::agents::ScheduleType::Interval,
+                Some(300),
+                None,
+            )
         } else if hint.contains("每10分钟") || hint.contains("10分钟") {
-            (neomind_storage::agents::ScheduleType::Interval, Some(600), None)
+            (
+                neomind_storage::agents::ScheduleType::Interval,
+                Some(600),
+                None,
+            )
         } else if hint.contains("每15分钟") || hint.contains("15分钟") {
-            (neomind_storage::agents::ScheduleType::Interval, Some(900), None)
-        } else if hint.contains("每30分钟") || hint.contains("30分钟") || hint.contains("半小时") {
-            (neomind_storage::agents::ScheduleType::Interval, Some(1800), None)
+            (
+                neomind_storage::agents::ScheduleType::Interval,
+                Some(900),
+                None,
+            )
+        } else if hint.contains("每30分钟") || hint.contains("30分钟") || hint.contains("半小时")
+        {
+            (
+                neomind_storage::agents::ScheduleType::Interval,
+                Some(1800),
+                None,
+            )
         } else if hint.contains("每小时") || hint.contains("1小时") {
-            (neomind_storage::agents::ScheduleType::Interval, Some(3600), None)
+            (
+                neomind_storage::agents::ScheduleType::Interval,
+                Some(3600),
+                None,
+            )
         } else if hint.contains("每天") || hint.contains("每日") {
-            (neomind_storage::agents::ScheduleType::Cron, None, Some("0 0 * * *".to_string()))
+            (
+                neomind_storage::agents::ScheduleType::Cron,
+                None,
+                Some("0 0 * * *".to_string()),
+            )
         } else if hint.contains("每周") {
-            (neomind_storage::agents::ScheduleType::Cron, None, Some("0 0 * * 1".to_string()))
+            (
+                neomind_storage::agents::ScheduleType::Cron,
+                None,
+                Some("0 0 * * 1".to_string()),
+            )
         } else if hint.contains("每月") {
-            (neomind_storage::agents::ScheduleType::Cron, None, Some("0 0 1 * *".to_string()))
+            (
+                neomind_storage::agents::ScheduleType::Cron,
+                None,
+                Some("0 0 1 * *".to_string()),
+            )
         } else {
             // Default to 5 minutes
-            (neomind_storage::agents::ScheduleType::Interval, Some(300), None)
+            (
+                neomind_storage::agents::ScheduleType::Interval,
+                Some(300),
+                None,
+            )
         };
 
         Some(neomind_storage::agents::AgentSchedule {
@@ -941,8 +1035,7 @@ impl CreateAgentTool {
         ];
 
         for (keyword, metric) in metric_mappings {
-            if prompt.contains(keyword)
-                && !metrics.contains(&metric.to_string()) {
+            if prompt.contains(keyword) && !metrics.contains(&metric.to_string()) {
                 metrics.push(metric.to_string());
             }
         }
@@ -1016,7 +1109,12 @@ impl CreateAgentTool {
     }
 
     /// Calculate confidence in the parsing result.
-    fn calculate_confidence(&self, intent_type: &IntentType, metrics: &[String], conditions: &[String]) -> f32 {
+    fn calculate_confidence(
+        &self,
+        intent_type: &IntentType,
+        metrics: &[String],
+        conditions: &[String],
+    ) -> f32 {
         let mut confidence: f32 = 0.5; // Base confidence
 
         // Increase confidence if we found metrics
@@ -1052,7 +1150,10 @@ impl CreateAgentTool {
         for resource in resources {
             if resource.resource_type == ResourceType::Device {
                 // Try to find the device by name or ID
-                match self.find_device_by_name(device_service, &resource.resource_id).await {
+                match self
+                    .find_device_by_name(device_service, &resource.resource_id)
+                    .await
+                {
                     Ok(Some((device_id, device_name))) => {
                         resolved.push(AgentResource {
                             resource_type: ResourceType::Device,
@@ -1066,7 +1167,11 @@ impl CreateAgentTool {
                         resolved.push(resource.clone());
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to resolve device '{}': {}", resource.resource_id, e);
+                        tracing::warn!(
+                            "Failed to resolve device '{}': {}",
+                            resource.resource_id,
+                            e
+                        );
                         resolved.push(resource.clone());
                     }
                 }
@@ -1147,7 +1252,7 @@ impl Tool for AgentMemoryTool {
                 "query_type": string_property("查询类型：patterns（模式）、state（状态）、history（历史）、baselines（基线）、all（全部）"),
                 "limit": number_property("可选，限制返回数量，默认10")
             }),
-            vec!["agent_id".to_string()]
+            vec!["agent_id".to_string()],
         )
     }
 
@@ -1211,7 +1316,10 @@ impl Tool for AgentMemoryTool {
         let limit = args["limit"].as_u64().unwrap_or(10) as usize;
 
         // Get agent
-        let agent = self.agent_store.get_agent(agent_id).await
+        let agent = self
+            .agent_store
+            .get_agent(agent_id)
+            .await
             .map_err(|e| ToolError::Execution(format!("Failed to get agent: {}", e)))?
             .ok_or_else(|| ToolError::Execution(format!("Agent '{}' not found", agent_id)))?;
 
@@ -1219,9 +1327,8 @@ impl Tool for AgentMemoryTool {
 
         match query_type {
             "patterns" => {
-                let patterns: Vec<&LearnedPattern> = memory.learned_patterns.iter()
-                    .take(limit)
-                    .collect();
+                let patterns: Vec<&LearnedPattern> =
+                    memory.learned_patterns.iter().take(limit).collect();
 
                 Ok(ToolOutput::success(serde_json::json!({
                     "agent_id": agent_id,
@@ -1236,16 +1343,15 @@ impl Tool for AgentMemoryTool {
                     "count": patterns.len()
                 })))
             }
-            "state" => {
-                Ok(ToolOutput::success(serde_json::json!({
-                    "agent_id": agent_id,
-                    "query_type": "state",
-                    "state_variables": memory.state_variables,
-                    "updated_at": memory.updated_at
-                })))
-            }
+            "state" => Ok(ToolOutput::success(serde_json::json!({
+                "agent_id": agent_id,
+                "query_type": "state",
+                "state_variables": memory.state_variables,
+                "updated_at": memory.updated_at
+            }))),
             "history" => {
-                let history: Vec<&neomind_storage::agents::ConversationTurn> = agent.conversation_history
+                let history: Vec<&neomind_storage::agents::ConversationTurn> = agent
+                    .conversation_history
                     .iter()
                     .rev()
                     .take(limit)
@@ -1264,32 +1370,28 @@ impl Tool for AgentMemoryTool {
                     "count": history.len()
                 })))
             }
-            "baselines" => {
-                Ok(ToolOutput::success(serde_json::json!({
-                    "agent_id": agent_id,
-                    "query_type": "baselines",
-                    "baselines": memory.baselines
-                })))
-            }
-            _ => {
-                Ok(ToolOutput::success(serde_json::json!({
-                    "agent_id": agent_id,
-                    "query_type": "all",
-                    "memory": {
-                        "state_variables": memory.state_variables,
-                        "learned_patterns": memory.learned_patterns.iter().take(limit).map(|p| serde_json::json!({
-                            "id": p.id,
-                            "pattern_type": p.pattern_type,
-                            "description": p.description,
-                            "confidence": p.confidence
-                        })).collect::<Vec<_>>(),
-                        "baselines": memory.baselines,
-                        "trend_data_count": memory.trend_data.len(),
-                        "conversation_turns_count": agent.conversation_history.len(),
-                        "user_messages_count": agent.user_messages.len()
-                    }
-                })))
-            }
+            "baselines" => Ok(ToolOutput::success(serde_json::json!({
+                "agent_id": agent_id,
+                "query_type": "baselines",
+                "baselines": memory.baselines
+            }))),
+            _ => Ok(ToolOutput::success(serde_json::json!({
+                "agent_id": agent_id,
+                "query_type": "all",
+                "memory": {
+                    "state_variables": memory.state_variables,
+                    "learned_patterns": memory.learned_patterns.iter().take(limit).map(|p| serde_json::json!({
+                        "id": p.id,
+                        "pattern_type": p.pattern_type,
+                        "description": p.description,
+                        "confidence": p.confidence
+                    })).collect::<Vec<_>>(),
+                    "baselines": memory.baselines,
+                    "trend_data_count": memory.trend_data.len(),
+                    "conversation_turns_count": agent.conversation_history.len(),
+                    "user_messages_count": agent.user_messages.len()
+                }
+            }))),
         }
     }
 }
@@ -1328,7 +1430,7 @@ impl Tool for GetAgentExecutionsTool {
                 "status": string_property("可选，按状态过滤：completed, failed, running, partial"),
                 "offset": number_property("可选，偏移量，用于分页，默认0")
             }),
-            vec!["agent_id".to_string()]
+            vec!["agent_id".to_string()],
         )
     }
 
@@ -1419,7 +1521,10 @@ impl Tool for GetAgentExecutionsTool {
         }
 
         // Query executions
-        let mut executions = self.agent_store.query_executions(filter).await
+        let mut executions = self
+            .agent_store
+            .query_executions(filter)
+            .await
             .map_err(|e| ToolError::Execution(format!("Failed to query executions: {}", e)))?;
 
         // Apply offset
@@ -1435,12 +1540,21 @@ impl Tool for GetAgentExecutionsTool {
         }
 
         // Calculate summary stats from all executions (without filters for full context)
-        let all_executions = self.agent_store.get_agent_executions(agent_id, 1000).await
+        let all_executions = self
+            .agent_store
+            .get_agent_executions(agent_id, 1000)
+            .await
             .map_err(|e| ToolError::Execution(format!("Failed to get summary stats: {}", e)))?;
 
         let total = all_executions.len();
-        let completed = all_executions.iter().filter(|e| matches!(e.status, ExecutionStatus::Completed)).count();
-        let failed = all_executions.iter().filter(|e| matches!(e.status, ExecutionStatus::Failed)).count();
+        let completed = all_executions
+            .iter()
+            .filter(|e| matches!(e.status, ExecutionStatus::Completed))
+            .count();
+        let failed = all_executions
+            .iter()
+            .filter(|e| matches!(e.status, ExecutionStatus::Failed))
+            .count();
         let avg_duration = if all_executions.is_empty() {
             0
         } else {
@@ -1506,7 +1620,7 @@ impl Tool for GetAgentExecutionDetailTool {
                 "execution_id": string_property("执行记录的唯一ID"),
                 "agent_id": string_property("可选，Agent ID，用于验证执行属于该Agent")
             }),
-            vec!["execution_id".to_string()]
+            vec!["execution_id".to_string()],
         )
     }
 
@@ -1579,18 +1693,24 @@ impl Tool for GetAgentExecutionDetailTool {
         let agent_id = args["agent_id"].as_str();
 
         // Get execution
-        let execution = self.agent_store.get_execution(execution_id).await
+        let execution = self
+            .agent_store
+            .get_execution(execution_id)
+            .await
             .map_err(|e| ToolError::Execution(format!("Failed to get execution: {}", e)))?
-            .ok_or_else(|| ToolError::Execution(format!("Execution '{}' not found", execution_id)))?;
+            .ok_or_else(|| {
+                ToolError::Execution(format!("Execution '{}' not found", execution_id))
+            })?;
 
         // Verify agent_id if provided
         if let Some(id) = agent_id
-            && execution.agent_id != id {
-                return Err(ToolError::Execution(format!(
-                    "Execution '{}' belongs to agent '{}', not '{}'",
-                    execution_id, execution.agent_id, id
-                )));
-            }
+            && execution.agent_id != id
+        {
+            return Err(ToolError::Execution(format!(
+                "Execution '{}' belongs to agent '{}', not '{}'",
+                execution_id, execution.agent_id, id
+            )));
+        }
 
         // Build detailed response
         let response = serde_json::json!({
@@ -1683,7 +1803,7 @@ impl Tool for GetAgentConversationTool {
                 "limit": number_property("可选，限制返回数量，默认20"),
                 "include_user_messages_only": boolean_property("可选，只返回用户消息，默认false")
             }),
-            vec!["agent_id".to_string()]
+            vec!["agent_id".to_string()],
         )
     }
 
@@ -1715,13 +1835,14 @@ impl Tool for GetAgentConversationTool {
                 description: "获取Agent对话历史".to_string(),
             }),
             category: ToolCategory::Agent,
-            scenarios: vec![
-                UsageScenario {
-                    description: "查看对话历史".to_string(),
-                    example_query: "查看Agent与用户的对话记录".to_string(),
-                    suggested_call: Some(r#"{"tool": "get_agent_conversation", "arguments": {"agent_id": "agent_1"}}"#.to_string()),
-                },
-            ],
+            scenarios: vec![UsageScenario {
+                description: "查看对话历史".to_string(),
+                example_query: "查看Agent与用户的对话记录".to_string(),
+                suggested_call: Some(
+                    r#"{"tool": "get_agent_conversation", "arguments": {"agent_id": "agent_1"}}"#
+                        .to_string(),
+                ),
+            }],
             relationships: ToolRelationships {
                 call_after: vec!["get_agent".to_string()],
                 output_to: vec!["get_agent_execution_detail".to_string()],
@@ -1746,25 +1867,33 @@ impl Tool for GetAgentConversationTool {
             .ok_or_else(|| ToolError::InvalidArguments("agent_id is required".to_string()))?;
 
         let limit = args["limit"].as_u64().unwrap_or(20) as usize;
-        let user_messages_only = args["include_user_messages_only"].as_bool().unwrap_or(false);
+        let user_messages_only = args["include_user_messages_only"]
+            .as_bool()
+            .unwrap_or(false);
 
         // Get agent
-        let agent = self.agent_store.get_agent(agent_id).await
+        let agent = self
+            .agent_store
+            .get_agent(agent_id)
+            .await
             .map_err(|e| ToolError::Execution(format!("Failed to get agent: {}", e)))?
             .ok_or_else(|| ToolError::Execution(format!("Agent '{}' not found", agent_id)))?;
 
         if user_messages_only {
             // Return only user messages
-            let messages: Vec<Value> = agent.user_messages
+            let messages: Vec<Value> = agent
+                .user_messages
                 .iter()
                 .rev()
                 .take(limit)
-                .map(|m| serde_json::json!({
-                    "message_id": m.id,
-                    "timestamp": m.timestamp,
-                    "content": m.content,
-                    "message_type": m.message_type
-                }))
+                .map(|m| {
+                    serde_json::json!({
+                        "message_id": m.id,
+                        "timestamp": m.timestamp,
+                        "content": m.content,
+                        "message_type": m.message_type
+                    })
+                })
                 .collect();
 
             Ok(ToolOutput::success(serde_json::json!({
@@ -1774,19 +1903,22 @@ impl Tool for GetAgentConversationTool {
             })))
         } else {
             // Return conversation turns
-            let turns: Vec<Value> = agent.conversation_history
+            let turns: Vec<Value> = agent
+                .conversation_history
                 .iter()
                 .rev()
                 .take(limit)
-                .map(|turn| serde_json::json!({
-                    "execution_id": turn.execution_id,
-                    "timestamp": turn.timestamp,
-                    "trigger_type": turn.trigger_type,
-                    "success": turn.success,
-                    "duration_ms": turn.duration_ms,
-                    "input": turn.input,
-                    "output": turn.output
-                }))
+                .map(|turn| {
+                    serde_json::json!({
+                        "execution_id": turn.execution_id,
+                        "timestamp": turn.timestamp,
+                        "trigger_type": turn.trigger_type,
+                        "success": turn.success,
+                        "duration_ms": turn.duration_ms,
+                        "input": turn.input,
+                        "output": turn.output
+                    })
+                })
                 .collect();
 
             Ok(ToolOutput::success(serde_json::json!({

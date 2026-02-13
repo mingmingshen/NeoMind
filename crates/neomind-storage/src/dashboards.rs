@@ -226,10 +226,13 @@ impl DashboardStore {
         // Check if we already have a store for this path
         {
             let Ok(singleton) = DASHBOARD_STORE_SINGLETON.lock() else {
-                return Err(Error::Storage("Failed to acquire dashboard store lock".to_string()));
+                return Err(Error::Storage(
+                    "Failed to acquire dashboard store lock".to_string(),
+                ));
             };
             if let Some(store) = singleton.as_ref()
-                && store.path == path_str {
+                && store.path == path_str
+            {
                 return Ok(store.clone());
             }
         }
@@ -253,7 +256,9 @@ impl DashboardStore {
 
         {
             let Ok(mut singleton) = DASHBOARD_STORE_SINGLETON.lock() else {
-                return Err(Error::Storage("Failed to acquire dashboard store lock".to_string()));
+                return Err(Error::Storage(
+                    "Failed to acquire dashboard store lock".to_string(),
+                ));
             };
             *singleton = Some(store.clone());
         }
@@ -264,7 +269,8 @@ impl DashboardStore {
 
     /// Create an in-memory dashboard store for testing.
     pub fn memory() -> Result<Arc<Self>, Error> {
-        let temp_path = std::env::temp_dir().join(format!("dashboards_test_{}.redb", uuid::Uuid::new_v4()));
+        let temp_path =
+            std::env::temp_dir().join(format!("dashboards_test_{}.redb", uuid::Uuid::new_v4()));
         Self::open(temp_path)
     }
 
@@ -445,7 +451,8 @@ mod tests {
 
     /// Helper to create a temporary DashboardStore for tests
     fn create_temp_store() -> Arc<DashboardStore> {
-        let temp_dir = std::env::temp_dir().join(format!("dashboard_test_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("dashboard_test_{}", uuid::Uuid::new_v4()));
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir).unwrap();
         let db_path = temp_dir.join("dashboards.redb");
@@ -457,7 +464,10 @@ mod tests {
         let store = create_temp_store();
 
         // Create a dashboard
-        let mut dashboard = Dashboard::new("Test Dashboard".to_string(), DashboardLayout::default_layout());
+        let mut dashboard = Dashboard::new(
+            "Test Dashboard".to_string(),
+            DashboardLayout::default_layout(),
+        );
         dashboard.id = "test-dashboard".to_string();
 
         // Save dashboard
@@ -489,7 +499,10 @@ mod tests {
     fn test_dashboard_with_components() {
         let store = create_temp_store();
 
-        let mut dashboard = Dashboard::new("Component Dashboard".to_string(), DashboardLayout::default_layout());
+        let mut dashboard = Dashboard::new(
+            "Component Dashboard".to_string(),
+            DashboardLayout::default_layout(),
+        );
         dashboard.id = "comp-dashboard".to_string();
 
         // Add components
@@ -525,10 +538,12 @@ mod tests {
     fn test_default_dashboard() {
         let store = create_temp_store();
 
-        let mut dashboard1 = Dashboard::new("Dashboard 1".to_string(), DashboardLayout::default_layout());
+        let mut dashboard1 =
+            Dashboard::new("Dashboard 1".to_string(), DashboardLayout::default_layout());
         dashboard1.id = "dash-1".to_string();
 
-        let mut dashboard2 = Dashboard::new("Dashboard 2".to_string(), DashboardLayout::default_layout());
+        let mut dashboard2 =
+            Dashboard::new("Dashboard 2".to_string(), DashboardLayout::default_layout());
         dashboard2.id = "dash-2".to_string();
 
         store.save(&dashboard1).unwrap();
@@ -589,7 +604,8 @@ mod tests {
     fn test_memory_store() {
         let store = DashboardStore::memory().unwrap();
 
-        let mut dashboard = Dashboard::new("Memory Test".to_string(), DashboardLayout::default_layout());
+        let mut dashboard =
+            Dashboard::new("Memory Test".to_string(), DashboardLayout::default_layout());
         dashboard.id = "mem-test".to_string();
 
         store.save(&dashboard).unwrap();

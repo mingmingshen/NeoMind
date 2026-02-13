@@ -21,130 +21,139 @@ pub fn parse_tool_calls(text: &str) -> Result<(String, Vec<ToolCall>)> {
 
     // First, try to parse XML format: <tool_calls><invoke name="tool_name">...</invoke></tool_calls>
     if let Some(start) = text.find("<tool_calls>")
-        && let Some(end) = text.find("</tool_calls>") {
-            let xml_section = &text[start..end + 13]; // 13 = len("</tool_calls>")
-            content = format!("{}{}", &text[..start], &text[end + 13..]);
+        && let Some(end) = text.find("</tool_calls>")
+    {
+        let xml_section = &text[start..end + 13]; // 13 = len("</tool_calls>")
+        content = format!("{}{}", &text[..start], &text[end + 13..]);
 
-            // Parse <invoke name="..."> entries
-            let mut remaining = xml_section;
-            while let Some(invoke_start) = remaining.find("<invoke") {
-                let invoke_end = match remaining.find("</invoke>") {
-                    Some(pos) => pos,
-                    None => break,
-                };
+        // Parse <invoke name="..."> entries
+        let mut remaining = xml_section;
+        while let Some(invoke_start) = remaining.find("<invoke") {
+            let invoke_end = match remaining.find("</invoke>") {
+                Some(pos) => pos,
+                None => break,
+            };
 
-                let invoke_section = &remaining[invoke_start..invoke_end + 8]; // 8 = len("</invoke>")
+            let invoke_section = &remaining[invoke_start..invoke_end + 8]; // 8 = len("</invoke>")
 
-                // Extract tool name from <invoke name="tool_name">
-                if let Some(name_start) = invoke_section.find("name=\"") {
-                    let name_section = &invoke_section[name_start + 6..];
-                    if let Some(name_end) = name_section.find('"') {
-                        let tool_name = &name_section[..name_end];
+            // Extract tool name from <invoke name="tool_name">
+            if let Some(name_start) = invoke_section.find("name=\"") {
+                let name_section = &invoke_section[name_start + 6..];
+                if let Some(name_end) = name_section.find('"') {
+                    let tool_name = &name_section[..name_end];
 
-                        // Extract parameters from <parameter name="key">value</parameter> or <parameter name="key" value="value"/>
-                        let mut arguments = serde_json::Map::new();
-                        let mut search_start = 0;
-                        while search_start < invoke_section.len() {
-                            if let Some(param_start) = invoke_section[search_start..].find("<parameter") {
-                                let absolute_param_start = search_start + param_start;
+                    // Extract parameters from <parameter name="key">value</parameter> or <parameter name="key" value="value"/>
+                    let mut arguments = serde_json::Map::new();
+                    let mut search_start = 0;
+                    while search_start < invoke_section.len() {
+                        if let Some(param_start) = invoke_section[search_start..].find("<parameter")
+                        {
+                            let absolute_param_start = search_start + param_start;
 
-                                // Find end of opening parameter tag (could be /> or >)
-                                let tag_end = match invoke_section[absolute_param_start..].find('>') {
-                                    Some(pos) => absolute_param_start + pos,
-                                    None => {
-                                        // Malformed, skip past <parameter
-                                        search_start = absolute_param_start + "<parameter".len();
-                                        continue;
-                                    }
-                                };
+                            // Find end of opening parameter tag (could be /> or >)
+                            let tag_end = match invoke_section[absolute_param_start..].find('>') {
+                                Some(pos) => absolute_param_start + pos,
+                                None => {
+                                    // Malformed, skip past <parameter
+                                    search_start = absolute_param_start + "<parameter".len();
+                                    continue;
+                                }
+                            };
 
-                                let tag_section = &invoke_section[absolute_param_start..=tag_end];
-                                let is_self_closing = tag_section.trim_end().ends_with("/>");
+                            let tag_section = &invoke_section[absolute_param_start..=tag_end];
+                            let is_self_closing = tag_section.trim_end().ends_with("/>");
 
-                                // Extract parameter name
-                                let param_name = match tag_section.find("name=\"") {
-                                    Some(name_start) => {
-                                        let name_section = &tag_section[name_start + 6..];
-                                        match name_section.find('"') {
-                                            Some(name_end) => name_section[..name_end].to_string(),
-                                            None => {
-                                                // Invalid, skip
-                                                search_start = absolute_param_start + "<parameter".len();
-                                                continue;
-                                            }
-                                        }
-                                    }
-                                    None => {
-                                        // No name, skip
-                                        search_start = absolute_param_start + "<parameter".len();
-                                        continue;
-                                    }
-                                };
-
-                                // Extract parameter value
-                                let param_value = match tag_section.find("value=\"") {
-                                    Some(val_start) => {
-                                        // value="..." format
-                                        let val_section = &tag_section[val_start + 7..];
-                                        match val_section.find('"') {
-                                            Some(val_end) => val_section[..val_end].to_string(),
-                                            None => {
-                                                // Invalid, skip
-                                                search_start = absolute_param_start + "<parameter".len();
-                                                continue;
-                                            }
-                                        }
-                                    }
-                                    None => {
-                                        if !is_self_closing {
-                                            // <parameter name="key">value</parameter> format
-                                            let content_start = tag_end + 1;
-                                            match invoke_section[content_start..].find("</parameter>") {
-                                                Some(end_pos) => {
-                                                    let value = invoke_section[content_start..content_start + end_pos].trim().to_string();
-                                                    arguments.insert(param_name, Value::String(value));
-                                                    search_start = content_start + end_pos + "</parameter>".len();
-                                                    continue;
-                                                }
-                                                None => {
-                                                    // No closing tag, skip
-                                                    search_start = absolute_param_start + "<parameter".len();
-                                                    continue;
-                                                }
-                                            }
-                                        } else {
-                                            // Self-closing with no value attribute, skip
-                                            search_start = absolute_param_start + "<parameter".len();
+                            // Extract parameter name
+                            let param_name = match tag_section.find("name=\"") {
+                                Some(name_start) => {
+                                    let name_section = &tag_section[name_start + 6..];
+                                    match name_section.find('"') {
+                                        Some(name_end) => name_section[..name_end].to_string(),
+                                        None => {
+                                            // Invalid, skip
+                                            search_start =
+                                                absolute_param_start + "<parameter".len();
                                             continue;
                                         }
                                     }
-                                };
+                                }
+                                None => {
+                                    // No name, skip
+                                    search_start = absolute_param_start + "<parameter".len();
+                                    continue;
+                                }
+                            };
 
-                                arguments.insert(param_name, Value::String(param_value));
+                            // Extract parameter value
+                            let param_value = match tag_section.find("value=\"") {
+                                Some(val_start) => {
+                                    // value="..." format
+                                    let val_section = &tag_section[val_start + 7..];
+                                    match val_section.find('"') {
+                                        Some(val_end) => val_section[..val_end].to_string(),
+                                        None => {
+                                            // Invalid, skip
+                                            search_start =
+                                                absolute_param_start + "<parameter".len();
+                                            continue;
+                                        }
+                                    }
+                                }
+                                None => {
+                                    if !is_self_closing {
+                                        // <parameter name="key">value</parameter> format
+                                        let content_start = tag_end + 1;
+                                        match invoke_section[content_start..].find("</parameter>") {
+                                            Some(end_pos) => {
+                                                let value = invoke_section
+                                                    [content_start..content_start + end_pos]
+                                                    .trim()
+                                                    .to_string();
+                                                arguments.insert(param_name, Value::String(value));
+                                                search_start =
+                                                    content_start + end_pos + "</parameter>".len();
+                                                continue;
+                                            }
+                                            None => {
+                                                // No closing tag, skip
+                                                search_start =
+                                                    absolute_param_start + "<parameter".len();
+                                                continue;
+                                            }
+                                        }
+                                    } else {
+                                        // Self-closing with no value attribute, skip
+                                        search_start = absolute_param_start + "<parameter".len();
+                                        continue;
+                                    }
+                                }
+                            };
 
-                                // Move past this self-closing tag
-                                search_start = tag_end + 1;
-                            } else {
-                                break;
-                            }
+                            arguments.insert(param_name, Value::String(param_value));
+
+                            // Move past this self-closing tag
+                            search_start = tag_end + 1;
+                        } else {
+                            break;
                         }
-
-                        tool_calls.push(ToolCall {
-                            name: tool_name.to_string(),
-                            id: Uuid::new_v4().to_string(),
-                            arguments: Value::Object(arguments),
-                            result: None,
-                        });
                     }
+
+                    tool_calls.push(ToolCall {
+                        name: tool_name.to_string(),
+                        id: Uuid::new_v4().to_string(),
+                        arguments: Value::Object(arguments),
+                        result: None,
+                    });
                 }
-
-                remaining = &remaining[invoke_end + 8..];
             }
 
-            if !tool_calls.is_empty() {
-                return Ok((content.trim().to_string(), tool_calls));
-            }
+            remaining = &remaining[invoke_end + 8..];
         }
+
+        if !tool_calls.is_empty() {
+            return Ok((content.trim().to_string(), tool_calls));
+        }
+    }
 
     // Second, try to parse JSON array format: [{"name": "tool1", "arguments": {...}}, ...]
     // Support multiple JSON arrays (e.g., when model puts tools on separate lines in thinking)
@@ -175,7 +184,10 @@ pub fn parse_tool_calls(text: &str) -> Result<(String, Vec<ToolCall>)> {
             let json_str = &text[absolute_start..array_end];
 
             // Only process if it looks like a tool call array (has "name", "tool", or "function")
-            if json_str.contains("\"name\"") || json_str.contains("\"tool\"") || json_str.contains("\"function\"") {
+            if json_str.contains("\"name\"")
+                || json_str.contains("\"tool\"")
+                || json_str.contains("\"function\"")
+            {
                 if first_array_start.is_none() {
                     first_array_start = Some(absolute_start);
                 }
@@ -197,8 +209,13 @@ pub fn parse_tool_calls(text: &str) -> Result<(String, Vec<ToolCall>)> {
                                     let mut args = serde_json::Map::new();
                                     if let Some(obj) = value.as_object() {
                                         for (k, v) in obj {
-                                            if k != "name" && k != "tool" && k != "function"
-                                                && k != "arguments" && k != "params" && k != "parameters" {
+                                            if k != "name"
+                                                && k != "tool"
+                                                && k != "function"
+                                                && k != "arguments"
+                                                && k != "params"
+                                                && k != "parameters"
+                                            {
                                                 args.insert(k.clone(), v.clone());
                                             }
                                         }
@@ -360,10 +377,13 @@ pub fn remove_tool_calls_from_response(response: &str) -> String {
             // Check if it's a tool call array
             let json_str = &result[start..end];
             if let Ok(array) = serde_json::from_str::<Vec<Value>>(json_str)
-                && array.iter().any(|v| v.get("name").is_some() || v.get("tool").is_some()) {
-                    result.replace_range(start..end, "");
-                    continue;
-                }
+                && array
+                    .iter()
+                    .any(|v| v.get("name").is_some() || v.get("tool").is_some())
+            {
+                result.replace_range(start..end, "");
+                continue;
+            }
         }
         break;
     }
@@ -388,10 +408,11 @@ pub fn remove_tool_calls_from_response(response: &str) -> String {
         if end > start {
             let json_str = &result[start..end];
             if let Ok(value) = serde_json::from_str::<Value>(json_str)
-                && (value.get("name").is_some() || value.get("tool").is_some()) {
-                    result.replace_range(start..end, "");
-                    continue;
-                }
+                && (value.get("name").is_some() || value.get("tool").is_some())
+            {
+                result.replace_range(start..end, "");
+                continue;
+            }
         }
         break;
     }

@@ -43,7 +43,9 @@
 //! ```
 
 use crate::bm25::BM25Index;
-use crate::embeddings::{create_embedding_model, EmbeddingConfig, EmbeddingModel, EmbeddingProvider};
+use crate::embeddings::{
+    EmbeddingConfig, EmbeddingModel, EmbeddingProvider, create_embedding_model,
+};
 use crate::error::{MemoryError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -175,17 +177,20 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
         return 0.0;
     }
 
-    let dot_product: f64 = a.iter()
+    let dot_product: f64 = a
+        .iter()
         .zip(b.iter())
         .map(|(x, y)| *x as f64 * *y as f64)
         .sum();
 
-    let norm_a: f64 = a.iter()
+    let norm_a: f64 = a
+        .iter()
         .map(|x| (*x as f64) * (*x as f64))
         .sum::<f64>()
         .sqrt();
 
-    let norm_b: f64 = b.iter()
+    let norm_b: f64 = b
+        .iter()
         .map(|x| (*x as f64) * (*x as f64))
         .sum::<f64>()
         .sqrt();
@@ -264,7 +269,10 @@ impl SemanticSearch {
                 }
                 Ok(search)
             }
-            Err(e) => Err(MemoryError::Config(format!("Failed to create embedding model: {}", e))),
+            Err(e) => Err(MemoryError::Config(format!(
+                "Failed to create embedding model: {}",
+                e
+            ))),
         }
     }
 
@@ -370,7 +378,11 @@ impl SemanticSearch {
     }
 
     // Internal: Execute the search.
-    async fn execute_search(&self, query: &str, config: &SearchConfig) -> Result<Vec<SemanticSearchResult>> {
+    async fn execute_search(
+        &self,
+        query: &str,
+        config: &SearchConfig,
+    ) -> Result<Vec<SemanticSearchResult>> {
         // Get query embedding
         let query_embedding = {
             let embedding_model = self.embedding.read().await;
@@ -386,7 +398,9 @@ impl SemanticSearch {
         // Get documents
         let docs = {
             let docs = self.documents.read().await;
-            docs.iter().map(|(id, doc)| (id.clone(), doc.clone())).collect::<Vec<_>>()
+            docs.iter()
+                .map(|(id, doc)| (id.clone(), doc.clone()))
+                .collect::<Vec<_>>()
         };
 
         // Get BM25 scores
@@ -495,8 +509,7 @@ mod tests {
 
     #[test]
     fn test_semantic_document_with_embedding() {
-        let doc = SemanticDocument::new("doc1", "test content")
-            .with_embedding(vec![0.1, 0.2, 0.3]);
+        let doc = SemanticDocument::new("doc1", "test content").with_embedding(vec![0.1, 0.2, 0.3]);
         assert_eq!(doc.embedding, Some(vec![0.1, 0.2, 0.3]));
     }
 
@@ -596,7 +609,10 @@ mod tests {
     async fn test_search_with_config() {
         let search = SemanticSearch::new();
 
-        search.index("doc1", "temperature sensor high").await.unwrap();
+        search
+            .index("doc1", "temperature sensor high")
+            .await
+            .unwrap();
         search.index("doc2", "humidity sensor low").await.unwrap();
 
         // Search with custom config

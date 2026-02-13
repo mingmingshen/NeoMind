@@ -33,7 +33,7 @@ pub mod telemetry;
 // Simplified device management
 pub mod registry;
 pub mod service;
-pub mod service_types;  // Shared types for device operations
+pub mod service_types; // Shared types for device operations
 
 // Protocol mapping layer - decouples MDL from protocol implementations
 pub mod protocol;
@@ -43,14 +43,12 @@ pub mod adapter;
 
 // Protocol mapping re-exports
 pub use protocol::{
-    Address, BinaryFormat, Capability, CapabilityType,
-    MappingConfig, MqttMapping, MqttMappingBuilder, ProtocolMapping, SharedMapping,
+    Address, BinaryFormat, Capability, CapabilityType, MappingConfig, MqttMapping,
+    MqttMappingBuilder, ProtocolMapping, SharedMapping,
 };
 
 // Re-export protocol mapping functions
-pub use builtin_types::{
-    builtin_device_types, builtin_mqtt_mappings,
-};
+pub use builtin_types::{builtin_device_types, builtin_mqtt_mappings};
 
 // Device adapters implementing the adapter interface
 pub mod adapters;
@@ -75,13 +73,18 @@ pub use mdl_format::{
 
 // New architecture exports
 pub use discovery::{DeviceDiscovery, DiscoveredDevice, DiscoveryResult};
-pub use registry::{ConnectionConfig, DeviceConfig, DeviceRegistry, DeviceTypeTemplate, DeviceTypeMode};
-pub use service::{AdapterInfo, AdapterStats, CommandHistoryRecord, CommandStatus, DeviceHealth, DeviceService, DeviceStatus, HeartbeatConfig};
+pub use registry::{
+    ConnectionConfig, DeviceConfig, DeviceRegistry, DeviceTypeMode, DeviceTypeTemplate,
+};
+pub use service::{
+    AdapterInfo, AdapterStats, CommandHistoryRecord, CommandStatus, DeviceHealth, DeviceService,
+    DeviceStatus, HeartbeatConfig,
+};
 pub use telemetry::{AggregatedData, DataPoint, MetricCache, TimeSeriesStorage};
 
 // Unified data extraction re-exports
 pub use unified_extractor::{
-    ExtractionConfig, ExtractionMode, ExtractionResult, ExtractedMetric, UnifiedExtractor,
+    ExtractedMetric, ExtractionConfig, ExtractionMode, ExtractionResult, UnifiedExtractor,
 };
 
 #[cfg(feature = "embedded-broker")]

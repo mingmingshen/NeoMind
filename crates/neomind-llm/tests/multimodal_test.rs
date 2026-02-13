@@ -5,9 +5,9 @@
 //! 2. The model can see and describe the image content
 //! 3. Images are preserved in conversation history for follow-up questions
 
-use neomind_llm::backends::ollama::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::{LlmInput, LlmRuntime};
-use neomind_core::message::{Message, MessageRole, Content, ContentPart};
+use neomind_core::message::{Content, ContentPart, Message, MessageRole};
+use neomind_llm::backends::ollama::{OllamaConfig, OllamaRuntime};
 
 /// A simple 1x1 red PNG image as data URL
 /// This is a minimal valid PNG file: 1x1 pixel, red color
@@ -21,7 +21,8 @@ data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42m
 /// Check if Ollama is available at the default endpoint
 async fn is_ollama_available() -> bool {
     let client = reqwest::Client::new();
-    if let Ok(resp) = client.get("http://localhost:11434/api/tags")
+    if let Ok(resp) = client
+        .get("http://localhost:11434/api/tags")
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await
@@ -35,7 +36,8 @@ async fn is_ollama_available() -> bool {
 /// Check if qwen3-vl:2b model is available
 async fn is_model_available(model: &str) -> bool {
     let client = reqwest::Client::new();
-    if let Ok(resp) = client.get("http://localhost:11434/api/tags")
+    if let Ok(resp) = client
+        .get("http://localhost:11434/api/tags")
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await
@@ -63,8 +65,8 @@ async fn test_multimodal_basic_image_description() {
         return;
     }
 
-    let runtime = OllamaRuntime::new(OllamaConfig::new(model))
-        .expect("Failed to create Ollama runtime");
+    let runtime =
+        OllamaRuntime::new(OllamaConfig::new(model)).expect("Failed to create Ollama runtime");
 
     println!("\n=== Test 1: Basic image description ===");
 
@@ -127,8 +129,8 @@ async fn test_multimodal_image_in_history() {
         return;
     }
 
-    let runtime = OllamaRuntime::new(OllamaConfig::new(model))
-        .expect("Failed to create Ollama runtime");
+    let runtime =
+        OllamaRuntime::new(OllamaConfig::new(model)).expect("Failed to create Ollama runtime");
 
     println!("\n=== Test 2: Image preserved in conversation history ===");
 
@@ -196,8 +198,8 @@ async fn test_multimodal_streaming() {
         return;
     }
 
-    let runtime = OllamaRuntime::new(OllamaConfig::new(model))
-        .expect("Failed to create Ollama runtime");
+    let runtime =
+        OllamaRuntime::new(OllamaConfig::new(model)).expect("Failed to create Ollama runtime");
 
     println!("\n=== Test 3: Streaming multimodal response ===");
 
@@ -238,7 +240,11 @@ async fn test_multimodal_streaming() {
 
     use futures::StreamExt;
     while let Some(chunk_result) = stream.next().await {
-        assert!(chunk_result.is_ok(), "Stream chunk error: {:?}", chunk_result.err());
+        assert!(
+            chunk_result.is_ok(),
+            "Stream chunk error: {:?}",
+            chunk_result.err()
+        );
         let (text, is_thinking) = chunk_result.unwrap();
         if !is_thinking {
             full_response.push_str(&text);
@@ -262,7 +268,10 @@ async fn test_multimodal_streaming() {
     let has_square = response_lower.contains("square") || response_lower.contains("方");
 
     if !has_blue && !has_square {
-        println!("Warning: Response doesn't mention blue or square. Got: {}", full_response);
+        println!(
+            "Warning: Response doesn't mention blue or square. Got: {}",
+            full_response
+        );
     }
 }
 
@@ -280,8 +289,8 @@ async fn test_multimodal_with_tools() {
         return;
     }
 
-    let runtime = OllamaRuntime::new(OllamaConfig::new(model))
-        .expect("Failed to create Ollama runtime");
+    let runtime =
+        OllamaRuntime::new(OllamaConfig::new(model)).expect("Failed to create Ollama runtime");
 
     println!("\n=== Test 4: Multimodal with tool calling ===");
 

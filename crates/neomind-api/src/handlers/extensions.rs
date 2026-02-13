@@ -9,24 +9,23 @@
 //! - extension_type field removed from metadata
 
 use axum::{
-    extract::{Path, Query, State},
     Json,
+    extract::{Path, Query, State},
 };
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::json;
 
-use crate::models::error::ErrorResponse;
-use crate::handlers::common::{ok, HandlerResult};
+use crate::handlers::common::{HandlerResult, ok};
 use crate::handlers::devices::models::TimeRangeQuery;
+use crate::models::error::ErrorResponse;
 use crate::server::ServerState;
 use neomind_core::datasource::DataSourceId;
-use neomind_storage::{ExtensionStore, ExtensionRecord};
 use neomind_core::extension::{MetricDataType, ParameterDefinition};
-
+use neomind_storage::{ExtensionRecord, ExtensionStore};
 
 /// Extension DTO for API responses.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -200,31 +199,39 @@ pub async fn list_extensions_handler(
         .into_iter()
         .map(|info| {
             // Convert commands to DTOs (V2 format)
-            let commands: Vec<CommandDescriptorDto> = info.commands.iter().map(|cmd| CommandDescriptorDto {
-                id: cmd.name.clone(),
-                display_name: cmd.display_name.clone(),
-                description: cmd.llm_hints.clone(),
-                input_schema: build_parameters_schema(&cmd.parameters),
-                output_fields: vec![],  // V2: Commands don't declare output fields
-                config: CommandConfigDto {
-                    requires_auth: false,
-                    timeout_ms: 30000,
-                    is_stream: false,
-                    expected_duration_ms: None,
-                },
-            }).collect();
+            let commands: Vec<CommandDescriptorDto> = info
+                .commands
+                .iter()
+                .map(|cmd| CommandDescriptorDto {
+                    id: cmd.name.clone(),
+                    display_name: cmd.display_name.clone(),
+                    description: cmd.llm_hints.clone(),
+                    input_schema: build_parameters_schema(&cmd.parameters),
+                    output_fields: vec![], // V2: Commands don't declare output fields
+                    config: CommandConfigDto {
+                        requires_auth: false,
+                        timeout_ms: 30000,
+                        is_stream: false,
+                        expected_duration_ms: None,
+                    },
+                })
+                .collect();
 
             // Convert metrics to DTOs (V2)
-            let metrics: Vec<MetricDescriptorDto> = info.metrics.iter().map(|m| MetricDescriptorDto {
-                name: m.name.clone(),
-                display_name: m.display_name.clone(),
-                data_type: format!("{:?}", m.data_type),
-                unit: m.unit.clone(),
-                description: None,  // V2: MetricDefinition doesn't have description
-                min: m.min,
-                max: m.max,
-                required: m.required,
-            }).collect();
+            let metrics: Vec<MetricDescriptorDto> = info
+                .metrics
+                .iter()
+                .map(|m| MetricDescriptorDto {
+                    name: m.name.clone(),
+                    display_name: m.display_name.clone(),
+                    data_type: format!("{:?}", m.data_type),
+                    unit: m.unit.clone(),
+                    description: None, // V2: MetricDefinition doesn't have description
+                    min: m.min,
+                    max: m.max,
+                    required: m.required,
+                })
+                .collect();
 
             ExtensionDto {
                 id: info.metadata.id.clone(),
@@ -233,7 +240,11 @@ pub async fn list_extensions_handler(
                 description: info.metadata.description.clone(),
                 author: info.metadata.author.clone(),
                 state: info.state.to_string(),
-                file_path: info.metadata.file_path.as_ref().map(|p| p.display().to_string()),
+                file_path: info
+                    .metadata
+                    .file_path
+                    .as_ref()
+                    .map(|p| p.display().to_string()),
                 loaded_at: info.loaded_at.map(|t| t.timestamp()),
                 commands,
                 metrics,
@@ -263,31 +274,39 @@ pub async fn get_extension_handler(
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     // Convert commands to DTOs (V2 format)
-    let commands: Vec<CommandDescriptorDto> = info.commands.iter().map(|cmd| CommandDescriptorDto {
-        id: cmd.name.clone(),
-        display_name: cmd.display_name.clone(),
-        description: cmd.llm_hints.clone(),
-        input_schema: build_parameters_schema(&cmd.parameters),
-        output_fields: vec![],  // V2: Commands don't declare output fields
-        config: CommandConfigDto {
-            requires_auth: false,
-            timeout_ms: 30000,
-            is_stream: false,
-            expected_duration_ms: None,
-        },
-    }).collect();
+    let commands: Vec<CommandDescriptorDto> = info
+        .commands
+        .iter()
+        .map(|cmd| CommandDescriptorDto {
+            id: cmd.name.clone(),
+            display_name: cmd.display_name.clone(),
+            description: cmd.llm_hints.clone(),
+            input_schema: build_parameters_schema(&cmd.parameters),
+            output_fields: vec![], // V2: Commands don't declare output fields
+            config: CommandConfigDto {
+                requires_auth: false,
+                timeout_ms: 30000,
+                is_stream: false,
+                expected_duration_ms: None,
+            },
+        })
+        .collect();
 
     // Convert metrics to DTOs (V2)
-    let metrics: Vec<MetricDescriptorDto> = info.metrics.iter().map(|m| MetricDescriptorDto {
-        name: m.name.clone(),
-        display_name: m.display_name.clone(),
-        data_type: format!("{:?}", m.data_type),
-        unit: m.unit.clone(),
-        description: None,  // V2: MetricDefinition doesn't have description
-        min: m.min,
-        max: m.max,
-        required: m.required,
-    }).collect();
+    let metrics: Vec<MetricDescriptorDto> = info
+        .metrics
+        .iter()
+        .map(|m| MetricDescriptorDto {
+            name: m.name.clone(),
+            display_name: m.display_name.clone(),
+            data_type: format!("{:?}", m.data_type),
+            unit: m.unit.clone(),
+            description: None, // V2: MetricDefinition doesn't have description
+            min: m.min,
+            max: m.max,
+            required: m.required,
+        })
+        .collect();
 
     ok(ExtensionDto {
         id: info.metadata.id.clone(),
@@ -296,7 +315,11 @@ pub async fn get_extension_handler(
         description: info.metadata.description.clone(),
         author: info.metadata.author.clone(),
         state: info.state.to_string(),
-        file_path: info.metadata.file_path.as_ref().map(|p| p.display().to_string()),
+        file_path: info
+            .metadata
+            .file_path
+            .as_ref()
+            .map(|p| p.display().to_string()),
         loaded_at: info.loaded_at.map(|t| t.timestamp()),
         commands,
         metrics,
@@ -410,7 +433,10 @@ pub async fn register_all_discovered_handler(
     let store = match ExtensionStore::open("data/extensions.redb") {
         Ok(s) => s,
         Err(e) => {
-            return Err(ErrorResponse::internal(format!("Failed to open extension store: {}", e)));
+            return Err(ErrorResponse::internal(format!(
+                "Failed to open extension store: {}",
+                e
+            )));
         }
     };
 
@@ -480,22 +506,19 @@ pub async fn register_extension_handler(
     let path = PathBuf::from(&req.file_path);
 
     // Load metadata from the extension file
-    let metadata = registry
-        .load_from_path(&path)
-        .await
-        .map_err(|e| {
-            // Check for specific error types to return appropriate HTTP status codes
-            let error_msg = e.to_string();
-            if error_msg.contains("already registered") || error_msg.contains("Already registered") {
-                ErrorResponse::conflict(format!("Extension already registered: {}", error_msg))
-            } else if error_msg.contains("not found") || error_msg.contains("NotFound") {
-                ErrorResponse::not_found(format!("Extension file not found: {}", error_msg))
-            } else if error_msg.contains("incompatible") || error_msg.contains("Incompatible") {
-                ErrorResponse::validation(format!("Incompatible extension: {}", error_msg))
-            } else {
-                ErrorResponse::bad_request(format!("Failed to load extension: {}", error_msg))
-            }
-        })?;
+    let metadata = registry.load_from_path(&path).await.map_err(|e| {
+        // Check for specific error types to return appropriate HTTP status codes
+        let error_msg = e.to_string();
+        if error_msg.contains("already registered") || error_msg.contains("Already registered") {
+            ErrorResponse::conflict(format!("Extension already registered: {}", error_msg))
+        } else if error_msg.contains("not found") || error_msg.contains("NotFound") {
+            ErrorResponse::not_found(format!("Extension file not found: {}", error_msg))
+        } else if error_msg.contains("incompatible") || error_msg.contains("Incompatible") {
+            ErrorResponse::validation(format!("Incompatible extension: {}", error_msg))
+        } else {
+            ErrorResponse::bad_request(format!("Failed to load extension: {}", error_msg))
+        }
+    })?;
 
     let ext_id = metadata.id.clone();
     let ext_name = metadata.name.clone();
@@ -508,7 +531,7 @@ pub async fn register_extension_handler(
             ext_id.clone(),
             ext_name.clone(),
             req.file_path.clone(),
-            String::new(),  // V2: No extension_type, use empty string
+            String::new(), // V2: No extension_type, use empty string
             ext_version.clone(),
         )
         .with_description(metadata.description.clone())
@@ -680,28 +703,24 @@ async fn publish_extension_metrics(
             // Convert JSON value to Core MetricValue
             let core_value = match metric.data_type {
                 neomind_core::extension::MetricDataType::Float => {
-                    value.as_f64()
-                        .map(CoreMetricValue::Float)
+                    value.as_f64().map(CoreMetricValue::Float)
                 }
                 neomind_core::extension::MetricDataType::Integer => {
-                    value.as_i64()
-                        .map(CoreMetricValue::Integer)
+                    value.as_i64().map(CoreMetricValue::Integer)
                 }
                 neomind_core::extension::MetricDataType::Boolean => {
-                    value.as_bool()
-                        .map(CoreMetricValue::Boolean)
+                    value.as_bool().map(CoreMetricValue::Boolean)
                 }
-                neomind_core::extension::MetricDataType::String => {
-                    value.as_str()
-                        .map(|s| CoreMetricValue::String(s.to_string()))
-                }
+                neomind_core::extension::MetricDataType::String => value
+                    .as_str()
+                    .map(|s| CoreMetricValue::String(s.to_string())),
                 _ => None,
             };
 
             if let Some(v) = core_value {
                 let event = NeoMindEvent::ExtensionOutput {
                     extension_id: extension_id.to_string(),
-                    output_name: format!("{}:{}", extension_id, metric.name),  // 修改：添加扩展ID前缀
+                    output_name: format!("{}:{}", extension_id, metric.name), // 修改：添加扩展ID前缀
                     value: v,
                     timestamp,
                     labels: None,
@@ -852,7 +871,7 @@ pub struct CommandConfigDto {
 /// Matches frontend ExtensionDataSourceInfo interface
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DataSourceInfoDto {
-    pub id: String,  // Format: "extension:{extension_id}:{command}:{field}"
+    pub id: String, // Format: "extension:{extension_id}:{command}:{field}"
     pub extension_id: String,
     pub command: String,
     pub field: String,
@@ -873,7 +892,9 @@ pub async fn list_extension_commands_handler(
 ) -> HandlerResult<Vec<CommandDescriptorDto>> {
     let registry = &state.extensions.registry;
 
-    let ext = registry.get(&id).await
+    let ext = registry
+        .get(&id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     let ext_read = ext.read().await;
@@ -886,7 +907,7 @@ pub async fn list_extension_commands_handler(
             display_name: cmd.display_name.clone(),
             description: cmd.llm_hints.clone(),
             input_schema: build_parameters_schema(&cmd.parameters),
-            output_fields: vec![],  // V2: Commands don't declare output fields
+            output_fields: vec![], // V2: Commands don't declare output fields
             config: CommandConfigDto {
                 requires_auth: false,
                 timeout_ms: 30000,
@@ -921,7 +942,12 @@ pub async fn query_extension_metric_data_handler(
     let points = state
         .extensions
         .metrics_storage
-        .query(&source_id.device_part(), source_id.metric_part(), start, end)
+        .query(
+            &source_id.device_part(),
+            source_id.metric_part(),
+            start,
+            end,
+        )
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to query metric: {:?}", e)))?;
 
@@ -970,7 +996,9 @@ pub async fn list_extension_data_sources_handler(
 ) -> HandlerResult<Vec<DataSourceInfoDto>> {
     let registry = &state.extensions.registry;
 
-    let ext = registry.get(&id).await
+    let ext = registry
+        .get(&id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     let ext_read = ext.read().await;
@@ -985,13 +1013,17 @@ pub async fn list_extension_data_sources_handler(
         sources.push(DataSourceInfoDto {
             id: source_id.storage_key(),
             extension_id: id.clone(),
-            command: String::new(),  // V2: No command field
+            command: String::new(), // V2: No command field
             field: metric.name.clone(),
             display_name: format!("{}: {}", metadata.name, metric.display_name),
             data_type: format!("{:?}", metric.data_type),
-            unit: if metric.unit.is_empty() { None } else { Some(metric.unit.clone()) },
-            description: metric.display_name.clone(),  // V2: Use display_name as description
-            aggregatable: true,  // V2: Metrics are generally aggregatable
+            unit: if metric.unit.is_empty() {
+                None
+            } else {
+                Some(metric.unit.clone())
+            },
+            description: metric.display_name.clone(), // V2: Use display_name as description
+            aggregatable: true,                       // V2: Metrics are generally aggregatable
             default_agg_func: "last".to_string(),
         });
     }
@@ -1005,7 +1037,7 @@ pub struct ExtensionCapabilityDto {
     pub extension_id: String,
     pub extension_name: String,
     #[serde(rename = "type")]
-    pub cap_type: String,  // "provider", "processor", "hybrid"
+    pub cap_type: String, // "provider", "processor", "hybrid"
     pub metrics: Vec<ExtensionMetricDto>,
     pub commands: Option<Vec<ExtensionCommandDto>>,
     pub tools: Option<Vec<ExtensionToolDto>>,
@@ -1062,7 +1094,11 @@ pub async fn list_extension_capabilities_handler(
             metrics.push(ExtensionMetricDto {
                 name: metric.name.clone(),
                 data_type: format!("{:?}", metric.data_type),
-                unit: if metric.unit.is_empty() { None } else { Some(metric.unit.clone()) },
+                unit: if metric.unit.is_empty() {
+                    None
+                } else {
+                    Some(metric.unit.clone())
+                },
             });
         }
 
@@ -1100,7 +1136,7 @@ pub async fn list_extension_capabilities_handler(
                 extension_id: ext_info.metadata.id.clone(),
                 extension_name: ext_info.metadata.name.clone(),
                 cap_type: "processor".to_string(),
-                metrics: vec![],  // Not used for processor type
+                metrics: vec![], // Not used for processor type
                 commands: Some(commands.clone()),
                 tools: Some(tools.clone()),
             });
@@ -1302,7 +1338,8 @@ pub async fn list_marketplace_extensions_handler(
         .build()
         .map_err(|e| ErrorResponse::internal(format!("Failed to build HTTP client: {}", e)))?;
 
-    let response = match client.get(&index_url)
+    let response = match client
+        .get(&index_url)
         .header("User-Agent", "NeoMind-Extension-Marketplace")
         .send()
         .await
@@ -1379,7 +1416,10 @@ pub async fn get_marketplace_extension_handler(
         .map_err(|e| ErrorResponse::internal(format!("Failed to fetch metadata: {}", e)))?;
 
     if !response.status().is_success() {
-        return Err(ErrorResponse::not_found(format!("Extension {} not found in marketplace", id)));
+        return Err(ErrorResponse::not_found(format!(
+            "Extension {} not found in marketplace",
+            id
+        )));
     }
 
     let metadata: MarketplaceExtensionMetadata = response
@@ -1393,16 +1433,24 @@ pub async fn get_marketplace_extension_handler(
 /// Detect current platform for extension download
 fn detect_platform() -> &'static str {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    { "darwin-aarch64" }
+    {
+        "darwin-aarch64"
+    }
 
     #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    { "darwin-x86_64" }
+    {
+        "darwin-x86_64"
+    }
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    { "linux-x86_64" }
+    {
+        "linux-x86_64"
+    }
 
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    { "windows-x86_64" }
+    {
+        "windows-x86_64"
+    }
 
     #[cfg(not(any(
         all(target_os = "macos", target_arch = "aarch64"),
@@ -1410,7 +1458,9 @@ fn detect_platform() -> &'static str {
         all(target_os = "linux", target_arch = "x86_64"),
         all(target_os = "windows", target_arch = "x86_64")
     )))]
-    { "unknown" }
+    {
+        "unknown"
+    }
 }
 
 /// Compute SHA256 checksum of file content
@@ -1543,14 +1593,21 @@ pub async fn install_marketplace_extension_handler(
                 downloaded: false,
                 installed: false,
                 path: None,
-                error: Some(format!("Checksum verification failed: expected {}, got {}", build.sha256, checksum)),
+                error: Some(format!(
+                    "Checksum verification failed: expected {}, got {}",
+                    build.sha256, checksum
+                )),
             });
         }
     }
 
     // Determine file extension and naming based on type
     let (ext, wasm_filename, json_filename) = if is_wasm {
-        (".wasm", format!("{}.wasm", req.id.replace("-", "_")), format!("{}.json", req.id.replace("-", "_")))
+        (
+            ".wasm",
+            format!("{}.wasm", req.id.replace("-", "_")),
+            format!("{}.json", req.id.replace("-", "_")),
+        )
     } else if platform.starts_with("darwin") {
         (".dylib", String::new(), String::new())
     } else if platform.starts_with("linux") {
@@ -1567,8 +1624,9 @@ pub async fn install_marketplace_extension_handler(
         .join(".neomind")
         .join("extensions");
 
-    std::fs::create_dir_all(&extensions_dir)
-        .map_err(|e| ErrorResponse::internal(format!("Failed to create extensions directory: {}", e)))?;
+    std::fs::create_dir_all(&extensions_dir).map_err(|e| {
+        ErrorResponse::internal(format!("Failed to create extensions directory: {}", e))
+    })?;
 
     // Write the extension file(s)
     let (file_path, json_path) = if is_wasm {
@@ -1613,27 +1671,36 @@ pub async fn install_marketplace_extension_handler(
                     }
                 }
 
-                std::fs::write(&json_path, &json_bytes)
-                    .map_err(|e| ErrorResponse::internal(format!("Failed to write JSON file: {}", e)))?;
+                std::fs::write(&json_path, &json_bytes).map_err(|e| {
+                    ErrorResponse::internal(format!("Failed to write JSON file: {}", e))
+                })?;
             } else {
                 // Copy local JSON if download fails (fallback)
-                let local_json = format!("extensions/{}/{}.json",
-                    req.id.replace("-", "_"), req.id.replace("-", "_"));
+                let local_json = format!(
+                    "extensions/{}/{}.json",
+                    req.id.replace("-", "_"),
+                    req.id.replace("-", "_")
+                );
                 if PathBuf::from(&local_json).exists() {
                     let _ = std::fs::copy(&local_json, &json_path);
                 }
             }
         }
 
-        tracing::info!("WASM extension downloaded to: {:?} + {:?}", wasm_path, json_path);
+        tracing::info!(
+            "WASM extension downloaded to: {:?} + {:?}",
+            wasm_path,
+            json_path
+        );
         (wasm_path, Some(json_path))
     } else {
         // Native: write single binary file
         let filename = format!("libneomind_extension_{}{}", req.id, ext);
         let file_path = extensions_dir.join(&filename);
 
-        std::fs::write(&file_path, &bytes)
-            .map_err(|e| ErrorResponse::internal(format!("Failed to write extension file: {}", e)))?;
+        std::fs::write(&file_path, &bytes).map_err(|e| {
+            ErrorResponse::internal(format!("Failed to write extension file: {}", e))
+        })?;
 
         tracing::info!("Extension downloaded to: {:?}", file_path);
         (file_path, None)
@@ -1760,15 +1827,18 @@ pub async fn get_extension_config_handler(
     let registry = &state.extensions.registry;
 
     // Get extension info for schema
-    let ext_info = registry.get_info(&id).await
+    let ext_info = registry
+        .get_info(&id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     // Get current config from storage
-    let current_config: Option<serde_json::Value> = if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
-        store.load(&id).ok().flatten().and_then(|r| r.config)
-    } else {
-        None
-    };
+    let current_config: Option<serde_json::Value> =
+        if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+            store.load(&id).ok().flatten().and_then(|r| r.config)
+        } else {
+            None
+        };
 
     // Build config schema from extension metadata
     let config_schema = if let Some(config_params) = &ext_info.metadata.config_parameters {
@@ -1800,7 +1870,9 @@ pub async fn update_extension_config_handler(
     let registry = &state.extensions.registry;
 
     // Verify extension exists
-    let ext_info = registry.get_info(&id).await
+    let ext_info = registry
+        .get_info(&id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     // Validate config against schema if present
@@ -1819,12 +1891,17 @@ pub async fn update_extension_config_handler(
             let new_record = ExtensionRecord::new(
                 id.clone(),
                 ext_info.metadata.name.clone(),
-                ext_info.metadata.file_path.as_ref()
-                    .and_then(|p| p.to_str()).map(|s| s.to_string())
+                ext_info
+                    .metadata
+                    .file_path
+                    .as_ref()
+                    .and_then(|p| p.to_str())
+                    .map(|s| s.to_string())
                     .unwrap_or_default(),
                 "native".to_string(),
                 ext_info.metadata.version.to_string(),
-            ).with_config(config.clone());
+            )
+            .with_config(config.clone());
             store.save(&new_record)?;
         }
     }
@@ -1846,14 +1923,17 @@ pub async fn reload_extension_handler(
     let registry = &state.extensions.registry;
 
     // Get current config
-    let config: Option<serde_json::Value> = if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
-        store.load(&id).ok().flatten().and_then(|r| r.config)
-    } else {
-        None
-    };
+    let config: Option<serde_json::Value> =
+        if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+            store.load(&id).ok().flatten().and_then(|r| r.config)
+        } else {
+            None
+        };
 
     // Unregister the extension
-    registry.unregister(&id).await
+    registry
+        .unregister(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to unregister: {}", e)))?;
 
     // Re-register with config (this is a simplified reload - in production
@@ -1933,7 +2013,8 @@ fn validate_config(
     config: &serde_json::Value,
     parameters: &[ParameterDefinition],
 ) -> std::result::Result<(), String> {
-    let obj = config.as_object()
+    let obj = config
+        .as_object()
         .ok_or_else(|| "Config must be an object".to_string())?;
 
     for param in parameters {
@@ -1980,7 +2061,10 @@ fn validate_config(
                 MetricDataType::Binary => {
                     // Binary configs are typically base64 strings
                     if !v.is_string() {
-                        return Err(format!("Parameter '{}' must be a string (base64)", param.name));
+                        return Err(format!(
+                            "Parameter '{}' must be a string (base64)",
+                            param.name
+                        ));
                     }
                 }
             }
@@ -1990,14 +2074,16 @@ fn validate_config(
                 if let Some(min) = param.min {
                     if n < min {
                         return Err(format!(
-                            "Parameter '{}' must be at least {}", param.name, min
+                            "Parameter '{}' must be at least {}",
+                            param.name, min
                         ));
                     }
                 }
                 if let Some(max) = param.max {
                     if n > max {
                         return Err(format!(
-                            "Parameter '{}' must be at most {}", param.name, max
+                            "Parameter '{}' must be at most {}",
+                            param.name, max
                         ));
                     }
                 }
@@ -2007,4 +2093,3 @@ fn validate_config(
 
     Ok(())
 }
-

@@ -7,7 +7,9 @@
 //! 4. Auto-registers high-confidence devices
 
 use crate::discovery::types::*;
-use crate::discovery::{DataPathExtractor, SemanticInference, VirtualMetricGenerator, MetricEnhancement};
+use crate::discovery::{
+    DataPathExtractor, MetricEnhancement, SemanticInference, VirtualMetricGenerator,
+};
 use neomind_core::{EventBus, LlmRuntime};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -23,11 +25,11 @@ fn decode_base64(s: &str) -> Vec<u8> {
 }
 
 /// Constants for auto-onboarding limits
-const MAX_DRAFT_DEVICES: usize = 50;  // Maximum concurrent draft devices
-const MIN_SAMPLES_FOR_ANALYSIS: usize = 1;  // Minimum samples before analysis
-const MAX_MESSAGES_PER_DRAFT: usize = 20;  // Max messages to process per draft (security)
-const MESSAGE_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);  // Rate limit window
-const MAX_MESSAGES_PER_WINDOW: usize = 10;  // Max messages per minute per device
+const MAX_DRAFT_DEVICES: usize = 50; // Maximum concurrent draft devices
+const MIN_SAMPLES_FOR_ANALYSIS: usize = 1; // Minimum samples before analysis
+const MAX_MESSAGES_PER_DRAFT: usize = 20; // Max messages to process per draft (security)
+const MESSAGE_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60); // Rate limit window
+const MAX_MESSAGES_PER_WINDOW: usize = 10; // Max messages per minute per device
 
 /// Rate limiter for device messages
 #[derive(Debug, Clone)]
@@ -125,7 +127,7 @@ impl Default for AutoOnboardConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            max_samples: 10,  // Collect 10 samples max
+            max_samples: 10,             // Collect 10 samples max
             draft_retention_secs: 86400, // 24 hours
         }
     }
@@ -231,7 +233,8 @@ impl AutoOnboardManager {
         data: &serde_json::Value,
         is_binary: bool,
     ) -> Result<bool> {
-        self.process_unknown_device_with_topic(device_id, source, data, is_binary, None, None).await
+        self.process_unknown_device_with_topic(device_id, source, data, is_binary, None, None)
+            .await
     }
 
     /// Process incoming data from an unknown device with original topic
@@ -284,13 +287,18 @@ impl AutoOnboardManager {
             let count = rate_limiter.total_count().await;
             tracing::warn!(
                 "Rate limit exceeded for device '{}': {} messages processed (max: {})",
-                device_id, count, MAX_MESSAGES_PER_DRAFT
+                device_id,
+                count,
+                MAX_MESSAGES_PER_DRAFT
             );
 
             // Block the device if it's clearly spamming
             if count >= MAX_MESSAGES_PER_DRAFT {
                 let mut blocked = self.blocked_devices.write().await;
-                blocked.insert(device_id.to_string(), (Instant::now(), "Rate limit exceeded".to_string()));
+                blocked.insert(
+                    device_id.to_string(),
+                    (Instant::now(), "Rate limit exceeded".to_string()),
+                );
                 tracing::warn!("Device '{}' blocked due to excessive messages", device_id);
             }
             return Ok(false);
@@ -317,7 +325,15 @@ impl AutoOnboardManager {
         drop(drafts);
 
         // Create new draft device
-        self.create_draft_with_topic(device_id, source, data, is_binary, original_topic, adapter_id).await
+        self.create_draft_with_topic(
+            device_id,
+            source,
+            data,
+            is_binary,
+            original_topic,
+            adapter_id,
+        )
+        .await
     }
 
     /// Create a new draft device with original topic
@@ -353,7 +369,7 @@ impl AutoOnboardManager {
             let raw_bytes = decode_base64(base64_str);
             DeviceSample {
                 raw_data: raw_bytes,
-                parsed: None,  // Binary data has no parsed JSON
+                parsed: None, // Binary data has no parsed JSON
                 source: source.to_string(),
                 timestamp: chrono::Utc::now().timestamp(),
             }
@@ -376,11 +392,13 @@ impl AutoOnboardManager {
         let draft_id_for_event = draft_id.clone();
         let device_id_for_event = device_id_owned.clone();
         tokio::spawn(async move {
-            manager_for_event.publish_event(AutoOnboardEvent::DraftCreated {
-                draft_id: draft_id_for_event,
-                device_id: device_id_for_event,
-                source: source_owned,
-            }).await;
+            manager_for_event
+                .publish_event(AutoOnboardEvent::DraftCreated {
+                    draft_id: draft_id_for_event,
+                    device_id: device_id_for_event,
+                    source: source_owned,
+                })
+                .await;
         });
 
         tracing::info!(
@@ -391,11 +409,8 @@ impl AutoOnboardManager {
             is_binary
         );
 
-        // Trigger analysis immediately since MIN_SAMPLES_FOR_ANALYSIS = 1
-        let manager_for_analysis = self.clone();
-        tokio::spawn(async move {
-            let _ = manager_for_analysis.analyze_device(&draft_id, &device_id_owned, samples).await;
-        });
+        // Note: Analysis will be triggered when MIN_SAMPLES_FOR_ANALYSIS samples are collected
+        // See add_sample_to_draft() for the analysis trigger logic
 
         Ok(true)
     }
@@ -451,10 +466,12 @@ impl AutoOnboardManager {
             let manager = self.clone();
             let draft_id = draft.id.clone();
             tokio::spawn(async move {
-                manager.publish_event(AutoOnboardEvent::SampleCollected {
-                    draft_id,
-                    sample_count: count,
-                }).await;
+                manager
+                    .publish_event(AutoOnboardEvent::SampleCollected {
+                        draft_id,
+                        sample_count: count,
+                    })
+                    .await;
             });
 
             // Check if ready for analysis
@@ -495,10 +512,12 @@ impl AutoOnboardManager {
         let draft_id_str = draft_id.to_string();
         let sample_count = samples.len();
         tokio::spawn(async move {
-            manager.publish_event(AutoOnboardEvent::AnalysisStarted {
-                draft_id: draft_id_str,
-                sample_count,
-            }).await;
+            manager
+                .publish_event(AutoOnboardEvent::AnalysisStarted {
+                    draft_id: draft_id_str,
+                    sample_count,
+                })
+                .await;
         });
 
         tracing::info!(
@@ -515,12 +534,17 @@ impl AutoOnboardManager {
 
         // For binary devices, generate simple mode MDL directly
         if is_binary {
-            tracing::info!("Draft device '{}' is binary, generating simple mode MDL", device_id);
+            tracing::info!(
+                "Draft device '{}' is binary, generating simple mode MDL",
+                device_id
+            );
 
             let category = DeviceCategory::Unknown;
             let type_id = format!("auto_{}", device_id.replace('-', "_"));
 
-            let mdl_definition = self.generate_simple_mdl(&type_id, &type_id, &category).await?;
+            let mdl_definition = self
+                .generate_simple_mdl(&type_id, &type_id, &category)
+                .await?;
 
             let generated_type = GeneratedDeviceType::from_discovered(
                 type_id.clone(),
@@ -545,10 +569,12 @@ impl AutoOnboardManager {
             let manager = self.clone_for_task();
             let draft_id_str = draft_id.to_string();
             tokio::spawn(async move {
-                manager.publish_event(AutoOnboardEvent::AnalysisCompleted {
-                    draft_id: draft_id_str,
-                    device_type: type_id_for_event,
-                }).await;
+                manager
+                    .publish_event(AutoOnboardEvent::AnalysisCompleted {
+                        draft_id: draft_id_str,
+                        device_type: type_id_for_event,
+                    })
+                    .await;
             });
 
             tracing::info!(
@@ -570,7 +596,7 @@ impl AutoOnboardManager {
 
         if metrics.is_empty() {
             return Err(DiscoveryError::Parse(
-                "No metrics could be extracted from samples".to_string()
+                "No metrics could be extracted from samples".to_string(),
             ));
         }
 
@@ -622,7 +648,9 @@ impl AutoOnboardManager {
         }
 
         // Generate MDL definition
-        let mdl_definition = self.generate_mdl(&type_id, &type_id, &metrics, &category).await?;
+        let mdl_definition = self
+            .generate_mdl(&type_id, &type_id, &metrics, &category)
+            .await?;
 
         let generated_type = GeneratedDeviceType::from_discovered(
             type_id.clone(),
@@ -636,7 +664,8 @@ impl AutoOnboardManager {
 
         // Register type signature if this is a new type
         if !reusing_type {
-            self.register_type_signature(&metrics, &category, &type_id).await;
+            self.register_type_signature(&metrics, &category, &type_id)
+                .await;
         }
 
         // Update draft with generated type
@@ -653,10 +682,12 @@ impl AutoOnboardManager {
         let manager = self.clone();
         let draft_id_str = draft_id.to_string();
         tokio::spawn(async move {
-            manager.publish_event(AutoOnboardEvent::AnalysisCompleted {
-                draft_id: draft_id_str,
-                device_type: type_id_for_event,
-            }).await;
+            manager
+                .publish_event(AutoOnboardEvent::AnalysisCompleted {
+                    draft_id: draft_id_str,
+                    device_type: type_id_for_event,
+                })
+                .await;
         });
 
         tracing::info!(
@@ -669,19 +700,18 @@ impl AutoOnboardManager {
         // Get the generated type from drafts
         let drafts = self.drafts.read().await;
         if let Some(draft) = drafts.get(device_id)
-            && let Some(ref gen_type) = draft.generated_type {
-                return Ok(gen_type.clone());
-            }
+            && let Some(ref gen_type) = draft.generated_type
+        {
+            return Ok(gen_type.clone());
+        }
 
-        Err(DiscoveryError::Parse("Generated type not found".to_string()))
+        Err(DiscoveryError::Parse(
+            "Generated type not found".to_string(),
+        ))
     }
 
     /// Register a device from its draft
-    pub async fn register_device(
-        &self,
-        draft_id: &str,
-        device_id: &str,
-    ) -> Result<()> {
+    pub async fn register_device(&self, draft_id: &str, device_id: &str) -> Result<()> {
         let (device_type, _mdl_def) = {
             let drafts = self.drafts.read().await;
             let draft = drafts.get(device_id).ok_or_else(|| {
@@ -692,7 +722,10 @@ impl AutoOnboardManager {
                 DiscoveryError::InvalidData("No generated type for draft".to_string())
             })?;
 
-            (gen_type.device_type.clone(), gen_type.mdl_definition.clone())
+            (
+                gen_type.device_type.clone(),
+                gen_type.mdl_definition.clone(),
+            )
         };
 
         tracing::info!(
@@ -720,11 +753,13 @@ impl AutoOnboardManager {
         let device_id_str = device_id.to_string();
         let device_type_clone = device_type.clone();
         tokio::spawn(async move {
-            manager.publish_event(AutoOnboardEvent::DeviceRegistered {
-                draft_id: draft_id_str,
-                device_id: device_id_str,
-                device_type: device_type_clone,
-            }).await;
+            manager
+                .publish_event(AutoOnboardEvent::DeviceRegistered {
+                    draft_id: draft_id_str,
+                    device_id: device_id_str,
+                    device_type: device_type_clone,
+                })
+                .await;
         });
 
         tracing::info!("Device '{}' successfully registered", device_id);
@@ -746,10 +781,7 @@ impl AutoOnboardManager {
         draft_id: &str,
         device_id: &str,
     ) -> Result<RegistrationResult> {
-        tracing::info!(
-            "Registering device '{}' with LLM enhancement",
-            device_id
-        );
+        tracing::info!("Registering device '{}' with LLM enhancement", device_id);
 
         // Get the draft and its metrics
         let (_draft, metrics) = {
@@ -769,24 +801,31 @@ impl AutoOnboardManager {
         let category_name = category.display_name();
 
         // Step 1: Enhance metrics with LLM (generate Chinese names, descriptions, units)
-        tracing::info!("Enhancing {} metrics with LLM for device '{}'", metrics.len(), device_id);
-        let enhancements = self.semantic_inference.enhance_metrics_with_llm(
-            device_id,
-            category_name,
-            &metrics
-        ).await;
+        tracing::info!(
+            "Enhancing {} metrics with LLM for device '{}'",
+            metrics.len(),
+            device_id
+        );
+        let enhancements = self
+            .semantic_inference
+            .enhance_metrics_with_llm(device_id, category_name, &metrics)
+            .await;
 
         // Step 2: Apply enhancements to metrics
-        let enhancement_map: std::collections::HashMap<String, _> = enhancements.into_iter().collect();
+        let enhancement_map: std::collections::HashMap<String, _> =
+            enhancements.into_iter().collect();
 
-        let enhanced_metrics: Vec<DiscoveredMetric> = metrics.into_iter().map(|mut m| {
-            if let Some(enhancement) = enhancement_map.get(&m.name) {
-                m.display_name = enhancement.display_name.clone();
-                m.description = enhancement.description.clone();
-                m.unit = enhancement.unit.clone();
-            }
-            m
-        }).collect();
+        let enhanced_metrics: Vec<DiscoveredMetric> = metrics
+            .into_iter()
+            .map(|mut m| {
+                if let Some(enhancement) = enhancement_map.get(&m.name) {
+                    m.display_name = enhancement.display_name.clone();
+                    m.description = enhancement.description.clone();
+                    m.unit = enhancement.unit.clone();
+                }
+                m
+            })
+            .collect();
 
         // Step 3: Generate the type ID
         let type_id = format!("auto_{}", device_id.replace('-', "_"));
@@ -799,15 +838,21 @@ impl AutoOnboardManager {
 
         tracing::info!(
             "Device '{}' assigned system device_id '{}' with recommended topic '{}'",
-            device_id, system_device_id, recommended_topic
+            device_id,
+            system_device_id,
+            recommended_topic
         );
 
         // Step 4: Generate MDL definition with enhanced metrics
-        let mdl_definition = self.generate_mdl(&type_id, &display_name, &enhanced_metrics, &category).await?;
+        let mdl_definition = self
+            .generate_mdl(&type_id, &display_name, &enhanced_metrics, &category)
+            .await?;
 
         tracing::info!(
             "Device '{}' enhanced and registered as type '{}', system device_id: '{}'",
-            device_id, type_id, system_device_id
+            device_id,
+            type_id,
+            system_device_id
         );
 
         // Update draft status and store system_device_id
@@ -833,11 +878,13 @@ impl AutoOnboardManager {
         let system_device_id_clone = system_device_id.clone();
         let type_id_clone = type_id.clone();
         tokio::spawn(async move {
-            manager.publish_event(AutoOnboardEvent::DeviceRegistered {
-                draft_id: draft_id_str,
-                device_id: system_device_id_clone,
-                device_type: type_id_clone,
-            }).await;
+            manager
+                .publish_event(AutoOnboardEvent::DeviceRegistered {
+                    draft_id: draft_id_str,
+                    device_id: system_device_id_clone,
+                    device_type: type_id_clone,
+                })
+                .await;
         });
 
         Ok(RegistrationResult {
@@ -867,13 +914,19 @@ impl AutoOnboardManager {
         let manager = self.clone();
         let reason_str = reason.to_string();
         tokio::spawn(async move {
-            manager.publish_event(AutoOnboardEvent::DeviceRejected {
-                draft_id,
-                reason: reason_str,
-            }).await;
+            manager
+                .publish_event(AutoOnboardEvent::DeviceRejected {
+                    draft_id,
+                    reason: reason_str,
+                })
+                .await;
         });
 
-        tracing::info!("Draft device '{}' rejected and removed: {}", device_id, reason);
+        tracing::info!(
+            "Draft device '{}' rejected and removed: {}",
+            device_id,
+            reason
+        );
 
         Ok(())
     }
@@ -895,7 +948,6 @@ impl AutoOnboardManager {
 
         Ok(())
     }
-
 
     /// Set the status of a draft device
     pub async fn set_draft_status(&self, device_id: &str, status: DraftDeviceStatus) -> Result<()> {
@@ -972,11 +1024,9 @@ impl AutoOnboardManager {
         device_category: &str,
         metrics: &[DiscoveredMetric],
     ) -> Vec<(String, MetricEnhancement)> {
-        self.semantic_inference.enhance_metrics_with_llm(
-            device_id,
-            device_category,
-            metrics,
-        ).await
+        self.semantic_inference
+            .enhance_metrics_with_llm(device_id, device_category, metrics)
+            .await
     }
 
     /// Clean up old draft devices
@@ -990,9 +1040,7 @@ impl AutoOnboardManager {
 
         let to_remove: Vec<String> = drafts
             .iter()
-            .filter(|(_, d)| {
-                now - d.updated_at > retention_secs as i64
-            })
+            .filter(|(_, d)| now - d.updated_at > retention_secs as i64)
             .map(|(id, _)| id.clone())
             .collect();
 
@@ -1012,12 +1060,18 @@ impl AutoOnboardManager {
         let has_motion = metrics.iter().any(|m| m.semantic_type == Motion);
         let has_light = metrics.iter().any(|m| m.semantic_type == Light);
         let has_switch = metrics.iter().any(|m| m.semantic_type == Switch);
-        let has_power = metrics.iter().any(|m| m.semantic_type == Power || m.semantic_type == Energy);
+        let has_power = metrics
+            .iter()
+            .any(|m| m.semantic_type == Power || m.semantic_type == Energy);
         let has_battery = metrics.iter().any(|m| m.semantic_type == Battery);
 
         // Detection-related patterns
-        let has_detections = metrics.iter().any(|m| m.path.contains("detection") || m.path.contains("object"));
-        let has_image = metrics.iter().any(|m| m.path.contains("image") || m.path.contains("frame"));
+        let has_detections = metrics
+            .iter()
+            .any(|m| m.path.contains("detection") || m.path.contains("object"));
+        let has_image = metrics
+            .iter()
+            .any(|m| m.path.contains("image") || m.path.contains("frame"));
 
         match () {
             _ if has_image && has_detections => DeviceCategory::Camera,
@@ -1058,7 +1112,8 @@ impl AutoOnboardManager {
         metrics: &[DiscoveredMetric],
         category: &DeviceCategory,
     ) -> Result<serde_json::Value> {
-        self.generate_mdl_impl(type_id, name, metrics, category, false).await
+        self.generate_mdl_impl(type_id, name, metrics, category, false)
+            .await
     }
 
     /// Generate MDL definition for binary devices (simple mode)
@@ -1068,7 +1123,8 @@ impl AutoOnboardManager {
         name: &str,
         category: &DeviceCategory,
     ) -> Result<serde_json::Value> {
-        self.generate_mdl_impl(type_id, name, &[], category, true).await
+        self.generate_mdl_impl(type_id, name, &[], category, true)
+            .await
     }
 
     /// Internal MDL generation implementation
@@ -1086,7 +1142,8 @@ impl AutoOnboardManager {
         let metrics_def: Vec<serde_json::Value> = if is_simple_mode {
             Vec::new()
         } else {
-            metrics.iter()
+            metrics
+                .iter()
                 .map(|m| {
                     json!({
                         "name": m.name,
@@ -1102,7 +1159,10 @@ impl AutoOnboardManager {
 
         let mode = if is_simple_mode { "simple" } else { "full" };
         let description = if is_simple_mode {
-            format!("Auto-generated {} definition (Raw Data Mode - requires Transform for decoding)", category.display_name())
+            format!(
+                "Auto-generated {} definition (Raw Data Mode - requires Transform for decoding)",
+                category.display_name()
+            )
         } else {
             format!("Auto-generated {} definition", category.display_name())
         };
@@ -1139,7 +1199,11 @@ impl AutoOnboardManager {
     /// The signature is based on the ordered list of (semantic_type, data_type) pairs
     /// and the device category. This allows devices with the same data structure
     /// to be identified as the same type.
-    pub fn compute_type_signature(&self, metrics: &[DiscoveredMetric], category: &DeviceCategory) -> TypeSignature {
+    pub fn compute_type_signature(
+        &self,
+        metrics: &[DiscoveredMetric],
+        category: &DeviceCategory,
+    ) -> TypeSignature {
         // Sort metrics by semantic type to ensure consistent ordering
         let mut sorted_metrics = metrics.to_vec();
         sorted_metrics.sort_by(|a, b| {
@@ -1175,7 +1239,11 @@ impl AutoOnboardManager {
     /// Find an existing device type that matches the given metrics
     ///
     /// Returns None if no matching type exists, or Some(device_type_id) if found.
-    pub async fn find_matching_type(&self, metrics: &[DiscoveredMetric], category: &DeviceCategory) -> Option<String> {
+    pub async fn find_matching_type(
+        &self,
+        metrics: &[DiscoveredMetric],
+        category: &DeviceCategory,
+    ) -> Option<String> {
         let signature = self.compute_type_signature(metrics, category);
         let signature_hash = signature.to_hash();
 
@@ -1187,7 +1255,12 @@ impl AutoOnboardManager {
     ///
     /// Returns the most similar device type if similarity >= threshold (default 0.7)
     /// Uses Jaccard similarity on metric signatures
-    pub async fn find_similar_type(&self, metrics: &[DiscoveredMetric], category: &DeviceCategory, threshold: f64) -> Option<String> {
+    pub async fn find_similar_type(
+        &self,
+        metrics: &[DiscoveredMetric],
+        category: &DeviceCategory,
+        threshold: f64,
+    ) -> Option<String> {
         let signature = self.compute_type_signature(metrics, category);
 
         // Get all registered signatures
@@ -1224,14 +1297,15 @@ impl AutoOnboardManager {
 
         // Look up the device_type from the signature hash
         if let Some((sig_hash, similarity)) = best_match
-            && let Some(device_type) = type_signatures.get(&sig_hash) {
-                tracing::info!(
-                    "Found similar type '{}' with similarity {:.2}%",
-                    device_type,
-                    similarity * 100.0
-                );
-                return Some(device_type.clone());
-            }
+            && let Some(device_type) = type_signatures.get(&sig_hash)
+        {
+            tracing::info!(
+                "Found similar type '{}' with similarity {:.2}%",
+                device_type,
+                similarity * 100.0
+            );
+            return Some(device_type.clone());
+        }
 
         None
     }
@@ -1263,7 +1337,12 @@ impl AutoOnboardManager {
     /// Register a new type signature mapping
     ///
     /// Stores the relationship between a signature hash and device_type_id.
-    pub async fn register_type_signature(&self, metrics: &[DiscoveredMetric], category: &DeviceCategory, device_type: &str) {
+    pub async fn register_type_signature(
+        &self,
+        metrics: &[DiscoveredMetric],
+        category: &DeviceCategory,
+        device_type: &str,
+    ) {
         let signature = self.compute_type_signature(metrics, category);
         let signature_hash = signature.to_hash();
 
@@ -1313,7 +1392,10 @@ impl AutoOnboardManager {
         let signature_hash = {
             let reverse = self.device_type_signatures.read().await;
             reverse.get(old_name).cloned().ok_or_else(|| {
-                DiscoveryError::InvalidData(format!("Device type not found in signatures: {}", old_name))
+                DiscoveryError::InvalidData(format!(
+                    "Device type not found in signatures: {}",
+                    old_name
+                ))
             })?
         };
 
@@ -1321,9 +1403,10 @@ impl AutoOnboardManager {
         {
             let mut signatures = self.type_signatures.write().await;
             if let Some(existing_type) = signatures.get(&signature_hash)
-                && existing_type == old_name {
-                    signatures.insert(signature_hash.clone(), new_name.to_string());
-                }
+                && existing_type == old_name
+            {
+                signatures.insert(signature_hash.clone(), new_name.to_string());
+            }
         }
 
         // Update device_type -> signature mapping
@@ -1342,7 +1425,10 @@ impl AutoOnboardManager {
         let signature_hash = {
             let reverse = self.device_type_signatures.read().await;
             reverse.get(device_type).cloned().ok_or_else(|| {
-                DiscoveryError::InvalidData(format!("Device type not found in signatures: {}", device_type))
+                DiscoveryError::InvalidData(format!(
+                    "Device type not found in signatures: {}",
+                    device_type
+                ))
             })?
         };
 
@@ -1363,7 +1449,11 @@ impl AutoOnboardManager {
     }
 
     /// Check if a device type exists for the given signature
-    pub async fn has_matching_type(&self, metrics: &[DiscoveredMetric], category: &DeviceCategory) -> bool {
+    pub async fn has_matching_type(
+        &self,
+        metrics: &[DiscoveredMetric],
+        category: &DeviceCategory,
+    ) -> bool {
         self.find_matching_type(metrics, category).await.is_some()
     }
 
@@ -1506,7 +1596,13 @@ mod tests {
             fn max_context_length(&self) -> usize {
                 4096
             }
-            async fn generate(&self, _input: neomind_core::llm::backend::LlmInput) -> std::result::Result<neomind_core::llm::backend::LlmOutput, neomind_core::llm::backend::LlmError> {
+            async fn generate(
+                &self,
+                _input: neomind_core::llm::backend::LlmInput,
+            ) -> std::result::Result<
+                neomind_core::llm::backend::LlmOutput,
+                neomind_core::llm::backend::LlmError,
+            > {
                 Ok(neomind_core::llm::backend::LlmOutput {
                     text: String::new(),
                     thinking: None,
@@ -1517,7 +1613,19 @@ mod tests {
             async fn generate_stream(
                 &self,
                 _input: neomind_core::llm::backend::LlmInput,
-            ) -> std::result::Result<Pin<Box<dyn futures::Stream<Item = std::result::Result<(String, bool), neomind_core::llm::backend::LlmError>> + Send>>, neomind_core::llm::backend::LlmError> {
+            ) -> std::result::Result<
+                Pin<
+                    Box<
+                        dyn futures::Stream<
+                                Item = std::result::Result<
+                                    (String, bool),
+                                    neomind_core::llm::backend::LlmError,
+                                >,
+                            > + Send,
+                    >,
+                >,
+                neomind_core::llm::backend::LlmError,
+            > {
                 Ok(Box::pin(futures::stream::empty()))
             }
         }

@@ -44,41 +44,82 @@ use neomind_storage::device_registry::{
 };
 
 // Conversion function for ValidationRule
-fn convert_validation_rule_to_storage(vr: &super::mdl_format::ValidationRule) -> StorageValidationRule {
+fn convert_validation_rule_to_storage(
+    vr: &super::mdl_format::ValidationRule,
+) -> StorageValidationRule {
     match vr {
-        super::mdl_format::ValidationRule::Pattern { regex, error_message } => {
-            StorageValidationRule::Pattern { regex: regex.clone(), error_message: error_message.clone() }
-        }
-        super::mdl_format::ValidationRule::Range { min, max, error_message } => {
-            StorageValidationRule::Range { min: *min, max: *max, error_message: error_message.clone() }
-        }
-        super::mdl_format::ValidationRule::Length { min, max, error_message } => {
-            StorageValidationRule::Length { min: *min, max: *max, error_message: error_message.clone() }
-        }
+        super::mdl_format::ValidationRule::Pattern {
+            regex,
+            error_message,
+        } => StorageValidationRule::Pattern {
+            regex: regex.clone(),
+            error_message: error_message.clone(),
+        },
+        super::mdl_format::ValidationRule::Range {
+            min,
+            max,
+            error_message,
+        } => StorageValidationRule::Range {
+            min: *min,
+            max: *max,
+            error_message: error_message.clone(),
+        },
+        super::mdl_format::ValidationRule::Length {
+            min,
+            max,
+            error_message,
+        } => StorageValidationRule::Length {
+            min: *min,
+            max: *max,
+            error_message: error_message.clone(),
+        },
         super::mdl_format::ValidationRule::Custom { validator, params } => {
-            StorageValidationRule::Custom { validator: validator.clone(), params: params.clone() }
+            StorageValidationRule::Custom {
+                validator: validator.clone(),
+                params: params.clone(),
+            }
         }
     }
 }
 
-fn convert_validation_rule_from_storage(vr: StorageValidationRule) -> super::mdl_format::ValidationRule {
+fn convert_validation_rule_from_storage(
+    vr: StorageValidationRule,
+) -> super::mdl_format::ValidationRule {
     match vr {
-        StorageValidationRule::Pattern { regex, error_message } => {
-            super::mdl_format::ValidationRule::Pattern { regex, error_message }
-        }
-        StorageValidationRule::Range { min, max, error_message } => {
-            super::mdl_format::ValidationRule::Range { min, max, error_message }
-        }
-        StorageValidationRule::Length { min, max, error_message } => {
-            super::mdl_format::ValidationRule::Length { min, max, error_message }
-        }
+        StorageValidationRule::Pattern {
+            regex,
+            error_message,
+        } => super::mdl_format::ValidationRule::Pattern {
+            regex,
+            error_message,
+        },
+        StorageValidationRule::Range {
+            min,
+            max,
+            error_message,
+        } => super::mdl_format::ValidationRule::Range {
+            min,
+            max,
+            error_message,
+        },
+        StorageValidationRule::Length {
+            min,
+            max,
+            error_message,
+        } => super::mdl_format::ValidationRule::Length {
+            min,
+            max,
+            error_message,
+        },
         StorageValidationRule::Custom { validator, params } => {
             super::mdl_format::ValidationRule::Custom { validator, params }
         }
     }
 }
 
-fn convert_parameter_group_to_storage(pg: &super::mdl_format::ParameterGroup) -> StorageParameterGroup {
+fn convert_parameter_group_to_storage(
+    pg: &super::mdl_format::ParameterGroup,
+) -> StorageParameterGroup {
     StorageParameterGroup {
         id: pg.id.clone(),
         display_name: pg.display_name.clone(),
@@ -89,7 +130,9 @@ fn convert_parameter_group_to_storage(pg: &super::mdl_format::ParameterGroup) ->
     }
 }
 
-fn convert_parameter_group_from_storage(pg: StorageParameterGroup) -> super::mdl_format::ParameterGroup {
+fn convert_parameter_group_from_storage(
+    pg: StorageParameterGroup,
+) -> super::mdl_format::ParameterGroup {
     super::mdl_format::ParameterGroup {
         id: pg.id,
         display_name: pg.display_name,
@@ -445,13 +488,21 @@ impl DeviceRegistry {
                                     visible_when: p.visible_when,
                                     group: p.group,
                                     help_text: p.help_text,
-                                    validation: p.validation.into_iter().map(convert_validation_rule_from_storage).collect(),
+                                    validation: p
+                                        .validation
+                                        .into_iter()
+                                        .map(convert_validation_rule_from_storage)
+                                        .collect(),
                                 }
                             })
                             .collect(),
                         samples: c.samples,
                         llm_hints: c.llm_hints,
-                        parameter_groups: c.parameter_groups.into_iter().map(convert_parameter_group_from_storage).collect(),
+                        parameter_groups: c
+                            .parameter_groups
+                            .into_iter()
+                            .map(convert_parameter_group_from_storage)
+                            .collect(),
                     })
                     .collect(),
             };
@@ -569,12 +620,20 @@ impl DeviceRegistry {
                                 visible_when: p.visible_when.clone(),
                                 group: p.group.clone(),
                                 help_text: p.help_text.clone(),
-                                validation: p.validation.iter().map(convert_validation_rule_to_storage).collect(),
+                                validation: p
+                                    .validation
+                                    .iter()
+                                    .map(convert_validation_rule_to_storage)
+                                    .collect(),
                             })
                             .collect(),
                         samples: c.samples.clone(),
                         llm_hints: c.llm_hints.clone(),
-                        parameter_groups: c.parameter_groups.iter().map(convert_parameter_group_to_storage).collect(),
+                        parameter_groups: c
+                            .parameter_groups
+                            .iter()
+                            .map(convert_parameter_group_to_storage)
+                            .collect(),
                     })
                     .collect(),
             };
@@ -688,12 +747,20 @@ impl DeviceRegistry {
                             visible_when: p.visible_when.clone(),
                             group: p.group.clone(),
                             help_text: p.help_text.clone(),
-                            validation: p.validation.iter().map(convert_validation_rule_to_storage).collect(),
+                            validation: p
+                                .validation
+                                .iter()
+                                .map(convert_validation_rule_to_storage)
+                                .collect(),
                         })
                         .collect(),
                     samples: c.samples.clone(),
                     llm_hints: c.llm_hints.clone(),
-                    parameter_groups: c.parameter_groups.iter().map(convert_parameter_group_to_storage).collect(),
+                    parameter_groups: c
+                        .parameter_groups
+                        .iter()
+                        .map(convert_parameter_group_to_storage)
+                        .collect(),
                 })
                 .collect(),
         };
@@ -703,11 +770,13 @@ impl DeviceRegistry {
 
         // Save to storage if enabled
         drop(templates);
-        if self.storage.is_some() && *self.auto_save.read().await
+        if self.storage.is_some()
+            && *self.auto_save.read().await
             && let Some(store) = &self.storage
-                && let Err(e) = store.save_template(&storage_template) {
-                    tracing::warn!("Failed to save template to storage: {}", e);
-                }
+            && let Err(e) = store.save_template(&storage_template)
+        {
+            tracing::warn!("Failed to save template to storage: {}", e);
+        }
 
         Ok(())
     }
@@ -729,13 +798,14 @@ impl DeviceRegistry {
         // Check if any devices are using this template
         let type_index = self.type_index.read().await;
         if let Some(device_ids) = type_index.get(device_type)
-            && !device_ids.is_empty() {
-                return Err(DeviceError::InvalidParameter(format!(
-                    "Cannot unregister template '{}': {} devices still use it",
-                    device_type,
-                    device_ids.len()
-                )));
-            }
+            && !device_ids.is_empty()
+        {
+            return Err(DeviceError::InvalidParameter(format!(
+                "Cannot unregister template '{}': {} devices still use it",
+                device_type,
+                device_ids.len()
+            )));
+        }
         drop(type_index);
 
         let mut templates = self.templates.write().await;
@@ -743,11 +813,13 @@ impl DeviceRegistry {
         drop(templates);
 
         // Delete from storage if enabled
-        if self.storage.is_some() && *self.auto_save.read().await
+        if self.storage.is_some()
+            && *self.auto_save.read().await
             && let Some(store) = &self.storage
-                && let Err(e) = store.delete_template(device_type) {
-                    tracing::warn!("Failed to delete template from storage: {}", e);
-                }
+            && let Err(e) = store.delete_template(device_type)
+        {
+            tracing::warn!("Failed to delete template from storage: {}", e);
+        }
 
         Ok(())
     }
@@ -844,11 +916,12 @@ impl DeviceRegistry {
         // Save to storage FIRST (before modifying memory)
         // This ensures atomicity - if storage fails, nothing is modified in memory
         if let Some(storage_config) = &storage_config
-            && let Some(store) = &self.storage {
-                store.save_device(storage_config).map_err(|e| {
-                    DeviceError::Storage(format!("Failed to save device to storage: {}", e))
-                })?;
-            }
+            && let Some(store) = &self.storage
+        {
+            store.save_device(storage_config).map_err(|e| {
+                DeviceError::Storage(format!("Failed to save device to storage: {}", e))
+            })?;
+        }
 
         // Store device configuration in memory
         {
@@ -882,13 +955,17 @@ impl DeviceRegistry {
 
     /// Find a device by its telemetry topic
     /// This is used by MQTT adapters to route messages from custom topics
-    pub async fn find_device_by_telemetry_topic(&self, topic: &str) -> Option<(String, DeviceConfig)> {
+    pub async fn find_device_by_telemetry_topic(
+        &self,
+        topic: &str,
+    ) -> Option<(String, DeviceConfig)> {
         let devices = self.devices.read().await;
         for (device_id, config) in devices.iter() {
             if let Some(ref telemetry_topic) = config.connection_config.telemetry_topic
-                && telemetry_topic == topic {
-                    return Some((device_id.clone(), config.clone()));
-                }
+                && telemetry_topic == topic
+            {
+                return Some((device_id.clone(), config.clone()));
+            }
         }
         None
     }
@@ -938,11 +1015,13 @@ impl DeviceRegistry {
         }
 
         // Delete from storage if enabled
-        if self.storage.is_some() && *self.auto_save.read().await
+        if self.storage.is_some()
+            && *self.auto_save.read().await
             && let Some(store) = &self.storage
-                && let Err(e) = store.delete_device(device_id) {
-                    tracing::warn!("Failed to delete device from storage: {}", e);
-                }
+            && let Err(e) = store.delete_device(device_id)
+        {
+            tracing::warn!("Failed to delete device from storage: {}", e);
+        }
 
         Ok(())
     }
@@ -1000,34 +1079,36 @@ impl DeviceRegistry {
 
         // Update type index if type changed
         if let Some(old_type) = old_device_type
-            && old_type != new_device_type {
-                // Remove from old type index
-                {
-                    let mut type_index = self.type_index.write().await;
-                    if let Some(device_ids) = type_index.get_mut(&old_type) {
-                        device_ids.retain(|id| id != device_id);
-                        if device_ids.is_empty() {
-                            type_index.remove(&old_type);
-                        }
+            && old_type != new_device_type
+        {
+            // Remove from old type index
+            {
+                let mut type_index = self.type_index.write().await;
+                if let Some(device_ids) = type_index.get_mut(&old_type) {
+                    device_ids.retain(|id| id != device_id);
+                    if device_ids.is_empty() {
+                        type_index.remove(&old_type);
                     }
                 }
-
-                // Add to new type index
-                {
-                    let mut type_index = self.type_index.write().await;
-                    type_index
-                        .entry(new_device_type)
-                        .or_insert_with(Vec::new)
-                        .push(device_id.to_string());
-                }
             }
+
+            // Add to new type index
+            {
+                let mut type_index = self.type_index.write().await;
+                type_index
+                    .entry(new_device_type)
+                    .or_insert_with(Vec::new)
+                    .push(device_id.to_string());
+            }
+        }
 
         // Update storage if enabled
         if let Some(storage_config) = storage_config
             && let Some(store) = &self.storage
-                && let Err(e) = store.update_device(device_id, &storage_config) {
-                    tracing::warn!("Failed to update device in storage: {}", e);
-                }
+            && let Err(e) = store.update_device(device_id, &storage_config)
+        {
+            tracing::warn!("Failed to update device in storage: {}", e);
+        }
 
         Ok(())
     }
@@ -1196,7 +1277,11 @@ mod tests {
         }"#;
 
         let ne101_result: Result<DeviceTypeTemplate, _> = serde_json::from_str(ne101_json);
-        assert!(ne101_result.is_ok(), "ne101_camera deserialization failed: {:?}", ne101_result.err());
+        assert!(
+            ne101_result.is_ok(),
+            "ne101_camera deserialization failed: {:?}",
+            ne101_result.err()
+        );
 
         // ne301_camera.json - uses TitleCase "Array" which was problematic
         let ne301_json = r#"{
@@ -1225,24 +1310,45 @@ mod tests {
         }"#;
 
         let ne301_result: Result<DeviceTypeTemplate, _> = serde_json::from_str(ne301_json);
-        assert!(ne301_result.is_ok(), "ne301_camera deserialization failed: {:?}", ne301_result.err());
+        assert!(
+            ne301_result.is_ok(),
+            "ne301_camera deserialization failed: {:?}",
+            ne301_result.err()
+        );
 
         // Verify the Array type was deserialized correctly
         let template = ne301_result.unwrap();
-        let detections_metric = template.metrics.iter().find(|m| m.name == "ai_result.ai_result.detections");
+        let detections_metric = template
+            .metrics
+            .iter()
+            .find(|m| m.name == "ai_result.ai_result.detections");
         assert!(detections_metric.is_some(), "detections metric not found");
         match &detections_metric.unwrap().data_type {
             MetricDataType::Array { element_type } => {
-                assert!(element_type.is_none(), "element_type should be None for plain 'Array' string");
+                assert!(
+                    element_type.is_none(),
+                    "element_type should be None for plain 'Array' string"
+                );
             }
-            _ => panic!("Expected Array variant, got {:?}", detections_metric.unwrap().data_type),
+            _ => panic!(
+                "Expected Array variant, got {:?}",
+                detections_metric.unwrap().data_type
+            ),
         }
 
         // Verify command parameter with default_value was deserialized
         let capture_cmd = template.commands.iter().find(|c| c.name == "capture");
         assert!(capture_cmd.is_some(), "capture command not found");
-        let enable_ai_param = capture_cmd.unwrap().parameters.iter().find(|p| p.name == "enable_ai");
+        let enable_ai_param = capture_cmd
+            .unwrap()
+            .parameters
+            .iter()
+            .find(|p| p.name == "enable_ai");
         assert!(enable_ai_param.is_some(), "enable_ai parameter not found");
-        assert_eq!(enable_ai_param.unwrap().required, false, "enable_ai should not be required");
+        assert_eq!(
+            enable_ai_param.unwrap().required,
+            false,
+            "enable_ai should not be required"
+        );
     }
 }

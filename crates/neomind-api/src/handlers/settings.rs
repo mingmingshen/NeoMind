@@ -1,7 +1,7 @@
 //! LLM generation handler for one-shot LLM requests.
 //! Used for features like AI-assisted MDL generation.
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde_json::json;
 
 use super::{
@@ -52,6 +52,58 @@ pub async fn llm_generate_handler(
             use neomind_llm::{CloudConfig, CloudRuntime};
             let config = if endpoint.is_empty() || endpoint.contains("api.openai.com") {
                 CloudConfig::openai(&api_key).with_model(&model)
+            } else {
+                CloudConfig::custom(&api_key, &endpoint).with_model(&model)
+            };
+            let runtime = CloudRuntime::new(config).map_err(|e| {
+                ErrorResponse::internal(format!("Failed to create Cloud runtime: {}", e))
+            })?;
+            (Box::new(runtime) as Box<dyn LlmRuntime>, model)
+        }
+        // Other backends (Anthropic, Google, XAi, Qwen, DeepSeek, GLM, MiniMax)
+        // use CloudConfig with custom endpoint
+        _backend => {
+            use neomind_llm::{CloudConfig, CloudRuntime};
+            let (api_key, endpoint, model) = match &_backend {
+                LlmBackend::Anthropic {
+                    api_key,
+                    endpoint,
+                    model,
+                }
+                | LlmBackend::Google {
+                    api_key,
+                    endpoint,
+                    model,
+                }
+                | LlmBackend::XAi {
+                    api_key,
+                    endpoint,
+                    model,
+                }
+                | LlmBackend::Qwen {
+                    api_key,
+                    endpoint,
+                    model,
+                }
+                | LlmBackend::DeepSeek {
+                    api_key,
+                    endpoint,
+                    model,
+                }
+                | LlmBackend::GLM {
+                    api_key,
+                    endpoint,
+                    model,
+                }
+                | LlmBackend::MiniMax {
+                    api_key,
+                    endpoint,
+                    model,
+                } => (api_key.clone(), endpoint.clone(), model.clone()),
+                _ => return Err(ErrorResponse::bad_request("Unsupported LLM backend")),
+            };
+            let config = if endpoint.is_empty() {
+                CloudConfig::custom(&api_key, &endpoint).with_model(&model)
             } else {
                 CloudConfig::custom(&api_key, &endpoint).with_model(&model)
             };
@@ -129,7 +181,10 @@ pub async fn get_timezone(State(_state): State<ServerState>) -> HandlerResult<Ti
     let timezone = settings_store.get_global_timezone();
     let is_default = timezone == neomind_storage::DEFAULT_GLOBAL_TIMEZONE;
 
-    ok(TimezoneResponse { timezone, is_default })
+    ok(TimezoneResponse {
+        timezone,
+        is_default,
+    })
 }
 
 /// Update the global timezone setting.

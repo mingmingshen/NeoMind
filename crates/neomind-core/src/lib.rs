@@ -9,12 +9,12 @@ pub mod datasource;
 pub mod error;
 pub mod event;
 pub mod eventbus;
-pub mod priority_eventbus;
 pub mod extension;
 pub mod integration;
 pub mod llm;
 pub mod macros;
 pub mod message;
+pub mod priority_eventbus;
 // Plugin system has been migrated to Extension system
 // Use neomind_core::extension instead
 pub mod registry;
@@ -40,8 +40,8 @@ pub use event::{EventMetadata, MetricValue, NeoMindEvent, ProposedAction};
 
 // Event bus exports
 pub use eventbus::{
-    DEFAULT_CHANNEL_CAPACITY, EventBus, EventBusReceiver, FilterBuilder,
-    FilteredReceiver, NoOpPersistence, PersistError, SharedEventBus,
+    DEFAULT_CHANNEL_CAPACITY, EventBus, EventBusReceiver, FilterBuilder, FilteredReceiver,
+    NoOpPersistence, PersistError, SharedEventBus,
 };
 
 /// Re-exports commonly used types.
@@ -80,14 +80,27 @@ pub mod prelude {
 
     // Extension system V2 (device-standard compatible)
     pub use crate::extension::{
-        DynExtension, Extension, ExtensionError, ExtensionMetadata,
-        ExtensionRegistry, ExtensionState, ExtensionStats,
+        CommandDefinition,
+        CommandExecutor,
+        CommandResult,
+        DynExtension,
+        Extension,
         // Extension types V2
-        ExtensionCommand, MetricDescriptor, ExtensionMetricValue,
-        CommandExecutor, CommandResult,
+        ExtensionCommand,
+        ExtensionError,
+        ExtensionMetadata,
+        ExtensionMetricValue,
+        ExtensionRegistry,
+        ExtensionState,
+        ExtensionStats,
+        MetricDataType,
         // Re-exported device types
-        MetricDefinition, CommandDefinition, ParameterDefinition,
-        MetricDataType, ParamMetricValue, ParameterGroup, ValidationRule,
+        MetricDefinition,
+        MetricDescriptor,
+        ParamMetricValue,
+        ParameterDefinition,
+        ParameterGroup,
+        ValidationRule,
     };
 
     // Unified data source system

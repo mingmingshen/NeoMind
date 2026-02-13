@@ -26,9 +26,8 @@ pub mod types;
 
 // Core extension types defined in the SDK
 pub use types::{
-    Extension, ExtensionMetadata, ExtensionCapabilityDescriptor, ExtensionCapabilityType,
-    ExtensionError, ToolDescriptor, MetricDescriptor, ChannelDescriptor,
-    NEO_EXT_ABI_VERSION,
+    ChannelDescriptor, Extension, ExtensionCapabilityDescriptor, ExtensionCapabilityType,
+    ExtensionError, ExtensionMetadata, MetricDescriptor, NEO_EXT_ABI_VERSION, ToolDescriptor,
 };
 
 // Legacy plugin types (for backward compatibility)
@@ -37,9 +36,9 @@ pub use error::{PluginError, PluginResult};
 
 // Type aliases for backward compatibility
 pub use Extension as Plugin;
+pub use ExtensionCapabilityDescriptor as PluginCapabilityDescriptor;
 pub use ExtensionError as PluginErrorAlias;
 pub use ExtensionMetadata as PluginMetadata;
-pub use ExtensionCapabilityDescriptor as PluginCapabilityDescriptor;
 pub const PLUGIN_ABI_VERSION: u32 = NEO_EXT_ABI_VERSION;
 
 /// Prelude module with common imports
@@ -51,9 +50,8 @@ pub mod prelude {
 
     // New extension types
     pub use crate::types::{
-        Extension, ExtensionMetadata, ExtensionCapabilityDescriptor, ExtensionCapabilityType,
-        ExtensionError, ToolDescriptor, MetricDescriptor, ChannelDescriptor,
-        NEO_EXT_ABI_VERSION,
+        ChannelDescriptor, Extension, ExtensionCapabilityDescriptor, ExtensionCapabilityType,
+        ExtensionError, ExtensionMetadata, MetricDescriptor, NEO_EXT_ABI_VERSION, ToolDescriptor,
     };
     pub use serde_json::Value;
 

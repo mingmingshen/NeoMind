@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use neomind_core::datasource::{DataSourceId, DataSourceType};
 use crate::engine::ValueProvider;
+use neomind_core::datasource::{DataSourceId, DataSourceType};
 
 /// Cache entry for metric values.
 #[derive(Debug, Clone)]
@@ -118,14 +118,26 @@ impl UnifiedValueProvider {
 
     /// Update a cached metric value.
     pub async fn update_value(&self, source_type: &str, source_id: &str, metric: &str, value: f64) {
-        self.update_value_with_ttl(source_type, source_id, metric, value, self.default_ttl_ms).await;
+        self.update_value_with_ttl(source_type, source_id, metric, value, self.default_ttl_ms)
+            .await;
     }
 
     /// Update a cached metric value with custom TTL.
-    pub async fn update_value_with_ttl(&self, source_type: &str, source_id: &str, metric: &str, value: f64, ttl_ms: u64) {
+    pub async fn update_value_with_ttl(
+        &self,
+        source_type: &str,
+        source_id: &str,
+        metric: &str,
+        value: f64,
+        ttl_ms: u64,
+    ) {
         let mut cache = self.cache.write().await;
         cache.insert(
-            (source_type.to_string(), source_id.to_string(), metric.to_string()),
+            (
+                source_type.to_string(),
+                source_id.to_string(),
+                metric.to_string(),
+            ),
             CacheEntry::new(value, ttl_ms),
         );
     }
@@ -137,7 +149,13 @@ impl UnifiedValueProvider {
             DataSourceType::Extension => "extension",
             DataSourceType::Transform => "transform",
         };
-        self.update_value(source_type, &data_source_id.source_id, &data_source_id.field_path, value).await;
+        self.update_value(
+            source_type,
+            &data_source_id.source_id,
+            &data_source_id.field_path,
+            value,
+        )
+        .await;
     }
 
     /// Update a device metric value (convenience method).
@@ -147,18 +165,31 @@ impl UnifiedValueProvider {
 
     /// Update an extension metric value (convenience method).
     pub async fn update_extension_value(&self, extension_id: &str, metric: &str, value: f64) {
-        self.update_value("extension", extension_id, metric, value).await;
+        self.update_value("extension", extension_id, metric, value)
+            .await;
     }
 
     /// Update an extension command output value (convenience method).
-    pub async fn update_extension_command_value(&self, extension_id: &str, command: &str, field: &str, value: f64) {
+    pub async fn update_extension_command_value(
+        &self,
+        extension_id: &str,
+        command: &str,
+        field: &str,
+        value: f64,
+    ) {
         let metric = format!("{}.{}", command, field);
-        self.update_value("extension", extension_id, &metric, value).await;
+        self.update_value("extension", extension_id, &metric, value)
+            .await;
     }
 
     /// Get a value from storage (bypassing cache).
     #[allow(dead_code)]
-    async fn fetch_from_storage(&self, source_type: &str, source_id: &str, metric: &str) -> Option<f64> {
+    async fn fetch_from_storage(
+        &self,
+        source_type: &str,
+        source_id: &str,
+        metric: &str,
+    ) -> Option<f64> {
         match source_type {
             "device" => {
                 let storage = self.device_storage.read().await;
@@ -193,7 +224,11 @@ impl UnifiedValueProvider {
     }
 
     /// Get all cached values for a source.
-    pub async fn get_source_values(&self, source_type: &str, source_id: &str) -> HashMap<String, f64> {
+    pub async fn get_source_values(
+        &self,
+        source_type: &str,
+        source_id: &str,
+    ) -> HashMap<String, f64> {
         let cache = self.cache.read().await;
         cache
             .iter()
@@ -251,7 +286,11 @@ impl ValueProvider for UnifiedValueProvider {
 
         // Try cache first (synchronous)
         if let Ok(cache) = self.cache.try_read() {
-            let key = (source_type.to_string(), actual_id.to_string(), metric.to_string());
+            let key = (
+                source_type.to_string(),
+                actual_id.to_string(),
+                metric.to_string(),
+            );
             if let Some(entry) = cache.get(&key) {
                 if !entry.is_expired() {
                     return Some(entry.value);
@@ -296,14 +335,12 @@ impl TimeSeriesStorageAdapter {
 impl DeviceStorageLike for TimeSeriesStorageAdapter {
     async fn query_latest(&self, device_id: &str, metric: &str) -> Option<f64> {
         match self.storage.latest(device_id, metric).await {
-            Ok(Some(dp)) => {
-                match &dp.value {
-                    neomind_devices::MetricValue::Float(f) => Some(*f),
-                    neomind_devices::MetricValue::Integer(i) => Some(*i as f64),
-                    neomind_devices::MetricValue::Boolean(b) => Some(if *b { 1.0 } else { 0.0 }),
-                    _ => None,
-                }
-            }
+            Ok(Some(dp)) => match &dp.value {
+                neomind_devices::MetricValue::Float(f) => Some(*f),
+                neomind_devices::MetricValue::Integer(i) => Some(*i as f64),
+                neomind_devices::MetricValue::Boolean(b) => Some(if *b { 1.0 } else { 0.0 }),
+                _ => None,
+            },
             Ok(None) => None,
             Err(_) => None,
         }
@@ -336,11 +373,11 @@ mod tests {
         assert_eq!(provider.get_value("sensor1", "temperature"), None);
 
         // Update and check
-        tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(async {
-                provider.update_device_value("sensor1", "temperature", 25.5).await;
-            });
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            provider
+                .update_device_value("sensor1", "temperature", 25.5)
+                .await;
+        });
 
         assert_eq!(provider.get_value("sensor1", "temperature"), Some(25.5));
     }
@@ -349,35 +386,48 @@ mod tests {
     fn test_unified_value_provider_extension() {
         let provider = UnifiedValueProvider::new();
 
-        tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(async {
-                provider.update_extension_value("weather", "temperature", 30.0).await;
-            });
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            provider
+                .update_extension_value("weather", "temperature", 30.0)
+                .await;
+        });
 
         // Query with extension: prefix
-        assert_eq!(provider.get_value("extension:weather", "temperature"), Some(30.0));
+        assert_eq!(
+            provider.get_value("extension:weather", "temperature"),
+            Some(30.0)
+        );
     }
 
     #[test]
     fn test_unified_value_provider_extension_command() {
         let provider = UnifiedValueProvider::new();
 
-        tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(async {
-                provider.update_extension_command_value("weather", "get_current_weather", "temperature_c", 28.5).await;
-            });
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            provider
+                .update_extension_command_value(
+                    "weather",
+                    "get_current_weather",
+                    "temperature_c",
+                    28.5,
+                )
+                .await;
+        });
 
         // Extension command output is stored as "command.field" metric
-        assert_eq!(provider.get_value("extension:weather", "get_current_weather.temperature_c"), Some(28.5));
+        assert_eq!(
+            provider.get_value("extension:weather", "get_current_weather.temperature_c"),
+            Some(28.5)
+        );
     }
 
     #[tokio::test]
     async fn test_cache_stats() {
         let provider = UnifiedValueProvider::new().with_ttl(100);
         provider.update_device_value("sensor1", "temp", 25.0).await;
-        provider.update_extension_value("weather", "temp", 30.0).await;
+        provider
+            .update_extension_value("weather", "temp", 30.0)
+            .await;
 
         let stats = provider.cache_stats().await;
         assert_eq!(stats.total_entries, 2);
@@ -389,8 +439,12 @@ mod tests {
     async fn test_get_source_values() {
         let provider = UnifiedValueProvider::new();
         provider.update_device_value("sensor1", "temp", 25.0).await;
-        provider.update_device_value("sensor1", "humidity", 60.0).await;
-        provider.update_extension_value("weather", "temp", 30.0).await;
+        provider
+            .update_device_value("sensor1", "humidity", 60.0)
+            .await;
+        provider
+            .update_extension_value("weather", "temp", 30.0)
+            .await;
 
         let device_values = provider.get_device_values("sensor1").await;
         assert_eq!(device_values.len(), 2);
@@ -414,11 +468,18 @@ mod tests {
         let ext_id = DataSourceId::extension("weather", "temperature");
         provider.update_from_data_source_id(&ext_id, 30.0).await;
 
-        assert_eq!(provider.get_value("extension:weather", "temperature"), Some(30.0));
+        assert_eq!(
+            provider.get_value("extension:weather", "temperature"),
+            Some(30.0)
+        );
 
-        let cmd_id = DataSourceId::extension_command("weather", "get_current_weather", "temperature_c");
+        let cmd_id =
+            DataSourceId::extension_command("weather", "get_current_weather", "temperature_c");
         provider.update_from_data_source_id(&cmd_id, 28.5).await;
 
-        assert_eq!(provider.get_value("extension:weather", "get_current_weather.temperature_c"), Some(28.5));
+        assert_eq!(
+            provider.get_value("extension:weather", "get_current_weather.temperature_c"),
+            Some(28.5)
+        );
     }
 }

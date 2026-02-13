@@ -300,5 +300,8 @@ fn test_session_clear_preserves_metadata() {
     assert!(session.is_empty());
     assert_eq!(session.metadata.title.as_ref().unwrap(), "Test");
     assert_eq!(session.metadata.model.as_ref().unwrap(), "gpt-4");
-    assert_eq!(session.get_context("key").unwrap(), &serde_json::json!("value"));
+    assert_eq!(
+        session.get_context("key").unwrap(),
+        &serde_json::json!("value")
+    );
 }

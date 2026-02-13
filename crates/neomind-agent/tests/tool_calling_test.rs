@@ -21,10 +21,10 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use neomind_core::message::Message;
 use neomind_agent::session::SessionManager;
-use neomind_llm::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::LlmRuntime;
+use neomind_core::message::Message;
+use neomind_llm::{OllamaConfig, OllamaRuntime};
 
 // ============================================================================
 // Test Context
@@ -39,8 +39,7 @@ struct ToolCallingTestContext {
 impl ToolCallingTestContext {
     async fn new() -> anyhow::Result<Self> {
         // Get model from environment or use default
-        let model_name = std::env::var("MODEL")
-            .unwrap_or_else(|_| "qwen2.5:3b".to_string());
+        let model_name = std::env::var("MODEL").unwrap_or_else(|_| "qwen2.5:3b".to_string());
 
         println!("📦 Using model: {}", model_name);
 
@@ -78,7 +77,8 @@ impl ToolCallingTestContext {
         println!("\n📤 User: {}", message);
         let start = Instant::now();
 
-        let response = self.session_manager
+        let response = self
+            .session_manager
             .process_message(&self.session_id, message)
             .await?;
 
@@ -109,10 +109,13 @@ impl ToolCallingTestContext {
     async fn get_history(&self) -> anyhow::Result<Vec<String>> {
         let agent = self.session_manager.get_session(&self.session_id).await?;
         let messages = agent.history().await;
-        Ok(messages.iter().map(|m| {
-            let preview: String = m.content.chars().take(100).collect();
-            format!("{}: {}", m.role, preview)
-        }).collect())
+        Ok(messages
+            .iter()
+            .map(|m| {
+                let preview: String = m.content.chars().take(100).collect();
+                format!("{}: {}", m.role, preview)
+            })
+            .collect())
     }
 }
 
@@ -273,7 +276,11 @@ async fn test_tool_calling_format_variations() -> anyhow::Result<()> {
     for query in queries {
         println!("\n--- Testing query: \"{}\" ---", query);
         let response = ctx.send_message(query).await?;
-        assert!(!response.is_empty(), "Response should not be empty for: {}", query);
+        assert!(
+            !response.is_empty(),
+            "Response should not be empty for: {}",
+            query
+        );
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
@@ -294,10 +301,15 @@ async fn test_error_handling_in_tool_calls() -> anyhow::Result<()> {
     println!("\n=== Test: Error Handling in Tool Calls ===\n");
 
     // Query a non-existent device (should handle gracefully)
-    let response = ctx.send_message("查询设备 'non_existent_device_12345' 的温度").await?;
+    let response = ctx
+        .send_message("查询设备 'non_existent_device_12345' 的温度")
+        .await?;
 
     // Should still get a response even if device doesn't exist
-    assert!(!response.is_empty(), "Should still respond even with errors");
+    assert!(
+        !response.is_empty(),
+        "Should still respond even with errors"
+    );
 
     println!("\n✅ Error handling test passed!");
     Ok(())
@@ -313,11 +325,10 @@ async fn test_direct_llm_tool_calling() -> anyhow::Result<()> {
 
     println!("\n=== Test: Direct LLM Tool Calling ===\n");
 
-    let model_name = std::env::var("MODEL")
-        .unwrap_or_else(|_| "qwen2.5:3b".to_string());
+    let model_name = std::env::var("MODEL").unwrap_or_else(|_| "qwen2.5:3b".to_string());
 
-    let ollama_endpoint = std::env::var("OLLAMA_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let ollama_endpoint =
+        std::env::var("OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://localhost:11434".to_string());
 
     let ollama_config = OllamaConfig {
         endpoint: ollama_endpoint,
@@ -328,7 +339,7 @@ async fn test_direct_llm_tool_calling() -> anyhow::Result<()> {
     let llm = Arc::new(OllamaRuntime::new(ollama_config)?);
 
     // Test with tools enabled
-    use neomind_core::llm::backend::{LlmInput, GenerationParams, ToolDefinition};
+    use neomind_core::llm::backend::{GenerationParams, LlmInput, ToolDefinition};
 
     let tools = vec![
         ToolDefinition {

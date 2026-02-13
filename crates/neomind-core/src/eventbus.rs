@@ -274,7 +274,9 @@ impl FilterBuilder {
     /// Filters for ExtensionOutput events (data from providers).
     pub fn extension_output(&self) -> FilteredReceiver<fn(&NeoMindEvent) -> bool> {
         let rx = self.tx.subscribe();
-        FilteredReceiver::new(rx, |event| matches!(event, NeoMindEvent::ExtensionOutput { .. }))
+        FilteredReceiver::new(rx, |event| {
+            matches!(event, NeoMindEvent::ExtensionOutput { .. })
+        })
     }
 
     /// Phase 2.2: Subscribe to extension lifecycle events only.
@@ -282,7 +284,9 @@ impl FilterBuilder {
     /// Filters for ExtensionLifecycle events (state changes).
     pub fn extension_lifecycle(&self) -> FilteredReceiver<fn(&NeoMindEvent) -> bool> {
         let rx = self.tx.subscribe();
-        FilteredReceiver::new(rx, |event| matches!(event, NeoMindEvent::ExtensionLifecycle { .. }))
+        FilteredReceiver::new(rx, |event| {
+            matches!(event, NeoMindEvent::ExtensionLifecycle { .. })
+        })
     }
 
     /// Phase 2.2: Subscribe to events from a specific extension.
@@ -296,9 +300,7 @@ impl FilterBuilder {
         let rx = self.tx.subscribe();
         FilteredReceiver::new(
             rx,
-            move |event| {
-                matches!(event, NeoMindEvent::ExtensionOutput { extension_id, .. } | NeoMindEvent::ExtensionLifecycle { extension_id, .. } if extension_id == &target_id)
-            }
+            move |event| matches!(event, NeoMindEvent::ExtensionOutput { extension_id, .. } | NeoMindEvent::ExtensionLifecycle { extension_id, .. } if extension_id == &target_id),
         )
     }
 
@@ -771,7 +773,10 @@ mod tests {
 
         // Should only receive the lifecycle event
         let received = rx.recv().await.unwrap();
-        assert!(matches!(received.0, NeoMindEvent::ExtensionLifecycle { .. }));
+        assert!(matches!(
+            received.0,
+            NeoMindEvent::ExtensionLifecycle { .. }
+        ));
     }
 
     #[tokio::test]

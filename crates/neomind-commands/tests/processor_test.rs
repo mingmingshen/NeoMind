@@ -7,10 +7,10 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use neomind_commands::{
+    adapter::DownlinkAdapterRegistry,
+    command::{CommandRequest, CommandSource},
     processor::{CommandProcessor, ProcessorConfig},
     queue::CommandQueue,
-    adapter::DownlinkAdapterRegistry,
-    command::{CommandPriority, CommandRequest, CommandStatus, CommandSource},
 };
 
 /// Helper to create a test processor.
@@ -174,21 +174,20 @@ async fn test_processor_custom_config() {
 
 #[tokio::test]
 async fn test_processor_concurrent_start() {
-    let processor = create_test_processor(100);
+    let processor = Arc::new(create_test_processor(100));
 
     // Try starting from multiple tasks
-    let handle1 = tokio::spawn(async move {
-        processor.start().await
-    });
+    let processor1 = Arc::clone(&processor);
+    let processor2 = Arc::clone(&processor);
+
+    let handle1 = tokio::spawn(async move { processor1.start().await });
 
     sleep(Duration::from_millis(10)).await;
 
-    let handle2 = tokio::spawn(async move {
-        processor.start().await
-    });
+    let handle2 = tokio::spawn(async move { processor2.start().await });
 
     // Both should complete without panicking
-    let (r1, r2) = tokio::join!(handle1, handle2).await;
+    let (r1, r2): (Result<(), _>, Result<(), _>) = tokio::join!(handle1, handle2);
     assert!(r1.is_ok());
     assert!(r2.is_ok());
 

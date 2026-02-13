@@ -223,7 +223,10 @@ impl DependencyManager {
     /// Perform topological sort and detect circular dependencies.
     ///
     /// Returns Ok with the sorted order, or Err with detected cycles.
-    fn topological_sort(&self, existing_rules: &HashSet<RuleId>) -> Result<Vec<RuleId>, Vec<Vec<RuleId>>> {
+    fn topological_sort(
+        &self,
+        existing_rules: &HashSet<RuleId>,
+    ) -> Result<Vec<RuleId>, Vec<Vec<RuleId>>> {
         let mut sorted = Vec::new();
         let mut visited = HashSet::new();
         let mut visiting = HashSet::new();
@@ -232,9 +235,10 @@ impl DependencyManager {
         // Only sort rules that exist
         for rule_id in existing_rules {
             if !visited.contains(rule_id)
-                && let Some(cycle) = self.visit(rule_id, &mut visited, &mut visiting, &mut sorted) {
-                    cycles.push(cycle);
-                }
+                && let Some(cycle) = self.visit(rule_id, &mut visited, &mut visiting, &mut sorted)
+            {
+                cycles.push(cycle);
+            }
         }
 
         if !cycles.is_empty() {
@@ -303,7 +307,10 @@ impl DependencyManager {
 
             if let Some(deps) = self.dependencies.get(rule_id) {
                 // Check if all dependencies are satisfied
-                if deps.iter().all(|dep| completed.contains(dep) || !existing_rules.contains(dep)) {
+                if deps
+                    .iter()
+                    .all(|dep| completed.contains(dep) || !existing_rules.contains(dep))
+                {
                     ready.push(rule_id.clone());
                 }
             } else {
@@ -381,9 +388,21 @@ mod tests {
         assert!(result.is_valid);
 
         // rule1 should come before rule2, rule2 before rule3
-        let pos1 = result.execution_order.iter().position(|id| id == &rule1).unwrap();
-        let pos2 = result.execution_order.iter().position(|id| id == &rule2).unwrap();
-        let pos3 = result.execution_order.iter().position(|id| id == &rule3).unwrap();
+        let pos1 = result
+            .execution_order
+            .iter()
+            .position(|id| id == &rule1)
+            .unwrap();
+        let pos2 = result
+            .execution_order
+            .iter()
+            .position(|id| id == &rule2)
+            .unwrap();
+        let pos3 = result
+            .execution_order
+            .iter()
+            .position(|id| id == &rule3)
+            .unwrap();
 
         assert!(pos1 < pos2);
         assert!(pos2 < pos3);
@@ -401,11 +420,10 @@ mod tests {
         manager.add_dependency(rule2.clone(), rule3.clone());
         manager.add_dependency(rule3.clone(), rule1.clone());
 
-        let existing: HashSet<_> =
-            [rule1.clone(), rule2.clone(), rule3.clone()]
-                .iter()
-                .cloned()
-                .collect();
+        let existing: HashSet<_> = [rule1.clone(), rule2.clone(), rule3.clone()]
+            .iter()
+            .cloned()
+            .collect();
 
         let result = manager.validate_and_order(&existing);
         assert!(!result.is_valid);

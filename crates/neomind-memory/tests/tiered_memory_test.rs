@@ -7,10 +7,8 @@
 //! - Memory consolidation
 //! - Search operations (semantic, BM25, hybrid)
 
-use neomind_memory::{
-    tiered::{SearchMethod, TieredMemory, TieredMemoryConfig},
-};
 use neomind_core::message::Message;
+use neomind_memory::tiered::{SearchMethod, TieredMemory, TieredMemoryConfig};
 
 #[tokio::test]
 async fn test_tiered_memory_new() {
@@ -28,9 +26,7 @@ async fn test_tiered_memory_new() {
 async fn test_short_term_add_message() {
     let mut memory = TieredMemory::new();
 
-    memory
-        .add_message("user", "Hello, how are you?")
-        .unwrap();
+    memory.add_message("user", "Hello, how are you?").unwrap();
 
     let stats = memory.get_stats().await;
     assert_eq!(stats.short_term_messages, 1);
@@ -44,15 +40,11 @@ async fn test_short_term_add_message() {
 async fn test_short_term_conversation() {
     let mut memory = TieredMemory::new();
 
-    memory
-        .add_message("user", "What's the weather?")
-        .unwrap();
+    memory.add_message("user", "What's the weather?").unwrap();
     memory
         .add_message("assistant", "It's sunny today.")
         .unwrap();
-    memory
-        .add_message("user", "What about tomorrow?")
-        .unwrap();
+    memory.add_message("user", "What about tomorrow?").unwrap();
 
     let stats = memory.get_stats().await;
     assert_eq!(stats.short_term_messages, 3);
@@ -65,9 +57,7 @@ async fn test_short_term_conversation() {
 async fn test_short_term_clear() {
     let mut memory = TieredMemory::new();
 
-    memory
-        .add_message("user", "Test message")
-        .unwrap();
+    memory.add_message("user", "Test message").unwrap();
 
     let stats = memory.get_stats().await;
     assert_eq!(stats.short_term_messages, 1);
@@ -130,9 +120,7 @@ async fn test_custom_config() {
 async fn test_memory_stats() {
     let mut memory = TieredMemory::new();
 
-    memory
-        .add_message("user", "Test")
-        .unwrap();
+    memory.add_message("user", "Test").unwrap();
 
     let stats = memory.get_stats().await;
     assert_eq!(stats.short_term_messages, 1);
@@ -188,12 +176,8 @@ async fn test_query_all() {
 async fn test_query_all_with_methods() {
     let mut memory = TieredMemory::new();
 
-    memory
-        .add_message("user", "How to connect WiFi?")
-        .unwrap();
-    memory
-        .add_message("assistant", "Go to settings.")
-        .unwrap();
+    memory.add_message("user", "How to connect WiFi?").unwrap();
+    memory.add_message("assistant", "Go to settings.").unwrap();
 
     // Semantic search
     let semantic_results = memory
@@ -225,9 +209,7 @@ async fn test_search_in_short_term() {
     memory
         .add_message("assistant", "Use the temperature command.")
         .unwrap();
-    memory
-        .add_message("user", "What about humidity?")
-        .unwrap();
+    memory.add_message("user", "What about humidity?").unwrap();
 
     let results = memory.query_all("temperature", 5).await;
     assert!(results.short_term.len() > 0);
@@ -254,12 +236,8 @@ async fn test_get_last_messages() {
 async fn test_short_term_token_count() {
     let mut memory = TieredMemory::new();
 
-    memory
-        .add_message("user", "Hello world")
-        .unwrap();
-    memory
-        .add_message("assistant", "Hi there!")
-        .unwrap();
+    memory.add_message("user", "Hello world").unwrap();
+    memory.add_message("assistant", "Hi there!").unwrap();
 
     let stats = memory.get_stats().await;
     assert_eq!(stats.short_term_messages, 2);
@@ -275,7 +253,10 @@ async fn test_mid_term_search() {
         .add_message("user", "How do I connect to WiFi?")
         .unwrap();
     memory
-        .add_message("assistant", "Go to Settings > WiFi and select your network.")
+        .add_message(
+            "assistant",
+            "Go to Settings > WiFi and select your network.",
+        )
         .unwrap();
 
     memory.consolidate("session1").await.unwrap();
@@ -299,7 +280,9 @@ async fn test_mid_term_bm25_search() {
     memory.consolidate("session2").await.unwrap();
 
     // BM25 search
-    let results = memory.search_mid_term_bm25("password change settings", 5).await;
+    let results = memory
+        .search_mid_term_bm25("password change settings", 5)
+        .await;
     assert!(results.len() > 0);
 }
 

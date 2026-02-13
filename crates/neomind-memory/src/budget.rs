@@ -130,8 +130,7 @@ impl TokenBudget {
     /// assert_eq!(max_for_msgs, 5400);
     /// ```
     pub fn max_for_messages(&self, overhead_tokens: usize) -> usize {
-        self.available_for_history()
-            .saturating_sub(overhead_tokens)
+        self.available_for_history().saturating_sub(overhead_tokens)
     }
 
     /// Allocate messages within budget using relevance scoring.
@@ -182,9 +181,10 @@ impl TokenBudget {
             .filter(|m| {
                 // Apply priority filter
                 if let PriorityFilter::MinPriority(min_prio) = filter
-                    && m.priority < min_prio {
-                        return false;
-                    }
+                    && m.priority < min_prio
+                {
+                    return false;
+                }
                 // Filter out low relevance
                 m.score >= 0.15
             })
@@ -193,9 +193,7 @@ impl TokenBudget {
         // Sort by priority first, then by relevance score
         filtered.sort_by(|a, b| {
             match (a.priority, b.priority) {
-                (Priority::Critical, _) | (_, Priority::Critical) => {
-                    b.priority.cmp(&a.priority)
-                }
+                (Priority::Critical, _) | (_, Priority::Critical) => b.priority.cmp(&a.priority),
                 _ => {
                     // Within same priority, sort by relevance score
                     b.score
@@ -290,11 +288,7 @@ impl ScoredMessage {
     }
 
     /// Create a new scored message with priority.
-    pub fn with_priority(
-        content: impl Into<String>,
-        score: f32,
-        priority: Priority,
-    ) -> Self {
+    pub fn with_priority(content: impl Into<String>, score: f32, priority: Priority) -> Self {
         Self {
             content: content.into(),
             score,
@@ -320,8 +314,7 @@ impl ScoredMessage {
 }
 
 /// Message priority for allocation decisions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub enum Priority {
     /// Low priority - can be dropped first
     Low = 0,
@@ -333,7 +326,6 @@ pub enum Priority {
     /// Critical - must always include (system prompts)
     Critical = 3,
 }
-
 
 /// Filter for message allocation.
 #[derive(Debug, Clone, Copy)]
@@ -455,8 +447,18 @@ mod tests {
         let allocation = budget.allocate_messages(messages, &counter, PriorityFilter::None);
 
         // Critical and high priority should be included
-        assert!(allocation.messages.iter().any(|m| m.priority == Priority::Critical));
-        assert!(allocation.messages.iter().any(|m| m.priority == Priority::High));
+        assert!(
+            allocation
+                .messages
+                .iter()
+                .any(|m| m.priority == Priority::Critical)
+        );
+        assert!(
+            allocation
+                .messages
+                .iter()
+                .any(|m| m.priority == Priority::High)
+        );
 
         // Low relevance (below 0.15) should be filtered out
         assert!(!allocation.messages.iter().any(|m| m.score < 0.15));

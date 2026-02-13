@@ -131,7 +131,8 @@ pub async fn get_system_stats_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Calculate start of today (UTC midnight)
     let now = chrono::Utc::now();
-    let start_of_today = now.date_naive()
+    let start_of_today = now
+        .date_naive()
         .and_hms_opt(0, 0, 0)
         .unwrap()
         .and_utc()
@@ -143,18 +144,30 @@ pub async fn get_system_stats_handler(
     let mut devices_with_metrics = 0;
     for config in &configs {
         if let Ok(metrics) = state
-            .devices.service
+            .devices
+            .service
             .get_current_metrics(&config.device_id)
             .await
-            && !metrics.is_empty() {
-                devices_with_metrics += 1;
-            }
+            && !metrics.is_empty()
+        {
+            devices_with_metrics += 1;
+        }
     }
 
     // Get online/offline device counts from connection status tracking
     use neomind_devices::adapter::ConnectionStatus;
-    let online_devices = state.devices.service.get_devices_by_status(ConnectionStatus::Connected).await.len();
-    let offline_devices = state.devices.service.get_devices_by_status(ConnectionStatus::Disconnected).await.len();
+    let online_devices = state
+        .devices
+        .service
+        .get_devices_by_status(ConnectionStatus::Connected)
+        .await
+        .len();
+    let offline_devices = state
+        .devices
+        .service
+        .get_devices_by_status(ConnectionStatus::Disconnected)
+        .await
+        .len();
 
     let device_stats = DeviceStats {
         total_devices: configs.len(),
@@ -191,7 +204,9 @@ pub async fn get_system_stats_handler(
         .collect();
 
     // Get today's messages count
-    let start_of_day = chrono::Utc::now().date_naive().and_hms_opt(0, 0, 0)
+    let start_of_day = chrono::Utc::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
         .unwrap()
         .and_utc();
     let messages_today = active_messages
@@ -327,114 +342,117 @@ fn detect_gpus() -> Vec<GpuInfo> {
         .arg("--query-gpu=name,memory.total,driver_version")
         .arg("--format=csv,noheader,nounits")
         .output()
-        && output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
-                let parts: Vec<&str> = line.trim().split(',').collect();
-                if parts.len() >= 3 {
-                    let name = parts[0].trim().to_string();
-                    let memory_mb = parts[1].trim().parse::<u64>().ok();
-                    let driver_version = Some(parts[2].trim().to_string());
-                    gpus.push(GpuInfo {
-                        name,
-                        vendor: "nvidia".to_string(),
-                        total_memory_mb: memory_mb,
-                        driver_version,
-                    });
-                }
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.trim().split(',').collect();
+            if parts.len() >= 3 {
+                let name = parts[0].trim().to_string();
+                let memory_mb = parts[1].trim().parse::<u64>().ok();
+                let driver_version = Some(parts[2].trim().to_string());
+                gpus.push(GpuInfo {
+                    name,
+                    vendor: "nvidia".to_string(),
+                    total_memory_mb: memory_mb,
+                    driver_version,
+                });
             }
-            return gpus;
         }
+        return gpus;
+    }
 
     // Try to detect AMD GPUs using rocm-smi or lspci
     if let Ok(output) = std::process::Command::new("rocm-smi")
         .arg("--showproductname")
         .output()
-        && output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            // Parse rocm-smi output for GPU names
-            for line in stdout.lines() {
-                if line.contains("Card series") || line.contains("GPU") {
-                    let name = line
-                        .split(':')
-                        .next_back()
-                        .map(|s| s.trim().to_string())
-                        .unwrap_or_else(|| "AMD GPU".to_string());
-                    gpus.push(GpuInfo {
-                        name,
-                        vendor: "amd".to_string(),
-                        total_memory_mb: None,
-                        driver_version: None,
-                    });
-                }
-            }
-            if !gpus.is_empty() {
-                return gpus;
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // Parse rocm-smi output for GPU names
+        for line in stdout.lines() {
+            if line.contains("Card series") || line.contains("GPU") {
+                let name = line
+                    .split(':')
+                    .next_back()
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_else(|| "AMD GPU".to_string());
+                gpus.push(GpuInfo {
+                    name,
+                    vendor: "amd".to_string(),
+                    total_memory_mb: None,
+                    driver_version: None,
+                });
             }
         }
+        if !gpus.is_empty() {
+            return gpus;
+        }
+    }
 
     // Try to detect Apple Silicon GPUs
-    if std::env::consts::OS == "macos" && std::env::consts::ARCH == "aarch64"
+    if std::env::consts::OS == "macos"
+        && std::env::consts::ARCH == "aarch64"
         && let Ok(output) = std::process::Command::new("system_profiler")
             .arg("SPDisplaysDataType")
             .arg("-json")
             .output()
-            && output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                // Look for Apple GPU in the output
-                if stdout.contains("Apple") && stdout.contains("GPU") {
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // Look for Apple GPU in the output
+        if stdout.contains("Apple") && stdout.contains("GPU") {
+            gpus.push(GpuInfo {
+                name: "Apple Silicon GPU".to_string(),
+                vendor: "apple".to_string(),
+                total_memory_mb: None,
+                driver_version: None,
+            });
+        }
+        return gpus;
+    }
+
+    // Fallback: try lspci for basic GPU detection (Linux)
+    if std::env::consts::OS == "linux"
+        && let Ok(output) = std::process::Command::new("lspci").arg("-nn").output()
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if line.contains("VGA compatible controller")
+                || line.contains("3D controller")
+                || line.contains("Display")
+            {
+                // Extract GPU name
+                if let Some(colon_pos) = line.find(':') {
+                    let name_part = &line[colon_pos + 1..];
+                    let name = name_part
+                        .split('(')
+                        .next()
+                        .map(|s| s.trim().to_string())
+                        .unwrap_or_else(|| "Unknown GPU".to_string());
+
+                    // Determine vendor
+                    let vendor = if line.contains("NVIDIA") || line.contains("10de") {
+                        "nvidia"
+                    } else if line.contains("AMD") || line.contains("1002") {
+                        "amd"
+                    } else if line.contains("Intel") || line.contains("8086") {
+                        "intel"
+                    } else {
+                        "other"
+                    };
+
                     gpus.push(GpuInfo {
-                        name: "Apple Silicon GPU".to_string(),
-                        vendor: "apple".to_string(),
+                        name,
+                        vendor: vendor.to_string(),
                         total_memory_mb: None,
                         driver_version: None,
                     });
                 }
-                return gpus;
             }
-
-    // Fallback: try lspci for basic GPU detection (Linux)
-    if std::env::consts::OS == "linux"
-        && let Ok(output) = std::process::Command::new("lspci")
-            .arg("-nn")
-            .output()
-            && output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    if line.contains("VGA compatible controller")
-                        || line.contains("3D controller")
-                        || line.contains("Display")
-                    {
-                        // Extract GPU name
-                        if let Some(colon_pos) = line.find(':') {
-                            let name_part = &line[colon_pos + 1..];
-                            let name = name_part
-                                .split('(')
-                                .next()
-                                .map(|s| s.trim().to_string())
-                                .unwrap_or_else(|| "Unknown GPU".to_string());
-
-                            // Determine vendor
-                            let vendor = if line.contains("NVIDIA") || line.contains("10de") {
-                                "nvidia"
-                            } else if line.contains("AMD") || line.contains("1002") {
-                                "amd"
-                            } else if line.contains("Intel") || line.contains("8086") {
-                                "intel"
-                            } else {
-                                "other"
-                            };
-
-                            gpus.push(GpuInfo {
-                                name,
-                                vendor: vendor.to_string(),
-                                total_memory_mb: None,
-                                driver_version: None,
-                            });
-                        }
-                    }
-                }
-            }
+        }
+    }
 
     gpus
 }
@@ -451,14 +469,19 @@ pub async fn get_device_stats_handler(
     for config in configs {
         // Get metrics count for this device
         let metrics_count = state
-            .devices.service
+            .devices
+            .service
             .get_current_metrics(&config.device_id)
             .await
             .map(|m| m.len())
             .unwrap_or(0);
 
         // Get actual connection status from DeviceService
-        let device_status = state.devices.service.get_device_status(&config.device_id).await;
+        let device_status = state
+            .devices
+            .service
+            .get_device_status(&config.device_id)
+            .await;
         let is_online = device_status.is_connected();
 
         devices_with_stats.push(json!({

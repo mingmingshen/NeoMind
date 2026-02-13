@@ -1,8 +1,6 @@
 //! Server middleware.
 
-use axum::{
-    body::Body, extract::ConnectInfo, extract::State, http::Request, middleware::Next,
-};
+use axum::{body::Body, extract::ConnectInfo, extract::State, http::Request, middleware::Next};
 use std::net::SocketAddr;
 
 use super::types::ServerState;

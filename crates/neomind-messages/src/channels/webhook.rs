@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 
 #[cfg(feature = "webhook")]
-use super::MessageChannel;
+use super::super::{Error, Message, Result};
 #[cfg(feature = "webhook")]
-use super::super::{Message, Result, Error};
+use super::MessageChannel;
 
 /// Webhook channel for sending messages via HTTP POST.
 #[cfg(feature = "webhook")]
@@ -126,13 +126,14 @@ impl super::ChannelFactory for WebhookChannelFactory {
         let mut channel = WebhookChannel::new(name, url.to_string());
 
         if let Some(headers) = config.get("headers")
-            && let Some(obj) = headers.as_object() {
-                for (key, value) in obj {
-                    if let Some(str_val) = value.as_str() {
-                        channel = channel.with_header(key.clone(), str_val.to_string());
-                    }
+            && let Some(obj) = headers.as_object()
+        {
+            for (key, value) in obj {
+                if let Some(str_val) = value.as_str() {
+                    channel = channel.with_header(key.clone(), str_val.to_string());
                 }
             }
+        }
 
         if !config
             .get("enabled")

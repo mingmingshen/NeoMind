@@ -21,8 +21,6 @@ export const selectSessionId = (state: NeoMindStore) => state.sessionId
  */
 export const selectMessages = (state: NeoMindStore) => state.messages
 
-export const selectIsLoadingMessages = (state: NeoMindStore) => state.isLoadingMessages
-
 /**
  * Select current user
  */

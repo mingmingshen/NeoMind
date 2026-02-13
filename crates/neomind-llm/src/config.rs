@@ -4,9 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use neomind_core::config::{
-    endpoints, env_vars, models, normalize_ollama_endpoint,
-};
+use neomind_core::config::{endpoints, env_vars, models, normalize_ollama_endpoint};
 use neomind_core::llm::backend::{BackendId, LlmError, LlmRuntime};
 
 #[cfg(feature = "cloud")]
@@ -121,7 +119,9 @@ impl LlmConfig {
                     }
                     #[cfg(not(feature = "ollama"))]
                     {
-                        return Err(LlmError::BackendUnavailable("ollama feature not enabled".to_string()));
+                        return Err(LlmError::BackendUnavailable(
+                            "ollama feature not enabled".to_string(),
+                        ));
                     }
                 }
                 "cloud" | "openai" => {
@@ -142,7 +142,9 @@ impl LlmConfig {
                     }
                     #[cfg(not(feature = "cloud"))]
                     {
-                        Err(LlmError::BackendUnavailable("cloud feature not enabled".to_string()))
+                        Err(LlmError::BackendUnavailable(
+                            "cloud feature not enabled".to_string(),
+                        ))
                     }
                 }
                 _ => Err(LlmError::InvalidInput(format!(

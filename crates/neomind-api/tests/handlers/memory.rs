@@ -1,9 +1,9 @@
 //! Tests for memory system handlers.
 
-use neomind_api::handlers::memory::*;
-use neomind_api::handlers::ServerState;
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
+use neomind_api::handlers::ServerState;
+use neomind_api::handlers::memory::*;
 
 async fn create_test_server_state() -> ServerState {
     crate::common::create_test_server_state().await
@@ -54,8 +54,14 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         let value = response.0.data.unwrap();
-        assert_eq!(value.get("message").unwrap().as_str().unwrap(), "Memory consolidated");
-        assert_eq!(value.get("session_id").unwrap().as_str().unwrap(), session_id);
+        assert_eq!(
+            value.get("message").unwrap().as_str().unwrap(),
+            "Memory consolidated"
+        );
+        assert_eq!(
+            value.get("session_id").unwrap().as_str().unwrap(),
+            session_id
+        );
     }
 
     #[tokio::test]
@@ -91,7 +97,10 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         let value = response.0.data.unwrap();
-        assert_eq!(value.get("message").unwrap().as_str().unwrap(), "Short-term memory cleared");
+        assert_eq!(
+            value.get("message").unwrap().as_str().unwrap(),
+            "Short-term memory cleared"
+        );
     }
 
     #[tokio::test]
@@ -102,7 +111,10 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         let value = response.0.data.unwrap();
-        assert_eq!(value.get("session_id").unwrap().as_str().unwrap(), session_id);
+        assert_eq!(
+            value.get("session_id").unwrap().as_str().unwrap(),
+            session_id
+        );
         assert!(value.get("entries").is_some());
         assert!(value.get("count").is_some());
     }
@@ -119,8 +131,14 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         let value = response.0.data.unwrap();
-        assert_eq!(value.get("message").unwrap().as_str().unwrap(), "Added to mid-term memory");
-        assert_eq!(value.get("session_id").unwrap().as_str().unwrap(), "session_789");
+        assert_eq!(
+            value.get("message").unwrap().as_str().unwrap(),
+            "Added to mid-term memory"
+        );
+        assert_eq!(
+            value.get("session_id").unwrap().as_str().unwrap(),
+            "session_789"
+        );
     }
 
     #[tokio::test]
@@ -146,7 +164,10 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         let value = response.0.data.unwrap();
-        assert_eq!(value.get("message").unwrap().as_str().unwrap(), "Mid-term memory cleared");
+        assert_eq!(
+            value.get("message").unwrap().as_str().unwrap(),
+            "Mid-term memory cleared"
+        );
     }
 
     #[tokio::test]
@@ -160,7 +181,10 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         let value = response.0.data.unwrap();
-        assert_eq!(value.get("query").unwrap().as_str().unwrap(), "best practices");
+        assert_eq!(
+            value.get("query").unwrap().as_str().unwrap(),
+            "best practices"
+        );
         assert!(value.get("results").is_some());
         assert!(value.get("count").is_some());
     }
@@ -169,7 +193,8 @@ mod tests {
     async fn test_get_knowledge_by_category_handler() {
         let state = create_test_server_state().await;
         let category = "best_practice";
-        let result = get_knowledge_by_category_handler(State(state), Path(category.to_string())).await;
+        let result =
+            get_knowledge_by_category_handler(State(state), Path(category.to_string())).await;
         assert!(result.is_ok());
         let response = result.unwrap();
         let value = response.0.data.unwrap();
@@ -196,7 +221,9 @@ mod tests {
         let state = create_test_server_state().await;
         let mut params = serde_json::Map::new();
         params.insert("n".to_string(), serde_json::json!(10));
-        let result = get_popular_knowledge_handler(State(state), Query(serde_json::Value::Object(params))).await;
+        let result =
+            get_popular_knowledge_handler(State(state), Query(serde_json::Value::Object(params)))
+                .await;
         assert!(result.is_ok());
         let response = result.unwrap();
         let value = response.0.data.unwrap();
@@ -218,7 +245,10 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         let value = response.0.data.unwrap();
-        assert_eq!(value.get("message").unwrap().as_str().unwrap(), "Knowledge added");
+        assert_eq!(
+            value.get("message").unwrap().as_str().unwrap(),
+            "Knowledge added"
+        );
     }
 
     #[tokio::test]
@@ -228,7 +258,10 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         let value = response.0.data.unwrap();
-        assert_eq!(value.get("message").unwrap().as_str().unwrap(), "Long-term memory cleared");
+        assert_eq!(
+            value.get("message").unwrap().as_str().unwrap(),
+            "Long-term memory cleared"
+        );
     }
 
     #[tokio::test]

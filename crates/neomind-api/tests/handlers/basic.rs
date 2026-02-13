@@ -1,8 +1,8 @@
 //! Tests for basic handlers.
 
-use neomind_api::handlers::basic::*;
-use neomind_api::handlers::ServerState;
 use axum::extract::State;
+use neomind_api::handlers::ServerState;
+use neomind_api::handlers::basic::*;
 
 async fn create_test_server_state() -> ServerState {
     crate::common::create_test_server_state().await
@@ -43,7 +43,11 @@ mod tests {
         let state = create_test_server_state().await;
         let result = readiness_handler(State(state)).await;
         assert!(result.0.ready);
-        assert!(result.0.dependencies.llm || result.0.dependencies.mqtt || result.0.dependencies.database);
+        assert!(
+            result.0.dependencies.llm
+                || result.0.dependencies.mqtt
+                || result.0.dependencies.database
+        );
     }
 
     #[tokio::test]

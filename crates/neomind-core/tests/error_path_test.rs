@@ -6,10 +6,10 @@
 //! - Context preservation
 //! - Recovery scenarios
 
-use neomind_core::extension::{
-    system::{ExtensionError, MetricDataType, ParameterDefinition, ParamMetricValue},
-};
 use neomind_core::config::{agent, agent_env_vars};
+use neomind_core::extension::system::{
+    ExtensionError, MetricDataType, ParamMetricValue, ParameterDefinition,
+};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -64,7 +64,7 @@ fn test_required_parameter_without_default() {
         description: "A required parameter".to_string(),
         param_type: MetricDataType::String,
         required: true,
-        default_value: None,  // No default for required parameter
+        default_value: None, // No default for required parameter
         min: None,
         max: None,
         options: vec![],
@@ -147,13 +147,19 @@ fn test_config_env_var_parsing_invalid() {
     // Test that invalid env var values fall back to defaults
     let orig = std::env::var(agent_env_vars::MAX_CONTEXT_TOKENS);
 
-    unsafe { std::env::set_var(agent_env_vars::MAX_CONTEXT_TOKENS, "not_a_number"); }
+    unsafe {
+        std::env::set_var(agent_env_vars::MAX_CONTEXT_TOKENS, "not_a_number");
+    }
     let result = agent_env_vars::max_context_tokens();
     assert_eq!(result, agent::DEFAULT_MAX_CONTEXT_TOKENS);
 
     match orig {
-        Ok(v) => unsafe { std::env::set_var(agent_env_vars::MAX_CONTEXT_TOKENS, v); },
-        Err(_) => unsafe { std::env::remove_var(agent_env_vars::MAX_CONTEXT_TOKENS); },
+        Ok(v) => unsafe {
+            std::env::set_var(agent_env_vars::MAX_CONTEXT_TOKENS, v);
+        },
+        Err(_) => unsafe {
+            std::env::remove_var(agent_env_vars::MAX_CONTEXT_TOKENS);
+        },
     }
 }
 
@@ -162,14 +168,20 @@ fn test_config_env_var_parsing_zero() {
     // Test edge case of zero value
     let orig = std::env::var(agent_env_vars::MAX_CONTEXT_TOKENS);
 
-    unsafe { std::env::set_var(agent_env_vars::MAX_CONTEXT_TOKENS, "0"); }
+    unsafe {
+        std::env::set_var(agent_env_vars::MAX_CONTEXT_TOKENS, "0");
+    }
     let result = agent_env_vars::max_context_tokens();
     // Zero is parsed successfully (though may be invalid for config validation)
     assert_eq!(result, 0);
 
     match orig {
-        Ok(v) => unsafe { std::env::set_var(agent_env_vars::MAX_CONTEXT_TOKENS, v); },
-        Err(_) => unsafe { std::env::remove_var(agent_env_vars::MAX_CONTEXT_TOKENS); },
+        Ok(v) => unsafe {
+            std::env::set_var(agent_env_vars::MAX_CONTEXT_TOKENS, v);
+        },
+        Err(_) => unsafe {
+            std::env::remove_var(agent_env_vars::MAX_CONTEXT_TOKENS);
+        },
     }
 }
 
@@ -179,14 +191,20 @@ fn test_config_env_var_parsing_overflow() {
     let orig = std::env::var(agent_env_vars::MAX_TOKENS);
 
     // Use usize::MAX which is valid but may cause issues
-    unsafe { std::env::set_var(agent_env_vars::MAX_TOKENS, "18446744073709551615"); }
+    unsafe {
+        std::env::set_var(agent_env_vars::MAX_TOKENS, "18446744073709551615");
+    }
     let result = agent_env_vars::max_tokens();
     // Should parse but the value may be truncated on 32-bit platforms
     assert!(result > 0);
 
     match orig {
-        Ok(v) => unsafe { std::env::set_var(agent_env_vars::MAX_TOKENS, v); },
-        Err(_) => unsafe { std::env::remove_var(agent_env_vars::MAX_TOKENS); },
+        Ok(v) => unsafe {
+            std::env::set_var(agent_env_vars::MAX_TOKENS, v);
+        },
+        Err(_) => unsafe {
+            std::env::remove_var(agent_env_vars::MAX_TOKENS);
+        },
     }
 }
 

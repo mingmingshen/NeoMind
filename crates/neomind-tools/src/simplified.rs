@@ -8,9 +8,9 @@
 //!
 //! NOTE: Tool names here must match the actual tool names registered in the tool registry.
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 
 use super::tool::ToolOutput;
 
@@ -49,14 +49,13 @@ impl FriendlyError {
 
     /// Convert to ToolOutput.
     pub fn to_output(&self) -> ToolOutput {
-
         if self.is_warning {
             ToolOutput::warning_with_metadata(
                 &self.message,
                 serde_json::json!({
                     "suggestions": self.suggestions,
                     "type": "friendly_warning"
-                })
+                }),
             )
         } else {
             ToolOutput::error_with_metadata(
@@ -64,7 +63,7 @@ impl FriendlyError {
                 serde_json::json!({
                     "suggestions": self.suggestions,
                     "type": "friendly_error"
-                })
+                }),
             )
         }
     }
@@ -617,7 +616,10 @@ pub fn format_tools_for_llm() -> String {
             prompt.push_str(&format!("必参:{}", tool.required.join(",")));
         }
         if !tool.optional.is_empty() {
-            prompt.push_str(&format!(" 可参:{}", tool.optional.keys().cloned().collect::<Vec<_>>().join(",")));
+            prompt.push_str(&format!(
+                " 可参:{}",
+                tool.optional.keys().cloned().collect::<Vec<_>>().join(",")
+            ));
         }
         prompt.push('\n');
     }
@@ -628,34 +630,43 @@ pub fn format_tools_for_llm() -> String {
 /// Format simplified tools as JSON for function calling.
 pub fn format_tools_as_json() -> Vec<Value> {
     let tools = get_simplified_tools();
-    tools.into_iter().map(|tool| {
-        let mut properties = serde_json::Map::new();
+    tools
+        .into_iter()
+        .map(|tool| {
+            let mut properties = serde_json::Map::new();
 
-        // Build properties from required and optional params
-        for param in &tool.required {
-            properties.insert(param.clone(), serde_json::json!({
-                "type": "string",
-                "description": format!("{} (必需)", param)
-            }));
-        }
-        for (param, info) in &tool.optional {
-            properties.insert(param.clone(), serde_json::json!({
-                "type": "string",
-                "description": info.description,
-                "default": info.default
-            }));
-        }
-
-        serde_json::json!({
-            "name": tool.name,
-            "description": tool.description,
-            "parameters": {
-                "type": "object",
-                "properties": properties,
-                "required": tool.required
+            // Build properties from required and optional params
+            for param in &tool.required {
+                properties.insert(
+                    param.clone(),
+                    serde_json::json!({
+                        "type": "string",
+                        "description": format!("{} (必需)", param)
+                    }),
+                );
             }
+            for (param, info) in &tool.optional {
+                properties.insert(
+                    param.clone(),
+                    serde_json::json!({
+                        "type": "string",
+                        "description": info.description,
+                        "default": info.default
+                    }),
+                );
+            }
+
+            serde_json::json!({
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": tool.required
+                }
+            })
         })
-    }).collect()
+        .collect()
 }
 
 #[cfg(test)]

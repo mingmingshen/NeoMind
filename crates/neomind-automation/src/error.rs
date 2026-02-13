@@ -54,10 +54,7 @@ pub enum AutomationError {
 
     /// Transform operation error
     #[error("Transform error in {operation}: {message}")]
-    TransformError {
-        operation: String,
-        message: String,
-    },
+    TransformError { operation: String, message: String },
 }
 
 impl From<redb::Error> for AutomationError {
@@ -119,4 +116,3 @@ impl From<neomind_rules::RuleError> for AutomationError {
         AutomationError::InvalidDefinition(format!("Rule error: {}", err))
     }
 }
-

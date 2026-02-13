@@ -106,15 +106,20 @@ impl RuleCondition {
     /// Get all device/metric pairs referenced in this condition.
     pub fn get_device_metrics(&self) -> Vec<(String, String)> {
         match self {
-            RuleCondition::Device { device_id, metric, .. } => {
+            RuleCondition::Device {
+                device_id, metric, ..
+            } => {
                 vec![(device_id.clone(), metric.clone())]
             }
-            RuleCondition::DeviceRange { device_id, metric, .. } => {
+            RuleCondition::DeviceRange {
+                device_id, metric, ..
+            } => {
                 vec![(device_id.clone(), metric.clone())]
             }
-            RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
-                conditions.iter().flat_map(|c| c.get_device_metrics()).collect()
-            }
+            RuleCondition::And(conditions) | RuleCondition::Or(conditions) => conditions
+                .iter()
+                .flat_map(|c| c.get_device_metrics())
+                .collect(),
             RuleCondition::Not(condition) => condition.get_device_metrics(),
             // Extension conditions don't contribute device metrics
             RuleCondition::Extension { .. } | RuleCondition::ExtensionRange { .. } => vec![],
@@ -124,15 +129,24 @@ impl RuleCondition {
     /// Get all extension/metric pairs referenced in this condition.
     pub fn get_extension_metrics(&self) -> Vec<(String, String)> {
         match self {
-            RuleCondition::Extension { extension_id, metric, .. } => {
+            RuleCondition::Extension {
+                extension_id,
+                metric,
+                ..
+            } => {
                 vec![(extension_id.clone(), metric.clone())]
             }
-            RuleCondition::ExtensionRange { extension_id, metric, .. } => {
+            RuleCondition::ExtensionRange {
+                extension_id,
+                metric,
+                ..
+            } => {
                 vec![(extension_id.clone(), metric.clone())]
             }
-            RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
-                conditions.iter().flat_map(|c| c.get_extension_metrics()).collect()
-            }
+            RuleCondition::And(conditions) | RuleCondition::Or(conditions) => conditions
+                .iter()
+                .flat_map(|c| c.get_extension_metrics())
+                .collect(),
             RuleCondition::Not(condition) => condition.get_extension_metrics(),
             // Device conditions don't contribute extension metrics
             RuleCondition::Device { .. } | RuleCondition::DeviceRange { .. } => vec![],
@@ -228,9 +242,7 @@ pub enum RuleAction {
         value: serde_json::Value,
     },
     /// Delay execution.
-    Delay {
-        duration: Duration,
-    },
+    Delay { duration: Duration },
     /// Create an alert.
     CreateAlert {
         title: String,
@@ -304,7 +316,7 @@ impl RuleDslParser {
                 // Check for inline keywords that should be on separate lines
                 let has_when = upper.contains(" WHEN ");
                 let has_do = upper.contains(" DO ");
-                let _has_for = upper.contains(" FOR ");  // FOR is optional
+                let _has_for = upper.contains(" FOR "); // FOR is optional
                 let has_end = upper.ends_with(" END") || upper.contains(" END ");
 
                 if has_when || has_do || has_end {
@@ -365,8 +377,7 @@ impl RuleDslParser {
 
                         // Find where DO actions end (at END)
                         let after_do_upper = after_do.to_uppercase();
-                        let actions_end = after_do_upper.find(" END")
-                            .unwrap_or(after_do.len());
+                        let actions_end = after_do_upper.find(" END").unwrap_or(after_do.len());
                         let actions = after_do[..actions_end].trim().to_string();
                         parts.push(format!("DO {}", actions));
 
@@ -518,10 +529,22 @@ impl RuleDslParser {
 
             // Extended keyword list including new actions
             for keyword in &[
-                "RULE", "WHEN", "FOR", "DO", "END",
-                "NOTIFY", "EXECUTE", "LOG", "SET", "DELAY",
-                "TRIGGER", "WORKFLOW", "ALERT", "HTTP",
-                "DESCRIPTION", "TAGS",
+                "RULE",
+                "WHEN",
+                "FOR",
+                "DO",
+                "END",
+                "NOTIFY",
+                "EXECUTE",
+                "LOG",
+                "SET",
+                "DELAY",
+                "TRIGGER",
+                "WORKFLOW",
+                "ALERT",
+                "HTTP",
+                "DESCRIPTION",
+                "TAGS",
             ] {
                 let keyword_with_space = format!("{} ", keyword);
                 if upper.starts_with(&keyword_with_space) || upper == *keyword {
@@ -576,13 +599,19 @@ impl RuleDslParser {
             condition,
             for_duration,
             actions,
-            description: if description.is_empty() { None } else { Some(description) },
+            description: if description.is_empty() {
+                None
+            } else {
+                Some(description)
+            },
             tags,
         })
     }
 
     /// Extract rule name and optional description/tags from RULE line.
-    fn extract_rule_header(lines: &mut Vec<&str>) -> Result<(String, String, Vec<String>), RuleError> {
+    fn extract_rule_header(
+        lines: &mut Vec<&str>,
+    ) -> Result<(String, String, Vec<String>), RuleError> {
         let mut name = String::new();
         let mut description = String::new();
         let mut tags = Vec::new();
@@ -599,13 +628,19 @@ impl RuleDslParser {
                 while idx < lines.len() {
                     let next_line = lines[idx].trim();
                     if next_line.starts_with("DESCRIPTION") {
-                        if let Some(desc) = Self::extract_quoted_string(next_line.strip_prefix("DESCRIPTION").map_or("", |s| s.trim())) {
+                        if let Some(desc) = Self::extract_quoted_string(
+                            next_line
+                                .strip_prefix("DESCRIPTION")
+                                .map_or("", |s| s.trim()),
+                        ) {
                             description = desc;
                         }
                         lines.remove(idx);
                         continue;
                     } else if next_line.starts_with("TAGS") {
-                        let tags_str = next_line.strip_prefix("TAGS").map_or(next_line, |s| s.trim());
+                        let tags_str = next_line
+                            .strip_prefix("TAGS")
+                            .map_or(next_line, |s| s.trim());
                         tags = tags_str.split(',').map(|s| s.trim().to_string()).collect();
                         lines.remove(idx);
                         continue;
@@ -638,7 +673,10 @@ impl RuleDslParser {
         let input = input.trim();
 
         // Handle NOT first (highest precedence)
-        if let Some(inner) = input.strip_prefix("NOT").or_else(|| input.strip_prefix("not")) {
+        if let Some(inner) = input
+            .strip_prefix("NOT")
+            .or_else(|| input.strip_prefix("not"))
+        {
             let inner = inner.trim();
             if !inner.is_empty() {
                 let condition = Self::parse_condition(inner)?;
@@ -658,7 +696,8 @@ impl RuleDslParser {
             if let Some(and_pos) = after_between.to_uppercase().find(" AND ") {
                 // Strip EXTENSION keyword if present
                 let condition_left = if is_extension {
-                    left_part.strip_prefix("EXTENSION")
+                    left_part
+                        .strip_prefix("EXTENSION")
                         .or_else(|| left_part.strip_prefix("EXT"))
                         .or_else(|| left_part.strip_prefix("extension"))
                         .unwrap_or(left_part)
@@ -672,43 +711,54 @@ impl RuleDslParser {
                 let min_str = after_between[..and_pos].trim();
                 let max_str = after_between[and_pos + 5..].trim();
 
-                let min = min_str.parse().map_err(|_| {
-                    RuleError::Parse(format!("Invalid min value: {}", min_str))
-                })?;
-                let max = max_str.parse().map_err(|_| {
-                    RuleError::Parse(format!("Invalid max value: {}", max_str))
-                })?;
+                let min = min_str
+                    .parse()
+                    .map_err(|_| RuleError::Parse(format!("Invalid min value: {}", min_str)))?;
+                let max = max_str
+                    .parse()
+                    .map_err(|_| RuleError::Parse(format!("Invalid max value: {}", max_str)))?;
 
                 return if is_extension {
-                    Ok(RuleCondition::ExtensionRange { extension_id: source_id, metric, min, max })
+                    Ok(RuleCondition::ExtensionRange {
+                        extension_id: source_id,
+                        metric,
+                        min,
+                        max,
+                    })
                 } else {
-                    Ok(RuleCondition::DeviceRange { device_id: source_id, metric, min, max })
+                    Ok(RuleCondition::DeviceRange {
+                        device_id: source_id,
+                        metric,
+                        min,
+                        max,
+                    })
                 };
             }
         }
 
         // Handle parenthesized expressions
         if input.starts_with('(')
-            && let Some(close_pos) = Self::find_matching_paren(input, 0) {
-                let inner = &input[1..close_pos];
-                let rest = input[close_pos + 1..].trim();
+            && let Some(close_pos) = Self::find_matching_paren(input, 0)
+        {
+            let inner = &input[1..close_pos];
+            let rest = input[close_pos + 1..].trim();
 
-                // Check for AND/OR after the parenthesized expression
-                if rest.to_uppercase().starts_with("AND ") {
-                    let left = Self::parse_condition(inner)?;
-                    let right_str = rest[3..].trim(); // Skip "AND"
-                    let right = Self::parse_condition(right_str)?;
-                    return Ok(RuleCondition::And(vec![left, right]));
-                } else if rest.to_uppercase().starts_with("OR ") {
-                    let left = Self::parse_condition(inner)?;
-                    let right_str = rest[2..].trim(); // Skip "OR"
-                    let right = Self::parse_condition(right_str)?;
-                    return Ok(RuleCondition::Or(vec![left, right]));
-                } else {
-                    // Just a parenthesized condition
-                    return Self::parse_condition(inner);
-                }
+            // Check for AND/OR after the parenthesized expression
+            if rest.to_uppercase().starts_with("AND ") {
+                let left = Self::parse_condition(inner)?;
+                let right_str = rest[3..].trim(); // Skip "AND"
+                let right = Self::parse_condition(right_str)?;
+                return Ok(RuleCondition::And(vec![left, right]));
+            } else if rest.to_uppercase().starts_with("OR ") {
+                let left = Self::parse_condition(inner)?;
+                let right_str = rest[2..].trim(); // Skip "OR"
+                let right = Self::parse_condition(right_str)?;
+                return Ok(RuleCondition::Or(vec![left, right]));
+            } else {
+                // Just a parenthesized condition
+                return Self::parse_condition(inner);
             }
+        }
 
         // Handle AND (higher precedence than OR)
         if let Some(pos) = Self::find_operator_ignore_parens(input, "AND") {
@@ -725,12 +775,23 @@ impl RuleDslParser {
         }
 
         // Simple condition
-        let (source_id, metric, operator, threshold) = Self::parse_simple_condition(input, is_extension)?;
+        let (source_id, metric, operator, threshold) =
+            Self::parse_simple_condition(input, is_extension)?;
 
         if is_extension {
-            Ok(RuleCondition::Extension { extension_id: source_id, metric, operator, threshold })
+            Ok(RuleCondition::Extension {
+                extension_id: source_id,
+                metric,
+                operator,
+                threshold,
+            })
         } else {
-            Ok(RuleCondition::Device { device_id: source_id, metric, operator, threshold })
+            Ok(RuleCondition::Device {
+                device_id: source_id,
+                metric,
+                operator,
+                threshold,
+            })
         }
     }
 
@@ -809,7 +870,8 @@ impl RuleDslParser {
     ) -> Result<(String, String, ComparisonOperator, f64), RuleError> {
         // Strip EXTENSION keyword if present
         let input = if is_extension {
-            input.strip_prefix("EXTENSION")
+            input
+                .strip_prefix("EXTENSION")
                 .or_else(|| input.strip_prefix("extension"))
                 .unwrap_or(input)
                 .trim()
@@ -849,11 +911,12 @@ impl RuleDslParser {
     fn parse_for_clause(lines: &mut Vec<&str>) -> Option<Duration> {
         for (i, line) in lines.iter().enumerate() {
             if line.starts_with("FOR")
-                && let Some(rest) = line.strip_prefix("FOR") {
-                    let duration_str = rest.trim();
-                    lines.remove(i);
-                    return Self::parse_duration(duration_str);
-                }
+                && let Some(rest) = line.strip_prefix("FOR")
+            {
+                let duration_str = rest.trim();
+                lines.remove(i);
+                return Self::parse_duration(duration_str);
+            }
         }
         None
     }
@@ -871,10 +934,12 @@ impl RuleDslParser {
             if *line == "END" {
                 break;
             }
-            if in_do_block && !line.is_empty()
-                && let Some(action) = Self::parse_action(line)? {
-                    actions.push(action);
-                }
+            if in_do_block
+                && !line.is_empty()
+                && let Some(action) = Self::parse_action(line)?
+            {
+                actions.push(action);
+            }
         }
 
         Ok(actions)
@@ -886,15 +951,16 @@ impl RuleDslParser {
         let mut parts = input.split_whitespace();
 
         if let (Some(num_str), Some(unit)) = (parts.next(), parts.next())
-            && let Ok(value) = num_str.parse::<u64>() {
-                let duration = match unit {
-                    "second" | "seconds" => Duration::from_secs(value),
-                    "minute" | "minutes" => Duration::from_secs(value * 60),
-                    "hour" | "hours" => Duration::from_secs(value * 3600),
-                    _ => return None,
-                };
-                return Some(duration);
-            }
+            && let Ok(value) = num_str.parse::<u64>()
+        {
+            let duration = match unit {
+                "second" | "seconds" => Duration::from_secs(value),
+                "minute" | "minutes" => Duration::from_secs(value * 60),
+                "hour" | "hours" => Duration::from_secs(value * 3600),
+                _ => return None,
+            };
+            return Some(duration);
+        }
 
         None
     }
@@ -917,10 +983,7 @@ impl RuleDslParser {
                 } else {
                     None
                 };
-                return Ok(Some(RuleAction::Notify {
-                    message,
-                    channels,
-                }));
+                return Ok(Some(RuleAction::Notify { message, channels }));
             }
         }
 
@@ -962,7 +1025,8 @@ impl RuleDslParser {
                         serde_json::Value::Number(serde_json::Number::from(num))
                     } else if let Ok(num) = value_str.parse::<f64>() {
                         serde_json::Value::Number(
-                            serde_json::Number::from_f64(num).unwrap_or_else(|| serde_json::Number::from(0))
+                            serde_json::Number::from_f64(num)
+                                .unwrap_or_else(|| serde_json::Number::from(0)),
                         )
                     } else if *value_str == "true" {
                         serde_json::Value::Bool(true)
@@ -1019,7 +1083,11 @@ impl RuleDslParser {
                     _ => AlertSeverity::Info,
                 };
 
-                return Ok(Some(RuleAction::CreateAlert { title, message, severity }));
+                return Ok(Some(RuleAction::CreateAlert {
+                    title,
+                    message,
+                    severity,
+                }));
             }
         }
 
@@ -1234,7 +1302,12 @@ mod tests {
         let rule = RuleDslParser::parse(dsl).unwrap();
         assert_eq!(rule.name, "Test Rule");
         match &rule.condition {
-            RuleCondition::Device { device_id, metric, operator, threshold } => {
+            RuleCondition::Device {
+                device_id,
+                metric,
+                operator,
+                threshold,
+            } => {
                 assert_eq!(device_id, "sensor");
                 assert_eq!(metric, "temperature");
                 assert_eq!(*operator, ComparisonOperator::GreaterThan);
@@ -1352,7 +1425,12 @@ mod tests {
 
         let rule = RuleDslParser::parse(dsl).unwrap();
         match &rule.condition {
-            RuleCondition::DeviceRange { device_id, metric, min, max } => {
+            RuleCondition::DeviceRange {
+                device_id,
+                metric,
+                min,
+                max,
+            } => {
                 assert_eq!(device_id, "sensor");
                 assert_eq!(metric, "temperature");
                 assert_eq!(*min, 20.0);
@@ -1374,7 +1452,11 @@ mod tests {
 
         let rule = RuleDslParser::parse(dsl).unwrap();
         match &rule.actions[0] {
-            RuleAction::Set { device_id, property, value } => {
+            RuleAction::Set {
+                device_id,
+                property,
+                value,
+            } => {
                 // device.fan.speed -> device_id="device.fan", property="speed"
                 assert_eq!(device_id, "device.fan");
                 assert_eq!(property, "speed");
@@ -1533,7 +1615,12 @@ DO NOTIFY \"High temperature\" END"#;
         let rule = RuleDslParser::parse(dsl).unwrap();
         assert_eq!(rule.name, "Test Nested Metrics");
         match &rule.condition {
-            RuleCondition::Device { device_id, metric, operator, threshold } => {
+            RuleCondition::Device {
+                device_id,
+                metric,
+                operator,
+                threshold,
+            } => {
                 assert_eq!(device_id, "2A3C39");
                 assert_eq!(metric, "metadata.height"); // Full nested path should be preserved
                 assert_eq!(*operator, ComparisonOperator::GreaterThan);
@@ -1556,7 +1643,9 @@ DO NOTIFY \"High temperature\" END"#;
 
         let rule = RuleDslParser::parse(dsl).unwrap();
         match &rule.condition {
-            RuleCondition::Device { device_id, metric, .. } => {
+            RuleCondition::Device {
+                device_id, metric, ..
+            } => {
                 assert_eq!(device_id, "device");
                 assert_eq!(metric, "ai_result.ai_result.confidence"); // Full path preserved
             }
@@ -1577,7 +1666,12 @@ DO NOTIFY \"High temperature\" END"#;
 
         let rule = RuleDslParser::parse(dsl).unwrap();
         match &rule.condition {
-            RuleCondition::DeviceRange { device_id, metric, min, max } => {
+            RuleCondition::DeviceRange {
+                device_id,
+                metric,
+                min,
+                max,
+            } => {
                 assert_eq!(device_id, "device");
                 assert_eq!(metric, "metadata.height"); // Full nested path preserved
                 assert_eq!(*min, 50.0);
@@ -1603,7 +1697,10 @@ DO NOTIFY \"High temperature\" END"#;
         match &rule.actions[0] {
             RuleAction::Notify { message, channels } => {
                 assert_eq!(message, "High temperature detected");
-                assert_eq!(channels, &Some(vec!["alerts".to_string(), "mobile".to_string()]));
+                assert_eq!(
+                    channels,
+                    &Some(vec!["alerts".to_string(), "mobile".to_string()])
+                );
             }
             _ => panic!("Expected Notify action"),
         }
@@ -1679,7 +1776,14 @@ DO NOTIFY \"High temperature\" END"#;
     fn test_parse_channels_helper() {
         // Test the parse_channels helper function directly
         let channels = RuleDslParser::parse_channels("[channel1, channel2, channel3]");
-        assert_eq!(channels, Some(vec!["channel1".to_string(), "channel2".to_string(), "channel3".to_string()]));
+        assert_eq!(
+            channels,
+            Some(vec![
+                "channel1".to_string(),
+                "channel2".to_string(),
+                "channel3".to_string()
+            ])
+        );
 
         let empty = RuleDslParser::parse_channels("[]");
         assert_eq!(empty, Some(vec![]));
@@ -1692,14 +1796,14 @@ DO NOTIFY \"High temperature\" END"#;
     fn test_extract_quoted_string_with_remainder() {
         // Test the extract_quoted_string_with_remainder helper
         let (message, remainder) = RuleDslParser::extract_quoted_string_with_remainder(
-            r#" "Hello world" [chan1, chan2] "#
-        ).unwrap();
+            r#" "Hello world" [chan1, chan2] "#,
+        )
+        .unwrap();
         assert_eq!(message, "Hello world");
         assert_eq!(remainder, r#"[chan1, chan2]"#);
 
-        let (message, remainder) = RuleDslParser::extract_quoted_string_with_remainder(
-            r#" "Test" "#
-        ).unwrap();
+        let (message, remainder) =
+            RuleDslParser::extract_quoted_string_with_remainder(r#" "Test" "#).unwrap();
         assert_eq!(message, "Test");
         assert_eq!(remainder, "");
     }

@@ -164,11 +164,7 @@ impl ResourceResolver {
     }
 
     /// Classify intent considering resource context.
-    fn classify_intent(
-        &self,
-        query: &str,
-        results: &[SearchResult],
-    ) -> (IntentCategory, f32) {
+    fn classify_intent(&self, query: &str, results: &[SearchResult]) -> (IntentCategory, f32) {
         let query_lower = query.to_lowercase();
 
         // Check for specific intent patterns
@@ -177,55 +173,67 @@ impl ResourceResolver {
         let mut highest_specific = 0.5f32;
 
         // List/query devices
-        if query_lower.contains("有哪些") || query_lower.contains("列出")
-            || query_lower.contains("所有设备") || query_lower.contains("设备列表")
+        if query_lower.contains("有哪些")
+            || query_lower.contains("列出")
+            || query_lower.contains("所有设备")
+            || query_lower.contains("设备列表")
             || (query_lower.contains("什么设备") && query_lower.contains("有"))
         {
             intent = IntentCategory::ListDevices;
             confidence = 0.9;
         }
-
         // Data query
-        else if query_lower.contains("温度") || query_lower.contains("湿度")
-            || query_lower.contains("多少") || query_lower.contains("当前")
-            || query_lower.contains("状态") || query_lower.contains("查询")
-            || query_lower.contains("temperature") || query_lower.contains("humidity")
+        else if query_lower.contains("温度")
+            || query_lower.contains("湿度")
+            || query_lower.contains("多少")
+            || query_lower.contains("当前")
+            || query_lower.contains("状态")
+            || query_lower.contains("查询")
+            || query_lower.contains("temperature")
+            || query_lower.contains("humidity")
         {
             intent = IntentCategory::QueryData;
             confidence = if !results.is_empty() && results[0].score > 0.7 {
                 0.9
             } else {
-                0.5  // Low confidence when no specific device found - triggers clarification
+                0.5 // Low confidence when no specific device found - triggers clarification
             };
         }
-
         // Control
-        else if query_lower.contains("打开") || query_lower.contains("关闭")
-            || query_lower.contains("关掉") || query_lower.contains("打开")
-            || query_lower.contains("控制") || query_lower.contains("调节")
-            || query_lower.contains("开灯") || query_lower.contains("关灯")
-            || query_lower.contains("open") || query_lower.contains("close")
-            || query_lower.contains("turn on") || query_lower.contains("turn off")
+        else if query_lower.contains("打开")
+            || query_lower.contains("关闭")
+            || query_lower.contains("关掉")
+            || query_lower.contains("打开")
+            || query_lower.contains("控制")
+            || query_lower.contains("调节")
+            || query_lower.contains("开灯")
+            || query_lower.contains("关灯")
+            || query_lower.contains("open")
+            || query_lower.contains("close")
+            || query_lower.contains("turn on")
+            || query_lower.contains("turn off")
         {
             intent = IntentCategory::ControlDevice;
             confidence = if !results.is_empty() && results[0].score > 0.7 {
                 0.9
             } else {
-                0.5  // Low confidence when no specific device found - triggers clarification
+                0.5 // Low confidence when no specific device found - triggers clarification
             };
         }
-
         // System status
-        else if query_lower.contains("系统状态") || query_lower.contains("运行情况")
-            || query_lower.contains("在线") || query_lower.contains("离线")
+        else if query_lower.contains("系统状态")
+            || query_lower.contains("运行情况")
+            || query_lower.contains("在线")
+            || query_lower.contains("离线")
         {
             intent = IntentCategory::SystemStatus;
             confidence = 0.95;
         }
-
         // Alert related
-        else if query_lower.contains("告警") || query_lower.contains("通知")
-            || query_lower.contains("alert") || query_lower.contains("notification")
+        else if query_lower.contains("告警")
+            || query_lower.contains("通知")
+            || query_lower.contains("alert")
+            || query_lower.contains("notification")
         {
             intent = IntentCategory::Alert;
             confidence = 0.8;
@@ -248,7 +256,8 @@ impl ResourceResolver {
 
     /// Extract resource matches from search results.
     fn extract_matches(&self, results: &[SearchResult]) -> Vec<ResourceMatch> {
-        results.iter()
+        results
+            .iter()
             .filter(|r| r.score > 0.3) // Only include relevant matches
             .map(|r| {
                 let match_type = if r.score > 0.8 {
@@ -263,7 +272,9 @@ impl ResourceResolver {
                     MatchType::Partial
                 };
 
-                let capabilities = r.resource.as_device()
+                let capabilities = r
+                    .resource
+                    .as_device()
                     .map(|d| d.capabilities.iter().map(|c| c.name.clone()).collect())
                     .unwrap_or_default();
 
@@ -398,10 +409,16 @@ impl ResourceResolver {
     fn infer_control_action(&self, query: &str) -> String {
         let query_lower = query.to_lowercase();
 
-        if query_lower.contains("打开") || query_lower.contains("开灯") || query_lower.contains("open") {
+        if query_lower.contains("打开")
+            || query_lower.contains("开灯")
+            || query_lower.contains("open")
+        {
             return "on".to_string();
         }
-        if query_lower.contains("关闭") || query_lower.contains("关灯") || query_lower.contains("close") {
+        if query_lower.contains("关闭")
+            || query_lower.contains("关灯")
+            || query_lower.contains("close")
+        {
             return "off".to_string();
         }
         if query_lower.contains("切换") || query_lower.contains("toggle") {
@@ -444,22 +461,34 @@ impl ResourceResolver {
             }
             IntentCategory::QueryData => {
                 if let Some(action) = resolved.actions.first()
-                    && let Some(target) = &action.target {
-                        let metric = action.parameters.get("metric")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("temperature");
-                        suggestions.push(format!("query_data(device='{}', metric='{}')", target, metric));
-                    }
+                    && let Some(target) = &action.target
+                {
+                    let metric = action
+                        .parameters
+                        .get("metric")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("temperature");
+                    suggestions.push(format!(
+                        "query_data(device='{}', metric='{}')",
+                        target, metric
+                    ));
+                }
                 suggestions.push("search_resources(query='相关设备类型')".to_string());
             }
             IntentCategory::ControlDevice => {
                 if let Some(action) = resolved.actions.first()
-                    && let Some(target) = &action.target {
-                        let action_type = action.parameters.get("action")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("toggle");
-                        suggestions.push(format!("control_device(device='{}', action='{}')", target, action_type));
-                    }
+                    && let Some(target) = &action.target
+                {
+                    let action_type = action
+                        .parameters
+                        .get("action")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("toggle");
+                    suggestions.push(format!(
+                        "control_device(device='{}', action='{}')",
+                        target, action_type
+                    ));
+                }
             }
             _ => {
                 suggestions.push("search_resources(query='查询内容')".to_string());
@@ -474,7 +503,10 @@ impl ResourceResolver {
         let mut text = String::new();
 
         text.push_str(&format!("**意图**: {:?}\n", resolved.intent));
-        text.push_str(&format!("**置信度**: {:.0}%\n", resolved.confidence * 100.0));
+        text.push_str(&format!(
+            "**置信度**: {:.0}%\n",
+            resolved.confidence * 100.0
+        ));
 
         if !resolved.resources.is_empty() {
             text.push_str("\n**匹配的资源**:\n");
@@ -507,7 +539,7 @@ impl ResourceResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::{Resource, Capability, CapabilityType, AccessType};
+    use crate::context::{AccessType, Capability, CapabilityType, Resource};
 
     #[tokio::test]
     async fn test_resolve_specific_device() {

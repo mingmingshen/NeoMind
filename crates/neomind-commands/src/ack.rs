@@ -214,8 +214,6 @@ impl AckHandler {
         let check_interval = tokio::time::Duration::from_millis(self.config.check_interval_ms);
         let auto_retry = self.config.auto_retry;
 
-        
-
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(check_interval);
 
@@ -433,7 +431,6 @@ pub enum AckError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::command::{CommandRequest, CommandSource};
     use crate::state::CommandStateStore;
     use std::sync::Arc;
 

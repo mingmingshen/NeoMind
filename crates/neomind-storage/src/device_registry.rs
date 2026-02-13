@@ -34,8 +34,7 @@ pub enum DeviceTypeMode {
 }
 
 /// Device type template (simplified version matching neomind_devices::mdl_format::DeviceTypeTemplate)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DeviceTypeTemplate {
     pub device_type: String,
     pub name: String,
@@ -54,7 +53,6 @@ pub struct DeviceTypeTemplate {
     #[serde(default)]
     pub commands: Vec<CommandDefinition>,
 }
-
 
 /// Metric definition (matches neomind_devices::mdl_format::MetricDefinition)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,7 +83,9 @@ pub enum MetricDataType {
     #[default]
     String,
     Binary,
-    Enum { options: Vec<String> },
+    Enum {
+        options: Vec<String>,
+    },
 }
 
 /// Command definition (matches neomind_devices::mdl_format::CommandDefinition)
@@ -154,13 +154,27 @@ pub struct ParameterDefinition {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ValidationRule {
     /// Pattern validation for strings (regex)
-    Pattern { regex: String, error_message: String },
+    Pattern {
+        regex: String,
+        error_message: String,
+    },
     /// Range validation for numbers
-    Range { min: f64, max: f64, error_message: String },
+    Range {
+        min: f64,
+        max: f64,
+        error_message: String,
+    },
     /// Length validation for strings/arrays
-    Length { min: usize, max: usize, error_message: String },
+    Length {
+        min: usize,
+        max: usize,
+        error_message: String,
+    },
     /// Custom validation (by name)
-    Custom { validator: String, params: serde_json::Value },
+    Custom {
+        validator: String,
+        params: serde_json::Value,
+    },
 }
 
 /// Parameter group for organizing parameters in the UI
@@ -176,7 +190,6 @@ pub struct ParameterGroup {
     #[serde(default)]
     pub order: i32,
 }
-
 
 /// Metric value for parameter defaults (renamed to avoid conflict with device_state::MetricValue)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,8 +207,7 @@ pub enum ParamMetricValue {
 }
 
 /// Device configuration (simplified version matching neomind_devices::registry::DeviceConfig)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DeviceConfig {
     pub device_id: String,
     pub name: String,
@@ -206,7 +218,6 @@ pub struct DeviceConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adapter_id: Option<String>,
 }
-
 
 /// Connection configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -274,9 +285,10 @@ impl DeviceRegistryStore {
         {
             let singleton = REGISTRY_STORE_SINGLETON.lock().unwrap();
             if let Some(store) = singleton.as_ref()
-                && store.path == path_str {
-                    return Ok(store.clone());
-                }
+                && store.path == path_str
+            {
+                return Ok(store.clone());
+            }
         }
 
         // Create new store
@@ -592,45 +604,46 @@ impl DeviceRegistryStore {
 
             // Update type index if type changed
             if let Some(old_type) = old_device_type
-                && old_type != new_device_type {
-                    let mut index_table = write_txn.open_table(TYPE_INDEX_TABLE)?;
+                && old_type != new_device_type
+            {
+                let mut index_table = write_txn.open_table(TYPE_INDEX_TABLE)?;
 
-                    // Remove from old type
-                    let old_type_key = old_type.as_str();
-                    let old_device_ids: Vec<String> = match index_table.get(old_type_key)? {
-                        Some(value) => value
-                            .value()
-                            .split(',')
-                            .filter(|s| !s.is_empty() && *s != device_id)
-                            .map(String::from)
-                            .collect(),
-                        None => Vec::new(),
-                    };
+                // Remove from old type
+                let old_type_key = old_type.as_str();
+                let old_device_ids: Vec<String> = match index_table.get(old_type_key)? {
+                    Some(value) => value
+                        .value()
+                        .split(',')
+                        .filter(|s| !s.is_empty() && *s != device_id)
+                        .map(String::from)
+                        .collect(),
+                    None => Vec::new(),
+                };
 
-                    if old_device_ids.is_empty() {
-                        index_table.remove(old_type_key)?;
-                    } else {
-                        index_table.insert(old_type_key, old_device_ids.join(",").as_str())?;
-                    }
-
-                    // Add to new type
-                    let key = new_device_type.as_str();
-                    let mut device_ids: Vec<String> = match index_table.get(key)? {
-                        Some(value) => value
-                            .value()
-                            .split(',')
-                            .filter(|s| !s.is_empty())
-                            .map(String::from)
-                            .collect(),
-                        None => Vec::new(),
-                    };
-
-                    if !device_ids.contains(&device_id.to_string()) {
-                        device_ids.push(device_id.to_string());
-                    }
-
-                    index_table.insert(key, device_ids.join(",").as_str())?;
+                if old_device_ids.is_empty() {
+                    index_table.remove(old_type_key)?;
+                } else {
+                    index_table.insert(old_type_key, old_device_ids.join(",").as_str())?;
                 }
+
+                // Add to new type
+                let key = new_device_type.as_str();
+                let mut device_ids: Vec<String> = match index_table.get(key)? {
+                    Some(value) => value
+                        .value()
+                        .split(',')
+                        .filter(|s| !s.is_empty())
+                        .map(String::from)
+                        .collect(),
+                    None => Vec::new(),
+                };
+
+                if !device_ids.contains(&device_id.to_string()) {
+                    device_ids.push(device_id.to_string());
+                }
+
+                index_table.insert(key, device_ids.join(",").as_str())?;
+            }
         }
         write_txn.commit()?;
         Ok(())

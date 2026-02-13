@@ -97,10 +97,9 @@ impl IntentParser {
         ];
 
         for (keyword, metric) in metric_mappings {
-            if prompt.contains(keyword)
-                && !metrics.contains(&metric.to_string()) {
-                    metrics.push(metric.to_string());
-                }
+            if prompt.contains(keyword) && !metrics.contains(&metric.to_string()) {
+                metrics.push(metric.to_string());
+            }
         }
 
         // If no metrics found, add temperature as default for monitoring
@@ -166,11 +165,7 @@ impl IntentParser {
             if !before_numbers.is_empty() && !after_numbers.is_empty() {
                 let before_val = before_numbers.last().cloned().unwrap_or_default();
                 let after_val = after_numbers.first().cloned().unwrap_or_default();
-                conditions.push(format!(
-                    "between {} and {}",
-                    before_val,
-                    after_val
-                ));
+                conditions.push(format!("between {} and {}", before_val, after_val));
             }
         }
 
@@ -287,6 +282,10 @@ mod tests {
         let conditions = parser.extract_conditions("温度大于30度");
 
         println!("Extracted conditions: {:?}", conditions);
-        assert!(conditions.contains(&">30".to_string()), "Expected '>30' in conditions: {:?}", conditions);
+        assert!(
+            conditions.contains(&">30".to_string()),
+            "Expected '>30' in conditions: {:?}",
+            conditions
+        );
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! Run with: cargo bench -p edge-ai-agent
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neomind_agent::agent::AgentMessage;
 use tokio::runtime::Runtime;
 
@@ -14,7 +14,9 @@ fn bench_token_estimation(c: &mut Criterion) {
         b.iter(|| {
             let mut total = 0;
             for msg in &messages {
-                total += black_box(neomind_agent::agent::tokenizer::estimate_message_tokens(msg));
+                total += black_box(neomind_agent::agent::tokenizer::estimate_message_tokens(
+                    msg,
+                ));
             }
             black_box(total)
         });
@@ -25,7 +27,9 @@ fn bench_token_estimation(c: &mut Criterion) {
         b.iter(|| {
             let mut total = 0;
             for msg in &messages {
-                total += black_box(neomind_agent::agent::tokenizer::estimate_message_tokens(msg));
+                total += black_box(neomind_agent::agent::tokenizer::estimate_message_tokens(
+                    msg,
+                ));
             }
             black_box(total)
         });
@@ -36,7 +40,9 @@ fn bench_token_estimation(c: &mut Criterion) {
         b.iter(|| {
             let mut total = 0;
             for msg in &messages {
-                total += black_box(neomind_agent::agent::tokenizer::estimate_message_tokens(msg));
+                total += black_box(neomind_agent::agent::tokenizer::estimate_message_tokens(
+                    msg,
+                ));
             }
             black_box(total)
         });

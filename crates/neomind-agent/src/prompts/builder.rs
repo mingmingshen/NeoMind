@@ -79,8 +79,16 @@ impl PromptBuilder {
     /// Build the enhanced system prompt.
     pub fn build_system_prompt(&self) -> String {
         match self.language {
-            Language::Chinese => Self::enhanced_prompt_zh(self.include_thinking, self.include_examples, self.supports_vision),
-            Language::English => Self::enhanced_prompt_en(self.include_thinking, self.include_examples, self.supports_vision),
+            Language::Chinese => Self::enhanced_prompt_zh(
+                self.include_thinking,
+                self.include_examples,
+                self.supports_vision,
+            ),
+            Language::English => Self::enhanced_prompt_en(
+                self.include_thinking,
+                self.include_examples,
+                self.supports_vision,
+            ),
         }
     }
 
@@ -577,7 +585,11 @@ When thinking mode is enabled, structure your thought process:
     // === Builder methods ===
 
     /// Enhanced Chinese system prompt.
-    fn enhanced_prompt_zh(include_thinking: bool, include_examples: bool, supports_vision: bool) -> String {
+    fn enhanced_prompt_zh(
+        include_thinking: bool,
+        include_examples: bool,
+        supports_vision: bool,
+    ) -> String {
         let mut prompt = String::with_capacity(4096);
 
         // Core identity
@@ -621,7 +633,11 @@ When thinking mode is enabled, structure your thought process:
     }
 
     /// Enhanced English system prompt.
-    fn enhanced_prompt_en(include_thinking: bool, include_examples: bool, supports_vision: bool) -> String {
+    fn enhanced_prompt_en(
+        include_thinking: bool,
+        include_examples: bool,
+        supports_vision: bool,
+    ) -> String {
         let mut prompt = String::with_capacity(4096);
 
         prompt.push_str(Self::IDENTITY_EN);

@@ -5,9 +5,7 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::command::{
-    CommandId, CommandRequest, CommandResult, CommandStatus,
-};
+use crate::command::{CommandId, CommandRequest, CommandResult, CommandStatus};
 use crate::queue::{CommandQueue, QueueError};
 
 /// Command state store error types.

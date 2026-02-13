@@ -1,11 +1,13 @@
 //! Tests for auth_users handlers.
 
-use neomind_api::handlers::auth_users::*;
-use neomind_api::handlers::ServerState;
-use neomind_api::auth_users::{LoginRequest, RegisterRequest, ChangePasswordRequest, SessionInfo, UserRole};
-use axum::extract::{Extension, Path, State};
 use axum::Json;
+use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
+use neomind_api::auth_users::{
+    ChangePasswordRequest, LoginRequest, RegisterRequest, SessionInfo, UserRole,
+};
+use neomind_api::handlers::ServerState;
+use neomind_api::handlers::auth_users::*;
 
 async fn create_test_server_state() -> ServerState {
     crate::common::create_test_server_state().await
@@ -29,7 +31,10 @@ mod tests {
     #[tokio::test]
     async fn test_register_handler() {
         let state = create_test_server_state().await;
-        let username = format!("test_user_{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let username = format!(
+            "test_user_{}",
+            uuid::Uuid::new_v4().to_string().replace('-', "")
+        );
         let req = RegisterRequest {
             username: username.clone(),
             password: "test_password_123".to_string(),
@@ -47,7 +52,10 @@ mod tests {
     #[tokio::test]
     async fn test_register_handler_admin_role() {
         let state = create_test_server_state().await;
-        let username = format!("admin_user_{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let username = format!(
+            "admin_user_{}",
+            uuid::Uuid::new_v4().to_string().replace('-', "")
+        );
         let req = RegisterRequest {
             username: username.clone(),
             password: "admin_password_123".to_string(),
@@ -64,7 +72,10 @@ mod tests {
     #[tokio::test]
     async fn test_register_handler_default_role() {
         let state = create_test_server_state().await;
-        let username = format!("default_user_{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let username = format!(
+            "default_user_{}",
+            uuid::Uuid::new_v4().to_string().replace('-', "")
+        );
         let req = RegisterRequest {
             username: username.clone(),
             password: "password123".to_string(),
@@ -196,7 +207,10 @@ mod tests {
             created_at: now,
             expires_at: now + 3600,
         };
-        let username = format!("created_user_{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let username = format!(
+            "created_user_{}",
+            uuid::Uuid::new_v4().to_string().replace('-', "")
+        );
         let req = RegisterRequest {
             username: username.clone(),
             password: "password123".to_string(),
@@ -221,7 +235,12 @@ mod tests {
             created_at: now,
             expires_at: now + 3600,
         };
-        let result = delete_user_handler(State(state), Extension(user_info), Path("someuser".to_string())).await;
+        let result = delete_user_handler(
+            State(state),
+            Extension(user_info),
+            Path("someuser".to_string()),
+        )
+        .await;
         assert!(result.is_err());
     }
 
@@ -236,11 +255,18 @@ mod tests {
             created_at: now,
             expires_at: now + 3600,
         };
-        let result = delete_user_handler(State(state), Extension(admin_info), Path("admin".to_string())).await;
+        let result = delete_user_handler(
+            State(state),
+            Extension(admin_info),
+            Path("admin".to_string()),
+        )
+        .await;
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("Cannot delete your own account") ||
-                err.to_string().contains("own account"));
+        assert!(
+            err.to_string().contains("Cannot delete your own account")
+                || err.to_string().contains("own account")
+        );
     }
 
     #[tokio::test]

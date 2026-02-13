@@ -196,9 +196,9 @@ impl MessageStore {
                 let mut active_table = write_txn
                     .open_table(ACTIVE_TABLE)
                     .map_err(|e| Error::Storage(format!("Failed to open active table: {}", e)))?;
-                active_table
-                    .insert(msg.id.as_str(), "1")
-                    .map_err(|e| Error::Storage(format!("Failed to index active message: {}", e)))?;
+                active_table.insert(msg.id.as_str(), "1").map_err(|e| {
+                    Error::Storage(format!("Failed to index active message: {}", e))
+                })?;
             }
 
             // Add to history
@@ -286,9 +286,9 @@ impl MessageStore {
                 .map_err(|e| Error::Storage(format!("Failed to open active table: {}", e)))?;
 
             if msg.is_active() {
-                active_table
-                    .insert(msg.id.as_str(), "1")
-                    .map_err(|e| Error::Storage(format!("Failed to index active message: {}", e)))?;
+                active_table.insert(msg.id.as_str(), "1").map_err(|e| {
+                    Error::Storage(format!("Failed to index active message: {}", e))
+                })?;
             } else if was_active {
                 active_table
                     .remove(msg.id.as_str())
@@ -353,8 +353,8 @@ impl MessageStore {
             .iter()
             .map_err(|e| Error::Storage(format!("Failed to iterate: {}", e)))?;
         for result in iter {
-            let (_id, value) = result
-                .map_err(|e| Error::Storage(format!("Failed to read entry: {}", e)))?;
+            let (_id, value) =
+                result.map_err(|e| Error::Storage(format!("Failed to read entry: {}", e)))?;
             let msg: StoredMessage = serde_json::from_str(value.value())
                 .map_err(|e| Error::Storage(format!("Failed to deserialize: {}", e)))?;
             messages.push(msg);
@@ -386,8 +386,8 @@ impl MessageStore {
             .iter()
             .map_err(|e| Error::Storage(format!("Failed to iterate: {}", e)))?;
         for result in iter {
-            let (id, _) = result
-                .map_err(|e| Error::Storage(format!("Failed to read entry: {}", e)))?;
+            let (id, _) =
+                result.map_err(|e| Error::Storage(format!("Failed to read entry: {}", e)))?;
             if let Some(value) = messages_table
                 .get(id.value())
                 .map_err(|e| Error::Storage(format!("Failed to read message: {}", e)))?
@@ -407,28 +407,19 @@ impl MessageStore {
     /// List messages by status.
     pub fn list_by_status(&self, status: &str) -> Result<Vec<StoredMessage>, Error> {
         let all = self.list()?;
-        Ok(all
-            .into_iter()
-            .filter(|m| m.status == status)
-            .collect())
+        Ok(all.into_iter().filter(|m| m.status == status).collect())
     }
 
     /// List messages by category.
     pub fn list_by_category(&self, category: &str) -> Result<Vec<StoredMessage>, Error> {
         let all = self.list()?;
-        Ok(all
-            .into_iter()
-            .filter(|m| m.category == category)
-            .collect())
+        Ok(all.into_iter().filter(|m| m.category == category).collect())
     }
 
     /// List messages by severity.
     pub fn list_by_severity(&self, severity: &str) -> Result<Vec<StoredMessage>, Error> {
         let all = self.list()?;
-        Ok(all
-            .into_iter()
-            .filter(|m| m.severity == severity)
-            .collect())
+        Ok(all.into_iter().filter(|m| m.severity == severity).collect())
     }
 
     /// Get message statistics.
@@ -474,8 +465,8 @@ impl MessageStore {
                 .iter()
                 .map_err(|e| Error::Storage(format!("Failed to iterate: {}", e)))?;
             for result in iter {
-                let (id, value) = result
-                    .map_err(|e| Error::Storage(format!("Failed to read entry: {}", e)))?;
+                let (id, value) =
+                    result.map_err(|e| Error::Storage(format!("Failed to read entry: {}", e)))?;
                 let msg: StoredMessage = serde_json::from_str(value.value())
                     .map_err(|e| Error::Storage(format!("Failed to deserialize: {}", e)))?;
                 if msg.timestamp < cutoff {
@@ -505,9 +496,7 @@ impl MessageStore {
                 .map_err(|e| Error::Storage(format!("Failed to open active table: {}", e)))?;
 
             for id in &to_remove {
-                active_table
-                    .remove(id.as_str())
-                    .ok();
+                active_table.remove(id.as_str()).ok();
             }
         }
 
@@ -559,9 +548,7 @@ impl MessageStore {
                 .open_table(MESSAGES_TABLE)
                 .map_err(|e| Error::Storage(format!("Failed to open messages table: {}", e)))?;
             for key in &keys_to_delete {
-                messages_table
-                    .remove(key.as_str())
-                    .ok();
+                messages_table.remove(key.as_str()).ok();
             }
         }
 
@@ -571,9 +558,7 @@ impl MessageStore {
                 .open_table(ACTIVE_TABLE)
                 .map_err(|e| Error::Storage(format!("Failed to open active table: {}", e)))?;
             for key in &active_keys {
-                active_table
-                    .remove(key.as_str())
-                    .ok();
+                active_table.remove(key.as_str()).ok();
             }
         }
 

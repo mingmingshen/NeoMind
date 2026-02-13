@@ -64,15 +64,33 @@ pub struct StreamingConfig {
 }
 
 // 默认值函数
-fn default_stream_timeout() -> u64 { 300 }
-fn default_heartbeat_interval() -> u64 { 30 }
-fn default_heartbeat_timeout() -> u64 { 60 }
-fn default_max_thinking() -> usize { 100_000 }
-fn default_max_content() -> usize { 50_000 }
-fn default_max_tool_iterations() -> usize { 10 }
-fn default_max_tools_per_request() -> usize { 10 }
-fn default_progress_interval() -> u64 { 5 }
-fn default_cache_ttl() -> u64 { 300 }
+fn default_stream_timeout() -> u64 {
+    300
+}
+fn default_heartbeat_interval() -> u64 {
+    30
+}
+fn default_heartbeat_timeout() -> u64 {
+    60
+}
+fn default_max_thinking() -> usize {
+    100_000
+}
+fn default_max_content() -> usize {
+    50_000
+}
+fn default_max_tool_iterations() -> usize {
+    10
+}
+fn default_max_tools_per_request() -> usize {
+    10
+}
+fn default_progress_interval() -> u64 {
+    5
+}
+fn default_cache_ttl() -> u64 {
+    300
+}
 
 impl Default for StreamingConfig {
     fn default() -> Self {
@@ -160,19 +178,22 @@ impl StreamingConfig {
         let mut config = Self::default();
 
         if let Ok(timeout) = std::env::var("NEOMIND_STREAM_TIMEOUT")
-            && let Ok(secs) = timeout.parse::<u64>() {
-                config.max_stream_duration_secs = secs;
-            }
+            && let Ok(secs) = timeout.parse::<u64>()
+        {
+            config.max_stream_duration_secs = secs;
+        }
 
         if let Ok(interval) = std::env::var("NEOMIND_HEARTBEAT_INTERVAL")
-            && let Ok(secs) = interval.parse::<u64>() {
-                config.heartbeat_interval_secs = secs;
-            }
+            && let Ok(secs) = interval.parse::<u64>()
+        {
+            config.heartbeat_interval_secs = secs;
+        }
 
         if let Ok(iterations) = std::env::var("NEOMIND_MAX_TOOL_ITERATIONS")
-            && let Ok(n) = iterations.parse::<usize>() {
-                config.max_tool_iterations = n;
-            }
+            && let Ok(n) = iterations.parse::<usize>()
+        {
+            config.max_tool_iterations = n;
+        }
 
         config
     }
@@ -190,7 +211,9 @@ impl StreamingConfig {
         }
 
         if self.heartbeat_timeout_secs <= self.heartbeat_interval_secs {
-            return Err("heartbeat_timeout_secs must be greater than heartbeat_interval_secs".to_string());
+            return Err(
+                "heartbeat_timeout_secs must be greater than heartbeat_interval_secs".to_string(),
+            );
         }
 
         if self.max_tool_iterations < 1 {
@@ -202,7 +225,9 @@ impl StreamingConfig {
         }
 
         if self.max_tool_iterations > 20 {
-            return Err("max_tool_iterations should not exceed 20 to prevent excessive loops".to_string());
+            return Err(
+                "max_tool_iterations should not exceed 20 to prevent excessive loops".to_string(),
+            );
         }
 
         Ok(())
@@ -221,11 +246,13 @@ pub fn get_default_config() -> &'static StreamingConfig {
 
 /// 设置全局默认配置
 ///
-    /// 注意：必须在第一次使用配置之前调用。
-    pub fn set_default_config(config: StreamingConfig) -> Result<(), String> {
-        config.validate()?;
-        DEFAULT_CONFIG.set(config).map_err(|_| "Default config already set".to_string())
-    }
+/// 注意：必须在第一次使用配置之前调用。
+pub fn set_default_config(config: StreamingConfig) -> Result<(), String> {
+    config.validate()?;
+    DEFAULT_CONFIG
+        .set(config)
+        .map_err(|_| "Default config already set".to_string())
+}
 
 #[cfg(test)]
 mod tests {

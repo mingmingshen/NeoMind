@@ -7,9 +7,9 @@
 //! - Parallel tool execution
 //! - Error handling
 
-use neomind_tools::{Tool, ToolRegistry, ToolRegistryBuilder, ToolOutput};
-use neomind_tools::{object_schema, number_property, string_property};
 use neomind_tools::ToolCall;
+use neomind_tools::{Tool, ToolOutput, ToolRegistry, ToolRegistryBuilder};
+use neomind_tools::{number_property, object_schema, string_property};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -33,14 +33,12 @@ impl Tool for TestTool {
             serde_json::json!({
                 "value": string_property("A test value")
             }),
-            vec!["value".to_string()]
+            vec!["value".to_string()],
         )
     }
 
     async fn execute(&self, args: serde_json::Value) -> neomind_tools::Result<ToolOutput> {
-        let value = args["value"]
-            .as_str()
-            .unwrap_or("default");
+        let value = args["value"].as_str().unwrap_or("default");
 
         Ok(ToolOutput::success(json!({
             "result": format!("Processed: {}", value)
@@ -67,7 +65,7 @@ impl Tool for AddTool {
                 "a": number_property("First number"),
                 "b": number_property("Second number")
             }),
-            vec!["a".to_string(), "b".to_string()]
+            vec!["a".to_string(), "b".to_string()],
         )
     }
 
@@ -125,9 +123,7 @@ async fn test_registry_execute_tool() {
     let add_tool = Arc::new(AddTool);
     registry.register(add_tool);
 
-    let result = registry
-        .execute("add", json!({"a": 5, "b": 3}))
-        .await;
+    let result = registry.execute("add", json!({"a": 5, "b": 3})).await;
 
     assert!(result.is_ok());
     let output = result.unwrap();
@@ -152,9 +148,7 @@ async fn test_registry_execute_missing_parameter() {
 async fn test_registry_execute_nonexistent_tool() {
     let registry = ToolRegistry::new();
 
-    let result = registry
-        .execute("nonexistent_tool", json!({}))
-        .await;
+    let result = registry.execute("nonexistent_tool", json!({})).await;
 
     assert!(result.is_err());
 }
@@ -298,7 +292,12 @@ async fn test_tool_execution_with_complex_args() {
     assert!(result.is_ok());
     let output = result.unwrap();
     assert!(output.success);
-    assert!(output.data["result"].as_str().unwrap().contains("test with spaces"));
+    assert!(
+        output.data["result"]
+            .as_str()
+            .unwrap()
+            .contains("test with spaces")
+    );
 }
 
 #[tokio::test]

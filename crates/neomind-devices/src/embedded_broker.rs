@@ -50,7 +50,6 @@ pub enum BrokerMode {
     Embedded,
 }
 
-
 /// Configuration for the embedded broker
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddedBrokerConfig {
@@ -357,10 +356,10 @@ mod tests {
 
     #[test]
     fn test_broker_mode_deserialize() {
-        let external: BrokerMode = serde_json::from_str("\"external\"")
-            .expect("Failed to deserialize external mode");
-        let embedded: BrokerMode = serde_json::from_str("\"embedded\"")
-            .expect("Failed to deserialize embedded mode");
+        let external: BrokerMode =
+            serde_json::from_str("\"external\"").expect("Failed to deserialize external mode");
+        let embedded: BrokerMode =
+            serde_json::from_str("\"embedded\"").expect("Failed to deserialize embedded mode");
 
         assert_eq!(external, BrokerMode::External);
         assert_eq!(embedded, BrokerMode::Embedded);

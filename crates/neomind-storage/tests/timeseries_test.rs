@@ -7,9 +7,7 @@
 //! - Retention policies
 //! - Cache management
 
-use neomind_storage::timeseries::{
-    DataPoint, RetentionPolicy, TimeSeriesStore,
-};
+use neomind_storage::timeseries::{DataPoint, RetentionPolicy, TimeSeriesStore};
 use serde_json::json;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -81,10 +79,7 @@ async fn test_timeseries_aggregation() {
             quality: Some(1.0),
             metadata: None,
         };
-        store
-            .write("device1", "temperature", point)
-            .await
-            .unwrap();
+        store.write("device1", "temperature", point).await.unwrap();
     }
 
     // Query with aggregation (5-second buckets)
@@ -108,10 +103,7 @@ async fn test_timeseries_delete_range() {
             quality: Some(1.0),
             metadata: None,
         };
-        store
-            .write("device1", "temperature", point)
-            .await
-            .unwrap();
+        store.write("device1", "temperature", point).await.unwrap();
     }
 
     // Delete middle range
@@ -182,10 +174,7 @@ async fn test_list_metrics() {
             quality: Some(1.0),
             metadata: None,
         };
-        store
-            .write("device1", metric, point)
-            .await
-            .unwrap();
+        store.write("device1", metric, point).await.unwrap();
     }
 
     let metrics = store
@@ -215,10 +204,7 @@ async fn test_delete_metric() {
     for i in 0..10 {
         let mut p = point.clone();
         p.timestamp = now + i;
-        store
-            .write("device1", "temperature", p)
-            .await
-            .unwrap();
+        store.write("device1", "temperature", p).await.unwrap();
     }
 
     // Delete the metric
@@ -251,9 +237,7 @@ async fn test_concurrent_writes() {
                     quality: Some(1.0),
                     metadata: None,
                 };
-                store_clone
-                    .write("device1", "temperature", point)
-                    .await
+                store_clone.write("device1", "temperature", point).await
             })
         })
         .collect();
@@ -389,10 +373,7 @@ async fn test_multiple_devices() {
             .unwrap();
 
         assert!(result.is_some());
-        assert_eq!(
-            result.unwrap().as_f64().unwrap(),
-            20.0 + device_id as f64
-        );
+        assert_eq!(result.unwrap().as_f64().unwrap(), 20.0 + device_id as f64);
     }
 }
 
@@ -471,10 +452,7 @@ async fn test_time_range_query() {
             quality: Some(1.0),
             metadata: None,
         };
-        store
-            .write("device1", "temperature", point)
-            .await
-            .unwrap();
+        store.write("device1", "temperature", point).await.unwrap();
     }
 
     // Query specific range (should get points 5-14)

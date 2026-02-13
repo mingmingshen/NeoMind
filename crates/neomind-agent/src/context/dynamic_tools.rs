@@ -8,7 +8,7 @@ use tokio::sync::RwLock;
 
 use serde_json::json;
 
-use super::resource_index::{ResourceIndex, Resource, CapabilityType};
+use super::resource_index::{CapabilityType, Resource, ResourceIndex};
 
 /// Dynamic tool generator that creates tools from available resources.
 pub struct DynamicToolGenerator {
@@ -92,22 +92,34 @@ impl DynamicToolGenerator {
         let query_lower = query.to_lowercase();
 
         // Device listing intent
-        if query_lower.contains("有哪些") || query_lower.contains("列出") || query_lower.contains("所有设备") {
+        if query_lower.contains("有哪些")
+            || query_lower.contains("列出")
+            || query_lower.contains("所有设备")
+        {
             let devices = index.list_devices().await;
             tools.push(self.list_devices_tool(&devices));
             return tools;
         }
 
         // Data query intent
-        if query_lower.contains("温度") || query_lower.contains("湿度") || query_lower.contains("多少")
-            || query_lower.contains("temperature") || query_lower.contains("humidity") {
+        if query_lower.contains("温度")
+            || query_lower.contains("湿度")
+            || query_lower.contains("多少")
+            || query_lower.contains("temperature")
+            || query_lower.contains("humidity")
+        {
             let devices = index.list_devices().await;
             tools.push(self.query_data_tool(&devices));
         }
 
         // Control intent
-        if query_lower.contains("打开") || query_lower.contains("关闭") || query_lower.contains("控制")
-            || query_lower.contains("调节") || query_lower.contains("open") || query_lower.contains("close") {
+        if query_lower.contains("打开")
+            || query_lower.contains("关闭")
+            || query_lower.contains("控制")
+            || query_lower.contains("调节")
+            || query_lower.contains("open")
+            || query_lower.contains("close")
+        {
             let devices = index.list_devices().await;
             tools.push(self.control_device_tool(&devices));
         }
@@ -129,7 +141,9 @@ impl DynamicToolGenerator {
         vec![
             ToolDefinition {
                 name: "search_resources".to_string(),
-                description: "搜索系统中的资源。支持按名称、别名、位置、能力模糊搜索。返回匹配的资源列表。".to_string(),
+                description:
+                    "搜索系统中的资源。支持按名称、别名、位置、能力模糊搜索。返回匹配的资源列表。"
+                        .to_string(),
                 parameters: json!({
                     "type": "object",
                     "properties": {
@@ -159,12 +173,10 @@ impl DynamicToolGenerator {
                     "properties": {},
                     "required": []
                 }),
-                examples: vec![
-                    Example {
-                        user_query: "系统状态如何".to_string(),
-                        tool_call: "get_system_status()".to_string(),
-                    },
-                ],
+                examples: vec![Example {
+                    user_query: "系统状态如何".to_string(),
+                    tool_call: "get_system_status()".to_string(),
+                }],
             },
         ]
     }
@@ -172,8 +184,10 @@ impl DynamicToolGenerator {
     /// Generate list_devices tool with current device context.
     fn list_devices_tool(&self, devices: &[Resource]) -> ToolDefinition {
         // Group devices by type and location for context
-        let mut by_type: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-        let mut by_location: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut by_type: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        let mut by_location: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
 
         for device in devices {
             if let Some(dev_data) = device.as_device() {
@@ -240,8 +254,14 @@ impl DynamicToolGenerator {
 
         for device in devices {
             if let Some(dev_data) = device.as_device() {
-                let metrics: Vec<_> = dev_data.capabilities.iter()
-                    .filter(|c| c.cap_type == CapabilityType::Metric || c.access == crate::context::AccessType::Read || c.access == crate::context::AccessType::ReadWrite)
+                let metrics: Vec<_> = dev_data
+                    .capabilities
+                    .iter()
+                    .filter(|c| {
+                        c.cap_type == CapabilityType::Metric
+                            || c.access == crate::context::AccessType::Read
+                            || c.access == crate::context::AccessType::ReadWrite
+                    })
                     .collect();
 
                 if !metrics.is_empty() {
@@ -264,7 +284,12 @@ impl DynamicToolGenerator {
         let devices_desc = if metric_devices.is_empty() {
             "传感器".to_string()
         } else {
-            metric_devices.iter().take(5).cloned().collect::<Vec<_>>().join("、")
+            metric_devices
+                .iter()
+                .take(5)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("、")
         };
 
         ToolDefinition {
@@ -294,7 +319,8 @@ impl DynamicToolGenerator {
             examples: vec![
                 Example {
                     user_query: "客厅温度是多少".to_string(),
-                    tool_call: "query_data(device='客厅温度传感器', metric='temperature')".to_string(),
+                    tool_call: "query_data(device='客厅温度传感器', metric='temperature')"
+                        .to_string(),
                 },
                 Example {
                     user_query: "查询sensor_1的湿度".to_string(),
@@ -312,8 +338,14 @@ impl DynamicToolGenerator {
 
         for device in devices {
             if let Some(dev_data) = device.as_device() {
-                let commands: Vec<_> = dev_data.capabilities.iter()
-                    .filter(|c| c.cap_type == CapabilityType::Command || c.access == crate::context::AccessType::Write || c.access == crate::context::AccessType::ReadWrite)
+                let commands: Vec<_> = dev_data
+                    .capabilities
+                    .iter()
+                    .filter(|c| {
+                        c.cap_type == CapabilityType::Command
+                            || c.access == crate::context::AccessType::Write
+                            || c.access == crate::context::AccessType::ReadWrite
+                    })
                     .collect();
 
                 if !commands.is_empty() {
@@ -335,7 +367,12 @@ impl DynamicToolGenerator {
         let commands_desc = if all_commands.is_empty() {
             "打开、关闭、调节等".to_string()
         } else {
-            all_commands.iter().take(5).cloned().collect::<Vec<_>>().join("、")
+            all_commands
+                .iter()
+                .take(5)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("、")
         };
 
         ToolDefinition {
@@ -385,12 +422,10 @@ impl DynamicToolGenerator {
                 "properties": {},
                 "required": []
             }),
-            examples: vec![
-                Example {
-                    user_query: "有哪些告警通道".to_string(),
-                    tool_call: "list_channels()".to_string(),
-                },
-            ],
+            examples: vec![Example {
+                user_query: "有哪些告警通道".to_string(),
+                tool_call: "list_channels()".to_string(),
+            }],
         }
     }
 
@@ -400,10 +435,7 @@ impl DynamicToolGenerator {
 
         ToolDefinition {
             name: "send_notification".to_string(),
-            description: format!(
-                "发送通知告警。可用通道：{}。",
-                channel_names.join("、")
-            ),
+            description: format!("发送通知告警。可用通道：{}。", channel_names.join("、")),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -430,12 +462,16 @@ impl DynamicToolGenerator {
     fn resource_specific_tool(&self, resource: &Resource) -> ToolDefinition {
         match &resource.data {
             super::resource_index::ResourceData::Device(d) => {
-                let metrics: Vec<_> = d.capabilities.iter()
+                let metrics: Vec<_> = d
+                    .capabilities
+                    .iter()
                     .filter(|c| c.cap_type == CapabilityType::Metric)
                     .map(|c| c.name.clone())
                     .collect();
 
-                let commands: Vec<_> = d.capabilities.iter()
+                let commands: Vec<_> = d
+                    .capabilities
+                    .iter()
                     .filter(|c| c.cap_type == CapabilityType::Command)
                     .map(|c| c.name.clone())
                     .collect();
@@ -472,7 +508,7 @@ impl DynamicToolGenerator {
                     }),
                     examples: vec![],
                 }
-            },
+            }
             _ => ToolDefinition {
                 name: format!("resource_{}", resource.id.id),
                 description: resource.name.clone(),
@@ -498,7 +534,8 @@ impl DynamicToolGenerator {
             std::collections::HashMap::new();
 
         for device in &devices {
-            let location = device.as_device()
+            let location = device
+                .as_device()
                 .and_then(|d| d.location.as_ref())
                 .cloned()
                 .unwrap_or_else(|| "未分类".to_string());
@@ -510,7 +547,8 @@ impl DynamicToolGenerator {
         for (location, devices) in &by_location {
             summary.push_str(&format!("**{}**: ", location));
 
-            let device_names: Vec<_> = devices.iter()
+            let device_names: Vec<_> = devices
+                .iter()
                 .map(|d| {
                     // Add capability indicators
                     let mut indicators = Vec::new();
@@ -579,7 +617,7 @@ impl IfEmpty for String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::{Capability, CapabilityType, AccessType, Resource, ResourceId};
+    use crate::context::{AccessType, Capability, CapabilityType, Resource, ResourceId};
 
     #[tokio::test]
     async fn test_dynamic_tool_generation() {

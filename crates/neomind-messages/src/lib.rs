@@ -41,17 +41,17 @@
 //! }
 //! ```
 
-pub mod message;
-pub mod manager;
-pub mod channels;
 pub mod category;
+pub mod channels;
 pub mod error;
+pub mod manager;
+pub mod message;
 
-pub use message::{Message, MessageId, MessageSeverity, MessageStatus};
-pub use manager::{MessageManager, MessageStats};
 pub use category::MessageCategory;
-pub use channels::{MessageChannel, ChannelRegistry, ConsoleChannel, MemoryChannel};
+pub use channels::{ChannelRegistry, ConsoleChannel, MemoryChannel, MessageChannel};
 pub use error::{Error, Result};
+pub use manager::{MessageManager, MessageStats};
+pub use message::{Message, MessageId, MessageSeverity, MessageStatus};
 
 // Channel factory exports
 pub use channels::{ConsoleChannelFactory, MemoryChannelFactory};
@@ -64,10 +64,10 @@ pub use channels::{WebhookChannel, WebhookChannelFactory};
 pub use channels::{EmailChannel, EmailChannelFactory};
 
 // Channel info exports (always available)
-pub use channels::{ChannelInfo, ChannelStats, ChannelTypeInfo, TestResult, ChannelFactory};
+pub use channels::{ChannelFactory, ChannelInfo, ChannelStats, ChannelTypeInfo, TestResult};
 
 // Re-export channel helper functions
-pub use channels::{list_channel_types, get_channel_schema};
+pub use channels::{get_channel_schema, list_channel_types};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

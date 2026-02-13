@@ -9,7 +9,6 @@ use crate::types::*;
 pub struct AutomationConverter;
 
 impl AutomationConverter {
-
     /// Get conversion recommendations for an automation
     pub fn get_conversion_recommendation(automation: &Automation) -> ConversionRecommendation {
         match automation {

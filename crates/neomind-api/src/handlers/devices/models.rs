@@ -164,11 +164,7 @@ pub struct PaginationMeta {
 impl PaginationMeta {
     /// Create pagination metadata
     pub fn new(page: usize, limit: usize, total: usize) -> Self {
-        let total_pages = if total == 0 {
-            0
-        } else {
-            total.div_ceil(limit)
-        };
+        let total_pages = if total == 0 { 0 } else { total.div_ceil(limit) };
         Self {
             page,
             limit,

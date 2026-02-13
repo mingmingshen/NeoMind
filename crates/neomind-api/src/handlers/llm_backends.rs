@@ -70,13 +70,13 @@ pub struct CreateBackendRequest {
 }
 
 fn default_temperature() -> f32 {
-    0.6  // Lowered for faster responses
+    0.6 // Lowered for faster responses
 }
 fn default_top_p() -> f32 {
-    0.85  // Lowered to reduce thinking time
+    0.85 // Lowered to reduce thinking time
 }
 fn default_top_k() -> Option<usize> {
-    Some(20)  // Lowered for faster sampling
+    Some(20) // Lowered for faster sampling
 }
 fn default_max_tokens() -> usize {
     usize::MAX
@@ -352,16 +352,14 @@ pub async fn create_backend_handler(
         temperature: req.temperature,
         top_p: req.top_p,
         max_tokens: default_max_tokens(),
-        top_k: req.top_k.unwrap_or(20),  // Default to 20 for faster responses
+        top_k: req.top_k.unwrap_or(20), // Default to 20 for faster responses
         thinking_enabled: req.thinking_enabled,
         capabilities,
         updated_at: chrono::Utc::now().timestamp(),
     };
 
     // Validate
-    instance
-        .validate()
-        .map_err(ErrorResponse::bad_request)?;
+    instance.validate().map_err(ErrorResponse::bad_request)?;
 
     // Save
     manager
@@ -422,9 +420,7 @@ pub async fn update_backend_handler(
     instance.updated_at = chrono::Utc::now().timestamp();
 
     // Validate
-    instance
-        .validate()
-        .map_err(ErrorResponse::bad_request)?;
+    instance.validate().map_err(ErrorResponse::bad_request)?;
 
     // Save
     manager
@@ -543,11 +539,64 @@ pub async fn activate_backend_handler(
                 model,
             }
         }
+        LlmBackendType::Qwen => {
+            let api_key = instance.api_key.clone().unwrap_or_default();
+            let endpoint = instance
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string());
+            let model = instance.model.clone();
+            LlmBackend::OpenAi {
+                api_key,
+                endpoint,
+                model,
+            }
+        }
+        LlmBackendType::DeepSeek => {
+            let api_key = instance.api_key.clone().unwrap_or_default();
+            let endpoint = instance
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "https://api.deepseek.com".to_string());
+            let model = instance.model.clone();
+            LlmBackend::OpenAi {
+                api_key,
+                endpoint,
+                model,
+            }
+        }
+        LlmBackendType::GLM => {
+            let api_key = instance.api_key.clone().unwrap_or_default();
+            let endpoint = instance
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "https://open.bigmodel.cn/api/paas/v4".to_string());
+            let model = instance.model.clone();
+            LlmBackend::OpenAi {
+                api_key,
+                endpoint,
+                model,
+            }
+        }
+        LlmBackendType::MiniMax => {
+            let api_key = instance.api_key.clone().unwrap_or_default();
+            let endpoint = instance
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "https://api.minimax.chat/v1".to_string());
+            let model = instance.model.clone();
+            LlmBackend::OpenAi {
+                api_key,
+                endpoint,
+                model,
+            }
+        }
     };
 
     // Update all existing sessions to use the new backend
     state
-        .agents.session_manager
+        .agents
+        .session_manager
         .set_llm_backend(backend.clone())
         .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
@@ -581,6 +630,30 @@ pub async fn activate_backend_handler(
         },
         LlmBackendType::XAi => crate::config::LlmSettingsRequest {
             backend: "xai".to_string(),
+            model: instance.model.clone(),
+            endpoint: instance.endpoint.clone(),
+            api_key: instance.api_key.clone(),
+        },
+        LlmBackendType::Qwen => crate::config::LlmSettingsRequest {
+            backend: "qwen".to_string(),
+            model: instance.model.clone(),
+            endpoint: instance.endpoint.clone(),
+            api_key: instance.api_key.clone(),
+        },
+        LlmBackendType::DeepSeek => crate::config::LlmSettingsRequest {
+            backend: "deepseek".to_string(),
+            model: instance.model.clone(),
+            endpoint: instance.endpoint.clone(),
+            api_key: instance.api_key.clone(),
+        },
+        LlmBackendType::GLM => crate::config::LlmSettingsRequest {
+            backend: "glm".to_string(),
+            model: instance.model.clone(),
+            endpoint: instance.endpoint.clone(),
+            api_key: instance.api_key.clone(),
+        },
+        LlmBackendType::MiniMax => crate::config::LlmSettingsRequest {
+            backend: "minimax".to_string(),
             model: instance.model.clone(),
             endpoint: instance.endpoint.clone(),
             api_key: instance.api_key.clone(),
@@ -682,7 +755,9 @@ pub async fn list_ollama_models_handler(
 ) -> HandlerResult<serde_json::Value> {
     use reqwest::Client;
 
-    let endpoint = params.endpoint.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let endpoint = params
+        .endpoint
+        .unwrap_or_else(|| "http://localhost:11434".to_string());
     let base_url = endpoint.trim_end_matches('/');
 
     let client = Client::builder()
@@ -718,7 +793,11 @@ pub async fn list_ollama_models_handler(
         let caps = match get_model_capabilities_from_show(&client, &show_url, &model.name).await {
             Ok(c) => c,
             Err(e) => {
-                tracing::warn!("Failed to get capabilities for {}: {}, using fallback detection", model.name, e);
+                tracing::warn!(
+                    "Failed to get capabilities for {}: {}, using fallback detection",
+                    model.name,
+                    e
+                );
                 // Fallback to name-based detection if /api/show fails
                 detect_ollama_model_capabilities_from_name(&model.name)
             }
@@ -1068,6 +1147,34 @@ fn get_default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilitie
             supports_tools: false,
             max_context: 128000,
         },
+        LlmBackendType::Qwen => BackendCapabilities {
+            supports_streaming: true,
+            supports_multimodal: true,
+            supports_thinking: false,
+            supports_tools: true,
+            max_context: 32768,
+        },
+        LlmBackendType::DeepSeek => BackendCapabilities {
+            supports_streaming: true,
+            supports_multimodal: false,
+            supports_thinking: false,
+            supports_tools: true,
+            max_context: 65536,
+        },
+        LlmBackendType::GLM => BackendCapabilities {
+            supports_streaming: true,
+            supports_multimodal: false,
+            supports_thinking: false,
+            supports_tools: true,
+            max_context: 131072,
+        },
+        LlmBackendType::MiniMax => BackendCapabilities {
+            supports_streaming: true,
+            supports_multimodal: true,
+            supports_thinking: false,
+            supports_tools: true,
+            max_context: 512000,
+        },
     }
 }
 
@@ -1099,9 +1206,11 @@ fn adjust_capabilities_for_model(model_name: &str, capabilities: &mut BackendCap
         // === Thinking detection ===
         // Models that support extended thinking (deepseek-r1, qwen thinking models)
         capabilities.supports_thinking = name_lower.starts_with("qwen3")
-            && !name_lower.contains("-vl") && !name_lower.contains(":vl")
+            && !name_lower.contains("-vl")
+            && !name_lower.contains(":vl")
             || name_lower.starts_with("qwen2.5")
-            && !name_lower.contains("-vl") && !name_lower.contains(":vl")
+                && !name_lower.contains("-vl")
+                && !name_lower.contains(":vl")
             || name_lower.contains("deepseek-r1")
             || name_lower.contains("thinking");
     }

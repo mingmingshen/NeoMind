@@ -10,7 +10,7 @@ use super::error::{Result, ToolError};
 
 // Re-export from core for unified types
 pub use neomind_core::tools::{
-    ToolCategory, ToolRelationships, UsageScenario, ToolDefinition as CoreToolDefinition,
+    ToolCategory, ToolDefinition as CoreToolDefinition, ToolRelationships, UsageScenario,
 };
 
 /// Tool execution result.
@@ -247,21 +247,23 @@ pub trait Tool: Send + Sync {
     fn validate_args(&self, args: &Value) -> Result<()> {
         let params = self.parameters();
         if let Some(obj) = params.as_object()
-            && let Some(required) = obj.get("required").and_then(|r| r.as_array()) {
-                let args_obj = args
-                    .as_object()
-                    .ok_or_else(|| ToolError::InvalidArguments("Expected object".to_string()))?;
+            && let Some(required) = obj.get("required").and_then(|r| r.as_array())
+        {
+            let args_obj = args
+                .as_object()
+                .ok_or_else(|| ToolError::InvalidArguments("Expected object".to_string()))?;
 
-                for req in required {
-                    if let Some(req_str) = req.as_str()
-                        && !args_obj.contains_key(req_str) {
-                            return Err(ToolError::InvalidArguments(format!(
-                                "Missing required parameter: {}",
-                                req_str
-                            )));
-                        }
+            for req in required {
+                if let Some(req_str) = req.as_str()
+                    && !args_obj.contains_key(req_str)
+                {
+                    return Err(ToolError::InvalidArguments(format!(
+                        "Missing required parameter: {}",
+                        req_str
+                    )));
                 }
             }
+        }
         Ok(())
     }
 }

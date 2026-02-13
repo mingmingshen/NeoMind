@@ -19,22 +19,22 @@
 //! └─────────────────────────────────────────────────────┘
 //! ```
 
+pub mod cache;
+pub mod conversation_context;
 pub mod fallback;
 pub mod formatter;
+pub mod scheduler;
 pub mod semantic_mapper;
+pub mod smart_followup;
 pub mod staged;
 pub mod streaming;
-pub mod tool_parser;
 pub mod tokenizer;
+pub mod tool_parser;
 pub mod types;
-pub mod conversation_context;
-pub mod smart_followup;
-pub mod scheduler;
-pub mod cache;
 
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::collections::HashMap;
 
 use futures::Stream;
 use tokio::sync::RwLock;
@@ -47,11 +47,7 @@ use super::error::Result;
 use super::llm::{ChatConfig, LlmInterface};
 use super::tools::mapper::map_tool_parameters;
 use crate::context::ResourceIndex;
-use neomind_core::{
-    Message,
-    llm::backend::LlmRuntime,
-    config::agent_env_vars,
-};
+use neomind_core::{Message, config::agent_env_vars, llm::backend::LlmRuntime};
 use neomind_llm::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
 
 // Type aliases to reduce complexity
@@ -59,37 +55,37 @@ pub type SharedToolRegistry = Arc<neomind_tools::ToolRegistry>;
 pub type SharedLlmInterface = Arc<LlmInterface>;
 pub type SharedSessionState = Arc<RwLock<SessionState>>;
 pub type SharedResourceIndex = Arc<RwLock<ResourceIndex>>;
-pub type SharedSmartConversation = Arc<tokio::sync::RwLock<crate::smart_conversation::SmartConversationManager>>;
+pub type SharedSmartConversation =
+    Arc<tokio::sync::RwLock<crate::smart_conversation::SmartConversationManager>>;
 pub type SharedSemanticMapper = Arc<semantic_mapper::SemanticToolMapper>;
 pub type EventStream = Pin<Box<dyn Stream<Item = AgentEvent> + Send>>;
 pub type MessageStream = Pin<Box<dyn Stream<Item = (String, bool)> + Send>>;
 
-pub use fallback::{FallbackRule, default_fallback_rules, process_fallback};
-pub use formatter::{format_summary, format_tool_result};
-pub use semantic_mapper::{
-    SemanticToolMapper, SemanticMapping, SemanticMatchType,
-    DeviceMapping, RuleMapping, WorkflowMapping, MappingStats,
-};
-pub use streaming::{
-    StreamSafeguards, events_to_string_stream, process_stream_events,
-    process_stream_events_with_safeguards, process_multimodal_stream_events,
-    process_multimodal_stream_events_with_safeguards,
-};
-pub use types::{
-    AgentConfig, AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, AgentResponse,
-    LlmBackend, SessionState, ToolCall,
+pub use crate::context_selector::{
+    CommandReference, ContextBundle, ContextScope, ContextSelector, DeviceTypeReference, Entity,
+    IntentAnalysis, IntentAnalyzer, IntentType, RuleReference,
 };
 pub use conversation_context::{
     ConversationContext, ConversationTopic, EntityReference, EntityType,
 };
-pub use smart_followup::{
-    SmartFollowUpManager, FollowUpAnalysis, FollowUpItem, FollowUpType,
-    FollowUpPriority, DetectedIntent, AvailableDevice,
+pub use fallback::{FallbackRule, default_fallback_rules, process_fallback};
+pub use formatter::{format_summary, format_tool_result};
+pub use semantic_mapper::{
+    DeviceMapping, MappingStats, RuleMapping, SemanticMapping, SemanticMatchType,
+    SemanticToolMapper, WorkflowMapping,
 };
-pub use crate::context_selector::{
-    ContextSelector, IntentAnalyzer, IntentAnalysis, ContextBundle,
-    IntentType, Entity, ContextScope,
-    DeviceTypeReference, RuleReference, CommandReference,
+pub use smart_followup::{
+    AvailableDevice, DetectedIntent, FollowUpAnalysis, FollowUpItem, FollowUpPriority,
+    FollowUpType, SmartFollowUpManager,
+};
+pub use streaming::{
+    StreamSafeguards, events_to_string_stream, process_multimodal_stream_events,
+    process_multimodal_stream_events_with_safeguards, process_stream_events,
+    process_stream_events_with_safeguards,
+};
+pub use types::{
+    AgentConfig, AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, AgentResponse,
+    LlmBackend, SessionState, ToolCall,
 };
 
 /// Maximum number of tool calls allowed per request to prevent infinite loops
@@ -256,7 +252,11 @@ pub fn compact_conversation(
             format!(
                 "[之前的对话: 包含{}轮交流，主题涉及{}]",
                 topic_batches.len(),
-                if topic_batches.len() > 5 { "多个话题" } else { "相关内容" }
+                if topic_batches.len() > 5 {
+                    "多个话题"
+                } else {
+                    "相关内容"
+                }
             )
         };
 
@@ -382,7 +382,7 @@ fn build_context_window(messages: &[AgentMessage], max_tokens: usize) -> Vec<Age
     let selected_refs = select_messages_with_importance(
         &conversation_compacted,
         max_tokens,
-        4,  // Always keep at least 4 recent messages
+        4,    // Always keep at least 4 recent messages
         0.15, // Minimum importance threshold
     );
 
@@ -432,8 +432,13 @@ fn calculate_adaptive_context_adjustment(messages: &[AgentMessage]) -> f64 {
                 entities.insert("agent".to_string());
             }
             // Location mentions
-            if word.contains("客厅") || word.contains("卧室") || word.contains("厨房")
-                || word.contains("living") || word.contains("bedroom") || word.contains("kitchen") {
+            if word.contains("客厅")
+                || word.contains("卧室")
+                || word.contains("厨房")
+                || word.contains("living")
+                || word.contains("bedroom")
+                || word.contains("kitchen")
+            {
                 entities.insert("location".to_string());
             }
         }
@@ -442,7 +447,10 @@ fn calculate_adaptive_context_adjustment(messages: &[AgentMessage]) -> f64 {
     // High entity diversity: +10%
     if entities.len() >= 4 {
         adjustment += 0.1;
-        tracing::debug!("Adaptive context: +10% for high entity diversity ({})", entities.len());
+        tracing::debug!(
+            "Adaptive context: +10% for high entity diversity ({})",
+            entities.len()
+        );
     }
 
     // 2. Topic variety: Count distinct topics
@@ -473,14 +481,20 @@ fn calculate_adaptive_context_adjustment(messages: &[AgentMessage]) -> f64 {
     // Multiple active topics: +10%
     if topics.len() >= 3 {
         adjustment += 0.1;
-        tracing::debug!("Adaptive context: +10% for multiple topics ({})", topics.len());
+        tracing::debug!(
+            "Adaptive context: +10% for multiple topics ({})",
+            topics.len()
+        );
     }
 
     // 3. Recent errors: +15%
     let has_recent_errors = recent.iter().any(|msg| {
         let content = msg.content.to_lowercase();
-        content.contains("错误") || content.contains("失败") || content.contains("error")
-            || content.contains("fail") || msg.role == "tool" && content.contains("\"success\":false")
+        content.contains("错误")
+            || content.contains("失败")
+            || content.contains("error")
+            || content.contains("fail")
+            || msg.role == "tool" && content.contains("\"success\":false")
     });
     if has_recent_errors {
         adjustment += 0.15;
@@ -488,19 +502,24 @@ fn calculate_adaptive_context_adjustment(messages: &[AgentMessage]) -> f64 {
     }
 
     // 4. Simple greetings: -10%
-    let is_simple_greeting = messages.len() <= 3 && recent.iter().all(|msg| {
-        let content = msg.content.to_lowercase();
-        let tokens = content.split_whitespace().count();
-        tokens <= 5 || content.contains("你好") || content.contains("hello")
-            || content.contains("hi") || content.contains("嗨")
-    });
+    let is_simple_greeting = messages.len() <= 3
+        && recent.iter().all(|msg| {
+            let content = msg.content.to_lowercase();
+            let tokens = content.split_whitespace().count();
+            tokens <= 5
+                || content.contains("你好")
+                || content.contains("hello")
+                || content.contains("hi")
+                || content.contains("嗨")
+        });
     if is_simple_greeting {
         adjustment -= 0.1;
         tracing::debug!("Adaptive context: -10% for simple greeting");
     }
 
     // 5. Repetitive content penalty: -5%
-    let unique_contents: std::collections::HashSet<_> = recent.iter().map(|m| m.content.as_str()).collect();
+    let unique_contents: std::collections::HashSet<_> =
+        recent.iter().map(|m| m.content.as_str()).collect();
     if recent.len() > 3 && unique_contents.len() < recent.len() / 2 {
         adjustment -= 0.05;
         tracing::debug!("Adaptive context: -5% for repetitive content");
@@ -578,7 +597,8 @@ impl ToolResultCache {
 
     fn put(&mut self, tool_name: &str, args: String, result: String) {
         let key = (tool_name.to_string(), args);
-        self.entries.insert(key, (result, std::time::Instant::now()));
+        self.entries
+            .insert(key, (result, std::time::Instant::now()));
 
         // Clean up expired entries periodically
         self.cleanup();
@@ -594,7 +614,8 @@ impl ToolResultCache {
 
     /// Invalidate all cache entries for a specific tool or prefix.
     fn invalidate(&mut self, tool_prefix: &str) {
-        let keys_to_remove: Vec<_> = self.entries
+        let keys_to_remove: Vec<_> = self
+            .entries
             .keys()
             .filter(|(name, _)| name.starts_with(tool_prefix))
             .cloned()
@@ -635,7 +656,8 @@ pub struct Agent {
     /// Process lock to prevent concurrent requests on the same session
     process_lock: Arc<tokio::sync::Mutex<()>>,
     /// Smart conversation manager - intercepts input for追问/确认
-    smart_conversation: Arc<tokio::sync::RwLock<crate::smart_conversation::SmartConversationManager>>,
+    smart_conversation:
+        Arc<tokio::sync::RwLock<crate::smart_conversation::SmartConversationManager>>,
     /// Semantic mapper - converts natural language to technical IDs
     semantic_mapper: Arc<semantic_mapper::SemanticToolMapper>,
     /// Conversation context - enables continuous dialogue with entity references
@@ -664,7 +686,7 @@ impl Agent {
             model: config.model.clone(),
             temperature: config.temperature,
             top_p: 0.75,
-            top_k: 20,  // Lowered for faster responses
+            top_k: 20,              // Lowered for faster responses
             max_tokens: usize::MAX, // No artificial limit - let model decide
             concurrent_limit: 3,    // Default to 3 concurrent LLM requests
         };
@@ -674,11 +696,13 @@ impl Agent {
 
         // Create semantic mapper with resource index
         let resource_index = Arc::new(RwLock::new(ResourceIndex::new()));
-        let semantic_mapper = Arc::new(semantic_mapper::SemanticToolMapper::new(resource_index.clone()));
+        let semantic_mapper = Arc::new(semantic_mapper::SemanticToolMapper::new(
+            resource_index.clone(),
+        ));
 
         // Create smart followup manager with resource index for device-aware followups
         let smart_followup = Arc::new(tokio::sync::RwLock::new(
-            SmartFollowUpManager::with_resource_index(resource_index.clone())
+            SmartFollowUpManager::with_resource_index(resource_index.clone()),
         ));
 
         Self {
@@ -692,12 +716,14 @@ impl Agent {
             fallback_rules: default_fallback_rules(),
             process_lock: Arc::new(tokio::sync::Mutex::new(())),
             smart_conversation: Arc::new(tokio::sync::RwLock::new(
-                crate::smart_conversation::SmartConversationManager::new()
+                crate::smart_conversation::SmartConversationManager::new(),
             )),
             semantic_mapper,
             conversation_context: Arc::new(tokio::sync::RwLock::new(ConversationContext::new())),
             smart_followup,
-            context_selector: Arc::new(tokio::sync::RwLock::new(crate::context_selector::ContextSelector::new())),
+            context_selector: Arc::new(tokio::sync::RwLock::new(
+                crate::context_selector::ContextSelector::new(),
+            )),
             last_injected_context_hash: Arc::new(tokio::sync::RwLock::new(0)),
             tool_result_cache: Arc::new(tokio::sync::RwLock::new(ToolResultCache::new())),
         }
@@ -717,12 +743,11 @@ impl Agent {
     /// Tools should be configured externally through the session manager.
     pub fn new(config: AgentConfig, session_id: String) -> Self {
         // Build tool registry - start empty, tools will be added by session manager
-        let mut registry = neomind_tools::ToolRegistryBuilder::new()
-            .build();
+        let mut registry = neomind_tools::ToolRegistryBuilder::new().build();
 
         // Add agent-specific tools
+        use crate::tools::{AskUserTool, ClarifyIntentTool, ConfirmActionTool};
         use crate::tools::{ThinkTool, ToolSearchTool};
-        use crate::tools::{AskUserTool, ConfirmActionTool, ClarifyIntentTool};
 
         // Create tool search tool (starts with empty tool list)
         let tool_search = ToolSearchTool::from_definitions(&[]);
@@ -786,6 +811,157 @@ impl Agent {
                     OllamaRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
+            LlmBackend::Qwen {
+                api_key,
+                endpoint,
+                model,
+            } => {
+                tracing::info!(
+                    endpoint = %endpoint, model = %model, timeout = cloud_timeout,
+                    "Creating CloudRuntime for Qwen"
+                );
+                let config = if endpoint.is_empty() {
+                    CloudConfig::qwen(&api_key)
+                        .with_model(&model)
+                        .with_timeout_secs(cloud_timeout)
+                } else {
+                    CloudConfig::custom(&api_key, &endpoint)
+                        .with_model(&model)
+                        .with_timeout_secs(cloud_timeout)
+                };
+                let runtime =
+                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
+            }
+            LlmBackend::DeepSeek {
+                api_key,
+                endpoint,
+                model,
+            } => {
+                tracing::info!(
+                    endpoint = %endpoint, model = %model, timeout = cloud_timeout,
+                    "Creating CloudRuntime for DeepSeek"
+                );
+                let config = if endpoint.is_empty() {
+                    CloudConfig::deepseek(&api_key)
+                        .with_model(&model)
+                        .with_timeout_secs(cloud_timeout)
+                } else {
+                    CloudConfig::custom(&api_key, &endpoint)
+                        .with_model(&model)
+                        .with_timeout_secs(cloud_timeout)
+                };
+                let runtime =
+                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
+            }
+            LlmBackend::GLM {
+                api_key,
+                endpoint,
+                model,
+            } => {
+                tracing::info!(
+                    endpoint = %endpoint, model = %model, timeout = cloud_timeout,
+                    "Creating CloudRuntime for GLM"
+                );
+                let config = if endpoint.is_empty() {
+                    CloudConfig::glm(&api_key)
+                        .with_model(&model)
+                        .with_timeout_secs(cloud_timeout)
+                } else {
+                    CloudConfig::custom(&api_key, &endpoint)
+                        .with_model(&model)
+                        .with_timeout_secs(cloud_timeout)
+                };
+                let runtime =
+                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
+            }
+            LlmBackend::MiniMax {
+                api_key,
+                endpoint,
+                model,
+            } => {
+                tracing::info!(
+                    endpoint = %endpoint, model = %model, timeout = cloud_timeout,
+                    "Creating CloudRuntime for MiniMax"
+                );
+                let config = if endpoint.is_empty() {
+                    CloudConfig::minimax(&api_key)
+                        .with_model(&model)
+                        .with_timeout_secs(cloud_timeout)
+                } else {
+                    CloudConfig::custom(&api_key, &endpoint)
+                        .with_model(&model)
+                        .with_timeout_secs(cloud_timeout)
+                };
+                let runtime =
+                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
+            }
+            LlmBackend::Anthropic {
+                api_key,
+                endpoint,
+                model,
+            } => {
+                tracing::info!(
+                    endpoint = %endpoint, model = %model, timeout = cloud_timeout,
+                    "Creating CloudRuntime for Anthropic"
+                );
+                let config = CloudConfig::anthropic(&api_key).with_timeout_secs(cloud_timeout);
+                let config = if endpoint.is_empty() {
+                    config.with_model(&model)
+                } else {
+                    CloudConfig::custom(&api_key, &endpoint)
+                        .with_model(&model)
+                        .with_timeout_secs(cloud_timeout)
+                };
+                let runtime =
+                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
+            }
+            LlmBackend::Google {
+                api_key,
+                endpoint,
+                model,
+            } => {
+                tracing::info!(
+                    endpoint = %endpoint, model = %model, timeout = cloud_timeout,
+                    "Creating CloudRuntime for Google"
+                );
+                let config = CloudConfig::google(&api_key).with_timeout_secs(cloud_timeout);
+                let config = if endpoint.is_empty() {
+                    config.with_model(&model)
+                } else {
+                    CloudConfig::custom(&api_key, &endpoint)
+                        .with_model(&model)
+                        .with_timeout_secs(cloud_timeout)
+                };
+                let runtime =
+                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
+            }
+            LlmBackend::XAi {
+                api_key,
+                endpoint,
+                model,
+            } => {
+                tracing::info!(
+                    endpoint = %endpoint, model = %model, timeout = cloud_timeout,
+                    "Creating CloudRuntime for xAI"
+                );
+                let config = CloudConfig::grok(&api_key).with_timeout_secs(cloud_timeout);
+                let config = if endpoint.is_empty() {
+                    config.with_model(&model)
+                } else {
+                    CloudConfig::custom(&api_key, &endpoint)
+                        .with_model(&model)
+                        .with_timeout_secs(cloud_timeout)
+                };
+                let runtime =
+                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
+            }
             LlmBackend::OpenAi {
                 api_key,
                 endpoint,
@@ -795,8 +971,7 @@ impl Agent {
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for OpenAI"
                 );
-                let config = CloudConfig::openai(&api_key)
-                    .with_timeout_secs(cloud_timeout);
+                let config = CloudConfig::openai(&api_key).with_timeout_secs(cloud_timeout);
                 let config = if endpoint.is_empty() {
                     config.with_model(&model)
                 } else {
@@ -848,22 +1023,32 @@ impl Agent {
 
                 for param in &tool.required {
                     required.push(param.clone());
-                    properties.insert(param.clone(), serde_json::json!({
-                        "type": "string",
-                        "description": param
-                    }));
+                    properties.insert(
+                        param.clone(),
+                        serde_json::json!({
+                            "type": "string",
+                            "description": param
+                        }),
+                    );
                 }
                 for (param, info) in &tool.optional {
-                    properties.insert(param.clone(), serde_json::json!({
-                        "type": "string",
-                        "description": info.description,
-                        "default": info.default
-                    }));
+                    properties.insert(
+                        param.clone(),
+                        serde_json::json!({
+                            "type": "string",
+                            "description": info.description,
+                            "default": info.default
+                        }),
+                    );
                 }
 
                 CoreToolDefinition {
                     name: tool.name.clone(),
-                    description: format!("{} (别名: {})", tool.description, tool.aliases.join(", ")),
+                    description: format!(
+                        "{} (别名: {})",
+                        tool.description,
+                        tool.aliases.join(", ")
+                    ),
                     parameters: serde_json::json!({
                         "type": "object",
                         "properties": properties,
@@ -885,7 +1070,10 @@ impl Agent {
 
     /// Generate a dynamic system prompt with tool descriptions.
     /// This ensures the prompt always reflects the currently available tools.
-    async fn generate_dynamic_system_prompt(&self, simplified_tools: &[neomind_tools::simplified::LlmToolDefinition]) -> String {
+    async fn generate_dynamic_system_prompt(
+        &self,
+        simplified_tools: &[neomind_tools::simplified::LlmToolDefinition],
+    ) -> String {
         // Generate base prompt (static parts: system_prompt + tools)
         let mut prompt = self.generate_base_prompt(simplified_tools);
 
@@ -902,7 +1090,10 @@ impl Agent {
 
     /// Generate base prompt (static parts: system_prompt + tools).
     /// This avoids rebuilding tool descriptions on every request.
-    fn generate_base_prompt(&self, simplified_tools: &[neomind_tools::simplified::LlmToolDefinition]) -> String {
+    fn generate_base_prompt(
+        &self,
+        simplified_tools: &[neomind_tools::simplified::LlmToolDefinition],
+    ) -> String {
         let mut prompt = String::from(self.config.system_prompt.trim());
 
         prompt.push_str("\n\n## 可用工具\n\n");
@@ -919,7 +1110,10 @@ impl Agent {
                 device_tools.push(tool);
             } else if tool.name.contains("device") || tool.name.contains("control") {
                 device_tools.push(tool);
-            } else if tool.name.contains("data") || tool.name.contains("query") || tool.name.contains("metrics") {
+            } else if tool.name.contains("data")
+                || tool.name.contains("query")
+                || tool.name.contains("metrics")
+            {
                 data_tools.push(tool);
             } else if tool.name.contains("rule") {
                 rule_tools.push(tool);
@@ -934,14 +1128,20 @@ impl Agent {
         if !device_tools.is_empty() {
             prompt.push_str("### 设备管理\n");
             for tool in device_tools {
-                prompt.push_str(&format!("**{}**: {} (别名: {})\n",
-                    tool.name, tool.description, tool.aliases.join(", ")));
+                prompt.push_str(&format!(
+                    "**{}**: {} (别名: {})\n",
+                    tool.name,
+                    tool.description,
+                    tool.aliases.join(", ")
+                ));
 
                 // Add use_when conditions
                 if !tool.use_when.is_empty() {
                     prompt.push_str("  *调用条件*: ");
                     for (i, condition) in tool.use_when.iter().enumerate() {
-                        if i > 0 { prompt.push_str(" 或 "); }
+                        if i > 0 {
+                            prompt.push_str(" 或 ");
+                        }
                         prompt.push_str(condition);
                     }
                     prompt.push('\n');
@@ -965,13 +1165,19 @@ impl Agent {
         if !data_tools.is_empty() {
             prompt.push_str("### 数据查询\n");
             for tool in data_tools {
-                prompt.push_str(&format!("**{}**: {} (别名: {})\n",
-                    tool.name, tool.description, tool.aliases.join(", ")));
+                prompt.push_str(&format!(
+                    "**{}**: {} (别名: {})\n",
+                    tool.name,
+                    tool.description,
+                    tool.aliases.join(", ")
+                ));
 
                 if !tool.use_when.is_empty() {
                     prompt.push_str("  *调用条件*: ");
                     for (i, condition) in tool.use_when.iter().enumerate() {
-                        if i > 0 { prompt.push_str(" 或 "); }
+                        if i > 0 {
+                            prompt.push_str(" 或 ");
+                        }
                         prompt.push_str(condition);
                     }
                     prompt.push('\n');
@@ -994,13 +1200,20 @@ impl Agent {
         if !rule_tools.is_empty() {
             prompt.push_str("### 规则管理\n");
             for tool in rule_tools {
-                prompt.push_str(&format!("**{}**: {} (别名: {})\n",
-                    tool.name, tool.description, tool.aliases.join(", ")));
+                prompt.push_str(&format!(
+                    "**{}**: {} (别名: {})\n",
+                    tool.name,
+                    tool.description,
+                    tool.aliases.join(", ")
+                ));
 
                 if !tool.examples.is_empty() {
                     prompt.push_str("  *示例*:\n");
                     for example in &tool.examples {
-                        prompt.push_str(&format!("    - 用户: \"{}\" → {}\n", example.user_query, example.tool_call));
+                        prompt.push_str(&format!(
+                            "    - 用户: \"{}\" → {}\n",
+                            example.user_query, example.tool_call
+                        ));
                     }
                 }
                 prompt.push('\n');
@@ -1010,13 +1223,20 @@ impl Agent {
         if !agent_tools.is_empty() {
             prompt.push_str("### AI Agent\n");
             for tool in agent_tools {
-                prompt.push_str(&format!("**{}**: {} (别名: {})\n",
-                    tool.name, tool.description, tool.aliases.join(", ")));
+                prompt.push_str(&format!(
+                    "**{}**: {} (别名: {})\n",
+                    tool.name,
+                    tool.description,
+                    tool.aliases.join(", ")
+                ));
 
                 if !tool.examples.is_empty() {
                     prompt.push_str("  *示例*:\n");
                     for example in &tool.examples {
-                        prompt.push_str(&format!("    - 用户: \"{}\" → {}\n", example.user_query, example.tool_call));
+                        prompt.push_str(&format!(
+                            "    - 用户: \"{}\" → {}\n",
+                            example.user_query, example.tool_call
+                        ));
                     }
                 }
                 prompt.push('\n');
@@ -1026,8 +1246,12 @@ impl Agent {
         if !system_tools.is_empty() {
             prompt.push_str("### 系统工具\n");
             for tool in system_tools {
-                prompt.push_str(&format!("**{}**: {} (别名: {})\n",
-                    tool.name, tool.description, tool.aliases.join(", ")));
+                prompt.push_str(&format!(
+                    "**{}**: {} (别名: {})\n",
+                    tool.name,
+                    tool.description,
+                    tool.aliases.join(", ")
+                ));
             }
             prompt.push('\n');
         }
@@ -1046,7 +1270,8 @@ impl Agent {
 
         prompt.push_str("⚠️ 关键要点：\n");
         prompt.push_str("- ✅ get_device_data 和 query_data 都支持直接使用设备名称（如 'ne101'、'ne101 test'）\n");
-        prompt.push_str("- ❌ 不要跳过 get_device_data 直接调用 query_data（需要先确认指标名称）\n");
+        prompt
+            .push_str("- ❌ 不要跳过 get_device_data 直接调用 query_data（需要先确认指标名称）\n");
         prompt.push_str("- ❌ query_data 的 metric 参数必须是实际的指标名（如 values.battery），不能是 'battery' 或 '温度'\n\n");
 
         prompt.push_str("## 使用指南\n");
@@ -1098,7 +1323,10 @@ impl Agent {
 
     /// Update the smart conversation manager with current devices.
     /// This enables better intent analysis based on available devices.
-    pub async fn update_smart_context_devices(&self, devices: Vec<crate::smart_conversation::Device>) {
+    pub async fn update_smart_context_devices(
+        &self,
+        devices: Vec<crate::smart_conversation::Device>,
+    ) {
         let mut smart_conv = self.smart_conversation.write().await;
         smart_conv.update_devices(devices);
     }
@@ -1128,7 +1356,9 @@ impl Agent {
     // === CONTEXT SELECTOR METHODS ===
 
     /// Get the context selector reference.
-    pub async fn context_selector(&self) -> Arc<tokio::sync::RwLock<crate::context_selector::ContextSelector>> {
+    pub async fn context_selector(
+        &self,
+    ) -> Arc<tokio::sync::RwLock<crate::context_selector::ContextSelector>> {
         Arc::clone(&self.context_selector)
     }
 
@@ -1139,7 +1369,10 @@ impl Agent {
     }
 
     /// Update device types in the context selector.
-    pub async fn update_context_device_types(&self, device_types: Vec<neomind_devices::mdl_format::DeviceTypeDefinition>) {
+    pub async fn update_context_device_types(
+        &self,
+        device_types: Vec<neomind_devices::mdl_format::DeviceTypeDefinition>,
+    ) {
         let selector = self.context_selector.read().await;
         selector.set_device_types(device_types).await;
         selector.register_with_analyzer().await;
@@ -1159,7 +1392,10 @@ impl Agent {
     /// - Device mentions (device IDs, locations)
     /// - Topic keywords (temperature, lighting, etc.)
     /// - Rule/automation mentions
-    fn extract_conversation_entities_topics(&self, messages: &[AgentMessage]) -> (Vec<String>, Vec<String>) {
+    fn extract_conversation_entities_topics(
+        &self,
+        messages: &[AgentMessage],
+    ) -> (Vec<String>, Vec<String>) {
         use std::collections::HashSet;
 
         let mut entities = HashSet::new();
@@ -1196,15 +1432,13 @@ impl Agent {
             if content.contains("湿度") || content.contains("humidity") {
                 topics.insert("humidity".to_string());
             }
-            if content.contains("规则") || content.contains("自动化") || content.contains("rule") {
+            if content.contains("规则") || content.contains("自动化") || content.contains("rule")
+            {
                 topics.insert("automation".to_string());
             }
         }
 
-        (
-            entities.into_iter().collect(),
-            topics.into_iter().collect(),
-        )
+        (entities.into_iter().collect(), topics.into_iter().collect())
     }
 
     /// Build memory injection hint based on entities, topics, and health status.
@@ -1236,7 +1470,10 @@ impl Agent {
 
         // Add topic recall hints
         if !topics.is_empty() {
-            hint.push_str(&format!("Previous topics discussed: {}. ", topics.join(", ")));
+            hint.push_str(&format!(
+                "Previous topics discussed: {}. ",
+                topics.join(", ")
+            ));
         }
 
         // Add guidance for memory retrieval
@@ -1256,12 +1493,9 @@ impl Agent {
     /// Update devices in the semantic mapper from smart conversation devices.
     pub async fn update_semantic_devices(&self, devices: Vec<crate::smart_conversation::Device>) {
         for device in devices {
-            let resource = crate::context::Resource::device(
-                &device.id,
-                &device.name,
-                &device.device_type
-            )
-                .with_location(&device.location);
+            let resource =
+                crate::context::Resource::device(&device.id, &device.name, &device.device_type)
+                    .with_location(&device.location);
 
             let _ = self.semantic_mapper.register_device(resource).await;
         }
@@ -1274,7 +1508,8 @@ impl Agent {
 
     /// Update rules in the semantic mapper from smart conversation rules.
     pub async fn update_semantic_rules(&self, rules: Vec<crate::smart_conversation::Rule>) {
-        let rules_data: Vec<(String, String, bool)> = rules.into_iter()
+        let rules_data: Vec<(String, String, bool)> = rules
+            .into_iter()
             .map(|r| (r.id, r.name, r.enabled))
             .collect();
         self.semantic_mapper.register_rules(rules_data).await;
@@ -1306,7 +1541,10 @@ impl Agent {
         let greeting_responses: &[(&str, &str)] = &[
             ("你好", "你好！我是 NeoMind 智能助手，有什么可以帮您？"),
             ("您好", "您好！我是 NeoMind 智能助手，有什么可以帮您？"),
-            ("hi", "Hello! I'm NeoMind, your smart assistant. How can I help you?"),
+            (
+                "hi",
+                "Hello! I'm NeoMind, your smart assistant. How can I help you?",
+            ),
             ("hello", "Hello! I'm NeoMind, your smart assistant."),
             ("早上好", "早上好！今天有什么可以帮您的？"),
             ("下午好", "下午好！有什么可以帮您的？"),
@@ -1328,7 +1566,10 @@ impl Agent {
             ("ok", "OK!"),
             ("好的ok", "好的！"),
             ("谢谢", "不客气！还有其他需要帮助的吗？"),
-            ("thanks", "You're welcome! Is there anything else I can help with?"),
+            (
+                "thanks",
+                "You're welcome! Is there anything else I can help with?",
+            ),
         ];
 
         // Check greetings
@@ -1369,10 +1610,7 @@ impl Agent {
         if let Some(response) = self.try_fast_path(user_message) {
             // Save to history for context continuity
             let user_msg = AgentMessage::user(user_message);
-            self.internal_state
-                .write()
-                .await
-                .push_message(user_msg);
+            self.internal_state.write().await.push_message(user_msg);
             self.internal_state
                 .write()
                 .await
@@ -1396,7 +1634,8 @@ impl Agent {
 
         // Handle smart followup cases
         if !followup_analysis.can_proceed {
-            let response_content = if let Some(first_followup) = followup_analysis.followups.first() {
+            let response_content = if let Some(first_followup) = followup_analysis.followups.first()
+            {
                 // Use the highest priority followup
                 let mut content = first_followup.question.clone();
 
@@ -1418,10 +1657,7 @@ impl Agent {
             let user_msg = AgentMessage::user(user_message);
             let response_msg = AgentMessage::assistant(&response_content);
 
-            self.internal_state
-                .write()
-                .await
-                .push_message(user_msg);
+            self.internal_state.write().await.push_message(user_msg);
             self.internal_state
                 .write()
                 .await
@@ -1463,10 +1699,7 @@ impl Agent {
             let user_msg = AgentMessage::user(user_message);
             let response_msg = AgentMessage::assistant(&response_content);
 
-            self.internal_state
-                .write()
-                .await
-                .push_message(user_msg);
+            self.internal_state.write().await.push_message(user_msg);
             self.internal_state
                 .write()
                 .await
@@ -1540,11 +1773,16 @@ impl Agent {
             Ok(response) => {
                 // === CONVERSATION CONTEXT: Update context after successful response ===
                 {
-                    let tool_results: Vec<(String, String)> = response.tool_calls
+                    let tool_results: Vec<(String, String)> = response
+                        .tool_calls
                         .iter()
                         .filter_map(|tc| {
                             tc.result.as_ref().map(|r| {
-                                (tc.name.clone(), serde_json::to_string(r).unwrap_or_else(|_| "无结果".to_string()))
+                                (
+                                    tc.name.clone(),
+                                    serde_json::to_string(r)
+                                        .unwrap_or_else(|_| "无结果".to_string()),
+                                )
                             })
                         })
                         .collect();
@@ -1612,7 +1850,9 @@ impl Agent {
                 if let Some(pos) = image_data.find(',') {
                     let mime = if image_data.contains("data:image/png") {
                         "image/png"
-                    } else if image_data.contains("data:image/jpeg") || image_data.contains("data:image/jpg") {
+                    } else if image_data.contains("data:image/jpeg")
+                        || image_data.contains("data:image/jpg")
+                    {
                         "image/jpeg"
                     } else if image_data.contains("data:image/webp") {
                         "image/webp"
@@ -1678,11 +1918,17 @@ impl Agent {
         };
 
         // Convert AgentMessage history to Message history
-        let core_history: Vec<neomind_core::Message> =
-            history_without_last.iter().map(|msg| msg.to_core()).collect();
+        let core_history: Vec<neomind_core::Message> = history_without_last
+            .iter()
+            .map(|msg| msg.to_core())
+            .collect();
 
         // === Process with LLM using multimodal message ===
-        match self.llm_interface.chat_multimodal_with_history(user_msg, &core_history).await {
+        match self
+            .llm_interface
+            .chat_multimodal_with_history(user_msg, &core_history)
+            .await
+        {
             Ok(llm_response) => {
                 let response_msg = AgentMessage::assistant(&llm_response.text);
 
@@ -1694,7 +1940,8 @@ impl Agent {
                 self.internal_state
                     .write()
                     .await
-                    .session.increment_messages();
+                    .session
+                    .increment_messages();
 
                 let processing_time = start.elapsed().as_millis() as u64;
 
@@ -1706,9 +1953,7 @@ impl Agent {
                     processing_time_ms: processing_time,
                 })
             }
-            Err(e) => {
-                Err(NeoMindError::Llm(format!("LLM processing failed: {}", e)))
-            }
+            Err(e) => Err(NeoMindError::Llm(format!("LLM processing failed: {}", e))),
         }
     }
 
@@ -1729,7 +1974,8 @@ impl Agent {
         // Check if LLM is configured (required for multimodal)
         if !self.llm_interface.is_ready().await {
             // Fall back to simple response without LLM
-            let (message, _, _) = process_fallback(&self.tools, &self.fallback_rules, user_message).await;
+            let (message, _, _) =
+                process_fallback(&self.tools, &self.fallback_rules, user_message).await;
             self.internal_state
                 .write()
                 .await
@@ -1871,7 +2117,9 @@ impl Agent {
 
                 use neomind_core::message::{Content, MessageRole};
                 core_history.push(Message::new(MessageRole::System, Content::text(&summary)));
-                tracing::debug!("Injected conversation context into LLM history (changed from previous)");
+                tracing::debug!(
+                    "Injected conversation context into LLM history (changed from previous)"
+                );
             } else {
                 drop(last_hash); // Release lock
                 tracing::debug!("Skipping context injection - unchanged from previous");
@@ -1930,11 +2178,12 @@ impl Agent {
         // Some models (like qwen3 with thinking enabled) may put tool calls in thinking
         if tool_calls.is_empty()
             && let Some(ref thinking_content) = thinking
-                && let Ok((_, thinking_tool_calls)) = parse_tool_calls(thinking_content)
-                    && !thinking_tool_calls.is_empty() {
-                        tracing::debug!("Found tool calls in thinking field, using them");
-                        tool_calls = thinking_tool_calls;
-                    }
+            && let Ok((_, thinking_tool_calls)) = parse_tool_calls(thinking_content)
+            && !thinking_tool_calls.is_empty()
+        {
+            tracing::debug!("Found tool calls in thinking field, using them");
+            tool_calls = thinking_tool_calls;
+        }
 
         // If no tool calls, return the direct response
         if tool_calls.is_empty() {
@@ -1987,7 +2236,12 @@ impl Agent {
             // Create a unique key based on tool name and arguments
             let key = (
                 tool_call.name.clone(),
-                tool_call.arguments.to_string().chars().take(100).collect::<String>()
+                tool_call
+                    .arguments
+                    .to_string()
+                    .chars()
+                    .take(100)
+                    .collect::<String>(),
             );
             seen.insert(key)
         });
@@ -2024,7 +2278,11 @@ impl Agent {
         // Execute each batch in sequence
         for (batch_idx, batch) in execution_batches.iter().enumerate() {
             if batch.len() > 1 {
-                tracing::debug!(batch = batch_idx, size = batch.len(), "Executing batch in parallel");
+                tracing::debug!(
+                    batch = batch_idx,
+                    size = batch.len(),
+                    "Executing batch in parallel"
+                );
             }
 
             // Clone tool_calls for parallel execution within this batch
@@ -2130,45 +2388,55 @@ impl Agent {
 
                 if (has_condition || has_description) && !has_dsl {
                     // Convert simplified parameters to DSL
-                    let name = args_obj.get("name")
+                    let name = args_obj
+                        .get("name")
                         .and_then(|v| v.as_str())
                         .unwrap_or("未命名规则");
 
                     let dsl = if has_description {
                         // rule_from_context: extract structured rule from description
-                        let description = args_obj.get("description")
+                        let description = args_obj
+                            .get("description")
                             .and_then(|v| v.as_str())
                             .unwrap_or("");
 
                         // Try to parse the description to extract condition/action
                         // For now, generate a simple DSL with the description as context
-                        format!(r#"RULE "{name}"
+                        format!(
+                            r#"RULE "{name}"
 WHEN sensor.temperature > 30
 DO
   NOTIFY "{description}"
-END"#)
+END"#
+                        )
                     } else if has_condition && has_action {
                         // create_rule with simplified condition/action
-                        let condition = args_obj.get("condition")
+                        let condition = args_obj
+                            .get("condition")
                             .and_then(|v| v.as_str())
                             .unwrap_or("sensor.temperature > 30");
 
-                        let action = args_obj.get("action")
+                        let action = args_obj
+                            .get("action")
                             .and_then(|v| v.as_str())
                             .unwrap_or("通知管理员");
 
-                        format!(r#"RULE "{name}"
+                        format!(
+                            r#"RULE "{name}"
 WHEN {condition}
 DO
   NOTIFY "{action}"
-END"#)
+END"#
+                        )
                     } else {
                         // Fallback: just use the name
-                        format!(r#"RULE "{name}"
+                        format!(
+                            r#"RULE "{name}"
 WHEN sensor.temperature > 30
 DO
   NOTIFY "规则触发"
-END"#)
+END"#
+                        )
                     };
 
                     let mut mapped = serde_json::Map::new();
@@ -2235,11 +2503,14 @@ END"#)
         for tool_call in tool_calls {
             let real_name = self.resolve_tool_name(&tool_call.name);
             original_to_resolved.insert(tool_call.name.clone(), real_name.clone());
-            resolved_to_original.entry(real_name).or_insert_with(|| tool_call.name.clone());
+            resolved_to_original
+                .entry(real_name)
+                .or_insert_with(|| tool_call.name.clone());
         }
 
         // Build relationships map using RESOLVED names as keys
-        let mut relationships: HashMap<String, neomind_core::tools::ToolRelationships> = HashMap::new();
+        let mut relationships: HashMap<String, neomind_core::tools::ToolRelationships> =
+            HashMap::new();
         for tool_call in tool_calls {
             let real_name = self.resolve_tool_name(&tool_call.name);
             if let Some(tool) = self.tools.get(&real_name) {
@@ -2275,7 +2546,8 @@ END"#)
                 }
 
                 // Get dependencies (call_after)
-                let deps = relationships.get(resolved_name)
+                let deps = relationships
+                    .get(resolved_name)
                     .map(|r| r.call_after.clone())
                     .unwrap_or_default();
 
@@ -2287,7 +2559,8 @@ END"#)
                     // Dependency is satisfied if:
                     // 1. It's not in our current tool_calls (not being executed)
                     // 2. Or it's already been placed in a previous batch
-                    !resolved_to_call.contains_key(&resolved_dep) || placed_resolved.contains(&resolved_dep)
+                    !resolved_to_call.contains_key(&resolved_dep)
+                        || placed_resolved.contains(&resolved_dep)
                 });
 
                 if !deps_satisfied {
@@ -2295,15 +2568,15 @@ END"#)
                 }
 
                 // Check for mutual exclusivity with tools in current batch
-                let exclusive_with = relationships.get(resolved_name)
+                let exclusive_with = relationships
+                    .get(resolved_name)
                     .map(|r| r.exclusive_with.clone())
                     .unwrap_or_default();
 
-                let conflicts_with_batch = exclusive_with.iter()
-                    .any(|excl| {
-                        let resolved_excl = self.resolve_tool_name(excl);
-                        current_batch_resolved.contains(&resolved_excl)
-                    });
+                let conflicts_with_batch = exclusive_with.iter().any(|excl| {
+                    let resolved_excl = self.resolve_tool_name(excl);
+                    current_batch_resolved.contains(&resolved_excl)
+                });
 
                 if conflicts_with_batch {
                     continue; // Can't run with current batch, try next batch
@@ -2372,11 +2645,7 @@ END"#)
     /// - **device_discover**: Always preserve summary and device list with id/name/type
     ///
     /// This preserves data structure while avoiding token waste on unusable data.
-    fn sanitize_tool_output_for_llm(
-        &self,
-        tool_name: &str,
-        data: &serde_json::Value,
-    ) -> String {
+    fn sanitize_tool_output_for_llm(&self, tool_name: &str, data: &serde_json::Value) -> String {
         const MAX_SIZE: usize = 10_240; // 10KB
         const MAX_PREVIEW_ITEMS: usize = 5; // Keep first 5 array items
         const MAX_STRING_PREVIEW: usize = 500; // 500 chars for string preview
@@ -2385,7 +2654,10 @@ END"#)
         if tool_name == "device_discover" {
             if let Some(obj) = data.as_object() {
                 // Always preserve summary - it has accurate counts
-                let summary = obj.get("summary").cloned().unwrap_or_else(|| serde_json::json!({}));
+                let summary = obj
+                    .get("summary")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
 
                 // Extract minimal device info: id, name, type, status
                 let devices: Vec<serde_json::Value> = obj.get("groups")
@@ -2482,14 +2754,25 @@ END"#)
             serde_json::Value::Array(arr) => {
                 if arr.len() <= max_items {
                     // Check each element recursively
-                    let truncated: Vec<serde_json::Value> = arr.iter()
-                        .map(|v| self.truncate_value(v, max_size / arr.len().max(1), max_items, max_string))
+                    let truncated: Vec<serde_json::Value> = arr
+                        .iter()
+                        .map(|v| {
+                            self.truncate_value(
+                                v,
+                                max_size / arr.len().max(1),
+                                max_items,
+                                max_string,
+                            )
+                        })
                         .collect();
                     serde_json::Value::Array(truncated)
                 } else {
-                    let kept: Vec<serde_json::Value> = arr.iter()
+                    let kept: Vec<serde_json::Value> = arr
+                        .iter()
                         .take(max_items)
-                        .map(|v| self.truncate_value(v, max_size / max_items, max_items, max_string))
+                        .map(|v| {
+                            self.truncate_value(v, max_size / max_items, max_items, max_string)
+                        })
                         .collect();
 
                     serde_json::json!({
@@ -2515,12 +2798,17 @@ END"#)
                             serde_json::json!({
                                 "_size_bytes": serde_json::to_string(val).unwrap_or_default().len(),
                                 "_note": "Large data omitted"
-                            })
+                            }),
                         );
                         continue;
                     }
 
-                    let truncated = self.truncate_value(val, max_size / obj.len().max(1), max_items, max_string);
+                    let truncated = self.truncate_value(
+                        val,
+                        max_size / obj.len().max(1),
+                        max_items,
+                        max_string,
+                    );
                     result.insert(key.clone(), truncated);
 
                     // Early exit if we're getting too big
@@ -2585,14 +2873,22 @@ END"#)
 
         // === SEMANTIC MAPPING: Convert natural language to technical IDs ===
         // This maps "客厅灯" -> "light_living_main" for device_id parameters
-        let semantically_mapped = self.semantic_mapper
+        let semantically_mapped = self
+            .semantic_mapper
             .map_tool_parameters(&real_tool_name, mapped_arguments.clone())
             .await
             .unwrap_or(mapped_arguments);
 
         // Sanitize arguments for logging (limit size to avoid log spam)
         let args_preview = if semantically_mapped.to_string().len() > 200 {
-            format!("{}...", &semantically_mapped.to_string().chars().take(200).collect::<String>())
+            format!(
+                "{}...",
+                &semantically_mapped
+                    .to_string()
+                    .chars()
+                    .take(200)
+                    .collect::<String>()
+            )
         } else {
             semantically_mapped.to_string()
         };
@@ -2605,7 +2901,11 @@ END"#)
         );
 
         for attempt in 0..=MAX_RETRIES {
-            match self.tools.execute(&real_tool_name, semantically_mapped.clone()).await {
+            match self
+                .tools
+                .execute(&real_tool_name, semantically_mapped.clone())
+                .await
+            {
                 Ok(output) => {
                     let elapsed = start.elapsed();
 
@@ -2626,10 +2926,7 @@ END"#)
                         );
 
                         // Don't retry on logical errors (like invalid input)
-                        return Ok(format!(
-                            "工具 {} 执行失败: {}",
-                            real_tool_name, error_msg
-                        ));
+                        return Ok(format!("工具 {} 执行失败: {}", real_tool_name, error_msg));
                     }
 
                     tracing::debug!(
@@ -2640,10 +2937,14 @@ END"#)
                     );
 
                     // Sanitize output to avoid sending large data (base64, files, etc.) to LLM
-                    let sanitized = self.sanitize_tool_output_for_llm(&real_tool_name, &output.data);
+                    let sanitized =
+                        self.sanitize_tool_output_for_llm(&real_tool_name, &output.data);
 
                     // === CACHE: Store successful result ===
-                    self.tool_result_cache.write().await.put(name, args_key, sanitized.clone());
+                    self.tool_result_cache
+                        .write()
+                        .await
+                        .put(name, args_key, sanitized.clone());
 
                     return Ok(sanitized);
                 }
@@ -2653,15 +2954,14 @@ END"#)
 
                     // Categorize the error for better debugging
                     let error_category = if last_error.contains("not_found")
-                        || last_error.contains("unknown") {
+                        || last_error.contains("unknown")
+                    {
                         "tool_not_found"
                     } else if last_error.contains("timeout") {
                         "timeout"
-                    } else if last_error.contains("network")
-                        || last_error.contains("connection") {
+                    } else if last_error.contains("network") || last_error.contains("connection") {
                         "network"
-                    } else if last_error.contains("parse")
-                        || last_error.contains("invalid") {
+                    } else if last_error.contains("parse") || last_error.contains("invalid") {
                         "validation"
                     } else {
                         "unknown"
@@ -2829,16 +3129,22 @@ impl Drop for Agent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neomind_tools::{Tool, Result, ToolOutput, ToolError};
+    use neomind_tools::{Result, Tool, ToolError, ToolOutput};
     use serde_json::json;
 
     /// Simple mock device_discover tool for testing
     struct MockDeviceDiscoverTool;
     #[async_trait::async_trait]
     impl Tool for MockDeviceDiscoverTool {
-        fn name(&self) -> &str { "device_discover" }
-        fn description(&self) -> &str { "List all devices (mock for testing)" }
-        fn parameters(&self) -> serde_json::Value { json!({}) }
+        fn name(&self) -> &str {
+            "device_discover"
+        }
+        fn description(&self) -> &str {
+            "List all devices (mock for testing)"
+        }
+        fn parameters(&self) -> serde_json::Value {
+            json!({})
+        }
         async fn execute(&self, _args: serde_json::Value) -> Result<ToolOutput> {
             let data = json!({"devices": [{"id": "mock_device_1", "name": "模拟设备"}]});
             Ok(ToolOutput::success(data))
@@ -2849,9 +3155,15 @@ mod tests {
     struct MockListRulesTool;
     #[async_trait::async_trait]
     impl Tool for MockListRulesTool {
-        fn name(&self) -> &str { "list_rules" }
-        fn description(&self) -> &str { "List all rules (mock for testing)" }
-        fn parameters(&self) -> serde_json::Value { json!({}) }
+        fn name(&self) -> &str {
+            "list_rules"
+        }
+        fn description(&self) -> &str {
+            "List all rules (mock for testing)"
+        }
+        fn parameters(&self) -> serde_json::Value {
+            json!({})
+        }
         async fn execute(&self, _args: serde_json::Value) -> Result<ToolOutput> {
             let data = json!({"rules": [{"id": "mock_rule_1", "name": "Mock Rule"}]});
             Ok(ToolOutput::success(data))
@@ -2862,9 +3174,15 @@ mod tests {
     struct MockQueryDataTool;
     #[async_trait::async_trait]
     impl Tool for MockQueryDataTool {
-        fn name(&self) -> &str { "query_data" }
-        fn description(&self) -> &str { "Query metric data (mock for testing)" }
-        fn parameters(&self) -> serde_json::Value { json!({"type": "object"}) }
+        fn name(&self) -> &str {
+            "query_data"
+        }
+        fn description(&self) -> &str {
+            "Query metric data (mock for testing)"
+        }
+        fn parameters(&self) -> serde_json::Value {
+            json!({"type": "object"})
+        }
         async fn execute(&self, _args: serde_json::Value) -> Result<ToolOutput> {
             let data = json!({"data": [{"metric": "temperature", "value": 25.5}]});
             Ok(ToolOutput::success(data))
@@ -2875,9 +3193,15 @@ mod tests {
     struct MockGreetTool;
     #[async_trait::async_trait]
     impl Tool for MockGreetTool {
-        fn name(&self) -> &str { "greet" }
-        fn description(&self) -> &str { "Greet the user (mock for testing)" }
-        fn parameters(&self) -> serde_json::Value { json!({}) }
+        fn name(&self) -> &str {
+            "greet"
+        }
+        fn description(&self) -> &str {
+            "Greet the user (mock for testing)"
+        }
+        fn parameters(&self) -> serde_json::Value {
+            json!({})
+        }
         async fn execute(&self, _args: serde_json::Value) -> Result<ToolOutput> {
             let data = json!({"message": "Hello there!"});
             Ok(ToolOutput::success(data))
@@ -2897,8 +3221,8 @@ mod tests {
         registry.register(std::sync::Arc::new(MockGreetTool));
 
         // Add default agent tools
+        use crate::tools::{AskUserTool, ClarifyIntentTool, ConfirmActionTool};
         use crate::tools::{ThinkTool, ToolSearchTool};
-        use crate::tools::{AskUserTool, ConfirmActionTool, ClarifyIntentTool};
 
         let tool_search = ToolSearchTool::from_definitions(&[]);
         registry.register(std::sync::Arc::new(tool_search));
@@ -2915,7 +3239,11 @@ mod tests {
         let clarify_tool = ClarifyIntentTool::new();
         registry.register(std::sync::Arc::new(clarify_tool));
 
-        Agent::with_tools(AgentConfig::default(), session_id, std::sync::Arc::new(registry))
+        Agent::with_tools(
+            AgentConfig::default(),
+            session_id,
+            std::sync::Arc::new(registry),
+        )
     }
 
     #[tokio::test]
@@ -3011,7 +3339,10 @@ mod tests {
         // Use "greet me" which won't match fast-path patterns
         let response = agent.process("greet me").await.unwrap();
         // The greet tool should be used
-        assert!(response.tools_used.contains(&"greet".to_string()),
-            "Expected 'greet' in tools_used, got: {:?}", response.tools_used);
+        assert!(
+            response.tools_used.contains(&"greet".to_string()),
+            "Expected 'greet' in tools_used, got: {:?}",
+            response.tools_used
+        );
     }
 }

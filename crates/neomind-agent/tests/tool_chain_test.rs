@@ -96,18 +96,37 @@ async fn test_tool_calling_chain() -> anyhow::Result<()> {
         for tc in &response.tool_calls {
             if let Some(result) = &tc.result {
                 let preview = serde_json::to_string(result).unwrap_or_default();
-                let preview = if preview.len() > 200 { &preview[..200] } else { &preview };
+                let preview = if preview.len() > 200 {
+                    &preview[..200]
+                } else {
+                    &preview
+                };
                 println!("  {} result: {}", tc.name, preview);
             }
         }
 
         // Check if chain was followed
-        let chain_followed = expected_tools.iter().all(|t| tools.iter().any(|c| c.contains(t)));
+        let chain_followed = expected_tools
+            .iter()
+            .all(|t| tools.iter().any(|c| c.contains(t)));
         let tool_count_ok = tool_count >= expected_tools.len().saturating_sub(1); // Allow missing 1
 
-        results.push((name.to_string(), tool_count, expected_tools.len(), chain_followed || tool_count_ok));
+        results.push((
+            name.to_string(),
+            tool_count,
+            expected_tools.len(),
+            chain_followed || tool_count_ok,
+        ));
 
-        println!("Response: {}", response.message.content.chars().take(100).collect::<String>());
+        println!(
+            "Response: {}",
+            response
+                .message
+                .content
+                .chars()
+                .take(100)
+                .collect::<String>()
+        );
     }
 
     // Summary
@@ -121,7 +140,10 @@ async fn test_tool_calling_chain() -> anyhow::Result<()> {
 
     for (name, actual, expected, success) in &results {
         let status = if *success { "✅" } else { "⚠️" };
-        println!("{} {}: {} tools (expected {})", status, name, actual, expected);
+        println!(
+            "{} {}: {} tools (expected {})",
+            status, name, actual, expected
+        );
         total_tools += actual;
         total_expected += expected;
         if *success {
@@ -131,7 +153,11 @@ async fn test_tool_calling_chain() -> anyhow::Result<()> {
 
     println!("\nTotal tools called: {}", total_tools);
     println!("Total expected: {}", total_expected);
-    println!("Chain success rate: {}/{}", successful_chains, results.len());
+    println!(
+        "Chain success rate: {}/{}",
+        successful_chains,
+        results.len()
+    );
 
     // Analyze multi-turn behavior
     println!("\n📈 Multi-turn Analysis:");
@@ -148,7 +174,9 @@ async fn test_tool_calling_chain() -> anyhow::Result<()> {
     let mut total_turn_tools = 0;
 
     // Turn 1: Get devices
-    let response1 = session_manager.process_message(&session_id, "列出所有设备").await?;
+    let response1 = session_manager
+        .process_message(&session_id, "列出所有设备")
+        .await?;
     let tools1 = response1.tool_calls.len();
     println!("Turn 1 (列出所有设备): {} tools", tools1);
     for tc in &response1.tool_calls {
@@ -157,7 +185,9 @@ async fn test_tool_calling_chain() -> anyhow::Result<()> {
     total_turn_tools += tools1;
 
     // Turn 2: Get specific device data
-    let response2 = session_manager.process_message(&session_id, "获取第一个设备的详细数据").await?;
+    let response2 = session_manager
+        .process_message(&session_id, "获取第一个设备的详细数据")
+        .await?;
     let tools2 = response2.tool_calls.len();
     println!("Turn 2 (获取第一个设备详细数据): {} tools", tools2);
     for tc in &response2.tool_calls {

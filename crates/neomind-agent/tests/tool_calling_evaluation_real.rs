@@ -84,7 +84,6 @@ fn get_test_cases() -> Vec<TestCase> {
             min_tools: 1,
             description: "应该调用数据查询工具".to_string(),
         },
-
         // === Rule Tools Tests ===
         TestCase {
             name: "规则列表".to_string(),
@@ -100,7 +99,6 @@ fn get_test_cases() -> Vec<TestCase> {
             min_tools: 1,
             description: "应该调用规则列表工具".to_string(),
         },
-
         // === Agent Tools Tests ===
         TestCase {
             name: "Agent列表".to_string(),
@@ -123,7 +121,6 @@ fn get_test_cases() -> Vec<TestCase> {
             min_tools: 1,
             description: "应该调用Agent执行历史工具".to_string(),
         },
-
         // === Multi-Tool Tests ===
         TestCase {
             name: "设备+规则".to_string(),
@@ -150,7 +147,6 @@ fn get_test_cases() -> Vec<TestCase> {
             min_tools: 2,
             description: "应该调用多个工具".to_string(),
         },
-
         // === Context/Reference Tests ===
         TestCase {
             name: "系统帮助".to_string(),
@@ -159,7 +155,6 @@ fn get_test_cases() -> Vec<TestCase> {
             min_tools: 1,
             description: "应该调用系统帮助工具".to_string(),
         },
-
         // === Control Tests ===
         TestCase {
             name: "设备控制".to_string(),
@@ -286,11 +281,18 @@ async fn run_test_case(
     }
 
     // Check for tool execution errors
-    let tool_errors: Vec<String> = tool_calls.iter()
+    let tool_errors: Vec<String> = tool_calls
+        .iter()
         .filter_map(|t| {
             if let Some(result) = &t.result {
                 if result.get("success").and_then(|s| s.as_bool()) == Some(false) {
-                    Some(result.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error").to_string())
+                    Some(
+                        result
+                            .get("error")
+                            .and_then(|e| e.as_str())
+                            .unwrap_or("Unknown error")
+                            .to_string(),
+                    )
                 } else {
                     None
                 }
@@ -350,21 +352,36 @@ fn print_metrics(metrics: &EvaluationMetrics) {
     println!("{}", "=".repeat(70));
 
     println!("\n📈 Core Metrics:");
-    println!("  Precision (精确度):   {:.1}%", metrics.precision() * 100.0);
+    println!(
+        "  Precision (精确度):   {:.1}%",
+        metrics.precision() * 100.0
+    );
     println!("  Recall (召回率):      {:.1}%", metrics.recall() * 100.0);
     println!("  F1 Score:             {:.1}%", metrics.f1_score() * 100.0);
 
     println!("\n🔧 Tool Call Detection:");
-    println!("  Detection Rate:       {:.1}%", metrics.tool_call_detection_rate() * 100.0);
-    println!("  Total Expected:       {}", metrics.total_expected_tool_calls);
-    println!("  Total Actual:         {}", metrics.total_actual_tool_calls);
+    println!(
+        "  Detection Rate:       {:.1}%",
+        metrics.tool_call_detection_rate() * 100.0
+    );
+    println!(
+        "  Total Expected:       {}",
+        metrics.total_expected_tool_calls
+    );
+    println!(
+        "  Total Actual:         {}",
+        metrics.total_actual_tool_calls
+    );
     println!("  Correct Matches:      {}", metrics.correct_tool_calls);
     println!("  Tool Errors:          {}", metrics.tool_execution_errors);
 
     println!("\n🎯 Multi-Tool Performance:");
     println!("  Multi-Tool Requests:  {}", metrics.multi_tool_requests);
     println!("  Successful:          {}", metrics.successful_multi_tools);
-    println!("  Success Rate:         {:.1}%", metrics.multi_tool_success_rate() * 100.0);
+    println!(
+        "  Success Rate:         {:.1}%",
+        metrics.multi_tool_success_rate() * 100.0
+    );
 
     println!("\n⏱️  Performance:");
     println!("  Average Response:     {:.0}ms", metrics.average_time_ms());
@@ -379,11 +396,19 @@ fn print_detailed_results(results: &[TestResult]) {
     println!("{}", "-".repeat(70));
 
     for (i, result) in results.iter().enumerate() {
-        println!("\n[{}] {} - {}ms", i + 1, result.test_name, result.elapsed_ms);
+        println!(
+            "\n[{}] {} - {}ms",
+            i + 1,
+            result.test_name,
+            result.elapsed_ms
+        );
         println!("    Query: {}", result.query);
         println!("    Tools called: {:?}", result.tool_calls);
         println!("    Expected patterns: {:?}", result.expected_tools);
-        println!("    Correct matches: {}/{}", result.correct_calls, result.total_expected);
+        println!(
+            "    Correct matches: {}/{}",
+            result.correct_calls, result.total_expected
+        );
 
         if !result.tool_errors.is_empty() {
             println!("    ⚠️  Tool errors: {:?}", result.tool_errors);
@@ -399,13 +424,24 @@ fn print_detailed_results(results: &[TestResult]) {
             if result.multi_tool_success {
                 println!("    ✅ Multi-tool successful");
             } else {
-                println!("    ⚠️  Multi-tool partial (expected >= {}, got {})", result.min_tools, result.total_actual);
+                println!(
+                    "    ⚠️  Multi-tool partial (expected >= {}, got {})",
+                    result.min_tools, result.total_actual
+                );
             }
         }
 
         // Response preview
         let preview: String = result.response_content.chars().take(150).collect();
-        println!("    Response: {}{}", preview, if result.response_content.len() > 150 { "..." } else { "" });
+        println!(
+            "    Response: {}{}",
+            preview,
+            if result.response_content.len() > 150 {
+                "..."
+            } else {
+                ""
+            }
+        );
     }
 }
 
@@ -423,11 +459,10 @@ async fn test_real_tool_calling_evaluation() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let model_name = std::env::var("MODEL")
-        .unwrap_or_else(|_| "qwen2.5:3b".to_string());
+    let model_name = std::env::var("MODEL").unwrap_or_else(|_| "qwen2.5:3b".to_string());
 
-    let ollama_endpoint = std::env::var("OLLAMA_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let ollama_endpoint =
+        std::env::var("OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://localhost:11434".to_string());
 
     println!("\n🚀 Real Tool Calling Evaluation (Updated Tool List)");
     println!("📦 Model: {}", model_name);
@@ -452,7 +487,9 @@ async fn test_real_tool_calling_evaluation() -> anyhow::Result<()> {
     println!("🔧 Tools: REAL (device_discover, list_rules, list_agents, etc.)");
 
     println!("\n📋 Available Tools:");
-    println!("  Device: device_discover, get_device_data, query_data, device_control, device_analyze");
+    println!(
+        "  Device: device_discover, get_device_data, query_data, device_control, device_analyze"
+    );
     println!("  Rule:   list_rules, create_rule, delete_rule");
     println!("  Agent:  list_agents, get_agent, execute_agent, control_agent, create_agent, etc.");
     println!("  System: system_help");
@@ -481,7 +518,10 @@ async fn test_real_tool_calling_evaluation() -> anyhow::Result<()> {
 
         match run_test_case(&session_manager, &test_session_id, test_case).await {
             Ok(result) => {
-                println!(" ✓ ({}ms, {} tools)", result.elapsed_ms, result.total_actual);
+                println!(
+                    " ✓ ({}ms, {} tools)",
+                    result.elapsed_ms, result.total_actual
+                );
 
                 metrics.total_actual_tool_calls += result.total_actual;
                 metrics.correct_tool_calls += result.correct_calls;
@@ -532,18 +572,28 @@ async fn test_real_tool_calling_evaluation() -> anyhow::Result<()> {
     }
 
     if multi_tool_rate >= 0.5 {
-        println!("  ✅ Multi-tool rate >= 50%: {:.1}%", multi_tool_rate * 100.0);
+        println!(
+            "  ✅ Multi-tool rate >= 50%: {:.1}%",
+            multi_tool_rate * 100.0
+        );
     } else {
-        println!("  ⚠️  Multi-tool rate < 50%: {:.1}%", multi_tool_rate * 100.0);
+        println!(
+            "  ⚠️  Multi-tool rate < 50%: {:.1}%",
+            multi_tool_rate * 100.0
+        );
     }
 
     if metrics.tool_execution_errors == 0 {
         println!("  ✅ No tool execution errors");
     } else {
-        println!("  ⚠️  Tool execution errors: {}", metrics.tool_execution_errors);
+        println!(
+            "  ⚠️  Tool execution errors: {}",
+            metrics.tool_execution_errors
+        );
     }
 
-    let overall_score = (metrics.precision() + metrics.recall() + metrics.multi_tool_success_rate()) / 3.0;
+    let overall_score =
+        (metrics.precision() + metrics.recall() + metrics.multi_tool_success_rate()) / 3.0;
     println!("\n🏆 Overall Score: {:.1}%", overall_score * 100.0);
 
     if overall_score >= 0.65 {

@@ -4,16 +4,13 @@
 //! (device names, rule names, etc.) and their technical IDs. It supports both Chinese
 //! and English, with automatic translation and fuzzy matching.
 
-use std::sync::Arc;
-use std::collections::HashMap;
-use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
-use crate::context::{
-    ResourceIndex, Resource,
-    ResourceDataHelper,
-};
+use crate::context::{Resource, ResourceDataHelper, ResourceIndex};
 
 /// Multilingual alias mappings for common terms.
 const LOCATION_ALIASES: &[(&str, &[&str])] = &[
@@ -33,7 +30,10 @@ const LOCATION_ALIASES: &[(&str, &[&str])] = &[
 const DEVICE_TYPE_ALIASES: &[(&str, &[&str])] = &[
     ("灯", &["light", "lamp", "lighting"]),
     ("空调", &["ac", "air_conditioner", "aircon", "climate"]),
-    ("温度传感器", &["temp_sensor", "temperature_sensor", "thermometer"]),
+    (
+        "温度传感器",
+        &["temp_sensor", "temperature_sensor", "thermometer"],
+    ),
     ("湿度传感器", &["humidity_sensor", "hygrometer"]),
     ("窗帘", &["curtain", "blind", "shade"]),
     ("电视", &["tv", "television"]),
@@ -48,21 +48,30 @@ const DEVICE_TYPE_ALIASES: &[(&str, &[&str])] = &[
 /// Common nickname mappings for devices (Chinese -> Variants)
 const DEVICE_NICKNAMES_CN: &[(&str, &[&str])] = &[
     // Light nicknames
-    ("大灯", &["主灯", "吸顶灯", "顶灯", "main_light", "ceiling_light"]),
-    ("小灯", &["台灯", "辅助灯", "bedside_light", "auxiliary_light"]),
-    ("灯带", &["氛围灯", "led_light", "ambient_light", "strip_light"]),
+    (
+        "大灯",
+        &["主灯", "吸顶灯", "顶灯", "main_light", "ceiling_light"],
+    ),
+    (
+        "小灯",
+        &["台灯", "辅助灯", "bedside_light", "auxiliary_light"],
+    ),
+    (
+        "灯带",
+        &["氛围灯", "led_light", "ambient_light", "strip_light"],
+    ),
     ("筒灯", &["downlight", "spot_light", "spotlight"]),
     ("射灯", &["spot_light", "track_light"]),
     ("壁灯", &["wall_light", "wall_sconce"]),
     ("落地灯", &["floor_lamp", "standing_light"]),
-
     // AC nicknames
     ("冷气", &["空调", "ac", "aircon"]),
     ("暖气", &["地暖", "heating", "floor_heating"]),
-
     // Curtain nicknames
-    ("智能窗帘", &["电动窗帘", "auto_curtain", "motorized_curtain"]),
-
+    (
+        "智能窗帘",
+        &["电动窗帘", "auto_curtain", "motorized_curtain"],
+    ),
     // Security nicknames
     ("门铃", &["doorbell"]),
     ("可视门铃", &["video_doorbell", "smart_doorbell"]),
@@ -202,11 +211,13 @@ impl SemanticToolMapper {
         for (zh, en_list) in LOCATION_ALIASES {
             for en in *en_list {
                 // Chinese -> English
-                alias_mappings.entry(zh.to_string())
+                alias_mappings
+                    .entry(zh.to_string())
                     .or_insert_with(Vec::new)
                     .push(en.to_string());
                 // English -> Chinese
-                alias_mappings.entry(en.to_string())
+                alias_mappings
+                    .entry(en.to_string())
                     .or_insert_with(Vec::new)
                     .push(zh.to_string());
             }
@@ -215,10 +226,12 @@ impl SemanticToolMapper {
         // Build device type alias mappings
         for (zh, en_list) in DEVICE_TYPE_ALIASES {
             for en in *en_list {
-                alias_mappings.entry(zh.to_string())
+                alias_mappings
+                    .entry(zh.to_string())
                     .or_insert_with(Vec::new)
                     .push(en.to_string());
-                alias_mappings.entry(en.to_string())
+                alias_mappings
+                    .entry(en.to_string())
                     .or_insert_with(Vec::new)
                     .push(zh.to_string());
             }
@@ -240,12 +253,15 @@ impl SemanticToolMapper {
 
     /// Detect the language of the input.
     pub fn detect_language(text: &str) -> Language {
-        let chinese_chars = text.chars().filter(|c| {
-            let cp = *c as u32;
-            (0x4E00..=0x9FFF).contains(&cp) || // CJK Unified Ideographs
+        let chinese_chars = text
+            .chars()
+            .filter(|c| {
+                let cp = *c as u32;
+                (0x4E00..=0x9FFF).contains(&cp) || // CJK Unified Ideographs
             (0x3400..=0x4DBF).contains(&cp) || // CJK Extension A
             (0x20000..=0x2A6DF).contains(&cp) // CJK Extension B
-        }).count();
+            })
+            .count();
 
         let english_chars = text.chars().filter(|c| c.is_ascii_alphabetic()).count();
 
@@ -443,10 +459,13 @@ impl SemanticToolMapper {
 
                 // Also check device type in resource data
                 if let Some(device_data) = result.resource.as_device()
-                    && (device_data.device_type.to_lowercase() == type_part_lower ||
-                       type_translations.iter().any(|t| t.to_lowercase() == device_data.device_type.to_lowercase())) {
-                        type_matches = true;
-                    }
+                    && (device_data.device_type.to_lowercase() == type_part_lower
+                        || type_translations
+                            .iter()
+                            .any(|t| t.to_lowercase() == device_data.device_type.to_lowercase()))
+                {
+                    type_matches = true;
+                }
 
                 if type_matches || device_type_part.len() <= 2 {
                     return Some(DeviceMapping {
@@ -475,138 +494,157 @@ impl SemanticToolMapper {
         match tool_name {
             // Device control tools
             "device.control" | "control_device" | "control" => {
-                let device_name = params.get("device")
+                let device_name = params
+                    .get("device")
                     .or(params.get("device_id"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
                 if let Some(name) = device_name
-                    && let Some(mapping) = self.resolve_device(&name).await {
-                        params["device_id"] = Value::String(mapping.device_id.clone());
-                        params["_device_name"] = Value::String(name);
-                        params["_match_type"] = Value::String(format!("{:?}", mapping.match_type));
-                        mapping_applied = true;
-                    }
+                    && let Some(mapping) = self.resolve_device(&name).await
+                {
+                    params["device_id"] = Value::String(mapping.device_id.clone());
+                    params["_device_name"] = Value::String(name);
+                    params["_match_type"] = Value::String(format!("{:?}", mapping.match_type));
+                    mapping_applied = true;
+                }
             }
 
             // Data query tools
             "data.query" | "query_data" | "query" => {
-                let device_name = params.get("device")
+                let device_name = params
+                    .get("device")
                     .or(params.get("device_id"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
                 if let Some(name) = device_name
-                    && let Some(mapping) = self.resolve_device(&name).await {
-                        params["device_id"] = Value::String(mapping.device_id.clone());
-                        params["_device_name"] = Value::String(name);
-                        mapping_applied = true;
-                    }
+                    && let Some(mapping) = self.resolve_device(&name).await
+                {
+                    params["device_id"] = Value::String(mapping.device_id.clone());
+                    params["_device_name"] = Value::String(name);
+                    mapping_applied = true;
+                }
             }
 
             // Device status query
             "device.status" | "query_device_status" => {
-                let device_name = params.get("device")
+                let device_name = params
+                    .get("device")
                     .or(params.get("device_id"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
                 if let Some(name) = device_name
-                    && let Some(mapping) = self.resolve_device(&name).await {
-                        params["device_id"] = Value::String(mapping.device_id.clone());
-                        mapping_applied = true;
-                    }
+                    && let Some(mapping) = self.resolve_device(&name).await
+                {
+                    params["device_id"] = Value::String(mapping.device_id.clone());
+                    mapping_applied = true;
+                }
             }
 
             // Device configuration
             "device.config.set" | "set_device_config" => {
-                let device_name = params.get("device")
+                let device_name = params
+                    .get("device")
                     .or(params.get("device_id"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
                 if let Some(name) = device_name
-                    && let Some(mapping) = self.resolve_device(&name).await {
-                        params["device_id"] = Value::String(mapping.device_id.clone());
-                        mapping_applied = true;
-                    }
+                    && let Some(mapping) = self.resolve_device(&name).await
+                {
+                    params["device_id"] = Value::String(mapping.device_id.clone());
+                    mapping_applied = true;
+                }
             }
 
             // Rule management tools
             "rule.delete" | "delete_rule" => {
-                let rule_name = params.get("rule")
+                let rule_name = params
+                    .get("rule")
                     .or(params.get("rule_id"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
                 if let Some(name) = rule_name
-                    && let Some(mapping) = self.resolve_rule(&name).await {
-                        params["rule_id"] = Value::String(mapping.rule_id.clone());
-                        params["_rule_name"] = Value::String(name);
-                        mapping_applied = true;
-                    }
+                    && let Some(mapping) = self.resolve_rule(&name).await
+                {
+                    params["rule_id"] = Value::String(mapping.rule_id.clone());
+                    params["_rule_name"] = Value::String(name);
+                    mapping_applied = true;
+                }
             }
 
             "rule.enable" | "enable_rule" | "rule.disable" | "disable_rule" => {
-                let rule_name = params.get("rule")
+                let rule_name = params
+                    .get("rule")
                     .or(params.get("rule_id"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
                 if let Some(name) = rule_name
-                    && let Some(mapping) = self.resolve_rule(&name).await {
-                        params["rule_id"] = Value::String(mapping.rule_id.clone());
-                        mapping_applied = true;
-                    }
+                    && let Some(mapping) = self.resolve_rule(&name).await
+                {
+                    params["rule_id"] = Value::String(mapping.rule_id.clone());
+                    mapping_applied = true;
+                }
             }
 
             "rule.update" | "update_rule" => {
-                let rule_name = params.get("rule")
+                let rule_name = params
+                    .get("rule")
                     .or(params.get("rule_id"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
                 if let Some(name) = rule_name
-                    && let Some(mapping) = self.resolve_rule(&name).await {
-                        params["rule_id"] = Value::String(mapping.rule_id.clone());
-                        mapping_applied = true;
-                    }
+                    && let Some(mapping) = self.resolve_rule(&name).await
+                {
+                    params["rule_id"] = Value::String(mapping.rule_id.clone());
+                    mapping_applied = true;
+                }
             }
 
             // Workflow tools
             "workflow.trigger" | "trigger_workflow" => {
-                let wf_name = params.get("workflow")
+                let wf_name = params
+                    .get("workflow")
                     .or(params.get("workflow_id"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
                 if let Some(name) = wf_name
-                    && let Some(mapping) = self.resolve_workflow(&name).await {
-                        params["workflow_id"] = Value::String(mapping.workflow_id.clone());
-                        params["_workflow_name"] = Value::String(name);
-                        mapping_applied = true;
-                    }
+                    && let Some(mapping) = self.resolve_workflow(&name).await
+                {
+                    params["workflow_id"] = Value::String(mapping.workflow_id.clone());
+                    params["_workflow_name"] = Value::String(name);
+                    mapping_applied = true;
+                }
             }
 
             // Batch device control
             "devices.batch_control" | "batch_control_devices" => {
                 if let Some(devices_array) = params.get_mut("devices")
-                    && let Some(devices) = devices_array.as_array_mut() {
-                        for device_param in devices.iter_mut() {
-                            let device_name = device_param.get("device")
-                                .or(device_param.get("device_id"))
-                                .and_then(|v| v.as_str());
+                    && let Some(devices) = devices_array.as_array_mut()
+                {
+                    for device_param in devices.iter_mut() {
+                        let device_name = device_param
+                            .get("device")
+                            .or(device_param.get("device_id"))
+                            .and_then(|v| v.as_str());
 
-                            if let Some(name) = device_name
-                                && let Some(mapping) = self.resolve_device(name).await {
-                                    *device_param = serde_json::json!({
-                                        "device_id": mapping.device_id,
-                                        "_device_name": name
-                                    });
-                                    mapping_applied = true;
-                                }
+                        if let Some(name) = device_name
+                            && let Some(mapping) = self.resolve_device(name).await
+                        {
+                            *device_param = serde_json::json!({
+                                "device_id": mapping.device_id,
+                                "_device_name": name
+                            });
+                            mapping_applied = true;
                         }
                     }
+                }
             }
 
             _ => {
@@ -678,9 +716,10 @@ impl SemanticToolMapper {
                             } else {
                                 SemanticMatchType::Partial
                             }
-                        } else if all_queries.iter().any(|q| {
-                            !q.eq(device_ref) && !q.eq(&device_ref.to_lowercase())
-                        }) {
+                        } else if all_queries
+                            .iter()
+                            .any(|q| !q.eq(device_ref) && !q.eq(&device_ref.to_lowercase()))
+                        {
                             SemanticMatchType::Translated
                         } else {
                             SemanticMatchType::Alias
@@ -719,24 +758,30 @@ impl SemanticToolMapper {
     /// Register a rule mapping with multilingual aliases.
     pub async fn register_rule(&self, rule_id: String, rule_name: String, enabled: bool) {
         let mut cache = self.rule_cache.write().await;
-        cache.insert(rule_name.clone(), RuleMapping {
-            name: rule_name.clone(),
-            rule_id,
-            match_type: SemanticMatchType::Exact,
-            enabled,
-        });
+        cache.insert(
+            rule_name.clone(),
+            RuleMapping {
+                name: rule_name.clone(),
+                rule_id,
+                match_type: SemanticMatchType::Exact,
+                enabled,
+            },
+        );
     }
 
     /// Bulk register rules.
     pub async fn register_rules(&self, rules: Vec<(String, String, bool)>) {
         let mut cache = self.rule_cache.write().await;
         for (rule_id, rule_name, enabled) in rules {
-            cache.insert(rule_name.clone(), RuleMapping {
-                name: rule_name,
-                rule_id,
-                match_type: SemanticMatchType::Exact,
-                enabled,
-            });
+            cache.insert(
+                rule_name.clone(),
+                RuleMapping {
+                    name: rule_name,
+                    rule_id,
+                    match_type: SemanticMatchType::Exact,
+                    enabled,
+                },
+            );
         }
     }
 
@@ -760,26 +805,37 @@ impl SemanticToolMapper {
     }
 
     /// Register a workflow mapping.
-    pub async fn register_workflow(&self, workflow_id: String, workflow_name: String, enabled: bool) {
+    pub async fn register_workflow(
+        &self,
+        workflow_id: String,
+        workflow_name: String,
+        enabled: bool,
+    ) {
         let mut cache = self.workflow_cache.write().await;
-        cache.insert(workflow_name.clone(), WorkflowMapping {
-            name: workflow_name.clone(),
-            workflow_id,
-            match_type: SemanticMatchType::Exact,
-            enabled,
-        });
+        cache.insert(
+            workflow_name.clone(),
+            WorkflowMapping {
+                name: workflow_name.clone(),
+                workflow_id,
+                match_type: SemanticMatchType::Exact,
+                enabled,
+            },
+        );
     }
 
     /// Bulk register workflows.
     pub async fn register_workflows(&self, workflows: Vec<(String, String, bool)>) {
         let mut cache = self.workflow_cache.write().await;
         for (workflow_id, workflow_name, enabled) in workflows {
-            cache.insert(workflow_name.clone(), WorkflowMapping {
-                name: workflow_name,
-                workflow_id,
-                match_type: SemanticMatchType::Exact,
-                enabled,
-            });
+            cache.insert(
+                workflow_name.clone(),
+                WorkflowMapping {
+                    name: workflow_name,
+                    workflow_id,
+                    match_type: SemanticMatchType::Exact,
+                    enabled,
+                },
+            );
         }
     }
 
@@ -850,7 +906,11 @@ impl SemanticToolMapper {
         let mut text = String::from("可用规则 / Available Rules:\n");
 
         for (_, mapping) in cache.iter() {
-            let status = if mapping.enabled { "启用 / Enabled" } else { "禁用 / Disabled" };
+            let status = if mapping.enabled {
+                "启用 / Enabled"
+            } else {
+                "禁用 / Disabled"
+            };
             text.push_str(&format!("- {} ({})\n", mapping.name, status));
         }
 
@@ -868,7 +928,11 @@ impl SemanticToolMapper {
         let mut text = String::from("可用工作流 / Available Workflows:\n");
 
         for (_, mapping) in cache.iter() {
-            let status = if mapping.enabled { "启用 / Enabled" } else { "禁用 / Disabled" };
+            let status = if mapping.enabled {
+                "启用 / Enabled"
+            } else {
+                "禁用 / Disabled"
+            };
             text.push_str(&format!("- {} ({})\n", mapping.name, status));
         }
 
@@ -952,7 +1016,10 @@ impl SemanticToolMapper {
     pub async fn suggest_resolution(&self, reference: &str) -> Option<String> {
         // Try device resolution first
         if let Some(mapping) = self.resolve_device(reference).await {
-            return Some(format!("设备: {} (ID: {})", mapping.name, mapping.device_id));
+            return Some(format!(
+                "设备: {} (ID: {})",
+                mapping.name, mapping.device_id
+            ));
         }
 
         // Try rule resolution
@@ -962,18 +1029,30 @@ impl SemanticToolMapper {
 
         // Try workflow resolution
         if let Some(mapping) = self.resolve_workflow(reference).await {
-            return Some(format!("工作流: {} (ID: {})", mapping.name, mapping.workflow_id));
+            return Some(format!(
+                "工作流: {} (ID: {})",
+                mapping.name, mapping.workflow_id
+            ));
         }
 
         // Search for similar devices
-        let results = self.resource_index.read().await.search_string(reference).await;
+        let results = self
+            .resource_index
+            .read()
+            .await
+            .search_string(reference)
+            .await;
         if !results.is_empty() {
-            let suggestions: Vec<String> = results.iter()
+            let suggestions: Vec<String> = results
+                .iter()
                 .take(3)
                 .map(|r| r.resource.name.clone())
                 .collect();
-            return Some(format!("您是不是指: {}? / Did you mean: {}?",
-                suggestions.join(", "), suggestions.join(", ")));
+            return Some(format!(
+                "您是不是指: {}? / Did you mean: {}?",
+                suggestions.join(", "),
+                suggestions.join(", ")
+            ));
         }
 
         None
@@ -1012,17 +1091,33 @@ mod tests {
 
     #[test]
     fn test_language_detection() {
-        assert_eq!(SemanticToolMapper::detect_language("你好"), Language::Chinese);
-        assert_eq!(SemanticToolMapper::detect_language("hello"), Language::English);
+        assert_eq!(
+            SemanticToolMapper::detect_language("你好"),
+            Language::Chinese
+        );
+        assert_eq!(
+            SemanticToolMapper::detect_language("hello"),
+            Language::English
+        );
         // "你好你好world" has 4 Chinese chars out of 9 total (44%), exceeding the 30% threshold
-        assert_eq!(SemanticToolMapper::detect_language("你好你好world"), Language::Mixed);
-        assert_eq!(SemanticToolMapper::detect_language("123"), Language::Unknown);
+        assert_eq!(
+            SemanticToolMapper::detect_language("你好你好world"),
+            Language::Mixed
+        );
+        assert_eq!(
+            SemanticToolMapper::detect_language("123"),
+            Language::Unknown
+        );
     }
 
     #[test]
     fn test_translate_term() {
         let translations = SemanticToolMapper::translate_term("客厅灯");
-        assert!(translations.iter().any(|t| t.contains("living") || t.contains("light")));
+        assert!(
+            translations
+                .iter()
+                .any(|t| t.contains("living") || t.contains("light"))
+        );
 
         let translations = SemanticToolMapper::translate_term("bedroom");
         assert!(translations.iter().any(|t| t.contains("卧室")));
@@ -1038,8 +1133,7 @@ mod tests {
             Resource::device("light_living", "客厅灯", "switch")
                 .with_alias("living room light")
                 .with_location("客厅"),
-            Resource::device("light_bedroom", "bedroom lamp", "switch")
-                .with_location("卧室"),
+            Resource::device("light_bedroom", "bedroom lamp", "switch").with_location("卧室"),
         ];
 
         for device in devices {
@@ -1062,8 +1156,7 @@ mod tests {
         let mapper = SemanticToolMapper::new(index.clone());
 
         // Register device with Chinese name
-        let device = Resource::device("light_corridor", "走廊灯", "switch")
-            .with_location("走廊");
+        let device = Resource::device("light_corridor", "走廊灯", "switch").with_location("走廊");
         index.write().await.register(device).await.unwrap();
 
         // Should match with English translation
@@ -1077,14 +1170,20 @@ mod tests {
         let index = Arc::new(RwLock::new(ResourceIndex::new()));
         let mapper = SemanticToolMapper::new(index.clone());
 
-        index.write().await.register(
-            Resource::device("light_1", "客厅灯", "switch")
-                .with_location("客厅")
-        ).await.unwrap();
+        index
+            .write()
+            .await
+            .register(Resource::device("light_1", "客厅灯", "switch").with_location("客厅"))
+            .await
+            .unwrap();
 
-        mapper.register_rules(vec![
-            ("rule_001".to_string(), "温度报警规则".to_string(), true),
-        ]).await;
+        mapper
+            .register_rules(vec![(
+                "rule_001".to_string(),
+                "温度报警规则".to_string(),
+                true,
+            )])
+            .await;
 
         let context = mapper.get_semantic_context().await;
         assert!(context.contains("客厅灯"));
@@ -1098,7 +1197,9 @@ mod tests {
         let mapper = SemanticToolMapper::new(index.clone());
 
         // Add custom alias
-        mapper.add_alias("front_door".to_string(), "entrance_light".to_string()).await;
+        mapper
+            .add_alias("front_door".to_string(), "entrance_light".to_string())
+            .await;
 
         // Verify alias was added
         let aliases = mapper.alias_mappings.read().await;
@@ -1111,13 +1212,21 @@ mod tests {
         let combinations = SemanticToolMapper::decompose_compound_reference("走廊灯");
         assert!(!combinations.is_empty());
         // Should contain ("走廊", "灯") or similar
-        assert!(combinations.iter().any(|(l, d)| l.contains("走廊") || d.contains("灯")));
+        assert!(
+            combinations
+                .iter()
+                .any(|(l, d)| l.contains("走廊") || d.contains("灯"))
+        );
 
         // Test English compound phrase decomposition
         let combinations = SemanticToolMapper::decompose_compound_reference("living room light");
         assert!(!combinations.is_empty());
         // Should contain location and device type
-        assert!(combinations.iter().any(|(l, d)| l.contains("living") || d.contains("light")));
+        assert!(
+            combinations
+                .iter()
+                .any(|(l, d)| l.contains("living") || d.contains("light"))
+        );
     }
 
     #[test]
@@ -1139,8 +1248,7 @@ mod tests {
         let mapper = SemanticToolMapper::new(index.clone());
 
         // Register a corridor light device
-        let device = Resource::device("light_corridor", "走廊灯", "switch")
-            .with_location("走廊");
+        let device = Resource::device("light_corridor", "走廊灯", "switch").with_location("走廊");
         index.write().await.register(device).await.unwrap();
 
         // Test compound phrase resolution - should decompose "走廊灯" into "走廊" + "灯"

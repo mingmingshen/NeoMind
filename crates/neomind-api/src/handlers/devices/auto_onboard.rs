@@ -6,31 +6,32 @@
 //! - Approving/rejecting draft devices
 //! - Managing auto-onboarding configuration
 
-use neomind_automation::{AutoOnboardManager, DiscoveredMetric};
+use neomind_automation::SemanticType;
 use neomind_automation::discovery::auto_onboard::AutoOnboardConfig;
 use neomind_automation::discovery::types::DataType;
-use neomind_automation::SemanticType;
+use neomind_automation::{AutoOnboardManager, DiscoveredMetric};
 use neomind_core::llm::backend::LlmRuntime;
+use neomind_devices::{
+    ConnectionConfig, DeviceConfig, DeviceTypeMode, DeviceTypeTemplate,
+    MdlMetricDefinition as MetricDefinition,
+};
 use neomind_llm::backends::{OllamaConfig, OllamaRuntime};
-use neomind_devices::{DeviceTypeTemplate, MdlMetricDefinition as MetricDefinition, DeviceConfig, ConnectionConfig, DeviceTypeMode};
 
 use crate::handlers::common::{HandlerResult, ok};
 use crate::models::ErrorResponse;
 use crate::server::types::ServerState;
 use axum::{
-    extract::{Path, State},
     Json,
+    extract::{Path, State},
 };
+use futures::Stream;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::sync::Arc;
-use futures::Stream;
 
 /// Helper to create an LLM runtime from a configuration
 /// This creates a simple default runtime for auto-onboarding when LLM is not fully configured
 fn create_default_llm_runtime() -> Arc<dyn LlmRuntime> {
-    
-
     // Create a default Ollama runtime with standard settings
     let config = OllamaConfig::new("qwen2.5:3b")
         .with_endpoint("http://localhost:11434")
@@ -52,7 +53,13 @@ fn create_default_llm_runtime() -> Arc<dyn LlmRuntime> {
                 fn capabilities(&self) -> neomind_core::llm::backend::BackendCapabilities {
                     neomind_core::llm::backend::BackendCapabilities::default()
                 }
-                async fn generate(&self, _input: neomind_core::llm::backend::LlmInput) -> Result<neomind_core::llm::backend::LlmOutput, neomind_core::llm::backend::LlmError> {
+                async fn generate(
+                    &self,
+                    _input: neomind_core::llm::backend::LlmInput,
+                ) -> Result<
+                    neomind_core::llm::backend::LlmOutput,
+                    neomind_core::llm::backend::LlmError,
+                > {
                     Ok(neomind_core::llm::backend::LlmOutput {
                         text: String::new(),
                         thinking: None,
@@ -63,7 +70,19 @@ fn create_default_llm_runtime() -> Arc<dyn LlmRuntime> {
                 async fn generate_stream(
                     &self,
                     _input: neomind_core::llm::backend::LlmInput,
-                ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), neomind_core::llm::backend::LlmError>> + Send>>, neomind_core::llm::backend::LlmError> {
+                ) -> Result<
+                    Pin<
+                        Box<
+                            dyn Stream<
+                                    Item = Result<
+                                        (String, bool),
+                                        neomind_core::llm::backend::LlmError,
+                                    >,
+                                > + Send,
+                        >,
+                    >,
+                    neomind_core::llm::backend::LlmError,
+                > {
                     Ok(Box::pin(futures::stream::empty()))
                 }
                 fn max_context_length(&self) -> usize {
@@ -125,10 +144,9 @@ pub async fn get_draft_device(
     Path(device_id): Path<String>,
 ) -> HandlerResult<DraftDeviceDto> {
     let manager = get_auto_onboard_manager(&state).await;
-    let draft = manager
-        .get_draft(&device_id)
-        .await
-        .ok_or_else(|| ErrorResponse::not_found(format!("Draft device '{}' not found", device_id)))?;
+    let draft = manager.get_draft(&device_id).await.ok_or_else(|| {
+        ErrorResponse::not_found(format!("Draft device '{}' not found", device_id))
+    })?;
 
     ok(DraftDeviceDto::from(draft))
 }
@@ -167,15 +185,15 @@ pub async fn approve_draft_device(
     let device_service = state.devices.service.clone();
 
     // Get the draft
-    let draft = manager
-        .get_draft(&device_id)
-        .await
-        .ok_or_else(|| ErrorResponse::not_found(format!("Draft device '{}' not found", device_id)))?;
+    let draft = manager.get_draft(&device_id).await.ok_or_else(|| {
+        ErrorResponse::not_found(format!("Draft device '{}' not found", device_id))
+    })?;
 
     let _draft_id = draft.id.clone();
 
     // Get device name from request (user-provided name for this device instance)
-    let device_instance_name = request.as_ref()
+    let device_instance_name = request
+        .as_ref()
         .and_then(|r| r.device_name.as_ref())
         .filter(|n| !n.is_empty())
         .cloned()
@@ -187,132 +205,157 @@ pub async fn approve_draft_device(
     // Check if user provided new type details
     let new_type_info = request.as_ref().and_then(|r| r.new_type.as_ref());
 
-    let (device_type, system_device_id, recommended_topic, message) = if let Some(existing_type) = use_existing_type {
-        // User wants to reuse an existing type - no need to create a new one
-        tracing::info!(
-            "Device {} being assigned to existing type {}",
-            device_id,
-            existing_type
-        );
+    let (device_type, system_device_id, recommended_topic, message) =
+        if let Some(existing_type) = use_existing_type {
+            // User wants to reuse an existing type - no need to create a new one
+            tracing::info!(
+                "Device {} being assigned to existing type {}",
+                device_id,
+                existing_type
+            );
 
-        // Use the original MQTT topic as the telemetry topic
-        // The device publishes to this topic (e.g., "ashuau" - the topic where it was discovered)
-        // We cannot change the device's topic, so we subscribe to what it's using
-        // Prefer original_topic if available, otherwise fall back to source
-        let topic = draft.original_topic.clone().unwrap_or_else(|| draft.source.clone());
+            // Use the original MQTT topic as the telemetry topic
+            // The device publishes to this topic (e.g., "ashuau" - the topic where it was discovered)
+            // We cannot change the device's topic, so we subscribe to what it's using
+            // Prefer original_topic if available, otherwise fall back to source
+            let topic = draft
+                .original_topic
+                .clone()
+                .unwrap_or_else(|| draft.source.clone());
 
-        // Create device config with the existing type
-        let device_config = DeviceConfig {
-            device_id: device_id.clone(),
-            name: device_instance_name.clone(),
-            device_type: existing_type.clone(),
-            adapter_type: "mqtt".to_string(),
-            connection_config: ConnectionConfig {
-                telemetry_topic: Some(topic.clone()),
-                json_path: Some("$.value".to_string()),
-                ..Default::default()
-            },
-            adapter_id: draft.adapter_id.clone().or_else(|| Some("internal-mqtt".to_string())),
-        };
+            // Create device config with the existing type
+            let device_config = DeviceConfig {
+                device_id: device_id.clone(),
+                name: device_instance_name.clone(),
+                device_type: existing_type.clone(),
+                adapter_type: "mqtt".to_string(),
+                connection_config: ConnectionConfig {
+                    telemetry_topic: Some(topic.clone()),
+                    json_path: Some("$.value".to_string()),
+                    ..Default::default()
+                },
+                adapter_id: draft
+                    .adapter_id
+                    .clone()
+                    .or_else(|| Some("internal-mqtt".to_string())),
+            };
 
-        // Register the device
-        device_service
-            .register_device(device_config)
-            .await
-            .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+            // Register the device
+            device_service
+                .register_device(device_config)
+                .await
+                .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
-        (existing_type.clone(), device_id.clone(), topic, format!(
-            "Device '{}' assigned to existing type '{}'",
-            device_id, existing_type
-        ))
-    } else {
-        // New type - either use the generated type from draft or user-provided details
-        let gen_type = draft.generated_type.as_ref()
-            .ok_or_else(|| ErrorResponse::bad_request("Draft device has no generated type. Please analyze it first."))?;
-
-        // Use user-provided type info if available, otherwise use generated type
-        let type_id = if let Some(new_info) = new_type_info {
-            new_info.device_type.clone()
+            (
+                existing_type.clone(),
+                device_id.clone(),
+                topic,
+                format!(
+                    "Device '{}' assigned to existing type '{}'",
+                    device_id, existing_type
+                ),
+            )
         } else {
-            gen_type.device_type.clone()
+            // New type - either use the generated type from draft or user-provided details
+            let gen_type = draft.generated_type.as_ref().ok_or_else(|| {
+                ErrorResponse::bad_request(
+                    "Draft device has no generated type. Please analyze it first.",
+                )
+            })?;
+
+            // Use user-provided type info if available, otherwise use generated type
+            let type_id = if let Some(new_info) = new_type_info {
+                new_info.device_type.clone()
+            } else {
+                gen_type.device_type.clone()
+            };
+
+            let type_name = if let Some(new_info) = new_type_info {
+                new_info.name.clone()
+            } else {
+                gen_type.name.clone()
+            };
+
+            let type_description = if let Some(new_info) = new_type_info {
+                new_info.description.clone()
+            } else {
+                gen_type.description.clone()
+            };
+
+            // Convert GeneratedDeviceType to DeviceTypeTemplate
+            // Categories are not auto-generated - user can add them later if needed
+            // Use Full mode if metrics were extracted, Simple mode for raw data devices
+            let mode = if gen_type.metrics.is_empty() {
+                DeviceTypeMode::Simple
+            } else {
+                DeviceTypeMode::Full
+            };
+            let template = DeviceTypeTemplate {
+                device_type: type_id.clone(),
+                name: type_name.clone(),
+                description: type_description,
+                categories: Vec::new(), // Empty - not auto-generated
+                mode,
+                metrics: convert_metrics_to_template(&gen_type.metrics),
+                commands: Vec::new(),       // No commands generated yet
+                uplink_samples: Vec::new(), // Samples not stored in draft
+            };
+
+            // Register the device type template
+            device_service
+                .register_template(template)
+                .await
+                .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+
+            tracing::info!("Registered device type '{}'", type_id);
+
+            // Use the original MQTT topic as the telemetry topic
+            // The device publishes to this topic (e.g., "ashuau" - the topic where it was discovered)
+            // We cannot change the device's topic, so we subscribe to what it's using
+            // Prefer original_topic if available, otherwise fall back to source
+            let topic = draft
+                .original_topic
+                .clone()
+                .unwrap_or_else(|| draft.source.clone());
+
+            // Create device config
+            let device_config = DeviceConfig {
+                device_id: device_id.clone(),
+                name: device_instance_name.clone(),
+                device_type: type_id.clone(),
+                adapter_type: "mqtt".to_string(),
+                connection_config: ConnectionConfig {
+                    telemetry_topic: Some(topic.clone()),
+                    json_path: Some("$.value".to_string()),
+                    ..Default::default()
+                },
+                adapter_id: draft
+                    .adapter_id
+                    .clone()
+                    .or_else(|| Some("internal-mqtt".to_string())),
+            };
+
+            // Register the device
+            device_service
+                .register_device(device_config)
+                .await
+                .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+
+            tracing::info!("Registered device '{}' with type '{}'", device_id, type_id);
+
+            (
+                type_id.clone(),
+                device_id.clone(),
+                topic,
+                format!("Device '{}' registered as type '{}'", device_id, type_id),
+            )
         };
-
-        let type_name = if let Some(new_info) = new_type_info {
-            new_info.name.clone()
-        } else {
-            gen_type.name.clone()
-        };
-
-        let type_description = if let Some(new_info) = new_type_info {
-            new_info.description.clone()
-        } else {
-            gen_type.description.clone()
-        };
-
-        // Convert GeneratedDeviceType to DeviceTypeTemplate
-        // Categories are not auto-generated - user can add them later if needed
-        // Use Full mode if metrics were extracted, Simple mode for raw data devices
-        let mode = if gen_type.metrics.is_empty() {
-            DeviceTypeMode::Simple
-        } else {
-            DeviceTypeMode::Full
-        };
-        let template = DeviceTypeTemplate {
-            device_type: type_id.clone(),
-            name: type_name.clone(),
-            description: type_description,
-            categories: Vec::new(), // Empty - not auto-generated
-            mode,
-            metrics: convert_metrics_to_template(&gen_type.metrics),
-            commands: Vec::new(), // No commands generated yet
-            uplink_samples: Vec::new(), // Samples not stored in draft
-        };
-
-        // Register the device type template
-        device_service
-            .register_template(template)
-            .await
-            .map_err(|e| ErrorResponse::internal(e.to_string()))?;
-
-        tracing::info!("Registered device type '{}'", type_id);
-
-        // Use the original MQTT topic as the telemetry topic
-        // The device publishes to this topic (e.g., "ashuau" - the topic where it was discovered)
-        // We cannot change the device's topic, so we subscribe to what it's using
-        // Prefer original_topic if available, otherwise fall back to source
-        let topic = draft.original_topic.clone().unwrap_or_else(|| draft.source.clone());
-
-        // Create device config
-        let device_config = DeviceConfig {
-            device_id: device_id.clone(),
-            name: device_instance_name.clone(),
-            device_type: type_id.clone(),
-            adapter_type: "mqtt".to_string(),
-            connection_config: ConnectionConfig {
-                telemetry_topic: Some(topic.clone()),
-                json_path: Some("$.value".to_string()),
-                ..Default::default()
-            },
-            adapter_id: draft.adapter_id.clone().or_else(|| Some("internal-mqtt".to_string())),
-        };
-
-        // Register the device
-        device_service
-            .register_device(device_config)
-            .await
-            .map_err(|e| ErrorResponse::internal(e.to_string()))?;
-
-        tracing::info!("Registered device '{}' with type '{}'", device_id, type_id);
-
-        (type_id.clone(), device_id.clone(), topic, format!(
-            "Device '{}' registered as type '{}'",
-            device_id, type_id
-        ))
-    };
 
     // Remove draft completely after successful registration (same behavior as reject)
     // This allows the device to be re-discovered if needed and keeps the pending list clean
-    manager.remove_draft(&device_id).await
+    manager
+        .remove_draft(&device_id)
+        .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(ApproveDraftResponse {
@@ -327,70 +370,72 @@ pub async fn approve_draft_device(
 
 /// Convert discovered metrics to MetricDefinition format
 fn convert_metrics_to_template(metrics: &[DiscoveredMetric]) -> Vec<MetricDefinition> {
-    use neomind_devices::MetricDataType;
     use neomind_automation::SemanticType;
+    use neomind_devices::MetricDataType;
 
-    metrics.iter().map(|m| {
-        // Map semantic type to data type
-        let data_type = match m.semantic_type {
-            SemanticType::Temperature
-            | SemanticType::Humidity
-            | SemanticType::Pressure
-            | SemanticType::Light
-            | SemanticType::Power
-            | SemanticType::Energy
-            | SemanticType::Speed
-            | SemanticType::Flow
-            | SemanticType::Level
-            | SemanticType::Co2
-            | SemanticType::Pm25
-            | SemanticType::Voc => MetricDataType::Float,
+    metrics
+        .iter()
+        .map(|m| {
+            // Map semantic type to data type
+            let data_type = match m.semantic_type {
+                SemanticType::Temperature
+                | SemanticType::Humidity
+                | SemanticType::Pressure
+                | SemanticType::Light
+                | SemanticType::Power
+                | SemanticType::Energy
+                | SemanticType::Speed
+                | SemanticType::Flow
+                | SemanticType::Level
+                | SemanticType::Co2
+                | SemanticType::Pm25
+                | SemanticType::Voc => MetricDataType::Float,
 
-            SemanticType::Motion
-            | SemanticType::Switch => MetricDataType::Boolean,
+                SemanticType::Motion | SemanticType::Switch => MetricDataType::Boolean,
 
-            SemanticType::Dimmer => MetricDataType::Integer,
+                SemanticType::Dimmer => MetricDataType::Integer,
 
-            SemanticType::Color => MetricDataType::String,
+                SemanticType::Color => MetricDataType::String,
 
-            SemanticType::Status
-            | SemanticType::Error
-            | SemanticType::Alarm
-            | SemanticType::Battery
-            | SemanticType::Rssi => MetricDataType::String,
+                SemanticType::Status
+                | SemanticType::Error
+                | SemanticType::Alarm
+                | SemanticType::Battery
+                | SemanticType::Rssi => MetricDataType::String,
 
-            SemanticType::Unknown => match m.data_type {
-                DataType::Float => MetricDataType::Float,
-                DataType::Integer => MetricDataType::Integer,
-                DataType::Boolean => MetricDataType::Boolean,
-                DataType::String => MetricDataType::String,
-                DataType::Array => MetricDataType::Array { element_type: None },
-                _ => MetricDataType::String,
-            },
-        };
+                SemanticType::Unknown => match m.data_type {
+                    DataType::Float => MetricDataType::Float,
+                    DataType::Integer => MetricDataType::Integer,
+                    DataType::Boolean => MetricDataType::Boolean,
+                    DataType::String => MetricDataType::String,
+                    DataType::Array => MetricDataType::Array { element_type: None },
+                    _ => MetricDataType::String,
+                },
+            };
 
-        // Use path (e.g., "data.temperature") for metric name to support nested JSON
-        // Use name (e.g., "temperature") for display name
-        let metric_name = if !m.path.is_empty() {
-            m.path.clone()
-        } else {
-            m.name.clone()
-        };
-
-        MetricDefinition {
-            name: metric_name,
-            display_name: if !m.display_name.is_empty() {
-                m.display_name.clone()
+            // Use path (e.g., "data.temperature") for metric name to support nested JSON
+            // Use name (e.g., "temperature") for display name
+            let metric_name = if !m.path.is_empty() {
+                m.path.clone()
             } else {
                 m.name.clone()
-            },
-            data_type,
-            unit: m.unit.clone().unwrap_or_default(),
-            min: m.value_range.as_ref().map(|r| r.min),
-            max: m.value_range.as_ref().map(|r| r.max),
-            required: false,
-        }
-    }).collect()
+            };
+
+            MetricDefinition {
+                name: metric_name,
+                display_name: if !m.display_name.is_empty() {
+                    m.display_name.clone()
+                } else {
+                    m.name.clone()
+                },
+                data_type,
+                unit: m.unit.clone().unwrap_or_default(),
+                min: m.value_range.as_ref().map(|r| r.min),
+                max: m.value_range.as_ref().map(|r| r.max),
+                required: false,
+            }
+        })
+        .collect()
 }
 
 /// Reject a draft device
@@ -416,23 +461,26 @@ pub async fn trigger_draft_analysis(
     Path(device_id): Path<String>,
 ) -> HandlerResult<SuccessResponse> {
     let manager = get_auto_onboard_manager(&state).await;
-    let draft = manager
-        .get_draft(&device_id)
-        .await
-        .ok_or_else(|| ErrorResponse::not_found(format!("Draft device '{}' not found", device_id)))?;
+    let draft = manager.get_draft(&device_id).await.ok_or_else(|| {
+        ErrorResponse::not_found(format!("Draft device '{}' not found", device_id))
+    })?;
 
     let draft_id = draft.id.clone();
     let samples = draft.json_samples();
 
     if samples.is_empty() {
-        return Err(ErrorResponse::bad_request("No samples available for analysis"));
+        return Err(ErrorResponse::bad_request(
+            "No samples available for analysis",
+        ));
     }
 
     // Trigger analysis in background
     let manager_clone = manager.clone();
     let device_id_clone = device_id.clone();
     tokio::spawn(async move {
-        let _ = manager_clone.analyze_device(&draft_id, &device_id_clone, samples).await;
+        let _ = manager_clone
+            .analyze_device(&draft_id, &device_id_clone, samples)
+            .await;
     });
 
     ok(SuccessResponse {
@@ -451,13 +499,15 @@ pub async fn enhance_draft_with_llm(
     let manager = get_auto_onboard_manager(&state).await;
 
     // Get the draft
-    let draft = manager
-        .get_draft(&device_id)
-        .await
-        .ok_or_else(|| ErrorResponse::not_found(format!("Draft device '{}' not found", device_id)))?;
+    let draft = manager.get_draft(&device_id).await.ok_or_else(|| {
+        ErrorResponse::not_found(format!("Draft device '{}' not found", device_id))
+    })?;
 
-    let gen_type = draft.generated_type.as_ref()
-        .ok_or_else(|| ErrorResponse::bad_request("Draft device has no generated type yet. Please analyze it first."))?;
+    let gen_type = draft.generated_type.as_ref().ok_or_else(|| {
+        ErrorResponse::bad_request(
+            "Draft device has no generated type yet. Please analyze it first.",
+        )
+    })?;
 
     // Trigger LLM enhancement in background
     let manager_clone = manager.clone();
@@ -466,27 +516,35 @@ pub async fn enhance_draft_with_llm(
     tokio::spawn(async move {
         // Use the manager's public method for LLM enhancement
         let enhancements: Vec<(String, neomind_automation::discovery::MetricEnhancement)> =
-            manager_clone.enhance_draft_with_llm(
-                &device_id_clone,
-                "sensor", // default category
-                &metrics_clone,
-            ).await;
+            manager_clone
+                .enhance_draft_with_llm(
+                    &device_id_clone,
+                    "sensor", // default category
+                    &metrics_clone,
+                )
+                .await;
 
         // Apply enhancements to metrics
-        let enhancement_map: std::collections::HashMap<String, _> = enhancements.into_iter().collect();
+        let enhancement_map: std::collections::HashMap<String, _> =
+            enhancements.into_iter().collect();
 
-        let enhanced_metrics: Vec<neomind_automation::DiscoveredMetric> = metrics_clone.into_iter().map(|mut m| {
-            if let Some(enhancement) = enhancement_map.get(&m.name) {
-                m.display_name = enhancement.display_name.clone();
-                m.description = enhancement.description.clone();
-                m.unit = enhancement.unit.clone();
-                // confidence field no longer exists in DiscoveredMetric
-            }
-            m
-        }).collect();
+        let enhanced_metrics: Vec<neomind_automation::DiscoveredMetric> = metrics_clone
+            .into_iter()
+            .map(|mut m| {
+                if let Some(enhancement) = enhancement_map.get(&m.name) {
+                    m.display_name = enhancement.display_name.clone();
+                    m.description = enhancement.description.clone();
+                    m.unit = enhancement.unit.clone();
+                    // confidence field no longer exists in DiscoveredMetric
+                }
+                m
+            })
+            .collect();
 
         // Update draft with enhanced metrics using public method
-        let _ = manager_clone.update_draft_metrics(&device_id_clone, enhanced_metrics).await;
+        let _ = manager_clone
+            .update_draft_metrics(&device_id_clone, enhanced_metrics)
+            .await;
     });
 
     // Return current draft immediately (enhancement happens in background)
@@ -518,10 +576,7 @@ pub async fn get_type_signatures(
     let signatures = manager.get_all_type_signatures().await;
     let count = signatures.len().to_string();
 
-    ok(TypeSignaturesResponse {
-        signatures,
-        count,
-    })
+    ok(TypeSignaturesResponse { signatures, count })
 }
 
 /// Get suggested device types for a draft device
@@ -537,18 +592,20 @@ pub async fn suggest_device_types(
     let device_service = state.devices.service.clone();
 
     // Get the draft
-    let draft = manager
-        .get_draft(&device_id)
-        .await
-        .ok_or_else(|| ErrorResponse::not_found(format!("Draft device '{}' not found", device_id)))?;
+    let draft = manager.get_draft(&device_id).await.ok_or_else(|| {
+        ErrorResponse::not_found(format!("Draft device '{}' not found", device_id))
+    })?;
 
-    let gen_type = draft.generated_type.as_ref()
-        .ok_or_else(|| ErrorResponse::bad_request("Draft device has no generated type. Please analyze it first."))?;
+    let gen_type = draft.generated_type.as_ref().ok_or_else(|| {
+        ErrorResponse::bad_request("Draft device has no generated type. Please analyze it first.")
+    })?;
 
     // Find matching type using signature
     let category = gen_type.category.clone();
 
-    let exact_match = manager.find_matching_type(&gen_type.metrics, &category).await;
+    let exact_match = manager
+        .find_matching_type(&gen_type.metrics, &category)
+        .await;
 
     // Get all device types to find partial matches
     let all_types = device_service.list_templates().await;
@@ -570,12 +627,19 @@ pub async fn suggest_device_types(
 
         // Calculate overlap score based on (semantic_type, data_type) signatures
         // This matches the logic used in TypeSignature for type matching
-        let draft_signatures: std::collections::HashSet<_> = gen_type.metrics
+        let draft_signatures: std::collections::HashSet<_> = gen_type
+            .metrics
             .iter()
-            .map(|m| (format!("{:?}", m.semantic_type), format!("{:?}", m.data_type)))
+            .map(|m| {
+                (
+                    format!("{:?}", m.semantic_type),
+                    format!("{:?}", m.data_type),
+                )
+            })
             .collect();
 
-        let type_signatures: std::collections::HashSet<_> = template.metrics
+        let type_signatures: std::collections::HashSet<_> = template
+            .metrics
             .iter()
             // Map data type from template format to semantic inference format
             .map(|m| {
@@ -586,13 +650,9 @@ pub async fn suggest_device_types(
             .collect();
 
         // Count matching signatures (intersection over union - Jaccard similarity)
-        let intersection = draft_signatures
-            .intersection(&type_signatures)
-            .count();
+        let intersection = draft_signatures.intersection(&type_signatures).count();
 
-        let union = draft_signatures
-            .union(&type_signatures)
-            .count();
+        let union = draft_signatures.union(&type_signatures).count();
 
         let match_score = if union > 0 {
             ((intersection as f64) / (union as f64) * 100.0) as u32
@@ -652,20 +712,27 @@ pub async fn upload_device_data(
 ) -> HandlerResult<SuccessResponse> {
     let manager = get_auto_onboard_manager(&state).await;
 
-    let device_id = request.device_id.clone().unwrap_or_else(|| {
-        format!("unknown_{}", uuid::Uuid::new_v4().to_string().split_at(8).0)
-    });
+    let device_id = request
+        .device_id
+        .clone()
+        .unwrap_or_else(|| format!("unknown_{}", uuid::Uuid::new_v4().to_string().split_at(8).0));
 
-    let source = request.source.clone().unwrap_or_else(|| "manual_upload".to_string());
+    let source = request
+        .source
+        .clone()
+        .unwrap_or_else(|| "manual_upload".to_string());
 
     // Process each data sample (manual upload is always JSON)
     let mut processed = 0;
     for data in request.data {
-        match manager.process_unknown_device(&device_id, &source, &data, false).await {
+        match manager
+            .process_unknown_device(&device_id, &source, &data, false)
+            .await
+        {
             Ok(true) => processed += 1,
             Ok(false) => {
                 // Device not accepted (disabled or at capacity)
-            },
+            }
             Err(e) => {
                 tracing::warn!("Failed to process data for device {}: {}", device_id, e);
             }
@@ -757,7 +824,11 @@ impl From<neomind_automation::GeneratedDeviceType> for GeneratedDeviceTypeDto {
             name: gen_type.name,
             description: gen_type.description,
             category: gen_type.category.display_name().to_string(),
-            metrics: gen_type.metrics.into_iter().map(MetricSummaryDto::from).collect(),
+            metrics: gen_type
+                .metrics
+                .into_iter()
+                .map(MetricSummaryDto::from)
+                .collect(),
             confidence: 1.0, // Default confidence
             summary: ProcessingSummaryDto::from(&gen_type.summary),
         }
@@ -943,19 +1014,27 @@ fn infer_semantic_type_from_metric_name(name: &str) -> SemanticType {
         return SemanticType::Pressure;
     }
     // Light
-    if name_lower.contains("lux") || name_lower.contains("light") || name_lower.contains("illuminance") {
+    if name_lower.contains("lux")
+        || name_lower.contains("light")
+        || name_lower.contains("illuminance")
+    {
         return SemanticType::Light;
     }
     // Motion
-    if name_lower.contains("motion") || name_lower.contains("occupancy") || name_lower.contains("presence") {
+    if name_lower.contains("motion")
+        || name_lower.contains("occupancy")
+        || name_lower.contains("presence")
+    {
         return SemanticType::Motion;
     }
     // Switch/relay
-    if name_lower.contains("switch") || name_lower.contains("relay") || name_lower.contains("state") {
+    if name_lower.contains("switch") || name_lower.contains("relay") || name_lower.contains("state")
+    {
         return SemanticType::Switch;
     }
     // Power/energy
-    if name_lower.contains("power") || name_lower.contains("energy") || name_lower.contains("watt") {
+    if name_lower.contains("power") || name_lower.contains("energy") || name_lower.contains("watt")
+    {
         return SemanticType::Power;
     }
     // Battery
@@ -971,7 +1050,8 @@ fn infer_semantic_type_from_metric_name(name: &str) -> SemanticType {
         return SemanticType::Co2;
     }
     // PM2.5
-    if name_lower.contains("pm25") || name_lower.contains("pm2.5") || name_lower.contains("pm_2_5") {
+    if name_lower.contains("pm25") || name_lower.contains("pm2.5") || name_lower.contains("pm_2_5")
+    {
         return SemanticType::Pm25;
     }
 

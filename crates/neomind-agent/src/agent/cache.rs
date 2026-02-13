@@ -149,11 +149,7 @@ impl ToolResultCache {
 
     /// Get cache statistics.
     pub fn stats(&self) -> CacheStats {
-        let valid_count = self
-            .cache
-            .values()
-            .filter(|entry| entry.is_valid())
-            .count();
+        let valid_count = self.cache.values().filter(|entry| entry.is_valid()).count();
         let stale_count = self.cache.len() - valid_count;
 
         CacheStats {
@@ -171,12 +167,8 @@ impl ToolResultCache {
         // If still full, remove oldest entries
         if self.cache.len() >= self.max_size {
             // Simple FIFO eviction (remove half the entries)
-            let keys_to_remove: Vec<_> = self
-                .cache
-                .keys()
-                .take(self.max_size / 2)
-                .cloned()
-                .collect();
+            let keys_to_remove: Vec<_> =
+                self.cache.keys().take(self.max_size / 2).cloned().collect();
             for key in keys_to_remove {
                 self.cache.remove(&key);
             }
@@ -194,10 +186,7 @@ impl ToolResultCache {
         }
 
         // Static data has longer TTL
-        if tool_name.contains("list")
-            || tool_name.contains("get")
-            || tool_name.contains("agent")
-        {
+        if tool_name.contains("list") || tool_name.contains("get") || tool_name.contains("agent") {
             return DEFAULT_STATIC_TTL;
         }
 
@@ -246,7 +235,7 @@ impl CacheStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     fn make_test_call(tool_name: &str, args: Value) -> ToolCall {
         ToolCall {

@@ -16,20 +16,29 @@
 //! 3. **Hex Analysis** - Hex-encoded data detection and interpretation
 //! 4. **Semantic Inference** - AI-powered semantic understanding (with fallback)
 
-pub mod types;
+pub mod auto_onboard;
+pub mod hex_analyzer;
 pub mod path_extractor;
 pub mod semantic_inference;
-pub mod virtual_metric;
-pub mod auto_onboard;
-pub mod structure_analyzer;
 pub mod statistics_analyzer;
-pub mod hex_analyzer;
+pub mod structure_analyzer;
+pub mod types;
+pub mod virtual_metric;
 
-pub use types::*;
+pub use auto_onboard::{AutoOnboardManager, RegistrationResult, TypeSignature};
+pub use hex_analyzer::{
+    HexAnalyzer, HexInfo, HexProbability, MetricInterpretation, SuggestedType,
+    compute_stats as hex_compute_stats, hex_to_bytes, is_hex_string,
+};
 pub use path_extractor::DataPathExtractor;
-pub use semantic_inference::{SemanticInference, MetricEnhancement};
-pub use virtual_metric::{VirtualMetricGenerator, AggregationSuggestion, AggregationOperation, DerivedMetric};
-pub use auto_onboard::{AutoOnboardManager, TypeSignature, RegistrationResult};
-pub use structure_analyzer::{StructureAnalyzer, StructureResult, PathInfo, InferredType, normalize_path, extract_field_name};
-pub use statistics_analyzer::{StatisticsAnalyzer, StatisticsResult, ValueStatistics, ValuePattern, compute_quick_stats};
-pub use hex_analyzer::{HexAnalyzer, HexInfo, HexProbability, MetricInterpretation, SuggestedType, hex_to_bytes, is_hex_string, compute_stats as hex_compute_stats};
+pub use semantic_inference::{MetricEnhancement, SemanticInference};
+pub use statistics_analyzer::{
+    StatisticsAnalyzer, StatisticsResult, ValuePattern, ValueStatistics, compute_quick_stats,
+};
+pub use structure_analyzer::{
+    InferredType, PathInfo, StructureAnalyzer, StructureResult, extract_field_name, normalize_path,
+};
+pub use types::*;
+pub use virtual_metric::{
+    AggregationOperation, AggregationSuggestion, DerivedMetric, VirtualMetricGenerator,
+};

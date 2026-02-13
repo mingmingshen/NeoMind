@@ -4,18 +4,16 @@
 //! - Connection failures
 //! - Invalid configurations
 //! - State transitions
+//
 
-use neomind_devices::adapter::{Adapter, AdapterError};
-use anyhow::anyhow;
+use neomind_devices::adapter::AdapterError;
 
 #[tokio::test]
 async fn test_error_display_configuration() {
     // Test AdapterError Configuration variant
-    use neomind_devices::adapter::{Adapter, AdapterError};
-
     let error = AdapterError::Configuration("test error".to_string());
 
-    // Verify error message contains the error text
+    // Verify error message contains error text
     let error_msg = format!("{}", error);
     assert!(error_msg.contains("Configuration error: test error"));
 }
@@ -23,8 +21,6 @@ async fn test_error_display_configuration() {
 #[tokio::test]
 async fn test_error_display_connection() {
     // Test AdapterError Connection variant
-    use neomind_devices::adapter::{Adapter, AdapterError};
-
     let error = AdapterError::Connection("connection failed".to_string());
 
     // Verify error message
@@ -35,8 +31,6 @@ async fn test_error_display_connection() {
 #[tokio::test]
 async fn test_error_display_communication() {
     // Test AdapterError Communication variant
-    use neomind_devices::adapter::{Adapter, AdapterError};
-
     let error = AdapterError::Communication("send failed".to_string());
 
     // Verify error message
@@ -46,26 +40,23 @@ async fn test_error_display_communication() {
 
 #[tokio::test]
 async fn test_error_display_stopped() {
-    // Test AdapterError Stopped variant
-    use neomind_devices::adapter::{Adapter, AdapterError};
-
-    let error = AdapterError::Stopped("Adapter stopped".to_string());
+    // Test AdapterError Stopped variant (the message is built-in via thiserror)
+    let error = AdapterError::Stopped;
 
     // Verify error message
     let error_msg = format!("{}", error);
-    assert!(error_msg.contains("Adapter stopped"));
+    assert!(error_msg.contains("stopped"));
 }
 
 #[tokio::test]
 async fn test_error_display_other() {
     // Test AdapterError Other variant with anyhow
-    use neomind_devices::adapter::{Adapter, AdapterError};
     use anyhow::anyhow;
 
-    let inner_error = std::io::Error::new(std::io::ErrorKind::NotFound, "test".to_string());
+    let inner_error = anyhow::anyhow!("test error");
     let error = AdapterError::Other(inner_error);
 
     // Verify error message
     let error_msg = format!("{:?}", error);
-    assert!(error_msg.contains("test") || error_msg.contains("NotFound"));
+    assert!(error_msg.contains("test error"));
 }

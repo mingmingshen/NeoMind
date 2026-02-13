@@ -284,6 +284,10 @@
       "anthropic": "Anthropic",
       "google": "Google",
       "xai": "xAI",
+      "qwen": "通义千问",
+      "deepseek": "DeepSeek",
+      "glm": "智谱 GLM",
+      "minimax": "MiniMax",
       "default": "默认模型"
     },
     "providerTypes": {

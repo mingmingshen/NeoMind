@@ -57,16 +57,18 @@ pub mod error;
 pub mod extension_tools;
 pub mod real;
 pub mod registry;
+pub mod simplified;
 pub mod system_tools;
 pub mod tool;
-pub mod simplified;
 
 // Re-exports commonly used types
 pub use error::{NeoMindError, Result, ToolError};
 pub use registry::{ToolCall, ToolRegistry, ToolRegistryBuilder, ToolResult, format_for_llm};
+pub use simplified::{
+    ErrorMessages, Example, FriendlyError, LlmToolDefinition, SimplifiedConfig,
+    format_tools_as_json, format_tools_for_llm, get_simplified_tools,
+};
 pub use tool::{DynTool, Parameter, Tool, ToolDefinition, ToolExample, ToolOutput};
-pub use simplified::{ErrorMessages, Example, FriendlyError, LlmToolDefinition, SimplifiedConfig,
-                   format_tools_as_json, format_tools_for_llm, get_simplified_tools};
 
 // Type aliases to reduce complexity
 pub type SharedToolRegistry = Arc<ToolRegistry>;
@@ -84,14 +86,10 @@ pub use neomind_core::tools::{
 // Real Tools (Primary Exports)
 // ============================================================================
 /// Device tools (QueryDataTool and GetDeviceDataTool remain - core_tools may not fully replace them yet)
-pub use real::{
-    QueryDataTool, GetDeviceDataTool, QueryRuleHistoryTool,
-};
+pub use real::{GetDeviceDataTool, QueryDataTool, QueryRuleHistoryTool};
 
 /// Rule tools (CreateRuleTool, ListRulesTool, DeleteRuleTool - no core_tools equivalent yet)
-pub use real::{
-    CreateRuleTool, ListRulesTool, DeleteRuleTool,
-};
+pub use real::{CreateRuleTool, DeleteRuleTool, ListRulesTool};
 
 // ============================================================================
 // Core Business-Scenario Tools
@@ -99,25 +97,41 @@ pub use real::{
 
 /// Core business-scenario tools with device registry abstraction
 pub use core_tools::{
-    // Device tools
-    DeviceDiscoverTool, DeviceQueryTool, DeviceControlTool,
+    AnalysisResult,
+    // Analysis types
+    AnalysisType,
+    BatchControlResult,
+    CommandInfo as CoreCommandInfo,
+    // Control types
+    ControlCommand,
+    ControlResult,
+    DataPoint as CoreDataPoint,
     DeviceAnalyzeTool as CoreDeviceAnalyzeTool,
+    DeviceCapabilities,
+    DeviceControlTool,
+    // Device tools
+    DeviceDiscoverTool,
+    DeviceFilter,
+    DeviceGroup,
+    // Types
+    DeviceInfo as CoreDeviceInfo,
+    DeviceQueryTool,
+    DeviceRegistryAdapter,
+    // Registry trait and adapters
+    DeviceRegistryTrait,
+    DiscoverySummary,
+    // Rule types
+    ExtractedRuleDefinition,
+    MetricInfo as CoreMetricInfo,
+    MetricQueryResult,
+    MetricStatistics,
+    ParameterInfo,
+    RealDeviceRegistryAdapter,
+    RuleActionDef,
     // Rule tools
     RuleFromContextTool,
-    // Types
-    DeviceInfo as CoreDeviceInfo, DeviceCapabilities, DeviceFilter,
-    DeviceGroup, DiscoverySummary,
-    MetricInfo as CoreMetricInfo, CommandInfo as CoreCommandInfo, ParameterInfo,
     // Query types
-    TimeRange, DataPoint as CoreDataPoint, MetricQueryResult, MetricStatistics,
-    // Control types
-    ControlCommand, ControlResult, BatchControlResult,
-    // Analysis types
-    AnalysisType, AnalysisResult,
-    // Rule types
-    ExtractedRuleDefinition, RuleActionDef,
-    // Registry trait and adapters
-    DeviceRegistryTrait, RealDeviceRegistryAdapter, DeviceRegistryAdapter,
+    TimeRange,
 };
 
 // ============================================================================
@@ -125,12 +139,21 @@ pub use core_tools::{
 // ============================================================================
 
 pub use system_tools::{
-    // System tools
-    SystemInfoTool, SystemConfigTool, ServiceRestartTool, SystemHelpTool,
+    AcknowledgeAlertTool,
+    AlertInfo,
+    AlertSeverity,
     // Alert tools
-    CreateAlertTool, ListAlertsTool, AcknowledgeAlertTool, AlertInfo, AlertSeverity,
+    CreateAlertTool,
     // Export tools
-    ExportToCsvTool, ExportToJsonTool, GenerateReportTool,
+    ExportToCsvTool,
+    ExportToJsonTool,
+    GenerateReportTool,
+    ListAlertsTool,
+    ServiceRestartTool,
+    SystemConfigTool,
+    SystemHelpTool,
+    // System tools
+    SystemInfoTool,
 };
 
 // ============================================================================
@@ -138,9 +161,8 @@ pub use system_tools::{
 // ============================================================================
 
 pub use agent_tools::{
-    ListAgentsTool, GetAgentTool, ExecuteAgentTool, ControlAgentTool,
-    CreateAgentTool, AgentMemoryTool,
-    GetAgentExecutionsTool, GetAgentExecutionDetailTool, GetAgentConversationTool,
+    AgentMemoryTool, ControlAgentTool, CreateAgentTool, ExecuteAgentTool, GetAgentConversationTool,
+    GetAgentExecutionDetailTool, GetAgentExecutionsTool, GetAgentTool, ListAgentsTool,
 };
 
 // ============================================================================
@@ -148,8 +170,7 @@ pub use agent_tools::{
 // ============================================================================
 
 pub use extension_tools::{
-    ExtensionTool, ExtensionToolGenerator, ExtensionToolExecutor,
-    ExtensionFilter,
+    ExtensionFilter, ExtensionTool, ExtensionToolExecutor, ExtensionToolGenerator,
 };
 
 // Note: ExtensionRegistry is now defined in neomind_core::extension
@@ -175,9 +196,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_registry_with_system_help() {
-        let registry = ToolRegistryBuilder::new()
-            .with_system_help_tool()
-            .build();
+        let registry = ToolRegistryBuilder::new().with_system_help_tool().build();
 
         assert!(registry.len() >= 1);
         assert!(registry.has("system_help"));

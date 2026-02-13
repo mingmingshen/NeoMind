@@ -78,7 +78,10 @@ impl MemoryConfig {
 
     /// Set the consolidation ratio (0.0 - 1.0).
     pub fn with_consolidation_ratio(mut self, ratio: f64) -> Self {
-        assert!((0.0..=1.0).contains(&ratio), "consolidation_ratio must be between 0.0 and 1.0");
+        assert!(
+            (0.0..=1.0).contains(&ratio),
+            "consolidation_ratio must be between 0.0 and 1.0"
+        );
         self.consolidation_ratio = ratio;
         self
     }
@@ -261,10 +264,7 @@ impl MemoryConsolidator {
                 continue;
             }
 
-            by_role
-                .entry(msg.role.clone())
-                .or_default()
-                .push(msg);
+            by_role.entry(msg.role.clone()).or_default().push(msg);
         }
 
         // Create summaries for each role group
@@ -385,8 +385,7 @@ mod tests {
 
     #[test]
     fn test_needs_consolidation() {
-        let config = MemoryConfig::default()
-            .with_max_messages_before_consolidation(10);
+        let config = MemoryConfig::default().with_max_messages_before_consolidation(10);
 
         assert!(!config.needs_consolidation(5));
         assert!(config.needs_consolidation(10));
@@ -420,8 +419,8 @@ mod tests {
     fn test_consolidate_creates_summary() {
         let config = MemoryConfig::default()
             .with_max_messages_before_consolidation(5)
-            .with_consolidation_ratio(0.4)  // Lower ratio to ensure consolidation happens
-            .with_min_recent_messages(1);     // Lower to ensure more consolidation
+            .with_consolidation_ratio(0.4) // Lower ratio to ensure consolidation happens
+            .with_min_recent_messages(1); // Lower to ensure more consolidation
 
         let consolidator = MemoryConsolidator::new(config);
         let messages = vec![

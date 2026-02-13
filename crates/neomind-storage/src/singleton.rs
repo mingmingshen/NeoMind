@@ -178,8 +178,12 @@ mod tests {
         // Clear cache and verify it reduces (may not be exactly 0 due to parallel tests)
         let _cleared = clear_cache();
         let final_size = cache_size();
-        assert!(final_size <= size_after_second - 2 || final_size < 2,
-                "Cache should be cleared, went from {} to {}", size_after_second, final_size);
+        assert!(
+            final_size <= size_after_second - 2 || final_size < 2,
+            "Cache should be cleared, went from {} to {}",
+            size_after_second,
+            final_size
+        );
     }
 
     #[test]

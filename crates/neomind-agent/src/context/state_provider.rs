@@ -47,17 +47,23 @@ impl SystemSnapshot {
         }
 
         if !self.rules.is_empty() {
-            if !summary.is_empty() { summary.push_str(", "); }
+            if !summary.is_empty() {
+                summary.push_str(", ");
+            }
             summary.push_str(&format!("规则: {} 条", self.rules.len()));
         }
 
         if !self.workflows.is_empty() {
-            if !summary.is_empty() { summary.push_str(", "); }
+            if !summary.is_empty() {
+                summary.push_str(", ");
+            }
             summary.push_str(&format!("工作流: {} 个", self.workflows.len()));
         }
 
         if !self.alerts.is_empty() {
-            if !summary.is_empty() { summary.push_str(", "); }
+            if !summary.is_empty() {
+                summary.push_str(", ");
+            }
             summary.push_str(&format!("活跃告警: {} 个", self.alerts.len()));
         }
 
@@ -66,14 +72,16 @@ impl SystemSnapshot {
 
     /// Find devices by capability.
     pub fn devices_with_capability(&self, capability: &str) -> Vec<&DeviceState> {
-        self.devices.iter()
+        self.devices
+            .iter()
             .filter(|d| d.has_capability(capability))
             .collect()
     }
 
     /// Find devices by location.
     pub fn devices_at_location(&self, location: &str) -> Vec<&DeviceState> {
-        self.devices.iter()
+        self.devices
+            .iter()
             .filter(|d| d.location.as_ref().is_some_and(|l| l == location))
             .collect()
     }
@@ -103,12 +111,15 @@ pub struct DeviceState {
 impl DeviceState {
     /// Check if device has a capability.
     pub fn has_capability(&self, capability: &str) -> bool {
-        self.capabilities.iter().any(|c| c.eq_ignore_ascii_case(capability))
+        self.capabilities
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(capability))
     }
 
     /// Get current value for a metric.
     pub fn get_value(&self, metric: &str) -> Option<f64> {
-        self.values.iter()
+        self.values
+            .iter()
             .find(|v| v.name.eq_ignore_ascii_case(metric))
             .and_then(|v| v.value)
     }
@@ -180,8 +191,7 @@ pub enum AlertSeverity {
 }
 
 /// System-wide metrics.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SystemMetrics {
     /// Total device count
     pub total_devices: usize,
@@ -194,7 +204,6 @@ pub struct SystemMetrics {
     /// System uptime in seconds
     pub uptime_seconds: u64,
 }
-
 
 /// System resource types for discovery.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -299,14 +308,12 @@ impl StateProvider {
                 device_type: "dht22_sensor".to_string(),
                 location: Some("卧室".to_string()),
                 capabilities: vec!["temperature".to_string(), "humidity".to_string()],
-                values: vec![
-                    DeviceValue {
-                        name: "temperature".to_string(),
-                        value: Some(22.0),
-                        unit: Some("°C".to_string()),
-                        timestamp: chrono::Utc::now().timestamp(),
-                    },
-                ],
+                values: vec![DeviceValue {
+                    name: "temperature".to_string(),
+                    value: Some(22.0),
+                    unit: Some("°C".to_string()),
+                    timestamp: chrono::Utc::now().timestamp(),
+                }],
                 online: true,
                 last_update: chrono::Utc::now().timestamp(),
             },
@@ -316,14 +323,12 @@ impl StateProvider {
                 device_type: "switch".to_string(),
                 location: Some("客厅".to_string()),
                 capabilities: vec!["power".to_string(), "brightness".to_string()],
-                values: vec![
-                    DeviceValue {
-                        name: "power".to_string(),
-                        value: Some(1.0),
-                        unit: None,
-                        timestamp: chrono::Utc::now().timestamp(),
-                    },
-                ],
+                values: vec![DeviceValue {
+                    name: "power".to_string(),
+                    value: Some(1.0),
+                    unit: None,
+                    timestamp: chrono::Utc::now().timestamp(),
+                }],
                 online: true,
                 last_update: chrono::Utc::now().timestamp(),
             },
@@ -333,15 +338,13 @@ impl StateProvider {
     /// Fetch current rules.
     async fn fetch_rules(&self) -> Vec<RuleSummary> {
         // In production, this would query the actual rule engine
-        vec![
-            RuleSummary {
-                rule_id: "rule_1".to_string(),
-                name: "高温告警".to_string(),
-                description: "当温度超过30度时触发".to_string(),
-                device_id: "sensor_1".to_string(),
-                enabled: true,
-            },
-        ]
+        vec![RuleSummary {
+            rule_id: "rule_1".to_string(),
+            name: "高温告警".to_string(),
+            description: "当温度超过30度时触发".to_string(),
+            device_id: "sensor_1".to_string(),
+            enabled: true,
+        }]
     }
 
     /// Fetch current workflows.

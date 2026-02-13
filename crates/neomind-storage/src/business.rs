@@ -32,10 +32,6 @@ pub enum EventSeverity {
     Critical,
 }
 
-
-
-
-
 /// Rule execution history entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuleExecution {
@@ -213,12 +209,13 @@ impl RuleHistoryStore {
         for result in table.iter()? {
             let (_key, value) = result?;
             if let Ok(execution) = serde_json::from_slice::<RuleExecution>(value.value())
-                && execution.timestamp >= since_timestamp {
-                    // Count only triggered rules (not "NotTriggered")
-                    if !matches!(execution.result, RuleExecutionResult::NotTriggered) {
-                        count += 1;
-                    }
+                && execution.timestamp >= since_timestamp
+            {
+                // Count only triggered rules (not "NotTriggered")
+                if !matches!(execution.result, RuleExecutionResult::NotTriggered) {
+                    count += 1;
                 }
+            }
         }
 
         Ok(count)
@@ -396,13 +393,15 @@ impl AlertStore {
         for result in table.range(&*start_key..=&*end_key)? {
             let (_key, value) = result?;
             if let Ok(alert) = serde_json::from_slice::<Alert>(value.value())
-                && self.matches_filter(&alert, filter) {
-                    results.push(alert);
-                    if let Some(limit) = filter.limit
-                        && results.len() >= limit {
-                            break;
-                        }
+                && self.matches_filter(&alert, filter)
+            {
+                results.push(alert);
+                if let Some(limit) = filter.limit
+                    && results.len() >= limit
+                {
+                    break;
                 }
+            }
         }
 
         Ok(results)
@@ -423,45 +422,47 @@ impl AlertStore {
     /// Acknowledge an alert.
     pub fn acknowledge(&self, alert_id: &str, acknowledged_by: &str) -> Result<bool> {
         if let Some(mut alert) = self.get(alert_id)?
-            && alert.status == AlertStatus::Active {
-                alert.status = AlertStatus::Acknowledged;
-                alert.acknowledged_at = Some(Utc::now().timestamp());
-                alert.acknowledged_by = Some(acknowledged_by.to_string());
+            && alert.status == AlertStatus::Active
+        {
+            alert.status = AlertStatus::Acknowledged;
+            alert.acknowledged_at = Some(Utc::now().timestamp());
+            alert.acknowledged_by = Some(acknowledged_by.to_string());
 
-                let key = format!("{}:{}", alert.created_at, alert.id);
-                let value = serde_json::to_vec(&alert)?;
+            let key = format!("{}:{}", alert.created_at, alert.id);
+            let value = serde_json::to_vec(&alert)?;
 
-                let txn = self.db.begin_write()?;
-                {
-                    let mut table = txn.open_table(ALERT_TABLE)?;
-                    table.insert(&*key, &*value)?;
-                }
-                txn.commit()?;
-
-                return Ok(true);
+            let txn = self.db.begin_write()?;
+            {
+                let mut table = txn.open_table(ALERT_TABLE)?;
+                table.insert(&*key, &*value)?;
             }
+            txn.commit()?;
+
+            return Ok(true);
+        }
         Ok(false)
     }
 
     /// Resolve an alert.
     pub fn resolve(&self, alert_id: &str) -> Result<bool> {
         if let Some(mut alert) = self.get(alert_id)?
-            && alert.status != AlertStatus::Resolved {
-                alert.status = AlertStatus::Resolved;
-                alert.resolved_at = Some(Utc::now().timestamp());
+            && alert.status != AlertStatus::Resolved
+        {
+            alert.status = AlertStatus::Resolved;
+            alert.resolved_at = Some(Utc::now().timestamp());
 
-                let key = format!("{}:{}", alert.created_at, alert.id);
-                let value = serde_json::to_vec(&alert)?;
+            let key = format!("{}:{}", alert.created_at, alert.id);
+            let value = serde_json::to_vec(&alert)?;
 
-                let txn = self.db.begin_write()?;
-                {
-                    let mut table = txn.open_table(ALERT_TABLE)?;
-                    table.insert(&*key, &*value)?;
-                }
-                txn.commit()?;
-
-                return Ok(true);
+            let txn = self.db.begin_write()?;
+            {
+                let mut table = txn.open_table(ALERT_TABLE)?;
+                table.insert(&*key, &*value)?;
             }
+            txn.commit()?;
+
+            return Ok(true);
+        }
         Ok(false)
     }
 
@@ -508,17 +509,17 @@ impl AlertStore {
         }
 
         if let Some(ref source) = filter.source
-            && alert.source != *source {
-                return false;
-            }
+            && alert.source != *source
+        {
+            return false;
+        }
 
         true
     }
 
     /// Get count of alerts created since a given timestamp.
     pub fn count_since(&self, since_timestamp: i64) -> Result<u64> {
-        let filter = AlertFilter::new()
-            .with_time_range(since_timestamp, i64::MAX);
+        let filter = AlertFilter::new().with_time_range(since_timestamp, i64::MAX);
         let alerts = self.query(&filter)?;
         Ok(alerts.len() as u64)
     }

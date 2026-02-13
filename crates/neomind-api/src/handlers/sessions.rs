@@ -147,7 +147,10 @@ async fn process_stream_to_channel(
                         // Intermediate end - for multi-round tool calling
                         // This indicates the current round is complete but more processing is coming
                         // Send this to frontend but don't exit the loop
-                        tracing::debug!("*** Sending IntermediateEnd event (round {}) ***", event_count);
+                        tracing::debug!(
+                            "*** Sending IntermediateEnd event (round {}) ***",
+                            event_count
+                        );
                         json!({
                             "type": "intermediate_end",
                             "sessionId": session_id,
@@ -180,21 +183,31 @@ async fn process_stream_to_channel(
 
                             let consolidate_result = tokio::time::timeout(
                                 consolidate_timeout,
-                                state_clone.agents.memory.write().await.consolidate(&session_id_clone)
-                            ).await;
+                                state_clone
+                                    .agents
+                                    .memory
+                                    .write()
+                                    .await
+                                    .consolidate(&session_id_clone),
+                            )
+                            .await;
 
                             match consolidate_result {
                                 Ok(Ok(())) => {
                                     // Also directly add to mid-term memory for immediate retrieval
-                                    let response_with_thinking = if let Some(thinking_content) = thinking_clone {
-                                        if !thinking_content.is_empty() {
-                                            format!("{}\n\nThinking: {}", assistant_response_clone, thinking_content)
+                                    let response_with_thinking =
+                                        if let Some(thinking_content) = thinking_clone {
+                                            if !thinking_content.is_empty() {
+                                                format!(
+                                                    "{}\n\nThinking: {}",
+                                                    assistant_response_clone, thinking_content
+                                                )
+                                            } else {
+                                                assistant_response_clone.clone()
+                                            }
                                         } else {
                                             assistant_response_clone.clone()
-                                        }
-                                    } else {
-                                        assistant_response_clone.clone()
-                                    };
+                                        };
 
                                     let add_result = tokio::time::timeout(
                                         Duration::from_secs(2),
@@ -202,26 +215,42 @@ async fn process_stream_to_channel(
                                             &session_id_clone,
                                             &user_message_clone,
                                             &response_with_thinking,
-                                        )
-                                    ).await;
+                                        ),
+                                    )
+                                    .await;
 
                                     match add_result {
                                         Ok(Ok(())) => {
-                                            tracing::debug!("Conversation consolidated to memory: session={}", session_id_clone);
+                                            tracing::debug!(
+                                                "Conversation consolidated to memory: session={}",
+                                                session_id_clone
+                                            );
                                         }
                                         Ok(Err(e)) => {
-                                            tracing::warn!("Failed to add conversation to mid-term memory: {}", e);
+                                            tracing::warn!(
+                                                "Failed to add conversation to mid-term memory: {}",
+                                                e
+                                            );
                                         }
                                         Err(_) => {
-                                            tracing::warn!("Timeout adding conversation to mid-term memory: session={}", session_id_clone);
+                                            tracing::warn!(
+                                                "Timeout adding conversation to mid-term memory: session={}",
+                                                session_id_clone
+                                            );
                                         }
                                     }
                                 }
                                 Ok(Err(e)) => {
-                                    tracing::warn!("Failed to consolidate short-term to mid-term memory: {}", e);
+                                    tracing::warn!(
+                                        "Failed to consolidate short-term to mid-term memory: {}",
+                                        e
+                                    );
                                 }
                                 Err(_) => {
-                                    tracing::warn!("Timeout consolidating memory for session={}", session_id_clone);
+                                    tracing::warn!(
+                                        "Timeout consolidating memory for session={}",
+                                        session_id_clone
+                                    );
                                 }
                             }
                         });
@@ -239,9 +268,15 @@ async fn process_stream_to_channel(
                         elapsed_ms,
                         ..
                     } => {
-                        let elapsed = elapsed_ms.unwrap_or_else(|| stream_start.elapsed().as_millis() as u64) / 1000;
+                        let elapsed = elapsed_ms
+                            .unwrap_or_else(|| stream_start.elapsed().as_millis() as u64)
+                            / 1000;
                         let remaining = max_duration_secs.saturating_sub(elapsed);
-                        tracing::debug!("Sending Progress event: {} ({})", message, stage.as_deref().unwrap_or("unknown"));
+                        tracing::debug!(
+                            "Sending Progress event: {} ({})",
+                            message,
+                            stage.as_deref().unwrap_or("unknown")
+                        );
                         json!({
                             "type": "Progress",
                             "message": message,
@@ -307,7 +342,10 @@ async fn process_stream_to_channel(
             }
             Err(_) => {
                 // Timeout occurred - CRITICAL: clean up pending state to prevent memory leak
-                tracing::warn!("Stream timeout after {:?} - cleaning up pending state", stream_timeout);
+                tracing::warn!(
+                    "Stream timeout after {:?} - cleaning up pending state",
+                    stream_timeout
+                );
                 let _ = session_store.delete_pending_stream(&session_id);
 
                 let timeout_json = json!({
@@ -336,7 +374,12 @@ async fn process_stream_to_channel(
     }
 
     // Persist history after stream completes
-    if let Err(e) = state.agents.session_manager.persist_history(&session_id).await {
+    if let Err(e) = state
+        .agents
+        .session_manager
+        .persist_history(&session_id)
+        .await
+    {
         tracing::warn!(category = "session", error = %e, "Failed to persist history");
     }
 }
@@ -362,7 +405,8 @@ pub async fn create_session_handler(
     State(state): State<ServerState>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
     let session_id = state
-        .agents.session_manager
+        .agents
+        .session_manager
         .create_session()
         .await
         .map_err(|e| ErrorResponse::with_message(e.to_string()))?;
@@ -424,7 +468,8 @@ pub async fn get_session_handler(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
     let agent = state
-        .agents.session_manager
+        .agents
+        .session_manager
         .get_session(&id)
         .await
         .map_err(|_| ErrorResponse::not_found("Session"))?;
@@ -442,13 +487,15 @@ pub async fn get_session_history_handler(
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
     // First check if session exists (get_history returns empty for NotFound)
     let _agent = state
-        .agents.session_manager
+        .agents
+        .session_manager
         .get_session(&id)
         .await
         .map_err(|_| ErrorResponse::not_found("Session"))?;
 
     let history = state
-        .agents.session_manager
+        .agents
+        .session_manager
         .get_history(&id)
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get history: {}", e)))?;
@@ -465,7 +512,8 @@ pub async fn delete_session_handler(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
     state
-        .agents.session_manager
+        .agents
+        .session_manager
         .remove_session(&id)
         .await
         .map_err(|e| {
@@ -492,27 +540,24 @@ pub async fn get_pending_stream_handler(
     let session_store = state.agents.session_manager.session_store();
 
     match session_store.get_pending_stream(&id) {
-        Ok(Some(pending)) => {
-            Ok(Json(ApiResponse::success(json!({
-                "hasPending": true,
-                "sessionId": id,
-                "userMessage": pending.user_message,
-                "content": pending.content,
-                "thinking": pending.thinking,
-                "stage": pending.stage,
-                "elapsed": pending.elapsed_secs(),
-                "startedAt": pending.started_at,
-            }))))
-        }
-        Ok(None) => {
-            Ok(Json(ApiResponse::success(json!({
-                "hasPending": false,
-                "sessionId": id,
-            }))))
-        }
-        Err(e) => {
-            Err(ErrorResponse::with_message(format!("Failed to check pending stream: {}", e)))
-        }
+        Ok(Some(pending)) => Ok(Json(ApiResponse::success(json!({
+            "hasPending": true,
+            "sessionId": id,
+            "userMessage": pending.user_message,
+            "content": pending.content,
+            "thinking": pending.thinking,
+            "stage": pending.stage,
+            "elapsed": pending.elapsed_secs(),
+            "startedAt": pending.started_at,
+        })))),
+        Ok(None) => Ok(Json(ApiResponse::success(json!({
+            "hasPending": false,
+            "sessionId": id,
+        })))),
+        Err(e) => Err(ErrorResponse::with_message(format!(
+            "Failed to check pending stream: {}",
+            e
+        ))),
     }
 }
 
@@ -523,9 +568,9 @@ pub async fn clear_pending_stream_handler(
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
     let session_store = state.agents.session_manager.session_store();
 
-    session_store
-        .delete_pending_stream(&id)
-        .map_err(|e| ErrorResponse::with_message(format!("Failed to clear pending stream: {}", e)))?;
+    session_store.delete_pending_stream(&id).map_err(|e| {
+        ErrorResponse::with_message(format!("Failed to clear pending stream: {}", e))
+    })?;
 
     Ok(Json(ApiResponse::success(json!({
         "cleared": true,
@@ -547,7 +592,8 @@ pub async fn update_session_handler(
     Json(req): Json<UpdateSessionRequest>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
     state
-        .agents.session_manager
+        .agents
+        .session_manager
         .update_session_title(&id, req.title)
         .await
         .map_err(|e| ErrorResponse::with_message(e.to_string()))?;
@@ -563,7 +609,11 @@ pub async fn update_session_handler(
 pub async fn cleanup_sessions_handler(
     State(state): State<ServerState>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
-    let cleaned_count = state.agents.session_manager.cleanup_invalid_sessions().await;
+    let cleaned_count = state
+        .agents
+        .session_manager
+        .cleanup_invalid_sessions()
+        .await;
 
     Ok(Json(ApiResponse::success(json!({
         "cleaned": cleaned_count,
@@ -579,14 +629,20 @@ pub async fn chat_handler(
 ) -> Result<Json<ChatResponse>, ErrorResponse> {
     use tokio::time::{Duration, timeout};
 
-    println!("[chat_handler] Received request for session {}, message: {}", id, req.message);
+    println!(
+        "[chat_handler] Received request for session {}, message: {}",
+        id, req.message
+    );
 
     // Add a 120-second timeout to support thinking models
     // QWEN3 with thinking enabled can take 60-90 seconds for complex queries
     // due to the model's repetitive thinking generation, especially with longer context
     let response = match timeout(
         Duration::from_secs(120),
-        state.agents.session_manager.process_message(&id, &req.message),
+        state
+            .agents
+            .session_manager
+            .process_message(&id, &req.message),
     )
     .await
     {
@@ -598,7 +654,7 @@ pub async fn chat_handler(
                 return Err(ErrorResponse::not_found("Session"));
             }
             return Err(ErrorResponse::with_message(err_msg));
-        },
+        }
         Err(_) => {
             // Timeout - return an error response instead of hanging
             return Ok(Json(ChatResponse {
@@ -697,7 +753,8 @@ async fn send_session_history(
                         "thinking": msg.thinking,
                         "toolCalls": msg.tool_calls,
                         "timestamp": msg.timestamp,
-                    }).to_string();
+                    })
+                    .to_string();
 
                     if socket.send(AxumMessage::Text(history_msg)).await.is_err() {
                         return Err("Failed to send history message".into());
@@ -709,7 +766,8 @@ async fn send_session_history(
                     "type": "history_complete",
                     "sessionId": session_id,
                     "count": messages.len(),
-                }).to_string();
+                })
+                .to_string();
 
                 socket.send(AxumMessage::Text(complete_msg)).await?;
             }
@@ -735,7 +793,9 @@ async fn handle_ws_socket(
 ) {
     // Create connection metadata for tracking state and heartbeat
     let conn_meta = create_connection_metadata();
-    conn_meta.set_state(super::ws::ConnectionState::Authenticated).await;
+    conn_meta
+        .set_state(super::ws::ConnectionState::Authenticated)
+        .await;
 
     // Track the current session for this connection
     let current_session_id = Arc::new(tokio::sync::RwLock::new(session_id.clone()));
@@ -1077,7 +1137,12 @@ async fn handle_ws_socket(
 
     // Cleanup: persist session history AFTER loop ends (when connection closes)
     if let Some(session_id) = current_session_id.read().await.as_ref()
-        && let Err(e) = state.agents.session_manager.persist_history(session_id).await {
-            tracing::warn!(category = "session", error = %e, "Failed to persist history on disconnect");
-        }
+        && let Err(e) = state
+            .agents
+            .session_manager
+            .persist_history(session_id)
+            .await
+    {
+        tracing::warn!(category = "session", error = %e, "Failed to persist history on disconnect");
+    }
 }

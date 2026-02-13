@@ -15,7 +15,8 @@ use crate::Error;
 
 // Tables for agent storage
 const AGENTS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("agents");
-const AGENT_EXECUTIONS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("agent_executions");
+const AGENT_EXECUTIONS_TABLE: TableDefinition<&str, &[u8]> =
+    TableDefinition::new("agent_executions");
 const AGENT_MEMORY_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("agent_memory");
 
 /// AI Agent store for persisting autonomous agents.
@@ -93,7 +94,7 @@ fn default_context_window() -> usize {
 
 /// Default value for max chain depth.
 fn default_max_chain_depth() -> usize {
-    3  // Allow up to 3 chain steps by default
+    3 // Allow up to 3 chain steps by default
 }
 
 /// Default value for agent priority.
@@ -201,8 +202,7 @@ pub enum AgentStatus {
 }
 
 /// Agent execution statistics.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AgentStats {
     /// Total executions
     pub total_executions: u64,
@@ -215,7 +215,6 @@ pub struct AgentStats {
     /// Last execution duration in milliseconds
     pub last_duration_ms: Option<u64>,
 }
-
 
 /// Hierarchical memory for an agent across executions.
 ///
@@ -349,13 +348,19 @@ pub struct ImportantMemory {
 }
 
 /// Default short-term memory limit (number of summaries).
-fn default_short_term_limit() -> usize { 10 }
+fn default_short_term_limit() -> usize {
+    10
+}
 
 /// Default long-term memory limit (number of important memories).
-fn default_long_term_limit() -> usize { 50 }
+fn default_long_term_limit() -> usize {
+    50
+}
 
 /// Default minimum importance score for long-term retention.
-fn default_min_importance() -> f32 { 0.3 }
+fn default_min_importance() -> f32 {
+    0.3
+}
 
 /// Normalize agent memory limits for backward compatibility.
 ///
@@ -430,9 +435,7 @@ impl AgentMemory {
         // Keep only the most recent half in short-term
         let keep_count = self.short_term.max_summaries / 2;
         let drain_count = self.short_term.summaries.len().saturating_sub(keep_count);
-        let to_archive: Vec<_> = self.short_term.summaries
-            .drain(..drain_count)
-            .collect();
+        let to_archive: Vec<_> = self.short_term.summaries.drain(..drain_count).collect();
 
         // Convert archived summaries to important memories
         for summary in to_archive {
@@ -443,7 +446,12 @@ impl AgentMemory {
             if importance >= self.long_term.min_importance {
                 let memory = ImportantMemory {
                     id: uuid::Uuid::new_v4().to_string(),
-                    memory_type: if summary.success { "successful_execution" } else { "failed_execution" }.to_string(),
+                    memory_type: if summary.success {
+                        "successful_execution"
+                    } else {
+                        "failed_execution"
+                    }
+                    .to_string(),
                     content: format!("{} -> {}", summary.situation, summary.conclusion),
                     importance,
                     created_at: summary.timestamp,
@@ -536,13 +544,16 @@ impl AgentMemory {
         let query_lower = query.to_lowercase();
 
         // First pass: Update access stats and compute scores
-        let mut scores: Vec<(usize, f32)> = self.long_term.memories
+        let mut scores: Vec<(usize, f32)> = self
+            .long_term
+            .memories
             .iter()
             .enumerate()
             .map(|(idx, mem)| {
                 let mut score = mem.importance;
                 if mem.content.to_lowercase().contains(&query_lower)
-                    || mem.memory_type.to_lowercase().contains(&query_lower) {
+                    || mem.memory_type.to_lowercase().contains(&query_lower)
+                {
                     // Relevance boost
                     score += 0.1;
                 }
@@ -560,7 +571,8 @@ impl AgentMemory {
             .filter_map(|(idx, _)| {
                 let mem = &mut self.long_term.memories[idx];
                 if mem.content.to_lowercase().contains(&query_lower)
-                    || mem.memory_type.to_lowercase().contains(&query_lower) {
+                    || mem.memory_type.to_lowercase().contains(&query_lower)
+                {
                     mem.last_accessed_at = now;
                     mem.access_count += 1;
 
@@ -610,7 +622,9 @@ impl AgentMemory {
             // Prune long_term.patterns if needed
             if self.long_term.patterns.len() > 15 {
                 self.long_term.patterns.sort_by(|a, b| {
-                    b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal)
+                    b.confidence
+                        .partial_cmp(&a.confidence)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
                 self.long_term.patterns.truncate(15);
             }
@@ -618,7 +632,9 @@ impl AgentMemory {
             // Also prune legacy learned_patterns
             if self.learned_patterns.len() > 15 {
                 self.learned_patterns.sort_by(|a, b| {
-                    b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal)
+                    b.confidence
+                        .partial_cmp(&a.confidence)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
                 self.learned_patterns.truncate(15);
             }
@@ -629,7 +645,11 @@ impl AgentMemory {
     pub fn memory_usage_summary(&self) -> String {
         format!(
             "Working: {}, Short-term: {}/{}, Long-term: {}/{}, Patterns: {}, Trend points: {}, Baselines: {}",
-            if self.working.current_analysis.is_some() { "active" } else { "empty" },
+            if self.working.current_analysis.is_some() {
+                "active"
+            } else {
+                "empty"
+            },
             self.short_term.summaries.len(),
             self.short_term.max_summaries,
             self.long_term.memories.len(),
@@ -1116,20 +1136,16 @@ impl AgentStore {
 
     /// Update agent memory after execution.
     /// First reads the agent, then updates both tables in a single write transaction.
-    pub async fn update_agent_memory(
-        &self,
-        id: &str,
-        memory: AgentMemory,
-    ) -> Result<(), Error> {
+    pub async fn update_agent_memory(&self, id: &str, memory: AgentMemory) -> Result<(), Error> {
         // First, read the current agent data (before starting write transaction)
         let agent = {
             let read_txn = self.db.begin_read()?;
             let table = read_txn.open_table(AGENTS_TABLE)?;
             match table.get(id)? {
-                Some(bytes) => {
-                    Some(serde_json::from_slice::<AiAgent>(bytes.value())
-                        .map_err(|e| Error::Serialization(e.to_string()))?)
-                }
+                Some(bytes) => Some(
+                    serde_json::from_slice::<AiAgent>(bytes.value())
+                        .map_err(|e| Error::Serialization(e.to_string()))?,
+                ),
                 None => None,
             }
         };
@@ -1139,8 +1155,8 @@ impl AgentStore {
 
         // Update memory in dedicated table
         {
-            let memory_value = serde_json::to_vec(&memory)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let memory_value =
+                serde_json::to_vec(&memory).map_err(|e| Error::Serialization(e.to_string()))?;
             let mut memory_table = write_txn.open_table(AGENT_MEMORY_TABLE)?;
             memory_table.insert(id, memory_value.as_slice())?;
         }
@@ -1150,8 +1166,7 @@ impl AgentStore {
             ag.memory = memory;
             ag.updated_at = chrono::Utc::now().timestamp();
 
-            let value = serde_json::to_vec(&ag)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value = serde_json::to_vec(&ag).map_err(|e| Error::Serialization(e.to_string()))?;
             let mut agent_table = write_txn.open_table(AGENTS_TABLE)?;
             agent_table.insert(id, value.as_slice())?;
         }
@@ -1182,10 +1197,10 @@ impl AgentStore {
 
                 // Try to get latest memory from memory table
                 let latest_mem = match memory_table.get(id)? {
-                    Some(mem_bytes) => {
-                        Some(serde_json::from_slice::<AgentMemory>(mem_bytes.value())
-                            .map_err(|e| Error::Serialization(e.to_string()))?)
-                    }
+                    Some(mem_bytes) => Some(
+                        serde_json::from_slice::<AgentMemory>(mem_bytes.value())
+                            .map_err(|e| Error::Serialization(e.to_string()))?,
+                    ),
                     None => None,
                 };
 
@@ -1252,8 +1267,8 @@ impl AgentStore {
         {
             let mut table = write_txn.open_table(AGENT_EXECUTIONS_TABLE)?;
 
-            let value = serde_json::to_vec(execution)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(execution).map_err(|e| Error::Serialization(e.to_string()))?;
 
             table.insert(execution.id.as_str(), value.as_slice())?;
         }
@@ -1274,8 +1289,8 @@ impl AgentStore {
         // Save execution record
         {
             let mut table = write_txn.open_table(AGENT_EXECUTIONS_TABLE)?;
-            let value = serde_json::to_vec(execution)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(execution).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert(execution.id.as_str(), value.as_slice())?;
         }
 
@@ -1305,8 +1320,11 @@ impl AgentStore {
             // Update conversation history
             let old_len = agent.conversation_history.len();
             agent.conversation_history.push(turn.clone());
-            tracing::debug!("[DEBUG] Conversation history: old_len={}, new_len={}",
-                old_len, agent.conversation_history.len());
+            tracing::debug!(
+                "[DEBUG] Conversation history: old_len={}, new_len={}",
+                old_len,
+                agent.conversation_history.len()
+            );
 
             tracing::debug!(
                 agent_id = %agent_id,
@@ -1335,8 +1353,8 @@ impl AgentStore {
             // Save updated agent
             {
                 let mut table = write_txn.open_table(AGENTS_TABLE)?;
-                let value = serde_json::to_vec(&agent)
-                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                let value =
+                    serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
                 table.insert(agent_id, value.as_slice())?;
             }
         } else {
@@ -1456,20 +1474,27 @@ impl AgentStore {
 
     /// Check if an agent matches the given filter.
     fn matches_agent_filter(&self, agent: &AiAgent, filter: &AgentFilter) -> bool {
-        if let Some(status) = filter.status && agent.status != status {
+        if let Some(status) = filter.status
+            && agent.status != status
+        {
             return false;
         }
 
         if let Some(schedule_type) = &filter.schedule_type
-            && agent.schedule.schedule_type != *schedule_type {
+            && agent.schedule.schedule_type != *schedule_type
+        {
             return false;
         }
 
-        if let Some(start_time) = filter.start_time && agent.created_at < start_time {
+        if let Some(start_time) = filter.start_time
+            && agent.created_at < start_time
+        {
             return false;
         }
 
-        if let Some(end_time) = filter.end_time && agent.created_at > end_time {
+        if let Some(end_time) = filter.end_time
+            && agent.created_at > end_time
+        {
             return false;
         }
 
@@ -1482,19 +1507,27 @@ impl AgentStore {
         execution: &AgentExecutionRecord,
         filter: &ExecutionFilter,
     ) -> bool {
-        if let Some(agent_id) = &filter.agent_id && &execution.agent_id != agent_id {
+        if let Some(agent_id) = &filter.agent_id
+            && &execution.agent_id != agent_id
+        {
             return false;
         }
 
-        if let Some(status) = filter.status && execution.status != status {
+        if let Some(status) = filter.status
+            && execution.status != status
+        {
             return false;
         }
 
-        if let Some(start_time) = filter.start_time && execution.timestamp < start_time {
+        if let Some(start_time) = filter.start_time
+            && execution.timestamp < start_time
+        {
             return false;
         }
 
-        if let Some(end_time) = filter.end_time && execution.timestamp > end_time {
+        if let Some(end_time) = filter.end_time
+            && execution.timestamp > end_time
+        {
             return false;
         }
 
@@ -1514,7 +1547,9 @@ impl AgentStore {
         agent_id: &str,
         turn: &ConversationTurn,
     ) -> Result<(), Error> {
-        let mut agent = self.get_agent(agent_id).await?
+        let mut agent = self
+            .get_agent(agent_id)
+            .await?
             .ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
 
         agent.conversation_history.push(turn.clone());
@@ -1540,8 +1575,8 @@ impl AgentStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(AGENTS_TABLE)?;
-            let value = serde_json::to_vec(&agent)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert(agent_id, value.as_slice())?;
         }
         write_txn.commit()?;
@@ -1556,7 +1591,8 @@ impl AgentStore {
         limit: Option<usize>,
     ) -> Result<Vec<ConversationTurn>, Error> {
         let agent = self.get_agent(agent_id).await?;
-        let agent = agent.ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
+        let agent =
+            agent.ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
 
         let history = &agent.conversation_history;
         if let Some(limit) = limit {
@@ -1577,12 +1613,15 @@ impl AgentStore {
         keep_recent: usize,
         summary: String,
     ) -> Result<(), Error> {
-        let mut agent = self.get_agent(agent_id).await?
+        let mut agent = self
+            .get_agent(agent_id)
+            .await?
             .ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
 
         if agent.conversation_history.len() > keep_recent {
             // Remove old turns, keeping only the most recent ones
-            agent.conversation_history = agent.conversation_history
+            agent.conversation_history = agent
+                .conversation_history
                 .split_off(agent.conversation_history.len() - keep_recent);
             agent.conversation_summary = Some(summary);
             agent.updated_at = chrono::Utc::now().timestamp();
@@ -1591,8 +1630,8 @@ impl AgentStore {
             let write_txn = self.db.begin_write()?;
             {
                 let mut table = write_txn.open_table(AGENTS_TABLE)?;
-                let value = serde_json::to_vec(&agent)
-                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                let value =
+                    serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
                 table.insert(agent_id, value.as_slice())?;
             }
             write_txn.commit()?;
@@ -1603,7 +1642,9 @@ impl AgentStore {
 
     /// Clear all conversation history for an agent.
     pub async fn clear_conversation_history(&self, agent_id: &str) -> Result<(), Error> {
-        let mut agent = self.get_agent(agent_id).await?
+        let mut agent = self
+            .get_agent(agent_id)
+            .await?
             .ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
 
         agent.conversation_history.clear();
@@ -1614,8 +1655,8 @@ impl AgentStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(AGENTS_TABLE)?;
-            let value = serde_json::to_vec(&agent)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert(agent_id, value.as_slice())?;
         }
         write_txn.commit()?;
@@ -1635,7 +1676,9 @@ impl AgentStore {
         content: String,
         message_type: Option<String>,
     ) -> Result<UserMessage, Error> {
-        let mut agent = self.get_agent(agent_id).await?
+        let mut agent = self
+            .get_agent(agent_id)
+            .await?
             .ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
 
         let message = UserMessage {
@@ -1666,8 +1709,8 @@ impl AgentStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(AGENTS_TABLE)?;
-            let value = serde_json::to_vec(&agent)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert(agent_id, value.as_slice())?;
         }
         write_txn.commit()?;
@@ -1682,7 +1725,8 @@ impl AgentStore {
         limit: Option<usize>,
     ) -> Result<Vec<UserMessage>, Error> {
         let agent = self.get_agent(agent_id).await?;
-        let agent = agent.ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
+        let agent =
+            agent.ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
 
         let messages = &agent.user_messages;
         if let Some(limit) = limit {
@@ -1702,7 +1746,9 @@ impl AgentStore {
         agent_id: &str,
         message_id: &str,
     ) -> Result<bool, Error> {
-        let mut agent = self.get_agent(agent_id).await?
+        let mut agent = self
+            .get_agent(agent_id)
+            .await?
             .ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
 
         let original_len = agent.user_messages.len();
@@ -1715,8 +1761,8 @@ impl AgentStore {
             let write_txn = self.db.begin_write()?;
             {
                 let mut table = write_txn.open_table(AGENTS_TABLE)?;
-                let value = serde_json::to_vec(&agent)
-                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                let value =
+                    serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
                 table.insert(agent_id, value.as_slice())?;
             }
             write_txn.commit()?;
@@ -1729,7 +1775,9 @@ impl AgentStore {
 
     /// Clear all user messages for an agent.
     pub async fn clear_user_messages(&self, agent_id: &str) -> Result<usize, Error> {
-        let mut agent = self.get_agent(agent_id).await?
+        let mut agent = self
+            .get_agent(agent_id)
+            .await?
             .ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
 
         let count = agent.user_messages.len();
@@ -1740,8 +1788,8 @@ impl AgentStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(AGENTS_TABLE)?;
-            let value = serde_json::to_vec(&agent)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert(agent_id, value.as_slice())?;
         }
         write_txn.commit()?;
@@ -1912,10 +1960,10 @@ mod tests {
         store.save_agent(&agent).await.unwrap();
 
         // Update memory
-        agent.memory.state_variables.insert(
-            "baseline_temp".to_string(),
-            serde_json::json!(25.0),
-        );
+        agent
+            .memory
+            .state_variables
+            .insert("baseline_temp".to_string(), serde_json::json!(25.0));
         agent.memory.trend_data.push(TrendPoint {
             timestamp: chrono::Utc::now().timestamp(),
             metric: "temperature".to_string(),
@@ -1923,7 +1971,10 @@ mod tests {
             context: None,
         });
 
-        store.update_agent_memory("agent-1", agent.memory.clone()).await.unwrap();
+        store
+            .update_agent_memory("agent-1", agent.memory.clone())
+            .await
+            .unwrap();
 
         // Retrieve and verify
         let retrieved = store.get_agent("agent-1").await.unwrap().unwrap();

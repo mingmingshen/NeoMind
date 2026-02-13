@@ -92,8 +92,7 @@ impl CommandSource {
 }
 
 /// Command priority levels.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum CommandPriority {
     /// Low priority - background operations
     Low = 1,
@@ -138,9 +137,15 @@ impl CommandPriority {
     }
 }
 
+impl std::fmt::Display for CommandPriority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = self.type_name();
+        write!(f, "{}", name)
+    }
+}
 
 /// Command status tracking.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum CommandStatus {
     /// Command created, waiting to be queued
     Pending,

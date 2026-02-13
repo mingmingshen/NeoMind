@@ -71,7 +71,11 @@ pub enum ValueStatistics {
     /// String statistics
     String(StringStatistics),
     /// Boolean statistics
-    Boolean { true_count: usize, false_count: usize, null_count: usize },
+    Boolean {
+        true_count: usize,
+        false_count: usize,
+        null_count: usize,
+    },
     /// Unknown/mixed type
     Unknown,
 }
@@ -232,7 +236,11 @@ impl StatisticsAnalyzer {
         if numeric_ratio > 0.7 {
             ValueStatistics::Numeric(self.compute_numeric_stats(&numeric_values))
         } else if boolean_ratio > 0.7 {
-            ValueStatistics::Boolean { true_count, false_count, null_count }
+            ValueStatistics::Boolean {
+                true_count,
+                false_count,
+                null_count,
+            }
         } else if string_ratio > 0.5 {
             ValueStatistics::String(self.compute_string_stats(&string_values))
         } else {
@@ -277,9 +285,7 @@ impl StatisticsAnalyzer {
         let p25 = sorted[count / 4];
         let p75 = sorted[count * 3 / 4];
 
-        let variance = values.iter()
-            .map(|v| (v - mean).powi(2))
-            .sum::<f64>() / count as f64;
+        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / count as f64;
 
         let std_dev = variance.sqrt();
 
@@ -323,10 +329,7 @@ impl StatisticsAnalyzer {
         }
 
         let unique_count = freq_map.len();
-        let (mode, mode_frequency) = freq_map
-            .into_iter()
-            .max_by_key(|(_, freq)| *freq)
-            .unzip();
+        let (mode, mode_frequency) = freq_map.into_iter().max_by_key(|(_, freq)| *freq).unzip();
 
         StringStatistics {
             min_length,
@@ -346,32 +349,43 @@ impl StatisticsAnalyzer {
 
         if let ValueStatistics::Numeric(num_stats) = stats {
             // Temperature ranges
-            if num_stats.min >= -50.0 && num_stats.max <= 60.0
-                && (path_lower.contains("temp") || path_lower.contains("temperature")) {
-                    return Some("°C".to_string());
-                }
-            if num_stats.min >= 30.0 && num_stats.max <= 120.0
-                && (path_lower.contains("temp") || path_lower.contains("temperature")) {
-                    return Some("°F".to_string());
-                }
+            if num_stats.min >= -50.0
+                && num_stats.max <= 60.0
+                && (path_lower.contains("temp") || path_lower.contains("temperature"))
+            {
+                return Some("°C".to_string());
+            }
+            if num_stats.min >= 30.0
+                && num_stats.max <= 120.0
+                && (path_lower.contains("temp") || path_lower.contains("temperature"))
+            {
+                return Some("°F".to_string());
+            }
 
             // Percentage range (0-100)
-            if num_stats.min >= 0.0 && num_stats.max <= 100.0
-                && (path_lower.contains("humidity") || path_lower.contains("level")
-                    || path_lower.contains("percent") || path_lower.contains("ratio"))
-                {
-                    return Some("%".to_string());
-                }
+            if num_stats.min >= 0.0
+                && num_stats.max <= 100.0
+                && (path_lower.contains("humidity")
+                    || path_lower.contains("level")
+                    || path_lower.contains("percent")
+                    || path_lower.contains("ratio"))
+            {
+                return Some("%".to_string());
+            }
 
             // Pressure ranges
-            if num_stats.min >= 900.0 && num_stats.max <= 1100.0
-                && (path_lower.contains("pressure") || path_lower.contains("bar")) {
-                    return Some("hPa".to_string());
-                }
-            if num_stats.min >= 28.0 && num_stats.max <= 32.0
-                && (path_lower.contains("pressure") || path_lower.contains("in")) {
-                    return Some("inHg".to_string());
-                }
+            if num_stats.min >= 900.0
+                && num_stats.max <= 1100.0
+                && (path_lower.contains("pressure") || path_lower.contains("bar"))
+            {
+                return Some("hPa".to_string());
+            }
+            if num_stats.min >= 28.0
+                && num_stats.max <= 32.0
+                && (path_lower.contains("pressure") || path_lower.contains("in"))
+            {
+                return Some("inHg".to_string());
+            }
         }
 
         // Check for explicit unit indicators in path
@@ -398,7 +412,12 @@ impl StatisticsAnalyzer {
     }
 
     /// Detect value pattern
-    fn detect_pattern(&self, stats: &ValueStatistics, path: &str, unit: &Option<String>) -> ValuePattern {
+    fn detect_pattern(
+        &self,
+        stats: &ValueStatistics,
+        path: &str,
+        unit: &Option<String>,
+    ) -> ValuePattern {
         let path_lower = path.to_lowercase();
 
         match stats {
@@ -415,12 +434,15 @@ impl StatisticsAnalyzer {
                 if unit.as_deref() == Some("%") {
                     return ValuePattern::Percentage;
                 }
-                if num.min >= 0.0 && num.max <= 100.0
-                    && (path_lower.contains("humidity") || path_lower.contains("level")
-                        || path_lower.contains("percent") || path_lower.contains("ratio"))
-                    {
-                        return ValuePattern::Percentage;
-                    }
+                if num.min >= 0.0
+                    && num.max <= 100.0
+                    && (path_lower.contains("humidity")
+                        || path_lower.contains("level")
+                        || path_lower.contains("percent")
+                        || path_lower.contains("ratio"))
+                {
+                    return ValuePattern::Percentage;
+                }
 
                 // Temperature patterns
                 if unit.as_deref() == Some("°C") {
@@ -431,11 +453,15 @@ impl StatisticsAnalyzer {
                 }
 
                 // Boolean-like (0/1 values)
-                if num.min >= 0.0 && num.max <= 1.0 && num.std_dev < 0.6
-                    && num.p25 == num.median && num.p75 == num.median {
-                        // Most values are either 0 or 1
-                        return ValuePattern::BooleanLike;
-                    }
+                if num.min >= 0.0
+                    && num.max <= 1.0
+                    && num.std_dev < 0.6
+                    && num.p25 == num.median
+                    && num.p75 == num.median
+                {
+                    // Most values are either 0 or 1
+                    return ValuePattern::BooleanLike;
+                }
 
                 ValuePattern::Numeric
             }
@@ -449,16 +475,22 @@ impl StatisticsAnalyzer {
                 }
 
                 // UUID/Identifier pattern
-                if str_stats.avg_length >= 32.0 && str_stats.avg_length <= 40.0
-                    && str_stats.min_length == str_stats.max_length {
-                        return ValuePattern::Identifier;
-                    }
+                if str_stats.avg_length >= 32.0
+                    && str_stats.avg_length <= 40.0
+                    && str_stats.min_length == str_stats.max_length
+                {
+                    return ValuePattern::Identifier;
+                }
 
                 // Check for hex-like strings
-                if str_stats.unique_count > 10 && str_stats.avg_length > 8.0
-                    && (path_lower.contains("id") || path_lower.contains("uuid") || path_lower.contains("key")) {
-                        return ValuePattern::Identifier;
-                    }
+                if str_stats.unique_count > 10
+                    && str_stats.avg_length > 8.0
+                    && (path_lower.contains("id")
+                        || path_lower.contains("uuid")
+                        || path_lower.contains("key"))
+                {
+                    return ValuePattern::Identifier;
+                }
 
                 ValuePattern::Unknown
             }
@@ -510,9 +542,10 @@ pub fn compute_quick_stats(values: &[Value]) -> (Option<f64>, Option<f64>, Optio
 
     for v in values {
         if let Value::Number(n) = v
-            && let Some(f) = n.as_f64() {
-                nums.push(f);
-            }
+            && let Some(f) = n.as_f64()
+        {
+            nums.push(f);
+        }
     }
 
     if nums.is_empty() {
@@ -534,7 +567,13 @@ mod tests {
     #[test]
     fn test_numeric_statistics() {
         let analyzer = StatisticsAnalyzer::new();
-        let values = vec![json!(10.0), json!(20.0), json!(30.0), json!(40.0), json!(50.0)];
+        let values = vec![
+            json!(10.0),
+            json!(20.0),
+            json!(30.0),
+            json!(40.0),
+            json!(50.0),
+        ];
 
         let result = analyzer.analyze_path("$.test", &values);
 

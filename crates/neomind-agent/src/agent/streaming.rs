@@ -28,7 +28,8 @@ pub type EventChannel = tokio::sync::mpsc::UnboundedSender<AgentEvent>;
 
 // Re-export compaction types for use in other modules
 pub use neomind_core::llm::compaction::{
-    CompactionConfig, MessagePriority,
+    CompactionConfig,
+    MessagePriority,
     // Note: estimate_tokens is defined locally below to use the tokenizer module
 };
 
@@ -280,7 +281,10 @@ fn detect_json_tool_calls(buffer: &str) -> Option<(usize, String, String)> {
     let json_str = buffer[start..end].to_string();
 
     // Check if it looks like a tool call (has "name", "tool", or "function" key)
-    if !json_str.contains("\"name\"") && !json_str.contains("\"tool\"") && !json_str.contains("\"function\"") {
+    if !json_str.contains("\"name\"")
+        && !json_str.contains("\"tool\"")
+        && !json_str.contains("\"function\"")
+    {
         return None;
     }
 
@@ -438,10 +442,16 @@ impl ToolResultCache {
             let mut sorted_pairs: Vec<_> = obj.iter().collect();
             sorted_pairs.sort_by(|a, b| a.0.cmp(b.0));
 
-            let sorted_obj: serde_json::Map<String, Value> =
-                sorted_pairs.into_iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let sorted_obj: serde_json::Map<String, Value> = sorted_pairs
+                .into_iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
 
-            format!("{}:{}", name, serde_json::to_string(&sorted_obj).unwrap_or_default())
+            format!(
+                "{}:{}",
+                name,
+                serde_json::to_string(&sorted_obj).unwrap_or_default()
+            )
         } else {
             // For non-objects (arrays, strings, numbers, etc.), use as-is
             format!("{}:{}", name, arguments)
@@ -500,7 +510,8 @@ fn build_phase2_prompt_with_tool_results(
     original_question: Option<String>,
     tool_call_results: &[(String, String)],
 ) -> String {
-    let question = original_question.unwrap_or_else(|| "请总结以上工具执行结果，给出完整的回复。".to_string());
+    let question =
+        original_question.unwrap_or_else(|| "请总结以上工具执行结果，给出完整的回复。".to_string());
     if tool_call_results.is_empty() {
         return question;
     }
@@ -514,7 +525,10 @@ fn build_phase2_prompt_with_tool_results(
     });
 
     let mut block = if tool_count > 1 {
-        format!("\n\n[已执行 {} 个工具，请整合所有结果回答用户问题]\n", tool_count)
+        format!(
+            "\n\n[已执行 {} 个工具，请整合所有结果回答用户问题]\n",
+            tool_count
+        )
     } else {
         String::from("\n\n[工具执行结果 - 请务必分析结果并给出完整回复]\n")
     };
@@ -526,7 +540,9 @@ fn build_phase2_prompt_with_tool_results(
     if has_errors {
         block.push_str("注意：工具执行失败。\n\n");
         block.push_str("处理策略：\n");
-        block.push_str("1. 先检查用户的原始请求是否已经包含了所有必要信息（设备、指标、条件、动作）\n");
+        block.push_str(
+            "1. 先检查用户的原始请求是否已经包含了所有必要信息（设备、指标、条件、动作）\n",
+        );
         block.push_str("2. 如果用户已提供足够信息，说明是DSL格式问题，你应该直接告诉用户\"我明白了，让我重新生成\"然后告诉用户规则已创建成功\n");
         block.push_str("3. 只有当用户确实缺少关键信息时才追问，而且要一次问清楚\n");
         block.push_str("4. 不要把技术错误消息展示给用户\n");
@@ -535,7 +551,11 @@ fn build_phase2_prompt_with_tool_results(
 
     for (name, result) in tool_call_results {
         let r = if result.len() > PHASE2_TOOL_RESULT_MAX_LEN {
-            format!("{}... (结果已截断，共{}字)", &result[..PHASE2_TOOL_RESULT_MAX_LEN], result.len())
+            format!(
+                "{}... (结果已截断，共{}字)",
+                &result[..PHASE2_TOOL_RESULT_MAX_LEN],
+                result.len()
+            )
         } else {
             result.clone()
         };
@@ -578,7 +598,8 @@ fn detect_hallucination(phase2_response: &str, tool_results: &[(String, String)]
 
                     // Check if any actual agent name appears in the response
                     let has_match = actual_names.iter().any(|name| {
-                        phase2_response.contains(name) || phase2_response.contains(&format!("**{}**", name))
+                        phase2_response.contains(name)
+                            || phase2_response.contains(&format!("**{}**", name))
                     });
 
                     // Also check for common hallucination patterns
@@ -645,7 +666,8 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                             response.push_str("**按类型统计**:\n");
                             for (device_type, count) in by_type.iter() {
                                 if let Some(count) = count.as_u64() {
-                                    response.push_str(&format!("- {}: {} 台\n", device_type, count));
+                                    response
+                                        .push_str(&format!("- {}: {} 台\n", device_type, count));
                                 }
                             }
                             response.push_str("\n");
@@ -657,11 +679,23 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                         response.push_str("**设备列表**:\n\n");
                         for device in devices {
                             let id = device.get("id").and_then(|i| i.as_str()).unwrap_or("未知");
-                            let name = device.get("name").and_then(|n| n.as_str()).unwrap_or("未知");
-                            let device_type = device.get("device_type").and_then(|t| t.as_str()).unwrap_or("未知");
-                            let status = device.get("status").and_then(|s| s.as_str()).unwrap_or("未知");
+                            let name = device
+                                .get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("未知");
+                            let device_type = device
+                                .get("device_type")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("未知");
+                            let status = device
+                                .get("status")
+                                .and_then(|s| s.as_str())
+                                .unwrap_or("未知");
 
-                            response.push_str(&format!("- **{}** ({}) - {} - {}\n", name, id, device_type, status));
+                            response.push_str(&format!(
+                                "- **{}** ({}) - {} - {}\n",
+                                name, id, device_type, status
+                            ));
                         }
                     }
                 }
@@ -719,8 +753,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 }
                 "list_scenarios" => {
                     // Handle both direct array and truncated nested structure
-                    if let Some(scenarios) = extract_array(&json_value, "scenarios")
-                    {
+                    if let Some(scenarios) = extract_array(&json_value, "scenarios") {
                         response.push_str(&format!("## 场景列表 (共 {} 个)\n\n", scenarios.len()));
                         for scenario in scenarios {
                             let name = scenario
@@ -735,8 +768,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 }
                 "list_workflows" => {
                     // Handle both direct array and truncated nested structure
-                    if let Some(workflows) = extract_array(&json_value, "workflows")
-                    {
+                    if let Some(workflows) = extract_array(&json_value, "workflows") {
                         response
                             .push_str(&format!("## 工作流列表 (共 {} 个)\n\n", workflows.len()));
                         for workflow in workflows {
@@ -785,8 +817,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 }
                 "query_workflow_status" => {
                     // Handle both direct array and truncated nested structure
-                    if let Some(executions) = extract_array(&json_value, "executions")
-                    {
+                    if let Some(executions) = extract_array(&json_value, "executions") {
                         response.push_str(&format!(
                             "## 工作流执行状态 (共 {} 条)\n\n",
                             executions.len()
@@ -834,12 +865,14 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 }
                 "get_device_data" => {
                     // Format get_device_data result with device info and metrics
-                    let device_name = json_value.get("device_name")
+                    let device_name = json_value
+                        .get("device_name")
                         .and_then(|n| n.as_str())
                         .or_else(|| json_value.get("device_id").and_then(|d| d.as_str()))
                         .unwrap_or("未知设备");
 
-                    let device_type = json_value.get("device_type")
+                    let device_type = json_value
+                        .get("device_type")
                         .and_then(|t| t.as_str())
                         .unwrap_or("未知");
 
@@ -847,11 +880,13 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
 
                     if let Some(metrics) = json_value.get("metrics").and_then(|m| m.as_object()) {
                         for (metric_name, metric_data) in metrics {
-                            let display_name = metric_data.get("display_name")
+                            let display_name = metric_data
+                                .get("display_name")
                                 .and_then(|n| n.as_str())
                                 .unwrap_or(metric_name);
 
-                            let value = metric_data.get("value")
+                            let value = metric_data
+                                .get("value")
                                 .map(|v| {
                                     if v.is_null() {
                                         "无数据".to_string()
@@ -861,18 +896,23 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                 })
                                 .unwrap_or("未知".to_string());
 
-                            let unit = metric_data.get("unit")
+                            let unit = metric_data
+                                .get("unit")
                                 .and_then(|u| u.as_str())
                                 .unwrap_or("");
 
                             if !unit.is_empty() {
-                                response.push_str(&format!("- **{}**: {} {}\n", display_name, value, unit));
+                                response.push_str(&format!(
+                                    "- **{}**: {} {}\n",
+                                    display_name, value, unit
+                                ));
                             } else {
                                 response.push_str(&format!("- **{}**: {}\n", display_name, value));
                             }
 
                             // Show timestamp if available
-                            if let Some(ts) = metric_data.get("timestamp").and_then(|t| t.as_i64()) {
+                            if let Some(ts) = metric_data.get("timestamp").and_then(|t| t.as_i64())
+                            {
                                 if ts > 0 {
                                     use chrono::{DateTime, Utc};
                                     if let Some(dt) = DateTime::from_timestamp(ts, 0) {
@@ -880,7 +920,10 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                         if time_ago < 3600 {
                                             response.push_str(&format!("  _{}秒前_\n", time_ago));
                                         } else if time_ago < 86400 {
-                                            response.push_str(&format!("  _{}分钟前_\n", time_ago / 60));
+                                            response.push_str(&format!(
+                                                "  _{}分钟前_\n",
+                                                time_ago / 60
+                                            ));
                                         }
                                     }
                                 }
@@ -907,7 +950,9 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 "list_agents" => {
                     // Format agent list with statistics
                     // Tool result structure: {"agents": {"items": [...], "_total_count": N}, "count": N}
-                    let agents_array = if let Some(agents_obj) = json_value.get("agents").and_then(|a| a.as_object()) {
+                    let agents_array = if let Some(agents_obj) =
+                        json_value.get("agents").and_then(|a| a.as_object())
+                    {
                         // New structure: agents is an object with "items" array
                         agents_obj.get("items").and_then(|i| i.as_array())
                     } else {
@@ -920,17 +965,33 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                         for agent in agents {
                             let name = agent.get("name").and_then(|n| n.as_str()).unwrap_or("未知");
                             let id = agent.get("id").and_then(|i| i.as_str()).unwrap_or("");
-                            let status = agent.get("status").and_then(|s| s.as_str()).unwrap_or("未知");
+                            let status = agent
+                                .get("status")
+                                .and_then(|s| s.as_str())
+                                .unwrap_or("未知");
 
                             // Get execution stats - try multiple paths
-                            let exec_count_str = agent.get("execution_count")
+                            let exec_count_str = agent
+                                .get("execution_count")
                                 .and_then(|e| e.as_u64())
-                                .or_else(|| agent.get("stats").and_then(|s| s.get("total_executions")).and_then(|e| e.as_u64()))
+                                .or_else(|| {
+                                    agent
+                                        .get("stats")
+                                        .and_then(|s| s.get("total_executions"))
+                                        .and_then(|e| e.as_u64())
+                                })
                                 .map(|c| c.to_string())
-                                .or_else(|| agent.get("stats").and_then(|s| s.get("total_executions")).and_then(|e| e.as_str()).map(String::from))
+                                .or_else(|| {
+                                    agent
+                                        .get("stats")
+                                        .and_then(|s| s.get("total_executions"))
+                                        .and_then(|e| e.as_str())
+                                        .map(String::from)
+                                })
                                 .unwrap_or_else(|| "0".to_string());
 
-                            let last_exec = agent.get("last_execution_at")
+                            let last_exec = agent
+                                .get("last_execution_at")
                                 .and_then(|l| l.as_str())
                                 .unwrap_or("未执行");
 
@@ -939,7 +1000,8 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                 _ => "✗",
                             };
 
-                            response.push_str(&format!("- **{}** {} {}\n", name, status_icon, status));
+                            response
+                                .push_str(&format!("- **{}** {} {}\n", name, status_icon, status));
 
                             // Add ID for reference
                             if !id.is_empty() && id.len() < 30 {
@@ -948,9 +1010,15 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
 
                             // Add execution info
                             if exec_count_str != "0" {
-                                response.push_str(&format!("  执行: {} 次, 最后: {}\n", exec_count_str,
-                                    if last_exec == "未执行" || last_exec.contains("null") { "未执行" }
-                                    else { last_exec }));
+                                response.push_str(&format!(
+                                    "  执行: {} 次, 最后: {}\n",
+                                    exec_count_str,
+                                    if last_exec == "未执行" || last_exec.contains("null") {
+                                        "未执行"
+                                    } else {
+                                        last_exec
+                                    }
+                                ));
                             }
 
                             // Add description if available
@@ -968,31 +1036,52 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 }
                 "get_agent" => {
                     // Format single agent details
-                    let name = json_value.get("name").and_then(|n| n.as_str()).unwrap_or("未知");
-                    let status = json_value.get("status").and_then(|s| s.as_str()).unwrap_or("未知");
-                    let agent_type = json_value.get("type").and_then(|t| t.as_str()).unwrap_or("未知");
+                    let name = json_value
+                        .get("name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("未知");
+                    let status = json_value
+                        .get("status")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("未知");
+                    let agent_type = json_value
+                        .get("type")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("未知");
 
                     response.push_str(&format!("## Agent: {} ({})\n\n", name, agent_type));
                     response.push_str(&format!("**状态**: {}\n", status));
 
                     // Execution stats
                     if let Some(stats) = json_value.get("stats") {
-                        if let Some(total) = stats.get("total_executions").and_then(|t| t.as_u64()) {
-                            let success = stats.get("successful_executions").and_then(|s| s.as_u64()).unwrap_or(0);
-                            let failed = stats.get("failed_executions").and_then(|f| f.as_u64()).unwrap_or(0);
-                            response.push_str(&format!("**执行统计**: 总计{}次, 成功{}次, 失败{}次\n", total, success, failed));
+                        if let Some(total) = stats.get("total_executions").and_then(|t| t.as_u64())
+                        {
+                            let success = stats
+                                .get("successful_executions")
+                                .and_then(|s| s.as_u64())
+                                .unwrap_or(0);
+                            let failed = stats
+                                .get("failed_executions")
+                                .and_then(|f| f.as_u64())
+                                .unwrap_or(0);
+                            response.push_str(&format!(
+                                "**执行统计**: 总计{}次, 成功{}次, 失败{}次\n",
+                                total, success, failed
+                            ));
                         }
                     }
 
                     // Last execution
-                    if let Some(last) = json_value.get("last_execution_at").and_then(|l| l.as_str()) {
+                    if let Some(last) = json_value.get("last_execution_at").and_then(|l| l.as_str())
+                    {
                         if !last.is_empty() && last != "null" {
                             response.push_str(&format!("**最后执行**: {}\n", last));
                         }
                     }
 
                     // Schedule
-                    if let Some(schedule) = json_value.get("schedule_type").and_then(|s| s.as_str()) {
+                    if let Some(schedule) = json_value.get("schedule_type").and_then(|s| s.as_str())
+                    {
                         response.push_str(&format!("**调度类型**: {}\n", schedule));
                     }
                 }
@@ -1022,7 +1111,9 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                     }
                 }
                 "execute_agent" => {
-                    if let Some(execution_id) = json_value.get("execution_id").and_then(|e| e.as_str()) {
+                    if let Some(execution_id) =
+                        json_value.get("execution_id").and_then(|e| e.as_str())
+                    {
                         response.push_str(&format!("✓ Agent执行已触发 (ID: {})\n", execution_id));
                     } else if let Some(result) = json_value.get("result").and_then(|r| r.as_str()) {
                         response.push_str(&format!("✓ Agent执行完成: {}\n", result));
@@ -1057,7 +1148,11 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
 
     // Safe character-based slicing for logging
     let preview: String = response.chars().take(200).collect();
-    tracing::info!("format_tool_results: Final output length: {} chars, preview: {}", response.len(), preview);
+    tracing::info!(
+        "format_tool_results: Final output length: {} chars, preview: {}",
+        response.len(),
+        preview
+    );
     response
 }
 
@@ -1221,8 +1316,8 @@ fn estimate_message_tokens(msg: &AgentMessage) -> usize {
     let mut tokens = estimate_tokens(&msg.content);
 
     // NOTE: Thinking is intentionally NOT counted here
-// Even though it's stored in AgentMessage, it's not sent to LLM via to_core()
-// Only count content, tool_calls, and images
+    // Even though it's stored in AgentMessage, it's not sent to LLM via to_core()
+    // Only count content, tool_calls, and images
 
     // Add tokens for tool calls
     if let Some(tool_calls) = &msg.tool_calls {
@@ -1234,9 +1329,10 @@ fn estimate_message_tokens(msg: &AgentMessage) -> usize {
 
     // Add tokens for images (rough estimate)
     if let Some(images) = &msg.images
-        && !images.is_empty() {
-            tokens += 85 * images.len();
-        }
+        && !images.is_empty()
+    {
+        tokens += 85 * images.len();
+    }
 
     tokens
 }
@@ -1257,13 +1353,16 @@ fn truncate_agent_message(msg: &AgentMessage, max_len: usize) -> AgentMessage {
 
     // Also truncate thinking if present
     if let Some(thinking) = &truncated.thinking
-        && thinking.len() > max_len / 2 {
-            truncated.thinking = Some(if let Some(last_space) = thinking[..max_len / 2].rfind(' ') {
+        && thinking.len() > max_len / 2
+    {
+        truncated.thinking = Some(
+            if let Some(last_space) = thinking[..max_len / 2].rfind(' ') {
                 format!("{}...", &thinking[..last_space])
             } else {
                 format!("{}...", &thinking[..max_len / 2])
-            });
-        }
+            },
+        );
+    }
 
     truncated
 }
@@ -1364,21 +1463,33 @@ pub async fn process_stream_events_with_safeguards(
 
     // Greeting patterns
     let greeting_patterns = [
-        "你好", "您好", "hi", "hello", "嗨", "在吗",
-        "早上好", "下午好", "晚上好",
+        "你好",
+        "您好",
+        "hi",
+        "hello",
+        "嗨",
+        "在吗",
+        "早上好",
+        "下午好",
+        "晚上好",
     ];
 
     // Device list query patterns - fast path for common device queries
     let device_list_patterns = [
-        "有哪些设备", "有什么设备", "设备列表", "查看设备", "所有设备",
-        "列出设备", "系统设备", "显示设备",
-        "devices", "list devices",
+        "有哪些设备",
+        "有什么设备",
+        "设备列表",
+        "查看设备",
+        "所有设备",
+        "列出设备",
+        "系统设备",
+        "显示设备",
+        "devices",
+        "list devices",
     ];
 
     // Temperature query patterns - fast path for temperature queries
-    let temp_query_patterns = [
-        "温度", "temperature",
-    ];
+    let temp_query_patterns = ["温度", "temperature"];
 
     let _is_greeting = greeting_patterns
         .iter()
@@ -1390,9 +1501,9 @@ pub async fn process_stream_events_with_safeguards(
         .any(|&pat| lower.contains(&pat.to_lowercase()) && lower.len() < 30);
 
     // Check for temperature query (simple single-word queries)
-    let _is_temp_query = temp_query_patterns
-        .iter()
-        .any(|&pat| lower == pat || lower.ends_with(pat) || lower.starts_with("当前") && lower.contains("温度"));
+    let _is_temp_query = temp_query_patterns.iter().any(|&pat| {
+        lower == pat || lower.ends_with(pat) || lower.starts_with("当前") && lower.contains("温度")
+    });
 
     // === INTENT RECOGNITION: Understand user intent before LLM call ===
     // This helps reduce cognitive load and provides better visualization
@@ -1446,10 +1557,7 @@ pub async fn process_stream_events_with_safeguards(
             ("获取系统信息", "Execution"),
             ("返回系统状态", "Response"),
         ],
-        IntentCategory::Help => vec![
-            ("识别帮助请求意图", "Intent"),
-            ("提供使用说明", "Response"),
-        ],
+        IntentCategory::Help => vec![("识别帮助请求意图", "Intent"), ("提供使用说明", "Response")],
         IntentCategory::General => vec![("理解用户问题", "Intent"), ("生成回复", "Response")],
     };
 
@@ -2380,7 +2488,7 @@ pub async fn process_multimodal_stream_events(
     internal_state: Arc<tokio::sync::RwLock<AgentInternalState>>,
     tools: Arc<neomind_tools::ToolRegistry>,
     user_message: &str,
-    images: Vec<String>,  // Base64 data URLs (e.g., "data:image/png;base64,...")
+    images: Vec<String>, // Base64 data URLs (e.g., "data:image/png;base64,...")
 ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
     process_multimodal_stream_events_with_safeguards(
         llm_interface,
@@ -2412,21 +2520,22 @@ pub async fn process_multimodal_stream_events_with_safeguards(
     // Add images as ContentPart
     for image_data in &images {
         if image_data.starts_with("data:image/")
-            && let Some(base64_part) = image_data.split(',').nth(1) {
-                // Extract mime type from data URL
-                let mime_type = if image_data.contains("data:image/png") {
-                    "image/png"
-                } else if image_data.contains("data:image/jpeg") {
-                    "image/jpeg"
-                } else if image_data.contains("data:image/webp") {
-                    "image/webp"
-                } else if image_data.contains("data:image/gif") {
-                    "image/gif"
-                } else {
-                    "image/png"
-                };
-                parts.push(ContentPart::image_base64(base64_part, mime_type));
-            }
+            && let Some(base64_part) = image_data.split(',').nth(1)
+        {
+            // Extract mime type from data URL
+            let mime_type = if image_data.contains("data:image/png") {
+                "image/png"
+            } else if image_data.contains("data:image/jpeg") {
+                "image/jpeg"
+            } else if image_data.contains("data:image/webp") {
+                "image/webp"
+            } else if image_data.contains("data:image/gif") {
+                "image/gif"
+            } else {
+                "image/png"
+            };
+            parts.push(ContentPart::image_base64(base64_part, mime_type));
+        }
     }
 
     // Get conversation history
@@ -2851,10 +2960,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
 
 /// Detect if the user's intent requires multi-step tool calling using LLM analysis.
 /// This is more reliable than keyword matching and can understand nuanced requests.
-async fn detect_complex_intent_with_llm(
-    llm_interface: &LlmInterface,
-    user_message: &str,
-) -> bool {
+async fn detect_complex_intent_with_llm(llm_interface: &LlmInterface, user_message: &str) -> bool {
     let detection_prompt = format!(
         "分析以下用户请求是否需要**多步操作**才能完成。
 
@@ -2883,14 +2989,20 @@ async fn detect_complex_intent_with_llm(
                 || response_lower.contains("yes")
                 || response_lower.contains("多步")
                 || response_lower.contains("需要多次");
-            tracing::info!("LLM complex intent detection: message='{}' => response='{}' => is_complex={}",
+            let complexity_label = if is_complex { "complex" } else { "simple" };
+            tracing::info!(
+                "LLM intent detection: message='{}' => response='{}' => is_{}",
                 user_message.chars().take(50).collect::<String>(),
                 response_text.chars().take(50).collect::<String>(),
-                is_complex);
+                complexity_label
+            );
             is_complex
         }
         Err(e) => {
-            tracing::warn!("LLM complex intent detection failed: {}, falling back to keyword matching", e);
+            tracing::warn!(
+                "LLM complex intent detection failed: {}, falling back to keyword matching",
+                e
+            );
             // Fallback to keyword-based detection if LLM call fails
             is_complex_multi_step_intent_fallback(user_message)
         }
@@ -2935,7 +3047,11 @@ fn is_complex_multi_step_intent_fallback(message: &str) -> bool {
     for (first, second) in complex_patterns {
         if !second.is_empty() {
             if lower.contains(first) && lower.contains(second) {
-                tracing::info!("Complex intent detected by keyword: '{}' + '{}'", first, second);
+                tracing::info!(
+                    "Complex intent detected by keyword: '{}' + '{}'",
+                    first,
+                    second
+                );
                 return true;
             }
         } else if lower.contains(first) {
@@ -2973,13 +3089,14 @@ async fn execute_tool_with_retry(
     // Cache successful results for cacheable tools
     if is_tool_cacheable(name)
         && let Ok(ref output) = result
-            && output.success {
-                let cache_key = ToolResultCache::make_key(name, &arguments);
-                let mut cache_write = cache.write().await;
-                cache_write.insert(cache_key, output.clone());
-                // Periodic cleanup
-                cache_write.cleanup_expired();
-            }
+        && output.success
+    {
+        let cache_key = ToolResultCache::make_key(name, &arguments);
+        let mut cache_write = cache.write().await;
+        cache_write.insert(cache_key, output.clone());
+        // Periodic cleanup
+        cache_write.cleanup_expired();
+    }
 
     result
 }
@@ -3010,7 +3127,7 @@ async fn execute_with_retry_impl(
     for attempt in 0..=max_retries {
         let result = tokio::time::timeout(
             tokio::time::Duration::from_secs(TOOL_TIMEOUT_SECS),
-            tools.execute(&real_tool_name, arguments.clone())
+            tools.execute(&real_tool_name, arguments.clone()),
         )
         .await
         .unwrap_or(Err(neomind_tools::ToolError::Execution(format!(

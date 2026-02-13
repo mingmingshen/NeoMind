@@ -11,8 +11,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// Event priority levels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum EventPriority {
     /// Low priority - informational events that can be delayed
     Low = 0,
@@ -24,7 +23,6 @@ pub enum EventPriority {
     /// Critical priority - urgent events that must be processed immediately
     Critical = 3,
 }
-
 
 /// Wrapper that combines an event with its priority for ordering.
 #[derive(Debug, Clone)]
@@ -145,7 +143,8 @@ impl PriorityEventBus {
 
     /// Publish a critical event (highest priority).
     pub async fn publish_critical(&self, event: NeoMindEvent) -> bool {
-        self.publish_with_priority(event, EventPriority::Critical).await
+        self.publish_with_priority(event, EventPriority::Critical)
+            .await
     }
 
     /// Publish a high-priority event.
@@ -197,7 +196,8 @@ impl PriorityEventBus {
         let running_clone = running.clone();
 
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(interval_ms));
+            let mut interval =
+                tokio::time::interval(tokio::time::Duration::from_millis(interval_ms));
             loop {
                 interval.tick().await;
                 if !*running_clone.lock().await {
@@ -252,8 +252,9 @@ impl EventProcessorHandle {
 pub fn event_priority(event: &NeoMindEvent) -> EventPriority {
     match event {
         // Critical events - device failures, alerts, security issues
-        NeoMindEvent::DeviceOffline { .. }
-        | NeoMindEvent::AlertCreated { .. } => EventPriority::Critical,
+        NeoMindEvent::DeviceOffline { .. } | NeoMindEvent::AlertCreated { .. } => {
+            EventPriority::Critical
+        }
 
         // High priority - device online, rule triggered, workflow triggered
         NeoMindEvent::DeviceOnline { .. }

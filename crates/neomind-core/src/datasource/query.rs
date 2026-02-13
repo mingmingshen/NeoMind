@@ -4,8 +4,8 @@
 //! It abstracts the underlying storage and provides a consistent API for
 //! querying data from devices, extensions, and transforms.
 
-use super::{AggregatedValue, DataPoint, DataSourceId, DataSourceInfo, QueryParams, QueryResult};
 use super::super::extension::executor::UnifiedStorage;
+use super::{AggregatedValue, DataPoint, DataSourceId, DataSourceInfo, QueryParams, QueryResult};
 
 /// Unified query service for all data sources
 pub struct UnifiedQueryService {

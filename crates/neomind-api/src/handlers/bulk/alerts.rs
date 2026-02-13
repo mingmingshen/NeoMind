@@ -3,8 +3,8 @@
 use axum::{Json, extract::State};
 use serde_json::json;
 
-use neomind_messages::{Message, MessageSeverity};
 use neomind_core::event::NeoMindEvent;
+use neomind_messages::{Message, MessageSeverity};
 
 use super::models::{
     BulkAcknowledgeAlertsRequest, BulkCreateAlertsRequest, BulkDeleteAlertsRequest,

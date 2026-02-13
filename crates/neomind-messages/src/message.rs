@@ -1,9 +1,8 @@
 //! Message types.
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize, Serializer, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
-
 
 /// Unique message identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -69,9 +68,8 @@ impl MessageSeverity {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Self::from_string(&s).ok_or_else(|| {
-            serde::de::Error::custom(format!("invalid severity: {}", s))
-        })
+        Self::from_string(&s)
+            .ok_or_else(|| serde::de::Error::custom(format!("invalid severity: {}", s)))
     }
 
     pub fn display_name(&self) -> &str {
@@ -142,9 +140,8 @@ impl MessageStatus {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Self::from_string(&s).ok_or_else(|| {
-            serde::de::Error::custom(format!("invalid status: {}", s))
-        })
+        Self::from_string(&s)
+            .ok_or_else(|| serde::de::Error::custom(format!("invalid status: {}", s)))
     }
 
     pub fn display_name(&self) -> &str {
@@ -181,7 +178,10 @@ pub struct Message {
     /// Message category
     pub category: String,
     /// Message severity
-    #[serde(serialize_with = "MessageSeverity::serialize", deserialize_with = "MessageSeverity::deserialize")]
+    #[serde(
+        serialize_with = "MessageSeverity::serialize",
+        deserialize_with = "MessageSeverity::deserialize"
+    )]
     pub severity: MessageSeverity,
     /// Message title
     pub title: String,
@@ -194,7 +194,10 @@ pub struct Message {
     /// When the message was created
     pub timestamp: DateTime<Utc>,
     /// Current message status
-    #[serde(serialize_with = "MessageStatus::serialize", deserialize_with = "MessageStatus::deserialize")]
+    #[serde(
+        serialize_with = "MessageStatus::serialize",
+        deserialize_with = "MessageStatus::deserialize"
+    )]
     pub status: MessageStatus,
     /// Additional metadata
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -230,13 +233,24 @@ impl Message {
     }
 
     /// Create an alert message.
-    pub fn alert(severity: MessageSeverity, title: String, message: String, source: String) -> Self {
+    pub fn alert(
+        severity: MessageSeverity,
+        title: String,
+        message: String,
+        source: String,
+    ) -> Self {
         Self::new("alert", severity, title, message, source)
     }
 
     /// Create a system message.
     pub fn system(title: String, message: String) -> Self {
-        Self::new("system", MessageSeverity::Info, title, message, "system".to_string())
+        Self::new(
+            "system",
+            MessageSeverity::Info,
+            title,
+            message,
+            "system".to_string(),
+        )
     }
 
     /// Create a system message with severity.
@@ -263,7 +277,12 @@ impl Message {
     }
 
     /// Create a rule message.
-    pub fn rule(severity: MessageSeverity, title: String, message: String, rule_id: String) -> Self {
+    pub fn rule(
+        severity: MessageSeverity,
+        title: String,
+        message: String,
+        rule_id: String,
+    ) -> Self {
         let mut msg = Self::alert(severity, title, message, rule_id.clone());
         msg.source_type = "rule".to_string();
         msg.tags.push("rule".to_string());
@@ -331,10 +350,7 @@ impl Message {
 
 impl Default for Message {
     fn default() -> Self {
-        Self::system(
-            "默认消息".to_string(),
-            "这是一个默认消息".to_string(),
-        )
+        Self::system("默认消息".to_string(), "这是一个默认消息".to_string())
     }
 }
 
@@ -407,10 +423,7 @@ mod tests {
 
     #[test]
     fn test_message_status() {
-        let mut msg = Message::system(
-            "Test".to_string(),
-            "Test message".to_string(),
-        );
+        let mut msg = Message::system("Test".to_string(), "Test message".to_string());
 
         assert!(msg.is_active());
 
@@ -431,10 +444,22 @@ mod tests {
 
     #[test]
     fn test_severity_from_str() {
-        assert_eq!(MessageSeverity::from_string("info"), Some(MessageSeverity::Info));
-        assert_eq!(MessageSeverity::from_string("warning"), Some(MessageSeverity::Warning));
-        assert_eq!(MessageSeverity::from_string("critical"), Some(MessageSeverity::Critical));
-        assert_eq!(MessageSeverity::from_string("emergency"), Some(MessageSeverity::Emergency));
+        assert_eq!(
+            MessageSeverity::from_string("info"),
+            Some(MessageSeverity::Info)
+        );
+        assert_eq!(
+            MessageSeverity::from_string("warning"),
+            Some(MessageSeverity::Warning)
+        );
+        assert_eq!(
+            MessageSeverity::from_string("critical"),
+            Some(MessageSeverity::Critical)
+        );
+        assert_eq!(
+            MessageSeverity::from_string("emergency"),
+            Some(MessageSeverity::Emergency)
+        );
         assert_eq!(MessageSeverity::from_string("invalid"), None);
     }
 

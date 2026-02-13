@@ -78,7 +78,8 @@ where
             Err(e) => {
                 last_error = Some(e);
                 if attempt < max_attempts {
-                    tokio::time::sleep(std::time::Duration::from_millis(100 * attempt as u64)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(100 * attempt as u64))
+                        .await;
                 }
             }
         }
@@ -95,7 +96,10 @@ macro_rules! assert_eventually {
             match ($condition) {
                 true => break,
                 false if attempts >= $max_attempts => {
-                    panic!("Condition did not become true after {} attempts", $max_attempts);
+                    panic!(
+                        "Condition did not become true after {} attempts",
+                        $max_attempts
+                    );
                 }
                 false => {
                     attempts += 1;

@@ -91,9 +91,10 @@ impl DeviceAlias {
 
         // Check location
         if let Some(loc) = &self.location
-            && loc.to_lowercase().contains(&term_lower) {
-                return true;
-            }
+            && loc.to_lowercase().contains(&term_lower)
+        {
+            return true;
+        }
 
         false
     }
@@ -102,7 +103,8 @@ impl DeviceAlias {
     pub fn has_capability(&self, capability: &str) -> bool {
         self.capabilities.iter().any(|c| {
             c.to_lowercase() == capability.to_lowercase()
-                || c.to_lowercase().contains(capability.to_lowercase().as_str())
+                || c.to_lowercase()
+                    .contains(capability.to_lowercase().as_str())
         })
     }
 }
@@ -135,7 +137,11 @@ pub enum CapabilityValues {
     /// Boolean (on/off, true/false)
     Bool,
     /// Numeric range
-    Range { min: f64, max: f64, step: Option<f64> },
+    Range {
+        min: f64,
+        max: f64,
+        step: Option<f64>,
+    },
     /// Enum values
     Enum(Vec<String>),
     /// Any string
@@ -188,34 +194,35 @@ impl DeviceRegistry {
         let mut aliases = HashMap::new();
 
         // Temperature aliases
-        aliases.insert("temperature".to_string(), vec![
-            "温度".to_string(),
-            "气温".to_string(),
-            "temp".to_string(),
-        ]);
+        aliases.insert(
+            "temperature".to_string(),
+            vec!["温度".to_string(), "气温".to_string(), "temp".to_string()],
+        );
 
         // Humidity aliases
-        aliases.insert("humidity".to_string(), vec![
-            "湿度".to_string(),
-            "humid".to_string(),
-        ]);
+        aliases.insert(
+            "humidity".to_string(),
+            vec!["湿度".to_string(), "humid".to_string()],
+        );
 
         // Light/on-off aliases
-        aliases.insert("power".to_string(), vec![
-            "电源".to_string(),
-            "开关".to_string(),
-            "on".to_string(),
-            "off".to_string(),
-            "打开".to_string(),
-            "关闭".to_string(),
-        ]);
+        aliases.insert(
+            "power".to_string(),
+            vec![
+                "电源".to_string(),
+                "开关".to_string(),
+                "on".to_string(),
+                "off".to_string(),
+                "打开".to_string(),
+                "关闭".to_string(),
+            ],
+        );
 
         // Brightness aliases
-        aliases.insert("brightness".to_string(), vec![
-            "亮度".to_string(),
-            "明暗".to_string(),
-            "bright".to_string(),
-        ]);
+        aliases.insert(
+            "brightness".to_string(),
+            vec!["亮度".to_string(), "明暗".to_string(), "bright".to_string()],
+        );
 
         aliases
     }
@@ -233,7 +240,8 @@ impl DeviceRegistry {
         // Update location index
         if let Some(ref location) = device.location {
             let mut index = self.location_index.write().await;
-            index.entry(location.clone())
+            index
+                .entry(location.clone())
                 .or_insert_with(Vec::new)
                 .push(device_id.clone());
         }
@@ -241,7 +249,8 @@ impl DeviceRegistry {
         // Update capability index
         for cap in &device.capabilities {
             let mut index = self.capability_index.write().await;
-            index.entry(cap.clone())
+            index
+                .entry(cap.clone())
                 .or_insert_with(Vec::new)
                 .push(device_id.clone());
         }
@@ -281,7 +290,8 @@ impl DeviceRegistry {
                 for alias in alias_list {
                     if query_lower.contains(alias) {
                         // Find devices with this capability
-                        let capability_devices: Vec<_> = devices.values()
+                        let capability_devices: Vec<_> = devices
+                            .values()
                             .filter(|d| d.has_capability(capability))
                             .map(|d| {
                                 let mut dev = d.clone();
@@ -315,7 +325,8 @@ impl DeviceRegistry {
     /// Get devices by location.
     pub async fn list_by_location(&self, location: &str) -> Vec<DeviceAlias> {
         let devices = self.devices.read().await;
-        devices.values()
+        devices
+            .values()
             .filter(|d| d.location.as_ref().is_some_and(|l| l == location))
             .cloned()
             .collect()
@@ -326,7 +337,8 @@ impl DeviceRegistry {
         let devices = self.devices.read().await;
 
         // Check both direct capability and aliases
-        let mut result: Vec<DeviceAlias> = devices.values()
+        let mut result: Vec<DeviceAlias> = devices
+            .values()
             .filter(|d| d.has_capability(capability))
             .cloned()
             .collect();
@@ -335,7 +347,8 @@ impl DeviceRegistry {
             let aliases = self.capability_aliases.read().await;
             for (cap, alias_list) in aliases.iter() {
                 if alias_list.iter().any(|a| a == capability) {
-                    result = devices.values()
+                    result = devices
+                        .values()
                         .filter(|d| d.has_capability(cap))
                         .cloned()
                         .collect();
@@ -350,7 +363,8 @@ impl DeviceRegistry {
     /// Add capability alias.
     pub async fn add_capability_alias(&self, capability: String, alias: String) {
         let mut aliases = self.capability_aliases.write().await;
-        aliases.entry(capability)
+        aliases
+            .entry(capability)
             .or_insert_with(Vec::new)
             .push(alias);
     }
@@ -375,28 +389,24 @@ mod tests {
                 .with_capability("humidity")
                 .with_alias("温度传感器")
                 .with_alias("温度"),
-
             DeviceAlias::new("客厅灯", "light_living_1", "switch")
                 .with_location("客厅")
                 .with_capability("power")
                 .with_capability("brightness")
                 .with_alias("灯")
                 .with_alias("客厅灯"),
-
             DeviceAlias::new("卧室温度传感器", "sensor_2", "dht22_sensor")
                 .with_location("卧室")
                 .with_capability("temperature")
                 .with_capability("humidity")
                 .with_alias("温度传感器")
                 .with_alias("温度"),
-
             DeviceAlias::new("卧室灯", "light_bedroom_1", "switch")
                 .with_location("卧室")
                 .with_capability("power")
                 .with_capability("brightness")
                 .with_alias("灯")
                 .with_alias("卧室灯"),
-
             DeviceAlias::new("厨房湿度传感器", "sensor_3", "dht22_sensor")
                 .with_location("厨房")
                 .with_capability("humidity")
@@ -431,7 +441,11 @@ mod tests {
 
         let living_room = registry.list_by_location("客厅").await;
         assert!(!living_room.is_empty());
-        assert!(living_room.iter().all(|d| d.location == Some("客厅".to_string())));
+        assert!(
+            living_room
+                .iter()
+                .all(|d| d.location == Some("客厅".to_string()))
+        );
     }
 
     #[tokio::test]

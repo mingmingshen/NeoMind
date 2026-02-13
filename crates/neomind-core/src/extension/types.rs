@@ -7,32 +7,32 @@
 // ============================================================================
 
 pub use super::system::{
-    // Core Extension trait (V2)
-    Extension,
-    // Metadata types (V2)
-    ExtensionMetadata,
-    // Error types (V2)
-    ExtensionError,
-    // Result type (V2)
-    Result,
-    // Extension state (V2)
-    ExtensionState,
-    // Dynamic extension type (V2)
-    DynExtension,
-    // Metrics and commands (V2)
-    MetricDescriptor,
-    ExtensionCommand,
-    ExtensionMetricValue,
-    ParamMetricValue,
-    MetricDataType,
-    // Extension stats (V2)
-    ExtensionStats,
-    // C-compatible metadata (V2)
-    CExtensionMetadata,
-    // Tool descriptor (V2)
-    ToolDescriptor,
     // ABI version (V2)
     ABI_VERSION,
+    // C-compatible metadata (V2)
+    CExtensionMetadata,
+    // Dynamic extension type (V2)
+    DynExtension,
+    // Core Extension trait (V2)
+    Extension,
+    ExtensionCommand,
+    // Error types (V2)
+    ExtensionError,
+    // Metadata types (V2)
+    ExtensionMetadata,
+    ExtensionMetricValue,
+    // Extension state (V2)
+    ExtensionState,
+    // Extension stats (V2)
+    ExtensionStats,
+    MetricDataType,
+    // Metrics and commands (V2)
+    MetricDescriptor,
+    ParamMetricValue,
+    // Result type (V2)
+    Result,
+    // Tool descriptor (V2)
+    ToolDescriptor,
 };
 
 // ============================================================================

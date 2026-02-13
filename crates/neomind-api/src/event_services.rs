@@ -3,14 +3,14 @@
 //! This module provides background services that subscribe to events from the EventBus
 //! and trigger actions in the rule engine and transform engine.
 
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use neomind_automation::{Automation, TransformEngine, store::SharedAutomationStore};
 use neomind_core::eventbus::EventBus;
-use neomind_core::{NeoMindEvent, MetricValue};
-use neomind_rules::RuleEngine;
-use neomind_automation::{store::SharedAutomationStore, Automation, TransformEngine};
+use neomind_core::{MetricValue, NeoMindEvent};
 use neomind_devices::DeviceRegistry;
+use neomind_rules::RuleEngine;
 
 /// Rule engine event service.
 ///
@@ -33,12 +33,16 @@ impl RuleEngineEventService {
 
     /// Start the service.
     pub fn start(&self) -> Arc<std::sync::atomic::AtomicBool> {
-        if self.running.compare_exchange(
-            false,
-            true,
-            std::sync::atomic::Ordering::SeqCst,
-            std::sync::atomic::Ordering::SeqCst
-        ).is_ok() {
+        if self
+            .running
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_ok()
+        {
             let _running = self.running.clone();
             let event_bus = self.event_bus.clone();
             tokio::spawn(async move {
@@ -46,7 +50,13 @@ impl RuleEngineEventService {
                 tracing::info!("Rule engine event service started - subscribing to device events");
 
                 while let Some((event, _metadata)) = rx.recv().await {
-                    if let NeoMindEvent::DeviceMetric { device_id, metric, value, .. } = event {
+                    if let NeoMindEvent::DeviceMetric {
+                        device_id,
+                        metric,
+                        value,
+                        ..
+                    } = event
+                    {
                         tracing::trace!(device_id = %device_id, metric = %metric, "Device metric received for rule evaluation");
                         // Rule states are updated by the separate value provider update task in init_rule_engine_events
                         let _ = (device_id, metric, value);
@@ -89,12 +99,16 @@ impl TransformEventService {
 
     /// Start the service.
     pub fn start(&self) -> Arc<std::sync::atomic::AtomicBool> {
-        if self.running.compare_exchange(
-            false,
-            true,
-            std::sync::atomic::Ordering::SeqCst,
-            std::sync::atomic::Ordering::SeqCst
-        ).is_ok() {
+        if self
+            .running
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_ok()
+        {
             let event_bus = self.event_bus.clone();
             let transform_engine = self.transform_engine.clone();
             let automation_store = self.automation_store.clone();
@@ -108,14 +122,22 @@ impl TransformEventService {
                 // (device_id -> (raw_data, latest_timestamp, timer_handle))
                 let mut device_raw_data: HashMap<String, serde_json::Value> = HashMap::new();
                 let mut device_latest_ts: HashMap<String, i64> = HashMap::new();
-                let mut device_timers: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
+                let mut device_timers: HashMap<String, tokio::task::JoinHandle<()>> =
+                    HashMap::new();
 
                 // Debounce delay: wait this long after the last metric before processing
                 // This allows multiple metrics from the same device to be collected and processed together
                 const DEBOUNCE_MS: u64 = 100; // 100ms debounce window
 
                 while let Some((event, _metadata)) = rx.recv().await {
-                    if let NeoMindEvent::DeviceMetric { device_id, metric, value, timestamp, quality: _ } = event {
+                    if let NeoMindEvent::DeviceMetric {
+                        device_id,
+                        metric,
+                        value,
+                        timestamp,
+                        quality: _,
+                    } = event
+                    {
                         // Skip transform output metrics to prevent infinite loop
                         // Transforms publish metrics with "transform." prefix, which should not be re-processed
                         if metric.starts_with("transform.") {
@@ -134,21 +156,26 @@ impl TransformEventService {
                         device_latest_ts.insert(device_id.clone(), timestamp);
 
                         // Build or update the device's raw data structure
-                        let device_entry = device_raw_data.entry(device_id.clone()).or_insert_with(|| {
-                            serde_json::json!({
-                                "device_id": device_id,
-                                "timestamp": timestamp,
-                                "values": {}
-                            })
-                        });
+                        let device_entry =
+                            device_raw_data.entry(device_id.clone()).or_insert_with(|| {
+                                serde_json::json!({
+                                    "device_id": device_id,
+                                    "timestamp": timestamp,
+                                    "values": {}
+                                })
+                            });
 
                         // Update the device data with the new metric
                         if let Some(obj) = device_entry.as_object_mut() {
                             // Update top-level timestamp to latest
-                            obj.insert("timestamp".to_string(), serde_json::Value::Number(timestamp.into()));
+                            obj.insert(
+                                "timestamp".to_string(),
+                                serde_json::Value::Number(timestamp.into()),
+                            );
 
                             // Update values object
-                            let values = obj.entry("values").or_insert_with(|| serde_json::json!({}));
+                            let values =
+                                obj.entry("values").or_insert_with(|| serde_json::json!({}));
                             if let Some(values_obj) = values.as_object_mut() {
                                 let json_value = match value {
                                     MetricValue::Float(f) => serde_json::json!(f),
@@ -167,7 +194,9 @@ impl TransformEventService {
                         }
 
                         // Get device type from registry (cached for the debounce task)
-                        let device_type: Option<String> = device_registry.get_device(&device_id).await
+                        let device_type: Option<String> = device_registry
+                            .get_device(&device_id)
+                            .await
                             .map(|d| d.device_type.clone());
 
                         // Cancel existing timer for this device if any
@@ -186,7 +215,8 @@ impl TransformEventService {
                         // Schedule a new debounce timer
                         let timer_handle = tokio::spawn(async move {
                             // Wait for the debounce delay
-                            tokio::time::sleep(tokio::time::Duration::from_millis(DEBOUNCE_MS)).await;
+                            tokio::time::sleep(tokio::time::Duration::from_millis(DEBOUNCE_MS))
+                                .await;
 
                             tracing::info!(
                                 device_id = %device_id_clone,
@@ -195,7 +225,8 @@ impl TransformEventService {
 
                             // Load all enabled transforms
                             let transforms = match automation_store_clone.list_automations().await {
-                                Ok(all) => all.into_iter()
+                                Ok(all) => all
+                                    .into_iter()
                                     .filter_map(|a| match a {
                                         Automation::Transform(t) if t.metadata.enabled => Some(t),
                                         _ => None,
@@ -213,8 +244,14 @@ impl TransformEventService {
                             }
 
                             // Filter transforms to only those applicable to this device
-                            let applicable_transforms: Vec<_> = transforms.into_iter()
-                                .filter(|t| t.applies_to_device(&device_id_clone, device_type_clone.as_deref()))
+                            let applicable_transforms: Vec<_> = transforms
+                                .into_iter()
+                                .filter(|t| {
+                                    t.applies_to_device(
+                                        &device_id_clone,
+                                        device_type_clone.as_deref(),
+                                    )
+                                })
                                 .collect();
 
                             if applicable_transforms.is_empty() {
@@ -222,12 +259,15 @@ impl TransformEventService {
                             }
 
                             // Process the device data through transforms
-                            match transform_engine_clone.process_device_data(
-                                &applicable_transforms,
-                                &device_id_clone,
-                                device_type_clone.as_deref(),
-                                &device_entry_clone,
-                            ).await {
+                            match transform_engine_clone
+                                .process_device_data(
+                                    &applicable_transforms,
+                                    &device_id_clone,
+                                    device_type_clone.as_deref(),
+                                    &device_entry_clone,
+                                )
+                                .await
+                            {
                                 Ok(result) => {
                                     if !result.metrics.is_empty() {
                                         tracing::debug!(
@@ -240,13 +280,17 @@ impl TransformEventService {
                                         // Publish transformed metrics back to event bus
                                         for transformed_metric in result.metrics {
                                             // Publish as DeviceMetric event so rules can also use them
-                                            let _ = event_bus_clone.publish(NeoMindEvent::DeviceMetric {
-                                                device_id: transformed_metric.device_id.clone(),
-                                                metric: transformed_metric.metric.clone(),
-                                                value: MetricValue::Float(transformed_metric.value),
-                                                timestamp: transformed_metric.timestamp,
-                                                quality: transformed_metric.quality,
-                                            }).await;
+                                            let _ = event_bus_clone
+                                                .publish(NeoMindEvent::DeviceMetric {
+                                                    device_id: transformed_metric.device_id.clone(),
+                                                    metric: transformed_metric.metric.clone(),
+                                                    value: MetricValue::Float(
+                                                        transformed_metric.value,
+                                                    ),
+                                                    timestamp: transformed_metric.timestamp,
+                                                    quality: transformed_metric.quality,
+                                                })
+                                                .await;
 
                                             tracing::trace!(
                                                 device_id = %transformed_metric.device_id,

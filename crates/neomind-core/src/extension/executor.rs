@@ -6,7 +6,9 @@
 //! - Event publishing for command lifecycle
 //! - Metric collection (separate from command execution)
 
-use super::system::{DynExtension, ExtensionCommand, ExtensionError, ExtensionMetricValue, ParamMetricValue, Result};
+use super::system::{
+    DynExtension, ExtensionCommand, ExtensionError, ExtensionMetricValue, ParamMetricValue, Result,
+};
 use crate::datasource::{DataPoint, DataSourceId};
 use crate::event::{EventMetadata, MetricValue, NeoMindEvent};
 use crate::eventbus::EventBus;
@@ -42,10 +44,7 @@ pub struct CommandExecutor {
 }
 
 impl CommandExecutor {
-    pub fn new(
-        event_bus: Arc<EventBus>,
-        storage: Arc<dyn UnifiedStorage + Send + Sync>,
-    ) -> Self {
+    pub fn new(event_bus: Arc<EventBus>, storage: Arc<dyn UnifiedStorage + Send + Sync>) -> Self {
         Self { event_bus, storage }
     }
 
@@ -161,7 +160,11 @@ impl CommandExecutor {
             };
 
             // Store the metric (fire and forget, log error only)
-            if let Err(e) = self.storage.write_datapoint(&data_source_id, datapoint).await {
+            if let Err(e) = self
+                .storage
+                .write_datapoint(&data_source_id, datapoint)
+                .await
+            {
                 warn!(data_source_id = %data_source_id, error = %e, "Failed to store metric");
             }
         }
@@ -377,8 +380,8 @@ impl UnifiedStorage for MemoryStorage {
 
 #[cfg(test)]
 mod tests {
+    use super::super::system::{Extension, ExtensionMetadata, MetricDataType, MetricDefinition};
     use super::*;
-    use super::super::system::{Extension, ExtensionMetadata, MetricDefinition, MetricDataType};
     use crate::eventbus::EventBus;
     use std::sync::Arc;
 
@@ -388,9 +391,15 @@ mod tests {
         let source_id = DataSourceId::extension("weather", "temperature"); // V2 format
 
         let datapoint = DataPoint::new(12345, MetricValue::Float(42.0));
-        storage.write_datapoint(&source_id, datapoint.clone()).await.unwrap();
+        storage
+            .write_datapoint(&source_id, datapoint.clone())
+            .await
+            .unwrap();
 
-        let results = storage.query_datapoints(&source_id, 0, 99999).await.unwrap();
+        let results = storage
+            .query_datapoints(&source_id, 0, 99999)
+            .await
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].timestamp, 12345);
     }
@@ -439,11 +448,7 @@ mod tests {
                 use std::sync::OnceLock;
                 static META: OnceLock<ExtensionMetadata> = OnceLock::new();
                 META.get_or_init(|| {
-                    ExtensionMetadata::new(
-                        "test-ext",
-                        "Test",
-                        semver::Version::new(1, 0, 0),
-                    )
+                    ExtensionMetadata::new("test-ext", "Test", semver::Version::new(1, 0, 0))
                 })
             }
 

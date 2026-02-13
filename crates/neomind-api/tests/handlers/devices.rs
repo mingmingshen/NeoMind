@@ -1,11 +1,11 @@
 //! Tests for device management handlers.
 
 use axum::extract::{Path, Query, State};
+use neomind_api::handlers::ServerState;
 use neomind_api::handlers::devices::models::{
     AddDeviceRequest, BatchCurrentValuesRequest, PaginationQuery, TimeRangeQuery,
     UpdateDeviceRequest,
 };
-use neomind_api::handlers::ServerState;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -152,7 +152,11 @@ mod tests {
         let state = crate::common::create_test_server_state().await;
 
         // Test with a non-existent device
-        let result = state.devices.service.get_device("non-existent-device").await;
+        let result = state
+            .devices
+            .service
+            .get_device("non-existent-device")
+            .await;
         assert!(result.is_none());
     }
 

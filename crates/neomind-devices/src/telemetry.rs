@@ -6,10 +6,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use neomind_storage::DataPoint as StorageDataPoint;
 use neomind_storage::TimeSeriesStore as StorageTimeSeriesStore;
@@ -68,7 +68,9 @@ impl DataPoint {
             Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
                     Some(MetricValue::Integer(i))
-                } else { n.as_f64().map(MetricValue::Float) }
+                } else {
+                    n.as_f64().map(MetricValue::Float)
+                }
             }
             Value::String(s) => {
                 // Try to decode as base64 first (for binary data)
@@ -144,21 +146,15 @@ pub struct TimeSeriesStorage {
 impl TimeSeriesStorage {
     /// Create a new time series storage at the given path
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, DeviceError> {
-        let store = StorageTimeSeriesStore::open(path).map_err(|e| {
-            DeviceError::Io(std::io::Error::other(
-                e.to_string(),
-            ))
-        })?;
+        let store = StorageTimeSeriesStore::open(path)
+            .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
         Ok(Self { store })
     }
 
     /// Create an in-memory time series storage
     pub fn memory() -> Result<Self, DeviceError> {
-        let store = StorageTimeSeriesStore::memory().map_err(|e| {
-            DeviceError::Io(std::io::Error::other(
-                e.to_string(),
-            ))
-        })?;
+        let store = StorageTimeSeriesStore::memory()
+            .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
         Ok(Self { store })
     }
 
@@ -173,11 +169,7 @@ impl TimeSeriesStorage {
         self.store
             .write(device_id, metric, storage_point)
             .await
-            .map_err(|e| {
-                DeviceError::Io(std::io::Error::other(
-                    e.to_string(),
-                ))
-            })?;
+            .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
 
         Ok(())
     }
@@ -194,11 +186,7 @@ impl TimeSeriesStorage {
         self.store
             .write_batch(device_id, metric, storage_points)
             .await
-            .map_err(|e| {
-                DeviceError::Io(std::io::Error::other(
-                    e.to_string(),
-                ))
-            })?;
+            .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
 
         Ok(())
     }
@@ -212,8 +200,13 @@ impl TimeSeriesStorage {
         end_timestamp: i64,
     ) -> Result<Vec<DataPoint>, DeviceError> {
         // Debug log for troubleshooting, not needed in production
-        tracing::debug!("TimeSeriesStorage::query: device_id={}, metric={}, start={}, end={}",
-            device_id, metric, start_timestamp, end_timestamp);
+        tracing::debug!(
+            "TimeSeriesStorage::query: device_id={}, metric={}, start={}, end={}",
+            device_id,
+            metric,
+            start_timestamp,
+            end_timestamp
+        );
 
         let result = self
             .store
@@ -221,15 +214,18 @@ impl TimeSeriesStorage {
             .await
             .map_err(|e| {
                 tracing::error!("query_range failed for {}/{}: {}", device_id, metric, e);
-                DeviceError::Io(std::io::Error::other(
-                    e.to_string(),
-                ))
+                DeviceError::Io(std::io::Error::other(e.to_string()))
             })?;
 
         // Only log if no points found (might indicate missing data)
         if result.points.is_empty() {
-            tracing::debug!("No points found for {}/{} (timestamp range {} to {})",
-                device_id, metric, start_timestamp, end_timestamp);
+            tracing::debug!(
+                "No points found for {}/{} (timestamp range {} to {})",
+                device_id,
+                metric,
+                start_timestamp,
+                end_timestamp
+            );
         }
 
         let filtered: Vec<DataPoint> = result
@@ -238,7 +234,12 @@ impl TimeSeriesStorage {
             .filter_map(DataPoint::from_storage)
             .collect();
 
-        tracing::debug!("query result: {} points for {}/{}", filtered.len(), device_id, metric);
+        tracing::debug!(
+            "query result: {} points for {}/{}",
+            filtered.len(),
+            device_id,
+            metric
+        );
 
         Ok(filtered)
     }
@@ -253,11 +254,7 @@ impl TimeSeriesStorage {
             .store
             .query_latest(device_id, metric)
             .await
-            .map_err(|e| {
-                DeviceError::Io(std::io::Error::other(
-                    e.to_string(),
-                ))
-            })?;
+            .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
 
         Ok(result.and_then(DataPoint::from_storage))
     }
@@ -324,11 +321,11 @@ impl TimeSeriesStorage {
     pub async fn delete_before(&self, before_timestamp: i64) -> Result<(), DeviceError> {
         // Get all metrics for this device and delete old data
         // This is a simplified implementation - for production you'd want to track all devices
-        let metrics = self.store.list_metrics("").await.map_err(|e| {
-            DeviceError::Io(std::io::Error::other(
-                e.to_string(),
-            ))
-        })?;
+        let metrics = self
+            .store
+            .list_metrics("")
+            .await
+            .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
 
         for metric in metrics {
             let device_id: Vec<&str> = metric.split(':').collect();
@@ -346,19 +343,20 @@ impl TimeSeriesStorage {
     /// List all devices with data
     pub async fn list_devices(&self) -> Result<Vec<String>, DeviceError> {
         // Get all metrics and extract unique device IDs
-        let metrics = self.store.list_metrics("").await.map_err(|e| {
-            DeviceError::Io(std::io::Error::other(
-                e.to_string(),
-            ))
-        })?;
+        let metrics = self
+            .store
+            .list_metrics("")
+            .await
+            .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
 
         // Extract unique device IDs from "device_id:metric_name" format
         let mut device_ids = std::collections::HashSet::new();
         for metric in metrics {
             if let Some(device_id) = metric.split(':').next()
-                && !device_id.is_empty() {
-                    device_ids.insert(device_id.to_string());
-                }
+                && !device_id.is_empty()
+            {
+                device_ids.insert(device_id.to_string());
+            }
         }
 
         let mut devices: Vec<String> = device_ids.into_iter().collect();
@@ -368,11 +366,11 @@ impl TimeSeriesStorage {
 
     /// List all metrics for a device
     pub async fn list_metrics(&self, device_id: &str) -> Result<Vec<String>, DeviceError> {
-        let metrics = self.store.list_metrics(device_id).await.map_err(|e| {
-            DeviceError::Io(std::io::Error::other(
-                e.to_string(),
-            ))
-        })?;
+        let metrics = self
+            .store
+            .list_metrics(device_id)
+            .await
+            .map_err(|e| DeviceError::Io(std::io::Error::other(e.to_string())))?;
 
         Ok(metrics)
     }

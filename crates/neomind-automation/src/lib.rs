@@ -33,60 +33,51 @@
 //! ```
 
 pub mod conversion;
-pub mod discovery;
 pub mod device_type_generator;
+pub mod discovery;
 pub mod error;
 pub mod intent;
 pub mod nl2automation;
 pub mod output_registry;
+pub mod store;
 pub mod threshold_recommender;
 pub mod transform;
 pub mod types;
-pub mod store;
 
 // Re-export all types
 pub use types::*;
 
 // Re-export core types with common aliases
-pub use error::{AutomationError, Result};
 pub use conversion::AutomationConverter;
-pub use nl2automation::{Nl2Automation, ExtractedEntities, TriggerEntity, ConditionEntity, ActionEntity, TriggerTypeEntity, ActionTypeEntity, TimeConstraints, Language, ExtractionContext, DeviceInfo, MetricInfo};
-pub use threshold_recommender::{ThresholdRecommender, ThresholdRequest, ThresholdRecommendation, ThresholdIntent, ThresholdValidation, Statistics};
-pub use device_type_generator::{DeviceTypeGenerator, DeviceCapabilities, ValidationResult, GenerationConfig};
+pub use device_type_generator::{
+    DeviceCapabilities, DeviceTypeGenerator, GenerationConfig, ValidationResult,
+};
+pub use error::{AutomationError, Result};
+pub use nl2automation::{
+    ActionEntity, ActionTypeEntity, ConditionEntity, DeviceInfo, ExtractedEntities,
+    ExtractionContext, Language, MetricInfo, Nl2Automation, TimeConstraints, TriggerEntity,
+    TriggerTypeEntity,
+};
+pub use threshold_recommender::{
+    Statistics, ThresholdIntent, ThresholdRecommendation, ThresholdRecommender, ThresholdRequest,
+    ThresholdValidation,
+};
 
 // Re-export discovery module
 pub use discovery::{
-    DataPathExtractor,
-    DeviceSample,
-    DiscoveredPath,
-    SemanticType,
-    SemanticInference,
-    DiscoveredMetric,
-    FieldSemantic,
-    InferenceContext,
-    VirtualMetricGenerator,
-    AutoOnboardManager,
-    RegistrationResult,
-    TypeSignature,
-    DraftDevice,
-    DraftDeviceStatus,
-    GeneratedDeviceType,
-    ProcessingSummary,
-    DeviceCategory,
+    AutoOnboardManager, DataPathExtractor, DeviceCategory, DeviceSample, DiscoveredMetric,
+    DiscoveredPath, DraftDevice, DraftDeviceStatus, FieldSemantic, GeneratedDeviceType,
+    InferenceContext, ProcessingSummary, RegistrationResult, SemanticInference, SemanticType,
+    TypeSignature, VirtualMetricGenerator,
 };
 
 // Re-export transform-specific types
 pub use types::{
-    TransformAutomation, TransformOperation, TransformScope,
-    AggregationFunc, TimeWindow,
-    RuleAutomation,
-    Automation, AutomationType, AutomationMetadata,
-    Trigger, TriggerType, Condition, ComparisonOperator,
-    Action, LogLevel, AlertSeverity,
-    IntentResult, SuggestedAutomation,
-    AutomationTemplate, TemplateParameter, TemplateParameterType,
-    ExecutionRecord, ExecutionStatus,
-    AutomationFilter, AutomationList, TypeCounts,
+    Action, AggregationFunc, AlertSeverity, Automation, AutomationFilter, AutomationList,
+    AutomationMetadata, AutomationTemplate, AutomationType, ComparisonOperator, Condition,
+    ExecutionRecord, ExecutionStatus, IntentResult, LogLevel, RuleAutomation, SuggestedAutomation,
+    TemplateParameter, TemplateParameterType, TimeWindow, TransformAutomation, TransformOperation,
+    TransformScope, Trigger, TriggerType, TypeCounts,
 };
 
 // Re-export transform engine
@@ -94,6 +85,6 @@ pub use transform::{TransformEngine, TransformResult, TransformedMetric};
 
 // Re-export output registry
 pub use output_registry::{
-    TransformOutputRegistry, TransformOutputInfo, TransformOutputType,
-    TransformDataSourceInfo, TransformDataSourcesResponse,
+    TransformDataSourceInfo, TransformDataSourcesResponse, TransformOutputInfo,
+    TransformOutputRegistry, TransformOutputType,
 };

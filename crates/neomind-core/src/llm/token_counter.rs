@@ -27,7 +27,7 @@ use crate::message::{Content, ContentPart, Message, MessageRole};
 use once_cell::sync::Lazy;
 
 #[cfg(feature = "tiktoken")]
-use tiktoken_rs::{cl100k_base, p50k_base, CoreBPE};
+use tiktoken_rs::{CoreBPE, cl100k_base, p50k_base};
 
 /// Mode for token counting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,8 +42,7 @@ pub enum CounterMode {
 }
 
 /// Token encoding type for tiktoken.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EncodingType {
     /// cl100k_base - used by GPT-4, GPT-3.5-turbo, text-embedding-ada-002
     #[default]
@@ -55,7 +54,6 @@ pub enum EncodingType {
     /// Auto-detect based on model name
     Auto,
 }
-
 
 /// Token counter that can use different counting strategies.
 #[derive(Clone)]
@@ -152,10 +150,10 @@ impl TokenCounter {
     pub fn count_message(&self, message: &Message) -> usize {
         // Role tokens (typically 1-3 tokens per role)
         let role_tokens = match &message.role {
-            MessageRole::System => 3,   // "<|start|>system<|message|>"
-            MessageRole::User => 3,     // "<|start|>user<|message|>"
+            MessageRole::System => 3,    // "<|start|>system<|message|>"
+            MessageRole::User => 3,      // "<|start|>user<|message|>"
             MessageRole::Assistant => 4, // "<|start|>assistant<|message|>"
-            MessageRole::Tool => 4,     // "<|start|>tool<|message|>"
+            MessageRole::Tool => 4,      // "<|start|>tool<|message|>"
         };
 
         role_tokens + self.count_content(&message.content)
@@ -163,10 +161,7 @@ impl TokenCounter {
 
     /// Count total tokens in a list of messages.
     pub fn count_messages(&self, messages: &[Message]) -> usize {
-        messages
-            .iter()
-            .map(|m| self.count_message(m))
-            .sum()
+        messages.iter().map(|m| self.count_message(m)).sum()
     }
 
     /// Estimate tokens for a model's response generation.
@@ -195,9 +190,7 @@ impl TokenCounter {
         }
 
         // Code models use p50k_base
-        if model_lower.contains("code-davinci")
-            || model_lower.contains("code-cushman")
-        {
+        if model_lower.contains("code-davinci") || model_lower.contains("code-cushman") {
             return EncodingType::P50kBase;
         }
 
@@ -207,13 +200,9 @@ impl TokenCounter {
 
     #[cfg(feature = "tiktoken")]
     fn get_tiktoken(encoding: EncodingType) -> Option<Arc<CoreBPE>> {
-        static CL100K: Lazy<Option<Arc<CoreBPE>>> = Lazy::new(|| {
-            cl100k_base().ok().map(Arc::new)
-        });
+        static CL100K: Lazy<Option<Arc<CoreBPE>>> = Lazy::new(|| cl100k_base().ok().map(Arc::new));
 
-        static P50K: Lazy<Option<Arc<CoreBPE>>> = Lazy::new(|| {
-            p50k_base().ok().map(Arc::new)
-        });
+        static P50K: Lazy<Option<Arc<CoreBPE>>> = Lazy::new(|| p50k_base().ok().map(Arc::new));
 
         match encoding {
             EncodingType::Cl100kBase | EncodingType::Auto => CL100K.clone(),

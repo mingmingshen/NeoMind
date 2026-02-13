@@ -88,7 +88,10 @@ impl CompactionConfig {
 
     /// Set the maximum history share (0.0 - 1.0).
     pub fn with_max_history_share(mut self, share: f64) -> Self {
-        assert!((0.0..=1.0).contains(&share), "max_history_share must be between 0.0 and 1.0");
+        assert!(
+            (0.0..=1.0).contains(&share),
+            "max_history_share must be between 0.0 and 1.0"
+        );
         self.max_history_share = share;
         self
     }
@@ -259,9 +262,10 @@ pub fn compact_messages(
                     let truncated = truncate_text(&content_text, 200);
                     let summary_msg = Message {
                         role: msg.role,
-                        content: crate::message::Content::Text(
-                            format!("[Previous tool result: {}]", truncated)
-                        ),
+                        content: crate::message::Content::Text(format!(
+                            "[Previous tool result: {}]",
+                            truncated
+                        )),
                         timestamp: msg.timestamp,
                     };
                     current_tokens += estimate_message_tokens(&summary_msg.content);
@@ -342,8 +346,8 @@ fn content_as_text(content: &crate::message::Content) -> String {
                     crate::message::ContentPart::Text { text } => {
                         result.push_str(text);
                     }
-                    crate::message::ContentPart::ImageUrl { .. } |
-                    crate::message::ContentPart::ImageBase64 { .. } => {
+                    crate::message::ContentPart::ImageUrl { .. }
+                    | crate::message::ContentPart::ImageBase64 { .. } => {
                         has_multimodal = true;
                         result.push_str("[image]");
                     }
@@ -369,8 +373,8 @@ fn estimate_message_tokens(content: &crate::message::Content) -> usize {
                     crate::message::ContentPart::Text { text } => {
                         total += estimate_tokens(text);
                     }
-                    crate::message::ContentPart::ImageUrl { .. } |
-                    crate::message::ContentPart::ImageBase64 { .. } => {
+                    crate::message::ContentPart::ImageUrl { .. }
+                    | crate::message::ContentPart::ImageBase64 { .. } => {
                         total += 85; // Approximate token cost for images
                     }
                 }

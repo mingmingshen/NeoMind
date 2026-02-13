@@ -180,14 +180,10 @@ fn calculate_completeness(messages: &[AgentMessage]) -> f64 {
     }
 
     // High completeness if entities are mentioned in recent messages
-    let recent_has_entities = messages
-        .iter()
-        .rev()
-        .take(5)
-        .any(|msg| {
-            let content = msg.content.to_lowercase();
-            entity_keywords.iter().any(|kw| content.contains(kw))
-        });
+    let recent_has_entities = messages.iter().rev().take(5).any(|msg| {
+        let content = msg.content.to_lowercase();
+        entity_keywords.iter().any(|kw| content.contains(kw))
+    });
 
     if recent_has_entities || entity_keywords.is_empty() {
         1.0
@@ -323,10 +319,16 @@ impl ContextHealth {
                 format!("Context is good (score: {:.2})", self.overall_score)
             }
             HealthStatus::Degraded => {
-                format!("Context is degraded (score: {:.2}), consider refresh", self.overall_score)
+                format!(
+                    "Context is degraded (score: {:.2}), consider refresh",
+                    self.overall_score
+                )
             }
             HealthStatus::Critical => {
-                format!("Context is critical (score: {:.2}), refresh recommended", self.overall_score)
+                format!(
+                    "Context is critical (score: {:.2}), refresh recommended",
+                    self.overall_score
+                )
             }
         }
     }

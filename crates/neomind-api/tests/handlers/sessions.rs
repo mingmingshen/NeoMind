@@ -1,10 +1,10 @@
 //! Tests for sessions handlers.
 
-use neomind_api::handlers::sessions::*;
-use neomind_api::handlers::ServerState;
-use neomind_api::models::ChatRequest;
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
+use neomind_api::handlers::ServerState;
+use neomind_api::handlers::sessions::*;
+use neomind_api::models::ChatRequest;
 use std::collections::HashMap;
 
 async fn create_test_server_state() -> ServerState {
@@ -58,7 +58,8 @@ mod tests {
     #[tokio::test]
     async fn test_get_session_handler_not_found() {
         let state = create_test_server_state().await;
-        let result = get_session_handler(State(state), Path("nonexistent_session".to_string())).await;
+        let result =
+            get_session_handler(State(state), Path("nonexistent_session".to_string())).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.status, axum::http::StatusCode::NOT_FOUND);
@@ -67,7 +68,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_session_history_handler_not_found() {
         let state = create_test_server_state().await;
-        let result = get_session_history_handler(State(state), Path("nonexistent_session".to_string())).await;
+        let result =
+            get_session_history_handler(State(state), Path("nonexistent_session".to_string()))
+                .await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.status, axum::http::StatusCode::NOT_FOUND);
@@ -76,7 +79,8 @@ mod tests {
     #[tokio::test]
     async fn test_delete_session_handler_not_found() {
         let state = create_test_server_state().await;
-        let result = delete_session_handler(State(state), Path("nonexistent_session".to_string())).await;
+        let result =
+            delete_session_handler(State(state), Path("nonexistent_session".to_string())).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         // Handler returns NOT_FOUND for sessions that don't exist
@@ -89,7 +93,12 @@ mod tests {
         let req = UpdateSessionRequest {
             title: Some("Test Title".to_string()),
         };
-        let result = update_session_handler(State(state), Path("nonexistent_session".to_string()), Json(req)).await;
+        let result = update_session_handler(
+            State(state),
+            Path("nonexistent_session".to_string()),
+            Json(req),
+        )
+        .await;
         assert!(result.is_err());
     }
 
@@ -113,7 +122,12 @@ mod tests {
             images: None,
             backend_id: None,
         };
-        let result = chat_handler(State(state), Path("nonexistent_session".to_string()), Json(req)).await;
+        let result = chat_handler(
+            State(state),
+            Path("nonexistent_session".to_string()),
+            Json(req),
+        )
+        .await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.status, axum::http::StatusCode::NOT_FOUND);
@@ -125,7 +139,15 @@ mod tests {
 
         // First create a session
         let create_result = create_session_handler(State(state.clone())).await.unwrap();
-        let session_id = create_result.0.data.unwrap().get("sessionId").unwrap().as_str().unwrap().to_string();
+        let session_id = create_result
+            .0
+            .data
+            .unwrap()
+            .get("sessionId")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
 
         // Then send a chat message (will likely fail due to no LLM configured, but shouldn't be 404)
         let req = ChatRequest {
@@ -165,9 +187,7 @@ mod tests {
         };
         assert_eq!(req.title.unwrap(), "New Title");
 
-        let req_empty = UpdateSessionRequest {
-            title: None,
-        };
+        let req_empty = UpdateSessionRequest { title: None };
         assert!(req_empty.title.is_none());
     }
 

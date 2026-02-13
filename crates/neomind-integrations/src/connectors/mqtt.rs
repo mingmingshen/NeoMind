@@ -2,10 +2,10 @@
 //!
 //! Provides a MQTT client implementation that conforms to the Connector trait.
 
+use futures::{SinkExt, Stream, StreamExt, channel::mpsc};
 use neomind_core::integration::connector::{
     BaseConnector as CoreBaseConnector, Connector, ConnectorError, Result,
 };
-use futures::{SinkExt, Stream, StreamExt, channel::mpsc};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;

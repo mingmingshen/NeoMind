@@ -24,7 +24,8 @@ pub async fn read_metric_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Get current metrics for the device
     let current_values = state
-        .devices.service
+        .devices
+        .service
         .get_current_metrics(&device_id)
         .await
         .map_err(|e| ErrorResponse::bad_request(format!("Failed to read metric: {:?}", e)))?;
@@ -53,7 +54,8 @@ pub async fn query_metric_handler(
 
     // Use DeviceService to query telemetry
     let points = state
-        .devices.service
+        .devices
+        .service
         .query_telemetry(&device_id, &metric, Some(start), Some(end))
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to query metric: {:?}", e)))?;
@@ -92,7 +94,8 @@ pub async fn aggregate_metric_handler(
 
     // Use telemetry service for aggregation
     let aggregated = state
-        .devices.telemetry
+        .devices
+        .telemetry
         .aggregate(&device_id, &metric, start, end)
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to aggregate metric: {:?}", e)))?;
@@ -121,7 +124,8 @@ pub async fn send_command_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Use DeviceService.send_command which accepts HashMap<String, serde_json::Value>
     state
-        .devices.service
+        .devices
+        .service
         .send_command(&device_id, &command, req.params)
         .await
         .map_err(|e| ErrorResponse::bad_request(format!("Failed to send command: {:?}", e)))?;
@@ -143,14 +147,17 @@ pub fn value_to_json(value: &MetricValue) -> serde_json::Value {
         // Encode binary data as base64 string for frontend image detection
         MetricValue::Binary(v) => json!(STANDARD.encode(v)),
         MetricValue::Array(arr) => {
-            let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
-                MetricValue::Integer(i) => json!(*i),
-                MetricValue::Float(f) => json!(*f),
-                MetricValue::String(s) => json!(s),
-                MetricValue::Boolean(b) => json!(*b),
-                MetricValue::Null => json!(null),
-                MetricValue::Array(_) | MetricValue::Binary(_) => json!(null),
-            }).collect();
+            let json_arr: Vec<serde_json::Value> = arr
+                .iter()
+                .map(|v| match v {
+                    MetricValue::Integer(i) => json!(*i),
+                    MetricValue::Float(f) => json!(*f),
+                    MetricValue::String(s) => json!(s),
+                    MetricValue::Boolean(b) => json!(*b),
+                    MetricValue::Null => json!(null),
+                    MetricValue::Array(_) | MetricValue::Binary(_) => json!(null),
+                })
+                .collect();
             json!(json_arr)
         }
         MetricValue::Null => json!(null),

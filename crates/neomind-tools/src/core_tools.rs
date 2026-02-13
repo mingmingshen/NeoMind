@@ -11,8 +11,8 @@
 //! 2. Conversation flow oriented - tools follow natural dialogue patterns
 //! 3. Industry agnostic - business logic is pluggable via industry-specific plugins
 
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -22,8 +22,7 @@ use tokio::sync::RwLock;
 use crate::error::Result as ToolResult;
 use crate::error::ToolError;
 use crate::tool::{
-    Tool, ToolOutput,
-    array_property, boolean_property, number_property, object_schema,
+    Tool, ToolOutput, array_property, boolean_property, number_property, object_schema,
     string_property,
 };
 use neomind_core::tools::{ToolCategory, ToolRelationships, UsageScenario};
@@ -177,10 +176,14 @@ impl RealDeviceRegistryAdapter {
         start_time: i64,
         end_time: i64,
     ) -> Result<Vec<neomind_devices::DataPoint>, String> {
-        let storage = self.storage.as_ref()
+        let storage = self
+            .storage
+            .as_ref()
             .ok_or_else(|| "Time series storage not configured".to_string())?;
 
-        storage.query(device_id, metric, start_time, end_time).await
+        storage
+            .query(device_id, metric, start_time, end_time)
+            .await
             .map_err(|e| e.to_string())
     }
 
@@ -194,7 +197,10 @@ impl RealDeviceRegistryAdapter {
         let now = chrono::Utc::now().timestamp();
         let one_hour_ago = now - 3600;
 
-        storage.query(device_id, metric, one_hour_ago, now).await.ok()?
+        storage
+            .query(device_id, metric, one_hour_ago, now)
+            .await
+            .ok()?
             .into_iter()
             .max_by_key(|p| p.timestamp)
     }
@@ -205,7 +211,11 @@ impl RealDeviceRegistryAdapter {
         let template = self.get_template_cached(&config.device_type).await?;
 
         // Get connection status - default to unknown if not available
-        let status = match self.device_service.get_device_connection_status(&config.device_id).await {
+        let status = match self
+            .device_service
+            .get_device_connection_status(&config.device_id)
+            .await
+        {
             neomind_devices::ConnectionStatus::Connected => "online".to_string(),
             neomind_devices::ConnectionStatus::Disconnected => "offline".to_string(),
             neomind_devices::ConnectionStatus::Connecting => "connecting".to_string(),
@@ -220,12 +230,10 @@ impl RealDeviceRegistryAdapter {
             let five_minutes_ago = now - 300;
 
             for metric in &template.metrics {
-                if let Ok(points) = storage.query(
-                    &config.device_id,
-                    &metric.name,
-                    five_minutes_ago,
-                    now,
-                ).await {
+                if let Ok(points) = storage
+                    .query(&config.device_id, &metric.name, five_minutes_ago, now)
+                    .await
+                {
                     if let Some(latest) = points.into_iter().max_by_key(|p| p.timestamp) {
                         let float_val = match latest.value {
                             neomind_devices::MetricValue::Float(f) => Some(f),
@@ -238,23 +246,35 @@ impl RealDeviceRegistryAdapter {
                     }
                 }
             }
-            if data_map.is_empty() { None } else { Some(data_map) }
+            if data_map.is_empty() {
+                None
+            } else {
+                Some(data_map)
+            }
         } else {
             None
         };
 
         // Extract location from connection config extra metadata
-        let location = config.connection_config.extra.get("location")
+        let location = config
+            .connection_config
+            .extra
+            .get("location")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
         // Extract tags from connection config extra metadata
-        let tags = config.connection_config.extra.get("tags")
+        let tags = config
+            .connection_config
+            .extra
+            .get("tags")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter()
-                .filter_map(|v| v.as_str())
-                .map(|s| s.to_string())
-                .collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .collect()
+            })
             .unwrap_or_default();
 
         Some(DeviceInfo {
@@ -291,23 +311,40 @@ impl RealDeviceRegistryAdapter {
                                 default_value: p.default_value.as_ref().and_then(|v| {
                                     // Convert MetricValue to serde_json::Value
                                     match v {
-                                        neomind_devices::MetricValue::String(s) => Some(Value::String(s.clone())),
-                                        neomind_devices::MetricValue::Float(f) => serde_json::Number::from_f64(*f).map(Value::Number),
-                                        neomind_devices::MetricValue::Integer(i) => Some(Value::Number(serde_json::Number::from(*i))),
-                                        neomind_devices::MetricValue::Boolean(b) => Some(Value::Bool(*b)),
+                                        neomind_devices::MetricValue::String(s) => {
+                                            Some(Value::String(s.clone()))
+                                        }
+                                        neomind_devices::MetricValue::Float(f) => {
+                                            serde_json::Number::from_f64(*f).map(Value::Number)
+                                        }
+                                        neomind_devices::MetricValue::Integer(i) => {
+                                            Some(Value::Number(serde_json::Number::from(*i)))
+                                        }
+                                        neomind_devices::MetricValue::Boolean(b) => {
+                                            Some(Value::Bool(*b))
+                                        }
                                         neomind_devices::MetricValue::Array(a) => {
                                             // Convert array to JSON
-                                            let json_arr: Vec<Value> = a.iter().map(|v| match v {
-                                                neomind_devices::MetricValue::String(s) => Value::String(s.clone()),
-                                                neomind_devices::MetricValue::Integer(i) => Value::Number(serde_json::Number::from(*i)),
-                                                neomind_devices::MetricValue::Float(f) => {
-                                                    serde_json::Number::from_f64(*f)
-                                                        .map(Value::Number)
-                                                        .unwrap_or(Value::Null)
-                                                },
-                                                neomind_devices::MetricValue::Boolean(b) => Value::Bool(*b),
-                                                _ => Value::Null,
-                                            }).collect();
+                                            let json_arr: Vec<Value> = a
+                                                .iter()
+                                                .map(|v| match v {
+                                                    neomind_devices::MetricValue::String(s) => {
+                                                        Value::String(s.clone())
+                                                    }
+                                                    neomind_devices::MetricValue::Integer(i) => {
+                                                        Value::Number(serde_json::Number::from(*i))
+                                                    }
+                                                    neomind_devices::MetricValue::Float(f) => {
+                                                        serde_json::Number::from_f64(*f)
+                                                            .map(Value::Number)
+                                                            .unwrap_or(Value::Null)
+                                                    }
+                                                    neomind_devices::MetricValue::Boolean(b) => {
+                                                        Value::Bool(*b)
+                                                    }
+                                                    _ => Value::Null,
+                                                })
+                                                .collect();
                                             Some(Value::Array(json_arr))
                                         }
                                         neomind_devices::MetricValue::Null => Some(Value::Null),
@@ -392,9 +429,7 @@ impl DeviceRegistryTrait for RealDeviceRegistryAdapter {
 
     async fn find_by_filter(&self, filter: &DeviceFilter) -> Vec<DeviceInfo> {
         let all = self.get_all().await;
-        all.into_iter()
-            .filter(|d| filter.matches(d))
-            .collect()
+        all.into_iter().filter(|d| filter.matches(d)).collect()
     }
 
     async fn update_device_data(&self, _id: &str, _data: HashMap<String, f64>) {
@@ -485,14 +520,12 @@ impl MockDeviceRegistry {
                         CommandInfo {
                             name: "set_brightness".to_string(),
                             display_name: "设置亮度".to_string(),
-                            parameters: vec![
-                                ParameterInfo {
-                                    name: "brightness".to_string(),
-                                    display_name: "亮度".to_string(),
-                                    data_type: "integer".to_string(),
-                                    default_value: Some(Value::Number(100.into())),
-                                },
-                            ],
+                            parameters: vec![ParameterInfo {
+                                name: "brightness".to_string(),
+                                display_name: "亮度".to_string(),
+                                data_type: "integer".to_string(),
+                                default_value: Some(Value::Number(100.into())),
+                            }],
                         },
                     ],
                 },
@@ -577,14 +610,12 @@ impl MockDeviceRegistry {
                         CommandInfo {
                             name: "set_temperature".to_string(),
                             display_name: "设置温度".to_string(),
-                            parameters: vec![
-                                ParameterInfo {
-                                    name: "temperature".to_string(),
-                                    display_name: "温度".to_string(),
-                                    data_type: "float".to_string(),
-                                    default_value: Some(Value::Number(24.into())),
-                                },
-                            ],
+                            parameters: vec![ParameterInfo {
+                                name: "temperature".to_string(),
+                                display_name: "温度".to_string(),
+                                data_type: "float".to_string(),
+                                default_value: Some(Value::Number(24.into())),
+                            }],
                         },
                     ],
                 },
@@ -605,14 +636,12 @@ impl MockDeviceRegistry {
                 status: "online".to_string(),
                 tags: vec!["sensor".to_string(), "temperature".to_string()],
                 capabilities: DeviceCapabilities {
-                    metrics: vec![
-                        MetricInfo {
-                            name: "temperature".to_string(),
-                            display_name: "温度".to_string(),
-                            unit: "°C".to_string(),
-                            data_type: "float".to_string(),
-                        },
-                    ],
+                    metrics: vec![MetricInfo {
+                        name: "temperature".to_string(),
+                        display_name: "温度".to_string(),
+                        unit: "°C".to_string(),
+                        data_type: "float".to_string(),
+                    }],
                     commands: vec![],
                 },
                 latest_data: Some({
@@ -784,21 +813,26 @@ pub struct DeviceFilter {
 impl DeviceFilter {
     pub fn matches(&self, device: &DeviceInfo) -> bool {
         if let Some(ref t) = self.r#type
-            && device.device_type != *t {
-                return false;
-            }
+            && device.device_type != *t
+        {
+            return false;
+        }
         if let Some(ref status) = self.status
-            && device.status != *status {
-                return false;
-            }
+            && device.status != *status
+        {
+            return false;
+        }
         if let Some(ref tags) = self.tags
-            && !tags.iter().all(|t| device.tags.contains(t)) {
-                return false;
-            }
+            && !tags.iter().all(|t| device.tags.contains(t))
+        {
+            return false;
+        }
         if let Some(ref name) = self.name_contains
-            && !device.name.contains(name) && !device.id.contains(name) {
-                return false;
-            }
+            && !device.name.contains(name)
+            && !device.id.contains(name)
+        {
+            return false;
+        }
         true
     }
 }
@@ -835,7 +869,10 @@ impl DeviceDiscoverTool {
         device_service: Arc<neomind_devices::DeviceService>,
         storage: Arc<neomind_devices::TimeSeriesStorage>,
     ) -> Self {
-        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(device_service, storage));
+        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(
+            device_service,
+            storage,
+        ));
         Self::new(adapter)
     }
 
@@ -958,7 +995,10 @@ impl Tool for DeviceDiscoverTool {
             UsageScenario {
                 description: "用户询问名称包含关键词的设备".to_string(),
                 example_query: "名称包含温度的设备有哪些？".to_string(),
-                suggested_call: Some("device_discover({filter: {name_contains: '温度'}, group_by: 'type'})".to_string()),
+                suggested_call: Some(
+                    "device_discover({filter: {name_contains: '温度'}, group_by: 'type'})"
+                        .to_string(),
+                ),
             },
             UsageScenario {
                 description: "用户要按类型分组查看".to_string(),
@@ -972,12 +1012,26 @@ impl Tool for DeviceDiscoverTool {
         // Parse filter
         let filter = if let Some(filter_obj) = args.get("filter").and_then(|v| v.as_object()) {
             DeviceFilter {
-                r#type: filter_obj.get("type").and_then(|v| v.as_str()).map(String::from),
-                status: filter_obj.get("status").and_then(|v| v.as_str()).map(String::from),
-                tags: filter_obj.get("tags").and_then(|v| v.as_array()).map(|arr| {
-                    arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
-                }),
-                name_contains: filter_obj.get("name_contains").and_then(|v| v.as_str()).map(String::from),
+                r#type: filter_obj
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                status: filter_obj
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                tags: filter_obj
+                    .get("tags")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    }),
+                name_contains: filter_obj
+                    .get("name_contains")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
             }
         } else {
             DeviceFilter::default()
@@ -1120,7 +1174,10 @@ impl DeviceQueryTool {
         device_service: Arc<neomind_devices::DeviceService>,
         storage: Arc<neomind_devices::TimeSeriesStorage>,
     ) -> Self {
-        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(device_service, storage));
+        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(
+            device_service,
+            storage,
+        ));
         Self::new(adapter)
     }
 
@@ -1130,10 +1187,26 @@ impl DeviceQueryTool {
         let trend = stats.trend.as_ref()?;
 
         Some(match trend.as_str() {
-            "rising" => format!("{}呈上升趋势，当前值{:.1}{}", result.display_name, result.current.unwrap_or(0.0), result.unit),
-            "falling" => format!("{}呈下降趋势，当前值{:.1}{}", result.display_name, result.current.unwrap_or(0.0), result.unit),
-            "stable" => format!("{}保持稳定，平均值{:.1}{}", result.display_name, stats.avg, result.unit),
-            _ => format!("{}：平均值{:.1}{}，范围{:.1}-{}{}", result.display_name, stats.avg, result.unit, stats.min, stats.max, result.unit),
+            "rising" => format!(
+                "{}呈上升趋势，当前值{:.1}{}",
+                result.display_name,
+                result.current.unwrap_or(0.0),
+                result.unit
+            ),
+            "falling" => format!(
+                "{}呈下降趋势，当前值{:.1}{}",
+                result.display_name,
+                result.current.unwrap_or(0.0),
+                result.unit
+            ),
+            "stable" => format!(
+                "{}保持稳定，平均值{:.1}{}",
+                result.display_name, stats.avg, result.unit
+            ),
+            _ => format!(
+                "{}：平均值{:.1}{}，范围{:.1}-{}{}",
+                result.display_name, stats.avg, result.unit, stats.min, stats.max, result.unit
+            ),
         })
     }
 
@@ -1299,10 +1372,7 @@ impl Tool for DeviceQueryTool {
         };
 
         // Get limit
-        let limit = args
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(24) as usize;
+        let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
 
         // Build results
         let mut results = Vec::new();
@@ -1421,7 +1491,10 @@ impl DeviceControlTool {
         device_service: Arc<neomind_devices::DeviceService>,
         storage: Arc<neomind_devices::TimeSeriesStorage>,
     ) -> Self {
-        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(device_service, storage));
+        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(
+            device_service,
+            storage,
+        ));
         Self::new(adapter)
     }
 
@@ -1443,10 +1516,7 @@ impl DeviceControlTool {
 
         // Method 2: Multiple device_ids
         if let Some(device_ids) = args.get("device_ids").and_then(|v| v.as_array()) {
-            let ids: Vec<_> = device_ids
-                .iter()
-                .filter_map(|v| v.as_str())
-                .collect();
+            let ids: Vec<_> = device_ids.iter().filter_map(|v| v.as_str()).collect();
             let filtered: Vec<_> = devices
                 .iter()
                 .filter(|d| ids.iter().any(|id| &d.id == id || d.name.contains(id)))
@@ -1460,7 +1530,10 @@ impl DeviceControlTool {
         // Method 3: Filter by type
         if let Some(filter) = args.get("filter").and_then(|v| v.as_object()) {
             let device_filter = DeviceFilter {
-                r#type: filter.get("type").and_then(|v| v.as_str()).map(String::from),
+                r#type: filter
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 status: None,
                 tags: None,
                 name_contains: None,
@@ -1902,8 +1975,13 @@ mod tests {
         let data = &result.data;
         assert_eq!(data["rule"]["condition"]["threshold"], 30.0);
         assert_eq!(data["rule"]["condition"]["for_duration"], 300); // 5 minutes in seconds
-        assert!(data["rule"]["actions"].as_array().unwrap().iter()
-            .any(|a| a["action_type"] == "execute"));
+        assert!(
+            data["rule"]["actions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a["action_type"] == "execute")
+        );
     }
 
     #[tokio::test]
@@ -2030,7 +2108,10 @@ impl DeviceAnalyzeTool {
         device_service: Arc<neomind_devices::DeviceService>,
         storage: Arc<neomind_devices::TimeSeriesStorage>,
     ) -> Self {
-        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(device_service, storage));
+        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(
+            device_service,
+            storage,
+        ));
         Self::new(adapter)
     }
 
@@ -2072,8 +2153,14 @@ impl DeviceAnalyzeTool {
         };
 
         let findings = vec![
-            format!("{} 从 {:.1}{} 变化到 {:.1}{}", metric.display_name, first, metric.unit, last, metric.unit),
-            format!("变化幅度: {:+.1}{} ({:+.1}%)", change, metric.unit, pct_change),
+            format!(
+                "{} 从 {:.1}{} 变化到 {:.1}{}",
+                metric.display_name, first, metric.unit, last, metric.unit
+            ),
+            format!(
+                "变化幅度: {:+.1}{} ({:+.1}%)",
+                change, metric.unit, pct_change
+            ),
         ];
 
         let insights = vec![format!("趋势: {} {}", color, trend_desc)];
@@ -2133,12 +2220,14 @@ impl DeviceAnalyzeTool {
         // Calculate mean and standard deviation
         let values: Vec<f64> = data.iter().map(|d| d.value).collect();
         let mean = values.iter().sum::<f64>() / values.len() as f64;
-        let variance = values.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
+        let variance =
+            values.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
         let std_dev = variance.sqrt();
 
         // Define anomaly threshold (2 standard deviations)
         let threshold = 2.0 * std_dev;
-        let anomalies: Vec<_> = data.iter()
+        let anomalies: Vec<_> = data
+            .iter()
             .enumerate()
             .filter(|&(_, d)| (d.value - mean).abs() > threshold)
             .map(|(i, d)| (i, d.value, d.timestamp))
@@ -2161,8 +2250,13 @@ impl DeviceAnalyzeTool {
             insights.push(format!("⚠️ 发现 {} 个数据点超出正常范围", anomalies.len()));
 
             for (i, value, _ts) in &anomalies {
-                insights.push(format!("  - 数据点#{}: {:.1}{} (偏差 {:.1}σ)",
-                    i + 1, value, metric.unit, (value - mean) / std_dev));
+                insights.push(format!(
+                    "  - 数据点#{}: {:.1}{} (偏差 {:.1}σ)",
+                    i + 1,
+                    value,
+                    metric.unit,
+                    (value - mean) / std_dev
+                ));
             }
 
             recommendations.push("建议检查设备在异常时间点的运行状态".to_string());
@@ -2216,20 +2310,32 @@ impl DeviceAnalyzeTool {
         let findings = vec![
             format!("当前值: {:.1}{}", current, metric.unit),
             format!("平均值: {:.1}{}", avg, metric.unit),
-            format!("范围: {:.1}{} - {:.1}{} (波动 {:.1}{})", min, metric.unit, max, metric.unit, range, metric.unit),
+            format!(
+                "范围: {:.1}{} - {:.1}{} (波动 {:.1}{})",
+                min, metric.unit, max, metric.unit, range, metric.unit
+            ),
             format!("数据点数: {}", data.len()),
         ];
 
-        let mut insights = vec![
-            format!("{} 当前处于 {:.1}{}", metric.display_name, current, metric.unit),
-        ];
+        let mut insights = vec![format!(
+            "{} 当前处于 {:.1}{}",
+            metric.display_name, current, metric.unit
+        )];
 
         if range > avg * 0.3 {
-            insights.push(format!("数据波动较大 ({:.1}{}， {:.1}% 平均值)",
-                range, metric.unit, (range / avg) * 100.0));
+            insights.push(format!(
+                "数据波动较大 ({:.1}{}， {:.1}% 平均值)",
+                range,
+                metric.unit,
+                (range / avg) * 100.0
+            ));
         } else {
-            insights.push(format!("数据波动较小 ({:.1}{}， {:.1}% 平均值)",
-                range, metric.unit, (range / avg) * 100.0));
+            insights.push(format!(
+                "数据波动较小 ({:.1}{}， {:.1}% 平均值)",
+                range,
+                metric.unit,
+                (range / avg) * 100.0
+            ));
         }
 
         let mut recommendations = vec![];
@@ -2349,14 +2455,14 @@ impl Tool for DeviceAnalyzeTool {
         let metric_filter = args.get("metric").and_then(|v| v.as_str());
 
         // Get limit
-        let limit = args
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(24) as usize;
+        let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
 
         // Filter metrics
         let metrics_to_analyze: Vec<_> = if let Some(filter) = metric_filter {
-            device.capabilities.metrics.iter()
+            device
+                .capabilities
+                .metrics
+                .iter()
                 .filter(|m| m.name == filter)
                 .collect()
         } else {
@@ -2365,15 +2471,23 @@ impl Tool for DeviceAnalyzeTool {
 
         if metrics_to_analyze.is_empty() {
             return Ok(ToolOutput::error_with_metadata(
-                format!("设备 '{}' 没有指标 '{}'", device.name, metric_filter.unwrap_or("")),
+                format!(
+                    "设备 '{}' 没有指标 '{}'",
+                    device.name,
+                    metric_filter.unwrap_or("")
+                ),
                 serde_json::json!({"available_metrics": device.capabilities.metrics.iter().map(|m| &m.name).collect::<Vec<_>>()}),
             ));
         }
 
         // Generate mock data for analysis
-        let base_value = device.latest_data.as_ref()
+        let base_value = device
+            .latest_data
+            .as_ref()
             .and_then(|data| {
-                metrics_to_analyze.first().and_then(|m| data.get(&m.name).copied())
+                metrics_to_analyze
+                    .first()
+                    .and_then(|m| data.get(&m.name).copied())
             })
             .unwrap_or(25.0);
 
@@ -2452,7 +2566,9 @@ pub struct RuleFromContextTool {
 impl RuleFromContextTool {
     /// Create a new rule from context tool.
     pub fn new(registry: DeviceRegistryAdapter) -> Self {
-        Self { _registry: registry }
+        Self {
+            _registry: registry,
+        }
     }
 
     /// Create with a mock registry for testing.
@@ -2471,7 +2587,10 @@ impl RuleFromContextTool {
         device_service: Arc<neomind_devices::DeviceService>,
         storage: Arc<neomind_devices::TimeSeriesStorage>,
     ) -> Self {
-        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(device_service, storage));
+        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(
+            device_service,
+            storage,
+        ));
         Self::new(adapter)
     }
 
@@ -2501,7 +2620,15 @@ impl RuleFromContextTool {
         let description_text = format!("当{}{}{}时触发", metric, operator, threshold);
 
         // Generate DSL
-        let dsl = self.generate_dsl(&name, &device_id, &metric, &operator, threshold, for_duration.as_ref(), &actions);
+        let dsl = self.generate_dsl(
+            &name,
+            &device_id,
+            &metric,
+            &operator,
+            threshold,
+            for_duration.as_ref(),
+            &actions,
+        );
 
         // Check for missing info
         let mut missing_info = vec![];
@@ -2537,7 +2664,10 @@ impl RuleFromContextTool {
         // Look for numeric patterns
         let re = regex::Regex::new(r"(\d+\.?\d*)\s*(度|°|℃|%|摄氏度|百分比)").unwrap();
         if let Some(caps) = re.captures(desc) {
-            return caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(50.0);
+            return caps
+                .get(1)
+                .and_then(|m| m.as_str().parse().ok())
+                .unwrap_or(50.0);
         }
 
         // Simple number extraction
@@ -2559,7 +2689,7 @@ impl RuleFromContextTool {
         } else if desc.contains("不超过") || desc.contains("小于等于") {
             "<=".to_string()
         } else {
-            ">".to_string()  // Default
+            ">".to_string() // Default
         }
     }
 
@@ -2575,7 +2705,7 @@ impl RuleFromContextTool {
         } else if desc.contains("二氧化碳") || desc.contains("CO2") {
             ("sensor_co2_living".to_string(), "co2".to_string())
         } else {
-            ("sensor_temp_living".to_string(), "temperature".to_string())  // Default
+            ("sensor_temp_living".to_string(), "temperature".to_string()) // Default
         }
     }
 
@@ -2629,7 +2759,10 @@ impl RuleFromContextTool {
     fn extract_duration(&self, desc: &str) -> Option<u64> {
         let re = regex::Regex::new(r"(\d+)\s*(秒|second|分钟|minute|小时|hour)").unwrap();
         if let Some(caps) = re.captures(desc) {
-            let value = caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(1);
+            let value = caps
+                .get(1)
+                .and_then(|m| m.as_str().parse().ok())
+                .unwrap_or(1);
             let unit = caps.get(2).map(|m| m.as_str()).unwrap_or("");
             match unit {
                 "秒" | "second" | "seconds" => Some(value),
@@ -2638,7 +2771,7 @@ impl RuleFromContextTool {
                 _ => None,
             }
         } else if desc.contains("持续") {
-            Some(300)  // Default 5 minutes
+            Some(300) // Default 5 minutes
         } else {
             None
         }
@@ -2670,7 +2803,10 @@ impl RuleFromContextTool {
         let mut dsl = format!("RULE \"{}\"\n", name);
 
         // WHEN clause
-        dsl.push_str(&format!("WHEN {}.{} {} {}\n", device_id, metric, operator, threshold));
+        dsl.push_str(&format!(
+            "WHEN {}.{} {} {}\n",
+            device_id, metric, operator, threshold
+        ));
 
         // FOR clause
         if let Some(duration) = for_duration {
@@ -2689,16 +2825,22 @@ impl RuleFromContextTool {
         for action in actions {
             match action.action_type.as_str() {
                 "notify" => {
-                    let msg = action.params.get("message")
+                    let msg = action
+                        .params
+                        .get("message")
                         .and_then(|m| m.as_str())
                         .unwrap_or("规则触发");
                     dsl.push_str(&format!("  NOTIFY \"{}\"\n", msg));
                 }
                 "execute" => {
-                    let device = action.params.get("device")
+                    let device = action
+                        .params
+                        .get("device")
                         .and_then(|d| d.as_str())
                         .unwrap_or("unknown");
-                    let cmd = action.params.get("command")
+                    let cmd = action
+                        .params
+                        .get("command")
                         .and_then(|c| c.as_str())
                         .unwrap_or("turn_on");
                     dsl.push_str(&format!("  EXECUTE {}.{}\n", device, cmd));
@@ -2787,20 +2929,21 @@ impl Tool for RuleFromContextTool {
     async fn execute(&self, args: Value) -> ToolResult<ToolOutput> {
         self.validate_args(&args)?;
 
-        let description = args["description"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("description must be a string".to_string()))?;
+        let description = args["description"].as_str().ok_or_else(|| {
+            ToolError::InvalidArguments("description must be a string".to_string())
+        })?;
 
         // Extract rule from description
         let mut rule_def = self.extract_from_description(description);
 
         // Validate device context if provided
         if let Some(devices) = args.get("context_devices").and_then(|d| d.as_array()) {
-            let device_ids: Vec<&str> = devices.iter()
-                .filter_map(|d| d.as_str())
-                .collect();
+            let device_ids: Vec<&str> = devices.iter().filter_map(|d| d.as_str()).collect();
             if !device_ids.contains(&rule_def.device_id.as_str()) {
-                rule_def.missing_info.push(format!("警告: 指定设备 '{}' 不在上下文设备列表中", rule_def.device_id));
+                rule_def.missing_info.push(format!(
+                    "警告: 指定设备 '{}' 不在上下文设备列表中",
+                    rule_def.device_id
+                ));
                 rule_def.confidence = (rule_def.confidence - 0.2).max(0.1);
             }
         }

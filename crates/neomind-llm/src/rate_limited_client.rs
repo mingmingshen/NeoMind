@@ -117,11 +117,12 @@ impl GlobalRateLimiter {
         let limiter = limiters.get(key)?;
         let timestamps = limiter.timestamps.read().await;
         if timestamps.len() >= limiter.max_requests
-            && let Some(oldest) = timestamps.first() {
-                let now = Instant::now();
-                let wait = limiter.window_duration.saturating_sub(now - *oldest);
-                return Some(wait);
-            }
+            && let Some(oldest) = timestamps.first()
+        {
+            let now = Instant::now();
+            let wait = limiter.window_duration.saturating_sub(now - *oldest);
+            return Some(wait);
+        }
         None
     }
 }
@@ -224,20 +225,22 @@ impl RateLimitedClient {
         // Try Retry-After header (seconds)
         if let Some(retry_after) = response.headers().get("Retry-After")
             && let Ok(seconds) = retry_after.to_str()
-                && let Ok(secs) = seconds.parse::<u64>() {
-                    return Some(Duration::from_secs(secs));
-                }
+            && let Ok(secs) = seconds.parse::<u64>()
+        {
+            return Some(Duration::from_secs(secs));
+        }
 
         // Try Retry-After from HTTP date
         if let Some(retry_after) = response.headers().get("Retry-After")
             && let Ok(date_str) = retry_after.to_str()
-                && let Ok(date) = parse_http_date(date_str) {
-                    let now = Instant::now();
-                    let wait = date.saturating_duration_since(now);
-                    if wait > Duration::ZERO {
-                        return Some(wait);
-                    }
-                }
+            && let Ok(date) = parse_http_date(date_str)
+        {
+            let now = Instant::now();
+            let wait = date.saturating_duration_since(now);
+            if wait > Duration::ZERO {
+                return Some(wait);
+            }
+        }
 
         None
     }

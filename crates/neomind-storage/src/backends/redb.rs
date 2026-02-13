@@ -2,12 +2,12 @@
 //!
 //! Provides persistent storage using the redb embedded database.
 
+use lru::LruCache;
 use neomind_core::storage::{Result as CoreResult, StorageBackend, StorageError};
 use redb::{Database, ReadableTable, TableDefinition};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock as StdRwLock};
-use std::num::NonZeroUsize;
-use lru::LruCache;
 
 type Result<T> = CoreResult<T>;
 
@@ -107,14 +107,16 @@ impl RedbBackend {
             // Use a temporary file instead.
             let temp_dir = std::env::temp_dir();
             let temp_path = temp_dir.join(format!("redb_{}", uuid::Uuid::new_v4()));
-            let db = Database::create(&temp_path).map_err(|e| StorageError::Backend(e.to_string()))?;
+            let db =
+                Database::create(&temp_path).map_err(|e| StorageError::Backend(e.to_string()))?;
             (db, Some(temp_path))
         } else {
             let path_ref = Path::new(path);
             if config.create_dirs
-                && let Some(parent) = path_ref.parent() {
-                    std::fs::create_dir_all(parent).map_err(StorageError::Io)?;
-                }
+                && let Some(parent) = path_ref.parent()
+            {
+                std::fs::create_dir_all(parent).map_err(StorageError::Io)?;
+            }
 
             let db = if path_ref.exists() {
                 Database::open(path_ref).map_err(|e| StorageError::Backend(e.to_string()))?
@@ -193,9 +195,10 @@ impl StorageBackend for RedbBackend {
 
         // Try cache first - use write lock since get() updates LRU position
         if let Ok(mut cache) = self.cache.write()
-            && let Some(cached) = cache.get(&namespaced) {
-                return Ok(Some(cached.clone()));
-            }
+            && let Some(cached) = cache.get(&namespaced)
+        {
+            return Ok(Some(cached.clone()));
+        }
 
         // Cache miss - read from database
         let txn = self
@@ -205,8 +208,6 @@ impl StorageBackend for RedbBackend {
         let t = txn
             .open_table(UNIFIED_TABLE)
             .map_err(|e| StorageError::Backend(e.to_string()))?;
-
-        
 
         match t
             .get(&*namespaced)
@@ -308,7 +309,11 @@ impl Drop for RedbBackend {
             // Clean up the temporary file
             if let Err(e) = std::fs::remove_file(temp_path) {
                 // Log warning but don't panic - cleanup failures are non-critical
-                tracing::debug!("Failed to remove temporary database file {}: {}", temp_path.display(), e);
+                tracing::debug!(
+                    "Failed to remove temporary database file {}: {}",
+                    temp_path.display(),
+                    e
+                );
             }
             // Also try to remove the -journal file if it exists
             let journal_path = temp_path.with_extension("redb-journal");

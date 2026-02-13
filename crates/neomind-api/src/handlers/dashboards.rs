@@ -3,8 +3,8 @@
 //! Provides API endpoints for managing visual dashboards with components.
 
 use axum::{
-    extract::{Path, State},
     Json,
+    extract::{Path, State},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -15,8 +15,8 @@ use super::{
 };
 use crate::models::ErrorResponse;
 use neomind_storage::dashboards::{
-    Dashboard as StoredDashboard, DashboardTemplate as StoredTemplate,
-    DashboardLayout as StoredLayout, DashboardComponent as StoredComponent, default_templates,
+    Dashboard as StoredDashboard, DashboardComponent as StoredComponent,
+    DashboardLayout as StoredLayout, DashboardTemplate as StoredTemplate, default_templates,
 };
 
 // ============================================================================
@@ -72,15 +72,35 @@ pub struct DashboardComponent {
     #[serde(alias = "type", rename = "type")]
     pub component_type: String,
     pub position: ComponentPosition,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "title", rename = "title")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "title",
+        rename = "title"
+    )]
     pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "data_source", rename = "data_source")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "data_source",
+        rename = "data_source"
+    )]
     pub data_source: Option<JsonValue>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "display", rename = "display")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "display",
+        rename = "display"
+    )]
     pub display: Option<JsonValue>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "config", rename = "config")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "config",
+        rename = "config"
+    )]
     pub config: Option<JsonValue>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "actions", rename = "actions")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "actions",
+        rename = "actions"
+    )]
     pub actions: Option<JsonValue>,
 }
 
@@ -95,7 +115,11 @@ pub struct Dashboard {
     pub created_at: i64,
     #[serde(alias = "updated_at", rename = "updated_at")]
     pub updated_at: i64,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "is_default", rename = "is_default")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "is_default",
+        rename = "is_default"
+    )]
     pub is_default: Option<bool>,
 }
 
@@ -112,15 +136,35 @@ pub struct CreateDashboardComponent {
     #[serde(alias = "type", rename = "type")]
     pub component_type: String,
     pub position: ComponentPosition,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "title", rename = "title")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "title",
+        rename = "title"
+    )]
     pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "data_source", rename = "data_source")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "data_source",
+        rename = "data_source"
+    )]
     pub data_source: Option<JsonValue>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "display", rename = "display")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "display",
+        rename = "display"
+    )]
     pub display: Option<JsonValue>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "config", rename = "config")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "config",
+        rename = "config"
+    )]
     pub config: Option<JsonValue>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "actions", rename = "actions")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "actions",
+        rename = "actions"
+    )]
     pub actions: Option<JsonValue>,
 }
 
@@ -274,11 +318,14 @@ fn stored_template_to_api(template: &StoredTemplate) -> DashboardTemplate {
         icon: template.icon.clone(),
         layout: convert_layout(&template.layout),
         components: template.components.clone(),
-        required_resources: template.required_resources.as_ref().map(|r| RequiredResources {
-            devices: r.devices,
-            agents: r.agents,
-            rules: r.rules,
-        }),
+        required_resources: template
+            .required_resources
+            .as_ref()
+            .map(|r| RequiredResources {
+                devices: r.devices,
+                agents: r.agents,
+                rules: r.rules,
+            }),
     }
 }
 
@@ -290,7 +337,9 @@ fn stored_template_to_api(template: &StoredTemplate) -> DashboardTemplate {
 pub async fn list_dashboards_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<DashboardsResponse> {
-    let dashboards = state.dashboard_store.list_all()
+    let dashboards = state
+        .dashboard_store
+        .list_all()
         .map_err(|e| ErrorResponse::internal(format!("Failed to list dashboards: {}", e)))?;
 
     let api_dashboards: Vec<Dashboard> = dashboards.iter().map(stored_to_api).collect();
@@ -310,7 +359,8 @@ pub async fn get_dashboard_handler(
     // Special handling for "overview" and "blank" template IDs
     if id == "overview" || id == "blank" {
         let templates = default_templates();
-        let template = templates.into_iter()
+        let template = templates
+            .into_iter()
             .find(|t| t.id == id)
             .ok_or_else(|| ErrorResponse::not_found(format!("Template '{}' not found", id)))?;
 
@@ -326,7 +376,9 @@ pub async fn get_dashboard_handler(
         });
     }
 
-    let dashboard = state.dashboard_store.load(&id)
+    let dashboard = state
+        .dashboard_store
+        .load(&id)
         .map_err(|e| ErrorResponse::internal(format!("Failed to load dashboard: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Dashboard '{}' not found", id)))?;
 
@@ -345,7 +397,9 @@ pub async fn create_dashboard_handler(
         id: id.clone(),
         name: req.name,
         layout: api_to_stored_layout(&req.layout),
-        components: req.components.iter()
+        components: req
+            .components
+            .iter()
             .enumerate()
             .map(|(i, c)| {
                 let mut comp = api_to_stored_component(c);
@@ -358,7 +412,9 @@ pub async fn create_dashboard_handler(
         is_default: None,
     };
 
-    state.dashboard_store.save(&stored_dashboard)
+    state
+        .dashboard_store
+        .save(&stored_dashboard)
         .map_err(|e| ErrorResponse::internal(format!("Failed to save dashboard: {}", e)))?;
 
     ok(stored_to_api(&stored_dashboard))
@@ -370,7 +426,9 @@ pub async fn update_dashboard_handler(
     Path(id): Path<String>,
     Json(req): Json<UpdateDashboardRequest>,
 ) -> HandlerResult<Dashboard> {
-    let mut dashboard = state.dashboard_store.load(&id)
+    let mut dashboard = state
+        .dashboard_store
+        .load(&id)
         .map_err(|e| ErrorResponse::internal(format!("Failed to load dashboard: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Dashboard '{}' not found", id)))?;
 
@@ -383,13 +441,16 @@ pub async fn update_dashboard_handler(
     }
     if let Some(components) = req.components {
         // Parse components from JSON
-        dashboard.components = components.iter()
+        dashboard.components = components
+            .iter()
             .filter_map(|c| serde_json::from_value::<StoredComponent>(c.clone()).ok())
             .collect();
     }
     dashboard.updated_at = chrono::Utc::now().timestamp();
 
-    state.dashboard_store.save(&dashboard)
+    state
+        .dashboard_store
+        .save(&dashboard)
         .map_err(|e| ErrorResponse::internal(format!("Failed to save dashboard: {}", e)))?;
 
     ok(stored_to_api(&dashboard))
@@ -401,12 +462,20 @@ pub async fn delete_dashboard_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     // Check if dashboard exists
-    if !state.dashboard_store.exists(&id)
-        .map_err(|e| ErrorResponse::internal(format!("Failed to check dashboard: {}", e)))? {
-        return Err(ErrorResponse::not_found(format!("Dashboard '{}' not found", id)));
+    if !state
+        .dashboard_store
+        .exists(&id)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to check dashboard: {}", e)))?
+    {
+        return Err(ErrorResponse::not_found(format!(
+            "Dashboard '{}' not found",
+            id
+        )));
     }
 
-    state.dashboard_store.delete(&id)
+    state
+        .dashboard_store
+        .delete(&id)
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete dashboard: {}", e)))?;
 
     ok(serde_json::json!({
@@ -421,12 +490,20 @@ pub async fn set_default_dashboard_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     // Check if dashboard exists
-    if !state.dashboard_store.exists(&id)
-        .map_err(|e| ErrorResponse::internal(format!("Failed to check dashboard: {}", e)))? {
-        return Err(ErrorResponse::not_found(format!("Dashboard '{}' not found", id)));
+    if !state
+        .dashboard_store
+        .exists(&id)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to check dashboard: {}", e)))?
+    {
+        return Err(ErrorResponse::not_found(format!(
+            "Dashboard '{}' not found",
+            id
+        )));
     }
 
-    state.dashboard_store.set_default(&id)
+    state
+        .dashboard_store
+        .set_default(&id)
         .map_err(|e| ErrorResponse::internal(format!("Failed to set default dashboard: {}", e)))?;
 
     ok(serde_json::json!({
@@ -449,7 +526,8 @@ pub async fn get_template_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<DashboardTemplate> {
     let templates = default_templates();
-    let template = templates.into_iter()
+    let template = templates
+        .into_iter()
         .find(|t| t.id == id)
         .ok_or_else(|| ErrorResponse::not_found(format!("Template '{}' not found", id)))?;
 

@@ -9,7 +9,7 @@
 
 use neomind_core::extension::{
     loader::NativeExtensionLoader,
-    system::{ExtensionError, ExtensionMetadata, ExtensionState, MetricDefinition, MetricDataType},
+    system::{ExtensionError, ExtensionMetadata, ExtensionState, MetricDataType, MetricDefinition},
 };
 use std::path::PathBuf;
 
@@ -43,11 +43,11 @@ fn test_load_invalid_extension_format() {
 
     // Test with various invalid extensions
     let invalid_paths = vec![
-        PathBuf::from("test.txt"),      // Wrong extension
-        PathBuf::from("test.json"),     // Wrong extension
-        PathBuf::from("test.toml"),     // Wrong extension
-        PathBuf::from("test.exe"),      // Not a native library
-        PathBuf::from("test"),          // No extension
+        PathBuf::from("test.txt"),  // Wrong extension
+        PathBuf::from("test.json"), // Wrong extension
+        PathBuf::from("test.toml"), // Wrong extension
+        PathBuf::from("test.exe"),  // Not a native library
+        PathBuf::from("test"),      // No extension
     ];
 
     for path in invalid_paths {
@@ -85,7 +85,10 @@ fn test_extension_metadata_with_description() {
     )
     .with_description("A test extension for unit testing");
 
-    assert_eq!(meta.description, Some("A test extension for unit testing".to_string()));
+    assert_eq!(
+        meta.description,
+        Some("A test extension for unit testing".to_string())
+    );
 }
 
 #[test]
@@ -188,7 +191,9 @@ fn test_metric_data_type_variants() {
         MetricDataType::Boolean,
         MetricDataType::String,
         MetricDataType::Binary,
-        MetricDataType::Enum { options: vec!["a".to_string(), "b".to_string()] },
+        MetricDataType::Enum {
+            options: vec!["a".to_string(), "b".to_string()],
+        },
     ];
 
     for data_type in types {
@@ -226,7 +231,10 @@ fn test_extension_error_symbol_not_found() {
 
 #[test]
 fn test_extension_error_incompatible_version() {
-    let err = ExtensionError::IncompatibleVersion { expected: 2, got: 1 };
+    let err = ExtensionError::IncompatibleVersion {
+        expected: 2,
+        got: 1,
+    };
     let msg = err.to_string();
     assert!(msg.contains("Incompatible"));
     assert!(msg.contains("2"));
@@ -271,11 +279,7 @@ fn test_extension_metadata_version_semver() {
     ];
 
     for version in &versions {
-        let meta = ExtensionMetadata::new(
-            "test.extension",
-            "Test",
-            version.clone(),
-        );
+        let meta = ExtensionMetadata::new("test.extension", "Test", version.clone());
         assert_eq!(meta.version, *version);
     }
 }
@@ -292,11 +296,7 @@ fn test_extension_metadata_id_validation() {
     ];
 
     for id in valid_ids {
-        let meta = ExtensionMetadata::new(
-            id,
-            "Test",
-            semver::Version::new(1, 0, 0),
-        );
+        let meta = ExtensionMetadata::new(id, "Test", semver::Version::new(1, 0, 0));
         assert_eq!(meta.id, id);
     }
 }
@@ -368,11 +368,7 @@ fn test_enum_metric_data_type() {
 
 #[test]
 fn test_extension_metadata_empty_optional_fields() {
-    let meta = ExtensionMetadata::new(
-        "test.ext",
-        "Test",
-        semver::Version::new(1, 0, 0),
-    );
+    let meta = ExtensionMetadata::new("test.ext", "Test", semver::Version::new(1, 0, 0));
 
     // Optional fields should be None by default
     assert!(meta.description.is_none());

@@ -169,18 +169,23 @@ impl DiscoveredPath {
         }
 
         // Normalize all paths to find common pattern
-        let normalized_info: Vec<_> = paths.iter()
+        let normalized_info: Vec<_> = paths
+            .iter()
             .map(|p| Self::normalize_array_path(&p.path))
             .collect();
 
         // Check if all normalize to the same pattern
         let first_normalized = &normalized_info[0].0;
-        if !normalized_info.iter().all(|(norm, _, _)| norm == first_normalized) {
+        if !normalized_info
+            .iter()
+            .all(|(norm, _, _)| norm == first_normalized)
+        {
             return None; // Not the same pattern
         }
 
         // Find max array index
-        let max_length = normalized_info.iter()
+        let max_length = normalized_info
+            .iter()
             .filter_map(|(_, _, idx)| *idx)
             .map(|idx| idx + 1) // Convert 0-based index to length
             .max();
@@ -314,9 +319,8 @@ impl ValueRange {
         let avg = sum / values.len() as f64;
 
         let std_dev = if values.len() > 1 {
-            let variance = values.iter()
-                .map(|&x| (x - avg).powi(2))
-                .sum::<f64>() / (values.len() - 1) as f64;
+            let variance =
+                values.iter().map(|&x| (x - avg).powi(2)).sum::<f64>() / (values.len() - 1) as f64;
             Some(variance.sqrt())
         } else {
             None
@@ -472,17 +476,23 @@ impl SemanticType {
         }
 
         // Light
-        if name_lower.contains("light") || name_lower.contains("lux") || name_lower.contains("光照") {
+        if name_lower.contains("light") || name_lower.contains("lux") || name_lower.contains("光照")
+        {
             return SemanticType::Light;
         }
 
         // Motion
-        if name_lower.contains("motion") || name_lower.contains("pir") || name_lower.contains("移动") {
+        if name_lower.contains("motion")
+            || name_lower.contains("pir")
+            || name_lower.contains("移动")
+        {
             return SemanticType::Motion;
         }
 
         // Switch
-        if name_lower.contains("switch") || (name_lower.contains("power") && name_lower.contains("state")) {
+        if name_lower.contains("switch")
+            || (name_lower.contains("power") && name_lower.contains("state"))
+        {
             return SemanticType::Switch;
         }
 
@@ -507,12 +517,18 @@ impl SemanticType {
         }
 
         // Energy
-        if name_lower.contains("energy") || name_lower.contains("kwh") || name_lower.contains("能耗") {
+        if name_lower.contains("energy")
+            || name_lower.contains("kwh")
+            || name_lower.contains("能耗")
+        {
             return SemanticType::Energy;
         }
 
         // Speed
-        if name_lower.contains("speed") || name_lower.contains("rpm") || name_lower.contains("velocity") {
+        if name_lower.contains("speed")
+            || name_lower.contains("rpm")
+            || name_lower.contains("velocity")
+        {
             return SemanticType::Speed;
         }
 
@@ -527,7 +543,10 @@ impl SemanticType {
         }
 
         // RSSI/Signal
-        if name_lower.contains("rssi") || name_lower.contains("signal") || name_lower.contains("snr") {
+        if name_lower.contains("rssi")
+            || name_lower.contains("signal")
+            || name_lower.contains("snr")
+        {
             return SemanticType::Rssi;
         }
 
@@ -542,7 +561,10 @@ impl SemanticType {
         }
 
         // Alarm
-        if name_lower.contains("alarm") || name_lower.contains("alert") || name_lower.contains("告警") {
+        if name_lower.contains("alarm")
+            || name_lower.contains("alert")
+            || name_lower.contains("告警")
+        {
             return SemanticType::Alarm;
         }
 
@@ -552,7 +574,11 @@ impl SemanticType {
         }
 
         // Width/Height (image dimensions) - check last segment for nested fields
-        if last_segment == "width" || last_segment == "height" || name_lower.ends_with(".width") || name_lower.ends_with(".height") {
+        if last_segment == "width"
+            || last_segment == "height"
+            || name_lower.ends_with(".width")
+            || name_lower.ends_with(".height")
+        {
             return SemanticType::Status;
         }
 
@@ -597,7 +623,8 @@ impl SemanticType {
         }
 
         // Type - prefer exact match, but allow device_type, encoding_type etc.
-        if last_segment == "type" || name_lower.ends_with("_type") || name_lower.ends_with(".type") {
+        if last_segment == "type" || name_lower.ends_with("_type") || name_lower.ends_with(".type")
+        {
             return SemanticType::Status;
         }
 
@@ -622,27 +649,35 @@ impl SemanticType {
         }
 
         // X/Y coordinates - check last segment for nested fields
-        if last_segment == "x" || last_segment == "y" || name_lower.ends_with(".x") || name_lower.ends_with(".y") {
+        if last_segment == "x"
+            || last_segment == "y"
+            || name_lower.ends_with(".x")
+            || name_lower.ends_with(".y")
+        {
             return SemanticType::Status;
         }
 
         // Latency / inference time
-        if name_lower.contains("latency") || name_lower.contains("inference_time") || name_lower.contains("delay") {
+        if name_lower.contains("latency")
+            || name_lower.contains("inference_time")
+            || name_lower.contains("delay")
+        {
             return SemanticType::Speed;
         }
 
         // Try to infer from value range
         if let Some(v) = value
-            && let Some(n) = v.as_f64() {
-                // Temperature range check (typical: -40 to 100)
-                if (-50.0..=150.0).contains(&n) {
-                    // Could be temperature, but need more context
-                }
-                // Humidity range check (0-100)
-                if (0.0..=100.0).contains(&n) {
-                    // Could be humidity or percentage
-                }
+            && let Some(n) = v.as_f64()
+        {
+            // Temperature range check (typical: -40 to 100)
+            if (-50.0..=150.0).contains(&n) {
+                // Could be temperature, but need more context
             }
+            // Humidity range check (0-100)
+            if (0.0..=100.0).contains(&n) {
+                // Could be humidity or percentage
+            }
+        }
 
         SemanticType::Unknown
     }
@@ -1084,15 +1119,9 @@ pub enum AutoOnboardEvent {
         device_type: String,
     },
     /// Device rejected
-    DeviceRejected {
-        draft_id: String,
-        reason: String,
-    },
+    DeviceRejected { draft_id: String, reason: String },
     /// Analysis failed
-    AnalysisFailed {
-        draft_id: String,
-        error: String,
-    },
+    AnalysisFailed { draft_id: String, error: String },
 }
 
 impl DraftDevice {
@@ -1141,8 +1170,7 @@ impl DraftDevice {
 
     /// Check if ready for analysis
     pub fn ready_for_analysis(&self, min_samples: usize) -> bool {
-        self.status == DraftDeviceStatus::Collecting
-            && self.samples.len() >= min_samples
+        self.status == DraftDeviceStatus::Collecting && self.samples.len() >= min_samples
     }
 
     /// Check if should trigger analysis by timeout
@@ -1154,7 +1182,8 @@ impl DraftDevice {
 
     /// Get samples as JSON values
     pub fn json_samples(&self) -> Vec<serde_json::Value> {
-        self.samples.iter()
+        self.samples
+            .iter()
             .filter_map(|s| s.parsed.clone())
             .collect()
     }
@@ -1206,13 +1235,22 @@ impl GeneratedDeviceType {
         }
     }
 
-    fn generate_insights(metrics: &[DiscoveredMetric], commands: &[DiscoveredCommand]) -> (Vec<String>, Vec<String>) {
+    fn generate_insights(
+        metrics: &[DiscoveredMetric],
+        commands: &[DiscoveredCommand],
+    ) -> (Vec<String>, Vec<String>) {
         let mut insights = Vec::new();
         let warnings = Vec::new();
 
         // Analyze metrics
-        let temp_count = metrics.iter().filter(|m| m.semantic_type == SemanticType::Temperature).count();
-        let humid_count = metrics.iter().filter(|m| m.semantic_type == SemanticType::Humidity).count();
+        let temp_count = metrics
+            .iter()
+            .filter(|m| m.semantic_type == SemanticType::Temperature)
+            .count();
+        let humid_count = metrics
+            .iter()
+            .filter(|m| m.semantic_type == SemanticType::Humidity)
+            .count();
 
         if temp_count > 0 && humid_count > 0 {
             insights.push("Device measures both temperature and humidity".to_string());
@@ -1232,13 +1270,31 @@ mod tests {
 
     #[test]
     fn test_data_type_inference() {
-        assert_eq!(DataType::from_json(&serde_json::json!(42)), DataType::Integer);
-        assert_eq!(DataType::from_json(&serde_json::json!(3.14)), DataType::Float);
-        assert_eq!(DataType::from_json(&serde_json::json!("hello")), DataType::String);
-        assert_eq!(DataType::from_json(&serde_json::json!(true)), DataType::Boolean);
-        assert_eq!(DataType::from_json(&serde_json::json!(null)), DataType::Null);
+        assert_eq!(
+            DataType::from_json(&serde_json::json!(42)),
+            DataType::Integer
+        );
+        assert_eq!(
+            DataType::from_json(&serde_json::json!(3.14)),
+            DataType::Float
+        );
+        assert_eq!(
+            DataType::from_json(&serde_json::json!("hello")),
+            DataType::String
+        );
+        assert_eq!(
+            DataType::from_json(&serde_json::json!(true)),
+            DataType::Boolean
+        );
+        assert_eq!(
+            DataType::from_json(&serde_json::json!(null)),
+            DataType::Null
+        );
         assert_eq!(DataType::from_json(&serde_json::json!([])), DataType::Array);
-        assert_eq!(DataType::from_json(&serde_json::json!({})), DataType::Object);
+        assert_eq!(
+            DataType::from_json(&serde_json::json!({})),
+            DataType::Object
+        );
     }
 
     #[test]

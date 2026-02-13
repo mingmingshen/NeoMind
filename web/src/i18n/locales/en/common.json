@@ -284,6 +284,10 @@
       "anthropic": "Anthropic",
       "google": "Google",
       "xai": "xAI",
+      "qwen": "Qwen",
+      "deepseek": "DeepSeek",
+      "glm": "GLM",
+      "minimax": "MiniMax",
       "default": "Default Model"
     },
     "providerTypes": {

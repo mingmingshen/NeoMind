@@ -2,8 +2,8 @@
 
 use async_trait::async_trait;
 
+use super::super::{Error, Message, Result};
 use super::MessageChannel;
-use super::super::{Message, Result, Error};
 
 /// Console channel for printing messages to stdout.
 #[derive(Debug, Clone)]

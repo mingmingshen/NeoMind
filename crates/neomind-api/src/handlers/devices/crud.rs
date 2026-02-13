@@ -9,8 +9,8 @@ use uuid::Uuid;
 
 use super::compat::{config_to_device_instance, format_status_to_str};
 use super::models::{
-    AddDeviceRequest, BatchCurrentValuesRequest,
-    DeviceDto, PaginationMeta, PaginationQuery, UpdateDeviceRequest,
+    AddDeviceRequest, BatchCurrentValuesRequest, DeviceDto, PaginationMeta, PaginationQuery,
+    UpdateDeviceRequest,
 };
 use crate::handlers::{
     ServerState,
@@ -67,14 +67,16 @@ pub async fn list_devices_handler(
     for config in configs {
         // Filter by device_type
         if let Some(ref filter_type) = pagination.device_type
-            && &config.device_type != filter_type {
-                continue;
-            }
+            && &config.device_type != filter_type
+        {
+            continue;
+        }
 
         // Filter by status
         if let Some(ref filter_status) = pagination.status {
             let device_status = state
-                .devices.service
+                .devices
+                .service
                 .get_device_status(&config.device_id)
                 .await;
             let status_str = match device_status.status {
@@ -108,7 +110,8 @@ pub async fn list_devices_handler(
 
         // Get real device status from DeviceService
         let device_status = state
-            .devices.service
+            .devices
+            .service
             .get_device_status(&config.device_id)
             .await;
 
@@ -129,7 +132,11 @@ pub async fn list_devices_handler(
         let instance = config_to_device_instance(&config, status, last_seen);
 
         // Get template info for metric/command counts
-        let template = state.devices.service.get_template(&config.device_type).await;
+        let template = state
+            .devices
+            .service
+            .get_template(&config.device_type)
+            .await;
         let metric_count = template.as_ref().map(|t| t.metrics.len());
         let command_count = template.as_ref().map(|t| t.commands.len());
 
@@ -173,7 +180,8 @@ pub async fn get_device_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Use new DeviceService
     let (config, template) = state
-        .devices.service
+        .devices
+        .service
         .get_device_with_template(&device_id)
         .await
         .map_err(|_| ErrorResponse::not_found("Device"))?;
@@ -183,7 +191,8 @@ pub async fn get_device_handler(
 
     // Get current metric values (if available)
     let current_values = state
-        .devices.service
+        .devices
+        .service
         .get_current_metrics(&device_id)
         .await
         .unwrap_or_default();
@@ -245,7 +254,8 @@ pub async fn get_device_current_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Get device config and template
     let (config, template) = state
-        .devices.service
+        .devices
+        .service
         .get_device_with_template(&device_id)
         .await
         .map_err(|_| ErrorResponse::not_found("Device"))?;
@@ -272,11 +282,18 @@ pub async fn get_device_current_handler(
     let now = chrono::Utc::now().timestamp();
 
     // Transform-generated metric namespaces (with dot notation)
-    let transform_namespaces = ["transform.", "virtual.", "computed.", "derived.", "aggregated."];
+    let transform_namespaces = [
+        "transform.",
+        "virtual.",
+        "computed.",
+        "derived.",
+        "aggregated.",
+    ];
 
     // Get all available metrics from storage first
     let all_storage_metrics: Vec<String> = state
-        .devices.telemetry
+        .devices
+        .telemetry
         .list_metrics(&device_id)
         .await
         .unwrap_or_default();
@@ -285,7 +302,8 @@ pub async fn get_device_current_handler(
     // 1. Template metrics
     // 2. Auto-extracted metrics (like values.battery) from storage
     // 3. Virtual metrics (transform-generated)
-    let mut metrics_to_process: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut metrics_to_process: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
 
     // Add template metrics
     for metric in &template.metrics {
@@ -304,11 +322,15 @@ pub async fn get_device_current_handler(
         // Check if this is a template metric
         let is_template = template.metrics.iter().any(|m| m.name == metric_name);
         // Check if this is a virtual metric (transform-generated)
-        let is_virtual = transform_namespaces.iter().any(|p| metric_name.starts_with(p));
+        let is_virtual = transform_namespaces
+            .iter()
+            .any(|p| metric_name.starts_with(p));
 
         let (display_name, unit, data_type_str, is_virtual_flag) = if is_template {
             // Safe: is_template check above guarantees the metric exists
-            let metric = template.metrics.iter()
+            let metric = template
+                .metrics
+                .iter()
                 .find(|m| m.name == metric_name)
                 .expect("metric should exist in template after is_template check");
             let data_type_str = match metric.data_type {
@@ -320,38 +342,69 @@ pub async fn get_device_current_handler(
                 neomind_devices::mdl::MetricDataType::Enum { .. } => "enum",
                 neomind_devices::mdl::MetricDataType::Array { .. } => "array",
             };
-            (metric.display_name.clone(), metric.unit.clone(), data_type_str.to_string(), false)
+            (
+                metric.display_name.clone(),
+                metric.unit.clone(),
+                data_type_str.to_string(),
+                false,
+            )
         } else if is_virtual {
-            (metric_name.clone(), "-".to_string(), "float".to_string(), true)
+            (
+                metric_name.clone(),
+                "-".to_string(),
+                "float".to_string(),
+                true,
+            )
         } else {
             // Auto-extracted metric (e.g., values.battery)
-            (metric_name.clone(), "-".to_string(), "string".to_string(), false)
+            (
+                metric_name.clone(),
+                "-".to_string(),
+                "string".to_string(),
+                false,
+            )
         };
 
         // Get latest value - try time_series_storage directly for auto-extracted metrics
         let value = if is_template {
             // Use device_service.query_telemetry for template metrics
             match state
-                .devices.service
+                .devices
+                .service
                 .query_telemetry(&device_id, &metric_name, Some(now - 3600), Some(now))
                 .await
             {
                 Ok(points) => points.last().map(|(_, v)| super::metrics::value_to_json(v)),
                 Err(e) => {
-                    tracing::warn!("Failed to query telemetry for {}/{}: {:?}", device_id, metric_name, e);
+                    tracing::warn!(
+                        "Failed to query telemetry for {}/{}: {:?}",
+                        device_id,
+                        metric_name,
+                        e
+                    );
                     None
                 }
             }
         } else {
             // Use time_series_storage.latest for storage metrics
-            match state.devices.telemetry.latest(&device_id, &metric_name).await {
+            match state
+                .devices
+                .telemetry
+                .latest(&device_id, &metric_name)
+                .await
+            {
                 Ok(Some(point)) => Some(super::metrics::value_to_json(&point.value)),
                 Ok(None) => {
                     tracing::debug!("No data found in storage for {}/{}", device_id, metric_name);
                     None
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to query latest for {}/{}: {:?}", device_id, metric_name, e);
+                    tracing::warn!(
+                        "Failed to query latest for {}/{}: {:?}",
+                        device_id,
+                        metric_name,
+                        e
+                    );
                     None
                 }
             }
@@ -408,7 +461,8 @@ pub async fn get_devices_current_batch_handler(
     for device_id in req.device_ids {
         // Get current metrics from device_service (in-memory cache)
         let current_values = state
-            .devices.service
+            .devices
+            .service
             .get_current_metrics(&device_id)
             .await
             .unwrap_or_default();
@@ -429,10 +483,16 @@ pub async fn get_devices_current_batch_handler(
                 let mut values = std::collections::HashMap::new();
                 // Fetch latest value for each template metric
                 for metric in &template.metrics {
-                    if let Ok(Some(point)) =
-                        state.devices.telemetry.latest(&device_id, &metric.name).await
+                    if let Ok(Some(point)) = state
+                        .devices
+                        .telemetry
+                        .latest(&device_id, &metric.name)
+                        .await
                     {
-                        values.insert(metric.name.clone(), super::metrics::value_to_json(&point.value));
+                        values.insert(
+                            metric.name.clone(),
+                            super::metrics::value_to_json(&point.value),
+                        );
                     }
                 }
                 values
@@ -467,7 +527,8 @@ pub async fn delete_device_handler(
     Path(device_id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     state
-        .devices.service
+        .devices
+        .service
         .unregister_device(&device_id)
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete device: {}", e)))?;
@@ -499,9 +560,8 @@ pub async fn add_device_handler(
 
     // Parse connection_config JSON into ConnectionConfig
     let connection_config: neomind_devices::ConnectionConfig =
-        serde_json::from_value(req.connection_config).map_err(|e| {
-            ErrorResponse::bad_request(format!("Invalid connection_config: {}", e))
-        })?;
+        serde_json::from_value(req.connection_config)
+            .map_err(|e| ErrorResponse::bad_request(format!("Invalid connection_config: {}", e)))?;
 
     // Create DeviceConfig
     let config = neomind_devices::DeviceConfig {
@@ -515,7 +575,8 @@ pub async fn add_device_handler(
 
     // Register device using new DeviceService
     state
-        .devices.service
+        .devices
+        .service
         .register_device(config)
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to add device: {}", e)))?;
@@ -535,7 +596,8 @@ pub async fn update_device_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Get existing device config
     let existing = state
-        .devices.service
+        .devices
+        .service
         .get_device(&device_id)
         .await
         .ok_or_else(|| ErrorResponse::not_found("Device"))?;
@@ -560,7 +622,8 @@ pub async fn update_device_handler(
 
     // Update device using new DeviceService
     state
-        .devices.service
+        .devices
+        .service
         .update_device(&device_id, config)
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update device: {}", e)))?;
@@ -581,7 +644,8 @@ pub async fn get_device_state_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Check device exists
     let _config = state
-        .devices.service
+        .devices
+        .service
         .get_device(&device_id)
         .await
         .ok_or_else(|| ErrorResponse::not_found("Device"))?;
@@ -612,7 +676,8 @@ pub async fn get_device_health_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Check device exists
     let _config = state
-        .devices.service
+        .devices
+        .service
         .get_device(&device_id)
         .await
         .ok_or_else(|| ErrorResponse::not_found("Device"))?;
@@ -661,7 +726,8 @@ pub async fn refresh_device_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Check device exists
     let config = state
-        .devices.service
+        .devices
+        .service
         .get_device(&device_id)
         .await
         .ok_or_else(|| ErrorResponse::not_found("Device"))?;
@@ -684,7 +750,8 @@ pub async fn refresh_device_handler(
             AdapterConnectionStatus::Disconnected
         };
         state
-            .devices.service
+            .devices
+            .service
             .update_device_status(&device_id, new_status)
             .await;
 

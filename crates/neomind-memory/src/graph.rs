@@ -486,7 +486,12 @@ impl MemoryGraph {
         }
 
         let rel_id = format!("{}_{}_{:?}", from_id, to_id, relation_type);
-        let relationship = Relationship::new(rel_id.clone(), from_id.clone(), to_id.clone(), relation_type);
+        let relationship = Relationship::new(
+            rel_id.clone(),
+            from_id.clone(),
+            to_id.clone(),
+            relation_type,
+        );
 
         // Add relationship
         {
@@ -497,11 +502,17 @@ impl MemoryGraph {
         // Update adjacency lists
         {
             let mut adj_out = self.adj_out.write().await;
-            adj_out.entry(from_id.clone()).or_default().push((to_id.clone(), rel_id.clone()));
+            adj_out
+                .entry(from_id.clone())
+                .or_default()
+                .push((to_id.clone(), rel_id.clone()));
         }
         {
             let mut adj_in = self.adj_in.write().await;
-            adj_in.entry(to_id).or_default().push((from_id, rel_id.clone()));
+            adj_in
+                .entry(to_id)
+                .or_default()
+                .push((from_id, rel_id.clone()));
         }
 
         Ok(rel_id)
@@ -518,8 +529,13 @@ impl MemoryGraph {
         let from_id = from.into();
         let to_id = to.into();
         let rel_id = format!("{}_{}_{:?}", from_id, to_id, relation_type);
-        let relationship = Relationship::new(rel_id.clone(), from_id.clone(), to_id.clone(), relation_type)
-            .with_weight(weight);
+        let relationship = Relationship::new(
+            rel_id.clone(),
+            from_id.clone(),
+            to_id.clone(),
+            relation_type,
+        )
+        .with_weight(weight);
 
         {
             let mut relationships = self.relationships.write().await;
@@ -528,11 +544,17 @@ impl MemoryGraph {
 
         {
             let mut adj_out = self.adj_out.write().await;
-            adj_out.entry(from_id.clone()).or_default().push((to_id.clone(), rel_id.clone()));
+            adj_out
+                .entry(from_id.clone())
+                .or_default()
+                .push((to_id.clone(), rel_id.clone()));
         }
         {
             let mut adj_in = self.adj_in.write().await;
-            adj_in.entry(to_id).or_default().push((from_id, rel_id.clone()));
+            adj_in
+                .entry(to_id)
+                .or_default()
+                .push((from_id, rel_id.clone()));
         }
 
         Ok(rel_id)
@@ -611,11 +633,12 @@ impl MemoryGraph {
                     }
 
                     if let Some(rel) = relationships.get(rel_id)
-                        && rel.relation_type == relation_type {
-                            visited.insert(to_id.clone());
-                            result.push(to_id.clone());
-                            queue.push_back((to_id.clone(), depth + 1));
-                        }
+                        && rel.relation_type == relation_type
+                    {
+                        visited.insert(to_id.clone());
+                        result.push(to_id.clone());
+                        queue.push_back((to_id.clone(), depth + 1));
+                    }
                 }
             }
         }
@@ -635,7 +658,8 @@ impl MemoryGraph {
         let mut paths = Vec::new();
 
         // BFS to find all paths
-        let mut queue: VecDeque<(EntityId, Vec<EntityId>, Vec<RelationType>, f64)> = VecDeque::new();
+        let mut queue: VecDeque<(EntityId, Vec<EntityId>, Vec<RelationType>, f64)> =
+            VecDeque::new();
         queue.push_back((from_id.clone(), vec![from_id.clone()], Vec::new(), 0.0));
 
         while let Some((current, path, rels, weight)) = queue.pop_front() {
@@ -746,7 +770,11 @@ impl MemoryGraph {
     }
 
     /// Associate a memory with an entity.
-    pub async fn associate_memory(&self, entity_id: &str, memory_id: impl Into<String>) -> Result<()> {
+    pub async fn associate_memory(
+        &self,
+        entity_id: &str,
+        memory_id: impl Into<String>,
+    ) -> Result<()> {
         let mut entities = self.entities.write().await;
         let entity = entities
             .get_mut(entity_id)
@@ -826,7 +854,9 @@ mod tests {
     #[tokio::test]
     async fn test_remove_entity() {
         let graph = MemoryGraph::new();
-        graph.create_entity("test", "Test", EntityType::Device).await;
+        graph
+            .create_entity("test", "Test", EntityType::Device)
+            .await;
         assert!(graph.has_entity("test").await);
 
         graph.remove_entity("test").await;
@@ -836,8 +866,12 @@ mod tests {
     #[tokio::test]
     async fn test_add_relationship() {
         let graph = MemoryGraph::new();
-        graph.create_entity("user1", "Alice", EntityType::Person).await;
-        graph.create_entity("device1", "Sensor", EntityType::Device).await;
+        graph
+            .create_entity("user1", "Alice", EntityType::Person)
+            .await;
+        graph
+            .create_entity("device1", "Sensor", EntityType::Device)
+            .await;
 
         let rel_id = graph
             .add_relationship("user1", "device1", RelationType::Owns)
@@ -854,8 +888,14 @@ mod tests {
         graph.create_entity("b", "B", EntityType::Device).await;
         graph.create_entity("c", "C", EntityType::Device).await;
 
-        graph.add_relationship("a", "b", RelationType::Owns).await.unwrap();
-        graph.add_relationship("a", "c", RelationType::Controls).await.unwrap();
+        graph
+            .add_relationship("a", "b", RelationType::Owns)
+            .await
+            .unwrap();
+        graph
+            .add_relationship("a", "c", RelationType::Controls)
+            .await
+            .unwrap();
 
         let neighbors = graph.find_neighbors("a").await;
         assert_eq!(neighbors.len(), 2);
@@ -864,9 +904,15 @@ mod tests {
     #[tokio::test]
     async fn test_find_related() {
         let graph = MemoryGraph::new();
-        graph.create_entity("user", "User", EntityType::Person).await;
-        graph.create_entity("device1", "Device 1", EntityType::Device).await;
-        graph.create_entity("device2", "Device 2", EntityType::Device).await;
+        graph
+            .create_entity("user", "User", EntityType::Person)
+            .await;
+        graph
+            .create_entity("device1", "Device 1", EntityType::Device)
+            .await;
+        graph
+            .create_entity("device2", "Device 2", EntityType::Device)
+            .await;
         graph
             .create_entity("sub1", "Sub 1", EntityType::Device)
             .await;
@@ -912,9 +958,15 @@ mod tests {
     #[tokio::test]
     async fn test_get_entities_by_type() {
         let graph = MemoryGraph::new();
-        graph.create_entity("d1", "Device 1", EntityType::Device).await;
-        graph.create_entity("d2", "Device 2", EntityType::Device).await;
-        graph.create_entity("u1", "User 1", EntityType::Person).await;
+        graph
+            .create_entity("d1", "Device 1", EntityType::Device)
+            .await;
+        graph
+            .create_entity("d2", "Device 2", EntityType::Device)
+            .await;
+        graph
+            .create_entity("u1", "User 1", EntityType::Person)
+            .await;
 
         let devices = graph.get_entities_by_type(EntityType::Device).await;
         assert_eq!(devices.len(), 2);
@@ -926,7 +978,9 @@ mod tests {
     #[tokio::test]
     async fn test_associate_memory() {
         let graph = MemoryGraph::new();
-        graph.create_entity("entity1", "Entity", EntityType::Device).await;
+        graph
+            .create_entity("entity1", "Entity", EntityType::Device)
+            .await;
 
         graph
             .associate_memory("entity1", "memory123")
@@ -948,7 +1002,10 @@ mod tests {
     #[tokio::test]
     async fn test_relation_type_from_str() {
         assert_eq!(RelationType::from_string("owns"), Some(RelationType::Owns));
-        assert_eq!(RelationType::from_string("controls"), Some(RelationType::Controls));
+        assert_eq!(
+            RelationType::from_string("controls"),
+            Some(RelationType::Controls)
+        );
         assert_eq!(RelationType::from_string("unknown"), None);
     }
 

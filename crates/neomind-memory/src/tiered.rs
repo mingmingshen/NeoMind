@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use super::error::Result;
 use super::embeddings::EmbeddingConfig;
+use super::error::Result;
 use super::long_term::{KnowledgeCategory, KnowledgeEntry, TroubleshootingCase};
 use super::mid_term::{ConversationEntry, SearchResult};
 use super::short_term::{MemoryMessage, ShortTermMemory};
@@ -612,15 +612,27 @@ mod tests {
 
         // Add some conversations
         memory
-            .add_conversation("session1", "What is temperature?", "Temperature is a measure of heat.")
+            .add_conversation(
+                "session1",
+                "What is temperature?",
+                "Temperature is a measure of heat.",
+            )
             .await
             .unwrap();
         memory
-            .add_conversation("session1", "How about humidity?", "Humidity measures water vapor in air.")
+            .add_conversation(
+                "session1",
+                "How about humidity?",
+                "Humidity measures water vapor in air.",
+            )
             .await
             .unwrap();
         memory
-            .add_conversation("session2", "temperature sensor", "The temperature sensor reads 25 degrees.")
+            .add_conversation(
+                "session2",
+                "temperature sensor",
+                "The temperature sensor reads 25 degrees.",
+            )
             .await
             .unwrap();
 
@@ -654,7 +666,9 @@ mod tests {
 
         // Add to short-term
         memory.add_message("user", "temperature question").unwrap();
-        memory.add_message("assistant", "Temperature is 25 degrees").unwrap();
+        memory
+            .add_message("assistant", "Temperature is 25 degrees")
+            .unwrap();
 
         // Add to mid-term
         memory
@@ -663,9 +677,15 @@ mod tests {
             .unwrap();
 
         // Test with different search methods
-        let hybrid_results = memory.query_all_with_method("temperature", 5, SearchMethod::Hybrid).await;
-        let semantic_results = memory.query_all_with_method("temperature", 5, SearchMethod::Semantic).await;
-        let bm25_results = memory.query_all_with_method("temperature", 5, SearchMethod::BM25).await;
+        let hybrid_results = memory
+            .query_all_with_method("temperature", 5, SearchMethod::Hybrid)
+            .await;
+        let semantic_results = memory
+            .query_all_with_method("temperature", 5, SearchMethod::Semantic)
+            .await;
+        let bm25_results = memory
+            .query_all_with_method("temperature", 5, SearchMethod::BM25)
+            .await;
 
         // All should return some results
         let total_hybrid = hybrid_results.short_term.len() + hybrid_results.mid_term.len();
@@ -708,7 +728,11 @@ mod tests {
 
         // Add conversations with specific topics
         memory
-            .add_conversation("s1", "What is the temperature?", "The temperature is 25 degrees Celsius.")
+            .add_conversation(
+                "s1",
+                "What is the temperature?",
+                "The temperature is 25 degrees Celsius.",
+            )
             .await
             .unwrap();
         memory
@@ -716,7 +740,11 @@ mod tests {
             .await
             .unwrap();
         memory
-            .add_conversation("s2", "temp sensor reading", "Temperature sensor shows 30 degrees.")
+            .add_conversation(
+                "s2",
+                "temp sensor reading",
+                "Temperature sensor shows 30 degrees.",
+            )
             .await
             .unwrap();
 

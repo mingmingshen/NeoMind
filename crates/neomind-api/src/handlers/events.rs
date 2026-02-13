@@ -12,9 +12,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::handlers::ServerState;
-use neomind_core::eventbus::{EventBus, EventBusReceiver, FilteredReceiver};
-use neomind_core::event::EventMetadata;
 use neomind_core::NeoMindEvent;
+use neomind_core::event::EventMetadata;
+use neomind_core::eventbus::{EventBus, EventBusReceiver, FilteredReceiver};
 
 /// Wrapper for either filtered or unfiltered event receiver.
 enum EventBusReceiverWrapper {
@@ -52,7 +52,13 @@ impl EventBusReceiverWrapper {
 ///   `{ "agent_id": "...", "agent_name": "...", ... }`
 fn extract_event_data(event: &NeoMindEvent) -> Value {
     match event {
-        NeoMindEvent::AgentExecutionStarted { agent_id, agent_name, execution_id, trigger_type, .. } => {
+        NeoMindEvent::AgentExecutionStarted {
+            agent_id,
+            agent_name,
+            execution_id,
+            trigger_type,
+            ..
+        } => {
             serde_json::json!({
                 "agent_id": agent_id,
                 "agent_name": agent_name,
@@ -60,7 +66,14 @@ fn extract_event_data(event: &NeoMindEvent) -> Value {
                 "trigger_type": trigger_type,
             })
         }
-        NeoMindEvent::AgentExecutionCompleted { agent_id, execution_id, success, duration_ms, error, .. } => {
+        NeoMindEvent::AgentExecutionCompleted {
+            agent_id,
+            execution_id,
+            success,
+            duration_ms,
+            error,
+            ..
+        } => {
             serde_json::json!({
                 "agent_id": agent_id,
                 "execution_id": execution_id,
@@ -69,7 +82,15 @@ fn extract_event_data(event: &NeoMindEvent) -> Value {
                 "error": error,
             })
         }
-        NeoMindEvent::AgentThinking { agent_id, execution_id, step_number, step_type, description, details, .. } => {
+        NeoMindEvent::AgentThinking {
+            agent_id,
+            execution_id,
+            step_number,
+            step_type,
+            description,
+            details,
+            ..
+        } => {
             serde_json::json!({
                 "agent_id": agent_id,
                 "execution_id": execution_id,
@@ -79,7 +100,15 @@ fn extract_event_data(event: &NeoMindEvent) -> Value {
                 "details": details,
             })
         }
-        NeoMindEvent::AgentDecision { agent_id, execution_id, description, rationale, action, confidence, .. } => {
+        NeoMindEvent::AgentDecision {
+            agent_id,
+            execution_id,
+            description,
+            rationale,
+            action,
+            confidence,
+            ..
+        } => {
             serde_json::json!({
                 "agent_id": agent_id,
                 "execution_id": execution_id,
@@ -89,13 +118,25 @@ fn extract_event_data(event: &NeoMindEvent) -> Value {
                 "confidence": confidence,
             })
         }
-        NeoMindEvent::AgentMemoryUpdated { agent_id, memory_type, .. } => {
+        NeoMindEvent::AgentMemoryUpdated {
+            agent_id,
+            memory_type,
+            ..
+        } => {
             serde_json::json!({
                 "agent_id": agent_id,
                 "memory_type": memory_type,
             })
         }
-        NeoMindEvent::AgentProgress { agent_id, execution_id, stage, stage_label, progress, details, .. } => {
+        NeoMindEvent::AgentProgress {
+            agent_id,
+            execution_id,
+            stage,
+            stage_label,
+            progress,
+            details,
+            ..
+        } => {
             serde_json::json!({
                 "agent_id": agent_id,
                 "execution_id": execution_id,
@@ -107,7 +148,14 @@ fn extract_event_data(event: &NeoMindEvent) -> Value {
         }
         // DeviceMetric: payload must match frontend expectation (device_id, metric, value).
         // MetricValue serializes untagged (String => plain string, Float => number, etc.).
-        NeoMindEvent::DeviceMetric { device_id, metric, value, timestamp, quality, .. } => {
+        NeoMindEvent::DeviceMetric {
+            device_id,
+            metric,
+            value,
+            timestamp,
+            quality,
+            ..
+        } => {
             serde_json::json!({
                 "device_id": device_id,
                 "metric": metric,
@@ -150,7 +198,8 @@ pub async fn event_stream_handler(
     // Validate JWT token - must be provided
     let token = params.token.as_ref().ok_or(StatusCode::UNAUTHORIZED)?;
     state
-        .auth.user_state
+        .auth
+        .user_state
         .validate_token(token)
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
@@ -211,18 +260,29 @@ pub async fn event_stream_handler(
 }
 
 /// Create a filtered receiver based on category.
-fn create_filtered_receiver(event_bus: &EventBus, category: &Option<String>) -> EventBusReceiverWrapper {
+fn create_filtered_receiver(
+    event_bus: &EventBus,
+    category: &Option<String>,
+) -> EventBusReceiverWrapper {
     match category.as_deref() {
-        Some("device") => EventBusReceiverWrapper::FilteredDevice(event_bus.filter().device_events()),
+        Some("device") => {
+            EventBusReceiverWrapper::FilteredDevice(event_bus.filter().device_events())
+        }
         Some("rule") => EventBusReceiverWrapper::FilteredRule(event_bus.filter().rule_events()),
-        Some("workflow") => EventBusReceiverWrapper::FilteredWorkflow(event_bus.filter().workflow_events()),
+        Some("workflow") => {
+            EventBusReceiverWrapper::FilteredWorkflow(event_bus.filter().workflow_events())
+        }
         Some("agent") => EventBusReceiverWrapper::FilteredAgent(event_bus.filter().agent_events()),
         Some("llm") => EventBusReceiverWrapper::FilteredLlm(event_bus.filter().llm_events()),
         Some("alert") => EventBusReceiverWrapper::FilteredAlert(event_bus.filter().alert_events()),
-        Some("extension") => EventBusReceiverWrapper::FilteredExtension(event_bus.filter().extension_events()),
+        Some("extension") => {
+            EventBusReceiverWrapper::FilteredExtension(event_bus.filter().extension_events())
+        }
         Some("tool") => {
             // Custom filter for tool events - use the FilteredDevice variant as they have the same type
-            EventBusReceiverWrapper::FilteredDevice(event_bus.filter().custom(|e| e.is_tool_event()))
+            EventBusReceiverWrapper::FilteredDevice(
+                event_bus.filter().custom(|e| e.is_tool_event()),
+            )
         }
         Some("all") | None => EventBusReceiverWrapper::Unfiltered(event_bus.subscribe()),
         _ => EventBusReceiverWrapper::Unfiltered(event_bus.subscribe()),

@@ -13,11 +13,11 @@ use std::sync::Arc;
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::extension::types::{ExtensionError, Result};
 use crate::extension::system::{
-    Extension, ExtensionMetricValue, ExtensionMetadata as SystemMetadata,
-    MetricDescriptor, CommandDefinition, MetricDataType, ParamMetricValue, DynExtension,
+    CommandDefinition, DynExtension, Extension, ExtensionMetadata as SystemMetadata,
+    ExtensionMetricValue, MetricDataType, MetricDescriptor, ParamMetricValue,
 };
+use crate::extension::types::{ExtensionError, Result};
 use neomind_sandbox::{Sandbox, SandboxConfig};
 
 /// Loaded WASM extension with sandbox.
@@ -88,7 +88,11 @@ impl Extension for WasmExtension {
 
     async fn execute_command(&self, command: &str, args: &Value) -> Result<Value> {
         // Execute the command in the sandbox
-        match self.sandbox.execute(&self.module_name, command, args.clone()).await {
+        match self
+            .sandbox
+            .execute(&self.module_name, command, args.clone())
+            .await
+        {
             Ok(result) => {
                 // Extract metric values from result and cache them
                 if let Some(obj) = result.as_object() {
@@ -100,7 +104,8 @@ impl Extension for WasmExtension {
                         // 1. Direct field: {counter: 42}
                         // 2. Nested in data: {data: {counter: 42}}
                         // 3. Nested in data.value: {data: {name: "counter", value: 42}}
-                        let metric_value = obj.get(&metric.name)
+                        let metric_value = obj
+                            .get(&metric.name)
                             .or_else(|| obj.get("data").and_then(|d| d.get(&metric.name)))
                             .or_else(|| {
                                 obj.get("data").and_then(|d| {
@@ -144,34 +149,26 @@ impl Extension for WasmExtension {
             if let Some(value) = values.get(&metric.name) {
                 // Convert JSON value to extension metric value
                 let metric_value = match metric.data_type {
-                    MetricDataType::Float => {
-                        value.as_f64().map(|v| ExtensionMetricValue {
-                            name: metric.name.clone(),
-                            value: v.into(),
-                            timestamp: chrono::Utc::now().timestamp_millis(),
-                        })
-                    }
-                    MetricDataType::Integer => {
-                        value.as_i64().map(|v| ExtensionMetricValue {
-                            name: metric.name.clone(),
-                            value: v.into(),
-                            timestamp: chrono::Utc::now().timestamp_millis(),
-                        })
-                    }
-                    MetricDataType::Boolean => {
-                        value.as_bool().map(|v| ExtensionMetricValue {
-                            name: metric.name.clone(),
-                            value: v.into(),
-                            timestamp: chrono::Utc::now().timestamp_millis(),
-                        })
-                    }
-                    MetricDataType::String => {
-                        value.as_str().map(|v| ExtensionMetricValue {
-                            name: metric.name.clone(),
-                            value: v.into(),
-                            timestamp: chrono::Utc::now().timestamp_millis(),
-                        })
-                    }
+                    MetricDataType::Float => value.as_f64().map(|v| ExtensionMetricValue {
+                        name: metric.name.clone(),
+                        value: v.into(),
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                    }),
+                    MetricDataType::Integer => value.as_i64().map(|v| ExtensionMetricValue {
+                        name: metric.name.clone(),
+                        value: v.into(),
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                    }),
+                    MetricDataType::Boolean => value.as_bool().map(|v| ExtensionMetricValue {
+                        name: metric.name.clone(),
+                        value: v.into(),
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                    }),
+                    MetricDataType::String => value.as_str().map(|v| ExtensionMetricValue {
+                        name: metric.name.clone(),
+                        value: v.into(),
+                        timestamp: chrono::Utc::now().timestamp_millis(),
+                    }),
                     _ => None,
                 };
 
@@ -186,7 +183,15 @@ impl Extension for WasmExtension {
 
     async fn health_check(&self) -> Result<bool> {
         // Try to execute a simple health check function
-        match self.sandbox.execute(&self.module_name, "health", Value::Object(Default::default())).await {
+        match self
+            .sandbox
+            .execute(
+                &self.module_name,
+                "health",
+                Value::Object(Default::default()),
+            )
+            .await
+        {
             Ok(result) => {
                 if let Some(healthy) = result.as_bool() {
                     Ok(healthy)
@@ -223,10 +228,10 @@ impl WasmExtensionLoader {
             max_execution_time_secs: 30,
             allow_wasi: true,
         };
-        let sandbox = Arc::new(
-            Sandbox::new(config)
-                .map_err(|e| ExtensionError::LoadFailed(format!("Failed to create sandbox: {}", e)))?
-        );
+        let sandbox =
+            Arc::new(Sandbox::new(config).map_err(|e| {
+                ExtensionError::LoadFailed(format!("Failed to create sandbox: {}", e))
+            })?);
         Ok(Self {
             sandbox,
             _modules: Vec::new(),
@@ -242,9 +247,7 @@ impl WasmExtensionLoader {
 
         // Validate extension
         if path.extension().and_then(|e| e.to_str()) != Some("wasm") {
-            return Err(ExtensionError::InvalidFormat(
-                "Not a WASM file".to_string(),
-            ));
+            return Err(ExtensionError::InvalidFormat("Not a WASM file".to_string()));
         }
 
         // Try to load metadata from sidecar JSON file
@@ -258,8 +261,12 @@ impl WasmExtensionLoader {
 
         // Load the WASM module into sandbox
         let module_name = metadata.id.clone();
-        self.sandbox.load_module_from_file(&module_name, path).await
-            .map_err(|e| ExtensionError::LoadFailed(format!("Failed to load WASM module: {}", e)))?;
+        self.sandbox
+            .load_module_from_file(&module_name, path)
+            .await
+            .map_err(|e| {
+                ExtensionError::LoadFailed(format!("Failed to load WASM module: {}", e))
+            })?;
 
         // Create the extension wrapper
         let wasm_ext = WasmExtension::new(
@@ -277,15 +284,22 @@ impl WasmExtensionLoader {
     }
 
     /// Load metadata from JSON sidecar file.
-    fn load_metadata_from_json(&self, json_path: &Path) -> Result<(SystemMetadata, Vec<MetricDescriptor>, Vec<CommandDefinition>)> {
+    fn load_metadata_from_json(
+        &self,
+        json_path: &Path,
+    ) -> Result<(
+        SystemMetadata,
+        Vec<MetricDescriptor>,
+        Vec<CommandDefinition>,
+    )> {
         let content = std::fs::read_to_string(json_path)
             .map_err(|e| ExtensionError::LoadFailed(format!("Failed to read JSON: {}", e)))?;
 
         let json: WasmMetadataJson = serde_json::from_str(&content)
             .map_err(|e| ExtensionError::LoadFailed(format!("Failed to parse JSON: {}", e)))?;
 
-        let version = semver::Version::parse(&json.version)
-            .unwrap_or(semver::Version::new(1, 0, 0));
+        let version =
+            semver::Version::parse(&json.version).unwrap_or(semver::Version::new(1, 0, 0));
 
         let metadata = SystemMetadata {
             id: json.id.clone(),
@@ -299,7 +313,9 @@ impl WasmExtensionLoader {
             config_parameters: None,
         };
 
-        let metrics: Vec<MetricDescriptor> = json.metrics.unwrap_or_default()
+        let metrics: Vec<MetricDescriptor> = json
+            .metrics
+            .unwrap_or_default()
             .into_iter()
             .map(|m| MetricDescriptor {
                 name: m.name,
@@ -312,32 +328,42 @@ impl WasmExtensionLoader {
             })
             .collect();
 
-        let commands: Vec<CommandDefinition> = json.commands.unwrap_or_default()
+        let commands: Vec<CommandDefinition> = json
+            .commands
+            .unwrap_or_default()
             .into_iter()
             .map(|c| CommandDefinition {
                 name: c.name,
                 display_name: c.display_name,
                 payload_template: c.payload_template,
-                parameters: c.parameters.into_iter().map(|p| crate::extension::system::ParameterDefinition {
-                    name: p.name,
-                    display_name: p.display_name,
-                    description: p.description,
-                    param_type: p.param_type,
-                    required: p.required,
-                    default_value: p.default_value,
-                    min: p.min,
-                    max: p.max,
-                    options: p.options,
-                }).collect(),
+                parameters: c
+                    .parameters
+                    .into_iter()
+                    .map(|p| crate::extension::system::ParameterDefinition {
+                        name: p.name,
+                        display_name: p.display_name,
+                        description: p.description,
+                        param_type: p.param_type,
+                        required: p.required,
+                        default_value: p.default_value,
+                        min: p.min,
+                        max: p.max,
+                        options: p.options,
+                    })
+                    .collect(),
                 fixed_values: c.fixed_values,
                 samples: c.samples,
                 llm_hints: c.llm_hints,
-                parameter_groups: c.parameter_groups.into_iter().map(|g| crate::extension::system::ParameterGroup {
-                    name: g.name,
-                    display_name: g.display_name,
-                    description: g.description,
-                    parameters: g.parameters,
-                }).collect(),
+                parameter_groups: c
+                    .parameter_groups
+                    .into_iter()
+                    .map(|g| crate::extension::system::ParameterGroup {
+                        name: g.name,
+                        display_name: g.display_name,
+                        description: g.description,
+                        parameters: g.parameters,
+                    })
+                    .collect(),
             })
             .collect();
 
@@ -345,7 +371,14 @@ impl WasmExtensionLoader {
     }
 
     /// Generate metadata from filename.
-    fn metadata_from_filename(&self, path: &Path) -> Result<(SystemMetadata, Vec<MetricDescriptor>, Vec<CommandDefinition>)> {
+    fn metadata_from_filename(
+        &self,
+        path: &Path,
+    ) -> Result<(
+        SystemMetadata,
+        Vec<MetricDescriptor>,
+        Vec<CommandDefinition>,
+    )> {
         let file_name = path
             .file_stem()
             .and_then(|n| n.to_str())
@@ -363,8 +396,8 @@ impl WasmExtensionLoader {
                 file_path: Some(path.to_path_buf()),
                 config_parameters: None,
             },
-            Vec::new(),  // No metrics without JSON
-            Vec::new(),  // No commands without JSON
+            Vec::new(), // No metrics without JSON
+            Vec::new(), // No commands without JSON
         ))
     }
 
@@ -377,9 +410,7 @@ impl WasmExtensionLoader {
 
         // Validate extension
         if path.extension().and_then(|e| e.to_str()) != Some("wasm") {
-            return Err(ExtensionError::InvalidFormat(
-                "Not a WASM file".to_string(),
-            ));
+            return Err(ExtensionError::InvalidFormat("Not a WASM file".to_string()));
         }
 
         // Try to load metadata from sidecar JSON file

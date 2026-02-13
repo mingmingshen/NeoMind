@@ -32,9 +32,9 @@ impl MetaTool {
     /// Check if this tool should be used for a query.
     pub fn should_use(&self, query: &str) -> bool {
         let query_lower = query.to_lowercase();
-        self.use_when.iter().any(|pattern| {
-            query_lower.contains(pattern.to_lowercase().as_str())
-        })
+        self.use_when
+            .iter()
+            .any(|pattern| query_lower.contains(pattern.to_lowercase().as_str()))
     }
 }
 
@@ -98,16 +98,14 @@ impl MetaToolRegistry {
                 "怎么样".to_string(),
                 "运行情况".to_string(),
             ],
-            examples: vec![
-                "系统状态如何".to_string(),
-                "当前有什么告警".to_string(),
-            ],
+            examples: vec!["系统状态如何".to_string(), "当前有什么告警".to_string()],
         });
 
         // resolve_device tool
         self.register(MetaTool {
             name: "resolve_device".to_string(),
-            description: "根据模糊名称或位置解析设备ID。当用户使用自然语言指代设备时使用。".to_string(),
+            description: "根据模糊名称或位置解析设备ID。当用户使用自然语言指代设备时使用。"
+                .to_string(),
             category: MetaToolCategory::Resolution,
             use_when: vec![
                 "打开灯".to_string(),
@@ -115,10 +113,7 @@ impl MetaToolRegistry {
                 "调节".to_string(),
                 "控制".to_string(),
             ],
-            examples: vec![
-                "打开客厅的灯".to_string(),
-                "把卧室灯调暗一点".to_string(),
-            ],
+            examples: vec!["打开客厅的灯".to_string(), "把卧室灯调暗一点".to_string()],
         });
 
         // validate_device_capability tool
@@ -156,14 +151,16 @@ impl MetaToolRegistry {
 
     /// Find relevant meta-tools for a query.
     pub fn find_relevant(&self, query: &str) -> Vec<&MetaTool> {
-        self.tools.values()
+        self.tools
+            .values()
             .filter(|tool| tool.should_use(query))
             .collect()
     }
 
     /// Get tool definitions for function calling.
     pub fn to_tool_definitions(&self) -> Vec<neomind_core::llm::backend::ToolDefinition> {
-        self.tools.values()
+        self.tools
+            .values()
             .map(|tool| neomind_core::llm::backend::ToolDefinition {
                 name: tool.name.clone(),
                 description: tool.description.clone(),
@@ -267,7 +264,9 @@ impl VagueQueryHandler {
 
         // Check against patterns
         for pattern in &self.vague_patterns {
-            let matches = pattern.keywords.iter()
+            let matches = pattern
+                .keywords
+                .iter()
                 .all(|kw| query_lower.contains(&kw.to_lowercase()));
 
             if matches {
@@ -283,7 +282,9 @@ impl VagueQueryHandler {
         let query_lower = query.to_lowercase();
 
         for pattern in &self.vague_patterns {
-            let matches = pattern.keywords.iter()
+            let matches = pattern
+                .keywords
+                .iter()
                 .all(|kw| query_lower.contains(&kw.to_lowercase()));
 
             if matches {
@@ -318,7 +319,8 @@ impl VagueQueryHandler {
             && query_lower.contains("灯")
         {
             for device in available_devices {
-                if device.to_lowercase().contains("light") || device.to_lowercase().contains("灯") {
+                if device.to_lowercase().contains("light") || device.to_lowercase().contains("灯")
+                {
                     return Some(format!("{}的灯", device));
                 }
             }

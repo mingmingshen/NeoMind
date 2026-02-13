@@ -1,8 +1,11 @@
 //! Business context structures for LLM prompt injection.
 
-use serde::{Deserialize, Serialize};
-use crate::context::{device_registry::DeviceAlias, state_provider::{SystemSnapshot, DeviceState}};
 use super::meta_tools::VagueQueryHandler;
+use crate::context::{
+    device_registry::DeviceAlias,
+    state_provider::{DeviceState, SystemSnapshot},
+};
+use serde::{Deserialize, Serialize};
 
 /// Business context containing all relevant information for LLM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,7 +32,10 @@ impl BusinessContext {
 
         // Add device summary
         if !self.system_state.devices.is_empty() {
-            prompt.push_str(&format!("**在线设备**: {} 个\n", self.system_state.devices.len()));
+            prompt.push_str(&format!(
+                "**在线设备**: {} 个\n",
+                self.system_state.devices.len()
+            ));
             prompt.push_str("\n### 设备列表\n\n");
 
             // Group devices by location
@@ -38,7 +44,12 @@ impl BusinessContext {
 
             for device in &self.system_state.devices {
                 by_location
-                    .entry(device.location.clone().unwrap_or_else(|| "未分类".to_string()))
+                    .entry(
+                        device
+                            .location
+                            .clone()
+                            .unwrap_or_else(|| "未分类".to_string()),
+                    )
                     .or_default()
                     .push(device);
             }
@@ -71,17 +82,26 @@ impl BusinessContext {
 
         // Add rules summary
         if !self.system_state.rules.is_empty() {
-            prompt.push_str(&format!("**活跃规则**: {} 个\n", self.system_state.rules.len()));
+            prompt.push_str(&format!(
+                "**活跃规则**: {} 个\n",
+                self.system_state.rules.len()
+            ));
         }
 
         // Add workflows summary
         if !self.system_state.workflows.is_empty() {
-            prompt.push_str(&format!("**活跃工作流**: {} 个\n", self.system_state.workflows.len()));
+            prompt.push_str(&format!(
+                "**活跃工作流**: {} 个\n",
+                self.system_state.workflows.len()
+            ));
         }
 
         // Add alerts summary
         if !self.system_state.alerts.is_empty() {
-            prompt.push_str(&format!("**当前告警**: {} 个\n", self.system_state.alerts.len()));
+            prompt.push_str(&format!(
+                "**当前告警**: {} 个\n",
+                self.system_state.alerts.len()
+            ));
         }
 
         // Add context-specific guidance
@@ -122,7 +142,10 @@ impl BusinessContext {
     /// Try to resolve vague query using context.
     pub fn resolve_vague_query(&self) -> Option<String> {
         let handler = VagueQueryHandler::new();
-        let device_ids: Vec<String> = self.system_state.devices.iter()
+        let device_ids: Vec<String> = self
+            .system_state
+            .devices
+            .iter()
             .map(|d| d.device_id.clone())
             .collect();
 
@@ -135,35 +158,51 @@ impl BusinessContext {
         let query_lower = self.query.to_lowercase();
 
         if query_lower.contains("温度") || query_lower.contains("temperature") {
-            return self.devices.iter()
-                .filter(|d| d.capabilities.iter().any(|c|
-                    c.to_lowercase().contains("temperature") || c == "温度"
-                ))
+            return self
+                .devices
+                .iter()
+                .filter(|d| {
+                    d.capabilities
+                        .iter()
+                        .any(|c| c.to_lowercase().contains("temperature") || c == "温度")
+                })
                 .collect();
         }
 
         if query_lower.contains("湿度") || query_lower.contains("humidity") {
-            return self.devices.iter()
-                .filter(|d| d.capabilities.iter().any(|c|
-                    c.to_lowercase().contains("humidity") || c == "湿度"
-                ))
+            return self
+                .devices
+                .iter()
+                .filter(|d| {
+                    d.capabilities
+                        .iter()
+                        .any(|c| c.to_lowercase().contains("humidity") || c == "湿度")
+                })
                 .collect();
         }
 
         // For location-based queries, recommend devices at that location
         if query_lower.contains("客厅") || query_lower.contains("living") {
-            return self.devices.iter()
-                .filter(|d| d.location.as_ref().is_some_and(|l|
-                    l.contains("客厅") || l.to_lowercase().contains("living")
-                ))
+            return self
+                .devices
+                .iter()
+                .filter(|d| {
+                    d.location
+                        .as_ref()
+                        .is_some_and(|l| l.contains("客厅") || l.to_lowercase().contains("living"))
+                })
                 .collect();
         }
 
         if query_lower.contains("卧室") || query_lower.contains("bedroom") {
-            return self.devices.iter()
-                .filter(|d| d.location.as_ref().is_some_and(|l|
-                    l.contains("卧室") || l.to_lowercase().contains("bedroom")
-                ))
+            return self
+                .devices
+                .iter()
+                .filter(|d| {
+                    d.location
+                        .as_ref()
+                        .is_some_and(|l| l.contains("卧室") || l.to_lowercase().contains("bedroom"))
+                })
                 .collect();
         }
 
@@ -192,9 +231,7 @@ impl ContextScope {
     /// Get guidance text for this scope.
     pub fn guidance(&self) -> &'static str {
         match self {
-            ContextScope::Minimal => {
-                "用户查询简单，直接回答问题即可。"
-            }
+            ContextScope::Minimal => "用户查询简单，直接回答问题即可。",
             ContextScope::Discovery => {
                 "用户想了解系统但未指定具体设备。先调用 list_devices 查看可用设备，\
                 然后根据设备能力引导用户。"
@@ -203,15 +240,9 @@ impl ContextScope {
                 "用户询问数据或状态但未指定设备。分析上下文，如果只有一个相关设备则直接查询，\
                 否则列出选项让用户选择。"
             }
-            ContextScope::Focused => {
-                "用户指定了具体设备，直接执行相应操作即可。"
-            }
-            ContextScope::Location => {
-                "用户指定了位置。先查询该位置的设备，然后执行相应操作。"
-            }
-            ContextScope::Full => {
-                "用户请求系统概览。调用相关列表工具返回完整信息。"
-            }
+            ContextScope::Focused => "用户指定了具体设备，直接执行相应操作即可。",
+            ContextScope::Location => "用户指定了位置。先查询该位置的设备，然后执行相应操作。",
+            ContextScope::Full => "用户请求系统概览。调用相关列表工具返回完整信息。",
         }
     }
 
@@ -262,6 +293,9 @@ mod tests {
         };
 
         // Discovery scope should make list_devices high relevance
-        assert_eq!(context.relevance_for_tool("list_devices"), ContextRelevance::Normal);
+        assert_eq!(
+            context.relevance_for_tool("list_devices"),
+            ContextRelevance::Normal
+        );
     }
 }

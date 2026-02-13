@@ -3,14 +3,13 @@
 //! This module contains common types used by the device service,
 //! separated for better organization and reusability.
 
-use std::collections::HashMap;
 use crate::adapter::ConnectionStatus;
+use std::collections::HashMap;
 use tokio::time::Duration;
 
 // Import storage types for command history persistence
 use neomind_storage::device_registry::{
-    CommandHistoryRecord as StorageCommandRecord,
-    CommandStatus as StorageCommandStatus,
+    CommandHistoryRecord as StorageCommandRecord, CommandStatus as StorageCommandStatus,
 };
 
 /// Command history record

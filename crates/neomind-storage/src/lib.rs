@@ -59,8 +59,8 @@
 // Storage backends module
 pub mod backends;
 
-pub mod backend;
 pub mod agents;
+pub mod backend;
 pub mod backup;
 pub mod business;
 pub mod dashboards;
@@ -93,17 +93,29 @@ pub use vector::{
     Embedding, PersistentVectorStore, SearchResult, SimilarityMetric, VectorDocument, VectorStore,
 };
 
-pub use session::{SessionMessage, SessionMessageImage, SessionMetadata, SessionStore, PendingStreamState, StreamStage};
+pub use session::{
+    PendingStreamState, SessionMessage, SessionMessageImage, SessionMetadata, SessionStore,
+    StreamStage,
+};
 
 pub use multimodal::{DocumentMetadata, ImageMetadata, MultimodalStore};
 
-pub use messages::{MessageStore, MessageStats, StoredMessage};
+pub use messages::{MessageStats, MessageStore, StoredMessage};
 
 pub use settings::{
-    ConfigChangeEntry, ExternalBroker, LlmBackendType, LlmSettings, MqttSettings,
-    SecurityLevel, SecurityWarning, SettingsStore,
+    ConfigChangeEntry,
     // Timezone settings
-    DEFAULT_GLOBAL_TIMEZONE, KEY_GLOBAL_TIMEZONE, KEY_LLM_CONFIG, KEY_MQTT_CONFIG,
+    DEFAULT_GLOBAL_TIMEZONE,
+    ExternalBroker,
+    KEY_GLOBAL_TIMEZONE,
+    KEY_LLM_CONFIG,
+    KEY_MQTT_CONFIG,
+    LlmBackendType,
+    LlmSettings,
+    MqttSettings,
+    SecurityLevel,
+    SecurityWarning,
+    SettingsStore,
 };
 
 pub use llm_backends::{
@@ -113,16 +125,43 @@ pub use llm_backends::{
 pub use extensions::{ExtensionRecord, ExtensionStats, ExtensionStore};
 
 pub use agents::{
-    ActionExecuted, AgentExecutionRecord, AgentFilter, AgentMemory, AgentResource, AgentSchedule,
-    AgentStats, AgentStore, AgentStatus, AiAgent, DataCollected, DataSummary, Decision,
-    DecisionProcess, ExecutionFilter, ExecutionResult, ExecutionStatus, GeneratedReport,
-    LearnedPattern, NotificationSent, ParsedIntent, ReasoningStep, ResourceType, ScheduleType,
-    TrendPoint, IntentType,
+    ActionExecuted,
+    AgentExecutionRecord,
+    AgentFilter,
+    AgentMemory,
+    AgentResource,
+    AgentSchedule,
+    AgentStats,
+    AgentStatus,
+    AgentStore,
+    AiAgent,
     // Conversation types
-    ConversationTurn, TurnInput, TurnOutput,
+    ConversationTurn,
+    DataCollected,
+    DataSummary,
+    Decision,
+    DecisionProcess,
+    ExecutionFilter,
+    ExecutionResult,
+    ExecutionStatus,
+    GeneratedReport,
+    ImportantMemory,
+    IntentType,
+    LearnedPattern,
+    LongTermMemory,
+    MemorySummary,
+    NotificationSent,
+    ParsedIntent,
+    ReasoningStep,
+    ResourceType,
+    ScheduleType,
+    ShortTermMemory,
+    TrendPoint,
+    TurnInput,
+    TurnOutput,
     UserMessage,
     // Hierarchical memory types
-    WorkingMemory, ShortTermMemory, LongTermMemory, MemorySummary, ImportantMemory,
+    WorkingMemory,
 };
 
 pub use device_state::{
@@ -131,8 +170,8 @@ pub use device_state::{
 };
 
 pub use business::{
-    Alert, AlertFilter, AlertStatus, AlertStore,
-    EventSeverity, RuleExecution, RuleExecutionResult, RuleExecutionStats, RuleHistoryStore,
+    Alert, AlertFilter, AlertStatus, AlertStore, EventSeverity, RuleExecution, RuleExecutionResult,
+    RuleExecutionStats, RuleHistoryStore,
 };
 
 pub use llm_data::{LongTermMemoryStore, MemoryEntry, MemoryFilter, MemoryStats};

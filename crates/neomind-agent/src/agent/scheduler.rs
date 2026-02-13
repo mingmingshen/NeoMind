@@ -199,8 +199,14 @@ fn detect_conflicts(nodes: &[DependencyNode]) -> HashSet<(usize, usize)> {
             }
 
             // Check if tools are mutually exclusive
-            if node_i.relationships.exclusive_with.contains(&node_j.call.name)
-                || node_j.relationships.exclusive_with.contains(&node_i.call.name)
+            if node_i
+                .relationships
+                .exclusive_with
+                .contains(&node_j.call.name)
+                || node_j
+                    .relationships
+                    .exclusive_with
+                    .contains(&node_i.call.name)
             {
                 conflicts.insert((i, j));
             }
@@ -229,15 +235,12 @@ fn create_execution_batches(
             }
 
             // Check if all dependencies are executed
-            let deps_satisfied = node
-                .dependencies
-                .iter()
-                .all(|dep| executed.contains(dep));
+            let deps_satisfied = node.dependencies.iter().all(|dep| executed.contains(dep));
 
             // Check for conflicts with nodes already in this batch
-            let has_conflict = in_batch
-                .iter()
-                .any(|batch_idx| conflicts.contains(&(*batch_idx, idx)) || conflicts.contains(&(idx, *batch_idx)));
+            let has_conflict = in_batch.iter().any(|batch_idx| {
+                conflicts.contains(&(*batch_idx, idx)) || conflicts.contains(&(idx, *batch_idx))
+            });
 
             if deps_satisfied && !has_conflict {
                 ready.push((idx, node));

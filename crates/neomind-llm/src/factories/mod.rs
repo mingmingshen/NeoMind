@@ -58,9 +58,10 @@ impl BackendFactory for OllamaFactory {
 
     fn validate_config(&self, config: &Value) -> Result<(), LlmError> {
         if let Some(endpoint) = config.get("endpoint").and_then(|v| v.as_str())
-            && endpoint.is_empty() {
-                return Err(LlmError::InvalidInput("endpoint cannot be empty".into()));
-            }
+            && endpoint.is_empty()
+        {
+            return Err(LlmError::InvalidInput("endpoint cannot be empty".into()));
+        }
         Ok(())
     }
 
@@ -79,9 +80,10 @@ impl BackendFactory for OllamaFactory {
             if let Ok(client) = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(2))
                 .build()
-                && let Ok(resp) = client.get("http://localhost:11434/api/tags").send().await {
-                    return resp.status().is_success();
-                }
+                && let Ok(resp) = client.get("http://localhost:11434/api/tags").send().await
+            {
+                return resp.status().is_success();
+            }
         }
         false
     }
@@ -152,6 +154,19 @@ impl BackendFactory for CloudFactory {
             CloudProvider::Anthropic => CloudConfig::anthropic(api_key),
             CloudProvider::Google => CloudConfig::google(api_key),
             CloudProvider::Grok => CloudConfig::grok(api_key),
+            CloudProvider::Qwen => CloudConfig::qwen(api_key),
+            CloudProvider::DeepSeek => {
+                let url = endpoint.unwrap_or("https://api.deepseek.com/v1");
+                CloudConfig::custom(api_key, url)
+            }
+            CloudProvider::GLM => {
+                let url = endpoint.unwrap_or("https://open.bigmodel.cn/api/paas/v4");
+                CloudConfig::custom(api_key, url)
+            }
+            CloudProvider::MiniMax => {
+                let url = endpoint.unwrap_or("https://api.minimax.chat/v1");
+                CloudConfig::custom(api_key, url)
+            }
             CloudProvider::Custom => {
                 let url = endpoint.unwrap_or("https://api.example.com/v1");
                 CloudConfig::custom(api_key, url)
@@ -276,11 +291,7 @@ impl LlmRuntime for MockRuntime {
         &self,
         input: neomind_core::llm::backend::LlmInput,
     ) -> Result<neomind_core::llm::backend::LlmOutput, LlmError> {
-        let last_msg = input
-            .messages
-            .last()
-            .map(|m| m.text())
-            .unwrap_or_default();
+        let last_msg = input.messages.last().map(|m| m.text()).unwrap_or_default();
         Ok(neomind_core::llm::backend::LlmOutput {
             text: format!("Mock response to: {}", last_msg),
             finish_reason: neomind_core::llm::backend::FinishReason::Stop,
@@ -299,11 +310,7 @@ impl LlmRuntime for MockRuntime {
         LlmError,
     > {
         use futures::stream;
-        let last_msg = input
-            .messages
-            .last()
-            .map(|m| m.text())
-            .unwrap_or_default();
+        let last_msg = input.messages.last().map(|m| m.text()).unwrap_or_default();
         let response = format!("Mock stream response to: {}", last_msg);
         let chunks: Vec<_> = response
             .chars()

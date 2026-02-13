@@ -104,7 +104,8 @@ impl From<&neomind_commands::command::CommandResult> for CommandResultDto {
 /// Get command manager from server state.
 fn get_command_manager(state: &ServerState) -> Result<Arc<CommandManager>, ErrorResponse> {
     state
-        .core.command_manager
+        .core
+        .command_manager
         .as_ref()
         .cloned()
         .ok_or_else(|| ErrorResponse::service_unavailable("Command manager not initialized"))
@@ -144,17 +145,21 @@ pub async fn list_commands_handler(
         .into_iter()
         .filter(|cmd| {
             if let Some(ref device_id) = params.device_id
-                && &cmd.device_id != device_id {
-                    return false;
-                }
+                && &cmd.device_id != device_id
+            {
+                return false;
+            }
             if let Some(ref status) = params.status
-                && cmd.status != *status && cmd.status != format!("{:?}", status) {
-                    return false;
-                }
+                && cmd.status != *status
+                && cmd.status != format!("{:?}", status)
+            {
+                return false;
+            }
             if let Some(ref source) = params.source
-                && cmd.source_type != *source {
-                    return false;
-                }
+                && cmd.source_type != *source
+            {
+                return false;
+            }
             true
         })
         .collect();

@@ -86,7 +86,10 @@ impl ExtensionRegistry {
         }
 
         // Store extension
-        self.extensions.write().await.insert(id.clone(), extension.clone());
+        self.extensions
+            .write()
+            .await
+            .insert(id.clone(), extension.clone());
 
         // Store info
         self.info_cache.write().await.insert(
@@ -127,7 +130,9 @@ impl ExtensionRegistry {
         }
 
         // Store extension
-        self.extensions.blocking_write().insert(id.clone(), extension.clone());
+        self.extensions
+            .blocking_write()
+            .insert(id.clone(), extension.clone());
 
         // Store info
         self.info_cache.blocking_write().insert(
@@ -162,9 +167,7 @@ impl ExtensionRegistry {
         if let Some(ext) = self.get(id).await {
             let ext = ext.read().await;
             // Call produce_metrics with panic handling
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                ext.produce_metrics()
-            })) {
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ext.produce_metrics())) {
                 Ok(Ok(metrics)) => metrics,
                 Ok(Err(e)) => {
                     tracing::warn!(
@@ -285,7 +288,10 @@ impl ExtensionRegistry {
     pub async fn discover(&self) -> Vec<(PathBuf, ExtensionMetadata)> {
         let mut discovered = Vec::new();
 
-        tracing::debug!("Extension discover: starting, dirs: {:?}", self.extension_dirs);
+        tracing::debug!(
+            "Extension discover: starting, dirs: {:?}",
+            self.extension_dirs
+        );
 
         for dir in &self.extension_dirs {
             if !dir.exists() {
@@ -297,20 +303,29 @@ impl ExtensionRegistry {
 
             // Use the loader's discover method
             let native_found = self.native_loader.discover(dir).await;
-            tracing::debug!("Extension discover: found {} native extensions", native_found.len());
+            tracing::debug!(
+                "Extension discover: found {} native extensions",
+                native_found.len()
+            );
             for (path, metadata) in native_found {
                 discovered.push((path, metadata));
             }
 
             // Discover WASM extensions
             let wasm_found = self.wasm_loader.discover(dir).await;
-            tracing::debug!("Extension discover: found {} wasm extensions", wasm_found.len());
+            tracing::debug!(
+                "Extension discover: found {} wasm extensions",
+                wasm_found.len()
+            );
             for (path, metadata) in wasm_found {
                 discovered.push((path, metadata));
             }
         }
 
-        tracing::debug!("Extension discover: complete, total found: {}", discovered.len());
+        tracing::debug!(
+            "Extension discover: complete, total found: {}",
+            discovered.len()
+        );
         discovered
     }
 

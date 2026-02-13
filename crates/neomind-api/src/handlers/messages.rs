@@ -8,16 +8,22 @@
 //! POST   /api/messages/:id/resolve  - Resolve message
 //! GET    /api/messages/stats        - Message statistics
 
-use axum::{Json, extract::{Path, State}};
+use axum::{
+    Json,
+    extract::{Path, State},
+};
 use serde::Deserialize;
 
-use neomind_messages::{Message, MessageSeverity, MessageId};
+use neomind_messages::{Message, MessageId, MessageSeverity};
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 
 // Import json macro for handler responses
-use serde_json::json;
 use crate::models::ErrorResponse;
+use serde_json::json;
 
 /// List messages.
 /// GET /api/messages
@@ -34,8 +40,8 @@ pub async fn list_messages_handler(
 /// Create message request.
 #[derive(Debug, Deserialize)]
 pub struct CreateMessageRequest {
-    pub category: String,          // alert | system | business
-    pub severity: String,          // info | warning | critical | emergency
+    pub category: String, // alert | system | business
+    pub severity: String, // info | warning | critical | emergency
     pub title: String,
     pub message: String,
     pub source: Option<String>,
@@ -62,13 +68,7 @@ pub async fn create_message_handler(
 
     tracing::info!("Creating message: {} - {}", req.title, req.severity);
 
-    let mut msg = Message::new(
-        req.category,
-        severity,
-        req.title,
-        req.message,
-        source,
-    );
+    let mut msg = Message::new(req.category, severity, req.title, req.message, source);
 
     if let Some(source_type) = req.source_type {
         msg.source_type = source_type;
@@ -83,7 +83,8 @@ pub async fn create_message_handler(
     }
 
     let created = state
-        .core.message_manager
+        .core
+        .message_manager
         .create_message(msg)
         .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
@@ -102,12 +103,12 @@ pub async fn get_message_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     let msg_id = MessageId(
-        uuid::Uuid::parse_str(&id)
-            .map_err(|_| ErrorResponse::bad_request("Invalid message ID"))?,
+        uuid::Uuid::parse_str(&id).map_err(|_| ErrorResponse::bad_request("Invalid message ID"))?,
     );
 
     let message = state
-        .core.message_manager
+        .core
+        .message_manager
         .get_message(&msg_id)
         .await
         .ok_or_else(|| ErrorResponse::not_found("Message not found"))?;
@@ -122,12 +123,12 @@ pub async fn delete_message_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     let msg_id = MessageId(
-        uuid::Uuid::parse_str(&id)
-            .map_err(|_| ErrorResponse::bad_request("Invalid message ID"))?,
+        uuid::Uuid::parse_str(&id).map_err(|_| ErrorResponse::bad_request("Invalid message ID"))?,
     );
 
     state
-        .core.message_manager
+        .core
+        .message_manager
         .delete(&msg_id)
         .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
@@ -145,12 +146,12 @@ pub async fn acknowledge_message_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     let msg_id = MessageId(
-        uuid::Uuid::parse_str(&id)
-            .map_err(|_| ErrorResponse::bad_request("Invalid message ID"))?,
+        uuid::Uuid::parse_str(&id).map_err(|_| ErrorResponse::bad_request("Invalid message ID"))?,
     );
 
     state
-        .core.message_manager
+        .core
+        .message_manager
         .acknowledge(&msg_id)
         .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
@@ -168,12 +169,12 @@ pub async fn resolve_message_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     let msg_id = MessageId(
-        uuid::Uuid::parse_str(&id)
-            .map_err(|_| ErrorResponse::bad_request("Invalid message ID"))?,
+        uuid::Uuid::parse_str(&id).map_err(|_| ErrorResponse::bad_request("Invalid message ID"))?,
     );
 
     state
-        .core.message_manager
+        .core
+        .message_manager
         .resolve(&msg_id)
         .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
@@ -191,12 +192,12 @@ pub async fn archive_message_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     let msg_id = MessageId(
-        uuid::Uuid::parse_str(&id)
-            .map_err(|_| ErrorResponse::bad_request("Invalid message ID"))?,
+        uuid::Uuid::parse_str(&id).map_err(|_| ErrorResponse::bad_request("Invalid message ID"))?,
     );
 
     state
-        .core.message_manager
+        .core
+        .message_manager
         .archive(&msg_id)
         .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
@@ -229,15 +230,16 @@ pub async fn bulk_acknowledge_handler(
 ) -> HandlerResult<serde_json::Value> {
     let mut ids = Vec::new();
     for id_str in &req.message_ids {
-        let msg_id = MessageId(
-            uuid::Uuid::parse_str(id_str)
-                .map_err(|_| ErrorResponse::bad_request(format!("Invalid message ID: {}", id_str)))?,
-        );
+        let msg_id =
+            MessageId(uuid::Uuid::parse_str(id_str).map_err(|_| {
+                ErrorResponse::bad_request(format!("Invalid message ID: {}", id_str))
+            })?);
         ids.push(msg_id);
     }
 
     let count = state
-        .core.message_manager
+        .core
+        .message_manager
         .acknowledge_multiple(&ids)
         .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
@@ -255,15 +257,16 @@ pub async fn bulk_resolve_handler(
 ) -> HandlerResult<serde_json::Value> {
     let mut ids = Vec::new();
     for id_str in &req.message_ids {
-        let msg_id = MessageId(
-            uuid::Uuid::parse_str(id_str)
-                .map_err(|_| ErrorResponse::bad_request(format!("Invalid message ID: {}", id_str)))?,
-        );
+        let msg_id =
+            MessageId(uuid::Uuid::parse_str(id_str).map_err(|_| {
+                ErrorResponse::bad_request(format!("Invalid message ID: {}", id_str))
+            })?);
         ids.push(msg_id);
     }
 
     let count = state
-        .core.message_manager
+        .core
+        .message_manager
         .resolve_multiple(&ids)
         .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
@@ -281,15 +284,16 @@ pub async fn bulk_delete_handler(
 ) -> HandlerResult<serde_json::Value> {
     let mut ids = Vec::new();
     for id_str in &req.message_ids {
-        let msg_id = MessageId(
-            uuid::Uuid::parse_str(id_str)
-                .map_err(|_| ErrorResponse::bad_request(format!("Invalid message ID: {}", id_str)))?,
-        );
+        let msg_id =
+            MessageId(uuid::Uuid::parse_str(id_str).map_err(|_| {
+                ErrorResponse::bad_request(format!("Invalid message ID: {}", id_str))
+            })?);
         ids.push(msg_id);
     }
 
     let count = state
-        .core.message_manager
+        .core
+        .message_manager
         .delete_multiple(&ids)
         .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
@@ -311,7 +315,8 @@ pub async fn cleanup_handler(
     Json(req): Json<CleanupRequest>,
 ) -> HandlerResult<serde_json::Value> {
     let count = state
-        .core.message_manager
+        .core
+        .message_manager
         .cleanup_old(req.older_than_days as i64)
         .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
@@ -325,10 +330,13 @@ pub async fn cleanup_handler(
 
 /// Router for message endpoints.
 pub fn messages_router() -> axum::Router<ServerState> {
-    use axum::routing::{get, post, delete};
+    use axum::routing::{delete, get, post};
 
     axum::Router::new()
-        .route("/messages", get(list_messages_handler).post(create_message_handler))
+        .route(
+            "/messages",
+            get(list_messages_handler).post(create_message_handler),
+        )
         .route("/messages/stats", get(message_stats_handler))
         .route("/messages/cleanup", post(cleanup_handler))
         .route("/messages/acknowledge", post(bulk_acknowledge_handler))
@@ -336,7 +344,10 @@ pub fn messages_router() -> axum::Router<ServerState> {
         .route("/messages/delete", post(bulk_delete_handler))
         .route("/messages/:id", get(get_message_handler))
         .route("/messages/:id", delete(delete_message_handler))
-        .route("/messages/:id/acknowledge", post(acknowledge_message_handler))
+        .route(
+            "/messages/:id/acknowledge",
+            post(acknowledge_message_handler),
+        )
         .route("/messages/:id/resolve", post(resolve_message_handler))
         .route("/messages/:id/archive", post(archive_message_handler))
 }

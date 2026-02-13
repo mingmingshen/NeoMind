@@ -269,7 +269,10 @@ impl ToolRegistryBuilder {
     }
 
     /// Set the extension registry for scanning extension tools.
-    pub fn with_extension_registry(mut self, registry: Arc<neomind_core::extension::registry::ExtensionRegistry>) -> Self {
+    pub fn with_extension_registry(
+        mut self,
+        registry: Arc<neomind_core::extension::registry::ExtensionRegistry>,
+    ) -> Self {
         self.extension_registry = Some(registry);
         self
     }
@@ -312,16 +315,17 @@ impl ToolRegistryBuilder {
     }
 
     /// Add the control device tool.
-    pub fn with_control_device_tool(
-        self,
-        service: Arc<neomind_devices::DeviceService>,
-    ) -> Self {
-        self.with_tool(Arc::new(super::core_tools::DeviceControlTool::with_real_device_service(service)))
+    pub fn with_control_device_tool(self, service: Arc<neomind_devices::DeviceService>) -> Self {
+        self.with_tool(Arc::new(
+            super::core_tools::DeviceControlTool::with_real_device_service(service),
+        ))
     }
 
     /// Add the list devices tool.
     pub fn with_list_devices_tool(self, service: Arc<neomind_devices::DeviceService>) -> Self {
-        self.with_tool(Arc::new(super::core_tools::DeviceDiscoverTool::with_real_device_service(service)))
+        self.with_tool(Arc::new(
+            super::core_tools::DeviceDiscoverTool::with_real_device_service(service),
+        ))
     }
 
     /// Add the device analyze tool.
@@ -330,7 +334,11 @@ impl ToolRegistryBuilder {
         service: Arc<neomind_devices::DeviceService>,
         storage: Arc<neomind_devices::TimeSeriesStorage>,
     ) -> Self {
-        self.with_tool(Arc::new(super::core_tools::DeviceAnalyzeTool::with_real_device_service_and_storage(service, storage)))
+        self.with_tool(Arc::new(
+            super::core_tools::DeviceAnalyzeTool::with_real_device_service_and_storage(
+                service, storage,
+            ),
+        ))
     }
 
     /// Add the get device data tool (simplified interface for device status and latest data).
@@ -339,7 +347,9 @@ impl ToolRegistryBuilder {
         service: Arc<neomind_devices::DeviceService>,
         storage: Arc<neomind_devices::TimeSeriesStorage>,
     ) -> Self {
-        self.with_tool(Arc::new(super::real::GetDeviceDataTool::new(service, storage)))
+        self.with_tool(Arc::new(super::real::GetDeviceDataTool::new(
+            service, storage,
+        )))
     }
 
     // ============================================================================
@@ -362,7 +372,10 @@ impl ToolRegistryBuilder {
     }
 
     /// Add the query rule history tool.
-    pub fn with_query_rule_history_tool(self, history: Arc<neomind_rules::RuleHistoryStorage>) -> Self {
+    pub fn with_query_rule_history_tool(
+        self,
+        history: Arc<neomind_rules::RuleHistoryStorage>,
+    ) -> Self {
         self.with_tool(Arc::new(super::real::QueryRuleHistoryTool::new(history)))
     }
 
@@ -372,7 +385,9 @@ impl ToolRegistryBuilder {
 
     /// Add the list agents tool.
     pub fn with_list_agents_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::ListAgentsTool::new(agent_store)))
+        self.with_tool(Arc::new(super::agent_tools::ListAgentsTool::new(
+            agent_store,
+        )))
     }
 
     /// Add the get agent tool.
@@ -382,17 +397,23 @@ impl ToolRegistryBuilder {
 
     /// Add the execute agent tool.
     pub fn with_execute_agent_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::ExecuteAgentTool::new(agent_store)))
+        self.with_tool(Arc::new(super::agent_tools::ExecuteAgentTool::new(
+            agent_store,
+        )))
     }
 
     /// Add the control agent tool.
     pub fn with_control_agent_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::ControlAgentTool::new(agent_store)))
+        self.with_tool(Arc::new(super::agent_tools::ControlAgentTool::new(
+            agent_store,
+        )))
     }
 
     /// Add the create agent tool.
     pub fn with_create_agent_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::CreateAgentTool::new(agent_store)))
+        self.with_tool(Arc::new(super::agent_tools::CreateAgentTool::new(
+            agent_store,
+        )))
     }
 
     /// Add the create agent tool with device service for device resolution.
@@ -413,8 +434,7 @@ impl ToolRegistryBuilder {
         device_service: Option<Arc<neomind_devices::DeviceService>>,
     ) -> Self {
         let tool = if let Some(ds) = device_service {
-            super::agent_tools::CreateAgentTool::new(agent_store)
-                .with_device_service(ds)
+            super::agent_tools::CreateAgentTool::new(agent_store).with_device_service(ds)
         } else {
             super::agent_tools::CreateAgentTool::new(agent_store)
         };
@@ -423,22 +443,39 @@ impl ToolRegistryBuilder {
 
     /// Add the agent memory tool.
     pub fn with_agent_memory_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::AgentMemoryTool::new(agent_store)))
+        self.with_tool(Arc::new(super::agent_tools::AgentMemoryTool::new(
+            agent_store,
+        )))
     }
 
     /// Add the get agent executions tool.
-    pub fn with_get_agent_executions_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::GetAgentExecutionsTool::new(agent_store)))
+    pub fn with_get_agent_executions_tool(
+        self,
+        agent_store: Arc<neomind_storage::AgentStore>,
+    ) -> Self {
+        self.with_tool(Arc::new(super::agent_tools::GetAgentExecutionsTool::new(
+            agent_store,
+        )))
     }
 
     /// Add the get agent execution detail tool.
-    pub fn with_get_agent_execution_detail_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::GetAgentExecutionDetailTool::new(agent_store)))
+    pub fn with_get_agent_execution_detail_tool(
+        self,
+        agent_store: Arc<neomind_storage::AgentStore>,
+    ) -> Self {
+        self.with_tool(Arc::new(
+            super::agent_tools::GetAgentExecutionDetailTool::new(agent_store),
+        ))
     }
 
     /// Add the get agent conversation tool.
-    pub fn with_get_agent_conversation_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::GetAgentConversationTool::new(agent_store)))
+    pub fn with_get_agent_conversation_tool(
+        self,
+        agent_store: Arc<neomind_storage::AgentStore>,
+    ) -> Self {
+        self.with_tool(Arc::new(super::agent_tools::GetAgentConversationTool::new(
+            agent_store,
+        )))
     }
 
     /// Add all agent tools.
@@ -485,7 +522,9 @@ impl ToolRegistryBuilder {
 
     /// Add the system help tool with a custom system name.
     pub fn with_system_help_tool_named(self, name: impl Into<String>) -> Self {
-        self.with_tool(Arc::new(super::system_tools::SystemHelpTool::with_name(name)))
+        self.with_tool(Arc::new(super::system_tools::SystemHelpTool::with_name(
+            name,
+        )))
     }
 
     /// Build the registry.
@@ -514,7 +553,8 @@ pub fn format_for_llm(definitions: &[ToolDefinition]) -> String {
     result.push_str("\n\n");
 
     // Group tools by category
-    let mut grouped: std::collections::HashMap<String, Vec<&ToolDefinition>> = std::collections::HashMap::new();
+    let mut grouped: std::collections::HashMap<String, Vec<&ToolDefinition>> =
+        std::collections::HashMap::new();
     for def in definitions {
         if def.deprecated {
             continue; // Skip deprecated tools
@@ -524,7 +564,9 @@ pub fn format_for_llm(definitions: &[ToolDefinition]) -> String {
     }
 
     // Define category order
-    let category_order = vec!["device", "data", "analysis", "rule", "alert", "agent", "config", "system"];
+    let category_order = vec![
+        "device", "data", "analysis", "rule", "alert", "agent", "config", "system",
+    ];
 
     // Output tools by category
     for category in category_order {
@@ -551,53 +593,68 @@ pub fn format_for_llm(definitions: &[ToolDefinition]) -> String {
                 if !def.scenarios.is_empty() {
                     result.push_str("**使用场景**:\n");
                     for (i, scenario) in def.scenarios.iter().enumerate() {
-                        result.push_str(&format!("  {}. {} - 示例: \"{}\"\n",
-                            i + 1, scenario.description, scenario.example_query));
+                        result.push_str(&format!(
+                            "  {}. {} - 示例: \"{}\"\n",
+                            i + 1,
+                            scenario.description,
+                            scenario.example_query
+                        ));
                     }
                 }
 
                 // Tool relationships
-                if !def.relationships.call_after.is_empty() || !def.relationships.output_to.is_empty() {
+                if !def.relationships.call_after.is_empty()
+                    || !def.relationships.output_to.is_empty()
+                {
                     result.push_str("**工具关系**:\n");
                     if !def.relationships.call_after.is_empty() {
-                        result.push_str(&format!("  → 建议先调用: {}\n",
-                            def.relationships.call_after.join(", ")));
+                        result.push_str(&format!(
+                            "  → 建议先调用: {}\n",
+                            def.relationships.call_after.join(", ")
+                        ));
                     }
                     if !def.relationships.output_to.is_empty() {
-                        result.push_str(&format!("  → 输出可用于: {}\n",
-                            def.relationships.output_to.join(", ")));
+                        result.push_str(&format!(
+                            "  → 输出可用于: {}\n",
+                            def.relationships.output_to.join(", ")
+                        ));
                     }
                 }
 
                 // Parameters
                 result.push_str("**参数**:\n");
                 if let Some(props) = def.parameters.get("properties")
-                    && let Some(obj) = props.as_object() {
-                        for (name, prop) in obj {
-                            let desc = prop.get("description")
-                                .and_then(|d| d.as_str())
-                                .unwrap_or("无描述");
-                            let type_name = prop.get("type")
-                                .and_then(|t| t.as_str())
-                                .unwrap_or("unknown");
-                            result.push_str(&format!("  - `{}`: {} ({})", name, desc, type_name));
+                    && let Some(obj) = props.as_object()
+                {
+                    for (name, prop) in obj {
+                        let desc = prop
+                            .get("description")
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("无描述");
+                        let type_name = prop
+                            .get("type")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("unknown");
+                        result.push_str(&format!("  - `{}`: {} ({})", name, desc, type_name));
 
-                            // Check if required
-                            if let Some(required) = def.parameters.get("required")
-                                && let Some(arr) = required.as_array()
-                                    && arr.iter().any(|v| v.as_str() == Some(name)) {
-                                        result.push_str(" **[必需]**");
-                                    }
-                            result.push('\n');
+                        // Check if required
+                        if let Some(required) = def.parameters.get("required")
+                            && let Some(arr) = required.as_array()
+                            && arr.iter().any(|v| v.as_str() == Some(name))
+                        {
+                            result.push_str(" **[必需]**");
                         }
+                        result.push('\n');
                     }
+                }
 
                 if let Some(required) = def.parameters.get("required")
                     && let Some(arr) = required.as_array()
-                        && !arr.is_empty() {
-                            let required_names: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
-                            result.push_str(&format!("**必需参数**: {}\n", required_names.join(", ")));
-                        }
+                    && !arr.is_empty()
+                {
+                    let required_names: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+                    result.push_str(&format!("**必需参数**: {}\n", required_names.join(", ")));
+                }
 
                 result.push('\n');
             }
@@ -624,8 +681,8 @@ mod tests {
     use super::*;
     use crate::Tool;
     use async_trait::async_trait;
+    use neomind_core::tools::{ToolCategory, ToolDefinition, ToolRelationships};
     use serde_json::Value;
-    use neomind_core::tools::{ToolCategory, ToolRelationships, ToolDefinition};
 
     // Simple test tool for registry testing
     struct TestTool {
@@ -668,7 +725,9 @@ mod tests {
         let mut registry = ToolRegistry::new();
         assert_eq!(registry.len(), 0);
 
-        let tool = Arc::new(TestTool { name: "test_tool".to_string() });
+        let tool = Arc::new(TestTool {
+            name: "test_tool".to_string(),
+        });
         registry.register(tool);
 
         assert_eq!(registry.len(), 1);
@@ -678,7 +737,9 @@ mod tests {
     #[tokio::test]
     async fn test_registry_get() {
         let mut registry = ToolRegistry::new();
-        let tool = Arc::new(TestTool { name: "test_tool".to_string() });
+        let tool = Arc::new(TestTool {
+            name: "test_tool".to_string(),
+        });
         registry.register(tool.clone());
 
         let retrieved = registry.get("test_tool");
@@ -689,7 +750,9 @@ mod tests {
     #[tokio::test]
     async fn test_registry_execute() {
         let mut registry = ToolRegistry::new();
-        let tool = Arc::new(TestTool { name: "test_tool".to_string() });
+        let tool = Arc::new(TestTool {
+            name: "test_tool".to_string(),
+        });
         registry.register(tool);
 
         let result = registry
@@ -714,8 +777,12 @@ mod tests {
     #[tokio::test]
     async fn test_registry_execute_parallel() {
         let mut registry = ToolRegistry::new();
-        registry.register(Arc::new(TestTool { name: "tool1".to_string() }));
-        registry.register(Arc::new(TestTool { name: "tool2".to_string() }));
+        registry.register(Arc::new(TestTool {
+            name: "tool1".to_string(),
+        }));
+        registry.register(Arc::new(TestTool {
+            name: "tool2".to_string(),
+        }));
 
         let calls = vec![
             ToolCall::new("tool1", serde_json::json!({})),
@@ -730,9 +797,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_builder_with_system_help() {
-        let registry = ToolRegistryBuilder::new()
-            .with_system_help_tool()
-            .build();
+        let registry = ToolRegistryBuilder::new().with_system_help_tool().build();
 
         assert!(registry.len() >= 1);
         assert!(registry.has("system_help"));

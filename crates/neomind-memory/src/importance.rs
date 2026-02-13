@@ -277,7 +277,8 @@ impl MemoryItem {
     /// Add a reaction.
     pub fn add_reaction(&mut self, reaction: ReactionType, intensity: f64) {
         let now = chrono::Utc::now().timestamp();
-        self.reactions.push((reaction, intensity.clamp(0.0, 1.0), now));
+        self.reactions
+            .push((reaction, intensity.clamp(0.0, 1.0), now));
         self.cached_heat = None;
     }
 
@@ -559,7 +560,8 @@ impl ImportanceScorer {
         }
 
         // Exponential decay: e^(-ln(2) * t / half_life)
-        let decay = (-std::f64::consts::LN_2 * time_since as f64 / self.config.decay_halflife as f64).exp();
+        let decay =
+            (-std::f64::consts::LN_2 * time_since as f64 / self.config.decay_halflife as f64).exp();
         decay.clamp(0.0, 1.0)
     }
 
@@ -572,7 +574,7 @@ impl ImportanceScorer {
 
         // Logarithmic scaling: log(count) / log(expected_max)
         // This gives diminishing returns for more accesses
-        
+
         ((count as f64).ln() / 10.0_f64.ln()).clamp(0.0, 1.0)
     }
 
@@ -610,7 +612,6 @@ impl ImportanceScorer {
             return 0.0;
         }
 
-        
         ((item.cross_references as f64).ln() / 3.0_f64.ln()).clamp(0.0, 1.0)
     }
 
@@ -715,8 +716,7 @@ mod tests {
 
     #[test]
     fn test_memory_item_with_reaction() {
-        let item = MemoryItem::new("test", "content")
-            .with_reaction(ReactionType::Positive, 0.8);
+        let item = MemoryItem::new("test", "content").with_reaction(ReactionType::Positive, 0.8);
         assert_eq!(item.reactions.len(), 1);
         assert_eq!(item.reactions[0].0, ReactionType::Positive);
     }

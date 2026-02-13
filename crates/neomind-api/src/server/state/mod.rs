@@ -8,16 +8,19 @@
 //! - [`AgentState`]: AI agents and sessions
 //! - [`AuthState`]: Authentication and authorization
 
-mod auth_state;
 mod agent_state;
+mod auth_state;
 mod automation_state;
 mod core_state;
 mod device_state;
 mod extension_state;
 
+pub use agent_state::{AgentManager, AgentState};
 pub use auth_state::AuthState;
-pub use agent_state::{AgentState, AgentManager};
 pub use automation_state::AutomationState;
 pub use core_state::CoreState;
 pub use device_state::{DeviceState, DeviceStatusUpdate};
-pub use extension_state::{ExtensionState, ExtensionMetricsStorage, ExtensionMetricsStorageAdapter, ExtensionRegistryAdapter};
+pub use extension_state::{
+    ExtensionMetricsStorage, ExtensionMetricsStorageAdapter, ExtensionRegistryAdapter,
+    ExtensionState,
+};

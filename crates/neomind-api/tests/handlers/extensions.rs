@@ -1,7 +1,7 @@
 //! Tests for extension system handlers.
 
-use neomind_api::handlers::extensions::*;
 use neomind_api::handlers::ServerState;
+use neomind_api::handlers::extensions::*;
 use serde_json::json;
 
 #[cfg(test)]
@@ -215,33 +215,29 @@ mod tests {
             state: "running".to_string(),
             file_path: Some("/path/to/sensor-ext.wasm".to_string()),
             loaded_at: Some(1234567890),
-            commands: vec![
-                CommandDescriptorDto {
-                    id: "calibrate".to_string(),
-                    display_name: "Calibrate".to_string(),
-                    description: "Calibrate the sensor".to_string(),
-                    input_schema: json!({"type": "object"}),
-                    output_fields: vec![],
-                    config: CommandConfigDto {
-                        requires_auth: false,
-                        timeout_ms: 30000,
-                        is_stream: false,
-                        expected_duration_ms: None,
-                    },
+            commands: vec![CommandDescriptorDto {
+                id: "calibrate".to_string(),
+                display_name: "Calibrate".to_string(),
+                description: "Calibrate the sensor".to_string(),
+                input_schema: json!({"type": "object"}),
+                output_fields: vec![],
+                config: CommandConfigDto {
+                    requires_auth: false,
+                    timeout_ms: 30000,
+                    is_stream: false,
+                    expected_duration_ms: None,
                 },
-            ],
-            metrics: vec![
-                MetricDescriptorDto {
-                    name: "temperature".to_string(),
-                    display_name: "Temperature".to_string(),
-                    data_type: "float".to_string(),
-                    unit: "°C".to_string(),
-                    description: None,
-                    min: Some(-40.0),
-                    max: Some(120.0),
-                    required: true,
-                },
-            ],
+            }],
+            metrics: vec![MetricDescriptorDto {
+                name: "temperature".to_string(),
+                display_name: "Temperature".to_string(),
+                data_type: "float".to_string(),
+                unit: "°C".to_string(),
+                description: None,
+                min: Some(-40.0),
+                max: Some(120.0),
+                required: true,
+            }],
         };
 
         assert_eq!(dto.commands.len(), 1);
@@ -261,33 +257,29 @@ mod tests {
             state: "loaded".to_string(),
             file_path: Some("/test/path.so".to_string()),
             loaded_at: Some(1234567890),
-            commands: vec![
-                CommandDescriptorDto {
-                    id: "cmd1".to_string(),
-                    display_name: "Command 1".to_string(),
-                    description: "Test command".to_string(),
-                    input_schema: json!({"type": "object"}),
-                    output_fields: vec![],
-                    config: CommandConfigDto {
-                        requires_auth: false,
-                        timeout_ms: 30000,
-                        is_stream: false,
-                        expected_duration_ms: None,
-                    },
+            commands: vec![CommandDescriptorDto {
+                id: "cmd1".to_string(),
+                display_name: "Command 1".to_string(),
+                description: "Test command".to_string(),
+                input_schema: json!({"type": "object"}),
+                output_fields: vec![],
+                config: CommandConfigDto {
+                    requires_auth: false,
+                    timeout_ms: 30000,
+                    is_stream: false,
+                    expected_duration_ms: None,
                 },
-            ],
-            metrics: vec![
-                MetricDescriptorDto {
-                    name: "metric1".to_string(),
-                    display_name: "Metric 1".to_string(),
-                    data_type: "integer".to_string(),
-                    unit: "".to_string(),
-                    description: Some("Test metric".to_string()),
-                    min: Some(0.0),
-                    max: Some(100.0),
-                    required: false,
-                },
-            ],
+            }],
+            metrics: vec![MetricDescriptorDto {
+                name: "metric1".to_string(),
+                display_name: "Metric 1".to_string(),
+                data_type: "integer".to_string(),
+                unit: "".to_string(),
+                description: Some("Test metric".to_string()),
+                min: Some(0.0),
+                max: Some(100.0),
+                required: false,
+            }],
         };
 
         let serialized = serde_json::to_value(&original).unwrap();
@@ -332,12 +324,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_extension_versions() {
-        let versions = vec![
-            "1.0.0",
-            "2.0.0-beta",
-            "3.1.2-rc1",
-            "0.9.0",
-        ];
+        let versions = vec!["1.0.0", "2.0.0-beta", "3.1.2-rc1", "0.9.0"];
 
         for version in versions {
             let dto = ExtensionDto {

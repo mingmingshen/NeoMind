@@ -26,16 +26,15 @@ const HISTORY_TABLE: TableDefinition<(&str, u64), Vec<u8>> = TableDefinition::ne
 
 // Pending stream states: key = session_id, value = PendingStreamState (serialized)
 // P0.3: Track in-progress streaming responses for recovery after disconnection
-const PENDING_STREAM_TABLE: TableDefinition<&str, Vec<u8>> = TableDefinition::new("pending_streams");
+const PENDING_STREAM_TABLE: TableDefinition<&str, Vec<u8>> =
+    TableDefinition::new("pending_streams");
 
 /// Session metadata (title, etc.).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SessionMetadata {
     /// User-defined title for the session
     pub title: Option<String>,
 }
-
 
 /// A message in a session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,8 +185,7 @@ pub struct PendingStreamState {
 }
 
 /// Current stage of stream processing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum StreamStage {
     /// Initial stage - waiting for response
     #[serde(rename = "waiting")]
@@ -206,7 +204,6 @@ pub enum StreamStage {
     #[serde(rename = "complete")]
     Complete,
 }
-
 
 impl PendingStreamState {
     /// Create a new pending stream state.
@@ -260,7 +257,7 @@ impl PendingStreamState {
     /// Check if the state is stale (older than 10 minutes).
     pub fn is_stale(&self) -> bool {
         let now = chrono::Utc::now().timestamp();
-        now - self.updated_at > 600  // 10 minutes
+        now - self.updated_at > 600 // 10 minutes
     }
 
     /// Get elapsed time in seconds.
@@ -291,16 +288,19 @@ impl SessionStore {
         // Check if we already have a store for this path
         {
             let Ok(singleton) = SESSION_STORE_SINGLETON.lock() else {
-                return Err(Error::Storage("Failed to acquire session store lock".to_string()));
+                return Err(Error::Storage(
+                    "Failed to acquire session store lock".to_string(),
+                ));
             };
             if let Some(store) = singleton.as_ref()
-                && store.path == path_str {
-                    tracing::debug!(
-                        "[SessionStore::open] Returning cached store for: {}",
-                        path_str
-                    );
-                    return Ok(store.clone());
-                }
+                && store.path == path_str
+            {
+                tracing::debug!(
+                    "[SessionStore::open] Returning cached store for: {}",
+                    path_str
+                );
+                return Ok(store.clone());
+            }
         }
 
         // Create new store and save to singleton
@@ -325,7 +325,9 @@ impl SessionStore {
 
         {
             let Ok(mut singleton) = SESSION_STORE_SINGLETON.lock() else {
-                return Err(Error::Storage("Failed to acquire session store lock".to_string()));
+                return Err(Error::Storage(
+                    "Failed to acquire session store lock".to_string(),
+                ));
             };
             *singleton = Some(store.clone());
         }
@@ -360,14 +362,15 @@ impl SessionStore {
                 let end_key = (session_id, u64::MAX);
                 let range = t.range(start_key..=end_key);
                 if let Ok(mut r) = range
-                    && r.next().is_some() {
-                        // Existing history found, don't clear it
-                        tracing::debug!(
-                            "[save_history] Refusing to clear existing history for session {}",
-                            session_id
-                        );
-                        return Ok(());
-                    }
+                    && r.next().is_some()
+                {
+                    // Existing history found, don't clear it
+                    tracing::debug!(
+                        "[save_history] Refusing to clear existing history for session {}",
+                        session_id
+                    );
+                    return Ok(());
+                }
             }
         }
 
@@ -378,7 +381,10 @@ impl SessionStore {
             // If messages is empty, don't delete existing data
             // This prevents accidental data loss
             if messages.is_empty() {
-                tracing::warn!("[save_history] Warning: Attempting to save empty message list for session {}, skipping to avoid data loss", session_id);
+                tracing::warn!(
+                    "[save_history] Warning: Attempting to save empty message list for session {}, skipping to avoid data loss",
+                    session_id
+                );
                 return Ok(());
             }
 
@@ -408,7 +414,11 @@ impl SessionStore {
                 table.insert(key, value)?;
             }
 
-            tracing::debug!("[save_history] Saved {} messages for session {}", messages.len(), session_id);
+            tracing::debug!(
+                "[save_history] Saved {} messages for session {}",
+                messages.len(),
+                session_id
+            );
         }
         write_txn.commit()?;
         Ok(())
@@ -575,10 +585,7 @@ impl SessionStore {
 
     /// Delete a session.
     pub fn delete_session(&self, session_id: &str) -> Result<(), Error> {
-        tracing::debug!(
-            "[SessionStore] delete_session called for: {}",
-            session_id
-        );
+        tracing::debug!("[SessionStore] delete_session called for: {}", session_id);
         let write_txn = self.db.begin_write()?;
         tracing::debug!("[SessionStore] write transaction started");
 
@@ -709,8 +716,9 @@ impl SessionStore {
 
     /// Save or update a pending stream state for a session.
     pub fn save_pending_stream(&self, state: &PendingStreamState) -> Result<(), Error> {
-        let serialized = serde_json::to_vec(state)
-            .map_err(|e| Error::Storage(format!("Failed to serialize pending stream state: {}", e)))?;
+        let serialized = serde_json::to_vec(state).map_err(|e| {
+            Error::Storage(format!("Failed to serialize pending stream state: {}", e))
+        })?;
 
         let write_txn = self.db.begin_write()?;
         {
@@ -722,7 +730,10 @@ impl SessionStore {
     }
 
     /// Get the pending stream state for a session (if any).
-    pub fn get_pending_stream(&self, session_id: &str) -> Result<Option<PendingStreamState>, Error> {
+    pub fn get_pending_stream(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<PendingStreamState>, Error> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(PENDING_STREAM_TABLE)?;
 
@@ -730,7 +741,9 @@ impl SessionStore {
             Some(value) => {
                 let value_vec = value.value();
                 let state = serde_json::from_slice::<PendingStreamState>(value_vec.as_slice())
-                    .map_err(|e| Error::Storage(format!("Failed to deserialize pending stream state: {}", e)))?;
+                    .map_err(|e| {
+                        Error::Storage(format!("Failed to deserialize pending stream state: {}", e))
+                    })?;
                 Ok(Some(state))
             }
             None => Ok(None),
@@ -755,7 +768,7 @@ impl SessionStore {
             Ok(txn) => txn,
             Err(_) => return Ok(vec![]), // Database error, return empty
         };
-        
+
         let table = match read_txn.open_table(PENDING_STREAM_TABLE) {
             Ok(t) => t,
             Err(e) => {
@@ -795,7 +808,7 @@ impl SessionStore {
             Ok(txn) => txn,
             Err(_) => return Ok(0), // Database error, nothing to clean
         };
-        
+
         let table = match read_txn.open_table(PENDING_STREAM_TABLE) {
             Ok(t) => t,
             Err(e) => {

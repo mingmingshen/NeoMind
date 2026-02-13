@@ -116,7 +116,7 @@ async fn test_event_bus_filtered_llm_events() {
         actions: vec![Action::control_device(
             "thermostat",
             "set_temp",
-            serde_json::json!("22")
+            serde_json::json!("22"),
         )],
         confidence: 0.95,
         timestamp: 1000,
@@ -561,7 +561,10 @@ async fn test_priority_event_bus_max_queue() {
         )
         .await;
 
-    assert!(!result, "Low priority event should be dropped when queue is full");
+    assert!(
+        !result,
+        "Low priority event should be dropped when queue is full"
+    );
 }
 
 #[tokio::test]

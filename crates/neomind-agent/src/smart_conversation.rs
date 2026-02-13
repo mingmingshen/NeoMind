@@ -13,15 +13,9 @@ pub enum ConversationState {
     /// 正常状态 - 直接处理
     Normal,
     /// 等待用户信息
-    AwaitingInfo {
-        question: String,
-        context: String,
-    },
+    AwaitingInfo { question: String, context: String },
     /// 等待用户确认
-    AwaitingConfirmation {
-        action: String,
-        description: String,
-    },
+    AwaitingConfirmation { action: String, description: String },
 }
 
 /// 用户意图分析结果
@@ -79,7 +73,10 @@ impl SmartConversationManager {
         if self.is_dangerous_operation(&input_lower) {
             return IntentAnalysis {
                 missing_info: None,
-                requires_confirmation: Some(format!("确定要{}吗？此操作不可恢复。回复'确认'继续。", user_input)),
+                requires_confirmation: Some(format!(
+                    "确定要{}吗？此操作不可恢复。回复'确认'继续。",
+                    user_input
+                )),
                 ambiguous: None,
                 can_proceed: false,
             };
@@ -147,11 +144,21 @@ impl SmartConversationManager {
             let has_specific_location = locations.iter().any(|loc| lower.contains(loc));
 
             // 具体设备名称（包含位置前缀的）
-            let specific_devices = ["客厅灯", "卧室空调", "厨房灯", "浴室灯", "主灯", "筒灯", "射灯"];
+            let specific_devices = [
+                "客厅灯",
+                "卧室空调",
+                "厨房灯",
+                "浴室灯",
+                "主灯",
+                "筒灯",
+                "射灯",
+            ];
             let has_specific_device = specific_devices.iter().any(|dev| lower.contains(dev));
 
             if !has_specific_location && !has_specific_device {
-                return Some("请问要控制哪个位置的设备？例如：客厅灯、卧室空调、厨房灯等。".to_string());
+                return Some(
+                    "请问要控制哪个位置的设备？例如：客厅灯、卧室空调、厨房灯等。".to_string(),
+                );
             }
         }
 

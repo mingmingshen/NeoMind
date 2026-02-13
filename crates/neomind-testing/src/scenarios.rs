@@ -201,12 +201,7 @@ impl MonitoringScenarioBuilder {
         self.builder.time_patterns.push(TimePattern {
             pattern_type: TimePatternType::Daily,
             schedule: time.to_string(),
-            devices: self
-                .builder
-                .devices
-                .iter()
-                .map(|d| d.id.clone())
-                .collect(),
+            devices: self.builder.devices.iter().map(|d| d.id.clone()).collect(),
         });
         self
     }
@@ -236,8 +231,8 @@ impl ReportScenarioBuilder {
             builder: self.builder.add_time_pattern(TimePattern {
                 pattern_type: TimePatternType::Daily,
                 schedule: "0 8 * * *".to_string(), // 8:00 AM daily
-                devices: vec![], // Will be filled when devices are added
-            })
+                devices: vec![],                   // Will be filled when devices are added
+            }),
         }
     }
 
@@ -248,7 +243,7 @@ impl ReportScenarioBuilder {
                 pattern_type: TimePatternType::Weekly,
                 schedule: "0 9 * * 1".to_string(), // 9:00 AM Monday
                 devices: vec![],
-            })
+            }),
         }
     }
 
@@ -358,7 +353,10 @@ pub fn simple_temperature_scenario() -> Scenario {
         .add_time_pattern(TimePattern {
             pattern_type: TimePatternType::Interval,
             schedule: "*/5 * * * *".to_string(), // Every 5 minutes
-            devices: vec!["warehouse-temp-1".to_string(), "warehouse-temp-2".to_string()],
+            devices: vec![
+                "warehouse-temp-1".to_string(),
+                "warehouse-temp-2".to_string(),
+            ],
         })
         .add_expected_behavior(ExpectedBehavior {
             behavior_type: BehaviorType::DataCollection,

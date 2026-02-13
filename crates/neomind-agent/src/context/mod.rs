@@ -5,34 +5,36 @@
 
 mod business_context;
 mod device_registry;
-mod state_provider;
+mod dynamic_tools;
+mod health;
 mod meta_tools;
 mod resource_index;
-mod dynamic_tools;
 mod resource_resolver;
-mod health;
+mod state_provider;
 
 #[cfg(test)]
 mod mock_devices;
 
-pub use business_context::{BusinessContext, ContextScope, ContextRelevance};
-pub use device_registry::{DeviceRegistry, DeviceAlias, DeviceLocation, DeviceCapability};
-pub use state_provider::{StateProvider, SystemSnapshot, SystemResource};
+pub use business_context::{BusinessContext, ContextRelevance, ContextScope};
+pub use device_registry::{DeviceAlias, DeviceCapability, DeviceLocation, DeviceRegistry};
+pub use dynamic_tools::DynamicToolGenerator;
+pub use health::{
+    ContextHealth, HealthCheckConfig, HealthStatus, calculate_health, calculate_health_with_config,
+};
 pub use meta_tools::{MetaTool, MetaToolRegistry, SearchContext};
 pub use resource_index::{
-    ResourceIndex, Resource, ResourceId, ResourceData, SearchResult, SearchQuery,
-    DeviceResourceData, DeviceTypeResourceData, AlertChannelResourceData, Capability,
-    CapabilityType, AccessType, ResourceIndexStats, ResourceDataHelper,
+    AccessType, AlertChannelResourceData, Capability, CapabilityType, DeviceResourceData,
+    DeviceTypeResourceData, Resource, ResourceData, ResourceDataHelper, ResourceId, ResourceIndex,
+    ResourceIndexStats, SearchQuery, SearchResult,
 };
-pub use dynamic_tools::DynamicToolGenerator;
 pub use resource_resolver::{
-    ResourceResolver, ResolvedIntent, ResourceMatch,
-    IntentCategory, MatchType, SuggestedAction, ActionType,
+    ActionType, IntentCategory, MatchType, ResolvedIntent, ResourceMatch, ResourceResolver,
+    SuggestedAction,
 };
-pub use health::{ContextHealth, HealthStatus, HealthCheckConfig, calculate_health, calculate_health_with_config};
+pub use state_provider::{StateProvider, SystemResource, SystemSnapshot};
 
 #[cfg(test)]
-pub use mock_devices::{generate_mock_devices, generate_large_scale_devices, get_device_summary};
+pub use mock_devices::{generate_large_scale_devices, generate_mock_devices, get_device_summary};
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -109,25 +111,37 @@ impl ContextManager {
 
         // Check for specific device mentions
         let has_device = devices.iter().any(|d| d.matched);
-        let has_location = query_lower.contains("客厅") || query_lower.contains("卧室")
-            || query_lower.contains("厨房") || query_lower.contains("卫生间")
-            || query_lower.contains("living") || query_lower.contains("bedroom")
+        let has_location = query_lower.contains("客厅")
+            || query_lower.contains("卧室")
+            || query_lower.contains("厨房")
+            || query_lower.contains("卫生间")
+            || query_lower.contains("living")
+            || query_lower.contains("bedroom")
             || query_lower.contains("kitchen");
 
         // Check for data query
-        let is_data_query = query_lower.contains("温度") || query_lower.contains("湿度")
-            || query_lower.contains("多少") || query_lower.contains("temperature")
-            || query_lower.contains("humidity") || query_lower.contains("状态");
+        let is_data_query = query_lower.contains("温度")
+            || query_lower.contains("湿度")
+            || query_lower.contains("多少")
+            || query_lower.contains("temperature")
+            || query_lower.contains("humidity")
+            || query_lower.contains("状态");
 
         // Check for control intent
-        let is_control = query_lower.contains("打开") || query_lower.contains("关闭")
-            || query_lower.contains("控制") || query_lower.contains("调节")
-            || query_lower.contains("open") || query_lower.contains("close")
-            || query_lower.contains("turn on") || query_lower.contains("turn off");
+        let is_control = query_lower.contains("打开")
+            || query_lower.contains("关闭")
+            || query_lower.contains("控制")
+            || query_lower.contains("调节")
+            || query_lower.contains("open")
+            || query_lower.contains("close")
+            || query_lower.contains("turn on")
+            || query_lower.contains("turn off");
 
         // Check for list/query intent
-        let is_list = query_lower.contains("有哪些") || query_lower.contains("列出")
-            || query_lower.contains("所有") || query_lower.contains("list")
+        let is_list = query_lower.contains("有哪些")
+            || query_lower.contains("列出")
+            || query_lower.contains("所有")
+            || query_lower.contains("list")
             || query_lower.contains("show all");
 
         match (has_device, has_location, is_data_query, is_control, is_list) {

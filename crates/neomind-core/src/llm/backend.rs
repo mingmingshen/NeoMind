@@ -102,7 +102,7 @@ impl Default for GenerationParams {
             frequency_penalty: Some(0.0),
             presence_penalty: Some(0.0),
             thinking_enabled: None, // Let backend decide based on model capabilities
-            max_context: None,       // Let backend decide based on model capabilities
+            max_context: None,      // Let backend decide based on model capabilities
         }
     }
 }
@@ -188,18 +188,19 @@ impl LlmInput {
     /// Add multimodal content to user message.
     pub fn with_image(mut self, _image: ImageContent) -> Self {
         if let Some(msg) = self.messages.last_mut()
-            && msg.role == MessageRole::User {
-                // Convert to multimodal content
-                let text = msg.text();
-                msg.content = crate::message::Content::text(format!(
-                    "{} <image>",
-                    if text.is_empty() {
-                        "Describe this image."
-                    } else {
-                        &text
-                    }
-                ));
-            }
+            && msg.role == MessageRole::User
+        {
+            // Convert to multimodal content
+            let text = msg.text();
+            msg.content = crate::message::Content::text(format!(
+                "{} <image>",
+                if text.is_empty() {
+                    "Describe this image."
+                } else {
+                    &text
+                }
+            ));
+        }
         self
     }
 }
@@ -558,9 +559,10 @@ impl BackendRegistry {
             }
             if let Some(min_context) = req.min_context
                 && let Some(max_context) = caps.max_context
-                    && max_context < min_context {
-                        return Ok(false);
-                    }
+                && max_context < min_context
+            {
+                return Ok(false);
+            }
 
             Ok(true)
         } else {
@@ -830,7 +832,7 @@ impl BackendCapabilitiesBuilder {
     /// Enable multimodal.
     pub fn multimodal(mut self) -> Self {
         self.capabilities.multimodal = true;
-        self.capabilities.supports_images = true;  // Multimodal implies image support
+        self.capabilities.supports_images = true; // Multimodal implies image support
         self
     }
 

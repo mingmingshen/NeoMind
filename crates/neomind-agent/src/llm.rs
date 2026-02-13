@@ -13,8 +13,8 @@ use tokio::sync::RwLock;
 
 use neomind_core::{
     Message,
-    llm::backend::{LlmInput, LlmRuntime},
     config::agent_env_vars,
+    llm::backend::{LlmInput, LlmRuntime},
 };
 
 // Import intent classifier for staged processing
@@ -47,8 +47,8 @@ pub fn get_concurrent_limit() -> usize {
 #[derive(Clone)]
 struct ConcurrencyLimiter {
     current: Arc<AtomicUsize>,
-    max: Arc<AtomicUsize>,  // Make max AtomciUsize for dynamic adjustment
-    base_max: usize,         // Original configured max
+    max: Arc<AtomicUsize>, // Make max AtomciUsize for dynamic adjustment
+    base_max: usize,       // Original configured max
 }
 
 impl ConcurrencyLimiter {
@@ -157,14 +157,14 @@ fn get_available_memory_bytes() -> usize {
     {
         // On macOS, use sysctl to get memory info
         // For simplicity, return a conservative estimate
-        4 * 1024 * 1024 * 1024  // Assume 4GB available
+        4 * 1024 * 1024 * 1024 // Assume 4GB available
     }
 
     #[cfg(target_os = "windows")]
     {
         // On Windows, use GlobalMemoryStatusEx
         // For simplicity, return a conservative estimate
-        4 * 1024 * 1024 * 1024  // Assume 4GB available
+        4 * 1024 * 1024 * 1024 // Assume 4GB available
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -387,12 +387,13 @@ impl LlmInterface {
     async fn get_runtime(&self) -> AgentResult<Arc<dyn LlmRuntime>> {
         // Try instance manager first if enabled
         if self.uses_instance_manager()
-            && let Some(manager) = &self.instance_manager {
-                return manager
-                    .get_active_runtime()
-                    .await
-                    .map_err(|e| NeoMindError::Llm(e.to_string()));
-            }
+            && let Some(manager) = &self.instance_manager
+        {
+            return manager
+                .get_active_runtime()
+                .await
+                .map_err(|e| NeoMindError::Llm(e.to_string()));
+        }
 
         // Fall back to direct runtime
         let llm_guard = self.llm.read().await;
@@ -408,14 +409,10 @@ impl LlmInterface {
     async fn get_effective_params(&self) -> (f32, f32, usize, usize) {
         if self.uses_instance_manager()
             && let Some(manager) = &self.instance_manager
-                && let Some(inst) = manager.get_active_instance() {
-                    return (
-                        inst.temperature,
-                        inst.top_p,
-                        inst.top_k,
-                        inst.max_tokens,
-                    );
-                }
+            && let Some(inst) = manager.get_active_instance()
+        {
+            return (inst.temperature, inst.top_p, inst.top_k, inst.max_tokens);
+        }
         // Fall back to local config
         (self.temperature, self.top_p, self.top_k, self.max_tokens)
     }
@@ -492,10 +489,11 @@ impl LlmInterface {
         // Try instance manager first if enabled
         if self.uses_instance_manager()
             && let Some(manager) = &self.instance_manager
-                && let Some(instance) = manager.get_active_instance() {
-                    // Instance has capabilities with max_context
-                    return instance.capabilities.max_context;
-                }
+            && let Some(instance) = manager.get_active_instance()
+        {
+            // Instance has capabilities with max_context
+            return instance.capabilities.max_context;
+        }
 
         // Fall back to querying the runtime directly
         match self.get_runtime().await {
@@ -511,10 +509,11 @@ impl LlmInterface {
         // Try instance manager first if enabled
         if self.uses_instance_manager()
             && let Some(manager) = &self.instance_manager
-                && let Some(instance) = manager.get_active_instance() {
-                    // Instance has capabilities with supports_multimodal (storage layer)
-                    return instance.capabilities.supports_multimodal;
-                }
+            && let Some(instance) = manager.get_active_instance()
+        {
+            // Instance has capabilities with supports_multimodal (storage layer)
+            return instance.capabilities.supports_multimodal;
+        }
 
         // Fall back to querying the runtime directly
         match self.get_runtime().await {
@@ -535,7 +534,10 @@ impl LlmInterface {
     /// ```
     pub async fn warmup(&self) -> AgentResult<()> {
         match self.get_runtime().await {
-            Ok(runtime) => runtime.warmup().await.map_err(|e| NeoMindError::Llm(e.to_string())),
+            Ok(runtime) => runtime
+                .warmup()
+                .await
+                .map_err(|e| NeoMindError::Llm(e.to_string())),
             Err(e) => Err(e),
         }
     }
@@ -683,8 +685,8 @@ impl LlmInterface {
 
         // Build base prompt using PromptBuilder
         let base_prompt = PromptBuilder::new()
-            .with_thinking(true)  // Include thinking guidelines
-            .with_examples(true)  // Include usage examples
+            .with_thinking(true) // Include thinking guidelines
+            .with_examples(true) // Include usage examples
             .build_system_prompt();
 
         let mut prompt = String::with_capacity(4096);
@@ -697,7 +699,8 @@ impl LlmInterface {
         prompt.push_str("2. 严禁在没有调用工具的情况下声称操作成功！\n");
         prompt.push_str("3. 只有在工具真正执行并返回成功结果后，才能使用「✓」标记。\n\n");
         prompt.push_str("## 工具调用格式\n");
-        prompt.push_str("在回复中输出: [{\"name\":\"工具名\",\"arguments\":{\"参数\":\"值\"}}]\n\n");
+        prompt
+            .push_str("在回复中输出: [{\"name\":\"工具名\",\"arguments\":{\"参数\":\"值\"}}]\n\n");
 
         // Add simplified tools
         use neomind_tools::simplified;
@@ -719,8 +722,10 @@ impl LlmInterface {
                     prompt.push_str(&format!("  - `{}` (必需)\n", param));
                 }
                 for (param, info) in &tool.optional {
-                    prompt.push_str(&format!("  - `{}` (可选，默认: {}) - {}\n",
-                        param, info.default, info.description));
+                    prompt.push_str(&format!(
+                        "  - `{}` (可选，默认: {}) - {}\n",
+                        param, info.default, info.description
+                    ));
                 }
             }
 
@@ -740,9 +745,12 @@ impl LlmInterface {
         prompt.push_str("| 用户问什么 | 调用什么工具 |\n");
         prompt.push_str("|-----------|-------------|\n");
         prompt.push_str("| \"有哪些设备\" | `list_devices()` |\n");
-        prompt.push_str("| \"温度是多少\" | `query_data(device='设备ID', metric='temperature')` |\n");
+        prompt
+            .push_str("| \"温度是多少\" | `query_data(device='设备ID', metric='temperature')` |\n");
         prompt.push_str("| \"打开灯\" | `control_device(device='设备ID', action='on')` |\n");
-        prompt.push_str("| \"创建规则\" | `create_rule(name='规则名', condition='条件', action='动作')` |\n");
+        prompt.push_str(
+            "| \"创建规则\" | `create_rule(name='规则名', condition='条件', action='动作')` |\n",
+        );
         prompt.push_str("| \"显示所有规则\" | `list_rules()` |\n");
         prompt.push('\n');
 
@@ -759,7 +767,9 @@ impl LlmInterface {
     /// Build the base system prompt with current time injected.
     /// This replaces the time placeholders with actual time values using the configured global timezone.
     pub async fn build_base_system_prompt_with_time(&self, timezone: Option<&str>) -> String {
-        use crate::prompts::{CURRENT_TIME_PLACEHOLDER, LOCAL_TIME_PLACEHOLDER, TIMEZONE_PLACEHOLDER};
+        use crate::prompts::{
+            CURRENT_TIME_PLACEHOLDER, LOCAL_TIME_PLACEHOLDER, TIMEZONE_PLACEHOLDER,
+        };
 
         // Get the base prompt (which contains placeholders)
         let base_prompt = self.build_base_system_prompt().await;
@@ -769,7 +779,10 @@ impl LlmInterface {
         let current_time_utc = now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
 
         // Use self.global_timezone first, then parameter, then default
-        let effective_timezone = self.global_timezone.read().await
+        let effective_timezone = self
+            .global_timezone
+            .read()
+            .await
             .as_ref()
             .cloned()
             .or_else(|| timezone.map(|s| s.to_string()))
@@ -780,7 +793,10 @@ impl LlmInterface {
             .parse::<chrono_tz::Tz>()
             .unwrap_or(chrono_tz::Tz::Asia__Shanghai); // Default to Shanghai on error
 
-        let local_time = now.with_timezone(&tz).format("%Y-%m-%d %H:%M:%S").to_string();
+        let local_time = now
+            .with_timezone(&tz)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
 
         // Get additional time context for better LLM understanding
         let day_of_week = now.with_timezone(&tz).format("%A").to_string();
@@ -835,8 +851,7 @@ impl LlmInterface {
             };
 
             // Get intent-specific addon from PromptBuilder
-            let addon = PromptBuilder::new()
-                .get_intent_prompt_addon(task_type);
+            let addon = PromptBuilder::new().get_intent_prompt_addon(task_type);
 
             if !addon.is_empty() {
                 prompt.push_str(&addon);
@@ -873,25 +888,39 @@ impl LlmInterface {
                 let scenario_lower = scenario.to_lowercase();
                 match intent.category {
                     crate::agent::staged::IntentCategory::Device => {
-                        scenario_lower.contains("设备") || scenario_lower.contains("控制") || scenario_lower.contains("打开") || scenario_lower.contains("关闭")
+                        scenario_lower.contains("设备")
+                            || scenario_lower.contains("控制")
+                            || scenario_lower.contains("打开")
+                            || scenario_lower.contains("关闭")
                     }
                     crate::agent::staged::IntentCategory::Data => {
-                        scenario_lower.contains("询问") || scenario_lower.contains("查询") || scenario_lower.contains("数据") || scenario_lower.contains("温度")
+                        scenario_lower.contains("询问")
+                            || scenario_lower.contains("查询")
+                            || scenario_lower.contains("数据")
+                            || scenario_lower.contains("温度")
                     }
                     crate::agent::staged::IntentCategory::Rule => {
-                        scenario_lower.contains("创建") || scenario_lower.contains("规则") || scenario_lower.contains("自动化")
+                        scenario_lower.contains("创建")
+                            || scenario_lower.contains("规则")
+                            || scenario_lower.contains("自动化")
                     }
                     crate::agent::staged::IntentCategory::Workflow => {
                         scenario_lower.contains("工作流") || scenario_lower.contains("执行")
                     }
                     crate::agent::staged::IntentCategory::Alert => {
-                        scenario_lower.contains("告警") || scenario_lower.contains("异常") || scenario_lower.contains("通知")
+                        scenario_lower.contains("告警")
+                            || scenario_lower.contains("异常")
+                            || scenario_lower.contains("通知")
                     }
                     crate::agent::staged::IntentCategory::System => {
-                        scenario_lower.contains("系统") || scenario_lower.contains("状态") || scenario_lower.contains("健康")
+                        scenario_lower.contains("系统")
+                            || scenario_lower.contains("状态")
+                            || scenario_lower.contains("健康")
                     }
                     crate::agent::staged::IntentCategory::Help => {
-                        scenario_lower.contains("帮助") || scenario_lower.contains("教程") || scenario_lower.contains("说明")
+                        scenario_lower.contains("帮助")
+                            || scenario_lower.contains("教程")
+                            || scenario_lower.contains("说明")
                     }
                     crate::agent::staged::IntentCategory::General => true,
                 }
@@ -904,9 +933,10 @@ impl LlmInterface {
 
         // Always include basic tools
         if !filtered.iter().any(|t| t.name == "list_devices")
-            && let Some(t) = tools.iter().find(|t| t.name == "list_devices") {
-                filtered.push(t.clone());
-            }
+            && let Some(t) = tools.iter().find(|t| t.name == "list_devices")
+        {
+            filtered.push(t.clone());
+        }
 
         filtered.truncate(6); // Limit to 6 tools max
         filtered
@@ -921,9 +951,10 @@ impl LlmInterface {
     /// Check if the LLM backend is ready.
     pub async fn is_ready(&self) -> bool {
         if self.uses_instance_manager()
-            && let Some(manager) = &self.instance_manager {
-                return manager.get_active_instance().is_some();
-            }
+            && let Some(manager) = &self.instance_manager
+        {
+            return manager.get_active_instance().is_some();
+        }
         let llm_guard = self.llm.read().await;
         llm_guard.as_ref().is_some()
     }
@@ -964,10 +995,11 @@ impl LlmInterface {
     /// This is used when the user sends images along with their text.
     pub async fn chat_multimodal_with_history(
         &self,
-        user_message: Message,  // Can contain text + images
+        user_message: Message, // Can contain text + images
         history: &[Message],
     ) -> AgentResult<ChatResponse> {
-        self.chat_internal_message(user_message, Some(history)).await
+        self.chat_internal_message(user_message, Some(history))
+            .await
     }
 
     /// Internal chat implementation.
@@ -1155,7 +1187,7 @@ impl LlmInterface {
     /// Internal chat implementation that accepts a Message directly (for multimodal).
     async fn chat_internal_message(
         &self,
-        user_message: Message,  // Can contain text + images
+        user_message: Message, // Can contain text + images
         history: Option<&[Message]>,
     ) -> AgentResult<ChatResponse> {
         // Acquire permit for concurrency limiting
@@ -1171,8 +1203,7 @@ impl LlmInterface {
         let system_prompt = if has_tools {
             // Extract text from user message for system prompt
             let user_text = user_message.content.as_text();
-            self.build_system_prompt_with_tools(Some(&user_text))
-                .await
+            self.build_system_prompt_with_tools(Some(&user_text)).await
         } else {
             self.system_prompt.read().await.clone()
         };
@@ -1309,8 +1340,7 @@ impl LlmInterface {
     pub async fn chat_stream(
         &self,
         user_message: impl Into<String>,
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
-    {
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         self.chat_stream_internal(user_message, None, true).await
     }
 
@@ -1319,8 +1349,7 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: &[Message],
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
-    {
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         // Enable thinking for complex queries (default behavior)
         *self.thinking_enabled.write().await = Some(true);
         self.chat_stream_internal(user_message, Some(history), true)
@@ -1332,8 +1361,7 @@ impl LlmInterface {
     pub async fn chat_stream_without_tools(
         &self,
         user_message: impl Into<String>,
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
-    {
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         self.chat_stream_internal(user_message, None, false).await
     }
 
@@ -1343,8 +1371,7 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: &[Message],
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
-    {
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         self.chat_stream_internal(user_message, Some(history), false)
             .await
     }
@@ -1355,8 +1382,7 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: &[Message],
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
-    {
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         // Set thinking to false for this call
         *self.thinking_enabled.write().await = Some(false);
         // Note: We DON'T restore the old value here because:
@@ -1373,8 +1399,7 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: &[Message],
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
-    {
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         // Temporarily disable thinking for this call
         let old_value = *self.thinking_enabled.read().await;
         *self.thinking_enabled.write().await = Some(false);
@@ -1389,10 +1414,9 @@ impl LlmInterface {
     /// This method accepts a Message directly, which can contain text and images.
     pub async fn chat_stream_multimodal_with_history(
         &self,
-        user_message: Message,  // Can contain text + images via Content::Parts
+        user_message: Message, // Can contain text + images via Content::Parts
         history: &[Message],
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
-    {
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         self.chat_stream_internal_message(user_message, Some(history), true, false)
             .await
     }
@@ -1401,10 +1425,9 @@ impl LlmInterface {
     /// For simple multimodal queries where we want fast responses.
     pub async fn chat_stream_multimodal_no_thinking_with_history(
         &self,
-        user_message: Message,  // Can contain text + images via Content::Parts
+        user_message: Message, // Can contain text + images via Content::Parts
         history: &[Message],
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
-    {
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         // Temporarily disable thinking for this call
         *self.thinking_enabled.write().await = Some(false);
         self.chat_stream_internal_message(user_message, Some(history), true, false)
@@ -1418,14 +1441,12 @@ impl LlmInterface {
         history: Option<&[Message]>,
         include_tools: bool,
         _restore_thinking: bool,
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
-    {
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         let model_arc = Arc::clone(&self.model);
 
         // Build system prompt (with or without tools based on phase)
         let system_prompt = if include_tools {
-            self.build_system_prompt_with_tools(None)
-                .await
+            self.build_system_prompt_with_tools(None).await
         } else {
             // Phase 2 system prompt - NO tool calling, just generate response based on tool results
             // Tool execution is already complete, this phase is for summarizing results
@@ -1467,7 +1488,8 @@ impl LlmInterface {
 - 不要重复显示原始 JSON 数据
 - **关键：每条信息只说一次，不要重复相同的内容**
 - 如果工具执行失败，解释原因并提供替代方案
-- 如果工具返回的数据不完整，诚实地说明".to_string()
+- 如果工具返回的数据不完整，诚实地说明"
+                .to_string()
         };
 
         // Build input outside the lock
@@ -1606,8 +1628,7 @@ impl LlmInterface {
         user_message: impl Into<String>,
         history: Option<&[Message]>,
         include_tools: bool,
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
-    {
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         let user_message = user_message.into();
 
         let model_arc = Arc::clone(&self.model);
@@ -1657,7 +1678,8 @@ impl LlmInterface {
 - 不要重复显示原始 JSON 数据
 - **关键：每条信息只说一次，不要重复相同的内容**
 - 如果工具执行失败，解释原因并提供替代方案
-- 如果工具返回的数据不完整，诚实地说明".to_string()
+- 如果工具返回的数据不完整，诚实地说明"
+                .to_string()
         };
 
         // Build input outside the lock
@@ -1809,7 +1831,7 @@ impl Default for ChatConfig {
             model: "qwen3-vl:2b".to_string(),
             temperature: agent_env_vars::temperature(),
             top_p: agent_env_vars::top_p(),
-            top_k: 20,  // Lowered for faster responses
+            top_k: 20, // Lowered for faster responses
             max_tokens: agent_env_vars::max_tokens(),
             concurrent_limit: agent_env_vars::concurrent_limit(),
         }
@@ -1865,8 +1887,7 @@ mod tests {
     #[test]
     fn test_llm_interface_with_system_prompt() {
         let config = ChatConfig::default();
-        let interface = LlmInterface::new(config)
-            .with_system_prompt("You are a test assistant.");
+        let interface = LlmInterface::new(config).with_system_prompt("You are a test assistant.");
         // The system prompt is set internally
         assert_eq!(interface.max_concurrent(), DEFAULT_CONCURRENT_LIMIT);
     }
@@ -1897,18 +1918,16 @@ mod tests {
         assert!(interface.get_tool_definitions().await.is_empty());
 
         // Set tool definitions
-        let tools = vec![
-            neomind_core::llm::backend::ToolDefinition {
-                name: "test_tool".to_string(),
-                description: "A test tool".to_string(),
-                parameters: serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "input": {"type": "string"}
-                    }
-                }),
-            }
-        ];
+        let tools = vec![neomind_core::llm::backend::ToolDefinition {
+            name: "test_tool".to_string(),
+            description: "A test tool".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"}
+                }
+            }),
+        }];
         interface.set_tool_definitions(tools.clone()).await;
 
         let retrieved = interface.get_tool_definitions().await;
@@ -2025,7 +2044,9 @@ mod tests {
         assert!(!filtered.is_empty());
 
         // Test filtering with data query
-        let filtered = interface.filter_tools_by_intent("what's the temperature?").await;
+        let filtered = interface
+            .filter_tools_by_intent("what's the temperature?")
+            .await;
         // Data-related tools should be included
         assert!(!filtered.is_empty());
     }

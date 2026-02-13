@@ -5,12 +5,12 @@ use crate::ai_agent::executor::AgentExecutor;
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use cron::Schedule;
-use neomind_storage::{AiAgent, AgentSchedule, ScheduleType};
+use neomind_storage::{AgentSchedule, AiAgent, ScheduleType};
 use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tokio::time::{interval, Duration};
+use tokio::time::{Duration, interval};
 
 /// Scheduler configuration.
 #[derive(Debug, Clone)]
@@ -118,7 +118,9 @@ impl AgentScheduler {
 
     /// Set the global default timezone.
     pub async fn set_default_timezone(&self, timezone: String) -> Result<(), SchedulerError> {
-        let tz = timezone.parse::<Tz>().map_err(|_| SchedulerError::InvalidTimezone(timezone.clone()))?;
+        let tz = timezone
+            .parse::<Tz>()
+            .map_err(|_| SchedulerError::InvalidTimezone(timezone.clone()))?;
 
         // Update the parsed timezone
         *self.default_tz.write().await = Some(tz);
@@ -178,7 +180,10 @@ impl AgentScheduler {
     }
 
     /// Start the scheduler.
-    pub async fn start(&self, executor: Arc<AgentExecutor>) -> Result<(), crate::error::NeoMindError> {
+    pub async fn start(
+        &self,
+        executor: Arc<AgentExecutor>,
+    ) -> Result<(), crate::error::NeoMindError> {
         let mut running = self.running.write().await;
         if *running {
             return Ok(());
@@ -271,7 +276,10 @@ impl AgentScheduler {
                     let semaphore_clone = semaphore.clone();
 
                     // Mark as running
-                    running_executions_clone.write().await.insert(agent_id.clone());
+                    running_executions_clone
+                        .write()
+                        .await
+                        .insert(agent_id.clone());
 
                     tokio::spawn(async move {
                         // Acquire semaphore permit for concurrency control
@@ -332,7 +340,10 @@ impl AgentScheduler {
         });
 
         let config = self.config.read().await;
-        tracing::info!("Agent scheduler started with default timezone: {:?}", config.default_timezone);
+        tracing::info!(
+            "Agent scheduler started with default timezone: {:?}",
+            config.default_timezone
+        );
         Ok(())
     }
 
@@ -408,10 +419,9 @@ impl AgentScheduler {
                 Ok((now.timestamp() + interval as i64, None))
             }
             ScheduleType::Cron => {
-                let cron_expr = schedule
-                    .cron_expression
-                    .as_ref()
-                    .ok_or_else(|| SchedulerError::InvalidCronExpression("No cron expression provided".to_string()))?;
+                let cron_expr = schedule.cron_expression.as_ref().ok_or_else(|| {
+                    SchedulerError::InvalidCronExpression("No cron expression provided".to_string())
+                })?;
 
                 let parsed = Self::parse_cron_expression(cron_expr)?;
 
@@ -426,16 +436,18 @@ impl AgentScheduler {
 
                 // Calculate next execution time
                 // We need to use a unified DateTime type for the calculation
-                let base_time_for_calc: chrono::DateTime<chrono::FixedOffset> = if let Some(ref tz) = tz_opt {
-                    now.with_timezone(tz).fixed_offset()
-                } else {
-                    now.fixed_offset()
-                };
+                let base_time_for_calc: chrono::DateTime<chrono::FixedOffset> =
+                    if let Some(ref tz) = tz_opt {
+                        now.with_timezone(tz).fixed_offset()
+                    } else {
+                        now.fixed_offset()
+                    };
 
-                let next_execution = parsed
-                    .after(&base_time_for_calc)
-                    .next()
-                    .ok_or_else(|| SchedulerError::CalculationError("Could not calculate next execution time".to_string()))?;
+                let next_execution = parsed.after(&base_time_for_calc).next().ok_or_else(|| {
+                    SchedulerError::CalculationError(
+                        "Could not calculate next execution time".to_string(),
+                    )
+                })?;
 
                 // Convert to UTC timestamp
                 let next_timestamp = next_execution.timestamp();

@@ -163,14 +163,19 @@ pub async fn bulk_device_command_handler(
                 MetricValue::Boolean(b) => serde_json::Value::Bool(b),
                 MetricValue::Binary(_) => serde_json::Value::String("binary".to_string()),
                 MetricValue::Array(arr) => {
-                    let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
-                        MetricValue::Integer(i) => serde_json::json!(*i),
-                        MetricValue::Float(f) => serde_json::json!(*f),
-                        MetricValue::String(s) => serde_json::json!(s),
-                        MetricValue::Boolean(b) => serde_json::json!(*b),
-                        MetricValue::Null => serde_json::json!(null),
-                        MetricValue::Array(_) | MetricValue::Binary(_) => serde_json::json!(null),
-                    }).collect();
+                    let json_arr: Vec<serde_json::Value> = arr
+                        .iter()
+                        .map(|v| match v {
+                            MetricValue::Integer(i) => serde_json::json!(*i),
+                            MetricValue::Float(f) => serde_json::json!(*f),
+                            MetricValue::String(s) => serde_json::json!(s),
+                            MetricValue::Boolean(b) => serde_json::json!(*b),
+                            MetricValue::Null => serde_json::json!(null),
+                            MetricValue::Array(_) | MetricValue::Binary(_) => {
+                                serde_json::json!(null)
+                            }
+                        })
+                        .collect();
                     serde_json::Value::Array(json_arr)
                 }
                 MetricValue::Null => serde_json::Value::Null,
@@ -181,7 +186,8 @@ pub async fn bulk_device_command_handler(
 
     for (index, device_id) in req.device_ids.into_iter().enumerate() {
         match state
-            .devices.service
+            .devices
+            .service
             .send_command(&device_id, &req.command, json_params.clone())
             .await
         {

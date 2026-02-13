@@ -1,19 +1,25 @@
 //! Server state and types.
 
+use futures::Stream;
 use std::pin::Pin;
 use std::sync::Arc;
-use futures::Stream;
 
 use neomind_agent::SessionManager;
 use neomind_commands::{CommandManager, CommandQueue, CommandStateStore};
 use neomind_core::{EventBus, extension::ExtensionRegistry};
 use neomind_devices::adapter::AdapterResult;
 use neomind_devices::{DeviceRegistry, DeviceService, TimeSeriesStorage};
-use neomind_rules::{UnifiedValueProvider, RuleEngine, device_integration::DeviceActionExecutor, extension_integration::ExtensionActionExecutor, store::RuleStore};
+use neomind_rules::{
+    RuleEngine, UnifiedValueProvider, device_integration::DeviceActionExecutor,
+    extension_integration::ExtensionActionExecutor, store::RuleStore,
+};
 use neomind_storage::dashboards::DashboardStore;
 use neomind_storage::llm_backends::LlmBackendStore;
 
-use neomind_automation::{AutoOnboardManager, store::SharedAutomationStore, intent::IntentAnalyzer, transform::TransformEngine};
+use neomind_automation::{
+    AutoOnboardManager, intent::IntentAnalyzer, store::SharedAutomationStore,
+    transform::TransformEngine,
+};
 use neomind_memory::TieredMemory;
 use neomind_messages::MessageManager;
 
@@ -22,8 +28,8 @@ use crate::auth_users::AuthUserState;
 use crate::config::LlmSettingsRequest;
 use crate::rate_limit::{RateLimitConfig, RateLimiter};
 use crate::server::state::{
-    AuthState, AgentState, AgentManager, AutomationState, CoreState, DeviceState, ExtensionState, ExtensionMetricsStorage,
-    ExtensionRegistryAdapter,
+    AgentManager, AgentState, AuthState, AutomationState, CoreState, DeviceState,
+    ExtensionMetricsStorage, ExtensionRegistryAdapter, ExtensionState,
 };
 
 #[cfg(feature = "embedded-broker")]
@@ -77,7 +83,8 @@ pub struct ServerState {
     rule_engine_events_initialized: Arc<std::sync::atomic::AtomicBool>,
 
     /// Cached rule engine event service instance (prevents duplicate instances).
-    rule_engine_event_service: Arc<tokio::sync::Mutex<Option<crate::event_services::RuleEngineEventService>>>,
+    rule_engine_event_service:
+        Arc<tokio::sync::Mutex<Option<crate::event_services::RuleEngineEventService>>>,
 }
 
 // Backward compatibility: Provide direct field access as before
@@ -221,17 +228,15 @@ impl ServerState {
         };
         message_manager.register_default_channels().await;
 
-        let core = CoreState::new(
-            event_bus.clone(),
-            command_manager,
-            message_manager.clone(),
-        );
+        let core = CoreState::new(event_bus.clone(), command_manager, message_manager.clone());
 
         // ========== Build DEVICE STATE ==========
         // Create device registry with persistent storage
         let device_registry = match DeviceRegistry::with_persistence("data/devices.redb").await {
             Ok(registry) => {
-                tracing::info!("Device registry initialized with persistent storage at data/devices.redb");
+                tracing::info!(
+                    "Device registry initialized with persistent storage at data/devices.redb"
+                );
                 Arc::new(registry)
             }
             Err(e) => {
@@ -265,7 +270,9 @@ impl ServerState {
             device_registry.clone(),
             event_bus_for_service,
         ));
-        device_service.set_telemetry_storage(time_series_storage.clone()).await;
+        device_service
+            .set_telemetry_storage(time_series_storage.clone())
+            .await;
 
         // Create device status broadcast channel
         let device_update_tx: tokio::sync::broadcast::Sender<super::state::DeviceStatusUpdate> =
@@ -281,8 +288,8 @@ impl ServerState {
         // ========== Build EXTENSION STATE ==========
         // Create extension registry with default directories
         let default_ext_dirs = vec![
-            std::path::PathBuf::from("extensions"),           // Local extensions dir
-            std::path::PathBuf::from("data/extensions"),      // Data directory extensions
+            std::path::PathBuf::from("extensions"), // Local extensions dir
+            std::path::PathBuf::from("data/extensions"), // Data directory extensions
         ];
 
         let mut registry_builder = ExtensionRegistry::new();
@@ -295,13 +302,12 @@ impl ServerState {
         let extension_registry = Arc::new(registry_builder);
 
         // Create extension metrics storage (shares device telemetry.redb)
-        let extension_metrics_storage = Arc::new(ExtensionMetricsStorage::with_shared_storage(time_series_storage.clone()));
+        let extension_metrics_storage = Arc::new(ExtensionMetricsStorage::with_shared_storage(
+            time_series_storage.clone(),
+        ));
 
         // Create the extension state with registry and storage
-        let extensions = ExtensionState::new(
-            extension_registry,
-            extension_metrics_storage,
-        );
+        let extensions = ExtensionState::new(extension_registry, extension_metrics_storage);
 
         tracing::info!("Extension state initialized");
 
@@ -309,7 +315,9 @@ impl ServerState {
         let rule_engine = Arc::new(RuleEngine::new(value_provider.clone()));
 
         // Wire rule engine to message manager
-        rule_engine.set_message_manager(core.message_manager.clone()).await;
+        rule_engine
+            .set_message_manager(core.message_manager.clone())
+            .await;
 
         // Wire rule engine to device service
         let event_bus_for_action = (**event_bus.as_ref().unwrap()).clone();
@@ -318,12 +326,18 @@ impl ServerState {
             event_bus_for_action,
             device_service_for_action,
         ));
-        rule_engine.set_device_action_executor(device_action_executor).await;
+        rule_engine
+            .set_device_action_executor(device_action_executor)
+            .await;
 
         // Wire rule engine to extension registry for extension command execution
-        let extension_registry_adapter = Arc::new(ExtensionRegistryAdapter::new(extensions.registry.clone()));
-        let extension_action_executor = Arc::new(ExtensionActionExecutor::new(extension_registry_adapter));
-        rule_engine.set_extension_action_executor(extension_action_executor).await;
+        let extension_registry_adapter =
+            Arc::new(ExtensionRegistryAdapter::new(extensions.registry.clone()));
+        let extension_action_executor =
+            Arc::new(ExtensionActionExecutor::new(extension_registry_adapter));
+        rule_engine
+            .set_extension_action_executor(extension_action_executor)
+            .await;
 
         // Wire event bus to message manager
         if let Some(ref bus) = event_bus {
@@ -355,7 +369,10 @@ impl ServerState {
                             tracing::debug!("Loaded rule: {} ({})", rule.name, rule.id);
                         }
                     }
-                    tracing::info!("Successfully loaded {} rules from persistent store", rule_count);
+                    tracing::info!(
+                        "Successfully loaded {} rules from persistent store",
+                        rule_count
+                    );
                 }
                 Err(e) => {
                     tracing::warn!(category = "storage", error = %e, "Failed to load rules from store");
@@ -385,13 +402,15 @@ impl ServerState {
         };
 
         // Create transform engine with extension registry support
-        let transform_engine = Some(Arc::new(
-            TransformEngine::with_extension_registry(extensions.registry.clone())
-        ));
+        let transform_engine = Some(Arc::new(TransformEngine::with_extension_registry(
+            extensions.registry.clone(),
+        )));
         tracing::info!("Transform engine initialized with extension registry");
 
         // Create rule history store
-        let rule_history_store = match neomind_storage::business::RuleHistoryStore::open("data/rule_history.redb") {
+        let rule_history_store = match neomind_storage::business::RuleHistoryStore::open(
+            "data/rule_history.redb",
+        ) {
             Ok(store) => {
                 tracing::info!("Rule history store initialized at data/rule_history.redb");
                 Some(Arc::new(store))
@@ -420,7 +439,9 @@ impl ServerState {
 
         // Create tiered memory
         let memory_config = crate::config::get_memory_config();
-        let memory = Arc::new(tokio::sync::RwLock::new(TieredMemory::with_config(memory_config)));
+        let memory = Arc::new(tokio::sync::RwLock::new(TieredMemory::with_config(
+            memory_config,
+        )));
 
         // Create agent store
         let agent_store = match neomind_storage::AgentStore::open("data/agents.redb") {
@@ -519,11 +540,7 @@ impl ServerState {
         let message_manager = Arc::new(MessageManager::new());
         message_manager.register_default_channels().await;
 
-        let core = CoreState::new(
-            event_bus.clone(),
-            command_manager,
-            message_manager.clone(),
-        );
+        let core = CoreState::new(event_bus.clone(), command_manager, message_manager.clone());
 
         // ========== Build DEVICE STATE ==========
         // In-memory device registry
@@ -535,7 +552,9 @@ impl ServerState {
             device_registry.clone(),
             event_bus_for_service,
         ));
-        device_service.set_telemetry_storage(time_series_storage.clone()).await;
+        device_service
+            .set_telemetry_storage(time_series_storage.clone())
+            .await;
 
         let device_update_tx: tokio::sync::broadcast::Sender<super::state::DeviceStatusUpdate> =
             tokio::sync::broadcast::channel(100).0;
@@ -549,15 +568,16 @@ impl ServerState {
 
         // ========== Build EXTENSION STATE ==========
         let extension_registry = Arc::new(ExtensionRegistry::new());
-        let extension_metrics_storage = Arc::new(ExtensionMetricsStorage::with_shared_storage(time_series_storage.clone()));
-        let extensions = ExtensionState::new(
-            extension_registry,
-            extension_metrics_storage,
-        );
+        let extension_metrics_storage = Arc::new(ExtensionMetricsStorage::with_shared_storage(
+            time_series_storage.clone(),
+        ));
+        let extensions = ExtensionState::new(extension_registry, extension_metrics_storage);
 
         // ========== Build AUTOMATION STATE ==========
         let rule_engine = Arc::new(RuleEngine::new(value_provider.clone()));
-        rule_engine.set_message_manager(core.message_manager.clone()).await;
+        rule_engine
+            .set_message_manager(core.message_manager.clone())
+            .await;
 
         let event_bus_for_action = (**event_bus.as_ref().unwrap()).clone();
         let device_service_for_action = devices.service.clone();
@@ -565,11 +585,17 @@ impl ServerState {
             event_bus_for_action,
             device_service_for_action,
         ));
-        rule_engine.set_device_action_executor(device_action_executor).await;
+        rule_engine
+            .set_device_action_executor(device_action_executor)
+            .await;
 
-        let extension_registry_adapter = Arc::new(ExtensionRegistryAdapter::new(extensions.registry.clone()));
-        let extension_action_executor = Arc::new(ExtensionActionExecutor::new(extension_registry_adapter));
-        rule_engine.set_extension_action_executor(extension_action_executor).await;
+        let extension_registry_adapter =
+            Arc::new(ExtensionRegistryAdapter::new(extensions.registry.clone()));
+        let extension_action_executor =
+            Arc::new(ExtensionActionExecutor::new(extension_registry_adapter));
+        rule_engine
+            .set_extension_action_executor(extension_action_executor)
+            .await;
 
         if let Some(ref bus) = event_bus {
             core.message_manager.set_event_bus(bus.clone()).await;
@@ -577,9 +603,9 @@ impl ServerState {
 
         // In-memory stores
         let automation_store = Some(Arc::new(SharedAutomationStore::memory().unwrap()));
-        let transform_engine = Some(Arc::new(
-            TransformEngine::with_extension_registry(extensions.registry.clone())
-        ));
+        let transform_engine = Some(Arc::new(TransformEngine::with_extension_registry(
+            extensions.registry.clone(),
+        )));
         let rule_history_store = None; // Skip for tests
 
         let automation = AutomationState::new(
@@ -594,7 +620,9 @@ impl ServerState {
         // ========== Build AGENT STATE ==========
         let session_manager = SessionManager::memory();
         let memory_config = crate::config::get_memory_config();
-        let memory = Arc::new(tokio::sync::RwLock::new(TieredMemory::with_config(memory_config)));
+        let memory = Arc::new(tokio::sync::RwLock::new(TieredMemory::with_config(
+            memory_config,
+        )));
         let agent_store = neomind_storage::AgentStore::memory().unwrap();
 
         let agents = AgentState::new(
@@ -691,7 +719,8 @@ impl ServerState {
 
         // Fallback: try to load from LlmBackendInstanceManager (database-stored backends)
         match self
-            .agents.session_manager
+            .agents
+            .session_manager
             .configure_llm_from_instance_manager()
             .await
         {
@@ -749,7 +778,7 @@ impl ServerState {
                 topic_prefix: "device".to_string(),
                 command_topic: "downlink".to_string(),
             },
-            subscribe_topics: vec!["#".to_string()],  // Subscribe to ALL topics for auto-discovery
+            subscribe_topics: vec!["#".to_string()], // Subscribe to ALL topics for auto-discovery
             discovery_topic: Some("device/+/+/uplink".to_string()),
             discovery_prefix: "device".to_string(),
             auto_discovery: true,
@@ -770,9 +799,8 @@ impl ServerState {
             }
         };
 
-        let mqtt_adapter_result: AdapterResult<Arc<dyn DeviceAdapter>> = {
-            create_adapter("mqtt", &mqtt_config_value, event_bus)
-        };
+        let mqtt_adapter_result: AdapterResult<Arc<dyn DeviceAdapter>> =
+            { create_adapter("mqtt", &mqtt_config_value, event_bus) };
 
         match mqtt_adapter_result {
             Ok(mqtt_adapter) => {
@@ -781,12 +809,17 @@ impl ServerState {
 
                 // Try to set the shared device registry on the MQTT adapter
                 // This allows the adapter to look up devices by custom telemetry topics
-                if let Some(mqtt) = mqtt_adapter.as_any().downcast_ref::<neomind_devices::adapters::mqtt::MqttAdapter>() {
-                    mqtt.set_shared_device_registry(self.devices.service.get_registry().await).await;
+                if let Some(mqtt) = mqtt_adapter
+                    .as_any()
+                    .downcast_ref::<neomind_devices::adapters::mqtt::MqttAdapter>()
+                {
+                    mqtt.set_shared_device_registry(self.devices.service.get_registry().await)
+                        .await;
                 }
 
                 // Register adapter with device service
-                self.devices.service
+                self.devices
+                    .service
                     .register_adapter("internal-mqtt".to_string(), mqtt_adapter.clone())
                     .await;
 
@@ -810,12 +843,15 @@ impl ServerState {
 
     /// Reconnect to all enabled external MQTT brokers on startup
     async fn reconnect_external_mqtt_brokers(&self) {
-        use crate::handlers::mqtt::brokers::{create_and_connect_broker, ExternalBrokerContext};
+        use crate::handlers::mqtt::brokers::{ExternalBrokerContext, create_and_connect_broker};
 
         let store = match crate::config::open_settings_store() {
             Ok(s) => s,
             Err(e) => {
-                tracing::warn!("Failed to open settings store for external broker reconnection: {}", e);
+                tracing::warn!(
+                    "Failed to open settings store for external broker reconnection: {}",
+                    e
+                );
                 return;
             }
         };
@@ -833,7 +869,10 @@ impl ServerState {
             return;
         }
 
-        tracing::info!("Found {} external MQTT broker(s), attempting to reconnect...", brokers.len());
+        tracing::info!(
+            "Found {} external MQTT broker(s), attempting to reconnect...",
+            brokers.len()
+        );
 
         let Some(event_bus) = self.core.event_bus.as_ref() else {
             tracing::warn!("EventBus not initialized, cannot reconnect external brokers");
@@ -852,15 +891,25 @@ impl ServerState {
                 continue;
             }
 
-            tracing::info!("Reconnecting to external broker: {} ({})", broker.id, broker.name);
+            tracing::info!(
+                "Reconnecting to external broker: {} ({})",
+                broker.id,
+                broker.name
+            );
 
             // Use the broker connection logic
             match create_and_connect_broker(&broker, &context).await {
                 Ok(connected) => {
                     if connected {
-                        tracing::info!("Successfully reconnected to external broker: {}", broker.id);
+                        tracing::info!(
+                            "Successfully reconnected to external broker: {}",
+                            broker.id
+                        );
                     } else {
-                        tracing::warn!("External broker reconnection attempted but failed: {}", broker.id);
+                        tracing::warn!(
+                            "External broker reconnection attempted but failed: {}",
+                            broker.id
+                        );
                     }
                 }
                 Err(e) => {
@@ -878,7 +927,10 @@ impl ServerState {
         // Build tool registry with real implementations that connect to actual services
         let builder = ToolRegistryBuilder::new()
             // Real implementations
-            .with_query_data_tool(self.devices.telemetry.clone(), Some(self.devices.service.clone()))
+            .with_query_data_tool(
+                self.devices.telemetry.clone(),
+                Some(self.devices.service.clone()),
+            )
             .with_get_device_data_tool(self.devices.service.clone(), self.devices.telemetry.clone())
             .with_control_device_tool(self.devices.service.clone())
             .with_list_devices_tool(self.devices.service.clone())
@@ -892,7 +944,8 @@ impl ServerState {
             .with_system_help_tool_named("NeoMind");
 
         let tool_registry = Arc::new(builder.build());
-        self.agents.session_manager
+        self.agents
+            .session_manager
             .set_tool_registry(tool_registry.clone())
             .await;
         tracing::info!(
@@ -908,12 +961,16 @@ impl ServerState {
     /// and automatically evaluates rules when relevant data is received.
     pub async fn init_rule_engine_events(&self) {
         // Prevent duplicate initialization - use compare_exchange for atomic check-and-set
-        if self.rule_engine_events_initialized.compare_exchange(
-            false,
-            true,
-            std::sync::atomic::Ordering::SeqCst,
-            std::sync::atomic::Ordering::SeqCst
-        ).is_err() {
+        if self
+            .rule_engine_events_initialized
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_err()
+        {
             tracing::debug!("Rule engine event service already initialized, skipping");
             return;
         }
@@ -927,7 +984,9 @@ impl ServerState {
         let (event_bus, rule_engine) = match (&self.core.event_bus, &self.automation.rule_engine) {
             (Some(bus), engine) => (bus, engine),
             _ => {
-                tracing::warn!("Rule engine events not started: event_bus or rule_engine not available");
+                tracing::warn!(
+                    "Rule engine events not started: event_bus or rule_engine not available"
+                );
                 return;
             }
         };
@@ -938,10 +997,8 @@ impl ServerState {
         {
             let mut cached_service = self.rule_engine_event_service.lock().await;
             if cached_service.is_none() {
-                let service = RuleEngineEventService::new(
-                    (*event_bus).clone(),
-                    rule_engine.clone(),
-                );
+                let service =
+                    RuleEngineEventService::new((*event_bus).clone(), rule_engine.clone());
                 *cached_service = Some(service);
             }
         }
@@ -983,7 +1040,9 @@ impl ServerState {
                 {
                     tracing::debug!(
                         "Received device metric: {} {} = {:?}",
-                        device_id, metric, value
+                        device_id,
+                        metric,
+                        value
                     );
 
                     // Extract numeric value for rule evaluation
@@ -996,16 +1055,35 @@ impl ServerState {
 
                     if let Some(num_value) = numeric_value {
                         // Update the UnifiedValueProvider with the new value
-                        if let Some(provider) = value_provider.as_any().downcast_ref::<UnifiedValueProvider>() {
+                        if let Some(provider) = value_provider
+                            .as_any()
+                            .downcast_ref::<UnifiedValueProvider>()
+                        {
                             // Store with original metric key
-                            provider.update_value("device", &device_id, &metric, num_value).await;
+                            provider
+                                .update_value("device", &device_id, &metric, num_value)
+                                .await;
 
                             // Also store with common prefixes stripped for rule matching
                             // Rules might reference "battery" while events use "values.battery"
-                            let common_prefixes = ["values.", "value.", "data.", "telemetry.", "metrics.", "state."];
+                            let common_prefixes = [
+                                "values.",
+                                "value.",
+                                "data.",
+                                "telemetry.",
+                                "metrics.",
+                                "state.",
+                            ];
                             for prefix in &common_prefixes {
                                 if let Some(stripped_metric) = metric.strip_prefix(prefix) {
-                                    provider.update_value("device", &device_id, stripped_metric, num_value).await;
+                                    provider
+                                        .update_value(
+                                            "device",
+                                            &device_id,
+                                            stripped_metric,
+                                            num_value,
+                                        )
+                                        .await;
                                     break;
                                 }
                             }
@@ -1092,31 +1170,62 @@ impl ServerState {
                                 fn backend_id(&self) -> neomind_core::llm::backend::BackendId {
                                     neomind_core::llm::backend::BackendId::new("dummy")
                                 }
-                                fn model_name(&self) -> &str { "dummy" }
-                                fn capabilities(&self) -> neomind_core::llm::backend::BackendCapabilities {
+                                fn model_name(&self) -> &str {
+                                    "dummy"
+                                }
+                                fn capabilities(
+                                    &self,
+                                ) -> neomind_core::llm::backend::BackendCapabilities
+                                {
                                     neomind_core::llm::backend::BackendCapabilities::default()
                                 }
-                                async fn generate(&self, _input: neomind_core::llm::backend::LlmInput) -> Result<neomind_core::llm::backend::LlmOutput, neomind_core::llm::backend::LlmError> {
+                                async fn generate(
+                                    &self,
+                                    _input: neomind_core::llm::backend::LlmInput,
+                                ) -> Result<
+                                    neomind_core::llm::backend::LlmOutput,
+                                    neomind_core::llm::backend::LlmError,
+                                > {
                                     Ok(neomind_core::llm::backend::LlmOutput {
                                         text: String::new(),
                                         thinking: None,
-                                        finish_reason: neomind_core::llm::backend::FinishReason::Stop,
-                                        usage: Some(neomind_core::llm::backend::TokenUsage::new(0, 0)),
+                                        finish_reason:
+                                            neomind_core::llm::backend::FinishReason::Stop,
+                                        usage: Some(neomind_core::llm::backend::TokenUsage::new(
+                                            0, 0,
+                                        )),
                                     })
                                 }
                                 async fn generate_stream(
                                     &self,
                                     _input: neomind_core::llm::backend::LlmInput,
-                                ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), neomind_core::llm::backend::LlmError>> + Send>>, neomind_core::llm::backend::LlmError> {
+                                ) -> Result<
+                                    Pin<
+                                        Box<
+                                            dyn Stream<
+                                                    Item = Result<
+                                                        (String, bool),
+                                                        neomind_core::llm::backend::LlmError,
+                                                    >,
+                                                > + Send,
+                                        >,
+                                    >,
+                                    neomind_core::llm::backend::LlmError,
+                                > {
                                     Ok(Box::pin(futures::stream::empty()))
                                 }
-                                fn max_context_length(&self) -> usize { 4096 }
+                                fn max_context_length(&self) -> usize {
+                                    4096
+                                }
                             }
                             Arc::new(DummyRuntime) as Arc<dyn LlmRuntime>
                         }
                     };
 
-                    let manager = Arc::new(neomind_automation::AutoOnboardManager::new(llm, event_bus.clone()));
+                    let manager = Arc::new(neomind_automation::AutoOnboardManager::new(
+                        llm,
+                        event_bus.clone(),
+                    ));
                     *mgr_guard = Some(manager.clone());
                     tracing::info!("AutoOnboardManager initialized at startup");
                     manager
@@ -1135,80 +1244,93 @@ impl ServerState {
             while let Some((event, _metadata)) = rx.recv().await {
                 // Check if this is an unknown device data event
                 if let neomind_core::NeoMindEvent::Custom { event_type, data } = event
-                    && event_type == "unknown_device_data" {
-                        // Extract device_id and sample from the event data
-                        if let Some(device_id) = data.get("device_id").and_then(|v| v.as_str())
-                            && let Some(sample) = data.get("sample") {
-                                // Extract the actual payload data from sample
-                                let payload_data = sample.get("data").unwrap_or(sample);
+                    && event_type == "unknown_device_data"
+                {
+                    // Extract device_id and sample from the event data
+                    if let Some(device_id) = data.get("device_id").and_then(|v| v.as_str())
+                        && let Some(sample) = data.get("sample")
+                    {
+                        // Extract the actual payload data from sample
+                        let payload_data = sample.get("data").unwrap_or(sample);
 
-                                let is_binary = data.get("is_binary")
-                                    .and_then(|v| v.as_bool())
-                                    .unwrap_or(false);
+                        let is_binary = data
+                            .get("is_binary")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
 
-                                // Check if device is already registered - skip auto-onboarding if it is
-                                if device_service_clone.get_device(device_id).await.is_some() {
-                                    tracing::debug!(
-                                        "Device {} already registered, skipping auto-onboarding",
-                                        device_id
-                                    );
-                                    continue;
-                                }
+                        // Check if device is already registered - skip auto-onboarding if it is
+                        if device_service_clone.get_device(device_id).await.is_some() {
+                            tracing::debug!(
+                                "Device {} already registered, skipping auto-onboarding",
+                                device_id
+                            );
+                            continue;
+                        }
 
+                        tracing::info!(
+                            "Processing unknown device data from MQTT: device_id={}, is_binary={}",
+                            device_id,
+                            is_binary
+                        );
+
+                        let source = data
+                            .get("source")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("mqtt")
+                            .to_string();
+
+                        // Extract original_topic if available (for MQTT devices)
+                        let original_topic = data
+                            .get("original_topic")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+
+                        // Extract adapter_id if available (for external brokers)
+                        let adapter_id = data
+                            .get("adapter_id")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+
+                        // Process the payload data through auto-onboarding
+                        match manager
+                            .process_unknown_device_with_topic(
+                                device_id,
+                                &source,
+                                payload_data,
+                                is_binary,
+                                original_topic,
+                                adapter_id,
+                            )
+                            .await
+                        {
+                            Ok(true) => {
                                 tracing::info!(
-                                    "Processing unknown device data from MQTT: device_id={}, is_binary={}",
-                                    device_id, is_binary
+                                    "Successfully processed unknown device data: {}",
+                                    device_id
                                 );
-
-                                let source = data.get("source")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("mqtt")
-                                    .to_string();
-
-                                // Extract original_topic if available (for MQTT devices)
-                                let original_topic = data.get("original_topic")
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s.to_string());
-
-                                // Extract adapter_id if available (for external brokers)
-                                let adapter_id = data.get("adapter_id")
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s.to_string());
-
-                                // Process the payload data through auto-onboarding
-                                match manager.process_unknown_device_with_topic(
-                                    device_id,
-                                    &source,
-                                    payload_data,
-                                    is_binary,
-                                    original_topic,
-                                    adapter_id,
-                                ).await {
-                                    Ok(true) => {
-                                        tracing::info!(
-                                            "Successfully processed unknown device data: {}",
-                                            device_id
-                                        );
-                                    }
-                                    Ok(false) => {
-                                        tracing::debug!(
-                                            "Unknown device data not accepted (disabled or at capacity): {}",
-                                            device_id
-                                        );
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!(
-                                            "Failed to process unknown device data for {}: {}",
-                                            device_id, e
-                                        );
-                                    }
-                                }
                             }
+                            Ok(false) => {
+                                tracing::debug!(
+                                    "Unknown device data not accepted (disabled or at capacity): {}",
+                                    device_id
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to process unknown device data for {}: {}",
+                                    device_id,
+                                    e
+                                );
+                            }
+                        }
                     }
+                }
             }
         });
 
-        tracing::info!("Auto-onboarding event listener initialized - MQTT unknown devices will trigger auto-onboarding");
+        tracing::info!(
+            "Auto-onboarding event listener initialized - MQTT unknown devices will trigger auto-onboarding"
+        );
     }
 
     /// Save LLM configuration to database.
@@ -1233,7 +1355,9 @@ impl ServerState {
         ) {
             (Some(bus), Some(engine), Some(store)) => (bus.clone(), engine.clone(), store.clone()),
             _ => {
-                tracing::warn!("Transform event service not started: required components not available");
+                tracing::warn!(
+                    "Transform event service not started: required components not available"
+                );
                 return;
             }
         };
@@ -1258,7 +1382,9 @@ impl ServerState {
     }
 
     /// Get or initialize the AI Agent manager.
-    pub async fn get_or_init_agent_manager(&self) -> Result<AgentManager, crate::models::ErrorResponse> {
+    pub async fn get_or_init_agent_manager(
+        &self,
+    ) -> Result<AgentManager, crate::models::ErrorResponse> {
         let mgr_guard = self.agents.agent_manager.read().await;
         if let Some(mgr) = mgr_guard.as_ref() {
             return Ok(mgr.clone());
@@ -1273,7 +1399,8 @@ impl ServerState {
 
         // Create or open TimeSeriesStore for agent data collection
         // Use the same telemetry.redb as DeviceService to access device telemetry data
-        let time_series_store = match neomind_storage::TimeSeriesStore::open("data/telemetry.redb") {
+        let time_series_store = match neomind_storage::TimeSeriesStore::open("data/telemetry.redb")
+        {
             Ok(store) => Some(store),
             Err(e) => {
                 tracing::warn!(category = "storage", error = %e, "Failed to open TimeSeriesStore, agents will not collect data");
@@ -1282,10 +1409,12 @@ impl ServerState {
         };
 
         // Get LLM runtime from SessionManager if available
-        let llm_runtime = if let Ok(Some(backend)) = self.agents.session_manager.get_llm_backend().await {
+        let llm_runtime = if let Ok(Some(backend)) =
+            self.agents.session_manager.get_llm_backend().await
+        {
             use neomind_agent::LlmBackend;
-            use neomind_llm::{OllamaConfig, OllamaRuntime, CloudConfig, CloudRuntime};
             use neomind_core::llm::backend::LlmRuntime;
+            use neomind_llm::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
 
             match backend {
                 LlmBackend::Ollama { endpoint, model } => {
@@ -1293,7 +1422,11 @@ impl ServerState {
                         .ok()
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(120);
-                    match OllamaRuntime::new(OllamaConfig::new(&model).with_endpoint(&endpoint).with_timeout_secs(timeout)) {
+                    match OllamaRuntime::new(
+                        OllamaConfig::new(&model)
+                            .with_endpoint(&endpoint)
+                            .with_timeout_secs(timeout),
+                    ) {
                         Ok(runtime) => Some(Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>),
                         Err(e) => {
                             tracing::warn!(category = "ai", error = %e, "Failed to create Ollama runtime for agents");
@@ -1301,7 +1434,11 @@ impl ServerState {
                         }
                     }
                 }
-                LlmBackend::OpenAi { api_key, endpoint, model } => {
+                LlmBackend::OpenAi {
+                    api_key,
+                    endpoint,
+                    model,
+                } => {
                     // Use CloudRuntime for OpenAI-compatible APIs
                     let timeout = std::env::var("OPENAI_TIMEOUT_SECS")
                         .ok()
@@ -1310,11 +1447,68 @@ impl ServerState {
                     match CloudRuntime::new(
                         CloudConfig::custom(&api_key, &endpoint)
                             .with_model(&model)
-                            .with_timeout_secs(timeout)
+                            .with_timeout_secs(timeout),
                     ) {
                         Ok(runtime) => Some(Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>),
                         Err(e) => {
                             tracing::warn!(category = "ai", error = %e, "Failed to create OpenAI runtime for agents");
+                            None
+                        }
+                    }
+                }
+                // Other cloud backends (Anthropic, Google, XAi, Qwen, DeepSeek, GLM, MiniMax)
+                _backend => {
+                    let (api_key, endpoint, model) = match &_backend {
+                        LlmBackend::Anthropic {
+                            api_key,
+                            endpoint,
+                            model,
+                        }
+                        | LlmBackend::Google {
+                            api_key,
+                            endpoint,
+                            model,
+                        }
+                        | LlmBackend::XAi {
+                            api_key,
+                            endpoint,
+                            model,
+                        }
+                        | LlmBackend::Qwen {
+                            api_key,
+                            endpoint,
+                            model,
+                        }
+                        | LlmBackend::DeepSeek {
+                            api_key,
+                            endpoint,
+                            model,
+                        }
+                        | LlmBackend::GLM {
+                            api_key,
+                            endpoint,
+                            model,
+                        }
+                        | LlmBackend::MiniMax {
+                            api_key,
+                            endpoint,
+                            model,
+                        } => (api_key.clone(), endpoint.clone(), model.clone()),
+                        // This is unreachable since we've excluded Ollama and OpenAi above
+                        _ => unreachable!("Unexpected LLM backend type"),
+                    };
+                    let timeout = std::env::var("OPENAI_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(60);
+                    match CloudRuntime::new(
+                        CloudConfig::custom(&api_key, &endpoint)
+                            .with_model(&model)
+                            .with_timeout_secs(timeout),
+                    ) {
+                        Ok(runtime) => Some(Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>),
+                        Err(e) => {
+                            tracing::warn!(category = "ai", error = %e, "Failed to create cloud runtime for agents");
                             None
                         }
                     }
@@ -1350,23 +1544,25 @@ impl ServerState {
 
         let manager = neomind_agent::ai_agent::AiAgentManager::new(executor_config)
             .await
-            .map_err(|e| crate::models::ErrorResponse::internal(format!("Failed to create agent manager: {}", e)))?;
+            .map_err(|e| {
+                crate::models::ErrorResponse::internal(format!(
+                    "Failed to create agent manager: {}",
+                    e
+                ))
+            })?;
 
         *mgr_guard = Some(manager.clone());
 
-        tracing::info!(
-            has_llm,
-            has_time_series,
-            "AI Agent manager initialized"
-        );
+        tracing::info!(has_llm, has_time_series, "AI Agent manager initialized");
         Ok(manager)
     }
 
     /// Start the AI Agent manager scheduler.
     pub async fn start_agent_manager(&self) -> Result<(), crate::models::ErrorResponse> {
         let manager = self.get_or_init_agent_manager().await?;
-        manager.start().await
-            .map_err(|e| crate::models::ErrorResponse::internal(format!("Failed to start agent manager: {}", e)))?;
+        manager.start().await.map_err(|e| {
+            crate::models::ErrorResponse::internal(format!("Failed to start agent manager: {}", e))
+        })?;
         tracing::info!("AI Agent manager scheduler started");
         Ok(())
     }
@@ -1377,7 +1573,10 @@ impl ServerState {
     /// event-scheduled agents.
     pub async fn init_agent_events(&self) {
         // Prevent duplicate initialization
-        if self.agent_events_initialized.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
+        if self
+            .agent_events_initialized
+            .fetch_or(true, std::sync::atomic::Ordering::Relaxed)
+        {
             tracing::debug!("Agent event listener already initialized, skipping");
             return;
         }
@@ -1403,25 +1602,33 @@ impl ServerState {
 
         // Cleanup agents stuck in Executing status on startup
         tokio::spawn(async move {
-            if let Ok(agents) = store.query_agents(neomind_storage::AgentFilter {
-                status: Some(neomind_storage::AgentStatus::Executing),
-                ..Default::default()
-            }).await {
+            if let Ok(agents) = store
+                .query_agents(neomind_storage::AgentFilter {
+                    status: Some(neomind_storage::AgentStatus::Executing),
+                    ..Default::default()
+                })
+                .await
+            {
                 let now = chrono::Utc::now().timestamp();
                 for agent in agents {
                     // Check if agent has been executing for more than 10 minutes
                     if let Some(last_exec) = agent.last_execution_at {
                         let exec_duration_secs = now - last_exec;
-                        if exec_duration_secs > 600 { // 10 minutes
+                        if exec_duration_secs > 600 {
+                            // 10 minutes
                             tracing::warn!(
                                 agent_id = %agent.id,
                                 agent_name = %agent.name,
                                 exec_duration_secs = exec_duration_secs,
                                 "Agent stuck in Executing status, resetting to Active"
                             );
-                            let _ = store.update_agent_status(&agent.id, neomind_storage::AgentStatus::Active, Some(
-                                "Execution timeout - status reset".to_string()
-                            )).await;
+                            let _ = store
+                                .update_agent_status(
+                                    &agent.id,
+                                    neomind_storage::AgentStatus::Active,
+                                    Some("Execution timeout - status reset".to_string()),
+                                )
+                                .await;
                         }
                     } else {
                         // No last execution time but status is Executing - reset it
@@ -1430,9 +1637,13 @@ impl ServerState {
                             agent_name = %agent.name,
                             "Agent in Executing status with no execution time, resetting to Active"
                         );
-                        let _ = store.update_agent_status(&agent.id, neomind_storage::AgentStatus::Active, Some(
-                            "Invalid executing state - status reset".to_string()
-                        )).await;
+                        let _ = store
+                            .update_agent_status(
+                                &agent.id,
+                                neomind_storage::AgentStatus::Active,
+                                Some("Invalid executing state - status reset".to_string()),
+                            )
+                            .await;
                     }
                 }
             }
@@ -1444,9 +1655,19 @@ impl ServerState {
 
             while let Some((event, _metadata)) = rx.recv().await {
                 // Check if any agent should be triggered by this event
-                if let neomind_core::NeoMindEvent::DeviceMetric { device_id, metric, value, timestamp: _, quality: _ } = event {
+                if let neomind_core::NeoMindEvent::DeviceMetric {
+                    device_id,
+                    metric,
+                    value,
+                    timestamp: _,
+                    quality: _,
+                } = event
+                {
                     // Trigger agents that have this device/metric in their event filter
-                    if let Err(e) = executor.check_and_trigger_event(device_id, &metric, &value).await {
+                    if let Err(e) = executor
+                        .check_and_trigger_event(device_id, &metric, &value)
+                        .await
+                    {
                         tracing::debug!("No agent triggered for event: {}", e);
                     }
                 }

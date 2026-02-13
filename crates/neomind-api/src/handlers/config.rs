@@ -242,8 +242,6 @@ pub async fn import_config_handler(
     State(state): State<ServerState>,
     Json(import): Json<ConfigImport>,
 ) -> Result<Json<ApiResponse<ConfigImportResult>>, ErrorResponse> {
-    
-
     let mut result = ConfigImportResult {
         imported: ConfigExport {
             version: import.config.version.clone(),
@@ -401,7 +399,8 @@ async fn import_llm_settings(
     };
 
     state
-        .agents.session_manager
+        .agents
+        .session_manager
         .set_llm_backend(backend)
         .await
         .map_err(|e| e.to_string())?;

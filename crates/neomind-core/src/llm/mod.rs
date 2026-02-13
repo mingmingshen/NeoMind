@@ -3,19 +3,29 @@
 //! This module provides abstractions for LLM inference backends.
 
 pub mod backend;
+pub mod capability;
 pub mod compaction;
 pub mod memory_consolidation;
 pub mod modality;
+pub mod models;
 pub mod token_counter;
 
 pub use backend::{
     BackendCapabilities, BackendId, DynamicLlmRuntime, FinishReason, GenerationParams, LlmError,
     LlmInput, LlmOutput, LlmRuntime, StreamChunk, TokenUsage,
 };
-pub use compaction::{compact_messages, estimate_tokens, CompactionConfig, CompactionResult, MessagePriority};
-pub use memory_consolidation::{MemoryConfig, MemoryConsolidator, ConsolidationResult, ConsolidatedMessage};
+pub use capability::{
+    CapabilityDetectionResult, CapabilityDetector, get_max_context, model_supports,
+};
+pub use compaction::{
+    CompactionConfig, CompactionResult, MessagePriority, compact_messages, estimate_tokens,
+};
+pub use memory_consolidation::{
+    ConsolidatedMessage, ConsolidationResult, MemoryConfig, MemoryConsolidator,
+};
 pub use modality::{ImageContent, ImageInput, ModalityContent};
-pub use token_counter::{count_tokens, heuristic_count, TokenCounter, CounterMode, EncodingType};
+pub use models::*;
+pub use token_counter::{CounterMode, EncodingType, TokenCounter, count_tokens, heuristic_count};
 
 use std::pin::Pin;
 use std::time::Duration;

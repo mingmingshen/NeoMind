@@ -262,9 +262,10 @@ impl AuditLogger {
 
         // Log to file
         if config.log_to_file
-            && let Err(e) = self.write_to_file(&config.log_path, &json_line).await {
-                tracing::warn!(category = "audit", error = %e, "Failed to write audit log");
-            }
+            && let Err(e) = self.write_to_file(&config.log_path, &json_line).await
+        {
+            tracing::warn!(category = "audit", error = %e, "Failed to write audit log");
+        }
     }
 
     /// Log authentication success.

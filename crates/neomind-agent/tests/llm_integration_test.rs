@@ -3,15 +3,15 @@
 //! This test requires Ollama to be running on localhost:11434
 //! with at least one model available (e.g., qwen2.5:3b)
 
-use std::sync::Arc;
-use neomind_core::EventBus;
-use neomind_storage::{
-    AgentStore, AgentSchedule, AgentStats, AgentStatus, AiAgent, AgentMemory,
-    ScheduleType, WorkingMemory, ShortTermMemory, LongTermMemory,
-};
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
-use neomind_llm::backends::ollama::{OllamaRuntime, OllamaConfig};
+use neomind_core::EventBus;
 use neomind_core::llm::backend::LlmRuntime;
+use neomind_llm::backends::ollama::{OllamaConfig, OllamaRuntime};
+use neomind_storage::{
+    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, LongTermMemory,
+    ScheduleType, ShortTermMemory, WorkingMemory,
+};
+use std::sync::Arc;
 
 /// Test context with real LLM backend
 struct LlmTestContext {
@@ -57,11 +57,7 @@ impl LlmTestContext {
         })
     }
 
-    async fn create_test_agent(
-        &self,
-        name: &str,
-        user_prompt: &str,
-    ) -> anyhow::Result<AiAgent> {
+    async fn create_test_agent(&self, name: &str, user_prompt: &str) -> anyhow::Result<AiAgent> {
         let now = chrono::Utc::now().timestamp();
 
         let agent = AiAgent {
@@ -139,10 +135,9 @@ async fn test_llm_monitor_agent() -> anyhow::Result<()> {
 
     println!("\n=== 测试 Monitor Agent with Real LLM ===");
 
-    let agent = ctx.create_test_agent(
-        "温度监控Agent",
-        "监控温度传感器，当温度超过30度时发出告警",
-    ).await?;
+    let agent = ctx
+        .create_test_agent("温度监控Agent", "监控温度传感器，当温度超过30度时发出告警")
+        .await?;
 
     let agent_id = agent.id.clone();
     println!("创建 Agent: {}", agent.name);
@@ -157,8 +152,14 @@ async fn test_llm_monitor_agent() -> anyhow::Result<()> {
     println!("  决策过程:");
 
     // Show the actual LLM response
-    println!("    情况分析: {}", record.decision_process.situation_analysis);
-    println!("    推理步骤数: {}", record.decision_process.reasoning_steps.len());
+    println!(
+        "    情况分析: {}",
+        record.decision_process.situation_analysis
+    );
+    println!(
+        "    推理步骤数: {}",
+        record.decision_process.reasoning_steps.len()
+    );
     for (i, step) in record.decision_process.reasoning_steps.iter().enumerate() {
         println!("      步骤{}: {}", i + 1, step.description);
     }
@@ -175,8 +176,10 @@ async fn test_llm_monitor_agent() -> anyhow::Result<()> {
     println!("  成功: {}", turn.success);
 
     assert!(turn.success, "Execution should succeed");
-    assert!(!record.decision_process.situation_analysis.is_empty(),
-        "LLM should provide analysis");
+    assert!(
+        !record.decision_process.situation_analysis.is_empty(),
+        "LLM should provide analysis"
+    );
 
     println!("\n✅ Monitor Agent 测试通过！");
     Ok(())
@@ -194,10 +197,12 @@ async fn test_llm_executor_agent() -> anyhow::Result<()> {
 
     println!("\n=== 测试 Executor Agent with Real LLM ===");
 
-    let agent = ctx.create_test_agent(
-        "开关控制Agent",
-        "当温度超过25度时，打开风扇开关。当温度低于20度时，关闭风扇开关",
-    ).await?;
+    let agent = ctx
+        .create_test_agent(
+            "开关控制Agent",
+            "当温度超过25度时，打开风扇开关。当温度低于20度时，关闭风扇开关",
+        )
+        .await?;
 
     let agent_id = agent.id.clone();
     println!("创建 Agent: {}", agent.name);
@@ -212,7 +217,12 @@ async fn test_llm_executor_agent() -> anyhow::Result<()> {
     println!("  决策数: {}", record.decision_process.decisions.len());
 
     for (i, decision) in record.decision_process.decisions.iter().enumerate() {
-        println!("    决策{}: {} - {}", i + 1, decision.decision_type, decision.description);
+        println!(
+            "    决策{}: {} - {}",
+            i + 1,
+            decision.decision_type,
+            decision.description
+        );
     }
 
     println!("  结论: {}", record.decision_process.conclusion);
@@ -237,10 +247,9 @@ async fn test_llm_analyst_agent() -> anyhow::Result<()> {
 
     println!("\n=== 测试 Analyst Agent with Real LLM ===");
 
-    let agent = ctx.create_test_agent(
-        "数据分析Agent",
-        "分析温度数据趋势，识别异常模式，生成周报",
-    ).await?;
+    let agent = ctx
+        .create_test_agent("数据分析Agent", "分析温度数据趋势，识别异常模式，生成周报")
+        .await?;
 
     let agent_id = agent.id.clone();
     println!("创建 Agent: {}", agent.name);
@@ -254,7 +263,10 @@ async fn test_llm_analyst_agent() -> anyhow::Result<()> {
     println!("  时长: {}ms", record.duration_ms);
     println!("  情况分析:");
     println!("    {}", record.decision_process.situation_analysis);
-    println!("  推理步骤数: {}", record.decision_process.reasoning_steps.len());
+    println!(
+        "  推理步骤数: {}",
+        record.decision_process.reasoning_steps.len()
+    );
     println!("  结论:");
     println!("    {}", record.decision_process.conclusion);
 
@@ -278,10 +290,12 @@ async fn test_llm_conversation_context() -> anyhow::Result<()> {
 
     println!("\n=== 测试对话上下文累积 ===");
 
-    let agent = ctx.create_test_agent(
-        "上下文测试Agent",
-        "监控传感器数据，记住之前的读数，检测趋势变化",
-    ).await?;
+    let agent = ctx
+        .create_test_agent(
+            "上下文测试Agent",
+            "监控传感器数据，记住之前的读数，检测趋势变化",
+        )
+        .await?;
 
     let agent_id = agent.id.clone();
     println!("创建 Agent: {}", agent.name);
@@ -312,8 +326,13 @@ async fn test_llm_conversation_context() -> anyhow::Result<()> {
 
     // Show the conversation turns
     for (i, turn) in agent.conversation_history.iter().enumerate() {
-        println!("  轮次{}: 触发={}, 成功={}, 时长={}ms",
-            i + 1, turn.trigger_type, turn.success, turn.duration_ms);
+        println!(
+            "  轮次{}: 触发={}, 成功={}, 时长={}ms",
+            i + 1,
+            turn.trigger_type,
+            turn.success,
+            turn.duration_ms
+        );
     }
 
     println!("\n✅ 对话上下文测试通过！");
@@ -338,7 +357,7 @@ async fn test_llm_direct_api() -> anyhow::Result<()> {
 
     let llm_runtime = OllamaRuntime::new(ollama_config)?;
 
-    use neomind_core::llm::backend::{LlmInput, GenerationParams};
+    use neomind_core::llm::backend::{GenerationParams, LlmInput};
     use neomind_core::message::Message;
 
     let messages = vec![
@@ -369,7 +388,10 @@ async fn test_llm_direct_api() -> anyhow::Result<()> {
     println!("  Token 使用: {:?}", output.usage);
     println!("  响应时间: {:?}", elapsed);
 
-    assert!(!output.text.is_empty(), "LLM should return non-empty response");
+    assert!(
+        !output.text.is_empty(),
+        "LLM should return non-empty response"
+    );
     assert!(elapsed.as_secs() < 30, "Response should be reasonably fast");
 
     println!("\n✅ 直接 LLM API 测试通过！");
@@ -420,7 +442,10 @@ async fn test_llm_agent_comparison() -> anyhow::Result<()> {
     let avg_duration: u64 = results.iter().map(|(_, d)| d).sum::<u64>() / results.len() as u64;
     println!("  平均: {}ms", avg_duration);
 
-    assert!(avg_duration < 30000, "Average execution time should be under 30 seconds");
+    assert!(
+        avg_duration < 30000,
+        "Average execution time should be under 30 seconds"
+    );
 
     println!("\n✅ Agent 对比测试通过！");
     Ok(())

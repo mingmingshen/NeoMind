@@ -4,11 +4,10 @@
 
 use crate::mdl::{MetricDataType, MetricValue};
 use crate::protocol::mapping::{
-    Address, MappingConfig, MappingError, MappingResult,
-    ProtocolMapping,
+    Address, MappingConfig, MappingError, MappingResult, ProtocolMapping,
 };
-use std::collections::HashMap;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use std::collections::HashMap;
 
 /// MQTT protocol mapping configuration.
 #[derive(Debug, Clone)]
@@ -30,8 +29,7 @@ pub struct MqttMappingConfig {
 }
 
 /// How to extract values from MQTT payloads.
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum MqttValueParser {
     /// Direct value (payload IS the value)
     #[default]
@@ -77,7 +75,6 @@ impl MqttValueParser {
     }
 }
 
-
 /// MQTT protocol mapping implementation.
 pub struct MqttMapping {
     config: MqttMappingConfig,
@@ -90,7 +87,9 @@ impl MqttMapping {
     /// Create a new MQTT mapping from configuration.
     pub fn new(config: MqttMappingConfig) -> Self {
         let capabilities = config
-            .metric_topics.keys().map(|k| (k.clone(), MetricDataType::Float))
+            .metric_topics
+            .keys()
+            .map(|k| (k.clone(), MetricDataType::Float))
             .collect();
 
         Self {
@@ -312,21 +311,26 @@ impl MqttMapping {
                     .map_err(|_| MappingError::ParseError("Invalid UTF-8 in hex string".into()))?;
 
                 // Remove optional "0x" prefix and whitespace
-                let hex_clean = hex_str.trim().trim_start_matches("0x").replace([' ', '\n', '\r', '\t'], "");
+                let hex_clean = hex_str
+                    .trim()
+                    .trim_start_matches("0x")
+                    .replace([' ', '\n', '\r', '\t'], "");
 
                 if hex_clean.len() % 2 != 0 {
                     return Err(MappingError::ParseError(
-                        "Hex string must have even length".to_string()
+                        "Hex string must have even length".to_string(),
                     ));
                 }
 
                 let bytes = (0..hex_clean.len())
                     .step_by(2)
                     .map(|i| {
-                        u8::from_str_radix(&hex_clean[i..i+2], 16)
-                            .map_err(|_| MappingError::ParseError(
-                                format!("Invalid hex characters at position {}", i)
+                        u8::from_str_radix(&hex_clean[i..i + 2], 16).map_err(|_| {
+                            MappingError::ParseError(format!(
+                                "Invalid hex characters at position {}",
+                                i
                             ))
+                        })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
 
@@ -334,7 +338,8 @@ impl MqttMapping {
             }
             BinaryFormat::Base64Hex => {
                 // First base64 decode, then parse as hex string
-                let decoded = BASE64.decode(data)
+                let decoded = BASE64
+                    .decode(data)
                     .map_err(|_| MappingError::ParseError("Invalid base64 encoding".into()))?;
 
                 // Recursively parse as hex string
@@ -367,13 +372,16 @@ impl MqttMapping {
                 MetricValue::Boolean(b) => b.to_string(),
                 MetricValue::Array(a) => {
                     // Convert array to JSON string representation
-                    let json_arr: Vec<String> = a.iter().map(|v| match v {
-                        MetricValue::String(s) => format!("\"{}\"", s),
-                        MetricValue::Integer(i) => i.to_string(),
-                        MetricValue::Float(f) => f.to_string(),
-                        MetricValue::Boolean(b) => b.to_string(),
-                        _ => "null".to_string(),
-                    }).collect();
+                    let json_arr: Vec<String> = a
+                        .iter()
+                        .map(|v| match v {
+                            MetricValue::String(s) => format!("\"{}\"", s),
+                            MetricValue::Integer(i) => i.to_string(),
+                            MetricValue::Float(f) => f.to_string(),
+                            MetricValue::Boolean(b) => b.to_string(),
+                            _ => "null".to_string(),
+                        })
+                        .collect();
                     format!("[{}]", json_arr.join(", "))
                 }
                 MetricValue::Null => "null".to_string(),

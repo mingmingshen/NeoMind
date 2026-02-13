@@ -132,18 +132,25 @@ impl SmartFollowUpManager {
         let index = self.resource_index.read().await;
         let resources = index.list_devices().await;
 
-        self.available_devices = resources.into_iter().filter_map(|r| {
-            // 只处理设备类型的资源
-            let device_data = r.as_device()?;
+        self.available_devices = resources
+            .into_iter()
+            .filter_map(|r| {
+                // 只处理设备类型的资源
+                let device_data = r.as_device()?;
 
-            Some(AvailableDevice {
-                id: r.id.id.clone(),
-                name: r.name.clone(),
-                location: device_data.location.clone().unwrap_or_default(),
-                device_type: device_data.device_type.clone(),
-                capabilities: device_data.capabilities.iter().map(|c| c.name.clone()).collect(),
+                Some(AvailableDevice {
+                    id: r.id.id.clone(),
+                    name: r.name.clone(),
+                    location: device_data.location.clone().unwrap_or_default(),
+                    device_type: device_data.device_type.clone(),
+                    capabilities: device_data
+                        .capabilities
+                        .iter()
+                        .map(|c| c.name.clone())
+                        .collect(),
+                })
             })
-        }).collect();
+            .collect();
     }
 
     /// 设置可用设备列表（保留向后兼容）
@@ -157,7 +164,8 @@ impl SmartFollowUpManager {
         let index = self.resource_index.read().await;
         let results = index.search_string(query).await;
 
-        results.into_iter()
+        results
+            .into_iter()
             .take(limit)
             .map(|r| r.resource.name.clone())
             .collect()
@@ -169,11 +177,9 @@ impl SmartFollowUpManager {
         let results = index.search_string(query).await;
 
         // 提取唯一的位置名称
-        let mut locations: Vec<String> = results.into_iter()
-            .filter_map(|r| {
-                r.resource.as_device()
-                    .and_then(|d| d.location.clone())
-            })
+        let mut locations: Vec<String> = results
+            .into_iter()
+            .filter_map(|r| r.resource.as_device().and_then(|d| d.location.clone()))
             .collect();
 
         // 去重并限制数量
@@ -268,7 +274,10 @@ impl SmartFollowUpManager {
                 return Some(FollowUpItem {
                     followup_type: ftype,
                     priority: FollowUpPriority::Critical,
-                    question: format!("⚠️ 确定要「{}」吗？此操作不可恢复。\n请回复「确认」继续，或「取消」放弃。", input),
+                    question: format!(
+                        "⚠️ 确定要「{}」吗？此操作不可恢复。\n请回复「确认」继续，或「取消」放弃。",
+                        input
+                    ),
                     suggestions: vec!["确认".to_string(), "取消".to_string()],
                     can_proceed_degraded: false,
                 });
@@ -358,16 +367,18 @@ impl SmartFollowUpManager {
         }
 
         // 温度设置类
-        if lower.contains("设置") && lower.contains("温度")
-            && !lower.contains(|c: char| c.is_ascii_digit()) {
-                followups.push(FollowUpItem {
-                    followup_type: FollowUpType::MissingValue,
-                    priority: FollowUpPriority::High,
-                    question: "请问要设置多少度？\n建议范围：16-30°C".to_string(),
-                    suggestions: vec!["26度".to_string(), "24度".to_string(), "28度".to_string()],
-                    can_proceed_degraded: false,
-                });
-            }
+        if lower.contains("设置")
+            && lower.contains("温度")
+            && !lower.contains(|c: char| c.is_ascii_digit())
+        {
+            followups.push(FollowUpItem {
+                followup_type: FollowUpType::MissingValue,
+                priority: FollowUpPriority::High,
+                question: "请问要设置多少度？\n建议范围：16-30°C".to_string(),
+                suggestions: vec!["26度".to_string(), "24度".to_string(), "28度".to_string()],
+                can_proceed_degraded: false,
+            });
+        }
 
         // 查询温湿度
         if (lower == "温度" || lower == "湿度" || lower == "温湿度")
@@ -378,7 +389,10 @@ impl SmartFollowUpManager {
                 followups.push(FollowUpItem {
                     followup_type: FollowUpType::MissingLocation,
                     priority: FollowUpPriority::High,
-                    question: format!("请问要查看哪个位置的温湿度？\n可用位置：{}", locations.join("、")),
+                    question: format!(
+                        "请问要查看哪个位置的温湿度？\n可用位置：{}",
+                        locations.join("、")
+                    ),
                     suggestions: locations.iter().take(3).cloned().collect(),
                     can_proceed_degraded: true, // 可以显示所有位置的数据
                 });
@@ -408,7 +422,8 @@ impl SmartFollowUpManager {
             followups.push(FollowUpItem {
                 followup_type: FollowUpType::AmbiguousIntent,
                 priority: FollowUpPriority::Medium,
-                question: "您是想：\n1. 查看当前温度\n2. 设置温度\n3. 创建温度相关的自动化规则".to_string(),
+                question: "您是想：\n1. 查看当前温度\n2. 设置温度\n3. 创建温度相关的自动化规则"
+                    .to_string(),
                 suggestions: vec!["查看当前温度".to_string(), "设置温度".to_string()],
                 can_proceed_degraded: true, // 默认为查看
             });
@@ -420,7 +435,11 @@ impl SmartFollowUpManager {
                 followup_type: FollowUpType::AmbiguousIntent,
                 priority: FollowUpPriority::Medium,
                 question: "您是想：\n1. 查看灯的状态\n2. 控制灯的开关\n3. 调节灯的亮度".to_string(),
-                suggestions: vec!["查看状态".to_string(), "打开灯".to_string(), "关闭灯".to_string()],
+                suggestions: vec![
+                    "查看状态".to_string(),
+                    "打开灯".to_string(),
+                    "关闭灯".to_string(),
+                ],
                 can_proceed_degraded: true,
             });
         }
@@ -429,22 +448,30 @@ impl SmartFollowUpManager {
     }
 
     /// 检测意图
-    fn detect_intents(
-        &self,
-        input: &str,
-        context: &ConversationContext,
-    ) -> Vec<DetectedIntent> {
+    fn detect_intents(&self, input: &str, context: &ConversationContext) -> Vec<DetectedIntent> {
         let mut intents = Vec::new();
         let lower = input.to_lowercase();
 
         // 查询意图
-        if lower.contains("查询") || lower.contains("查看") || lower.contains("多少")
-            || lower.contains("温度") || lower.contains("湿度") || lower.contains("状态")
+        if lower.contains("查询")
+            || lower.contains("查看")
+            || lower.contains("多少")
+            || lower.contains("温度")
+            || lower.contains("湿度")
+            || lower.contains("状态")
         {
             intents.push(DetectedIntent {
                 description: "查询信息".to_string(),
-                confidence: if lower.contains("查询") || lower.contains("查看") { 0.9 } else { 0.7 },
-                entities: context.mentioned_devices.iter().map(|d| d.name.clone()).collect(),
+                confidence: if lower.contains("查询") || lower.contains("查看") {
+                    0.9
+                } else {
+                    0.7
+                },
+                entities: context
+                    .mentioned_devices
+                    .iter()
+                    .map(|d| d.name.clone())
+                    .collect(),
             });
         }
 
@@ -453,7 +480,11 @@ impl SmartFollowUpManager {
             intents.push(DetectedIntent {
                 description: "设备控制".to_string(),
                 confidence: 0.95,
-                entities: context.mentioned_devices.iter().map(|d| d.name.clone()).collect(),
+                entities: context
+                    .mentioned_devices
+                    .iter()
+                    .map(|d| d.name.clone())
+                    .collect(),
             });
         }
 
@@ -468,21 +499,34 @@ impl SmartFollowUpManager {
 
         // 创建规则意图
         if (lower.contains("创建") || lower.contains("添加") || lower.contains("新建"))
-            && (lower.contains("规则") || lower.contains("自动化")) {
-                intents.push(DetectedIntent {
-                    description: "创建自动化规则".to_string(),
-                    confidence: 0.95,
-                    entities: vec![],
-                });
-            }
+            && (lower.contains("规则") || lower.contains("自动化"))
+        {
+            intents.push(DetectedIntent {
+                description: "创建自动化规则".to_string(),
+                confidence: 0.95,
+                entities: vec![],
+            });
+        }
 
         intents
     }
 
     /// 检查输入是否包含位置信息
     fn has_location_info(&self, input: &str, context: &ConversationContext) -> bool {
-        let locations = ["客厅", "卧室", "厨房", "浴室", "卫生间", "书房", "阳台",
-            "living room", "bedroom", "kitchen", "bathroom", "study"];
+        let locations = [
+            "客厅",
+            "卧室",
+            "厨房",
+            "浴室",
+            "卫生间",
+            "书房",
+            "阳台",
+            "living room",
+            "bedroom",
+            "kitchen",
+            "bathroom",
+            "study",
+        ];
 
         let lower = input.to_lowercase();
         let has_explicit = locations.iter().any(|loc| lower.contains(loc));
@@ -520,16 +564,22 @@ impl SmartFollowUpManager {
         }
 
         // 如果只是缺少位置，但有上下文位置
-        if followups.iter().any(|f| f.followup_type == FollowUpType::MissingLocation)
-            && let Some(loc) = &context.current_location {
-                return Some(format!("我理解您可能是指「{}」，是否继续？", loc));
-            }
+        if followups
+            .iter()
+            .any(|f| f.followup_type == FollowUpType::MissingLocation)
+            && let Some(loc) = &context.current_location
+        {
+            return Some(format!("我理解您可能是指「{}」，是否继续？", loc));
+        }
 
         // 如果是模糊意图
-        if followups.iter().any(|f| f.followup_type == FollowUpType::AmbiguousIntent)
-            && context.topic == ConversationTopic::DataQuery {
-                return Some("我可以先为您查询当前状态".to_string());
-            }
+        if followups
+            .iter()
+            .any(|f| f.followup_type == FollowUpType::AmbiguousIntent)
+            && context.topic == ConversationTopic::DataQuery
+        {
+            return Some("我可以先为您查询当前状态".to_string());
+        }
 
         None
     }
@@ -546,14 +596,19 @@ impl SmartFollowUpManager {
         // 如果有缺失位置的追问，使用模糊搜索增强建议
         for followup in &mut analysis.followups {
             if followup.followup_type == FollowUpType::MissingLocation
-                || followup.followup_type == FollowUpType::MissingDevice {
+                || followup.followup_type == FollowUpType::MissingDevice
+            {
                 // 使用模糊搜索获取更相关的建议
                 let suggestions = self.get_device_suggestions(user_input, 4).await;
                 if !suggestions.is_empty() {
                     followup.suggestions = suggestions;
                     followup.question = format!(
                         "{}\n相关设备：{}",
-                        followup.question.lines().next().unwrap_or(&followup.question),
+                        followup
+                            .question
+                            .lines()
+                            .next()
+                            .unwrap_or(&followup.question),
                         followup.suggestions.join("、")
                     );
                 }
@@ -621,7 +676,10 @@ mod tests {
 
         assert!(!analysis.can_proceed);
         assert_eq!(analysis.followups.len(), 1);
-        assert_eq!(analysis.followups[0].followup_type, FollowUpType::DangerousOperation);
+        assert_eq!(
+            analysis.followups[0].followup_type,
+            FollowUpType::DangerousOperation
+        );
         assert_eq!(analysis.followups[0].priority, FollowUpPriority::Critical);
     }
 
@@ -632,7 +690,8 @@ mod tests {
 
         // 有上下文时，"打开灯"应该不追问
         let analysis = manager.analyze_input("打开灯", &ctx);
-        let location_followups: Vec<_> = analysis.followups
+        let location_followups: Vec<_> = analysis
+            .followups
             .iter()
             .filter(|f| f.followup_type == FollowUpType::MissingLocation)
             .collect();
@@ -647,7 +706,8 @@ mod tests {
 
         let analysis = manager.analyze_input("打开灯", &ctx);
 
-        let location_followups: Vec<_> = analysis.followups
+        let location_followups: Vec<_> = analysis
+            .followups
             .iter()
             .filter(|f| f.followup_type == FollowUpType::MissingLocation)
             .collect();
@@ -665,7 +725,8 @@ mod tests {
         let analysis = manager.analyze_input("打开客厅灯然后关闭卧室灯", &ctx);
 
         // 多意图检测到，但可以降级执行
-        let multi_intent: Vec<_> = analysis.followups
+        let multi_intent: Vec<_> = analysis
+            .followups
             .iter()
             .filter(|f| f.followup_type == FollowUpType::MultipleIntents)
             .collect();
@@ -683,7 +744,12 @@ mod tests {
         let analysis = manager.analyze_input("查询客厅温度", &ctx);
 
         assert!(!analysis.detected_intents.is_empty());
-        assert!(analysis.detected_intents.iter().any(|i| i.description.contains("查询")));
+        assert!(
+            analysis
+                .detected_intents
+                .iter()
+                .any(|i| i.description.contains("查询"))
+        );
     }
 
     #[test]
@@ -695,7 +761,7 @@ mod tests {
 
         // 验证追问按优先级排序（高到低）
         for i in 1..analysis.followups.len() {
-            assert!(analysis.followups[i-1].priority >= analysis.followups[i].priority);
+            assert!(analysis.followups[i - 1].priority >= analysis.followups[i].priority);
         }
     }
 

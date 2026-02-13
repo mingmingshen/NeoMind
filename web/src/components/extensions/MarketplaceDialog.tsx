@@ -466,37 +466,32 @@ function ExtensionDetailView({
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       {/* Header */}
-      <div className="flex items-start justify-between border-b pb-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <h2 className="text-xl font-semibold">{extension.name}</h2>
-            <Badge variant="outline">{extension.version}</Badge>
-            {extension.categories.map((cat) => (
-              <Badge key={cat} variant="secondary">
-                {cat}
-              </Badge>
-            ))}
-          </div>
-          <p className="text-muted-foreground">{extension.description}</p>
-          <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-            <span>by {extension.author}</span>
-            <span>{extension.license}</span>
-            {extension.homepage && (
-              <a
-                href={extension.homepage}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 hover:text-primary"
-              >
-                <ExternalLink className="h-3 w-3" />
-                {t("extensions:market.homepage", "Homepage")}
-              </a>
-            )}
-          </div>
+      <div className="border-b pb-4">
+        <div className="flex items-center gap-2 mb-2">
+          <h2 className="text-xl font-semibold">{extension.name}</h2>
+          <Badge variant="outline">{extension.version}</Badge>
+          {extension.categories.map((cat) => (
+            <Badge key={cat} variant="secondary">
+              {cat}
+            </Badge>
+          ))}
         </div>
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          {t("common:back", "Back")}
-        </Button>
+        <p className="text-muted-foreground">{extension.description}</p>
+        <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+          <span>by {extension.author}</span>
+          <span>{extension.license}</span>
+          {extension.homepage && (
+            <a
+              href={extension.homepage}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 hover:text-primary"
+            >
+              <ExternalLink className="h-3 w-3" />
+              {t("extensions:market.homepage", "Homepage")}
+            </a>
+          )}
+        </div>
       </div>
 
       {/* Capabilities */}
@@ -589,7 +584,7 @@ function ExtensionDetailView({
       </div>
 
       {/* Footer */}
-      <DialogFooter className="border-t pt-4">
+      <DialogFooter className="border-t pt-4 justify-between">
         <Button variant="outline" onClick={onBack} disabled={installing}>
           {t("common:back", "Back")}
         </Button>

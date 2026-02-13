@@ -11,16 +11,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
-use neomind_devices::registry::DeviceTypeTemplate;
 use neomind_core::llm::backend::LlmRuntime;
-use neomind_storage::{LlmBackendInstance, LlmBackendType};
-use neomind_llm::{
-    instance_manager::get_instance_manager,
-    OllamaConfig, OllamaRuntime,
-};
+use neomind_devices::registry::DeviceTypeTemplate;
 use neomind_llm::backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
+use neomind_llm::{OllamaConfig, OllamaRuntime, instance_manager::get_instance_manager};
+use neomind_storage::{LlmBackendInstance, LlmBackendType};
 
-use super::models::{DeviceTypeDto, MetricDefinitionDto, CommandDefinitionDto, ParameterDefinitionDto};
+use super::models::{
+    CommandDefinitionDto, DeviceTypeDto, MetricDefinitionDto, ParameterDefinitionDto,
+};
 use crate::handlers::{
     ServerState,
     common::{HandlerResult, ok},
@@ -42,31 +41,41 @@ pub async fn list_device_types_handler(
             };
 
             // Convert metrics to DTO
-            let metrics: Vec<MetricDefinitionDto> = t.metrics.iter().map(|m| {
-                MetricDefinitionDto {
+            let metrics: Vec<MetricDefinitionDto> = t
+                .metrics
+                .iter()
+                .map(|m| MetricDefinitionDto {
                     name: m.name.clone(),
                     display_name: m.display_name.clone(),
                     data_type: format!("{:?}", m.data_type),
-                    unit: if m.unit.is_empty() { None } else { Some(m.unit.clone()) },
+                    unit: if m.unit.is_empty() {
+                        None
+                    } else {
+                        Some(m.unit.clone())
+                    },
                     min: m.min,
                     max: m.max,
-                }
-            }).collect();
+                })
+                .collect();
 
             // Convert commands to DTO
-            let commands: Vec<CommandDefinitionDto> = t.commands.iter().map(|c| {
-                CommandDefinitionDto {
+            let commands: Vec<CommandDefinitionDto> = t
+                .commands
+                .iter()
+                .map(|c| CommandDefinitionDto {
                     name: c.name.clone(),
                     display_name: c.display_name.clone(),
-                    parameters: c.parameters.iter().map(|p| {
-                        ParameterDefinitionDto {
+                    parameters: c
+                        .parameters
+                        .iter()
+                        .map(|p| ParameterDefinitionDto {
                             name: p.name.clone(),
                             display_name: p.display_name.clone(),
                             data_type: format!("{:?}", p.data_type),
-                        }
-                    }).collect(),
-                }
-            }).collect();
+                        })
+                        .collect(),
+                })
+                .collect();
 
             DeviceTypeDto {
                 device_type: t.device_type.clone(),
@@ -95,7 +104,8 @@ pub async fn get_device_type_handler(
     Path(device_type): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     let template = state
-        .devices.service
+        .devices
+        .service
         .get_template(&device_type)
         .await
         .ok_or_else(|| ErrorResponse::not_found("DeviceType"))?;
@@ -128,7 +138,8 @@ pub async fn register_device_type_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Register the template directly (already in simplified format)
     state
-        .devices.service
+        .devices
+        .service
         .register_template(template)
         .await
         .map_err(|e| {
@@ -148,7 +159,8 @@ pub async fn delete_device_type_handler(
     Path(device_type): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     state
-        .devices.service
+        .devices
+        .service
         .unregister_template(&device_type)
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete device type: {}", e)))?;
@@ -212,14 +224,14 @@ pub async fn validate_device_type_handler(
         if matches!(
             metric.data_type,
             neomind_devices::MetricDataType::Integer | neomind_devices::MetricDataType::Float
-        )
-            && let (Some(min), Some(max)) = (metric.min, metric.max)
-                && min > max {
-                    errors.push(format!(
-                        "metrics[{}]: min ({}) 不能大于 max ({})",
-                        idx, min, max
-                    ));
-                }
+        ) && let (Some(min), Some(max)) = (metric.min, metric.max)
+            && min > max
+        {
+            errors.push(format!(
+                "metrics[{}]: min ({}) 不能大于 max ({})",
+                idx, min, max
+            ));
+        }
     }
 
     // Validate commands (simplified structure - direct array)
@@ -294,8 +306,12 @@ pub struct GenerateDeviceTypeRequest {
     pub min_confidence: f32,
 }
 
-fn default_min_coverage() -> f32 { 0.0 }
-fn default_min_confidence() -> f32 { 0.0 }
+fn default_min_coverage() -> f32 {
+    0.0
+}
+fn default_min_confidence() -> f32 {
+    0.0
+}
 
 /// A single data sample with timestamp
 #[derive(Debug, Clone, Deserialize)]
@@ -389,7 +405,10 @@ fn instance_to_runtime(instance: &LlmBackendInstance) -> Result<Arc<dyn LlmRunti
     match instance.backend_type {
         LlmBackendType::Ollama => {
             let config = OllamaConfig {
-                endpoint: instance.endpoint.clone().unwrap_or_else(|| "http://localhost:11434".to_string()),
+                endpoint: instance
+                    .endpoint
+                    .clone()
+                    .unwrap_or_else(|| "http://localhost:11434".to_string()),
                 model: instance.model.clone(),
                 timeout_secs: 120,
             };
@@ -449,6 +468,59 @@ fn instance_to_runtime(instance: &LlmBackendInstance) -> Result<Arc<dyn LlmRunti
                 .map(|runtime| Arc::new(runtime) as Arc<dyn LlmRuntime>)
                 .map_err(|e| format!("Failed to create xAI runtime: {}", e))
         }
+        LlmBackendType::Qwen => {
+            // Qwen uses OpenAI-compatible API
+            let provider = CloudProvider::OpenAI;
+            let config = CloudConfig {
+                api_key: instance.api_key.clone().unwrap_or_default(),
+                provider,
+                model: Some(instance.model.clone()),
+                base_url: instance.endpoint.clone(),
+                timeout_secs: 120,
+            };
+            CloudRuntime::new(config)
+                .map(|runtime| Arc::new(runtime) as Arc<dyn LlmRuntime>)
+                .map_err(|e| format!("Failed to create Qwen runtime: {}", e))
+        }
+        LlmBackendType::DeepSeek => {
+            let provider = CloudProvider::DeepSeek;
+            let config = CloudConfig {
+                api_key: instance.api_key.clone().unwrap_or_default(),
+                provider,
+                model: Some(instance.model.clone()),
+                base_url: instance.endpoint.clone(),
+                timeout_secs: 120,
+            };
+            CloudRuntime::new(config)
+                .map(|runtime| Arc::new(runtime) as Arc<dyn LlmRuntime>)
+                .map_err(|e| format!("Failed to create DeepSeek runtime: {}", e))
+        }
+        LlmBackendType::GLM => {
+            let provider = CloudProvider::GLM;
+            let config = CloudConfig {
+                api_key: instance.api_key.clone().unwrap_or_default(),
+                provider,
+                model: Some(instance.model.clone()),
+                base_url: instance.endpoint.clone(),
+                timeout_secs: 120,
+            };
+            CloudRuntime::new(config)
+                .map(|runtime| Arc::new(runtime) as Arc<dyn LlmRuntime>)
+                .map_err(|e| format!("Failed to create GLM runtime: {}", e))
+        }
+        LlmBackendType::MiniMax => {
+            let provider = CloudProvider::MiniMax;
+            let config = CloudConfig {
+                api_key: instance.api_key.clone().unwrap_or_default(),
+                provider,
+                model: Some(instance.model.clone()),
+                base_url: instance.endpoint.clone(),
+                timeout_secs: 120,
+            };
+            CloudRuntime::new(config)
+                .map(|runtime| Arc::new(runtime) as Arc<dyn LlmRuntime>)
+                .map_err(|e| format!("Failed to create MiniMax runtime: {}", e))
+        }
     }
 }
 
@@ -461,8 +533,9 @@ pub async fn generate_device_type_from_samples_handler(
     let instance_manager = get_instance_manager()
         .map_err(|e| ErrorResponse::internal(format!("Failed to get LLM manager: {}", e)))?;
 
-    let instance = instance_manager.get_active_instance()
-        .ok_or_else(|| ErrorResponse::internal("No active LLM backend. Please configure an LLM backend first."))?;
+    let instance = instance_manager.get_active_instance().ok_or_else(|| {
+        ErrorResponse::internal("No active LLM backend. Please configure an LLM backend first.")
+    })?;
 
     // Convert to LlmRuntime
     let llm = instance_to_runtime(&instance)
@@ -475,7 +548,8 @@ pub async fn generate_device_type_from_samples_handler(
     let device_id = request.device_id.as_deref().unwrap_or("unknown-device");
     let manufacturer = request.manufacturer.as_deref();
 
-    let samples: Vec<DeviceSample> = request.samples
+    let samples: Vec<DeviceSample> = request
+        .samples
         .into_iter()
         .map(|s| DeviceSample::from_json(s.data, format!("sample-{}", s.timestamp)))
         .collect();
@@ -491,7 +565,8 @@ pub async fn generate_device_type_from_samples_handler(
     };
 
     // Generate device type with config
-    let generated = generator.generate_device_type_with_config(device_id, manufacturer, &samples, config)
+    let generated = generator
+        .generate_device_type_with_config(device_id, manufacturer, &samples, config)
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to generate device type: {}", e)))?;
 
@@ -502,29 +577,41 @@ pub async fn generate_device_type_from_samples_handler(
         description: generated.description,
         category: format!("{:?}", generated.category),
         manufacturer: generated.manufacturer,
-        metrics: generated.metrics.into_iter().map(|m| GeneratedMetricDto {
-            name: m.name,
-            path: m.path,
-            display_name: m.display_name,
-            description: m.description,
-            data_type: format!("{:?}", m.data_type),
-            semantic_type: format!("{:?}", m.semantic_type),
-            unit: m.unit,
-            readable: m.is_readable,
-            writable: m.is_writable,
-            confidence: 1.0, // Default confidence
-        }).collect(),
-        commands: generated.commands.into_iter().map(|c| GeneratedCommandDto {
-            name: c.name,
-            display_name: c.display_name,
-            description: c.description,
-            parameters: c.parameters.into_iter().map(|p| GeneratedParameterDto {
-                name: p.name,
-                type_: format!("{:?}", p.param_type),
-                required: p.required,
-            }).collect(),
-            confidence: 1.0, // Default confidence
-        }).collect(),
+        metrics: generated
+            .metrics
+            .into_iter()
+            .map(|m| GeneratedMetricDto {
+                name: m.name,
+                path: m.path,
+                display_name: m.display_name,
+                description: m.description,
+                data_type: format!("{:?}", m.data_type),
+                semantic_type: format!("{:?}", m.semantic_type),
+                unit: m.unit,
+                readable: m.is_readable,
+                writable: m.is_writable,
+                confidence: 1.0, // Default confidence
+            })
+            .collect(),
+        commands: generated
+            .commands
+            .into_iter()
+            .map(|c| GeneratedCommandDto {
+                name: c.name,
+                display_name: c.display_name,
+                description: c.description,
+                parameters: c
+                    .parameters
+                    .into_iter()
+                    .map(|p| GeneratedParameterDto {
+                        name: p.name,
+                        type_: format!("{:?}", p.param_type),
+                        required: p.required,
+                    })
+                    .collect(),
+                confidence: 1.0, // Default confidence
+            })
+            .collect(),
         confidence: 1.0, // Default confidence
     };
 
@@ -599,9 +686,11 @@ pub async fn list_cloud_device_types_handler(
         .build()
         .map_err(|e| ErrorResponse::internal(format!("Failed to build HTTP client: {}", e)))?;
 
-    let response = match client.get(&api_url)
+    let response = match client
+        .get(&api_url)
         .header("User-Agent", "NeoMind-DeviceType-Importer")
-        .send().await
+        .send()
+        .await
     {
         Ok(r) => r,
         Err(e) => {
@@ -618,9 +707,12 @@ pub async fn list_cloud_device_types_handler(
 
     if !response.status().is_success() {
         let status = response.status();
-        let error_text = response.text().await.unwrap_or_else(|_| "Unable to read error response".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unable to read error response".to_string());
         tracing::error!("GitHub API returned status {}: {}", status, error_text);
-        
+
         // Return empty list if fetch fails (graceful degradation)
         return ok(json!({
             "device_types": [],
@@ -768,7 +860,7 @@ pub async fn import_cloud_device_types_handler(
     // Process fetched device types
     for result in fetched {
         let device_type_id = result.id;
-        
+
         let template = match result.template {
             Some(t) => t,
             None => {
@@ -803,7 +895,10 @@ pub async fn import_cloud_device_types_handler(
         match state.devices.service.register_template(template).await {
             Ok(()) => {
                 imported += 1;
-                tracing::info!("Successfully imported device type: {}", device_type_id_for_log);
+                tracing::info!(
+                    "Successfully imported device type: {}",
+                    device_type_id_for_log
+                );
             }
             Err(e) => {
                 failed += 1;

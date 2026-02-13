@@ -170,7 +170,8 @@ impl BM25Index {
 
             // BM25 formula
             let numerator = tf * (self.k1 + 1.0);
-            let denominator = tf + self.k1 * (1.0 - self.b + self.b * (doc_length / self.avg_doc_length));
+            let denominator =
+                tf + self.k1 * (1.0 - self.b + self.b * (doc_length / self.avg_doc_length));
 
             score += idf * (numerator / denominator);
         }

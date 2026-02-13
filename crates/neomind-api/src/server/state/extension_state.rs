@@ -35,9 +35,7 @@ impl ExtensionMetricsStorage {
     /// database as device data (telemetry.redb), isolated by prefix.
     /// This allows AI Agents to query all data sources from one storage.
     pub fn with_shared_storage(storage: Arc<neomind_devices::TimeSeriesStorage>) -> Self {
-        Self {
-            inner: storage,
-        }
+        Self { inner: storage }
     }
 
     /// Open extension metrics storage at a separate path (DEPRECATED - use shared storage).
@@ -142,9 +140,7 @@ impl ExtensionState {
     }
 
     /// Create extension state with persistent storage.
-    pub async fn with_persistence(
-        storage_path: &str,
-    ) -> Result<Self, String> {
+    pub async fn with_persistence(storage_path: &str) -> Result<Self, String> {
         // Ensure data directory exists
         if let Err(e) = std::fs::create_dir_all("data") {
             return Err(format!("Failed to create data directory: {}", e));
@@ -154,9 +150,9 @@ impl ExtensionState {
         let registry = Arc::new(ExtensionRegistry::new());
 
         // Open extension metrics storage
-        let metrics_storage = Arc::new(
-            ExtensionMetricsStorage::open(std::path::Path::new(storage_path))?
-        );
+        let metrics_storage = Arc::new(ExtensionMetricsStorage::open(std::path::Path::new(
+            storage_path,
+        ))?);
 
         Ok(Self {
             registry,
@@ -170,8 +166,7 @@ impl ExtensionState {
         Self {
             registry: Arc::new(ExtensionRegistry::new()),
             metrics_storage: Arc::new(
-                ExtensionMetricsStorage::memory()
-                    .expect("Failed to create memory storage")
+                ExtensionMetricsStorage::memory().expect("Failed to create memory storage"),
             ),
         }
     }
@@ -186,7 +181,8 @@ impl ExtensionState {
             .map_err(|e| format!("Failed to open extension store: {}", e))?;
 
         // Load all auto-start extensions
-        let records = store.load_auto_start()
+        let records = store
+            .load_auto_start()
             .map_err(|e| format!("Failed to load extensions from storage: {}", e))?;
 
         if records.is_empty() {
@@ -217,8 +213,7 @@ impl ExtensionState {
 
             let load_result = if is_wasm {
                 // WASM extensions require async loading
-                self.registry.load_from_path(file_path).await
-                    .map(|_| ())
+                self.registry.load_from_path(file_path).await.map(|_| ())
             } else {
                 // Native extensions can be loaded in a blocking context
                 tokio::task::spawn_blocking({
@@ -226,9 +221,7 @@ impl ExtensionState {
                     let file_path = file_path.to_path_buf();
                     let config = record.config.clone().unwrap_or(serde_json::json!({}));
 
-                    move || {
-                        registry.blocking_load(&file_path, &config)
-                    }
+                    move || registry.blocking_load(&file_path, &config)
                 })
                 .await
                 .map_err(|e| format!("Failed to join loading task: {}", e))?
@@ -360,14 +353,12 @@ impl neomind_rules::ExtensionStorageLike for ExtensionMetricsStorageAdapter {
         // Extension metrics are stored with "extension:" prefix
         let device_id = format!("extension:{}", extension_id);
         match self.storage.query_latest(&device_id, metric).await {
-            Ok(Some(dp)) => {
-                match &dp.value {
-                    neomind_devices::MetricValue::Float(f) => Some(*f),
-                    neomind_devices::MetricValue::Integer(i) => Some(*i as f64),
-                    neomind_devices::MetricValue::Boolean(b) => Some(if *b { 1.0 } else { 0.0 }),
-                    _ => None,
-                }
-            }
+            Ok(Some(dp)) => match &dp.value {
+                neomind_devices::MetricValue::Float(f) => Some(*f),
+                neomind_devices::MetricValue::Integer(i) => Some(*i as f64),
+                neomind_devices::MetricValue::Boolean(b) => Some(if *b { 1.0 } else { 0.0 }),
+                _ => None,
+            },
             Ok(None) => None,
             Err(_) => None,
         }

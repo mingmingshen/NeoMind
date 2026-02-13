@@ -58,7 +58,7 @@ pub use error::{NeoMindError, Result};
 pub use session::SessionManager;
 pub use tools::{
     EventIntegratedToolRegistry, ToolExecutionHistory, ToolExecutionRecord, ToolExecutionStats,
-    resolve_tool_name as map_tool_name, ToolNameMapper,
+    ToolNameMapper, resolve_tool_name as map_tool_name,
 };
 
 /// Version information

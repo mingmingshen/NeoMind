@@ -2,17 +2,20 @@
 //!
 //! 这个测试**真正调用Ollama LLM**来衡量实际性能
 
+use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
+use neomind_core::llm::backend::{GenerationParams, LlmInput};
+use neomind_core::{
+    EventBus, LlmRuntime, MetricValue, NeoMindEvent,
+    message::{Content, Message, MessageRole},
+};
+use neomind_llm::backends::ollama::{OllamaConfig, OllamaRuntime};
+use neomind_storage::{
+    AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
+    DataPoint, LongTermMemory, ResourceType, ScheduleType, ShortTermMemory, TimeSeriesStore,
+    WorkingMemory,
+};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use neomind_core::{EventBus, MetricValue, NeoMindEvent, LlmRuntime, message::{Message, MessageRole, Content}};
-use neomind_storage::{
-    AgentStore, AgentSchedule, AgentStats, AgentStatus, AiAgent, AgentMemory,
-    WorkingMemory, ShortTermMemory, LongTermMemory, ScheduleType, ResourceType, AgentResource,
-    TimeSeriesStore, DataPoint,
-};
-use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
-use neomind_llm::backends::ollama::{OllamaRuntime, OllamaConfig};
-use neomind_core::llm::backend::{LlmInput, GenerationParams};
 
 struct RealPerfTestContext {
     pub store: Arc<AgentStore>,
@@ -104,11 +107,7 @@ impl RealPerfTestContext {
     }
 
     /// Create a test agent with the given parameters
-    async fn create_test_agent(
-        &self,
-        name: &str,
-        user_prompt: &str,
-    ) -> anyhow::Result<AiAgent> {
+    async fn create_test_agent(&self, name: &str, user_prompt: &str) -> anyhow::Result<AiAgent> {
         let now = chrono::Utc::now().timestamp();
 
         let agent = AiAgent {
@@ -177,9 +176,15 @@ async fn test_real_llm_performance() -> anyhow::Result<()> {
 
     let ctx = RealPerfTestContext::new().await?;
 
-    println!("\n{}", "============================================================");
+    println!(
+        "\n{}",
+        "============================================================"
+    );
     println!("真实LLM性能测试 - 每次调用都实际等待LLM响应");
-    println!("{}\n", "============================================================");
+    println!(
+        "{}\n",
+        "============================================================"
+    );
 
     let system_prompt = "你是一个物联网设备监控助手。分析数据并给出建议。";
 
@@ -252,7 +257,11 @@ async fn test_real_llm_performance() -> anyhow::Result<()> {
     println!("      最慢: {}ms", max);
     println!("      标准差: {:.2}ms", {
         let avg_f = avg as f64;
-        let variance = times.iter().map(|t| (*t as f64 - avg_f).powi(2)).sum::<f64>() / times.len() as f64;
+        let variance = times
+            .iter()
+            .map(|t| (*t as f64 - avg_f).powi(2))
+            .sum::<f64>()
+            / times.len() as f64;
         variance.sqrt()
     });
 
@@ -274,7 +283,10 @@ async fn test_real_llm_performance() -> anyhow::Result<()> {
     println!("   响应长度: {} 字符", response5.len());
     println!("   响应预览: {}...", &response5[..response5.len().min(100)]);
 
-    println!("\n{}", "============================================================");
+    println!(
+        "\n{}",
+        "============================================================"
+    );
     println!("真实性能测试完成");
     println!("============================================================");
 
@@ -291,12 +303,23 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
 
     let ctx = RealPerfTestContext::new().await?;
 
-    println!("\n{}", "============================================================");
+    println!(
+        "\n{}",
+        "============================================================"
+    );
     println!("LLM真实调用 vs 模拟响应 性能对比");
-    println!("{}\n", "============================================================");
+    println!(
+        "{}\n",
+        "============================================================"
+    );
 
     // 准备测试数据
-    ctx.inject_metrics("sensor_01", "temperature", &[20.0, 22.0, 24.0, 26.0, 28.0, 30.0]).await;
+    ctx.inject_metrics(
+        "sensor_01",
+        "temperature",
+        &[20.0, 22.0, 24.0, 26.0, 28.0, 30.0],
+    )
+    .await;
 
     // 测试场景1: Agent执行（不调用LLM）
     println!("📊 场景1: Agent执行（当前实现 - 无LLM）");
@@ -372,7 +395,10 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
     let agent_time = start.elapsed().as_millis();
 
     println!("   执行时间: {}ms", agent_time);
-    println!("   数据收集: {} 个", record.decision_process.data_collected.len());
+    println!(
+        "   数据收集: {} 个",
+        record.decision_process.data_collected.len()
+    );
     println!("   决策数: {}", record.decision_process.decisions.len());
     println!("   结论: {}", record.decision_process.conclusion);
     println!("   ⚠️  注意: 没有调用LLM，结论是预设的");
@@ -385,10 +411,7 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
 请分析：1. 趋势如何？2. 是否异常？3. 需要采取什么行动？"
     );
 
-    let (llm_response, llm_time) = ctx.llm_analyze(
-        "你是设备监控助手。",
-        &llm_input
-    ).await;
+    let (llm_response, llm_time) = ctx.llm_analyze("你是设备监控助手。", &llm_input).await;
 
     println!("   LLM响应时间: {}ms", llm_time);
     println!("   LLM分析结果: {}", llm_response);
@@ -399,8 +422,14 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
     println!("   │ 方式         │ 耗时     │ 说明         │");
     println!("   ├──────────────┼──────────┼──────────────┤");
     println!("   │ Agent(无LLM) │ {}ms     │ 无真实AI     │", agent_time);
-    println!("   │ Agent(+LLM)  │ {}ms    │ 真实AI推理  │", agent_time + llm_time);
-    println!("   │ 差异         │ {:.1}x   │ LLM是主要耗时│", (agent_time + llm_time) as f64 / agent_time.max(1) as f64);
+    println!(
+        "   │ Agent(+LLM)  │ {}ms    │ 真实AI推理  │",
+        agent_time + llm_time
+    );
+    println!(
+        "   │ 差异         │ {:.1}x   │ LLM是主要耗时│",
+        (agent_time + llm_time) as f64 / agent_time.max(1) as f64
+    );
     println!("   └──────────────┴──────────┴──────────────┘");
 
     println!("\n💡 结论:");
@@ -421,13 +450,21 @@ async fn test_realistic_multi_agent_scenario() -> anyhow::Result<()> {
 
     let ctx = RealPerfTestContext::new().await?;
 
-    println!("\n{}", "============================================================");
+    println!(
+        "\n{}",
+        "============================================================"
+    );
     println!("真实场景：多Agent协作（每次都调用LLM）");
-    println!("{}\n", "============================================================");
+    println!(
+        "{}\n",
+        "============================================================"
+    );
 
     // 模拟温室监控场景
-    ctx.inject_metrics("greenhouse", "temperature", &[25.0, 26.0, 27.0, 29.0, 31.0]).await;
-    ctx.inject_metrics("greenhouse", "humidity", &[65.0, 63.0, 61.0, 58.0, 55.0]).await;
+    ctx.inject_metrics("greenhouse", "temperature", &[25.0, 26.0, 27.0, 29.0, 31.0])
+        .await;
+    ctx.inject_metrics("greenhouse", "humidity", &[65.0, 63.0, 61.0, 58.0, 55.0])
+        .await;
 
     println!("🌱 场景：温室温度异常升高\n");
 
@@ -490,18 +527,28 @@ async fn test_realistic_multi_agent_scenario() -> anyhow::Result<()> {
     // 总计
     let total_time = monitor_time + executor_time + analyst_time;
 
-    println!("\n{}", "============================================================");
+    println!(
+        "\n{}",
+        "============================================================"
+    );
     println!("📊 多Agent协作真实耗时:");
     println!("   监控Agent: {}ms", monitor_time);
     println!("   执行Agent: {}ms", executor_time);
     println!("   分析Agent: {}ms", analyst_time);
     println!("   ──────────────────");
-    println!("   总计: {}ms ({:.1}秒)", total_time, total_time as f64 / 1000.0);
+    println!(
+        "   总计: {}ms ({:.1}秒)",
+        total_time,
+        total_time as f64 / 1000.0
+    );
     println!("   平均每Agent: {}ms", total_time / 3);
     println!("============================================================");
 
     println!("\n💡 结论:");
-    println!("   真实LLM场景下，3个Agent协作需要 {:.1} 秒", total_time as f64 / 1000.0);
+    println!(
+        "   真实LLM场景下，3个Agent协作需要 {:.1} 秒",
+        total_time as f64 / 1000.0
+    );
     println!("   这才是更接近实际部署的性能表现");
 
     Ok(())
@@ -517,9 +564,15 @@ async fn test_parallel_vs_sequential_execution() -> anyhow::Result<()> {
 
     let ctx = RealPerfTestContext::new().await?;
 
-    println!("\n{}", "============================================================");
+    println!(
+        "\n{}",
+        "============================================================"
+    );
     println!("并行 vs 顺序 LLM调用 性能对比测试");
-    println!("{}\n", "============================================================");
+    println!(
+        "{}\n",
+        "============================================================"
+    );
 
     let system_prompt = "你是一个物联网设备监控助手。";
 
@@ -538,7 +591,12 @@ async fn test_parallel_vs_sequential_execution() -> anyhow::Result<()> {
     for (i, query) in queries.iter().enumerate() {
         let (response, elapsed) = ctx.llm_analyze(system_prompt, query).await;
         sequential_results.push((i + 1, elapsed));
-        println!("   查询{} - {}ms (响应长度: {} 字符)", i + 1, elapsed, response.len());
+        println!(
+            "   查询{} - {}ms (响应长度: {} 字符)",
+            i + 1,
+            elapsed,
+            response.len()
+        );
     }
 
     let sequential_time = start.elapsed().as_millis();
@@ -551,7 +609,8 @@ async fn test_parallel_vs_sequential_execution() -> anyhow::Result<()> {
     // 使用futures::future::join_all并行执行
     use futures::future::join_all;
 
-    let parallel_futures: Vec<_> = queries.iter()
+    let parallel_futures: Vec<_> = queries
+        .iter()
         .map(|query| {
             let llm_runtime = ctx.llm_runtime.clone();
             let prompt = system_prompt.to_string();
@@ -561,11 +620,11 @@ async fn test_parallel_vs_sequential_execution() -> anyhow::Result<()> {
                 let messages = vec![
                     neomind_core::message::Message::new(
                         neomind_core::message::MessageRole::System,
-                        neomind_core::message::Content::text(&prompt)
+                        neomind_core::message::Content::text(&prompt),
                     ),
                     neomind_core::message::Message::new(
                         neomind_core::message::MessageRole::User,
-                        neomind_core::message::Content::text(&q)
+                        neomind_core::message::Content::text(&q),
                     ),
                 ];
 
@@ -607,28 +666,41 @@ async fn test_parallel_vs_sequential_execution() -> anyhow::Result<()> {
     println!("   并行调用总时间: {}ms", parallel_time);
 
     // 对比
-    println!("\n{}", "============================================================");
+    println!(
+        "\n{}",
+        "============================================================"
+    );
     println!("📊 性能对比:");
     println!("   ┌──────────────┬──────────┬──────────────┐");
     println!("   │ 方式         │ 耗时     │ 说明         │");
     println!("   ├──────────────┼──────────┼──────────────┤");
-    println!("   │ 顺序调用     │ {}ms   │ 逐个等待LLM  │", sequential_time);
+    println!(
+        "   │ 顺序调用     │ {}ms   │ 逐个等待LLM  │",
+        sequential_time
+    );
     println!("   │ 并行调用     │ {}ms   │ 同时等待LLM  │", parallel_time);
 
     let speedup = sequential_time as f64 / parallel_time.max(1) as f64;
-    let improvement = ((sequential_time as f64 - parallel_time as f64) / sequential_time as f64 * 100.0);
+    let improvement =
+        ((sequential_time as f64 - parallel_time as f64) / sequential_time as f64 * 100.0);
 
-    println!("   │ 性能提升     │ {:.1}%    │ {:.1}x 更快    │",
-        improvement.max(0.0), speedup
+    println!(
+        "   │ 性能提升     │ {:.1}%    │ {:.1}x 更快    │",
+        improvement.max(0.0),
+        speedup
     );
     println!("   └──────────────┴──────────┴──────────────┘");
 
     println!("\n💡 结论:");
     println!("   并行执行可以让多个LLM请求同时等待响应");
-    println!("   3个LLM调用的总时间从 {}ms 降至 {}ms",
-        sequential_time, parallel_time);
-    println!("   这意味着在多Agent协作场景中，可以节省 {:.1}% 的时间",
-        improvement.max(0.0));
+    println!(
+        "   3个LLM调用的总时间从 {}ms 降至 {}ms",
+        sequential_time, parallel_time
+    );
+    println!(
+        "   这意味着在多Agent协作场景中，可以节省 {:.1}% 的时间",
+        improvement.max(0.0)
+    );
     println!("============================================================");
 
     Ok(())

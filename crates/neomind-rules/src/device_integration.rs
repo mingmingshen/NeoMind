@@ -7,15 +7,17 @@
 use crate::dsl::{RuleAction, RuleError};
 use crate::engine::{CompiledRule, RuleExecutionResult, RuleId, ValueProvider};
 use crate::extension_integration::ExtensionRegistry;
-use neomind_core::{datasource::DataSourceId, EventBus, MetricValue as CoreMetricValue, NeoMindEvent};
+use neomind_core::{
+    EventBus, MetricValue as CoreMetricValue, NeoMindEvent, datasource::DataSourceId,
+};
 use neomind_devices::{DeviceService, MetricValue as DeviceMetricValue};
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
-use serde::{Deserialize, Serialize};
 
 /// Convert Device MetricValue to Core MetricValue
 fn convert_metric_value(device_val: DeviceMetricValue) -> CoreMetricValue {
@@ -42,9 +44,7 @@ fn convert_metric_value(device_val: DeviceMetricValue) -> CoreMetricValue {
             // Convert binary to hex string
             CoreMetricValue::String(bytes.iter().map(|b| format!("{:02x}", b)).collect())
         }
-        DeviceMetricValue::Null => {
-            CoreMetricValue::Json(serde_json::Value::Null)
-        }
+        DeviceMetricValue::Null => CoreMetricValue::Json(serde_json::Value::Null),
     }
 }
 
@@ -135,7 +135,7 @@ impl RetryConfig {
 
         let delay_ms = (self.initial_delay_ms as f64
             * self.backoff_multiplier.powi(attempt as i32 - 1))
-            .min(self.max_delay_ms as f64) as u64;
+        .min(self.max_delay_ms as f64) as u64;
 
         std::time::Duration::from_millis(delay_ms)
     }
@@ -257,9 +257,10 @@ impl CommandResultHistory {
 
         // Keep only last 100 results per rule
         if let Some(entries) = results.get_mut(&rule_id.to_string())
-            && entries.len() > 100 {
-                entries.drain(0..entries.len() - 100);
-            }
+            && entries.len() > 100
+        {
+            entries.drain(0..entries.len() - 100);
+        }
     }
 
     /// Get all results for a rule.
@@ -638,22 +639,33 @@ impl DeviceActionExecutor {
 
                 // Check if this is an extension command
                 // Extension ID formats: "extension:id", "extension:id:metric", "extension:id:command:field"
-                let is_extension = target.starts_with("extension:") ||
-                    DataSourceId::parse(target).map_or(false, |ds_id| {
-                        matches!(ds_id.source_type, neomind_core::datasource::DataSourceType::Extension)
+                let is_extension = target.starts_with("extension:")
+                    || DataSourceId::parse(target).map_or(false, |ds_id| {
+                        matches!(
+                            ds_id.source_type,
+                            neomind_core::datasource::DataSourceType::Extension
+                        )
                     });
 
                 if is_extension {
                     // Execute via extension registry
                     let execution_result = if let Some(ref registry) = self.extension_registry {
                         // Parse extension_id from target (remove "extension:" prefix if present)
-                        let extension_id = target.strip_prefix("extension:")
+                        let extension_id = target
+                            .strip_prefix("extension:")
                             .unwrap_or(target)
                             .split(':')
                             .next()
                             .unwrap_or(target);
 
-                        match registry.execute_command(extension_id, command, &serde_json::to_value(params).unwrap_or_default()).await {
+                        match registry
+                            .execute_command(
+                                extension_id,
+                                command,
+                                &serde_json::to_value(params).unwrap_or_default(),
+                            )
+                            .await
+                        {
                             Ok(result) => {
                                 info!(
                                     "Executed command '{}' on extension '{}' (rule: {})",
@@ -713,7 +725,9 @@ impl DeviceActionExecutor {
                     }
 
                     return Ok(RuleExecutionResult {
-                        rule_id: rule_id.map(|s| RuleId::from_string(s).unwrap_or_default()).unwrap_or_default(),
+                        rule_id: rule_id
+                            .map(|s| RuleId::from_string(s).unwrap_or_default())
+                            .unwrap_or_default(),
                         rule_name: "extension_command".to_string(),
                         success: execution_result.success,
                         actions_executed,
@@ -723,7 +737,10 @@ impl DeviceActionExecutor {
                 } else {
                     // Device command - try to execute via device service with retry logic
                     let execution_result = if let Some(ref _device_service) = self.device_service {
-                        match self.execute_command_with_retry(target, command, params).await {
+                        match self
+                            .execute_command_with_retry(target, command, params)
+                            .await
+                        {
                             Ok(result) => {
                                 info!(
                                     "Executed command '{}' on device '{}' via DeviceService (rule: {})",
@@ -748,7 +765,8 @@ impl DeviceActionExecutor {
                                     command: command.clone(),
                                     params: params.clone(),
                                     success: true,
-                                    result: result.map(|v| CommandResultValue::from(convert_metric_value(v))),
+                                    result: result
+                                        .map(|v| CommandResultValue::from(convert_metric_value(v))),
                                     error: None,
                                     duration_ms: start.elapsed().as_millis() as u64,
                                     timestamp: chrono::Utc::now().timestamp(),
@@ -795,7 +813,9 @@ impl DeviceActionExecutor {
                             command: command.clone(),
                             params: params.clone(),
                             success: true,
-                            result: Some(CommandResultValue::String("Published to event bus (no actual execution)".to_string())),
+                            result: Some(CommandResultValue::String(
+                                "Published to event bus (no actual execution)".to_string(),
+                            )),
                             error: None,
                             duration_ms: 0,
                             timestamp: chrono::Utc::now().timestamp(),
@@ -808,7 +828,9 @@ impl DeviceActionExecutor {
                     }
 
                     return Ok(RuleExecutionResult {
-                        rule_id: rule_id.map(|s| RuleId::from_string(s).unwrap_or_default()).unwrap_or_default(),
+                        rule_id: rule_id
+                            .map(|s| RuleId::from_string(s).unwrap_or_default())
+                            .unwrap_or_default(),
                         rule_name: "device_command".to_string(),
                         success: execution_result.success,
                         actions_executed,
@@ -817,7 +839,10 @@ impl DeviceActionExecutor {
                     });
                 }
             }
-            RuleAction::Notify { message, channels: _ } => {
+            RuleAction::Notify {
+                message,
+                channels: _,
+            } => {
                 actions_executed.push(format!("notify:{}", message));
 
                 // Publish alert event
@@ -849,7 +874,11 @@ impl DeviceActionExecutor {
                 }
             }
             // Handle new action types
-            RuleAction::Set { device_id: target_device, property, value } => {
+            RuleAction::Set {
+                device_id: target_device,
+                property,
+                value,
+            } => {
                 let target = device_id.unwrap_or(target_device);
                 actions_executed.push(format!("set:{}.{}={}", target, property, value));
                 info!("Set property '{}.{}' to {:?}", target, property, value);
@@ -859,12 +888,21 @@ impl DeviceActionExecutor {
                 tokio::time::sleep(*duration).await;
                 info!("Delayed for {:?}", duration);
             }
-            RuleAction::CreateAlert { title, message, severity } => {
+            RuleAction::CreateAlert {
+                title,
+                message,
+                severity,
+            } => {
                 let sev_str = format!("{:?}", severity);
                 actions_executed.push(format!("alert:{}:{}", sev_str, title));
                 info!("Created alert [{}]: {} - {}", sev_str, title, message);
             }
-            RuleAction::HttpRequest { method, url, headers, body } => {
+            RuleAction::HttpRequest {
+                method,
+                url,
+                headers,
+                body,
+            } => {
                 use crate::dsl::HttpMethod;
 
                 let method_str = match method {
@@ -921,8 +959,12 @@ impl DeviceActionExecutor {
                             Err(_) => "".to_string(),
                         };
 
-                        actions_executed.push(format!("http:{}:{}->{}", method_str, url, status_code));
-                        info!("HTTP request completed: {} {} -> {}", method_str, url, status_code);
+                        actions_executed
+                            .push(format!("http:{}:{}->{}", method_str, url, status_code));
+                        info!(
+                            "HTTP request completed: {} {} -> {}",
+                            method_str, url, status_code
+                        );
                     }
                     Err(e) => {
                         actions_executed.push(format!("http:error:{}:{}", url, e));
@@ -957,7 +999,10 @@ impl DeviceActionExecutor {
         let rule_id_str = rule.id.to_string();
 
         for action in &rule.actions {
-            match self.execute_action(action, device_id, Some(&rule_id_str)).await {
+            match self
+                .execute_action(action, device_id, Some(&rule_id_str))
+                .await
+            {
                 Ok(result) => {
                     all_executed.extend(result.actions_executed);
                 }

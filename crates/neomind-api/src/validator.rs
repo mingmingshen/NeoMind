@@ -461,16 +461,17 @@ pub fn validation_middleware(
             // Check Content-Length header
             if let Some(content_length) = req.headers().get("content-length")
                 && let Ok(length_str) = content_length.to_str()
-                    && let Ok(length) = length_str.parse::<usize>()
-                        && length > max_size {
-                            let error = ErrorResponse {
-                                code: ErrorCode::BadRequest.as_str().to_string(),
-                                message: format!("Request body too large (max {} bytes)", max_size),
-                                status: StatusCode::PAYLOAD_TOO_LARGE,
-                                request_id: None,
-                            };
-                            return error.into_response();
-                        }
+                && let Ok(length) = length_str.parse::<usize>()
+                && length > max_size
+            {
+                let error = ErrorResponse {
+                    code: ErrorCode::BadRequest.as_str().to_string(),
+                    message: format!("Request body too large (max {} bytes)", max_size),
+                    status: StatusCode::PAYLOAD_TOO_LARGE,
+                    request_id: None,
+                };
+                return error.into_response();
+            }
 
             next.run(req).await
         })

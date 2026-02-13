@@ -1,17 +1,18 @@
 //! Tests for Automation conversion utilities
 
 use neomind_automation::{
-    Automation, TransformAutomation, TransformScope,
-    RuleAutomation, Trigger, AutomationType, AutomationMetadata,
-    Condition, ComparisonOperator, Action, AlertSeverity, LogLevel,
+    Action, AlertSeverity, Automation, AutomationMetadata, AutomationType, ComparisonOperator,
+    Condition, LogLevel, RuleAutomation, TransformAutomation, TransformScope, Trigger,
 };
-use serde_json::{to_value, from_value};
+use serde_json::{from_value, to_value};
 use std::collections::HashMap;
 
 #[test]
 fn test_automation_get_type() {
     let transform = Automation::Transform(TransformAutomation::new(
-        "t1", "Transform 1", TransformScope::Global,
+        "t1",
+        "Transform 1",
+        TransformScope::Global,
     ));
 
     let rule = Automation::Rule(RuleAutomation {
@@ -35,7 +36,9 @@ fn test_automation_complexity_score() {
     });
 
     let simple_transform = Automation::Transform(TransformAutomation::new(
-        "t1", "Simple Transform", TransformScope::Global,
+        "t1",
+        "Simple Transform",
+        TransformScope::Global,
     ));
 
     assert_eq!(simple_rule.complexity_score(), 1);
@@ -118,13 +121,11 @@ fn test_automation_round_trip_serialization() {
             .with_description("Test description"),
         trigger: Trigger::event("data.received"),
         condition: Condition::new("device1", "temp", ComparisonOperator::GreaterThan, 25.0),
-        actions: vec![
-            Action::CreateAlert {
-                severity: AlertSeverity::Warning,
-                title: "High temp".to_string(),
-                message: "Temperature is too high".to_string(),
-            },
-        ],
+        actions: vec![Action::CreateAlert {
+            severity: AlertSeverity::Warning,
+            title: "High temp".to_string(),
+            message: "Temperature is too high".to_string(),
+        }],
     });
 
     let serialized = to_value(&original).unwrap();
@@ -137,8 +138,7 @@ fn test_automation_round_trip_serialization() {
 
 #[test]
 fn test_automation_metadata_serialization() {
-    let metadata = AutomationMetadata::new("id123", "Test")
-        .with_description("A test automation");
+    let metadata = AutomationMetadata::new("id123", "Test").with_description("A test automation");
 
     let serialized = to_value(&metadata).unwrap();
     let deserialized: AutomationMetadata = from_value(serialized).unwrap();
@@ -203,7 +203,12 @@ fn test_action_variants_serialization() {
 
 #[test]
 fn test_condition_serialization() {
-    let condition = Condition::new("device1", "temperature", ComparisonOperator::GreaterThan, 30.0);
+    let condition = Condition::new(
+        "device1",
+        "temperature",
+        ComparisonOperator::GreaterThan,
+        30.0,
+    );
 
     let serialized = to_value(&condition).unwrap();
     let deserialized: Condition = from_value(serialized.clone()).unwrap();

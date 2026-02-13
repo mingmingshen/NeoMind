@@ -164,7 +164,8 @@ pub async fn create_and_connect_broker(
             // Set shared device registry so the adapter can access devices registered via DeviceService
             // This is critical for external brokers to properly route messages to registered devices
             if let Some(mqtt) = adapter.as_any().downcast_ref::<MqttAdapter>() {
-                mqtt.set_shared_device_registry(context.device_service.get_registry().await).await;
+                mqtt.set_shared_device_registry(context.device_service.get_registry().await)
+                    .await;
             }
 
             // Register adapter with device service
@@ -207,11 +208,9 @@ pub async fn create_and_connect_broker(
     }
 
     // Update broker connection status
-    if let Err(e) = update_broker_connection_status_no_store(
-        &broker.id,
-        connected,
-        connection_error,
-    ).await {
+    if let Err(e) =
+        update_broker_connection_status_no_store(&broker.id, connected, connection_error).await
+    {
         tracing::warn!("Failed to update broker status: {}", e);
     }
 
@@ -229,14 +228,16 @@ async fn update_broker_connection_status_no_store(
     let store = crate::config::open_settings_store()
         .map_err(|e| format!("Failed to open settings store: {}", e))?;
 
-    let mut broker = store.load_external_broker(id)
+    let mut broker = store
+        .load_external_broker(id)
         .map_err(|e| format!("Failed to load broker: {}", e))?
         .ok_or_else(|| format!("Broker not found: {}", id))?;
 
     broker.connected = connected;
     broker.last_error = error;
 
-    store.save_external_broker(&broker)
+    store
+        .save_external_broker(&broker)
         .map_err(|e| format!("Failed to save broker: {}", e))?;
     Ok(())
 }
@@ -360,7 +361,10 @@ pub async fn create_broker_handler(
     let mut connected = false;
     let mut _connection_error: Option<String> = None;
     if broker.enabled {
-        let event_bus = state.core.event_bus.as_ref()
+        let event_bus = state
+            .core
+            .event_bus
+            .as_ref()
             .ok_or_else(|| ErrorResponse::internal("EventBus not initialized".to_string()))?;
 
         let context = ExternalBrokerContext {
@@ -371,7 +375,11 @@ pub async fn create_broker_handler(
         match create_and_connect_broker(&broker, &context).await {
             Ok(conn_result) => {
                 connected = conn_result;
-                _connection_error = if connected { None } else { Some("Connection failed".to_string()) };
+                _connection_error = if connected {
+                    None
+                } else {
+                    Some("Connection failed".to_string())
+                };
             }
             Err(e) => {
                 _connection_error = Some(e.to_string());
@@ -439,9 +447,10 @@ pub async fn update_broker_handler(
     broker.username = req.username;
     // Only update password if provided (non-empty)
     if let Some(pwd) = req.password
-        && !pwd.is_empty() {
-            broker.password = Some(pwd);
-        }
+        && !pwd.is_empty()
+    {
+        broker.password = Some(pwd);
+    }
     // Update certificates
     broker.ca_cert = req.ca_cert;
     broker.client_cert = req.client_cert;
@@ -468,7 +477,10 @@ pub async fn update_broker_handler(
         // First, stop the existing adapter if it's running
         let _ = state.devices.service.stop_adapter(&adapter_id).await;
 
-        let event_bus = state.core.event_bus.as_ref()
+        let event_bus = state
+            .core
+            .event_bus
+            .as_ref()
             .ok_or_else(|| ErrorResponse::internal("EventBus not initialized".to_string()))?;
 
         let context = ExternalBrokerContext {
@@ -479,7 +491,11 @@ pub async fn update_broker_handler(
         match create_and_connect_broker(&broker, &context).await {
             Ok(conn_result) => {
                 connected = conn_result;
-                _connection_error = if connected { None } else { Some("Connection failed".to_string()) };
+                _connection_error = if connected {
+                    None
+                } else {
+                    Some("Connection failed".to_string())
+                };
             }
             Err(e) => {
                 _connection_error = Some(e.to_string());

@@ -71,14 +71,12 @@ pub use executor::{CommandExecutor, CommandResult, UnifiedStorage};
 pub use loader::{NativeExtensionLoader, WasmExtensionLoader};
 pub use registry::{ExtensionInfo, ExtensionRegistry, ExtensionRegistryTrait};
 pub use system::{
-    CExtensionMetadata, CommandDefinition, Extension, ExtensionCommand,
-    ExtensionMetricValue, MetricDataType, MetricDescriptor, MetricDefinition,
-    ParamMetricValue, ParameterDefinition, ParameterGroup, ToolDescriptor, ValidationRule,
-    ExtensionMetadata, ExtensionStats, ExtensionState,
+    CExtensionMetadata, CommandDefinition, Extension, ExtensionCommand, ExtensionMetadata,
+    ExtensionMetricValue, ExtensionState, ExtensionStats, MetricDataType, MetricDefinition,
+    MetricDescriptor, ParamMetricValue, ParameterDefinition, ParameterGroup, ToolDescriptor,
+    ValidationRule,
 };
-pub use types::{
-    DynExtension, ExtensionError, Result,
-};
+pub use types::{DynExtension, ExtensionError, Result};
 
 /// Check if a file is a native extension.
 pub fn is_native_extension(path: &std::path::Path) -> bool {

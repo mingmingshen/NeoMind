@@ -119,7 +119,12 @@ async fn main() -> Result<()> {
     std::panic::set_hook(Box::new(|panic_info| {
         eprintln!("\n=== PANIC ===");
         if let Some(location) = panic_info.location() {
-            eprintln!("Location: {}:{}:{}", location.file(), location.line(), location.column());
+            eprintln!(
+                "Location: {}:{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            );
         } else {
             eprintln!("Location: <unknown>");
         }
@@ -480,7 +485,8 @@ async fn run_plugin_cmd(cmd: PluginCommand) -> Result<()> {
     match cmd {
         PluginCommand::Validate { path, verbose } => {
             // Detect extension type by file extension
-            let is_native = path.extension()
+            let is_native = path
+                .extension()
                 .and_then(|e| e.to_str())
                 .is_some_and(|e| matches!(e, "so" | "dylib" | "dll"));
 
@@ -553,21 +559,21 @@ async fn run_plugin_cmd(cmd: PluginCommand) -> Result<()> {
 
                         std::process::exit(0);
                     }
-                Err(e) => {
-                    println!("Extension Validation: FAILED");
-                    println!();
-                    println!("Error: {}", e);
-                    println!();
-                    println!("Make sure:");
-                    println!("  1. The extension file exists");
-                    println!("  2. The file has .wasm extension");
-                    println!("  3. A sidecar .json file exists with metadata (optional)");
+                    Err(e) => {
+                        println!("Extension Validation: FAILED");
+                        println!();
+                        println!("Error: {}", e);
+                        println!();
+                        println!("Make sure:");
+                        println!("  1. The extension file exists");
+                        println!("  2. The file has .wasm extension");
+                        println!("  3. A sidecar .json file exists with metadata (optional)");
 
-                    std::process::exit(1);
-                }
-            }  // Close match result
-            }  // Close else block
-        }  // Close Validate match arm
+                        std::process::exit(1);
+                    }
+                } // Close match result
+            } // Close else block
+        } // Close Validate match arm
 
         PluginCommand::Create {
             name,
@@ -661,13 +667,13 @@ async fn list_plugins(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
                     let json_path = path.with_extension("json");
                     if let Ok(content) = fs::read_to_string(&json_path)
                         && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
-                            && json
-                                .get("type")
-                                .and_then(|v| v.as_str())
-                                .is_none_or(|t| t != filter_type)
-                            {
-                                continue;
-                            }
+                        && json
+                            .get("type")
+                            .and_then(|v| v.as_str())
+                            .is_none_or(|t| t != filter_type)
+                    {
+                        continue;
+                    }
                 }
 
                 println!("  WASM: {}", plugin_name);

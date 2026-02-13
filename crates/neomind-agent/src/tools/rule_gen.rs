@@ -216,25 +216,45 @@ impl ValidateRuleDslTool {
 
                 // Extract device info from condition for validation
                 let (device_id, metric) = match &rule.condition {
-                    RuleCondition::Device { device_id, metric, .. } |
-                    RuleCondition::DeviceRange { device_id, metric, .. } => {
-                        (Some(device_id.clone()), Some(metric.clone()))
+                    RuleCondition::Device {
+                        device_id, metric, ..
                     }
-                    RuleCondition::Extension { extension_id, metric, .. } |
-                    RuleCondition::ExtensionRange { extension_id, metric, .. } => {
-                        (Some(extension_id.clone()), Some(metric.clone()))
+                    | RuleCondition::DeviceRange {
+                        device_id, metric, ..
+                    } => (Some(device_id.clone()), Some(metric.clone())),
+                    RuleCondition::Extension {
+                        extension_id,
+                        metric,
+                        ..
                     }
+                    | RuleCondition::ExtensionRange {
+                        extension_id,
+                        metric,
+                        ..
+                    } => (Some(extension_id.clone()), Some(metric.clone())),
                     RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
                         // For complex conditions, check all sub-conditions
                         let mut devices = Vec::new();
                         for c in conditions {
                             match c {
-                                RuleCondition::Device { device_id, metric, .. } |
-                                RuleCondition::DeviceRange { device_id, metric, .. } => {
+                                RuleCondition::Device {
+                                    device_id, metric, ..
+                                }
+                                | RuleCondition::DeviceRange {
+                                    device_id, metric, ..
+                                } => {
                                     devices.push((device_id.clone(), metric.clone()));
                                 }
-                                RuleCondition::Extension { extension_id, metric, .. } |
-                                RuleCondition::ExtensionRange { extension_id, metric, .. } => {
+                                RuleCondition::Extension {
+                                    extension_id,
+                                    metric,
+                                    ..
+                                }
+                                | RuleCondition::ExtensionRange {
+                                    extension_id,
+                                    metric,
+                                    ..
+                                } => {
                                     devices.push((extension_id.clone(), metric.clone()));
                                 }
                                 _ => {}
@@ -251,9 +271,7 @@ impl ValidateRuleDslTool {
 
                 // Check if device exists
                 if let Some(ref device_id) = device_id {
-                    let device_exists = device_types
-                        .iter()
-                        .any(|d| d.device_id == *device_id);
+                    let device_exists = device_types.iter().any(|d| d.device_id == *device_id);
                     if !device_exists {
                         warnings.push(format!(
                             "Device '{}' is not registered in the system",
@@ -262,24 +280,26 @@ impl ValidateRuleDslTool {
                     }
 
                     // Check if metric exists for device
-                    if let (Some(metric), Some(device)) = (&metric, device_types
-                        .iter()
-                        .find(|d| d.device_id == *device_id))
-                        && !device.metrics.contains(metric) {
-                            warnings.push(format!(
-                                "Metric '{}' is not available for device '{}'. Available metrics: {}",
-                                metric,
-                                device_id,
-                                device.metrics.join(", ")
-                            ));
-                        }
+                    if let (Some(metric), Some(device)) = (
+                        &metric,
+                        device_types.iter().find(|d| d.device_id == *device_id),
+                    ) && !device.metrics.contains(metric)
+                    {
+                        warnings.push(format!(
+                            "Metric '{}' is not available for device '{}'. Available metrics: {}",
+                            metric,
+                            device_id,
+                            device.metrics.join(", ")
+                        ));
+                    }
                 }
 
                 // Validate actions
                 for (i, action) in rule.actions.iter().enumerate() {
                     if let neomind_rules::RuleAction::Execute {
-                            device_id, command, ..
-                        } = action {
+                        device_id, command, ..
+                    } = action
+                    {
                         if let Some(device) =
                             device_types.iter().find(|d| d.device_id == *device_id)
                         {
@@ -328,46 +348,60 @@ impl ValidateRuleDslTool {
             parsed_rule_summary: parsed_rule.map(|r| {
                 // Extract info from condition for summary
                 let (device_id, metric, operator, threshold) = match &r.condition {
-                    RuleCondition::Device { device_id, metric, operator, threshold } => {
-                        (
-                            device_id.clone(),
-                            metric.clone(),
-                            operator.as_str().to_string(),
-                            *threshold
-                        )
-                    }
-                    RuleCondition::Extension { extension_id, metric, operator, threshold } => {
-                        (
-                            extension_id.clone(),
-                            metric.clone(),
-                            operator.as_str().to_string(),
-                            *threshold
-                        )
-                    }
-                    RuleCondition::DeviceRange { device_id, metric, min, max } => {
+                    RuleCondition::Device {
+                        device_id,
+                        metric,
+                        operator,
+                        threshold,
+                    } => (
+                        device_id.clone(),
+                        metric.clone(),
+                        operator.as_str().to_string(),
+                        *threshold,
+                    ),
+                    RuleCondition::Extension {
+                        extension_id,
+                        metric,
+                        operator,
+                        threshold,
+                    } => (
+                        extension_id.clone(),
+                        metric.clone(),
+                        operator.as_str().to_string(),
+                        *threshold,
+                    ),
+                    RuleCondition::DeviceRange {
+                        device_id,
+                        metric,
+                        min,
+                        max,
+                    } => {
                         (
                             device_id.clone(),
                             metric.clone(),
                             format!("{}-{}", min, max),
-                            *max // Use max as threshold for display
+                            *max, // Use max as threshold for display
                         )
                     }
-                    RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+                    RuleCondition::ExtensionRange {
+                        extension_id,
+                        metric,
+                        min,
+                        max,
+                    } => {
                         (
                             extension_id.clone(),
                             metric.clone(),
                             format!("{}-{}", min, max),
-                            *max // Use max as threshold for display
+                            *max, // Use max as threshold for display
                         )
                     }
-                    RuleCondition::And(_) | RuleCondition::Or(_) | RuleCondition::Not(_) => {
-                        (
-                            "(complex)".to_string(),
-                            "(complex)".to_string(),
-                            "complex".to_string(),
-                            0.0
-                        )
-                    }
+                    RuleCondition::And(_) | RuleCondition::Or(_) | RuleCondition::Not(_) => (
+                        "(complex)".to_string(),
+                        "(complex)".to_string(),
+                        "complex".to_string(),
+                        0.0,
+                    ),
                 };
 
                 RuleSummary {
@@ -418,7 +452,10 @@ impl Tool for ValidateRuleDslTool {
 
         match serde_json::to_value(result) {
             Ok(value) => Ok(ToolOutput::success(value)),
-            Err(e) => Err(ToolError::Execution(format!("Failed to serialize validation result: {}", e))),
+            Err(e) => Err(ToolError::Execution(format!(
+                "Failed to serialize validation result: {}",
+                e
+            ))),
         }
     }
 }
@@ -472,35 +509,51 @@ impl CreateRuleTool {
                 // Check for duplicate condition (only for Simple conditions)
                 // Extract key info from both conditions for comparison
                 let existing_key = match &existing.condition {
-                    RuleCondition::Device { device_id, metric, operator, threshold } => {
-                        Some((device_id.clone(), metric.clone(), format!("{:?}", operator), *threshold))
-                    }
+                    RuleCondition::Device {
+                        device_id,
+                        metric,
+                        operator,
+                        threshold,
+                    } => Some((
+                        device_id.clone(),
+                        metric.clone(),
+                        format!("{:?}", operator),
+                        *threshold,
+                    )),
                     _ => None,
                 };
 
                 let parsed_key = match &parsed.condition {
-                    RuleCondition::Device { device_id, metric, operator, threshold } => {
-                        Some((device_id.clone(), metric.clone(), format!("{:?}", operator), *threshold))
-                    }
+                    RuleCondition::Device {
+                        device_id,
+                        metric,
+                        operator,
+                        threshold,
+                    } => Some((
+                        device_id.clone(),
+                        metric.clone(),
+                        format!("{:?}", operator),
+                        *threshold,
+                    )),
                     _ => None,
                 };
 
                 if let (Some(_existing_key), Some(_parsed_key)) = (existing_key, parsed_key)
                     && _existing_key.0 == _parsed_key.0
-                        && _existing_key.1 == _parsed_key.1
-                        && _existing_key.2 == _parsed_key.2
-                        && (_existing_key.3 - _parsed_key.3).abs() < 0.0001
-                    {
-                        return Ok(CreateResult {
-                            success: false,
-                            rule_id: None,
-                            message: format!(
-                                "Similar rule already exists: '{}' (ID: {}). Consider modifying the condition.",
-                                existing.name, existing.id
-                            ),
-                            duplicate_name: None,
-                        });
-                    }
+                    && _existing_key.1 == _parsed_key.1
+                    && _existing_key.2 == _parsed_key.2
+                    && (_existing_key.3 - _parsed_key.3).abs() < 0.0001
+                {
+                    return Ok(CreateResult {
+                        success: false,
+                        rule_id: None,
+                        message: format!(
+                            "Similar rule already exists: '{}' (ID: {}). Consider modifying the condition.",
+                            existing.name, existing.id
+                        ),
+                        duplicate_name: None,
+                    });
+                }
             }
         }
 
@@ -552,7 +605,10 @@ impl Tool for CreateRuleTool {
         match self.create(dsl, check_duplicates).await {
             Ok(result) => match serde_json::to_value(result) {
                 Ok(value) => Ok(ToolOutput::success(value)),
-                Err(e) => Err(ToolError::Execution(format!("Failed to serialize created rule: {}", e))),
+                Err(e) => Err(ToolError::Execution(format!(
+                    "Failed to serialize created rule: {}",
+                    e
+                ))),
             },
             Err(e) => match &e {
                 RuleError::Parse(msg) => {
@@ -659,9 +715,15 @@ impl Tool for DeleteRuleTool {
         match self.delete(rule_id).await {
             Ok(result) => match serde_json::to_value(result) {
                 Ok(value) => Ok(ToolOutput::success(value)),
-                Err(e) => Err(ToolError::Execution(format!("Failed to serialize delete result: {}", e))),
+                Err(e) => Err(ToolError::Execution(format!(
+                    "Failed to serialize delete result: {}",
+                    e
+                ))),
             },
-            Err(e) => Err(ToolError::Execution(format!("Failed to delete rule: {}", e))),
+            Err(e) => Err(ToolError::Execution(format!(
+                "Failed to delete rule: {}",
+                e
+            ))),
         }
     }
 }

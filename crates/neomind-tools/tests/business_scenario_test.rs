@@ -6,10 +6,10 @@
 //! 3. Device control operations
 //! 4. Multi-step workflows combining multiple tools
 
-use std::sync::Arc;
-use neomind_tools::core_tools::*;
 use neomind_tools::Tool;
+use neomind_tools::core_tools::*;
 use serde_json::json;
+use std::sync::Arc;
 
 /// Scenario 1: User asks "What devices do I have?"
 ///
@@ -120,8 +120,10 @@ async fn scenario_3_query_temperature() {
                 println!("当前值: {:.1}", current);
             }
             if let Some(stats) = metric["stats"].as_object() {
-                println!("统计: 平均={:.1}°C, 最低={:.1}°C, 最高={:.1}°C",
-                    stats["avg"], stats["min"], stats["max"]);
+                println!(
+                    "统计: 平均={:.1}°C, 最低={:.1}°C, 最高={:.1}°C",
+                    stats["avg"], stats["min"], stats["max"]
+                );
             }
             if let Some(hint) = metric["analysis_hint"].as_str() {
                 println!("分析: {}", hint);
@@ -185,8 +187,15 @@ async fn scenario_5_batch_control_lights() {
     if let Some(results) = data["results"].as_array() {
         println!("\n执行结果:");
         for result in results {
-            let status = if result["success"].as_bool().unwrap() { "✓" } else { "✗" };
-            println!("  {} [{}] {}", status, result["device_id"], result["device_name"]);
+            let status = if result["success"].as_bool().unwrap() {
+                "✓"
+            } else {
+                "✗"
+            };
+            println!(
+                "  {} [{}] {}",
+                status, result["device_id"], result["device_name"]
+            );
         }
     }
 
@@ -253,10 +262,9 @@ async fn scenario_6_multi_step_temperature_workflow() {
     if let Some(metrics) = query_result.data["metrics"].as_array() {
         for metric in metrics {
             let current = metric["current"].as_f64().unwrap_or(0.0);
-            println!("  {}: 当前值 {:.1}{}",
-                metric["display_name"],
-                current,
-                metric["unit"]
+            println!(
+                "  {}: 当前值 {:.1}{}",
+                metric["display_name"], current, metric["unit"]
             );
         }
     }
@@ -340,7 +348,8 @@ async fn scenario_7_all_rooms_sensor_data() {
                     print!("  - {}: ", device_name);
 
                     if let Some(metrics) = data["metrics"].as_array() {
-                        let values: Vec<String> = metrics.iter()
+                        let values: Vec<String> = metrics
+                            .iter()
                             .filter_map(|m| {
                                 let name = m["display_name"].as_str().unwrap();
                                 let value = m["current"].as_f64().unwrap_or(0.0);
@@ -378,7 +387,8 @@ async fn scenario_8_control_by_name_filter() {
         .expect("discover should succeed");
 
     println!("发现的灯具:");
-    let device_ids: Vec<String> = discover_result.data["groups"].as_array()
+    let device_ids: Vec<String> = discover_result.data["groups"]
+        .as_array()
         .unwrap()
         .iter()
         .filter_map(|g| g["devices"].as_array())
@@ -403,7 +413,10 @@ async fn scenario_8_control_by_name_filter() {
     println!("\n控制结果:");
     println!("  总计: {} 个设备", control_result.data["total_targets"]);
     println!("  成功: {} 个", control_result.data["successful"]);
-    println!("  确认: {}", control_result.data["confirmation"].as_str().unwrap());
+    println!(
+        "  确认: {}",
+        control_result.data["confirmation"].as_str().unwrap()
+    );
 }
 
 /// Scenario 9: Analysis workflow - Trend detection

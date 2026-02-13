@@ -37,7 +37,7 @@ fn test_metric_data_type_title_case() {
     let json_array = r#""Array""#;
     let result: Result<MetricDataType, _> = serde_json::from_str(json_array);
     assert!(result.is_ok(), "Failed to parse TitleCase 'Array'");
-    
+
     // Test Binary
     let json_binary = r#""Binary""#;
     let result: Result<MetricDataType, _> = serde_json::from_str(json_binary);

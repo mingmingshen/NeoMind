@@ -6,8 +6,8 @@
 use std::sync::Arc;
 
 use crate::error::{AutomationError, Result};
-use neomind_core::{LlmRuntime, Message, GenerationParams};
 use neomind_core::llm::backend::LlmInput;
+use neomind_core::{GenerationParams, LlmRuntime, Message};
 use serde_json::json;
 
 /// Language for prompts
@@ -85,8 +85,12 @@ impl Nl2Automation {
         let input = LlmInput {
             messages: vec![
                 Message::system(match self.language {
-                    Language::Chinese => "你是一个物联网自动化专家。从自然语言描述中提取结构化实体。只返回有效的JSON格式。",
-                    Language::English => "You are an IoT automation expert. Extract structured entities from natural language descriptions. Respond ONLY with valid JSON.",
+                    Language::Chinese => {
+                        "你是一个物联网自动化专家。从自然语言描述中提取结构化实体。只返回有效的JSON格式。"
+                    }
+                    Language::English => {
+                        "You are an IoT automation expert. Extract structured entities from natural language descriptions. Respond ONLY with valid JSON."
+                    }
                 }),
                 Message::user(user_prompt),
             ],
@@ -113,16 +117,8 @@ impl Nl2Automation {
     /// Build the extraction prompt
     fn build_prompt(&self, description: &str) -> String {
         let (system_role, output_format, examples) = match self.language {
-            Language::Chinese => (
-                ZH_SYSTEM_ROLE,
-                ZH_OUTPUT_FORMAT,
-                ZH_EXAMPLES,
-            ),
-            Language::English => (
-                EN_SYSTEM_ROLE,
-                EN_OUTPUT_FORMAT,
-                EN_EXAMPLES,
-            ),
+            Language::Chinese => (ZH_SYSTEM_ROLE, ZH_OUTPUT_FORMAT, ZH_EXAMPLES),
+            Language::English => (EN_SYSTEM_ROLE, EN_OUTPUT_FORMAT, EN_EXAMPLES),
         };
 
         let mut prompt = String::new();
@@ -159,7 +155,8 @@ impl Nl2Automation {
 
     /// Parse entities from LLM response
     fn parse_entities(&self, value: serde_json::Value) -> ExtractedEntities {
-        let triggers = value.get("triggers")
+        let triggers = value
+            .get("triggers")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -168,7 +165,8 @@ impl Nl2Automation {
             })
             .unwrap_or_default();
 
-        let conditions = value.get("conditions")
+        let conditions = value
+            .get("conditions")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -177,7 +175,8 @@ impl Nl2Automation {
             })
             .unwrap_or_default();
 
-        let actions = value.get("actions")
+        let actions = value
+            .get("actions")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -186,7 +185,8 @@ impl Nl2Automation {
             })
             .unwrap_or_default();
 
-        let devices = value.get("devices")
+        let devices = value
+            .get("devices")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -196,7 +196,8 @@ impl Nl2Automation {
             })
             .unwrap_or_default();
 
-        let time_constraints = value.get("time_constraints")
+        let time_constraints = value
+            .get("time_constraints")
             .and_then(|v| self.parse_time_constraints(v.clone()));
 
         ExtractedEntities {
@@ -211,7 +212,8 @@ impl Nl2Automation {
 
     fn parse_trigger(&self, value: serde_json::Value) -> Option<TriggerEntity> {
         let trigger_type = value.get("type")?.as_str()?;
-        let description = value.get("description")
+        let description = value
+            .get("description")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
@@ -223,9 +225,18 @@ impl Nl2Automation {
                 "manual" => TriggerTypeEntity::Manual,
                 _ => TriggerTypeEntity::Manual,
             },
-            device_id: value.get("device_id").and_then(|v| v.as_str()).map(String::from),
-            metric: value.get("metric").and_then(|v| v.as_str()).map(String::from),
-            condition: value.get("condition").and_then(|v| v.as_str()).map(String::from),
+            device_id: value
+                .get("device_id")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            metric: value
+                .get("metric")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            condition: value
+                .get("condition")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             cron: value.get("cron").and_then(|v| v.as_str()).map(String::from),
             description,
         })
@@ -237,7 +248,8 @@ impl Nl2Automation {
             metric: value.get("metric")?.as_str()?.to_string(),
             operator: value.get("operator")?.as_str()?.to_string(),
             threshold: value.get("threshold").and_then(|v| v.as_f64()),
-            description: value.get("description")
+            description: value
+                .get("description")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
@@ -246,7 +258,8 @@ impl Nl2Automation {
 
     fn parse_action(&self, value: serde_json::Value) -> Option<ActionEntity> {
         let action_type = value.get("type")?.as_str()?;
-        let description = value.get("description")
+        let description = value
+            .get("description")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
@@ -259,7 +272,10 @@ impl Nl2Automation {
                 "create_alert" => ActionTypeEntity::CreateAlert,
                 _ => ActionTypeEntity::Notify,
             },
-            target: value.get("target").and_then(|v| v.as_str()).map(String::from),
+            target: value
+                .get("target")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             parameters: value.get("parameters").cloned().unwrap_or(json!({})),
             description,
         })
@@ -267,9 +283,16 @@ impl Nl2Automation {
 
     fn parse_time_constraints(&self, value: serde_json::Value) -> Option<TimeConstraints> {
         Some(TimeConstraints {
-            start_time: value.get("start_time").and_then(|v| v.as_str()).map(String::from),
-            end_time: value.get("end_time").and_then(|v| v.as_str()).map(String::from),
-            days: value.get("days")
+            start_time: value
+                .get("start_time")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            end_time: value
+                .get("end_time")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            days: value
+                .get("days")
                 .and_then(|v| v.as_array())
                 .map(|arr| {
                     arr.iter()
@@ -356,10 +379,12 @@ pub struct TimeConstraints {
 
 /// Extract JSON from an LLM response
 fn extract_json_from_response(response: &str) -> Result<String> {
-    let start = response.find('{')
+    let start = response
+        .find('{')
         .ok_or_else(|| AutomationError::IntentAnalysisFailed("No JSON object found".into()))?;
 
-    let end = response.rfind('}')
+    let end = response
+        .rfind('}')
         .ok_or_else(|| AutomationError::IntentAnalysisFailed("Incomplete JSON object".into()))?;
 
     Ok(response[start..=end].to_string())
@@ -562,11 +587,8 @@ mod tests {
     #[test]
     fn test_build_prompt_zh() {
         // Test prompt building with minimal setup
-        let (system_role, output_format, examples) = (
-            ZH_SYSTEM_ROLE,
-            ZH_OUTPUT_FORMAT,
-            ZH_EXAMPLES,
-        );
+        let (system_role, output_format, examples) =
+            (ZH_SYSTEM_ROLE, ZH_OUTPUT_FORMAT, ZH_EXAMPLES);
 
         let mut prompt = String::new();
         prompt.push_str(system_role);
@@ -582,13 +604,11 @@ mod tests {
     #[test]
     fn test_build_context() {
         let ctx = ExtractionContext {
-            available_devices: vec![
-                DeviceInfo {
-                    name: "温度传感器1".to_string(),
-                    device_type: "sensor".to_string(),
-                    id: "temp1".to_string(),
-                }
-            ],
+            available_devices: vec![DeviceInfo {
+                name: "温度传感器1".to_string(),
+                device_type: "sensor".to_string(),
+                id: "temp1".to_string(),
+            }],
             ..Default::default()
         };
 

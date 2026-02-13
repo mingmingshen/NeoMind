@@ -360,10 +360,7 @@ impl BatchWriteRequest {
 
     /// Add a data point for a metric.
     pub fn add_point(&mut self, metric: String, point: DataPoint) {
-        self.metrics
-            .entry(metric)
-            .or_default()
-            .push(point);
+        self.metrics.entry(metric).or_default().push(point);
     }
 
     /// Get total point count.
@@ -418,9 +415,10 @@ impl TimeSeriesStore {
         {
             let singleton = TIMESERIES_STORE_SINGLETON.lock().unwrap();
             if let Some(store) = singleton.as_ref()
-                && store.path == path_str {
-                    return Ok(store.clone());
-                }
+                && store.path == path_str
+            {
+                return Ok(store.clone());
+            }
         }
 
         // Create new store and save to singleton
@@ -618,7 +616,8 @@ impl TimeSeriesStore {
             Err(redb::TableError::TableDoesNotExist(_)) => {
                 tracing::debug!(
                     "query_range: table 'timeseries' does not exist yet, returning empty result for device_id={}, metric={}",
-                    device_id, metric
+                    device_id,
+                    metric
                 );
                 return Ok(TimeSeriesResult {
                     device_id: device_id.to_string(),
@@ -635,7 +634,12 @@ impl TimeSeriesStore {
 
         tracing::debug!(
             "query_range: device_id={}, metric={}, start={}, end={}, start_key={:?}, end_key={:?}",
-            device_id, metric, start, end, start_key, end_key
+            device_id,
+            metric,
+            start,
+            end,
+            start_key,
+            end_key
         );
 
         let mut points = Vec::new();
@@ -644,14 +648,24 @@ impl TimeSeriesStore {
             count += 1;
             let (key, value) = result?;
             let (did, met, ts) = key.value();
-            tracing::trace!("query_range: found key=({},{},{}), value_len={}", did, met, ts, value.value().len());
+            tracing::trace!(
+                "query_range: found key=({},{},{}), value_len={}",
+                did,
+                met,
+                ts,
+                value.value().len()
+            );
             let point: DataPoint = serde_json::from_slice(value.value())?;
             points.push(point);
         }
 
         tracing::debug!(
             "query_range: device_id={}, metric={}, start={}, end={}, found {} points",
-            device_id, metric, start, end, count
+            device_id,
+            metric,
+            start,
+            end,
+            count
         );
 
         Ok(TimeSeriesResult {
@@ -675,12 +689,13 @@ impl TimeSeriesStore {
         {
             let cache = self.latest_cache.read().await;
             if let Some(entry) = cache.get(&cache_key)
-                && entry.cached_at.elapsed() < self.cache_ttl {
-                    let mut stats = self.stats.write().await;
-                    stats.record_cache_hit();
-                    stats.record_read(start.elapsed());
-                    return Ok(Some(entry.point.clone()));
-                }
+                && entry.cached_at.elapsed() < self.cache_ttl
+            {
+                let mut stats = self.stats.write().await;
+                stats.record_cache_hit();
+                stats.record_read(start.elapsed());
+                return Ok(Some(entry.point.clone()));
+            }
         }
 
         // Cache miss - query from database
@@ -692,7 +707,8 @@ impl TimeSeriesStore {
             Err(redb::TableError::TableDoesNotExist(_)) => {
                 tracing::debug!(
                     "query_latest: table 'timeseries' does not exist yet, returning None for device_id={}, metric={}",
-                    device_id, metric
+                    device_id,
+                    metric
                 );
                 return Ok(None);
             }
@@ -887,9 +903,9 @@ impl TimeSeriesStore {
                                     .iter()
                                     .min_by_key(|(_, e)| e.access_count)
                                     .map(|(k, _)| k.clone())
-                                {
-                                    cache.remove(&lru);
-                                }
+                            {
+                                cache.remove(&lru);
+                            }
                         }
                         let entry = cache.entry(key).or_insert_with(|| CacheEntry {
                             point: DataPoint::new(0, 0.0),
@@ -968,15 +984,16 @@ impl TimeSeriesStore {
             let device_type = ""; // Could be enhanced to look up device type
 
             if let Some(cutoff) = policy.cutoff_timestamp(device_type, metric)
-                && cutoff < now {
-                    let removed = self
-                        .delete_range(device_id, metric, i64::MIN, cutoff)
-                        .await?;
-                    if removed > 0 {
-                        total_removed += removed as u64;
-                        metrics_cleaned.insert(metric_key.clone());
-                    }
+                && cutoff < now
+            {
+                let removed = self
+                    .delete_range(device_id, metric, i64::MIN, cutoff)
+                    .await?;
+                if removed > 0 {
+                    total_removed += removed as u64;
+                    metrics_cleaned.insert(metric_key.clone());
                 }
+            }
         }
 
         // Update stats

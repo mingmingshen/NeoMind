@@ -9,8 +9,10 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use super::embeddings::{create_embedding_model, cosine_similarity, EmbeddingConfig, EmbeddingModel, SimpleEmbedding};
-use super::bm25::{extract_text_for_bm25, BM25Index};
+use super::bm25::{BM25Index, extract_text_for_bm25};
+use super::embeddings::{
+    EmbeddingConfig, EmbeddingModel, SimpleEmbedding, cosine_similarity, create_embedding_model,
+};
 use super::error::Result;
 
 /// Wrapper to make SimpleEmbedding implement EmbeddingModel.
@@ -22,7 +24,10 @@ impl EmbeddingModel for SimpleEmbeddingWrapper {
         Ok(self.0.embed(text))
     }
 
-    async fn embed_batch(&self, texts: &[String]) -> std::result::Result<Vec<Vec<f32>>, super::error::MemoryError> {
+    async fn embed_batch(
+        &self,
+        texts: &[String],
+    ) -> std::result::Result<Vec<Vec<f32>>, super::error::MemoryError> {
         Ok(texts.iter().map(|t| self.0.embed(t)).collect())
     }
 
@@ -177,10 +182,7 @@ impl MidTermMemory {
             let mut entries = self.entries.write().await;
             if entries.len() >= self.max_entries {
                 // Find oldest entry and remove it
-                if let Some(oldest) = entries
-                    .values()
-                    .min_by_key(|e| e.timestamp)
-                {
+                if let Some(oldest) = entries.values().min_by_key(|e| e.timestamp) {
                     let oldest_id = oldest.id.clone();
                     entries.remove(&oldest_id);
                     Some(oldest_id)

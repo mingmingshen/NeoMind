@@ -10,14 +10,14 @@ use axum::{
     extract::{Query, State},
     response::Json as ResponseJson,
 };
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use chrono::Timelike;
 use futures::future;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::server::ServerState;
-use neomind_storage::AgentFilter;
 use neomind_devices::adapter::ConnectionStatus;
+use neomind_storage::AgentFilter;
 
 /// Suggestion item with enhanced metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,9 +28,9 @@ pub struct SuggestionItem {
     pub icon: String,
     pub category: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub priority: Option<i32>,  // Higher = more relevant
+    pub priority: Option<i32>, // Higher = more relevant
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub context: Option<String>,  // Additional context (e.g., "3 devices")
+    pub context: Option<String>, // Additional context (e.g., "3 devices")
 }
 
 /// Suggestions response with context
@@ -144,7 +144,10 @@ async fn get_device_count(state: &ServerState) -> usize {
 }
 
 /// Generate time-based context-aware suggestions
-async fn generate_time_based_suggestions(state: &ServerState, time_context: &str) -> Vec<SuggestionItem> {
+async fn generate_time_based_suggestions(
+    state: &ServerState,
+    time_context: &str,
+) -> Vec<SuggestionItem> {
     let mut suggestions = Vec::new();
     let device_count = get_device_count(state).await;
 
@@ -224,17 +227,15 @@ async fn generate_device_based_suggestions(state: &ServerState) -> Vec<Suggestio
 
     if devices.is_empty() {
         // No devices: suggest adding one
-        return vec![
-            SuggestionItem {
-                id: "device-add-first".to_string(),
-                label: "添加第一个设备".to_string(),
-                prompt: "如何添加新设备".to_string(),
-                icon: "Cpu".to_string(),
-                category: "device".to_string(),
-                priority: Some(90),
-                context: Some("开始使用".to_string()),
-            }
-        ];
+        return vec![SuggestionItem {
+            id: "device-add-first".to_string(),
+            label: "添加第一个设备".to_string(),
+            prompt: "如何添加新设备".to_string(),
+            icon: "Cpu".to_string(),
+            category: "device".to_string(),
+            priority: Some(90),
+            context: Some("开始使用".to_string()),
+        }];
     }
 
     // Group devices by type
@@ -247,7 +248,9 @@ async fn generate_device_based_suggestions(state: &ServerState) -> Vec<Suggestio
     // Generate suggestions for each device type
     for (dtype, count) in device_types {
         let icon = match dtype.as_str() {
-            t if t.contains("sensor") || t.contains("temperature") || t.contains("humidity") => "Cpu",
+            t if t.contains("sensor") || t.contains("temperature") || t.contains("humidity") => {
+                "Cpu"
+            }
             t if t.contains("switch") || t.contains("light") || t.contains("plug") => "Zap",
             t if t.contains("camera") => "Bot",
             _ => "Cpu",
@@ -280,18 +283,26 @@ async fn generate_device_based_suggestions(state: &ServerState) -> Vec<Suggestio
     // Count online devices in parallel to avoid N+1 query problem
     // Use join_all for concurrent status checks instead of sequential loop
     let online_count = {
-        let device_ids: Vec<_> = devices.iter()
-            .map(|d| d.device_id.clone())
-            .collect();
+        let device_ids: Vec<_> = devices.iter().map(|d| d.device_id.clone()).collect();
 
-        let status_futures: Vec<_> = device_ids.into_iter()
+        let status_futures: Vec<_> = device_ids
+            .into_iter()
             .map(|device_id| {
                 let service = state.devices.service.clone();
                 async move {
                     tokio::time::timeout(
                         std::time::Duration::from_millis(100),
-                        service.get_device_connection_status(&device_id)
-                    ).await.ok().and_then(|s| if matches!(s, ConnectionStatus::Connected) { Some(1) } else { None })
+                        service.get_device_connection_status(&device_id),
+                    )
+                    .await
+                    .ok()
+                    .and_then(|s| {
+                        if matches!(s, ConnectionStatus::Connected) {
+                            Some(1)
+                        } else {
+                            None
+                        }
+                    })
                 }
             })
             .collect();
@@ -324,27 +335,27 @@ async fn generate_recent_operation_suggestions(state: &ServerState) -> Vec<Sugge
 
     if sessions.is_empty() {
         // New user: suggest getting started
-        return vec![
-            SuggestionItem {
-                id: "recent-welcome".to_string(),
-                label: "新手入门指南".to_string(),
-                prompt: "你能做什么".to_string(),
-                icon: "Lightbulb".to_string(),
-                category: "general".to_string(),
-                priority: Some(85),
-                context: Some("开始探索".to_string()),
-            }
-        ];
+        return vec![SuggestionItem {
+            id: "recent-welcome".to_string(),
+            label: "新手入门指南".to_string(),
+            prompt: "你能做什么".to_string(),
+            icon: "Lightbulb".to_string(),
+            category: "general".to_string(),
+            priority: Some(85),
+            context: Some("开始探索".to_string()),
+        }];
     }
 
     // Analyze recent session titles to find common patterns
     let mut operation_counts: HashMap<String, usize> = HashMap::new();
 
-    for session_info in sessions.iter().take(10) {  // Check last 10 sessions
+    for session_info in sessions.iter().take(10) {
+        // Check last 10 sessions
         if let Some(ref title) = session_info.title
-            && !title.is_empty() {
-                *operation_counts.entry(title.clone()).or_insert(0) += 1;
-            }
+            && !title.is_empty()
+        {
+            *operation_counts.entry(title.clone()).or_insert(0) += 1;
+        }
     }
 
     // Generate suggestions from common operations (top 3)
@@ -352,7 +363,8 @@ async fn generate_recent_operation_suggestions(state: &ServerState) -> Vec<Sugge
     ops.sort_by(|a, b| b.1.cmp(&a.1));
 
     for (operation, count) in ops.into_iter().take(3) {
-        if count > 1 {  // Only suggest if done more than once
+        if count > 1 {
+            // Only suggest if done more than once
             suggestions.push(SuggestionItem {
                 id: format!("recent-{}", suggestions.len()),
                 label: format!("再次: {}", operation),
@@ -384,23 +396,21 @@ async fn generate_pattern_based_suggestions(state: &ServerState) -> Vec<Suggesti
         for pattern in &agent.memory.learned_patterns {
             if pattern.confidence > 0.7 {
                 if let Some(action) = pattern.data.get("action")
-                    && let Some(action_str) = action.as_str() {
-                        high_confidence_patterns.push((
-                            format!("类似: {}", action_str),
-                            pattern.confidence,
-                        ));
-                    }
+                    && let Some(action_str) = action.as_str()
+                {
+                    high_confidence_patterns
+                        .push((format!("类似: {}", action_str), pattern.confidence));
+                }
                 if !pattern.description.is_empty() {
-                    high_confidence_patterns.push((
-                        pattern.description.clone(),
-                        pattern.confidence,
-                    ));
+                    high_confidence_patterns
+                        .push((pattern.description.clone(), pattern.confidence));
                 }
             }
         }
     }
 
-    high_confidence_patterns.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    high_confidence_patterns
+        .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut seen = std::collections::HashSet::new();
     high_confidence_patterns.retain(|(desc, _)| seen.insert(desc.clone()));

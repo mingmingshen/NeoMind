@@ -6,18 +6,21 @@
 //! 3. Agent can send notifications/alerts
 //! 4. End-to-end workflow with real data flow
 
+use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
+use neomind_core::llm::backend::{GenerationParams, LlmInput};
+use neomind_core::{
+    EventBus, LlmRuntime, MetricValue, NeoMindEvent,
+    message::{Content, Message, MessageRole},
+};
+use neomind_llm::backends::ollama::{OllamaConfig, OllamaRuntime};
+use neomind_messages::{MessageManager, MessageSeverity, channels::ConsoleChannel};
+use neomind_storage::{
+    AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
+    DataPoint, LongTermMemory, ResourceType, ScheduleType, ShortTermMemory, TimeSeriesStore,
+    WorkingMemory,
+};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use neomind_core::{EventBus, MetricValue, NeoMindEvent, LlmRuntime, message::{Message, MessageRole, Content}};
-use neomind_storage::{
-    AgentStore, AgentSchedule, AgentStats, AgentStatus, AiAgent, AgentMemory,
-    WorkingMemory, ShortTermMemory, LongTermMemory, ScheduleType, ResourceType, AgentResource,
-    TimeSeriesStore, DataPoint,
-};
-use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
-use neomind_llm::backends::ollama::{OllamaRuntime, OllamaConfig};
-use neomind_messages::{MessageManager, MessageSeverity, channels::ConsoleChannel};
-use neomind_core::llm::backend::{LlmInput, GenerationParams};
 
 // ============================================================================
 // Test Context with All Components
@@ -62,7 +65,8 @@ impl FullTestContext {
             device_service: None,
             event_bus: Some(event_bus.clone()),
             message_manager: Some(message_manager.clone()),
-            llm_runtime: Some(llm_runtime.clone() as Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>),
+            llm_runtime: Some(llm_runtime.clone()
+                as Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>),
             llm_backend_store: None,
             extension_registry: None,
         };
@@ -80,7 +84,12 @@ impl FullTestContext {
     }
 
     /// Simulate metric data for a device
-    async fn inject_metric_data(&self, device_id: &str, metric: &str, value: f64) -> anyhow::Result<()> {
+    async fn inject_metric_data(
+        &self,
+        device_id: &str,
+        metric: &str,
+        value: f64,
+    ) -> anyhow::Result<()> {
         let timestamp = chrono::Utc::now().timestamp_millis();
 
         // Store in time series
@@ -91,11 +100,7 @@ impl FullTestContext {
             metadata: None,
         };
 
-        self.time_series.write(
-            device_id,
-            metric,
-            point
-        ).await?;
+        self.time_series.write(device_id, metric, point).await?;
 
         // Also publish to event bus
         let event = NeoMindEvent::DeviceMetric {
@@ -127,7 +132,9 @@ impl FullTestContext {
             });
         }
 
-        self.time_series.write_batch(device_id, metric, points).await?;
+        self.time_series
+            .write_batch(device_id, metric, points)
+            .await?;
         Ok(())
     }
 
@@ -282,7 +289,11 @@ impl FullTestContext {
     }
 
     /// Send a test notification
-    async fn send_notification(&self, severity: MessageSeverity, message: &str) -> anyhow::Result<()> {
+    async fn send_notification(
+        &self,
+        severity: MessageSeverity,
+        message: &str,
+    ) -> anyhow::Result<()> {
         let msg = neomind_messages::Message::alert(
             severity,
             "Agent Notification".to_string(),
@@ -351,17 +362,20 @@ async fn test_llm_understands_metrics() -> anyhow::Result<()> {
     println!("1. 注入模拟温度数据...");
     for i in 0..10 {
         let temp = 20.0 + (i as f64 * 2.0); // 20, 22, 24, 26, 28, 30, 32, 34, 36, 38
-        ctx.inject_metric_data(device_id, "temperature", temp).await?;
+        ctx.inject_metric_data(device_id, "temperature", temp)
+            .await?;
         println!("   {}℃ @ t-{}min", temp, (10 - i) * 5);
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
     // Create agent with this metric
-    let agent = ctx.create_monitoring_agent(
-        "温度分析Agent",
-        vec![(device_id.to_string(), "temperature".to_string())],
-        "分析温度传感器数据，检测异常值和趋势",
-    ).await?;
+    let agent = ctx
+        .create_monitoring_agent(
+            "温度分析Agent",
+            vec![(device_id.to_string(), "temperature".to_string())],
+            "分析温度传感器数据，检测异常值和趋势",
+        )
+        .await?;
 
     println!("\n2. 执行Agent分析...");
     let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
@@ -369,7 +383,10 @@ async fn test_llm_understands_metrics() -> anyhow::Result<()> {
 
     println!("\n3. Agent响应:");
     println!("   状态: {:?}", record.status);
-    println!("   情况分析: {}", record.decision_process.situation_analysis);
+    println!(
+        "   情况分析: {}",
+        record.decision_process.situation_analysis
+    );
     println!("   结论: {}", record.decision_process.conclusion);
 
     // Verify data was collected
@@ -384,7 +401,10 @@ async fn test_llm_understands_metrics() -> anyhow::Result<()> {
         }
     }
 
-    assert!(!record.decision_process.data_collected.is_empty(), "应该收集到数据");
+    assert!(
+        !record.decision_process.data_collected.is_empty(),
+        "应该收集到数据"
+    );
 
     println!("\n✅ LLM理解指标测试通过！");
     Ok(())
@@ -407,17 +427,24 @@ async fn test_llm_generates_commands() -> anyhow::Result<()> {
     println!("1. 注入高温数据...");
 
     for temp in &[25.0, 28.0, 31.0, 33.0, 35.0, 32.0] {
-        ctx.inject_metric_data(device_id, "temperature", *temp).await?;
+        ctx.inject_metric_data(device_id, "temperature", *temp)
+            .await?;
         println!("   注入: {}℃", temp);
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
     // Create executor agent with command resource
-    let agent = ctx.create_executor_agent(
-        "空调控制Agent",
-        vec![(device_id.to_string(), "turn_on".to_string(), serde_json::json!({"mode": "cool"}))],
-        "监控温度，当温度超过30度时开启空调，低于25度时关闭空调",
-    ).await?;
+    let agent = ctx
+        .create_executor_agent(
+            "空调控制Agent",
+            vec![(
+                device_id.to_string(),
+                "turn_on".to_string(),
+                serde_json::json!({"mode": "cool"}),
+            )],
+            "监控温度，当温度超过30度时开启空调，低于25度时关闭空调",
+        )
+        .await?;
 
     println!("\n2. 执行Agent决策...");
 
@@ -426,7 +453,10 @@ async fn test_llm_generates_commands() -> anyhow::Result<()> {
 
     println!("\n3. 决策分析:");
     println!("   状态: {:?}", record.status);
-    println!("   情况分析: {}", record.decision_process.situation_analysis);
+    println!(
+        "   情况分析: {}",
+        record.decision_process.situation_analysis
+    );
 
     println!("\n   推理步骤:");
     for (i, step) in record.decision_process.reasoning_steps.iter().enumerate() {
@@ -448,8 +478,11 @@ async fn test_llm_generates_commands() -> anyhow::Result<()> {
     if let Some(ref result) = record.result {
         println!("\n   执行结果:");
         for action in &result.actions_executed {
-            println!("     - 动作: {} ({})", action.action_type,
-                if action.success { "成功" } else { "失败" });
+            println!(
+                "     - 动作: {} ({})",
+                action.action_type,
+                if action.success { "成功" } else { "失败" }
+            );
         }
     }
 
@@ -471,21 +504,27 @@ async fn test_notification_sending() -> anyhow::Result<()> {
 
     println!("1. 测试不同严重级别的通知...");
 
-    ctx.send_notification(MessageSeverity::Info, "这是信息级别通知").await?;
-    ctx.send_notification(MessageSeverity::Warning, "这是警告级别通知").await?;
-    ctx.send_notification(MessageSeverity::Critical, "这是严重级别通知").await?;
+    ctx.send_notification(MessageSeverity::Info, "这是信息级别通知")
+        .await?;
+    ctx.send_notification(MessageSeverity::Warning, "这是警告级别通知")
+        .await?;
+    ctx.send_notification(MessageSeverity::Critical, "这是严重级别通知")
+        .await?;
 
     println!("\n2. 测试Agent触发的通知...");
 
     // Create a monitoring agent that should alert on high temperature
     let device_id = "furnace_sensor";
-    ctx.inject_metric_data(device_id, "temperature", 85.0).await?;
+    ctx.inject_metric_data(device_id, "temperature", 85.0)
+        .await?;
 
-    let agent = ctx.create_monitoring_agent(
-        "熔炉监控Agent",
-        vec![(device_id.to_string(), "temperature".to_string())],
-        "监控熔炉温度，超过80度发送严重告警",
-    ).await?;
+    let agent = ctx
+        .create_monitoring_agent(
+            "熔炉监控Agent",
+            vec![(device_id.to_string(), "temperature".to_string())],
+            "监控熔炉温度，超过80度发送严重告警",
+        )
+        .await?;
 
     println!("\n3. 执行Agent...");
     let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
@@ -497,11 +536,14 @@ async fn test_notification_sending() -> anyhow::Result<()> {
     // Simulate sending alert based on agent's decision
     if !record.decision_process.decisions.is_empty() {
         println!("\n5. 模拟发送告警通知...");
-        ctx.send_notification(MessageSeverity::Critical, &format!(
-            "Agent {} 检测到异常: {}",
-            agent.name,
-            record.decision_process.conclusion
-        )).await?;
+        ctx.send_notification(
+            MessageSeverity::Critical,
+            &format!(
+                "Agent {} 检测到异常: {}",
+                agent.name, record.decision_process.conclusion
+            ),
+        )
+        .await?;
     }
 
     println!("\n✅ 通知发送测试通过！");
@@ -522,10 +564,12 @@ async fn test_conversation_with_llm() -> anyhow::Result<()> {
 
     // Direct LLM conversation test
     println!("1. 直接查询LLM - 指标理解能力...");
-    let response1 = ctx.query_llm(
-        "你是一个物联网监控助手。",
-        "当前温度为35度，湿度为60%，请分析这个环境状态。"
-    ).await?;
+    let response1 = ctx
+        .query_llm(
+            "你是一个物联网监控助手。",
+            "当前温度为35度，湿度为60%，请分析这个环境状态。",
+        )
+        .await?;
 
     println!("   LLM响应: {}", response1);
 
@@ -538,10 +582,12 @@ async fn test_conversation_with_llm() -> anyhow::Result<()> {
     println!("   LLM响应: {}", response2);
 
     println!("\n3. 测试异常检测能力...");
-    let response3 = ctx.query_llm(
-        "你是一个设备监控助手。",
-        "温度传感器在过去1小时内从25度逐渐上升到42度，这是否异常？为什么？"
-    ).await?;
+    let response3 = ctx
+        .query_llm(
+            "你是一个设备监控助手。",
+            "温度传感器在过去1小时内从25度逐渐上升到42度，这是否异常？为什么？",
+        )
+        .await?;
 
     println!("   LLM响应: {}", response3);
 
@@ -573,13 +619,16 @@ async fn test_end_to_end_workflow() -> anyhow::Result<()> {
 
     // Round 1: Normal temperature
     println!("--- 场景1: 正常温度 (22度) ---");
-    ctx.inject_metric_data(device_id, "temperature", 22.0).await?;
+    ctx.inject_metric_data(device_id, "temperature", 22.0)
+        .await?;
 
-    let agent = ctx.create_monitoring_agent(
-        agent_name,
-        vec![(device_id.to_string(), "temperature".to_string())],
-        prompt,
-    ).await?;
+    let agent = ctx
+        .create_monitoring_agent(
+            agent_name,
+            vec![(device_id.to_string(), "temperature".to_string())],
+            prompt,
+        )
+        .await?;
 
     let agent_id = agent.id.clone();
 
@@ -590,7 +639,8 @@ async fn test_end_to_end_workflow() -> anyhow::Result<()> {
 
     // Round 2: Slightly high
     println!("\n--- 场景2: 稍高温度 (27度) ---");
-    ctx.inject_metric_data(device_id, "temperature", 27.0).await?;
+    ctx.inject_metric_data(device_id, "temperature", 27.0)
+        .await?;
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
@@ -600,7 +650,8 @@ async fn test_end_to_end_workflow() -> anyhow::Result<()> {
 
     // Round 3: Too high - should alert
     println!("\n--- 场景3: 过高温度 (31度) ---");
-    ctx.inject_metric_data(device_id, "temperature", 31.0).await?;
+    ctx.inject_metric_data(device_id, "temperature", 31.0)
+        .await?;
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
@@ -608,11 +659,16 @@ async fn test_end_to_end_workflow() -> anyhow::Result<()> {
     println!("分析: {}", record3.decision_process.situation_analysis);
 
     // Check if alert should be sent
-    if record3.decision_process.conclusion.contains("异常") ||
-       record3.decision_process.conclusion.contains("告警") ||
-       record3.decision_process.conclusion.contains("高") {
+    if record3.decision_process.conclusion.contains("异常")
+        || record3.decision_process.conclusion.contains("告警")
+        || record3.decision_process.conclusion.contains("高")
+    {
         println!("⚠️  检测到异常条件！");
-        ctx.send_notification(MessageSeverity::Warning, &record3.decision_process.conclusion).await?;
+        ctx.send_notification(
+            MessageSeverity::Warning,
+            &record3.decision_process.conclusion,
+        )
+        .await?;
     }
 
     // Verify conversation history
@@ -622,9 +678,12 @@ async fn test_end_to_end_workflow() -> anyhow::Result<()> {
 
     for (i, turn) in agent.conversation_history.iter().enumerate() {
         println!("轮次{}:", i + 1);
-        println!("  时间: {}", chrono::DateTime::from_timestamp(turn.timestamp, 0)
-            .map(|dt| dt.format("%H:%M:%S").to_string())
-            .unwrap_or_else(|| "?".to_string()));
+        println!(
+            "  时间: {}",
+            chrono::DateTime::from_timestamp(turn.timestamp, 0)
+                .map(|dt| dt.format("%H:%M:%S").to_string())
+                .unwrap_or_else(|| "?".to_string())
+        );
         println!("  数据点: {}", turn.input.data_collected.len());
         println!("  成功: {}", turn.success);
     }
@@ -653,11 +712,13 @@ async fn test_data_collection_and_context() -> anyhow::Result<()> {
         metrics.push((id.to_string(), metric.to_string()));
     }
 
-    let agent = ctx.create_monitoring_agent(
-        "多传感器监控Agent",
-        metrics,
-        "监控所有传感器数据，生成综合报告",
-    ).await?;
+    let agent = ctx
+        .create_monitoring_agent(
+            "多传感器监控Agent",
+            metrics,
+            "监控所有传感器数据，生成综合报告",
+        )
+        .await?;
 
     println!("2. 注入模拟数据...");
     for (device_id, metric) in &devices {
@@ -675,7 +736,10 @@ async fn test_data_collection_and_context() -> anyhow::Result<()> {
 
     println!("\n4. 执行结果:");
     println!("   耗时: {:?}", elapsed);
-    println!("   数据收集: {} 个数据源", record.decision_process.data_collected.len());
+    println!(
+        "   数据收集: {} 个数据源",
+        record.decision_process.data_collected.len()
+    );
 
     println!("\n   收集到的数据:");
     for data in &record.decision_process.data_collected {

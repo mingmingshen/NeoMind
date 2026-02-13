@@ -119,12 +119,14 @@ impl ToolNameMapper {
 
     /// 注册简化名称映射
     fn register_simplified(&mut self, simplified: &str, real: &str) {
-        self.simplified_to_real.insert(simplified.to_string(), real.to_string());
+        self.simplified_to_real
+            .insert(simplified.to_string(), real.to_string());
     }
 
     /// 注册别名映射
     fn register_alias(&mut self, alias: &str, real: &str) {
-        self.alias_to_real.insert(alias.to_string(), real.to_string());
+        self.alias_to_real
+            .insert(alias.to_string(), real.to_string());
     }
 
     /// 解析工具名称
@@ -266,14 +268,30 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
 
             for (key, value) in obj {
                 match key.as_str() {
-                    "type" => { filter.insert("type".to_string(), value.clone()); }
-                    "status" => { filter.insert("status".to_string(), value.clone()); }
-                    "name_contains" => { filter.insert("name_contains".to_string(), value.clone()); }
-                    "tags" => { filter.insert("tags".to_string(), value.clone()); }
-                    "group_by" => { mapped.insert("group_by".to_string(), value.clone()); }
-                    "include_data_preview" => { mapped.insert("include_data_preview".to_string(), value.clone()); }
-                    "include_capabilities" => { mapped.insert("include_capabilities".to_string(), value.clone()); }
-                    _ => { mapped.insert(key.clone(), value.clone()); }
+                    "type" => {
+                        filter.insert("type".to_string(), value.clone());
+                    }
+                    "status" => {
+                        filter.insert("status".to_string(), value.clone());
+                    }
+                    "name_contains" => {
+                        filter.insert("name_contains".to_string(), value.clone());
+                    }
+                    "tags" => {
+                        filter.insert("tags".to_string(), value.clone());
+                    }
+                    "group_by" => {
+                        mapped.insert("group_by".to_string(), value.clone());
+                    }
+                    "include_data_preview" => {
+                        mapped.insert("include_data_preview".to_string(), value.clone());
+                    }
+                    "include_capabilities" => {
+                        mapped.insert("include_capabilities".to_string(), value.clone());
+                    }
+                    _ => {
+                        mapped.insert(key.clone(), value.clone());
+                    }
                 }
             }
 
@@ -330,7 +348,9 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                 // list_devices (legacy, maps to device_discover)
                 ("list_devices", "type") => {
                     // Build nested filter for backward compatibility
-                    if let Some(filter_obj) = mapped.get_mut("filter").and_then(|v| v.as_object_mut()) {
+                    if let Some(filter_obj) =
+                        mapped.get_mut("filter").and_then(|v| v.as_object_mut())
+                    {
                         filter_obj.insert("type".to_string(), value.clone());
                     } else {
                         mapped.insert("filter".to_string(), serde_json::json!({"type": value}));
@@ -338,7 +358,9 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                     continue;
                 }
                 ("list_devices", "status") => {
-                    if let Some(filter_obj) = mapped.get_mut("filter").and_then(|v| v.as_object_mut()) {
+                    if let Some(filter_obj) =
+                        mapped.get_mut("filter").and_then(|v| v.as_object_mut())
+                    {
                         filter_obj.insert("status".to_string(), value.clone());
                     } else {
                         mapped.insert("filter".to_string(), serde_json::json!({"status": value}));

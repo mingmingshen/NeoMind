@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use super::super::{Error, Message, Result};
 use super::MessageChannel;
-use super::super::{Message, Result, Error};
 
 /// In-memory channel for testing.
 #[derive(Debug, Clone)]

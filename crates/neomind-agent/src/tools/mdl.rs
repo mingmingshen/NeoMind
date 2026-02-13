@@ -165,7 +165,10 @@ impl Tool for GetDeviceTypeTool {
 
         match serde_json::to_value(definition) {
             Ok(value) => Ok(ToolOutput::success(value)),
-            Err(e) => Err(ToolError::Execution(format!("Failed to serialize definition: {}", e))),
+            Err(e) => Err(ToolError::Execution(format!(
+                "Failed to serialize definition: {}",
+                e
+            ))),
         }
     }
 }
@@ -438,7 +441,10 @@ impl Tool for ExplainDeviceTypeTool {
 
         match serde_json::to_value(explanation) {
             Ok(value) => Ok(ToolOutput::success(value)),
-            Err(e) => Err(ToolError::Execution(format!("Failed to serialize explanation: {}", e))),
+            Err(e) => Err(ToolError::Execution(format!(
+                "Failed to serialize explanation: {}",
+                e
+            ))),
         }
     }
 }

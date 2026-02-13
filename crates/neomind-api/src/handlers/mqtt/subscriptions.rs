@@ -6,8 +6,7 @@ use axum::{
 };
 use serde_json::json;
 
-
-use super::models::{MqttSubscriptionDto, SubscribeRequest};
+use super::models::MqttSubscriptionDto;
 use crate::handlers::{
     ServerState,
     common::{HandlerResult, ok},
@@ -62,10 +61,10 @@ pub async fn list_subscriptions_handler(
 /// POST /api/mqtt/subscribe
 pub async fn subscribe_handler(
     State(_state): State<ServerState>,
-    Json(_req): Json<SubscribeRequest>,
+    Json(_req): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
     // Check MQTT connection status from adapter
-    
+
     // For now, just return a message - custom topic subscription not implemented
     ok(json!({
         "success": false,
@@ -78,7 +77,7 @@ pub async fn subscribe_handler(
 /// POST /api/mqtt/unsubscribe
 pub async fn unsubscribe_handler(
     State(_state): State<ServerState>,
-    Json(_req): Json<SubscribeRequest>,
+    Json(_req): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
     // TODO: Implement custom topic unsubscription
     ok(json!({
@@ -96,18 +95,18 @@ pub async fn subscribe_device_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Validate the device exists using DeviceService
     let device_opt = state.devices.service.get_device(&device_id).await;
-    let device = device_opt.ok_or_else(|| {
-        ErrorResponse::not_found(format!("Device not found: {}", device_id))
-    })?;
+    let device = device_opt
+        .ok_or_else(|| ErrorResponse::not_found(format!("Device not found: {}", device_id)))?;
 
     // Get the adapter for this device and subscribe
     if let Some(ref adapter_id) = device.adapter_id
-        && let Some(adapter) = state.devices.service.get_adapter(adapter_id).await {
-            adapter
-                .subscribe_device(&device_id)
-                .await
-                .map_err(|e| ErrorResponse::internal(format!("Failed to subscribe: {}", e)))?;
-        }
+        && let Some(adapter) = state.devices.service.get_adapter(adapter_id).await
+    {
+        adapter
+            .subscribe_device(&device_id)
+            .await
+            .map_err(|e| ErrorResponse::internal(format!("Failed to subscribe: {}", e)))?;
+    }
 
     ok(json!({
         "message": format!("Subscribed to device: {}", device_id),

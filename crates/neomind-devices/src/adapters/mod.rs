@@ -95,9 +95,13 @@ pub fn create_adapter(
             Ok(create_http_adapter(cfg, event_bus, device_registry))
         }
         "webhook" => {
-            let cfg: WebhookAdapterConfig = serde_json::from_value(config.clone()).map_err(|e| {
-                crate::adapter::AdapterError::Configuration(format!("Invalid Webhook config: {}", e))
-            })?;
+            let cfg: WebhookAdapterConfig =
+                serde_json::from_value(config.clone()).map_err(|e| {
+                    crate::adapter::AdapterError::Configuration(format!(
+                        "Invalid Webhook config: {}",
+                        e
+                    ))
+                })?;
             let device_registry = Arc::new(crate::registry::DeviceRegistry::new());
             Ok(create_webhook_adapter(cfg, event_bus, device_registry))
         }

@@ -128,7 +128,11 @@ pub async fn create_key_handler(
         req.permissions
     };
 
-    let (key, info) = state.auth.api_key_state.create_key(req.name, permissions).await;
+    let (key, info) = state
+        .auth
+        .api_key_state
+        .create_key(req.name, permissions)
+        .await;
 
     Ok(Json(CreateKeyResponse { api_key: key, info }))
 }

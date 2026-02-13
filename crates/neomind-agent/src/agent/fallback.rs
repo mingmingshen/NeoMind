@@ -243,7 +243,8 @@ fn default_help_message() -> String {
         - 创建自动化规则 (说 \"创建规则\")\n\
         \n\
         注意: 完整的对话功能需要配置 LLM 后端。\n\
-        设置环境变量 OLLAMA_ENDPOINT 或 OPENAI_API_KEY 来启用。".to_string()
+        设置环境变量 OLLAMA_ENDPOINT 或 OPENAI_API_KEY 来启用。"
+        .to_string()
 }
 
 #[cfg(test)]

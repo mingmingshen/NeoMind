@@ -120,8 +120,12 @@ impl DataSourceId {
     pub fn display_name(&self) -> String {
         match &self.source_type {
             DataSourceType::Device => format!("Device {} / {}", self.source_id, self.field_path),
-            DataSourceType::Extension => format!("Extension {} / {}", self.source_id, self.field_path),
-            DataSourceType::Transform => format!("Transform {} / {}", self.source_id, self.field_path),
+            DataSourceType::Extension => {
+                format!("Extension {} / {}", self.source_id, self.field_path)
+            }
+            DataSourceType::Transform => {
+                format!("Transform {} / {}", self.source_id, self.field_path)
+            }
         }
     }
 
@@ -264,7 +268,11 @@ impl DataSourceId {
 
 impl std::fmt::Display for DataSourceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}:{}:{}", self.source_type, self.source_id, self.field_path)
+        write!(
+            f,
+            "{:?}:{}:{}",
+            self.source_type, self.source_id, self.field_path
+        )
     }
 }
 
@@ -395,7 +403,11 @@ impl DataSourceInfo {
             display_name: format!("{}: {}", extension_name, metric.display_name),
             description: metric.display_name.clone(),
             data_type: format!("{:?}", metric.data_type),
-            unit: if metric.unit.is_empty() { None } else { Some(metric.unit.clone()) },
+            unit: if metric.unit.is_empty() {
+                None
+            } else {
+                Some(metric.unit.clone())
+            },
             is_primary: metric.required,
             aggregatable: true,
             id,
@@ -415,7 +427,11 @@ impl DataSourceInfo {
             display_name: format!("{}: {}", device_name, metric.display_name),
             description: metric.display_name.clone(),
             data_type: format!("{:?}", metric.data_type),
-            unit: if metric.unit.is_empty() { None } else { Some(metric.unit.clone()) },
+            unit: if metric.unit.is_empty() {
+                None
+            } else {
+                Some(metric.unit.clone())
+            },
             is_primary: metric.required,
             aggregatable: true,
             id,
@@ -583,7 +599,9 @@ mod tests {
     fn test_round_trip_storage_parts() {
         // Test that device_part() + metric_part() round-trips through from_storage_parts()
         let original = DataSourceId::extension("weather", "temperature");
-        let reconstructed = DataSourceId::from_storage_parts(&original.device_part(), original.metric_part()).unwrap();
+        let reconstructed =
+            DataSourceId::from_storage_parts(&original.device_part(), original.metric_part())
+                .unwrap();
         assert_eq!(original.source_type, reconstructed.source_type);
         assert_eq!(original.source_id, reconstructed.source_id);
         assert_eq!(original.field_path, reconstructed.field_path);
@@ -660,7 +678,9 @@ mod tests {
     #[test]
     fn test_parse_extension_command() {
         // Valid four-part format
-        let id = DataSourceId::parse_extension_command("extension:weather:get_current_weather:temperature_c");
+        let id = DataSourceId::parse_extension_command(
+            "extension:weather:get_current_weather:temperature_c",
+        );
         assert!(id.is_some());
         let id = id.unwrap();
         assert_eq!(id.source_type, DataSourceType::Extension);
@@ -668,13 +688,26 @@ mod tests {
         assert_eq!(id.field_path, "get_current_weather.temperature_c");
 
         // Invalid format - wrong prefix
-        assert!(DataSourceId::parse_extension_command("device:weather:get_current_weather:temperature_c").is_none());
+        assert!(
+            DataSourceId::parse_extension_command(
+                "device:weather:get_current_weather:temperature_c"
+            )
+            .is_none()
+        );
 
         // Invalid format - wrong part count
-        assert!(DataSourceId::parse_extension_command("extension:weather:get_current_weather").is_none());
+        assert!(
+            DataSourceId::parse_extension_command("extension:weather:get_current_weather")
+                .is_none()
+        );
 
         // Invalid format - too many parts
-        assert!(DataSourceId::parse_extension_command("extension:weather:get_current_weather:temperature_c:extra").is_none());
+        assert!(
+            DataSourceId::parse_extension_command(
+                "extension:weather:get_current_weather:temperature_c:extra"
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -722,7 +755,8 @@ mod tests {
         assert_eq!(id.metric_part(), "get_current_weather.temperature_c");
 
         // Should round-trip correctly
-        let reconstructed = DataSourceId::from_storage_parts(&id.device_part(), id.metric_part()).unwrap();
+        let reconstructed =
+            DataSourceId::from_storage_parts(&id.device_part(), id.metric_part()).unwrap();
         assert_eq!(reconstructed.source_type, id.source_type);
         assert_eq!(reconstructed.source_id, id.source_id);
         assert_eq!(reconstructed.field_path, id.field_path);
@@ -731,6 +765,9 @@ mod tests {
     #[test]
     fn test_extension_command_display_name() {
         let id = DataSourceId::extension_command("weather", "get_current_weather", "temperature_c");
-        assert_eq!(id.display_name(), "Extension weather / get_current_weather.temperature_c");
+        assert_eq!(
+            id.display_name(),
+            "Extension weather / get_current_weather.temperature_c"
+        );
     }
 }

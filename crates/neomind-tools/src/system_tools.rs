@@ -14,9 +14,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::error::Result;
-use super::tool::{Tool, ToolDefinition, ToolOutput, object_schema, string_property, number_property, boolean_property, array_property};
 use super::error::ToolError;
-use neomind_core::tools::{ToolExample, UsageScenario, ToolCategory, ToolRelationships};
+use super::tool::{
+    Tool, ToolDefinition, ToolOutput, array_property, boolean_property, number_property,
+    object_schema, string_property,
+};
+use neomind_core::tools::{ToolCategory, ToolExample, ToolRelationships, UsageScenario};
 
 // ============================================================================
 // System Information Tools
@@ -63,7 +66,7 @@ impl Tool for SystemInfoTool {
             serde_json::json!({
                 "detailed": boolean_property("是否返回详细信息，包括各服务的健康状态")
             }),
-            vec![]
+            vec![],
         )
     }
 
@@ -92,13 +95,13 @@ impl Tool for SystemInfoTool {
                 description: "获取系统状态信息".to_string(),
             }),
             category: ToolCategory::System,
-            scenarios: vec![
-                UsageScenario {
-                    description: "监控服务器健康状态".to_string(),
-                    example_query: "查看系统状态".to_string(),
-                    suggested_call: Some(r#"{"tool": "system_info", "arguments": {"detailed": true}}"#.to_string()),
-                }
-            ],
+            scenarios: vec![UsageScenario {
+                description: "监控服务器健康状态".to_string(),
+                example_query: "查看系统状态".to_string(),
+                suggested_call: Some(
+                    r#"{"tool": "system_info", "arguments": {"detailed": true}}"#.to_string(),
+                ),
+            }],
             relationships: ToolRelationships {
                 call_after: vec![],
                 output_to: vec!["system_config".to_string()],
@@ -197,7 +200,7 @@ impl Tool for SystemHelpTool {
                 "topic": string_property("帮助主题：overview（概览）、devices（设备）、automation（自动化）、agents（智能体）、alerts（告警）、getting_started（入门）、examples（示例）"),
                 "detail": string_property("可选，要详细了解的具体功能，如：device_control, rule_creation, agent_monitoring")
             }),
-            vec![]
+            vec![],
         )
     }
 
@@ -233,22 +236,34 @@ impl Tool for SystemHelpTool {
                 UsageScenario {
                     description: "新用户了解系统".to_string(),
                     example_query: "这个系统能做什么？".to_string(),
-                    suggested_call: Some(r#"{"tool": "system_help", "arguments": {"topic": "overview"}}"#.to_string()),
+                    suggested_call: Some(
+                        r#"{"tool": "system_help", "arguments": {"topic": "overview"}}"#
+                            .to_string(),
+                    ),
                 },
                 UsageScenario {
                     description: "快速入门".to_string(),
                     example_query: "如何开始使用？".to_string(),
-                    suggested_call: Some(r#"{"tool": "system_help", "arguments": {"topic": "getting_started"}}"#.to_string()),
+                    suggested_call: Some(
+                        r#"{"tool": "system_help", "arguments": {"topic": "getting_started"}}"#
+                            .to_string(),
+                    ),
                 },
                 UsageScenario {
                     description: "了解设备功能".to_string(),
                     example_query: "设备管理有什么功能？".to_string(),
-                    suggested_call: Some(r#"{"tool": "system_help", "arguments": {"topic": "devices"}}"#.to_string()),
+                    suggested_call: Some(
+                        r#"{"tool": "system_help", "arguments": {"topic": "devices"}}"#.to_string(),
+                    ),
                 },
             ],
             relationships: ToolRelationships {
                 call_after: vec![],
-                output_to: vec!["device_discover".to_string(), "list_agents".to_string(), "list_rules".to_string()],
+                output_to: vec![
+                    "device_discover".to_string(),
+                    "list_agents".to_string(),
+                    "list_rules".to_string(),
+                ],
                 exclusive_with: vec![],
             },
             deprecated: false,
@@ -356,7 +371,7 @@ impl SystemHelpTool {
                     ],
                     "example": "控制设备需要提供设备ID和命令，例如：把客厅灯打开"
                 }),
-                _ => base
+                _ => base,
             }
         } else {
             base
@@ -398,7 +413,7 @@ impl SystemHelpTool {
                         "EXECUTE device.command(param=value) - 执行设备命令"
                     ]
                 }),
-                _ => base
+                _ => base,
             }
         } else {
             base
@@ -448,7 +463,7 @@ impl SystemHelpTool {
                     "title": "Agent监控功能",
                     "description": "Agent可以自动监控设备和数据"
                 }),
-                _ => base
+                _ => base,
             }
         } else {
             base
@@ -610,7 +625,7 @@ impl Tool for SystemConfigTool {
                 "key": string_property("配置项的键路径，例如：llm.model, mqtt.port"),
                 "value": string_property("要设置的值（仅用于set操作）")
             }),
-            vec!["operation".to_string()]
+            vec!["operation".to_string()],
         )
     }
 
@@ -640,18 +655,16 @@ impl Tool for SystemConfigTool {
             deprecated: false,
             replaced_by: None,
             version: "1.0.0".to_string(),
-            examples: vec![
-                ToolExample {
-                    arguments: serde_json::json!({"operation": "list"}),
-                    result: serde_json::json!({
-                        "config": {
-                            "llm": {"model": "qwen3-vl:2b", "backend": "ollama"},
-                            "mqtt": {"port": 1883, "mode": "embedded"}
-                        }
-                    }),
-                    description: "列出所有配置".to_string(),
-                }
-            ],
+            examples: vec![ToolExample {
+                arguments: serde_json::json!({"operation": "list"}),
+                result: serde_json::json!({
+                    "config": {
+                        "llm": {"model": "qwen3-vl:2b", "backend": "ollama"},
+                        "mqtt": {"port": 1883, "mode": "embedded"}
+                    }
+                }),
+                description: "列出所有配置".to_string(),
+            }],
             response_format: Some("concise".to_string()),
             namespace: Some("system".to_string()),
         }
@@ -668,9 +681,9 @@ impl Tool for SystemConfigTool {
 
         match operation {
             "get" => {
-                let key = args["key"]
-                    .as_str()
-                    .ok_or_else(|| ToolError::InvalidArguments("key is required for get".to_string()))?;
+                let key = args["key"].as_str().ok_or_else(|| {
+                    ToolError::InvalidArguments("key is required for get".to_string())
+                })?;
 
                 let config = self.config.read().await;
                 let value = get_nested_value(&config, key);
@@ -681,11 +694,14 @@ impl Tool for SystemConfigTool {
                 })))
             }
             "set" => {
-                let key = args["key"]
-                    .as_str()
-                    .ok_or_else(|| ToolError::InvalidArguments("key is required for set".to_string()))?;
+                let key = args["key"].as_str().ok_or_else(|| {
+                    ToolError::InvalidArguments("key is required for set".to_string())
+                })?;
 
-                let value = args.get("value").cloned().unwrap_or(serde_json::Value::Null);
+                let value = args
+                    .get("value")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
 
                 let mut config = self.config.write().await;
                 set_nested_value(&mut config, key, value);
@@ -710,12 +726,10 @@ impl Tool for SystemConfigTool {
                     "message": "Configuration reset to defaults"
                 })))
             }
-            _ => {
-                Err(ToolError::InvalidArguments(format!(
-                    "Unknown operation: {}. Must be get, set, list, or reset",
-                    operation
-                )))
-            }
+            _ => Err(ToolError::InvalidArguments(format!(
+                "Unknown operation: {}. Must be get, set, list, or reset",
+                operation
+            ))),
         }
     }
 }
@@ -741,7 +755,9 @@ impl ServiceRestartTool {
 
     /// Create with custom allowed services.
     pub fn with_allowed_services(services: Vec<String>) -> Self {
-        Self { allowed_services: services }
+        Self {
+            allowed_services: services,
+        }
     }
 }
 
@@ -767,7 +783,7 @@ impl Tool for ServiceRestartTool {
                 "service": string_property("要重启的服务名称"),
                 "wait": boolean_property("是否等待服务完全启动后再返回")
             }),
-            vec!["service".to_string()]
+            vec!["service".to_string()],
         )
     }
 
@@ -789,13 +805,11 @@ impl Tool for ServiceRestartTool {
                 description: "重启规则引擎".to_string(),
             }),
             category: ToolCategory::System,
-            scenarios: vec![
-                UsageScenario {
-                    description: "重启系统服务".to_string(),
-                    example_query: "重启规则引擎".to_string(),
-                    suggested_call: Some(r#"{"service": "rule_engine", "wait": true}"#.to_string()),
-                },
-            ],
+            scenarios: vec![UsageScenario {
+                description: "重启系统服务".to_string(),
+                example_query: "重启规则引擎".to_string(),
+                suggested_call: Some(r#"{"service": "rule_engine", "wait": true}"#.to_string()),
+            }],
             relationships: ToolRelationships {
                 // 建议先获取系统信息
                 call_after: vec!["system_info".to_string()],
@@ -825,7 +839,7 @@ impl Tool for ServiceRestartTool {
                 format!("Service '{}' is not allowed for restart", service),
                 serde_json::json!({
                     "allowed_services": self.allowed_services
-                })
+                }),
             ));
         }
 
@@ -921,7 +935,7 @@ impl Tool for CreateAlertTool {
                 "severity": string_property("告警级别：info, warning, error, critical"),
                 "metadata": string_property("附加的元数据（JSON字符串）")
             }),
-            vec!["title".to_string(), "message".to_string()]
+            vec!["title".to_string(), "message".to_string()],
         )
     }
 
@@ -1056,7 +1070,7 @@ impl Tool for ListAlertsTool {
                 "acknowledged": boolean_property("是否只显示未确认的告警"),
                 "limit": number_property("限制返回数量")
             }),
-            vec![]
+            vec![],
         )
     }
 
@@ -1199,7 +1213,7 @@ impl Tool for AcknowledgeAlertTool {
                 "alert_id": string_property("告警ID"),
                 "acknowledged_by": string_property("确认人名称")
             }),
-            vec!["alert_id".to_string()]
+            vec!["alert_id".to_string()],
         )
     }
 
@@ -1246,9 +1260,7 @@ impl Tool for AcknowledgeAlertTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("alert_id is required".to_string()))?;
 
-        let acknowledged_by = args["acknowledged_by"]
-            .as_str()
-            .unwrap_or("system");
+        let acknowledged_by = args["acknowledged_by"].as_str().unwrap_or("system");
 
         let mut alerts = self.alerts.write().await;
         let found = alerts.iter_mut().find(|a| a.id == alert_id);
@@ -1260,7 +1272,7 @@ impl Tool for AcknowledgeAlertTool {
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
-                    .as_secs() as i64
+                    .as_secs() as i64,
             );
 
             Ok(ToolOutput::success(serde_json::json!({
@@ -1288,18 +1300,18 @@ pub struct ExportToCsvTool {
 impl ExportToCsvTool {
     /// Create a new export to CSV tool.
     pub fn new() -> Self {
-        Self { _storage: Arc::new(()) }
+        Self {
+            _storage: Arc::new(()),
+        }
     }
 
     /// Generate CSV from data points.
     fn generate_csv(&self, data: &[DataPointExport]) -> String {
         let mut csv = String::from("timestamp,device_id,metric,value\n");
         for point in data {
-            csv.push_str(&format!("{},{},{},{}\n",
-                point.timestamp,
-                point.device_id,
-                point.metric,
-                point.value
+            csv.push_str(&format!(
+                "{},{},{},{}\n",
+                point.timestamp, point.device_id, point.metric, point.value
             ));
         }
         csv
@@ -1339,7 +1351,7 @@ impl Tool for ExportToCsvTool {
                 "start_time": number_property("起始时间戳（可选）"),
                 "end_time": number_property("结束时间戳（可选）")
             }),
-            vec!["data_type".to_string()]
+            vec!["data_type".to_string()],
         )
     }
 
@@ -1392,21 +1404,49 @@ impl Tool for ExportToCsvTool {
                 let device_id = args["device_id"].as_str().unwrap_or("sensor_1");
                 let metric = args["metric"].as_str().unwrap_or("temperature");
                 vec![
-                    DataPointExport { timestamp: 1735718400, device_id: device_id.to_string(), metric: metric.to_string(), value: 22.5 },
-                    DataPointExport { timestamp: 1735722000, device_id: device_id.to_string(), metric: metric.to_string(), value: 23.1 },
-                    DataPointExport { timestamp: 1735725600, device_id: device_id.to_string(), metric: metric.to_string(), value: 22.8 },
+                    DataPointExport {
+                        timestamp: 1735718400,
+                        device_id: device_id.to_string(),
+                        metric: metric.to_string(),
+                        value: 22.5,
+                    },
+                    DataPointExport {
+                        timestamp: 1735722000,
+                        device_id: device_id.to_string(),
+                        metric: metric.to_string(),
+                        value: 23.1,
+                    },
+                    DataPointExport {
+                        timestamp: 1735725600,
+                        device_id: device_id.to_string(),
+                        metric: metric.to_string(),
+                        value: 22.8,
+                    },
                 ]
             }
             "rule_history" => {
                 vec![
-                    DataPointExport { timestamp: 1735718400, device_id: "rule_1".to_string(), metric: "triggered".to_string(), value: 1.0 },
-                    DataPointExport { timestamp: 1735722000, device_id: "rule_2".to_string(), metric: "triggered".to_string(), value: 1.0 },
+                    DataPointExport {
+                        timestamp: 1735718400,
+                        device_id: "rule_1".to_string(),
+                        metric: "triggered".to_string(),
+                        value: 1.0,
+                    },
+                    DataPointExport {
+                        timestamp: 1735722000,
+                        device_id: "rule_2".to_string(),
+                        metric: "triggered".to_string(),
+                        value: 1.0,
+                    },
                 ]
             }
             _ => {
-                vec![
-                    DataPointExport { timestamp: 1735718400, device_id: "sample".to_string(), metric: "value".to_string(), value: 1.0 },
-                ]
+                vec![DataPointExport {
+                    timestamp: 1735718400,
+                    device_id: "sample".to_string(),
+                    metric: "value".to_string(),
+                    value: 1.0,
+                }]
             }
         };
 
@@ -1429,7 +1469,9 @@ pub struct ExportToJsonTool {
 impl ExportToJsonTool {
     /// Create a new export to JSON tool.
     pub fn new() -> Self {
-        Self { _storage: Arc::new(()) }
+        Self {
+            _storage: Arc::new(()),
+        }
     }
 }
 
@@ -1456,7 +1498,7 @@ impl Tool for ExportToJsonTool {
                 "device_id": string_property("设备ID（仅用于device_data类型）"),
                 "pretty": boolean_property("是否格式化输出")
             }),
-            vec!["data_type".to_string()]
+            vec!["data_type".to_string()],
         )
     }
 
@@ -1557,7 +1599,9 @@ pub struct GenerateReportTool {
 impl GenerateReportTool {
     /// Create a new generate report tool.
     pub fn new() -> Self {
-        Self { _storage: Arc::new(()) }
+        Self {
+            _storage: Arc::new(()),
+        }
     }
 }
 
@@ -1585,7 +1629,7 @@ impl Tool for GenerateReportTool {
                 "end_time": number_property("结束时间戳（用于custom类型）"),
                 "include_sections": array_property("string", "要包含的报告章节")
             }),
-            vec!["report_type".to_string()]
+            vec!["report_type".to_string()],
         )
     }
 
@@ -1611,13 +1655,14 @@ impl Tool for GenerateReportTool {
                 description: "生成每日报告".to_string(),
             }),
             category: ToolCategory::Data,
-            scenarios: vec![
-                UsageScenario {
-                    description: "生成每日系统运行报告".to_string(),
-                    example_query: "生成今日报告".to_string(),
-                    suggested_call: Some(r#"{"tool": "generate_report", "arguments": {"report_type": "daily"}}"#.to_string()),
-                }
-            ],
+            scenarios: vec![UsageScenario {
+                description: "生成每日系统运行报告".to_string(),
+                example_query: "生成今日报告".to_string(),
+                suggested_call: Some(
+                    r#"{"tool": "generate_report", "arguments": {"report_type": "daily"}}"#
+                        .to_string(),
+                ),
+            }],
             relationships: ToolRelationships {
                 call_after: vec!["system_info".to_string(), "list_alerts".to_string()],
                 exclusive_with: vec![],
@@ -1793,15 +1838,17 @@ fn set_nested_value(value: &mut Value, key: &str, new_value: Value) {
         if i == parts.len() - 1 {
             // Last part - set the value
             if let Some(val) = value_to_set.take()
-                && let Some(obj) = current.as_object_mut() {
-                    obj.insert(part.to_string(), val);
-                }
+                && let Some(obj) = current.as_object_mut()
+            {
+                obj.insert(part.to_string(), val);
+            }
         } else {
             // Navigate deeper
             if current.get(part).is_none()
-                && let Some(obj) = current.as_object_mut() {
-                    obj.insert(part.to_string(), Value::Object(serde_json::Map::new()));
-                }
+                && let Some(obj) = current.as_object_mut()
+            {
+                obj.insert(part.to_string(), Value::Object(serde_json::Map::new()));
+            }
             current = current.get_mut(part).unwrap();
         }
     }
@@ -1830,45 +1877,60 @@ mod tests {
         }));
 
         // Test get
-        let result = tool.execute(serde_json::json!({
-            "operation": "get",
-            "key": "llm.model"
-        })).await.unwrap();
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "get",
+                "key": "llm.model"
+            }))
+            .await
+            .unwrap();
         assert!(result.success);
 
         // Test set
-        let result = tool.execute(serde_json::json!({
-            "operation": "set",
-            "key": "test.value",
-            "value": "hello"
-        })).await.unwrap();
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "set",
+                "key": "test.value",
+                "value": "hello"
+            }))
+            .await
+            .unwrap();
         assert!(result.success);
 
         // Test list
-        let result = tool.execute(serde_json::json!({
-            "operation": "list"
-        })).await.unwrap();
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "list"
+            }))
+            .await
+            .unwrap();
         assert!(result.success);
     }
 
     #[tokio::test]
     async fn test_service_restart_tool() {
         let tool = ServiceRestartTool::new();
-        let result = tool.execute(serde_json::json!({
-            "service": "rule_engine",
-            "wait": true
-        })).await.unwrap();
+        let result = tool
+            .execute(serde_json::json!({
+                "service": "rule_engine",
+                "wait": true
+            }))
+            .await
+            .unwrap();
         assert!(result.success);
     }
 
     #[tokio::test]
     async fn test_create_alert_tool() {
         let tool = CreateAlertTool::new();
-        let result = tool.execute(serde_json::json!({
-            "title": "Test Alert",
-            "message": "This is a test",
-            "severity": "warning"
-        })).await.unwrap();
+        let result = tool
+            .execute(serde_json::json!({
+                "title": "Test Alert",
+                "message": "This is a test",
+                "severity": "warning"
+            }))
+            .await
+            .unwrap();
         assert!(result.success);
         assert!(result.data["id"].is_string());
     }
@@ -1882,34 +1944,38 @@ mod tests {
 
     #[tokio::test]
     async fn test_acknowledge_alert_tool() {
-        let alerts = Arc::new(tokio::sync::RwLock::new(vec![
-            AlertInfo {
-                id: "test_alert".to_string(),
-                title: "Test".to_string(),
-                message: "Test message".to_string(),
-                severity: AlertSeverity::Info,
-                created_at: 0,
-                acknowledged: false,
-                acknowledged_by: None,
-                acknowledged_at: None,
-            }
-        ]));
+        let alerts = Arc::new(tokio::sync::RwLock::new(vec![AlertInfo {
+            id: "test_alert".to_string(),
+            title: "Test".to_string(),
+            message: "Test message".to_string(),
+            severity: AlertSeverity::Info,
+            created_at: 0,
+            acknowledged: false,
+            acknowledged_by: None,
+            acknowledged_at: None,
+        }]));
         let tool = AcknowledgeAlertTool::with_alerts(alerts);
-        let result = tool.execute(serde_json::json!({
-            "alert_id": "test_alert",
-            "acknowledged_by": "admin"
-        })).await.unwrap();
+        let result = tool
+            .execute(serde_json::json!({
+                "alert_id": "test_alert",
+                "acknowledged_by": "admin"
+            }))
+            .await
+            .unwrap();
         assert!(result.success);
     }
 
     #[tokio::test]
     async fn test_export_to_csv_tool() {
         let tool = ExportToCsvTool::new();
-        let result = tool.execute(serde_json::json!({
-            "data_type": "device_data",
-            "device_id": "sensor_1",
-            "metric": "temperature"
-        })).await.unwrap();
+        let result = tool
+            .execute(serde_json::json!({
+                "data_type": "device_data",
+                "device_id": "sensor_1",
+                "metric": "temperature"
+            }))
+            .await
+            .unwrap();
         assert!(result.success);
         assert_eq!(result.data["format"], "csv");
     }
@@ -1917,10 +1983,13 @@ mod tests {
     #[tokio::test]
     async fn test_export_to_json_tool() {
         let tool = ExportToJsonTool::new();
-        let result = tool.execute(serde_json::json!({
-            "data_type": "rules",
-            "pretty": true
-        })).await.unwrap();
+        let result = tool
+            .execute(serde_json::json!({
+                "data_type": "rules",
+                "pretty": true
+            }))
+            .await
+            .unwrap();
         assert!(result.success);
         assert_eq!(result.data["format"], "json");
     }
@@ -1928,9 +1997,12 @@ mod tests {
     #[tokio::test]
     async fn test_generate_report_tool() {
         let tool = GenerateReportTool::new();
-        let result = tool.execute(serde_json::json!({
-            "report_type": "daily"
-        })).await.unwrap();
+        let result = tool
+            .execute(serde_json::json!({
+                "report_type": "daily"
+            }))
+            .await
+            .unwrap();
         assert!(result.success);
         assert_eq!(result.data["report_type"], "daily");
     }

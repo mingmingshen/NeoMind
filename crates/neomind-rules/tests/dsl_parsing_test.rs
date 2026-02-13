@@ -360,7 +360,10 @@ fn test_parse_with_description() {
     let rule = parse_rule(dsl);
 
     assert_eq!(rule.name, "Test Rule");
-    assert_eq!(rule.description.as_ref().unwrap(), "This is a test rule for temperature monitoring");
+    assert_eq!(
+        rule.description.as_ref().unwrap(),
+        "This is a test rule for temperature monitoring"
+    );
 }
 
 #[test]
@@ -499,7 +502,11 @@ fn test_parse_http_methods() {
 
         match &rule.actions[0] {
             RuleAction::HttpRequest { method, .. } => {
-                assert_eq!(*method, expected_method, "Failed for method: {}", method_str);
+                assert_eq!(
+                    *method, expected_method,
+                    "Failed for method: {}",
+                    method_str
+                );
             }
             _ => panic!("Expected HttpRequest action for method: {}", method_str),
         }
@@ -508,11 +515,7 @@ fn test_parse_http_methods() {
 
 #[test]
 fn test_parse_with_all_time_units() {
-    let time_units = [
-        ("10 seconds", 10),
-        ("5 minutes", 300),
-        ("2 hours", 7200),
-    ];
+    let time_units = [("10 seconds", 10), ("5 minutes", 300), ("2 hours", 7200)];
 
     for (unit_str, expected_secs) in time_units {
         let dsl = &format!(
@@ -531,7 +534,12 @@ fn test_parse_with_all_time_units() {
 
         assert!(rule.for_duration.is_some());
         let duration = rule.for_duration.unwrap();
-        assert_eq!(duration.as_secs(), expected_secs as u64, "Failed for unit: {}", unit_str);
+        assert_eq!(
+            duration.as_secs(),
+            expected_secs as u64,
+            "Failed for unit: {}",
+            unit_str
+        );
     }
 }
 

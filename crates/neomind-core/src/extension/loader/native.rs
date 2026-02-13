@@ -6,10 +6,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::extension::system::{ABI_VERSION, CExtensionMetadata, DynExtension, Extension};
 use crate::extension::types::{ExtensionError, ExtensionMetadata, Result};
-use crate::extension::system::{
-    Extension, CExtensionMetadata, ABI_VERSION, DynExtension,
-};
 use tracing::debug;
 
 /// Loaded native extension with its library handle.
@@ -76,7 +74,8 @@ impl NativeExtensionLoader {
 
         // Get ABI version
         let abi_version: libloading::Symbol<unsafe extern "C" fn() -> u32> = unsafe {
-            library.get(b"neomind_extension_abi_version\0")
+            library
+                .get(b"neomind_extension_abi_version\0")
                 .map_err(|e| ExtensionError::SymbolNotFound(format!("abi_version: {}", e)))?
         };
 
@@ -90,7 +89,8 @@ impl NativeExtensionLoader {
 
         // Get extension metadata
         let get_metadata: libloading::Symbol<unsafe extern "C" fn() -> CExtensionMetadata> = unsafe {
-            library.get(b"neomind_extension_metadata\0")
+            library
+                .get(b"neomind_extension_metadata\0")
                 .map_err(|e| ExtensionError::SymbolNotFound(format!("metadata: {}", e)))?
         };
 
@@ -108,23 +108,27 @@ impl NativeExtensionLoader {
             .to_string();
 
         let description = if !c_meta.description.is_null() {
-            Some(unsafe { std::ffi::CStr::from_ptr(c_meta.description) }
-                .to_string_lossy()
-                .to_string())
+            Some(
+                unsafe { std::ffi::CStr::from_ptr(c_meta.description) }
+                    .to_string_lossy()
+                    .to_string(),
+            )
         } else {
             None
         };
 
         let author = if !c_meta.author.is_null() {
-            Some(unsafe { std::ffi::CStr::from_ptr(c_meta.author) }
-                .to_string_lossy()
-                .to_string())
+            Some(
+                unsafe { std::ffi::CStr::from_ptr(c_meta.author) }
+                    .to_string_lossy()
+                    .to_string(),
+            )
         } else {
             None
         };
 
-        let version = semver::Version::parse(&version_str)
-            .unwrap_or_else(|_| semver::Version::new(0, 1, 0));
+        let version =
+            semver::Version::parse(&version_str).unwrap_or_else(|_| semver::Version::new(0, 1, 0));
 
         let metadata = ExtensionMetadata {
             id,
@@ -140,20 +144,26 @@ impl NativeExtensionLoader {
 
         // Create extension instance
         let create_ext: libloading::Symbol<
-            unsafe extern "C" fn(*const u8, usize) -> *mut tokio::sync::RwLock<Box<dyn Extension>>
+            unsafe extern "C" fn(*const u8, usize) -> *mut tokio::sync::RwLock<Box<dyn Extension>>,
         > = unsafe {
-            library.get(b"neomind_extension_create\0")
+            library
+                .get(b"neomind_extension_create\0")
                 .map_err(|e| ExtensionError::SymbolNotFound(format!("create: {}", e)))?
         };
 
         // Serialize config to JSON bytes
         let default_config = serde_json::json!({});
         let config_value = config.unwrap_or(&default_config);
-        let config_string = serde_json::to_string(config_value)
-            .unwrap_or_else(|_| "{}".to_string());
+        let config_string =
+            serde_json::to_string(config_value).unwrap_or_else(|_| "{}".to_string());
         let config_json = std::ffi::CString::new(config_string)
             .unwrap_or_else(|_| std::ffi::CString::new("{}").unwrap());
-        let ext_ptr = unsafe { create_ext(config_json.as_ptr() as *const u8, config_json.as_bytes().len()) };
+        let ext_ptr = unsafe {
+            create_ext(
+                config_json.as_ptr() as *const u8,
+                config_json.as_bytes().len(),
+            )
+        };
 
         if ext_ptr.is_null() {
             return Err(ExtensionError::LoadFailed(
@@ -171,10 +181,7 @@ impl NativeExtensionLoader {
 
         debug!(extension_id = %metadata.id, "Native extension loaded successfully");
 
-        Ok(LoadedNativeExtension {
-            library,
-            extension,
-        })
+        Ok(LoadedNativeExtension { library, extension })
     }
 
     /// Get metadata only (lightweight version for discovery).
@@ -198,7 +205,8 @@ impl NativeExtensionLoader {
 
         // Get ABI version
         let abi_version: libloading::Symbol<unsafe extern "C" fn() -> u32> = unsafe {
-            library.get(b"neomind_extension_abi_version\0")
+            library
+                .get(b"neomind_extension_abi_version\0")
                 .map_err(|e| ExtensionError::SymbolNotFound(format!("abi_version: {}", e)))?
         };
 
@@ -212,7 +220,8 @@ impl NativeExtensionLoader {
 
         // Get extension metadata
         let get_metadata: libloading::Symbol<unsafe extern "C" fn() -> CExtensionMetadata> = unsafe {
-            library.get(b"neomind_extension_metadata\0")
+            library
+                .get(b"neomind_extension_metadata\0")
                 .map_err(|e| ExtensionError::SymbolNotFound(format!("metadata: {}", e)))?
         };
 
@@ -230,23 +239,27 @@ impl NativeExtensionLoader {
             .to_string();
 
         let description = if !c_meta.description.is_null() {
-            Some(unsafe { std::ffi::CStr::from_ptr(c_meta.description) }
-                .to_string_lossy()
-                .to_string())
+            Some(
+                unsafe { std::ffi::CStr::from_ptr(c_meta.description) }
+                    .to_string_lossy()
+                    .to_string(),
+            )
         } else {
             None
         };
 
         let author = if !c_meta.author.is_null() {
-            Some(unsafe { std::ffi::CStr::from_ptr(c_meta.author) }
-                .to_string_lossy()
-                .to_string())
+            Some(
+                unsafe { std::ffi::CStr::from_ptr(c_meta.author) }
+                    .to_string_lossy()
+                    .to_string(),
+            )
         } else {
             None
         };
 
-        let version = semver::Version::parse(&version_str)
-            .unwrap_or_else(|_| semver::Version::new(0, 1, 0));
+        let version =
+            semver::Version::parse(&version_str).unwrap_or_else(|_| semver::Version::new(0, 1, 0));
 
         // Library is dropped here (unloaded), which is fine for metadata-only access
 

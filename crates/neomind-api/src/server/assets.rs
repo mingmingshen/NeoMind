@@ -8,7 +8,7 @@
 
 use axum::{
     extract::Path,
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::IntoResponse,
 };
 
@@ -83,7 +83,10 @@ pub async fn serve_asset(Path(path): Path<String>) -> impl IntoResponse {
             };
 
             (
-                [(header::CONTENT_TYPE, mime), ("cache-control", cache_control)],
+                [
+                    (header::CONTENT_TYPE, mime),
+                    ("cache-control", cache_control),
+                ],
                 file.data.to_vec(),
             )
                 .into_response()
@@ -91,8 +94,9 @@ pub async fn serve_asset(Path(path): Path<String>) -> impl IntoResponse {
         .unwrap_or_else(|| {
             // File not found - for SPA routes, serve index.html
             if let Some(index) = Assets::get("index.html") {
-                let html = String::from_utf8(index.data.to_vec())
-                    .unwrap_or_else(|_| "<!DOCTYPE html><html><body>App loading...</body></html>".to_string());
+                let html = String::from_utf8(index.data.to_vec()).unwrap_or_else(|_| {
+                    "<!DOCTYPE html><html><body>App loading...</body></html>".to_string()
+                });
 
                 // Inject 404 status for actual missing assets
                 if asset_path.contains('.') {

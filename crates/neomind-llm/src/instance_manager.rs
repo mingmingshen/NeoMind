@@ -433,12 +433,61 @@ impl LlmBackendInstanceManager {
                 supports_thinking: false,
                 supports_multimodal: false,
             },
+            BackendTypeDefinition {
+                id: "qwen".to_string(),
+                name: "Qwen".to_string(),
+                description: "通义千问 API".to_string(),
+                default_model: "qwen-plus".to_string(),
+                default_endpoint: Some(
+                    "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(),
+                ),
+                requires_api_key: true,
+                supports_streaming: true,
+                supports_thinking: false,
+                supports_multimodal: true,
+            },
+            BackendTypeDefinition {
+                id: "deepseek".to_string(),
+                name: "DeepSeek".to_string(),
+                description: "DeepSeek API".to_string(),
+                default_model: "deepseek-chat".to_string(),
+                default_endpoint: Some("https://api.deepseek.com/v1".to_string()),
+                requires_api_key: true,
+                supports_streaming: true,
+                supports_thinking: true,
+                supports_multimodal: false,
+            },
+            BackendTypeDefinition {
+                id: "glm".to_string(),
+                name: "GLM".to_string(),
+                description: "智谱 GLM API".to_string(),
+                default_model: "glm-4-flash".to_string(),
+                default_endpoint: Some("https://open.bigmodel.cn/api/paas/v4".to_string()),
+                requires_api_key: true,
+                supports_streaming: true,
+                supports_thinking: false,
+                supports_multimodal: true,
+            },
+            BackendTypeDefinition {
+                id: "minimax".to_string(),
+                name: "MiniMax".to_string(),
+                description: "MiniMax API".to_string(),
+                default_model: "abab6.5s-chat".to_string(),
+                default_endpoint: Some("https://api.minimax.chat/v1".to_string()),
+                requires_api_key: true,
+                supports_streaming: true,
+                supports_thinking: false,
+                supports_multimodal: false,
+            },
         ]
     }
 
     /// Get configuration schema for a backend type
     pub fn get_config_schema(&self, backend_type: &str) -> serde_json::Value {
-        let requires_api_key = matches!(backend_type, "openai" | "anthropic" | "google" | "xai");
+        let requires_api_key = matches!(
+            backend_type,
+            "openai" | "anthropic" | "google" | "xai" | "qwen" | "deepseek" | "glm" | "minimax"
+        );
 
         // Build required fields array - only essential fields are required
         let required: Vec<&str> = vec!["name"]
@@ -466,7 +515,7 @@ impl LlmBackendInstanceManager {
                 "backend_type": {
                     "type": "string",
                     "title": "后端类型",
-                    "enum": ["ollama", "openai", "anthropic", "google", "xai"],
+                    "enum": ["ollama", "openai", "anthropic", "google", "xai", "qwen", "deepseek", "glm", "minimax"],
                     "default": backend_type,
                 },
                 "endpoint": {
@@ -652,8 +701,7 @@ mod tests {
 
     #[test]
     fn test_config_schema_generation() {
-        let manager =
-            LlmBackendInstanceManager::new(LlmBackendStore::open(":memory:").unwrap());
+        let manager = LlmBackendInstanceManager::new(LlmBackendStore::open(":memory:").unwrap());
 
         let schema = manager.get_config_schema("ollama");
         assert_eq!(schema["type"], "object");

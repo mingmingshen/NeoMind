@@ -287,7 +287,9 @@ impl RuleValidator {
                 operator,
                 threshold,
             } => {
-                issues.extend(Self::validate_simple_condition(device_id, metric, operator, threshold, context)?);
+                issues.extend(Self::validate_simple_condition(
+                    device_id, metric, operator, threshold, context,
+                )?);
             }
             RuleCondition::Extension {
                 extension_id,
@@ -314,11 +316,11 @@ impl RuleValidator {
                 max: _,
             } => {
                 // Check device exists
-                let device = context
-                    .get_device(device_id)
-                    .ok_or_else(|| ValidationError::DeviceNotFound {
+                let device = context.get_device(device_id).ok_or_else(|| {
+                    ValidationError::DeviceNotFound {
                         device_id: device_id.clone(),
-                    })?;
+                    }
+                })?;
 
                 // Check device is online (warning only)
                 if !device.online {
@@ -385,11 +387,12 @@ impl RuleValidator {
         let mut issues = Vec::new();
 
         // Check device exists
-        let device = context
-            .get_device(device_id)
-            .ok_or_else(|| ValidationError::DeviceNotFound {
-                device_id: device_id.to_string(),
-            })?;
+        let device =
+            context
+                .get_device(device_id)
+                .ok_or_else(|| ValidationError::DeviceNotFound {
+                    device_id: device_id.to_string(),
+                })?;
 
         // Check device is online (warning only)
         if !device.online {
@@ -413,16 +416,17 @@ impl RuleValidator {
 
         // Validate threshold against metric constraints
         if let (Some(min), Some(max)) = (metric_info.min_value, metric_info.max_value)
-            && (*threshold < min || *threshold > max) {
-                issues.push(ValidationIssue {
-                    code: "THRESHOLD_OUT_OF_RANGE".to_string(),
-                    message: format!(
-                        "Threshold {} is outside valid range [{}, {}]",
-                        threshold, min, max
-                    ),
-                    field: Some("condition.threshold".to_string()),
-                    severity: ValidationSeverity::Warning,
-                });
+            && (*threshold < min || *threshold > max)
+        {
+            issues.push(ValidationIssue {
+                code: "THRESHOLD_OUT_OF_RANGE".to_string(),
+                message: format!(
+                    "Threshold {} is outside valid range [{}, {}]",
+                    threshold, min, max
+                ),
+                field: Some("condition.threshold".to_string()),
+                severity: ValidationSeverity::Warning,
+            });
         }
 
         // Check if operator is compatible with metric type
@@ -434,7 +438,8 @@ impl RuleValidator {
                 ) {
                     issues.push(ValidationIssue {
                         code: "OPERATOR_NOT_COMPATIBLE".to_string(),
-                        message: "Only == and != operators are supported for boolean metrics".to_string(),
+                        message: "Only == and != operators are supported for boolean metrics"
+                            .to_string(),
                         field: Some("condition.operator".to_string()),
                         severity: ValidationSeverity::Error,
                     });
@@ -487,11 +492,11 @@ impl RuleValidator {
                 params,
             } => {
                 // Check device exists
-                let device = context
-                    .get_device(device_id)
-                    .ok_or_else(|| ValidationError::DeviceNotFound {
+                let device = context.get_device(device_id).ok_or_else(|| {
+                    ValidationError::DeviceNotFound {
                         device_id: device_id.clone(),
-                    })?;
+                    }
+                })?;
 
                 // Check command is supported
                 let cmd_info = device
@@ -530,19 +535,30 @@ impl RuleValidator {
             RuleAction::Log { .. } => {
                 // Log actions don't require specific resources
             }
-            RuleAction::Set { device_id, property, .. } => {
+            RuleAction::Set {
+                device_id,
+                property,
+                ..
+            } => {
                 // Check device exists
-                let device = context
-                    .get_device(device_id)
-                    .ok_or_else(|| ValidationError::DeviceNotFound {
+                let device = context.get_device(device_id).ok_or_else(|| {
+                    ValidationError::DeviceNotFound {
                         device_id: device_id.clone(),
-                    })?;
+                    }
+                })?;
 
                 // Check if property is a valid writable property
-                if !device.properties.iter().any(|p| p.name == *property && p.writable) {
+                if !device
+                    .properties
+                    .iter()
+                    .any(|p| p.name == *property && p.writable)
+                {
                     issues.push(ValidationIssue {
                         code: "PROPERTY_NOT_WRITABLE".to_string(),
-                        message: format!("Property '{}' is not writable or doesn't exist", property),
+                        message: format!(
+                            "Property '{}' is not writable or doesn't exist",
+                            property
+                        ),
                         field: Some("actions.set.property".to_string()),
                         severity: ValidationSeverity::Error,
                     });

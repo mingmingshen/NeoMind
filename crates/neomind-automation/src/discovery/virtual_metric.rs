@@ -32,7 +32,7 @@ impl VirtualMetricGenerator {
     ) -> Result<Vec<DiscoveredMetric>> {
         if samples.is_empty() {
             return Err(DiscoveryError::InsufficientData(
-                "No samples provided for metric generation".into()
+                "No samples provided for metric generation".into(),
             ));
         }
 
@@ -77,11 +77,15 @@ impl VirtualMetricGenerator {
         // Extract paths to find the target
         let paths = self.path_extractor.extract_paths(samples).await?;
 
-        let target_path = paths.iter()
+        let target_path = paths
+            .iter()
             .find(|p| p.path == path)
             .ok_or_else(|| DiscoveryError::InvalidData(format!("Path not found: {}", path)))?;
 
-        Ok(self.semantic_inference.enhance_path(target_path, context).await)
+        Ok(self
+            .semantic_inference
+            .enhance_path(target_path, context)
+            .await)
     }
 
     /// Suggest aggregations for multiple metrics
@@ -125,13 +129,19 @@ impl VirtualMetricGenerator {
         let mut derived = Vec::new();
 
         // Check for temperature and humidity to suggest heat index
-        let has_temp = metrics.iter().any(|m| m.semantic_type == SemanticType::Temperature);
-        let has_humid = metrics.iter().any(|m| m.semantic_type == SemanticType::Humidity);
+        let has_temp = metrics
+            .iter()
+            .any(|m| m.semantic_type == SemanticType::Temperature);
+        let has_humid = metrics
+            .iter()
+            .any(|m| m.semantic_type == SemanticType::Humidity);
 
         if has_temp && has_humid {
-            let temp_metric = metrics.iter()
+            let temp_metric = metrics
+                .iter()
                 .find(|m| m.semantic_type == SemanticType::Temperature);
-            let humid_metric = metrics.iter()
+            let humid_metric = metrics
+                .iter()
                 .find(|m| m.semantic_type == SemanticType::Humidity);
 
             if let (Some(temp), Some(humid)) = (temp_metric, humid_metric) {
@@ -147,7 +157,8 @@ impl VirtualMetricGenerator {
         }
 
         // Check for power to suggest energy accumulation
-        let power_metrics: Vec<_> = metrics.iter()
+        let power_metrics: Vec<_> = metrics
+            .iter()
             .filter(|m| m.semantic_type == SemanticType::Power)
             .collect();
 
@@ -173,8 +184,7 @@ impl VirtualMetricGenerator {
             // Key by semantic type and path - clone to avoid borrow issues
             let key = (metric.semantic_type.clone(), metric.path.clone());
 
-            unique.entry(key)
-                .or_insert(metric);
+            unique.entry(key).or_insert(metric);
         }
 
         unique.into_values().collect()

@@ -76,7 +76,10 @@ pub async fn webhook_handler(
     Json(payload): Json<WebhookPayload>,
 ) -> HandlerResult<serde_json::Value> {
     // Get source from query params, default to "webhook"
-    let source = params.get("source").cloned().unwrap_or_else(|| "webhook".to_string());
+    let source = params
+        .get("source")
+        .cloned()
+        .unwrap_or_else(|| "webhook".to_string());
     // Check if device exists
     let device_opt = state.devices.service.get_device(&device_id).await;
 
@@ -99,9 +102,13 @@ pub async fn webhook_handler(
                 let llm = OllamaConfig::new("qwen2.5:3b")
                     .with_endpoint("http://localhost:11434")
                     .with_timeout_secs(120);
-                let runtime = OllamaRuntime::new(llm)
-                    .map_err(|e| ErrorResponse::internal(format!("Failed to create LLM runtime: {}", e)))?;
-                let event_bus = state.core.event_bus.as_ref()
+                let runtime = OllamaRuntime::new(llm).map_err(|e| {
+                    ErrorResponse::internal(format!("Failed to create LLM runtime: {}", e))
+                })?;
+                let event_bus = state
+                    .core
+                    .event_bus
+                    .as_ref()
                     .ok_or_else(|| ErrorResponse::internal("EventBus not available"))?
                     .clone();
                 let mgr = neomind_automation::AutoOnboardManager::new(
@@ -125,7 +132,9 @@ pub async fn webhook_handler(
             // This will create a draft device if enough samples are collected
             // Source indicates where the data came from (e.g., "mqtt:device999", "webhook")
             // Webhook data is typically JSON
-            let _ = manager.process_unknown_device(&device_id, &source, &sample, false).await;
+            let _ = manager
+                .process_unknown_device(&device_id, &source, &sample, false)
+                .await;
 
             info!(
                 device_id = %device_id,
@@ -154,9 +163,9 @@ pub async fn webhook_handler(
         )));
     }
 
-    let timestamp = payload.timestamp.unwrap_or_else(|| {
-        chrono::Utc::now().timestamp()
-    });
+    let timestamp = payload
+        .timestamp
+        .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
     // Process the data and publish events
     let mut metrics_count = 0;
@@ -174,7 +183,8 @@ pub async fn webhook_handler(
                 metric_value,
                 timestamp,
                 payload.quality,
-            ).await;
+            )
+            .await;
 
             metrics_count += 1;
         }
@@ -188,7 +198,8 @@ pub async fn webhook_handler(
         Some(device.device_type.as_str()),
         &payload.data,
         timestamp,
-    ).await;
+    )
+    .await;
 
     info!(
         device_id = %device_id,
@@ -279,7 +290,11 @@ async fn publish_metric_event(
     };
 
     let data_point = DataPoint::new(timestamp, devices_metric_value);
-    let _ = state.devices.telemetry.write(device_id, metric, data_point).await;
+    let _ = state
+        .devices
+        .telemetry
+        .write(device_id, metric, data_point)
+        .await;
 }
 
 /// Process device data through TransformEngine to generate virtual metrics
@@ -354,10 +369,13 @@ async fn process_device_transforms(
                     }
 
                     // Also store in telemetry
-                    let data_point =
-                        DataPoint::new(metric.timestamp, neomind_devices::mdl::MetricValue::Float(metric.value));
+                    let data_point = DataPoint::new(
+                        metric.timestamp,
+                        neomind_devices::mdl::MetricValue::Float(metric.value),
+                    );
                     let _ = state
-                        .devices.telemetry
+                        .devices
+                        .telemetry
                         .write(&metric.device_id, &metric.metric, data_point)
                         .await;
                 }
@@ -369,7 +387,10 @@ async fn process_device_transforms(
             }
         }
         Err(e) => {
-            warn!("Transform processing failed for device {}: {}", device_id, e);
+            warn!(
+                "Transform processing failed for device {}: {}",
+                device_id, e
+            );
         }
     }
 }
@@ -382,12 +403,16 @@ pub async fn webhook_generic_handler(
     Query(params): Query<std::collections::HashMap<String, String>>,
     Json(mut payload): Json<WebhookPayload>,
 ) -> HandlerResult<serde_json::Value> {
-    let device_id = payload.device_id.take().ok_or_else(|| {
-        ErrorResponse::bad_request("device_id is required in request body")
-    })?;
+    let device_id = payload
+        .device_id
+        .take()
+        .ok_or_else(|| ErrorResponse::bad_request("device_id is required in request body"))?;
 
     // Get source from query params, default to "webhook"
-    let source = params.get("source").cloned().unwrap_or_else(|| "webhook".to_string());
+    let source = params
+        .get("source")
+        .cloned()
+        .unwrap_or_else(|| "webhook".to_string());
 
     // Check if device exists
     let device_opt = state.devices.service.get_device(&device_id).await;
@@ -411,9 +436,13 @@ pub async fn webhook_generic_handler(
                 let llm = OllamaConfig::new("qwen2.5:3b")
                     .with_endpoint("http://localhost:11434")
                     .with_timeout_secs(120);
-                let runtime = OllamaRuntime::new(llm)
-                    .map_err(|e| ErrorResponse::internal(format!("Failed to create LLM runtime: {}", e)))?;
-                let event_bus = state.core.event_bus.as_ref()
+                let runtime = OllamaRuntime::new(llm).map_err(|e| {
+                    ErrorResponse::internal(format!("Failed to create LLM runtime: {}", e))
+                })?;
+                let event_bus = state
+                    .core
+                    .event_bus
+                    .as_ref()
                     .ok_or_else(|| ErrorResponse::internal("EventBus not available"))?
                     .clone();
                 let mgr = neomind_automation::AutoOnboardManager::new(
@@ -434,7 +463,9 @@ pub async fn webhook_generic_handler(
             });
 
             // Trigger auto-onboarding analysis
-            let _ = manager.process_unknown_device(&device_id, &source, &sample, false).await;
+            let _ = manager
+                .process_unknown_device(&device_id, &source, &sample, false)
+                .await;
 
             info!(
                 device_id = %device_id,
@@ -463,9 +494,9 @@ pub async fn webhook_generic_handler(
         )));
     }
 
-    let timestamp = payload.timestamp.unwrap_or_else(|| {
-        chrono::Utc::now().timestamp()
-    });
+    let timestamp = payload
+        .timestamp
+        .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
     // Process the data and publish events
     let mut metrics_count = 0;
@@ -480,7 +511,8 @@ pub async fn webhook_generic_handler(
                 metric_value,
                 timestamp,
                 payload.quality,
-            ).await;
+            )
+            .await;
             metrics_count += 1;
         }
     }
@@ -518,8 +550,8 @@ pub async fn get_webhook_url_handler(
     }
 
     // Get server URL from config or use default
-    let server_url = std::env::var("NEOMIND_SERVER_URL")
-        .unwrap_or_else(|_| "http://localhost:3000".to_string());
+    let server_url =
+        std::env::var("NEOMIND_SERVER_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
 
     ok(serde_json::json!({
         "device_id": device_id,

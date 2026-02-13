@@ -8,9 +8,9 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::{Message, MessageId, MessageSeverity, MessageStatus};
 use super::channels::ChannelRegistry;
 use super::error::{Error, Result};
+use super::{Message, MessageId, MessageSeverity, MessageStatus};
 
 /// Persistent message manager with storage backend.
 #[derive(Clone)]
@@ -48,7 +48,7 @@ impl MessageManager {
 
         let store = Arc::new(
             neomind_storage::MessageStore::open(data_dir)
-                .map_err(|e| Error::Storage(format!("Failed to open message store: {}", e)))?
+                .map_err(|e| Error::Storage(format!("Failed to open message store: {}", e)))?,
         );
 
         // Load existing messages into memory
@@ -74,8 +74,7 @@ impl MessageManager {
     /// Convert StoredMessage to Message.
     fn stored_to_message(stored: neomind_storage::StoredMessage) -> Message {
         Message {
-            id: MessageId::from_string(&stored.id)
-                .unwrap_or_else(|_| MessageId::new()),
+            id: MessageId::from_string(&stored.id).unwrap_or_else(|_| MessageId::new()),
             category: stored.category,
             severity: MessageSeverity::from_string(&stored.severity)
                 .unwrap_or(MessageSeverity::Info),
@@ -85,8 +84,7 @@ impl MessageManager {
             source_type: stored.source_type.unwrap_or_else(|| "system".to_string()),
             timestamp: chrono::DateTime::from_timestamp(stored.timestamp, 0)
                 .unwrap_or_else(chrono::Utc::now),
-            status: MessageStatus::from_string(&stored.status)
-                .unwrap_or(MessageStatus::Active),
+            status: MessageStatus::from_string(&stored.status).unwrap_or(MessageStatus::Active),
             metadata: stored.metadata,
             tags: stored.tags.unwrap_or_default(),
         }
@@ -103,7 +101,11 @@ impl MessageManager {
             source: msg.source.clone(),
             source_type: Some(msg.source_type.clone()),
             status: msg.status.as_str().to_string(),
-            tags: if msg.tags.is_empty() { None } else { Some(msg.tags.clone()) },
+            tags: if msg.tags.is_empty() {
+                None
+            } else {
+                Some(msg.tags.clone())
+            },
             metadata: msg.metadata.clone(),
             timestamp: msg.timestamp.timestamp(),
             acknowledged_at: None,
@@ -148,12 +150,16 @@ impl MessageManager {
         let severity = message.severity;
 
         // Store in memory
-        self.messages.write().await.insert(id.clone(), message.clone());
+        self.messages
+            .write()
+            .await
+            .insert(id.clone(), message.clone());
 
         // Persist to storage if available
         if let Some(store) = self.storage.read().await.as_ref() {
             let stored = Self::message_to_stored(&message);
-            store.insert(&stored)
+            store
+                .insert(&stored)
                 .map_err(|e| Error::Storage(format!("Failed to persist message: {}", e)))?;
         }
 
@@ -164,20 +170,21 @@ impl MessageManager {
 
         for channel_name in &channel_names {
             if let Some(channel) = channels.get(channel_name).await
-                && channel.is_enabled() {
-                    match channel.send(&message).await {
-                        Ok(()) => send_results.push((channel_name.clone(), Ok(()))),
-                        Err(e) => {
-                            // Log channel failure but don't fail the entire operation
-                            tracing::warn!(
-                                "Failed to send message through channel '{}': {}",
-                                channel_name,
-                                e
-                            );
-                            send_results.push((channel_name.clone(), Err(e)));
-                        }
+                && channel.is_enabled()
+            {
+                match channel.send(&message).await {
+                    Ok(()) => send_results.push((channel_name.clone(), Ok(()))),
+                    Err(e) => {
+                        // Log channel failure but don't fail the entire operation
+                        tracing::warn!(
+                            "Failed to send message through channel '{}': {}",
+                            channel_name,
+                            e
+                        );
+                        send_results.push((channel_name.clone(), Err(e)));
                     }
                 }
+            }
         }
 
         // Log if all channels failed (but message was still created successfully)
@@ -193,13 +200,15 @@ impl MessageManager {
         if let Some(event_bus) = self.event_bus.read().await.as_ref() {
             use neomind_core::NeoMindEvent;
             let severity_str = format!("{:?}", severity).to_lowercase();
-            let _ = event_bus.publish(NeoMindEvent::MessageCreated {
-                message_id: id.to_string(),
-                title: message.title.clone(),
-                severity: severity_str,
-                message: message.message.clone(),
-                timestamp: message.timestamp.timestamp(),
-            }).await;
+            let _ = event_bus
+                .publish(NeoMindEvent::MessageCreated {
+                    message_id: id.to_string(),
+                    title: message.title.clone(),
+                    severity: severity_str,
+                    message: message.message.clone(),
+                    timestamp: message.timestamp.timestamp(),
+                })
+                .await;
             tracing::debug!("Published MessageCreated event for message {}", id);
         }
 
@@ -251,11 +260,7 @@ impl MessageManager {
     }
 
     /// Create a system message.
-    pub async fn system_message(
-        &self,
-        title: String,
-        message: String,
-    ) -> Result<Message> {
+    pub async fn system_message(&self, title: String, message: String) -> Result<Message> {
         let msg = Message::system(title, message);
         self.create_message(msg).await
     }
@@ -267,12 +272,7 @@ impl MessageManager {
 
     /// List all messages.
     pub async fn list_messages(&self) -> Vec<Message> {
-        let msgs: Vec<Message> = self.messages
-            .read()
-            .await
-            .values()
-            .cloned()
-            .collect();
+        let msgs: Vec<Message> = self.messages.read().await.values().cloned().collect();
         msgs
     }
 
@@ -312,18 +312,21 @@ impl MessageManager {
             // Persist update
             if let Some(store) = self.storage.read().await.as_ref() {
                 let stored = Self::message_to_stored(message);
-                store.update(&stored)
+                store
+                    .update(&stored)
                     .map_err(|e| Error::Storage(format!("Failed to update message: {}", e)))?;
             }
 
             // Publish event
             if let Some(event_bus) = self.event_bus.read().await.as_ref() {
                 use neomind_core::NeoMindEvent;
-                let _ = event_bus.publish(NeoMindEvent::MessageAcknowledged {
-                    message_id: id.to_string(),
-                    acknowledged_by: "api".to_string(),
-                    timestamp: chrono::Utc::now().timestamp(),
-                }).await;
+                let _ = event_bus
+                    .publish(NeoMindEvent::MessageAcknowledged {
+                        message_id: id.to_string(),
+                        acknowledged_by: "api".to_string(),
+                        timestamp: chrono::Utc::now().timestamp(),
+                    })
+                    .await;
             }
 
             Ok(())
@@ -341,17 +344,20 @@ impl MessageManager {
             // Persist update
             if let Some(store) = self.storage.read().await.as_ref() {
                 let stored = Self::message_to_stored(message);
-                store.update(&stored)
+                store
+                    .update(&stored)
                     .map_err(|e| Error::Storage(format!("Failed to update message: {}", e)))?;
             }
 
             // Publish event
             if let Some(event_bus) = self.event_bus.read().await.as_ref() {
                 use neomind_core::NeoMindEvent;
-                let _ = event_bus.publish(NeoMindEvent::MessageResolved {
-                    message_id: id.to_string(),
-                    timestamp: chrono::Utc::now().timestamp(),
-                }).await;
+                let _ = event_bus
+                    .publish(NeoMindEvent::MessageResolved {
+                        message_id: id.to_string(),
+                        timestamp: chrono::Utc::now().timestamp(),
+                    })
+                    .await;
             }
 
             Ok(())
@@ -369,7 +375,8 @@ impl MessageManager {
             // Persist update
             if let Some(store) = self.storage.read().await.as_ref() {
                 let stored = Self::message_to_stored(message);
-                store.update(&stored)
+                store
+                    .update(&stored)
                     .map_err(|e| Error::Storage(format!("Failed to update message: {}", e)))?;
             }
 
@@ -389,7 +396,8 @@ impl MessageManager {
 
         // Delete from storage
         if let Some(store) = self.storage.read().await.as_ref() {
-            store.delete(&id.to_string())
+            store
+                .delete(&id.to_string())
                 .map_err(|e| Error::Storage(format!("Failed to delete message: {}", e)))?;
         }
 
@@ -479,8 +487,12 @@ impl MessageManager {
 
         for message in messages.values() {
             *by_category.entry(message.category.clone()).or_insert(0) += 1;
-            *by_severity.entry(message.severity.as_str().to_string()).or_insert(0) += 1;
-            *by_status.entry(message.status.as_str().to_string()).or_insert(0) += 1;
+            *by_severity
+                .entry(message.severity.as_str().to_string())
+                .or_insert(0) += 1;
+            *by_status
+                .entry(message.status.as_str().to_string())
+                .or_insert(0) += 1;
         }
 
         MessageStats {
@@ -498,7 +510,8 @@ impl MessageManager {
 
         // Clear storage
         if let Some(store) = self.storage.read().await.as_ref() {
-            store.clear()
+            store
+                .clear()
                 .map_err(|e| Error::Storage(format!("Failed to clear messages: {}", e)))?;
         }
 
@@ -522,7 +535,8 @@ impl MessageManager {
 
         // Cleanup from storage
         if let Some(store) = self.storage.read().await.as_ref() {
-            store.cleanup_old(older_than_days)
+            store
+                .cleanup_old(older_than_days)
                 .map_err(|e| Error::Storage(format!("Failed to cleanup messages: {}", e)))?;
         }
 
@@ -532,7 +546,8 @@ impl MessageManager {
     /// Reload messages from storage.
     pub async fn reload(&self) -> Result<()> {
         if let Some(store) = self.storage.read().await.as_ref() {
-            let stored_msgs = store.list()
+            let stored_msgs = store
+                .list()
                 .map_err(|e| Error::Storage(format!("Failed to load messages: {}", e)))?;
 
             let mut messages = HashMap::new();
@@ -644,10 +659,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_message() {
         let manager = MessageManager::new();
-        let msg = Message::system(
-            "Test".to_string(),
-            "Test message".to_string(),
-        );
+        let msg = Message::system("Test".to_string(), "Test message".to_string());
 
         let created = manager.create_message(msg).await.unwrap();
         assert_eq!(created.title, "Test");
@@ -661,12 +673,15 @@ mod tests {
     async fn test_alert_message() {
         let manager = MessageManager::new();
 
-        let created = manager.alert(
-            MessageSeverity::Warning,
-            "Test Alert".to_string(),
-            "This is a test".to_string(),
-            "test_source".to_string(),
-        ).await.unwrap();
+        let created = manager
+            .alert(
+                MessageSeverity::Warning,
+                "Test Alert".to_string(),
+                "This is a test".to_string(),
+                "test_source".to_string(),
+            )
+            .await
+            .unwrap();
 
         assert_eq!(created.title, "Test Alert");
         assert_eq!(created.category, "alert");
@@ -675,10 +690,7 @@ mod tests {
     #[tokio::test]
     async fn test_acknowledge_message() {
         let manager = MessageManager::new();
-        let msg = Message::system(
-            "Test".to_string(),
-            "Test message".to_string(),
-        );
+        let msg = Message::system("Test".to_string(), "Test message".to_string());
 
         let created = manager.create_message(msg).await.unwrap();
         assert!(created.is_active());
@@ -692,10 +704,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_message() {
         let manager = MessageManager::new();
-        let msg = Message::system(
-            "Test".to_string(),
-            "Test message".to_string(),
-        );
+        let msg = Message::system("Test".to_string(), "Test message".to_string());
 
         let created = manager.create_message(msg).await.unwrap();
         manager.resolve(&created.id).await.unwrap();
@@ -707,10 +716,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_message() {
         let manager = MessageManager::new();
-        let msg = Message::system(
-            "Test".to_string(),
-            "Test message".to_string(),
-        );
+        let msg = Message::system("Test".to_string(), "Test message".to_string());
 
         let created = manager.create_message(msg).await.unwrap();
         assert!(manager.get_message(&created.id).await.is_some());

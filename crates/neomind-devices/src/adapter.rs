@@ -5,8 +5,8 @@
 
 use crate::mdl::MetricValue;
 use async_trait::async_trait;
-use neomind_core::{EventBus, NeoMindEvent};
 use futures::{Stream, StreamExt};
+use neomind_core::{EventBus, NeoMindEvent};
 use std::pin::Pin;
 use std::sync::Arc;
 use thiserror::Error;
@@ -183,13 +183,16 @@ fn convert_metric_value(value: MetricValue) -> neomind_core::MetricValue {
         MetricValue::Boolean(v) => neomind_core::MetricValue::Boolean(v),
         MetricValue::Array(arr) => {
             // Convert array to JSON for core metric value
-            let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
-                MetricValue::Integer(i) => json!(*i),
-                MetricValue::Float(f) => json!(*f),
-                MetricValue::String(s) => json!(s),
-                MetricValue::Boolean(b) => json!(*b),
-                _ => json!(null),
-            }).collect();
+            let json_arr: Vec<serde_json::Value> = arr
+                .iter()
+                .map(|v| match v {
+                    MetricValue::Integer(i) => json!(*i),
+                    MetricValue::Float(f) => json!(*f),
+                    MetricValue::String(s) => json!(s),
+                    MetricValue::Boolean(b) => json!(*b),
+                    _ => json!(null),
+                })
+                .collect();
             neomind_core::MetricValue::Json(json!(json_arr))
         }
         MetricValue::Binary(_) => neomind_core::MetricValue::String("<binary>".to_string()),

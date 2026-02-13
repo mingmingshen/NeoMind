@@ -7,8 +7,8 @@
 //! - Panic isolation
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
@@ -60,7 +60,7 @@ impl ExtensionCircuitBreaker {
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_secs()
+                    .as_secs(),
             )),
             failure_threshold,
             success_threshold,
@@ -73,9 +73,9 @@ impl ExtensionCircuitBreaker {
     pub fn with_defaults(extension_id: String) -> Self {
         Self::new(
             extension_id,
-            5,    // 5 failures to open circuit
-            2,    // 2 successes to close circuit
-            60,   // 60 seconds cooldown
+            5,  // 5 failures to open circuit
+            2,  // 2 successes to close circuit
+            60, // 60 seconds cooldown
         )
     }
 
@@ -144,7 +144,8 @@ impl ExtensionCircuitBreaker {
             CircuitState::HalfOpen => {
                 // Failed in half-open, immediately open again
                 self.set_state(CircuitState::Open);
-                self.failure_count.store(self.failure_threshold, Ordering::Relaxed);
+                self.failure_count
+                    .store(self.failure_threshold, Ordering::Relaxed);
                 warn!(extension_id = %self.extension_id, "Circuit breaker OPEN (failed in half-open state)");
             }
             CircuitState::Closed => {
@@ -195,7 +196,7 @@ impl ExtensionCircuitBreaker {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
-            Ordering::Relaxed
+            Ordering::Relaxed,
         );
         self.state.store(state as u8, Ordering::Relaxed);
     }
@@ -294,10 +295,12 @@ impl ExtensionSafetyManager {
     /// Record a panic from an extension.
     pub async fn record_panic(&self, extension_id: &str) {
         let mut panic_counts = self.panic_counts.write().await;
-        let info = panic_counts.entry(extension_id.to_string()).or_insert(PanicInfo {
-            count: 0,
-            last_panic: Instant::now(),
-        });
+        let info = panic_counts
+            .entry(extension_id.to_string())
+            .or_insert(PanicInfo {
+                count: 0,
+                last_panic: Instant::now(),
+            });
         info.count += 1;
         info.last_panic = Instant::now();
 
@@ -308,12 +311,18 @@ impl ExtensionSafetyManager {
                 extension_id,
                 "Too many panics (circuit breaker triggered)",
                 false, // Manual recovery required
-            ).await;
+            )
+            .await;
         }
     }
 
     /// Disable an extension manually or automatically.
-    pub async fn disable_extension(&self, extension_id: &str, reason: &str, can_auto_recover: bool) {
+    pub async fn disable_extension(
+        &self,
+        extension_id: &str,
+        reason: &str,
+        can_auto_recover: bool,
+    ) {
         let mut disabled = self.disabled.write().await;
         disabled.insert(
             extension_id.to_string(),
@@ -350,7 +359,8 @@ impl ExtensionSafetyManager {
         let panic_counts = self.panic_counts.read().await;
 
         // Get all unique extension IDs
-        let all_ids: std::collections::HashSet<_> = breakers.keys()
+        let all_ids: std::collections::HashSet<_> = breakers
+            .keys()
             .chain(disabled.keys())
             .chain(panic_counts.keys())
             .map(|s| s.clone())
@@ -361,14 +371,17 @@ impl ExtensionSafetyManager {
             let disabled_info = disabled.get(&id);
             let panic_info = panic_counts.get(&id);
 
-            status.insert(id.clone(), ExtensionSafetyStatus {
-                extension_id: id.clone(),
-                circuit_state: breaker.map(|b| b.get_state()),
-                failure_count: breaker.map(|b| b.failure_count()).unwrap_or(0),
-                is_disabled: disabled_info.is_some(),
-                disable_reason: disabled_info.map(|d| d.reason.clone()),
-                panic_count: panic_info.map(|p| p.count).unwrap_or(0),
-            });
+            status.insert(
+                id.clone(),
+                ExtensionSafetyStatus {
+                    extension_id: id.clone(),
+                    circuit_state: breaker.map(|b| b.get_state()),
+                    failure_count: breaker.map(|b| b.failure_count()).unwrap_or(0),
+                    is_disabled: disabled_info.is_some(),
+                    disable_reason: disabled_info.map(|d| d.reason.clone()),
+                    panic_count: panic_info.map(|p| p.count).unwrap_or(0),
+                },
+            );
         }
 
         status
@@ -508,7 +521,9 @@ mod tests {
         assert!(manager.is_allowed("test-ext").await);
 
         // Disable the extension
-        manager.disable_extension("test-ext", "Test disable", true).await;
+        manager
+            .disable_extension("test-ext", "Test disable", true)
+            .await;
 
         // Should not be allowed
         assert!(!manager.is_allowed("test-ext").await);

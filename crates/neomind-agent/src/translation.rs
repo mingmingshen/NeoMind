@@ -2,7 +2,6 @@
 //!
 //! Provides conversion between technical formats and human-readable descriptions.
 
-
 use serde::{Deserialize, Serialize};
 
 use neomind_devices::mdl_format::DeviceTypeDefinition;
@@ -279,7 +278,12 @@ impl DslTranslator {
 
         // Extract trigger condition info for raw format
         let trigger_condition = match &rule.condition {
-            RuleCondition::Device { device_id, metric, operator, threshold } => {
+            RuleCondition::Device {
+                device_id,
+                metric,
+                operator,
+                threshold,
+            } => {
                 format!(
                     "{}.{} {} {}",
                     device_id,
@@ -288,7 +292,12 @@ impl DslTranslator {
                     threshold
                 )
             }
-            RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+            RuleCondition::Extension {
+                extension_id,
+                metric,
+                operator,
+                threshold,
+            } => {
                 format!(
                     "EXTENSION {}.{} {} {}",
                     extension_id,
@@ -297,26 +306,30 @@ impl DslTranslator {
                     threshold
                 )
             }
-            RuleCondition::DeviceRange { device_id, metric, min, max } => {
-                format!(
-                    "{}.{} BETWEEN {} AND {}",
-                    device_id,
-                    metric,
-                    min,
-                    max
-                )
+            RuleCondition::DeviceRange {
+                device_id,
+                metric,
+                min,
+                max,
+            } => {
+                format!("{}.{} BETWEEN {} AND {}", device_id, metric, min, max)
             }
-            RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+            RuleCondition::ExtensionRange {
+                extension_id,
+                metric,
+                min,
+                max,
+            } => {
                 format!(
                     "EXTENSION {}.{} BETWEEN {} AND {}",
-                    extension_id,
-                    metric,
-                    min,
-                    max
+                    extension_id, metric, min, max
                 )
             }
             RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
-                format!("(complex condition with {} sub-conditions)", conditions.len())
+                format!(
+                    "(complex condition with {} sub-conditions)",
+                    conditions.len()
+                )
             }
             RuleCondition::Not(_) => "(NOT condition)".to_string(),
         };
@@ -378,7 +391,12 @@ impl DslTranslator {
         };
 
         match &rule.condition {
-            RuleCondition::Device { device_id, metric, operator, threshold } => {
+            RuleCondition::Device {
+                device_id,
+                metric,
+                operator,
+                threshold,
+            } => {
                 let operator_text = match language {
                     Language::Chinese => match operator {
                         ComparisonOperator::GreaterThan => "大于",
@@ -402,26 +420,23 @@ impl DslTranslator {
                     Language::Chinese => {
                         format!(
                             "当设备 '{}' 的指标 '{}' {} {} 时{}",
-                            device_id,
-                            metric,
-                            operator_text,
-                            threshold,
-                            duration_text
+                            device_id, metric, operator_text, threshold, duration_text
                         )
                     }
                     Language::English => {
                         format!(
                             "When metric '{}' on device '{}' is {} {}{}",
-                            metric,
-                            device_id,
-                            operator_text,
-                            threshold,
-                            duration_text
+                            metric, device_id, operator_text, threshold, duration_text
                         )
                     }
                 }
             }
-            RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+            RuleCondition::Extension {
+                extension_id,
+                metric,
+                operator,
+                threshold,
+            } => {
                 let operator_text = match language {
                     Language::Chinese => match operator {
                         ComparisonOperator::GreaterThan => "大于",
@@ -445,115 +460,83 @@ impl DslTranslator {
                     Language::Chinese => {
                         format!(
                             "当扩展 '{}' 的指标 '{}' {} {} 时{}",
-                            extension_id,
-                            metric,
-                            operator_text,
-                            threshold,
-                            duration_text
+                            extension_id, metric, operator_text, threshold, duration_text
                         )
                     }
                     Language::English => {
                         format!(
                             "When metric '{}' on extension '{}' is {} {}{}",
-                            metric,
-                            extension_id,
-                            operator_text,
-                            threshold,
-                            duration_text
+                            metric, extension_id, operator_text, threshold, duration_text
                         )
                     }
                 }
             }
-            RuleCondition::DeviceRange { device_id, metric, min, max } => {
-                match language {
-                    Language::Chinese => {
-                        format!(
-                            "当设备 '{}' 的指标 '{}' 在 {} 到 {} 之间时{}",
-                            device_id,
-                            metric,
-                            min,
-                            max,
-                            duration_text
-                        )
-                    }
-                    Language::English => {
-                        format!(
-                            "When metric '{}' on device '{}' is between {} and {}{}",
-                            metric,
-                            device_id,
-                            min,
-                            max,
-                            duration_text
-                        )
-                    }
+            RuleCondition::DeviceRange {
+                device_id,
+                metric,
+                min,
+                max,
+            } => match language {
+                Language::Chinese => {
+                    format!(
+                        "当设备 '{}' 的指标 '{}' 在 {} 到 {} 之间时{}",
+                        device_id, metric, min, max, duration_text
+                    )
                 }
-            }
-            RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
-                match language {
-                    Language::Chinese => {
-                        format!(
-                            "当扩展 '{}' 的指标 '{}' 在 {} 到 {} 之间时{}",
-                            extension_id,
-                            metric,
-                            min,
-                            max,
-                            duration_text
-                        )
-                    }
-                    Language::English => {
-                        format!(
-                            "When metric '{}' on extension '{}' is between {} and {}{}",
-                            metric,
-                            extension_id,
-                            min,
-                            max,
-                            duration_text
-                        )
-                    }
+                Language::English => {
+                    format!(
+                        "When metric '{}' on device '{}' is between {} and {}{}",
+                        metric, device_id, min, max, duration_text
+                    )
                 }
-            }
-            RuleCondition::And(conditions) => {
-                match language {
-                    Language::Chinese => {
-                        format!(
-                            "当{}个条件同时满足时{}",
-                            conditions.len(),
-                            duration_text
-                        )
-                    }
-                    Language::English => {
-                        format!(
-                            "When all {} conditions are met{}",
-                            conditions.len(),
-                            duration_text
-                        )
-                    }
+            },
+            RuleCondition::ExtensionRange {
+                extension_id,
+                metric,
+                min,
+                max,
+            } => match language {
+                Language::Chinese => {
+                    format!(
+                        "当扩展 '{}' 的指标 '{}' 在 {} 到 {} 之间时{}",
+                        extension_id, metric, min, max, duration_text
+                    )
                 }
-            }
-            RuleCondition::Or(conditions) => {
-                match language {
-                    Language::Chinese => {
-                        format!(
-                            "当{}个条件中任一满足时{}",
-                            conditions.len(),
-                            duration_text
-                        )
-                    }
-                    Language::English => {
-                        format!(
-                            "When any of {} conditions is met{}",
-                            conditions.len(),
-                            duration_text
-                        )
-                    }
+                Language::English => {
+                    format!(
+                        "When metric '{}' on extension '{}' is between {} and {}{}",
+                        metric, extension_id, min, max, duration_text
+                    )
                 }
-            }
-            RuleCondition::Not(_) => {
-                match language {
-                    Language::Chinese => format!("当条件不满足时{}", duration_text),
-                    Language::English => format!("When condition is NOT met{}", duration_text),
+            },
+            RuleCondition::And(conditions) => match language {
+                Language::Chinese => {
+                    format!("当{}个条件同时满足时{}", conditions.len(), duration_text)
                 }
-            }
+                Language::English => {
+                    format!(
+                        "When all {} conditions are met{}",
+                        conditions.len(),
+                        duration_text
+                    )
+                }
+            },
+            RuleCondition::Or(conditions) => match language {
+                Language::Chinese => {
+                    format!("当{}个条件中任一满足时{}", conditions.len(), duration_text)
+                }
+                Language::English => {
+                    format!(
+                        "When any of {} conditions is met{}",
+                        conditions.len(),
+                        duration_text
+                    )
+                }
+            },
+            RuleCondition::Not(_) => match language {
+                Language::Chinese => format!("当条件不满足时{}", duration_text),
+                Language::English => format!("When condition is NOT met{}", duration_text),
+            },
         }
     }
 
@@ -619,17 +602,26 @@ impl DslTranslator {
     fn summarize_rule(rule: &ParsedRule, language: Language) -> String {
         // Extract device_id and metric from condition
         let (device_id, metric) = match &rule.condition {
-            RuleCondition::Device { device_id, metric, .. } |
-            RuleCondition::DeviceRange { device_id, metric, .. } => {
-                (device_id.clone(), metric.clone())
+            RuleCondition::Device {
+                device_id, metric, ..
             }
-            RuleCondition::Extension { extension_id, metric, .. } |
-            RuleCondition::ExtensionRange { extension_id, metric, .. } => {
-                (extension_id.clone(), metric.clone())
+            | RuleCondition::DeviceRange {
+                device_id, metric, ..
+            } => (device_id.clone(), metric.clone()),
+            RuleCondition::Extension {
+                extension_id,
+                metric,
+                ..
             }
-            RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
-                (format!("({} devices)", conditions.len()), "(complex)".to_string())
-            }
+            | RuleCondition::ExtensionRange {
+                extension_id,
+                metric,
+                ..
+            } => (extension_id.clone(), metric.clone()),
+            RuleCondition::And(conditions) | RuleCondition::Or(conditions) => (
+                format!("({} devices)", conditions.len()),
+                "(complex)".to_string(),
+            ),
             RuleCondition::Not(_) => ("(not)".to_string(), "(complex)".to_string()),
         };
 
@@ -744,18 +736,14 @@ impl NlToDslConverter {
 
         if let Some(start) = desc_lower.find("规则名为") {
             let start = start + "规则名为".len();
-            if let Some(end) =
-                description[start..].find(['，', '。', ','])
-            {
+            if let Some(end) = description[start..].find(['，', '。', ',']) {
                 return Some(description[start..start + end].trim().to_string());
             }
         }
 
         if let Some(start) = desc_lower.find("名为") {
             let start = start + "名为".len();
-            if let Some(end) =
-                description[start..].find([' ', '，', '。', ','])
-            {
+            if let Some(end) = description[start..].find([' ', '，', '。', ',']) {
                 return Some(description[start..start + end].trim().to_string());
             }
         }
@@ -866,7 +854,10 @@ impl NlToDslConverter {
             } else {
                 "规则触发".to_string()
             };
-            actions.push(RuleAction::Notify { message, channels: None });
+            actions.push(RuleAction::Notify {
+                message,
+                channels: None,
+            });
         }
 
         // Check for logging intent
@@ -1026,9 +1017,9 @@ pub enum ConversionError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neomind_rules::dsl::RuleDslParser;
-    use neomind_devices::mdl_format::MetricDefinition;
     use neomind_devices::MetricDataType;
+    use neomind_devices::mdl_format::MetricDefinition;
+    use neomind_rules::dsl::RuleDslParser;
     use std::collections::HashMap;
 
     #[test]

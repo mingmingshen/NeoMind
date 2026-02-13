@@ -156,7 +156,8 @@ impl ExtensionStore {
         {
             let singleton = EXTENSION_STORE_SINGLETON.lock().unwrap();
             if let Some(store) = singleton.as_ref()
-                && store.path == path_str {
+                && store.path == path_str
+            {
                 return Ok(store.clone());
             }
         }

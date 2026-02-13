@@ -7,6 +7,7 @@
 //! 4. Query metrics
 //! 5. Query telemetry data
 
+use futures::Stream;
 use neomind_core::EventBus;
 use neomind_devices::mdl::MetricDataType;
 use neomind_devices::mdl_format::{CommandDefinition, MetricDefinition, ParameterDefinition};
@@ -14,7 +15,6 @@ use neomind_devices::{
     AdapterResult, ConnectionConfig, DeviceAdapter, DeviceConfig, DeviceRegistry, DeviceService,
     DeviceTypeTemplate,
 };
-use futures::Stream;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::test;

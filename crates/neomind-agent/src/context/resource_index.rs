@@ -336,7 +336,8 @@ impl ResourceIndex {
         // Index by name
         {
             let mut name_idx = self.name_index.write().await;
-            name_idx.entry(name_lower)
+            name_idx
+                .entry(name_lower)
                 .or_insert_with(Vec::new)
                 .push(id.clone());
         }
@@ -345,7 +346,8 @@ impl ResourceIndex {
         {
             let mut alias_idx = self.alias_index.write().await;
             for alias in &resource.aliases {
-                alias_idx.entry(alias.to_lowercase())
+                alias_idx
+                    .entry(alias.to_lowercase())
                     .or_insert_with(Vec::new)
                     .push(id.clone());
             }
@@ -355,7 +357,8 @@ impl ResourceIndex {
         {
             let mut kw_idx = self.keyword_index.write().await;
             for kw in &resource.keywords {
-                kw_idx.entry(kw.to_lowercase())
+                kw_idx
+                    .entry(kw.to_lowercase())
                     .or_insert_with(Vec::new)
                     .push(id.clone());
             }
@@ -364,7 +367,8 @@ impl ResourceIndex {
         // Index by location
         if let Some(loc) = &location {
             let mut loc_idx = self.location_index.write().await;
-            loc_idx.entry(loc.to_lowercase())
+            loc_idx
+                .entry(loc.to_lowercase())
                 .or_insert_with(Vec::new)
                 .push(id.clone());
         }
@@ -373,7 +377,8 @@ impl ResourceIndex {
         {
             let mut cap_idx = self.capability_index.write().await;
             for cap in &capabilities {
-                cap_idx.entry(cap.to_lowercase())
+                cap_idx
+                    .entry(cap.to_lowercase())
                     .or_insert_with(Vec::new)
                     .push(id.clone());
             }
@@ -382,7 +387,8 @@ impl ResourceIndex {
         // Index by type
         {
             let mut type_idx = self.type_index.write().await;
-            type_idx.entry(resource_type)
+            type_idx
+                .entry(resource_type)
                 .or_insert_with(Vec::new)
                 .push(id.clone());
         }
@@ -516,7 +522,11 @@ impl ResourceIndex {
             .collect();
 
         // Sort by score descending
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Limit results
         results.truncate(query.limit);
@@ -528,25 +538,48 @@ impl ResourceIndex {
         let terms = Self::extract_terms(query_str);
 
         // Detect query intent
-        let resource_type = if terms.iter().any(|t| t.contains("设备") || t.contains("device")) {
+        let resource_type = if terms
+            .iter()
+            .any(|t| t.contains("设备") || t.contains("device"))
+        {
             None // Don't filter, let results speak
-        } else if terms.iter().any(|t| t.contains("通道") || t.contains("channel") || t.contains("告警")) {
+        } else if terms
+            .iter()
+            .any(|t| t.contains("通道") || t.contains("channel") || t.contains("告警"))
+        {
             Some("channel".to_string())
-        } else if terms.iter().any(|t| t.contains("工作流") || t.contains("workflow")) {
+        } else if terms
+            .iter()
+            .any(|t| t.contains("工作流") || t.contains("workflow"))
+        {
             Some("workflow".to_string())
         } else {
             None
         };
 
-        let capability = terms.iter().find(|t| {
-            t.contains("温度") || t.contains("湿度") || t.contains("亮度")
-                || t.contains("temperature") || t.contains("humidity") || t.contains("brightness")
-        }).cloned();
+        let capability = terms
+            .iter()
+            .find(|t| {
+                t.contains("温度")
+                    || t.contains("湿度")
+                    || t.contains("亮度")
+                    || t.contains("temperature")
+                    || t.contains("humidity")
+                    || t.contains("brightness")
+            })
+            .cloned();
 
-        let location = terms.iter().find(|t| {
-            t.contains("客厅") || t.contains("卧室") || t.contains("厨房")
-                || t.contains("living") || t.contains("bedroom") || t.contains("kitchen")
-        }).cloned();
+        let location = terms
+            .iter()
+            .find(|t| {
+                t.contains("客厅")
+                    || t.contains("卧室")
+                    || t.contains("厨房")
+                    || t.contains("living")
+                    || t.contains("bedroom")
+                    || t.contains("kitchen")
+            })
+            .cloned();
 
         let query = SearchQuery {
             terms: terms.clone(),
@@ -585,7 +618,11 @@ impl ResourceIndex {
     }
 
     /// Score a resource against a search query.
-    fn score_resource(&self, resource: &Resource, query: &SearchQuery) -> (f32, Vec<String>, Vec<String>) {
+    fn score_resource(
+        &self,
+        resource: &Resource,
+        query: &SearchQuery,
+    ) -> (f32, Vec<String>, Vec<String>) {
         let mut score = 0.0f32;
         let mut matched_fields = Vec::new();
         let mut highlights = Vec::new();
@@ -637,7 +674,8 @@ impl ResourceIndex {
             if let Some(_cap) = &query.capability {
                 for capability in resource.data.capabilities() {
                     if capability.to_lowercase().contains(&term_lower)
-                        || term_lower.contains(&capability.to_lowercase()) {
+                        || term_lower.contains(&capability.to_lowercase())
+                    {
                         score += 0.6;
                         matched_fields.push("capability".to_string());
                     }
@@ -648,10 +686,13 @@ impl ResourceIndex {
         // Location match bonus
         if let Some(query_loc) = &query.location
             && let Some(resource_loc) = resource.data.location()
-                && resource_loc.to_lowercase().contains(&query_loc.to_lowercase()) {
-                    score += 0.3;
-                    matched_fields.push("location".to_string());
-                }
+            && resource_loc
+                .to_lowercase()
+                .contains(&query_loc.to_lowercase())
+        {
+            score += 0.3;
+            matched_fields.push("location".to_string());
+        }
 
         // Normalize score to 0-1 using sigmoid-like function
         // This prevents raw score accumulation from growing too large
@@ -669,7 +710,8 @@ impl ResourceIndex {
     /// List all resources of a given type.
     pub async fn list_by_type(&self, resource_type: &str) -> Vec<Resource> {
         let resources = self.resources.read().await;
-        resources.values()
+        resources
+            .values()
             .filter(|r| r.id.resource_type == resource_type)
             .cloned()
             .collect()
@@ -697,9 +739,10 @@ impl ResourceIndex {
         let mut online_devices = 0;
         for r in resources.values() {
             if let ResourceData::Device(d) = &r.data
-                && d.online {
-                    online_devices += 1;
-                }
+                && d.online
+            {
+                online_devices += 1;
+            }
         }
 
         ResourceIndexStats {
@@ -758,7 +801,11 @@ impl ResourceDataHelper for ResourceData {
     fn capabilities(&self) -> Vec<String> {
         match self {
             ResourceData::Device(d) => d.capabilities.iter().map(|c| c.name.clone()).collect(),
-            ResourceData::DeviceType(d) => d.default_capabilities.iter().map(|c| c.name.clone()).collect(),
+            ResourceData::DeviceType(d) => d
+                .default_capabilities
+                .iter()
+                .map(|c| c.name.clone())
+                .collect(),
             ResourceData::AlertChannel(_) => vec![],
             ResourceData::Workflow(_) => vec![],
             ResourceData::Generic(_) => vec![],
@@ -839,8 +886,14 @@ impl Resource {
     pub fn matches(&self, term: &str) -> bool {
         let term_lower = term.to_lowercase();
         self.name.to_lowercase().contains(&term_lower)
-            || self.aliases.iter().any(|a| a.to_lowercase().contains(&term_lower))
-            || self.keywords.iter().any(|k| k.to_lowercase().contains(&term_lower))
+            || self
+                .aliases
+                .iter()
+                .any(|a| a.to_lowercase().contains(&term_lower))
+            || self
+                .keywords
+                .iter()
+                .any(|k| k.to_lowercase().contains(&term_lower))
     }
 }
 
@@ -899,11 +952,7 @@ mod tests {
         let index = ResourceIndex::new();
 
         for i in 0..5 {
-            let device = Resource::device(
-                format!("device_{}", i),
-                format!("设备{}", i),
-                "sensor"
-            );
+            let device = Resource::device(format!("device_{}", i), format!("设备{}", i), "sensor");
             index.register(device).await.unwrap();
         }
 

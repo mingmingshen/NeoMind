@@ -139,10 +139,12 @@ fn format_value(value: &Value) -> String {
         Value::String(s) => {
             // Check if it's a timestamp
             if let Ok(ts) = s.parse::<i64>()
-                && ts > 1_000_000_000 && ts < 2_000_000_000
-                    && let Some(datetime) = timestamp_to_datetime(ts) {
-                        return datetime;
-                    }
+                && ts > 1_000_000_000
+                && ts < 2_000_000_000
+                && let Some(datetime) = timestamp_to_datetime(ts)
+            {
+                return datetime;
+            }
             s.clone()
         }
         Value::Array(arr) if arr.len() == 1 => format_value(&arr[0]),
@@ -232,15 +234,9 @@ pub fn format_summary(tool_name: &str, result: &serde_json::Map<String, Value>) 
             let count = result.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
             format!("📜 找到 {} 条规则", count)
         }
-        "control_device" => {
-            "✅ 设备控制命令已发送".to_string()
-        }
-        "create_rule" => {
-            "➕ 自动化规则已创建".to_string()
-        }
-        "trigger_workflow" => {
-            "⚡ 工作流已触发".to_string()
-        }
+        "control_device" => "✅ 设备控制命令已发送".to_string(),
+        "create_rule" => "➕ 自动化规则已创建".to_string(),
+        "trigger_workflow" => "⚡ 工作流已触发".to_string(),
         "query_rule_history" => {
             let count = result.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
             format!("📜 找到 {} 条执行历史", count)

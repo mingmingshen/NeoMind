@@ -221,9 +221,10 @@ impl LlmKnowledgeBase {
             if let Some(entry) = entries.get(&result.id) {
                 // Filter by type if specified
                 if let Some(ref ft) = filter_type
-                    && &entry.entry_type != ft {
-                        continue;
-                    }
+                    && &entry.entry_type != ft
+                {
+                    continue;
+                }
 
                 results.push(KnowledgeSearchResult {
                     entry: entry.clone(),

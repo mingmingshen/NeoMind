@@ -1,12 +1,13 @@
 //! Basic LLM test to verify connectivity.
 
-use neomind_llm::backends::ollama::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::{LlmInput, LlmRuntime};
-use neomind_core::message::{Message, MessageRole, Content};
+use neomind_core::message::{Content, Message, MessageRole};
+use neomind_llm::backends::ollama::{OllamaConfig, OllamaRuntime};
 
 async fn is_ollama_available() -> bool {
     let client = reqwest::Client::new();
-    if let Ok(resp) = client.get("http://localhost:11434/api/tags")
+    if let Ok(resp) = client
+        .get("http://localhost:11434/api/tags")
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await
@@ -26,8 +27,8 @@ async fn test_basic_chat() {
     }
 
     let model = "qwen3:1.7b";
-    let runtime = OllamaRuntime::new(OllamaConfig::new(model))
-        .expect("Failed to create Ollama runtime");
+    let runtime =
+        OllamaRuntime::new(OllamaConfig::new(model)).expect("Failed to create Ollama runtime");
 
     println!("\n=== Test: Basic chat ===");
 

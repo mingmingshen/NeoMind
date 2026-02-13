@@ -27,12 +27,9 @@
 //! return result.temp_f
 //! ```
 
-use crate::types::{
-    TransformAutomation, TransformOperation, AggregationFunc,
-    TimeWindow,
-};
 use crate::error::{AutomationError, Result};
 use crate::output_registry::TransformOutputRegistry;
+use crate::types::{AggregationFunc, TimeWindow, TransformAutomation, TransformOperation};
 use chrono::Utc;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -103,31 +100,34 @@ impl JsTransformExecutor {
         timestamp: i64,
         extension_registry: Option<&Arc<ExtensionRegistry>>,
     ) -> Result<Vec<TransformedMetric>> {
-        use boa_engine::{context::Context, Source, js_string, object::FunctionObjectBuilder, JsValue};
+        use boa_engine::{
+            JsValue, Source, context::Context, js_string, object::FunctionObjectBuilder,
+        };
 
         // Create Boa context
         let mut context = Context::default();
 
         // Inject input data as JSON
-        let input_json = serde_json::to_string(input)
-            .map_err(|e| AutomationError::TransformError {
+        let input_json =
+            serde_json::to_string(input).map_err(|e| AutomationError::TransformError {
                 operation: "JsTransform".to_string(),
                 message: format!("Failed to serialize input: {}", e),
             })?;
 
         // Define the input variable
         let setup_code = format!("const input = {};", input_json);
-        context.eval(Source::from_bytes(setup_code.as_bytes())).map_err(|e| {
-            AutomationError::TransformError {
+        context
+            .eval(Source::from_bytes(setup_code.as_bytes()))
+            .map_err(|e| AutomationError::TransformError {
                 operation: "JsTransform".to_string(),
                 message: format!("Failed to set input: {}", e),
-            }
-        })?;
+            })?;
 
         // Pre-execute extension calls if registry is provided
         // We parse the code for extensions.invoke() calls, execute them asynchronously,
         // and inject the results into the JS context before running user code
-        let mut extension_results: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+        let mut extension_results: std::collections::HashMap<String, Value> =
+            std::collections::HashMap::new();
 
         if let Some(registry) = extension_registry {
             // Try to get current tokio runtime handle
@@ -154,7 +154,11 @@ impl JsTransformExecutor {
 
                         // Skip whitespace
                         while parse_pos < after_open.len()
-                            && after_open.chars().nth(parse_pos).map_or(false, |c| c.is_whitespace()) {
+                            && after_open
+                                .chars()
+                                .nth(parse_pos)
+                                .map_or(false, |c| c.is_whitespace())
+                        {
                             parse_pos += 1;
                         }
 
@@ -180,12 +184,18 @@ impl JsTransformExecutor {
 
                                 // Skip to command
                                 while parse_pos < after_open.len()
-                                    && after_open.chars().nth(parse_pos).map_or(false, |c| c.is_whitespace() || c == ',') {
+                                    && after_open
+                                        .chars()
+                                        .nth(parse_pos)
+                                        .map_or(false, |c| c.is_whitespace() || c == ',')
+                                {
                                     parse_pos += 1;
                                 }
 
                                 // Find command quote
-                                if let Some(_) = after_open[parse_pos..].find(|c| c == '\'' || c == '"') {
+                                if let Some(_) =
+                                    after_open[parse_pos..].find(|c| c == '\'' || c == '"')
+                                {
                                     let cmd_quote_char = after_open.chars().nth(parse_pos).unwrap();
                                     let cmd_start = parse_pos + 1;
                                     parse_pos = cmd_start;
@@ -193,7 +203,8 @@ impl JsTransformExecutor {
                                     // Find closing quote for command
                                     let mut cmd_end = None;
                                     while parse_pos < after_open.len() {
-                                        if after_open.chars().nth(parse_pos) == Some(cmd_quote_char) {
+                                        if after_open.chars().nth(parse_pos) == Some(cmd_quote_char)
+                                        {
                                             cmd_end = Some(parse_pos);
                                             parse_pos += 1;
                                             break;
@@ -207,7 +218,13 @@ impl JsTransformExecutor {
                                         // Try to parse params (object or null)
                                         let params_val = loop {
                                             while parse_pos < after_open.len()
-                                                && after_open.chars().nth(parse_pos).map_or(false, |c| c.is_whitespace() || c == ',') {
+                                                && after_open
+                                                    .chars()
+                                                    .nth(parse_pos)
+                                                    .map_or(false, |c| {
+                                                        c.is_whitespace() || c == ','
+                                                    })
+                                            {
                                                 parse_pos += 1;
                                             }
 
@@ -222,35 +239,48 @@ impl JsTransformExecutor {
                                                 parse_pos += 1;
                                                 let params_start = parse_pos;
 
-                                                while parse_pos < after_open.len() && brace_count > 0 {
-                                                    if after_open.chars().nth(parse_pos) == Some('{') {
+                                                while parse_pos < after_open.len()
+                                                    && brace_count > 0
+                                                {
+                                                    if after_open.chars().nth(parse_pos)
+                                                        == Some('{')
+                                                    {
                                                         brace_count += 1;
-                                                    } else if after_open.chars().nth(parse_pos) == Some('}') {
+                                                    } else if after_open.chars().nth(parse_pos)
+                                                        == Some('}')
+                                                    {
                                                         brace_count -= 1;
                                                     }
                                                     parse_pos += 1;
                                                 }
 
-                                                let params_str = after_open[params_start..parse_pos - 1].trim();
+                                                let params_str =
+                                                    after_open[params_start..parse_pos - 1].trim();
                                                 if let Ok(v) = serde_json::from_str(params_str) {
                                                     break v;
                                                 }
                                                 break serde_json::json!({});
-                                            } else if next_char == Some('\'' ) || next_char == Some('"') {
+                                            } else if next_char == Some('\'')
+                                                || next_char == Some('"')
+                                            {
                                                 // String parameter - could be nested JSON
                                                 let quote = next_char.unwrap();
                                                 parse_pos += 1;
                                                 let str_start = parse_pos;
 
                                                 while parse_pos < after_open.len()
-                                                    && after_open.chars().nth(parse_pos) != Some(quote) {
+                                                    && after_open.chars().nth(parse_pos)
+                                                        != Some(quote)
+                                                {
                                                     parse_pos += 1;
-                                                    }
+                                                }
 
-                                                    if let Ok(s) = serde_json::from_str::<Value>(&after_open[str_start..parse_pos]) {
-                                                        break s;
-                                                    }
-                                                    break serde_json::json!({});
+                                                if let Ok(s) = serde_json::from_str::<Value>(
+                                                    &after_open[str_start..parse_pos],
+                                                ) {
+                                                    break s;
+                                                }
+                                                break serde_json::json!({});
                                             } else {
                                                 break serde_json::json!({});
                                             }
@@ -326,18 +356,14 @@ impl JsTransformExecutor {
                 let value_json = serde_json::to_string(value).unwrap_or_default();
                 let var_name = format!("ext_result_{}", key.replace("::", "_"));
 
-                let inject_code = format!(
-                    "const {} = {};",
-                    var_name,
-                    value_json
-                );
+                let inject_code = format!("const {} = {};", var_name, value_json);
 
-                context.eval(Source::from_bytes(inject_code.as_bytes())).map_err(|e| {
-                    AutomationError::TransformError {
+                context
+                    .eval(Source::from_bytes(inject_code.as_bytes()))
+                    .map_err(|e| AutomationError::TransformError {
                         operation: "JsTransform".to_string(),
                         message: format!("Failed to inject extension result: {}", e),
-                    }
-                })?;
+                    })?;
 
                 tracing::debug!("Injected extension result as variable: {}", var_name);
             }
@@ -345,30 +371,40 @@ impl JsTransformExecutor {
             // Create a global lookup object for extensions.invoke()
             let results_json_str = serde_json::to_string(&results_json).unwrap_or_default();
             let lookup_code = format!("const __extension_results__ = {};", results_json_str);
-            context.eval(Source::from_bytes(lookup_code.as_bytes())).map_err(|e| {
-                AutomationError::TransformError {
+            context
+                .eval(Source::from_bytes(lookup_code.as_bytes()))
+                .map_err(|e| AutomationError::TransformError {
                     operation: "JsTransform".to_string(),
                     message: format!("Failed to inject extension results lookup: {}", e),
-                }
-            })?;
+                })?;
 
             // Provide extensions.invoke() function that looks up pre-computed results
             let invoke_fn = boa_engine::NativeFunction::from_copy_closure(
                 |_this, args: &[JsValue], context: &mut Context<'_>| {
-                    let extension_id = args.get(0).and_then(|v| v.as_string())
+                    let extension_id = args
+                        .get(0)
+                        .and_then(|v| v.as_string())
                         .map(|s| s.to_std_string_escaped())
                         .unwrap_or_default();
-                    let command = args.get(1).and_then(|v| v.as_string())
+                    let command = args
+                        .get(1)
+                        .and_then(|v| v.as_string())
                         .map(|s| s.to_std_string_escaped())
                         .unwrap_or_default();
 
                     let key = format!("{}::{}", extension_id, command);
 
                     // Look up in the global __extension_results__ object
-                    let lookup_code = format!("__extension_results__['{}']", key.replace('\\', "\\\\").replace('\'', "\\'"));
+                    let lookup_code = format!(
+                        "__extension_results__['{}']",
+                        key.replace('\\', "\\\\").replace('\'', "\\'")
+                    );
                     match context.eval(Source::from_bytes(lookup_code.as_bytes())) {
                         Ok(val) => Ok(val),
-                        Err(_) => Ok(JsValue::from(js_string!(format!("Extension result not found: {}", key)))),
+                        Err(_) => Ok(JsValue::from(js_string!(format!(
+                            "Extension result not found: {}",
+                            key
+                        )))),
                     }
                 },
             );
@@ -379,33 +415,35 @@ impl JsTransformExecutor {
                 .build();
 
             // Register extensions_invoke() for use in user code
-            context.register_global_property(
-                js_string!("extensions_invoke"),
-                invoke_fn_obj,
-                boa_engine::property::Attribute::default()
-            ).map_err(|e| AutomationError::TransformError {
-                operation: "JsTransform".to_string(),
-                message: format!("Failed to register extensions_invoke function: {}", e),
-            })?;
+            context
+                .register_global_property(
+                    js_string!("extensions_invoke"),
+                    invoke_fn_obj,
+                    boa_engine::property::Attribute::default(),
+                )
+                .map_err(|e| AutomationError::TransformError {
+                    operation: "JsTransform".to_string(),
+                    message: format!("Failed to register extensions_invoke function: {}", e),
+                })?;
 
             if !extension_results.is_empty() {
-                tracing::debug!("Extension invocation support registered in Transform context (pre-execution mode with {} results)", extension_results.len());
+                tracing::debug!(
+                    "Extension invocation support registered in Transform context (pre-execution mode with {} results)",
+                    extension_results.len()
+                );
             }
         }
 
         // Wrap user code in a function to allow `return` statements
-        let wrapped_code = format!(
-            "(function() {{\n{}\n}})()",
-            code
-        );
+        let wrapped_code = format!("(function() {{\n{}\n}})()", code);
 
         // Execute the transformation code
-        let result = context.eval(Source::from_bytes(wrapped_code.as_bytes())).map_err(|e| {
-            AutomationError::TransformError {
+        let result = context
+            .eval(Source::from_bytes(wrapped_code.as_bytes()))
+            .map_err(|e| AutomationError::TransformError {
                 operation: "JsTransform".to_string(),
                 message: format!("JavaScript execution error: {}", e),
-            }
-        })?;
+            })?;
 
         // Convert result to Value
         let result_value = self.js_value_to_json(result, &mut context)?;
@@ -415,15 +453,19 @@ impl JsTransformExecutor {
     }
 
     /// Convert Boa value to JSON Value
-    fn js_value_to_json(&self, value: boa_engine::JsValue, context: &mut boa_engine::context::Context) -> Result<Value> {
+    fn js_value_to_json(
+        &self,
+        value: boa_engine::JsValue,
+        context: &mut boa_engine::context::Context,
+    ) -> Result<Value> {
         // Try to convert to JSON representation using Boa's to_json method
         // Note: to_json requires a context reference and returns serde_json::Value directly
-        let json_value = value.to_json(context).map_err(|e| {
-            AutomationError::TransformError {
+        let json_value = value
+            .to_json(context)
+            .map_err(|e| AutomationError::TransformError {
                 operation: "JsTransform".to_string(),
                 message: format!("Failed to convert JS value to JSON: {}", e),
-            }
-        })?;
+            })?;
 
         Ok(json_value)
     }
@@ -446,12 +488,20 @@ impl JsTransformExecutor {
             Value::Object(obj) => {
                 for (key, val) in obj.iter() {
                     let metric_name = format!("{}.{}", output_prefix, key);
-                    let metric_value = value_as_f64(val)
-                        .unwrap_or_else(|| {
-                            val.to_string().chars().map(|c| c as u32 as f64).sum::<f64>() % 10000.0
-                        });
+                    let metric_value = value_as_f64(val).unwrap_or_else(|| {
+                        val.to_string()
+                            .chars()
+                            .map(|c| c as u32 as f64)
+                            .sum::<f64>()
+                            % 10000.0
+                    });
 
-                    tracing::debug!("Transform generated metric: {} = {} (device: {})", metric_name, metric_value, device_id);
+                    tracing::debug!(
+                        "Transform generated metric: {} = {} (device: {})",
+                        metric_name,
+                        metric_value,
+                        device_id
+                    );
 
                     metrics.push(TransformedMetric {
                         device_id: device_id.to_string(),
@@ -492,9 +542,9 @@ impl JsTransformExecutor {
             }
 
             Value::String(s) => {
-                let value = s.parse::<f64>().unwrap_or_else(|_| {
-                    s.chars().map(|c| c as u32 as f64).sum::<f64>() % 10000.0
-                });
+                let value = s
+                    .parse::<f64>()
+                    .unwrap_or_else(|_| s.chars().map(|c| c as u32 as f64).sum::<f64>() % 10000.0);
                 metrics.push(TransformedMetric {
                     device_id: device_id.to_string(),
                     metric: format!("{}.value", output_prefix),
@@ -614,9 +664,7 @@ impl TransformEngine {
     ///
     /// This allows multiple components to access the same registry
     /// and query Transform outputs as data sources.
-    pub fn with_output_registry(
-        output_registry: Arc<TransformOutputRegistry>,
-    ) -> Self {
+    pub fn with_output_registry(output_registry: Arc<TransformOutputRegistry>) -> Self {
         Self {
             time_series_cache: Arc::new(tokio::sync::RwLock::new(TimeSeriesCache::new())),
             js_executor: JsTransformExecutor::new(),
@@ -639,7 +687,10 @@ impl TransformEngine {
     }
 
     /// Phase 4.1: Set the extension registry
-    pub fn set_extension_registry(&mut self, registry: Arc<neomind_core::extension::registry::ExtensionRegistry>) {
+    pub fn set_extension_registry(
+        &mut self,
+        registry: Arc<neomind_core::extension::registry::ExtensionRegistry>,
+    ) {
         self.extension_registry = Some(registry);
     }
 
@@ -750,7 +801,9 @@ impl TransformEngine {
         raw_data: &Value,
     ) -> Result<TransformResult> {
         // Phase 4.1: Preprocess data through extensions first
-        let processed_data = self.preprocess_with_extensions(device_id, device_type, raw_data).await;
+        let processed_data = self
+            .preprocess_with_extensions(device_id, device_type, raw_data)
+            .await;
 
         let mut all_metrics = Vec::new();
         let mut all_warnings = Vec::new();
@@ -770,16 +823,21 @@ impl TransformEngine {
 
         // Apply each applicable transform
         for transform in applicable_transforms {
-            match self.execute_transform(transform, device_id, &processed_data).await {
+            match self
+                .execute_transform(transform, device_id, &processed_data)
+                .await
+            {
                 Ok(result) => {
                     // Auto-register Transform outputs as data sources
                     if !result.metrics.is_empty() {
-                        self.output_registry.register_outputs(
-                            &transform.metadata.id,
-                            &transform.metadata.name,
-                            &result.metrics,
-                            transform.metadata.enabled,
-                        ).await;
+                        self.output_registry
+                            .register_outputs(
+                                &transform.metadata.id,
+                                &transform.metadata.name,
+                                &result.metrics,
+                                transform.metadata.enabled,
+                            )
+                            .await;
 
                         tracing::debug!(
                             transform_id = %transform.metadata.id,
@@ -793,7 +851,10 @@ impl TransformEngine {
                     all_warnings.extend(result.warnings);
                 }
                 Err(e) => {
-                    all_warnings.push(format!("Transform '{}' failed: {}", transform.metadata.name, e));
+                    all_warnings.push(format!(
+                        "Transform '{}' failed: {}",
+                        transform.metadata.name, e
+                    ));
                 }
             }
         }
@@ -855,31 +916,35 @@ impl TransformEngine {
 
         // Try JS-based execution first (new AI-native approach)
         if let Some(ref js_code) = transform.js_code
-            && !js_code.is_empty() {
-                // Pass extension registry to JS executor for extensions.invoke() support
-                let ext_ref = self.extension_registry.as_ref();
-                match self.js_executor.execute(
-                    js_code,
-                    raw_data,
-                    &actual_prefix,
-                    device_id,
-                    timestamp,
-                    ext_ref,
-                ) {
-                    Ok(js_metrics) => {
-                        metrics.extend(js_metrics);
-                    }
-                    Err(e) => {
-                        warnings.push(format!("JS execution failed: {}", e));
-                    }
+            && !js_code.is_empty()
+        {
+            // Pass extension registry to JS executor for extensions.invoke() support
+            let ext_ref = self.extension_registry.as_ref();
+            match self.js_executor.execute(
+                js_code,
+                raw_data,
+                &actual_prefix,
+                device_id,
+                timestamp,
+                ext_ref,
+            ) {
+                Ok(js_metrics) => {
+                    metrics.extend(js_metrics);
                 }
-                return Ok(TransformResult { metrics, warnings });
+                Err(e) => {
+                    warnings.push(format!("JS execution failed: {}", e));
+                }
             }
+            return Ok(TransformResult { metrics, warnings });
+        }
 
         // Fall back to legacy operations
         if let Some(ref operations) = transform.operations {
             for operation in operations {
-                match self.execute_operation(operation, device_id, timestamp, raw_data).await {
+                match self
+                    .execute_operation(operation, device_id, timestamp, raw_data)
+                    .await
+                {
                     Ok(op_metrics) => metrics.extend(op_metrics),
                     Err(e) => warnings.push(format!("Operation failed: {}", e)),
                 }
@@ -900,19 +965,21 @@ impl TransformEngine {
         // Use a match with explicit async blocks to avoid recursion
         match operation {
             // ========== Legacy Operations ==========
-            TransformOperation::Single { json_path, output_metric } => {
-                self.execute_single(json_path, output_metric, device_id, timestamp, raw_data)
-                    .await
-                    .map(|m| vec![m])
-            }
+            TransformOperation::Single {
+                json_path,
+                output_metric,
+            } => self
+                .execute_single(json_path, output_metric, device_id, timestamp, raw_data)
+                .await
+                .map(|m| vec![m]),
 
             TransformOperation::ArrayAggregation {
                 json_path,
                 aggregation,
                 value_path,
                 output_metric,
-            } => {
-                self.execute_array_aggregation(
+            } => self
+                .execute_array_aggregation(
                     json_path,
                     *aggregation,
                     value_path.as_deref(),
@@ -922,16 +989,15 @@ impl TransformEngine {
                     raw_data,
                 )
                 .await
-                .map(|m| vec![m])
-            }
+                .map(|m| vec![m]),
 
             TransformOperation::TimeSeriesAggregation {
                 source_metric,
                 window,
                 aggregation,
                 output_metric,
-            } => {
-                self.execute_time_series_aggregation(
+            } => self
+                .execute_time_series_aggregation(
                     source_metric,
                     window,
                     *aggregation,
@@ -939,8 +1005,7 @@ impl TransformEngine {
                     device_id,
                 )
                 .await
-                .map(|m| vec![m])
-            }
+                .map(|m| vec![m]),
 
             TransformOperation::Reference {
                 source_device,
@@ -990,7 +1055,12 @@ impl TransformEngine {
                         args.insert("data".to_string(), raw_data.clone());
                         args.insert("device_id".to_string(), device_id.to_string().into());
 
-                        match ext.read().await.execute_command(command, &serde_json::to_value(args)?).await {
+                        match ext
+                            .read()
+                            .await
+                            .execute_command(command, &serde_json::to_value(args)?)
+                            .await
+                        {
                             Ok(result) => {
                                 // Convert result to metrics
                                 Ok(output_metrics
@@ -1051,18 +1121,26 @@ impl TransformEngine {
                 let mut all_metrics = Vec::new();
                 for op in operations {
                     let result = match op {
-                        TransformOperation::Single { json_path, output_metric } => {
-                            self.execute_single(json_path, output_metric, device_id, timestamp, raw_data)
-                                .await
-                                .map(|m| vec![m])
-                        }
+                        TransformOperation::Single {
+                            json_path,
+                            output_metric,
+                        } => self
+                            .execute_single(
+                                json_path,
+                                output_metric,
+                                device_id,
+                                timestamp,
+                                raw_data,
+                            )
+                            .await
+                            .map(|m| vec![m]),
                         TransformOperation::ArrayAggregation {
                             json_path,
                             aggregation,
                             value_path,
                             output_metric,
-                        } => {
-                            self.execute_array_aggregation(
+                        } => self
+                            .execute_array_aggregation(
                                 json_path,
                                 *aggregation,
                                 value_path.as_deref(),
@@ -1072,15 +1150,14 @@ impl TransformEngine {
                                 raw_data,
                             )
                             .await
-                            .map(|m| vec![m])
-                        }
+                            .map(|m| vec![m]),
                         TransformOperation::TimeSeriesAggregation {
                             source_metric,
                             window,
                             aggregation,
                             output_metric,
-                        } => {
-                            self.execute_time_series_aggregation(
+                        } => self
+                            .execute_time_series_aggregation(
                                 source_metric,
                                 window,
                                 *aggregation,
@@ -1088,36 +1165,28 @@ impl TransformEngine {
                                 device_id,
                             )
                             .await
-                            .map(|m| vec![m])
-                        }
+                            .map(|m| vec![m]),
                         TransformOperation::Reference {
                             source_device,
                             source_metric: _,
                             output_metric,
-                        } => {
-                            Ok(vec![TransformedMetric {
-                                device_id: source_device.clone(),
-                                metric: output_metric.clone(),
+                        } => Ok(vec![TransformedMetric {
+                            device_id: source_device.clone(),
+                            metric: output_metric.clone(),
+                            value: 0.0,
+                            timestamp,
+                            quality: None,
+                        }]),
+                        TransformOperation::Custom { output_metrics, .. } => Ok(output_metrics
+                            .iter()
+                            .map(|m| TransformedMetric {
+                                device_id: device_id.to_string(),
+                                metric: m.clone(),
                                 value: 0.0,
                                 timestamp,
                                 quality: None,
-                            }])
-                        }
-                        TransformOperation::Custom {
-                            output_metrics,
-                            ..
-                        } => {
-                            Ok(output_metrics
-                                .iter()
-                                .map(|m| TransformedMetric {
-                                    device_id: device_id.to_string(),
-                                    metric: m.clone(),
-                                    value: 0.0,
-                                    timestamp,
-                                    quality: None,
-                                })
-                                .collect())
-                        }
+                            })
+                            .collect()),
                         // Skip nested MultiOutput to avoid deep recursion
                         TransformOperation::MultiOutput { .. } => continue,
                         _ => continue, // Skip other types for now
@@ -1131,62 +1200,135 @@ impl TransformEngine {
             }
 
             // ========== New Expression-Based Operations ==========
+            TransformOperation::Extract {
+                from,
+                output,
+                as_type,
+            } => self
+                .execute_extract(from, output, *as_type, device_id, timestamp, raw_data)
+                .await
+                .map(|m| vec![m]),
 
-            TransformOperation::Extract { from, output, as_type } => {
-                self.execute_extract(from, output, *as_type, device_id, timestamp, raw_data)
-                    .await
-                    .map(|m| vec![m])
+            TransformOperation::Map {
+                over,
+                template,
+                output,
+                filter,
+            } => {
+                self.execute_map(
+                    over,
+                    template,
+                    output,
+                    filter.as_deref(),
+                    device_id,
+                    timestamp,
+                    raw_data,
+                )
+                .await
             }
 
-            TransformOperation::Map { over, template, output, filter } => {
-                self.execute_map(over, template, output, filter.as_deref(), device_id, timestamp, raw_data)
-                    .await
-            }
+            TransformOperation::Reduce {
+                over,
+                using,
+                value,
+                output,
+            } => self
+                .execute_reduce(
+                    over,
+                    *using,
+                    value.as_deref(),
+                    output,
+                    device_id,
+                    timestamp,
+                    raw_data,
+                )
+                .await
+                .map(|m| vec![m]),
 
-            TransformOperation::Reduce { over, using, value, output } => {
-                self.execute_reduce(over, *using, value.as_deref(), output, device_id, timestamp, raw_data)
-                    .await
-                    .map(|m| vec![m])
-            }
+            TransformOperation::Format {
+                template,
+                output,
+                from,
+            } => self
+                .execute_format(
+                    template,
+                    output,
+                    from.as_deref(),
+                    device_id,
+                    timestamp,
+                    raw_data,
+                )
+                .await
+                .map(|m| vec![m]),
 
-            TransformOperation::Format { template, output, from } => {
-                self.execute_format(template, output, from.as_deref(), device_id, timestamp, raw_data)
-                    .await
-                    .map(|m| vec![m])
-            }
-
-            TransformOperation::Compute { expression, output } => {
-                self.execute_compute(expression, output, device_id, timestamp, raw_data)
-                    .await
-                    .map(|m| vec![m])
-            }
+            TransformOperation::Compute { expression, output } => self
+                .execute_compute(expression, output, device_id, timestamp, raw_data)
+                .await
+                .map(|m| vec![m]),
 
             TransformOperation::Pipeline { steps, output } => {
-                self.execute_pipeline(steps, output, device_id, timestamp, raw_data).await
+                self.execute_pipeline(steps, output, device_id, timestamp, raw_data)
+                    .await
             }
 
             TransformOperation::Fork { branches } => {
-                self.execute_fork(branches, device_id, timestamp, raw_data).await
+                self.execute_fork(branches, device_id, timestamp, raw_data)
+                    .await
             }
 
-            TransformOperation::If { condition, then, else_, output } => {
-                self.execute_if(condition, then, else_.as_deref(), output, device_id, timestamp, raw_data)
-                    .await
+            TransformOperation::If {
+                condition,
+                then,
+                else_,
+                output,
+            } => {
+                self.execute_if(
+                    condition,
+                    then,
+                    else_.as_deref(),
+                    output,
+                    device_id,
+                    timestamp,
+                    raw_data,
+                )
+                .await
             }
 
             // ========== Advanced Data Processing Operations ==========
-
-            TransformOperation::GroupBy { over, key, using, value, output } => {
-                self.execute_group_by(over, key, *using, value.as_deref(), output, device_id, timestamp, raw_data)
-                    .await
+            TransformOperation::GroupBy {
+                over,
+                key,
+                using,
+                value,
+                output,
+            } => {
+                self.execute_group_by(
+                    over,
+                    key,
+                    *using,
+                    value.as_deref(),
+                    output,
+                    device_id,
+                    timestamp,
+                    raw_data,
+                )
+                .await
             }
 
-            TransformOperation::Decode { from, format, output } => {
+            TransformOperation::Decode {
+                from,
+                format,
+                output,
+            } => {
                 self.execute_decode(from, *format, output, device_id, timestamp, raw_data)
                     .await
             }
 
-            TransformOperation::Encode { from, format, output } => {
+            TransformOperation::Encode {
+                from,
+                format,
+                output,
+            } => {
                 self.execute_encode(from, *format, output, device_id, timestamp, raw_data)
                     .await
             }
@@ -1204,11 +1346,10 @@ impl TransformEngine {
         raw_data: &Value,
     ) -> Result<TransformedMetric> {
         let value = self.extract_value_by_path(raw_data, from)?;
-        let float_value = value_as_f64(&value)
-            .ok_or_else(|| AutomationError::TransformError {
-                operation: "Extract".to_string(),
-                message: format!("Value at '{}' is not a number: {}", from, value),
-            })?;
+        let float_value = value_as_f64(&value).ok_or_else(|| AutomationError::TransformError {
+            operation: "Extract".to_string(),
+            message: format!("Value at '{}' is not a number: {}", from, value),
+        })?;
 
         Ok(TransformedMetric {
             device_id: device_id.to_string(),
@@ -1238,7 +1379,7 @@ impl TransformEngine {
                 return Err(AutomationError::TransformError {
                     operation: "Map".to_string(),
                     message: format!("Value at '{}' is not an array", over),
-                })
+                });
             }
         };
 
@@ -1279,7 +1420,16 @@ impl TransformEngine {
         timestamp: i64,
         raw_data: &Value,
     ) -> Result<TransformedMetric> {
-        self.execute_array_aggregation(over, aggregation, value_path, output, device_id, timestamp, raw_data).await
+        self.execute_array_aggregation(
+            over,
+            aggregation,
+            value_path,
+            output,
+            device_id,
+            timestamp,
+            raw_data,
+        )
+        .await
     }
 
     /// Execute Format operation - template string formatting
@@ -1330,7 +1480,8 @@ impl TransformEngine {
         // Supports: {{path}}, +, -, *, /, ( )
         let rendered = self.render_template(expression, raw_data, None, 0);
 
-        let value = self.evaluate_expression(&rendered, raw_data)
+        let value = self
+            .evaluate_expression(&rendered, raw_data)
             .unwrap_or_else(|_| rendered.trim().parse().unwrap_or(0.0));
 
         Ok(TransformedMetric {
@@ -1396,7 +1547,13 @@ impl TransformEngine {
     }
 
     /// Render a template string with variable substitution
-    fn render_template(&self, template: &str, root: &Value, item: Option<&Value>, index: usize) -> String {
+    fn render_template(
+        &self,
+        template: &str,
+        root: &Value,
+        item: Option<&Value>,
+        index: usize,
+    ) -> String {
         let mut result = template.to_string();
 
         // Replace {{variable}} patterns
@@ -1444,10 +1601,7 @@ impl TransformEngine {
     fn evaluate_expression(&self, expr: &str, data: &Value) -> Result<f64> {
         // Very simple expression evaluator
         // In production, use a proper expression parsing library
-        let sanitized = expr
-            .replace("{{", "")
-            .replace("}}", "")
-            .trim().to_string();
+        let sanitized = expr.replace("{{", "").replace("}}", "").trim().to_string();
 
         // Try to extract value and evaluate
         if let Ok(num) = sanitized.parse::<f64>() {
@@ -1456,11 +1610,10 @@ impl TransformEngine {
 
         // Try to extract from data
         match self.extract_value_by_path(data, &sanitized) {
-            Ok(value) => value_as_f64(&value)
-                .ok_or_else(|| AutomationError::TransformError {
-                    operation: "Compute".to_string(),
-                    message: format!("Cannot convert to number: {}", value),
-                }),
+            Ok(value) => value_as_f64(&value).ok_or_else(|| AutomationError::TransformError {
+                operation: "Compute".to_string(),
+                message: format!("Cannot convert to number: {}", value),
+            }),
             Err(_) => Ok(0.0),
         }
     }
@@ -1477,11 +1630,10 @@ impl TransformEngine {
         let value = self.extract_value_by_path(raw_data, json_path)?;
 
         // Convert to f64
-        let float_value = value_as_f64(&value)
-            .ok_or_else(|| AutomationError::TransformError {
-                operation: "Single".to_string(),
-                message: format!("Value at '{}' is not a number: {}", json_path, value),
-            })?;
+        let float_value = value_as_f64(&value).ok_or_else(|| AutomationError::TransformError {
+            operation: "Single".to_string(),
+            message: format!("Value at '{}' is not a number: {}", json_path, value),
+        })?;
 
         Ok(TransformedMetric {
             device_id: device_id.to_string(),
@@ -1512,7 +1664,7 @@ impl TransformEngine {
                 return Err(AutomationError::TransformError {
                     operation: "ArrayAggregation".to_string(),
                     message: format!("Value at '{}' is not an array", json_path),
-                })
+                });
             }
         };
 
@@ -1614,9 +1766,8 @@ impl TransformEngine {
             }
             AggregationFunc::StdDev => {
                 let mean = values.iter().sum::<f64>() / values.len() as f64;
-                let variance = values.iter()
-                    .map(|&x| (x - mean).powi(2))
-                    .sum::<f64>() / values.len() as f64;
+                let variance =
+                    values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64;
                 variance.sqrt()
             }
             AggregationFunc::Trend => {
@@ -1708,25 +1859,30 @@ impl TransformEngine {
                     if index_str.is_empty() {
                         // Wildcard "[]" - return the array as-is, or first element
                         if let Value::Array(arr) = current {
-                            current = if arr.len() == 1 {
-                                &arr[0]
-                            } else {
-                                current
-                            };
+                            current = if arr.len() == 1 { &arr[0] } else { current };
                         }
                         // If not an array, keep current as-is
                     } else {
                         // Numeric index
-                        let index: usize = index_str.parse().map_err(|_| AutomationError::TransformError {
-                            operation: "PathExtract".to_string(),
-                            message: format!("Invalid array index: {}", index_str),
-                        })?;
+                        let index: usize =
+                            index_str
+                                .parse()
+                                .map_err(|_| AutomationError::TransformError {
+                                    operation: "PathExtract".to_string(),
+                                    message: format!("Invalid array index: {}", index_str),
+                                })?;
 
                         if let Value::Array(arr) = current {
-                            current = arr.get(index).ok_or_else(|| AutomationError::TransformError {
-                                operation: "PathExtract".to_string(),
-                                message: format!("Array index {} out of bounds (len: {})", index, arr.len()),
-                            })?;
+                            current =
+                                arr.get(index)
+                                    .ok_or_else(|| AutomationError::TransformError {
+                                        operation: "PathExtract".to_string(),
+                                        message: format!(
+                                            "Array index {} out of bounds (len: {})",
+                                            index,
+                                            arr.len()
+                                        ),
+                                    })?;
                         } else {
                             return Err(AutomationError::TransformError {
                                 operation: "PathExtract".to_string(),
@@ -1743,10 +1899,16 @@ impl TransformEngine {
             } else if let Ok(index) = part.parse::<usize>() {
                 // Handle numeric array index in dot notation: "field.0"
                 if let Value::Array(arr) = current {
-                    current = arr.get(index).ok_or_else(|| AutomationError::TransformError {
-                        operation: "PathExtract".to_string(),
-                        message: format!("Array index {} out of bounds (len: {})", index, arr.len()),
-                    })?;
+                    current = arr
+                        .get(index)
+                        .ok_or_else(|| AutomationError::TransformError {
+                            operation: "PathExtract".to_string(),
+                            message: format!(
+                                "Array index {} out of bounds (len: {})",
+                                index,
+                                arr.len()
+                            ),
+                        })?;
                 } else {
                     return Err(AutomationError::TransformError {
                         operation: "PathExtract".to_string(),
@@ -1755,10 +1917,12 @@ impl TransformEngine {
                 }
             } else {
                 // Regular field access
-                current = current.get(part).ok_or_else(|| AutomationError::TransformError {
-                    operation: "PathExtract".to_string(),
-                    message: format!("Field '{}' not found", part),
-                })?;
+                current = current
+                    .get(part)
+                    .ok_or_else(|| AutomationError::TransformError {
+                        operation: "PathExtract".to_string(),
+                        message: format!("Field '{}' not found", part),
+                    })?;
             }
         }
 
@@ -1807,7 +1971,13 @@ impl TransformEngine {
             // Direct number
             Value::Number(n) => n.as_f64().unwrap_or(0.0),
             // Boolean as 0/1
-            Value::Bool(b) => if *b { 1.0 } else { 0.0 },
+            Value::Bool(b) => {
+                if *b {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
             // String: try to parse as number
             Value::String(s) => s.parse::<f64>().unwrap_or(0.0),
             // Null
@@ -1847,7 +2017,7 @@ impl TransformEngine {
                 return Err(AutomationError::TransformError {
                     operation: "GroupBy".to_string(),
                     message: format!("Value at '{}' is not an array", over),
-                })
+                });
             }
         };
 
@@ -1920,7 +2090,7 @@ impl TransformEngine {
                 return Err(AutomationError::TransformError {
                     operation: "Decode".to_string(),
                     message: format!("Value at '{}' is not a string", from),
-                })
+                });
             }
         };
 
@@ -1933,7 +2103,7 @@ impl TransformEngine {
                         return Err(AutomationError::TransformError {
                             operation: "Decode".to_string(),
                             message: format!("Invalid hex string: {}", e),
-                        })
+                        });
                     }
                 }
             }
@@ -1947,7 +2117,7 @@ impl TransformEngine {
                         return Err(AutomationError::TransformError {
                             operation: "Decode".to_string(),
                             message: format!("Invalid base64 string: {}", e),
-                        })
+                        });
                     }
                 }
             }
@@ -1963,7 +2133,7 @@ impl TransformEngine {
                         return Err(AutomationError::TransformError {
                             operation: "Decode".to_string(),
                             message: format!("Invalid URL encoding: {}", e),
-                        })
+                        });
                     }
                 }
             }
@@ -1981,9 +2151,8 @@ impl TransformEngine {
         };
 
         // Convert to f64 (use hash for non-numeric)
-        let value = value_as_f64(&json_value).unwrap_or_else(|| {
-            decoded.chars().map(|c| c as u32 as f64).sum::<f64>() % 10000.0
-        });
+        let value = value_as_f64(&json_value)
+            .unwrap_or_else(|| decoded.chars().map(|c| c as u32 as f64).sum::<f64>() % 10000.0);
 
         Ok(vec![TransformedMetric {
             device_id: device_id.to_string(),
@@ -2012,17 +2181,13 @@ impl TransformEngine {
         };
 
         let encoded = match format {
-            crate::types::DecodeFormat::Hex => {
-                hex::encode(to_encode)
-            }
+            crate::types::DecodeFormat::Hex => hex::encode(to_encode),
             crate::types::DecodeFormat::Base64 => {
                 use base64::Engine;
                 base64::engine::general_purpose::STANDARD.encode(to_encode)
             }
             crate::types::DecodeFormat::Bytes => to_encode,
-            crate::types::DecodeFormat::Url => {
-                urlencoding::encode(&to_encode).into_owned()
-            }
+            crate::types::DecodeFormat::Url => urlencoding::encode(&to_encode).into_owned(),
             crate::types::DecodeFormat::Csv => to_encode,
         };
 
@@ -2091,7 +2256,10 @@ impl TimeSeriesCache {
                 points
                     .iter()
                     .filter(|(ts, _)| *ts >= cutoff)
-                    .map(|(ts, v)| DataPoint { _timestamp: *ts, value: *v })
+                    .map(|(ts, v)| DataPoint {
+                        _timestamp: *ts,
+                        value: *v,
+                    })
                     .collect()
             })
             .unwrap_or_default()
@@ -2106,8 +2274,8 @@ struct DataPoint {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use crate::TransformScope;
+    use serde_json::json;
 
     #[test]
     fn test_extract_value_by_path() {
@@ -2126,13 +2294,17 @@ mod tests {
 
         // Test direct field
         assert_eq!(
-            engine.extract_value_by_path(&data, "$.temperature").unwrap(),
+            engine
+                .extract_value_by_path(&data, "$.temperature")
+                .unwrap(),
             json!(25.5)
         );
 
         // Test nested
         assert_eq!(
-            engine.extract_value_by_path(&data, "$.nested.value").unwrap(),
+            engine
+                .extract_value_by_path(&data, "$.nested.value")
+                .unwrap(),
             json!(42)
         );
 
@@ -2148,13 +2320,48 @@ mod tests {
         let engine = TransformEngine::new();
         let values = vec![10.0, 20.0, 30.0, 40.0, 50.0];
 
-        assert_eq!(engine.compute_aggregation(&values, AggregationFunc::Mean).unwrap(), 30.0);
-        assert_eq!(engine.compute_aggregation(&values, AggregationFunc::Max).unwrap(), 50.0);
-        assert_eq!(engine.compute_aggregation(&values, AggregationFunc::Min).unwrap(), 10.0);
-        assert_eq!(engine.compute_aggregation(&values, AggregationFunc::Sum).unwrap(), 150.0);
-        assert_eq!(engine.compute_aggregation(&values, AggregationFunc::Count).unwrap(), 5.0);
-        assert_eq!(engine.compute_aggregation(&values, AggregationFunc::First).unwrap(), 10.0);
-        assert_eq!(engine.compute_aggregation(&values, AggregationFunc::Last).unwrap(), 50.0);
+        assert_eq!(
+            engine
+                .compute_aggregation(&values, AggregationFunc::Mean)
+                .unwrap(),
+            30.0
+        );
+        assert_eq!(
+            engine
+                .compute_aggregation(&values, AggregationFunc::Max)
+                .unwrap(),
+            50.0
+        );
+        assert_eq!(
+            engine
+                .compute_aggregation(&values, AggregationFunc::Min)
+                .unwrap(),
+            10.0
+        );
+        assert_eq!(
+            engine
+                .compute_aggregation(&values, AggregationFunc::Sum)
+                .unwrap(),
+            150.0
+        );
+        assert_eq!(
+            engine
+                .compute_aggregation(&values, AggregationFunc::Count)
+                .unwrap(),
+            5.0
+        );
+        assert_eq!(
+            engine
+                .compute_aggregation(&values, AggregationFunc::First)
+                .unwrap(),
+            10.0
+        );
+        assert_eq!(
+            engine
+                .compute_aggregation(&values, AggregationFunc::Last)
+                .unwrap(),
+            50.0
+        );
     }
 
     #[test]
@@ -2164,9 +2371,24 @@ mod tests {
         let decreasing = vec![50.0, 40.0, 30.0, 20.0, 10.0];
         let constant = vec![25.0, 25.0, 25.0, 25.0];
 
-        assert_eq!(engine.compute_aggregation(&increasing, AggregationFunc::Trend).unwrap(), 1.0);
-        assert_eq!(engine.compute_aggregation(&decreasing, AggregationFunc::Trend).unwrap(), -1.0);
-        assert_eq!(engine.compute_aggregation(&constant, AggregationFunc::Trend).unwrap(), 0.0);
+        assert_eq!(
+            engine
+                .compute_aggregation(&increasing, AggregationFunc::Trend)
+                .unwrap(),
+            1.0
+        );
+        assert_eq!(
+            engine
+                .compute_aggregation(&decreasing, AggregationFunc::Trend)
+                .unwrap(),
+            -1.0
+        );
+        assert_eq!(
+            engine
+                .compute_aggregation(&constant, AggregationFunc::Trend)
+                .unwrap(),
+            0.0
+        );
     }
 
     #[test]
@@ -2216,7 +2438,10 @@ mod tests {
     #[test]
     fn test_transform_scope_priority() {
         assert_eq!(TransformScope::Global.priority(), 0);
-        assert_eq!(TransformScope::DeviceType("sensor".to_string()).priority(), 1);
+        assert_eq!(
+            TransformScope::DeviceType("sensor".to_string()).priority(),
+            1
+        );
         assert_eq!(TransformScope::Device("sensor1".to_string()).priority(), 2);
     }
 
@@ -2238,11 +2463,7 @@ mod tests {
         assert!(!transform.applies_to_device("sensor1", None));
 
         // Global scope applies to all
-        let global_transform = TransformAutomation::new(
-            "test",
-            "Test",
-            TransformScope::Global,
-        );
+        let global_transform = TransformAutomation::new("test", "Test", TransformScope::Global);
         assert!(global_transform.applies_to_device("any-device", None));
         assert!(global_transform.applies_to_device("any-device", Some("sensor")));
     }

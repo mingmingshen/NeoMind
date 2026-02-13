@@ -259,9 +259,10 @@ impl BackupManager {
 
             // Look for metadata files
             if path.extension().and_then(|s| s.to_str()) == Some("meta")
-                && let Ok(metadata) = self.load_metadata_from_path(&path) {
-                    backups.push(metadata);
-                }
+                && let Ok(metadata) = self.load_metadata_from_path(&path)
+            {
+                backups.push(metadata);
+            }
         }
 
         // Sort by timestamp descending
@@ -455,9 +456,11 @@ impl BackupHandler {
             let path = entry.path();
 
             if let Some(file_name) = path.file_name().and_then(|n| n.to_str())
-                && file_name.starts_with(name) && file_name.ends_with(".backup") {
-                    backups.push(path);
-                }
+                && file_name.starts_with(name)
+                && file_name.ends_with(".backup")
+            {
+                backups.push(path);
+            }
         }
 
         backups.sort();

@@ -7,9 +7,8 @@
 //! - Numeric range validation
 
 use neomind_core::config::{
-    agent, agent_env_vars,
-    normalize_ollama_endpoint, normalize_openai_endpoint,
-    endpoints, models, env_vars,
+    agent, agent_env_vars, endpoints, env_vars, models, normalize_ollama_endpoint,
+    normalize_openai_endpoint,
 };
 
 #[test]
@@ -111,7 +110,11 @@ fn test_env_var_constants_unique() {
     ];
 
     let unique_vars: std::collections::HashSet<_> = vars.iter().collect();
-    assert_eq!(unique_vars.len(), vars.len(), "Environment variable names should be unique");
+    assert_eq!(
+        unique_vars.len(),
+        vars.len(),
+        "Environment variable names should be unique"
+    );
 }
 
 #[test]
@@ -127,8 +130,16 @@ fn test_env_var_naming_convention() {
 
     for var in vars {
         // All env vars should be uppercase and use underscores
-        assert!(var == var.to_uppercase(), "Env var should be uppercase: {}", var);
-        assert!(!var.contains('-'), "Env var should use underscores not hyphens: {}", var);
+        assert!(
+            var == var.to_uppercase(),
+            "Env var should be uppercase: {}",
+            var
+        );
+        assert!(
+            !var.contains('-'),
+            "Env var should use underscores not hyphens: {}",
+            var
+        );
     }
 }
 
@@ -146,8 +157,16 @@ fn test_agent_env_var_constants() {
     ];
 
     for var in vars {
-        assert!(var.starts_with("AGENT_"), "Agent env var should start with AGENT_: {}", var);
-        assert!(var == var.to_uppercase(), "Env var should be uppercase: {}", var);
+        assert!(
+            var.starts_with("AGENT_"),
+            "Agent env var should start with AGENT_: {}",
+            var
+        );
+        assert!(
+            var == var.to_uppercase(),
+            "Env var should be uppercase: {}",
+            var
+        );
     }
 }
 
@@ -155,7 +174,10 @@ fn test_agent_env_var_constants() {
 fn test_normalize_preserves_case() {
     // Endpoints should preserve case (URLs are case-sensitive for path)
     let input = "http://localhost:11434/API/v1";
-    assert_eq!(normalize_ollama_endpoint(input.to_string()), "http://localhost:11434/API");
+    assert_eq!(
+        normalize_ollama_endpoint(input.to_string()),
+        "http://localhost:11434/API"
+    );
 }
 
 #[test]
@@ -230,22 +252,34 @@ fn test_agent_env_var_parsing() {
     let orig_temp = std::env::var(agent_env_vars::TEMPERATURE);
 
     // Test with invalid values - should fall back to defaults
-    unsafe { std::env::set_var(agent_env_vars::MAX_CONTEXT_TOKENS, "invalid"); }
+    unsafe {
+        std::env::set_var(agent_env_vars::MAX_CONTEXT_TOKENS, "invalid");
+    }
     let result = agent_env_vars::max_context_tokens();
     assert_eq!(result, agent::DEFAULT_MAX_CONTEXT_TOKENS);
 
-    unsafe { std::env::set_var(agent_env_vars::TEMPERATURE, "not_a_number"); }
+    unsafe {
+        std::env::set_var(agent_env_vars::TEMPERATURE, "not_a_number");
+    }
     let result = agent_env_vars::temperature();
     assert_eq!(result, agent::DEFAULT_TEMPERATURE);
 
     // Restore original env vars
     match orig_max_context {
-        Ok(v) => unsafe { std::env::set_var(agent_env_vars::MAX_CONTEXT_TOKENS, v); },
-        Err(_) => unsafe { std::env::remove_var(agent_env_vars::MAX_CONTEXT_TOKENS); },
+        Ok(v) => unsafe {
+            std::env::set_var(agent_env_vars::MAX_CONTEXT_TOKENS, v);
+        },
+        Err(_) => unsafe {
+            std::env::remove_var(agent_env_vars::MAX_CONTEXT_TOKENS);
+        },
     }
     match orig_temp {
-        Ok(v) => unsafe { std::env::set_var(agent_env_vars::TEMPERATURE, v); },
-        Err(_) => unsafe { std::env::remove_var(agent_env_vars::TEMPERATURE); },
+        Ok(v) => unsafe {
+            std::env::set_var(agent_env_vars::TEMPERATURE, v);
+        },
+        Err(_) => unsafe {
+            std::env::remove_var(agent_env_vars::TEMPERATURE);
+        },
     }
 }
 
@@ -255,20 +289,32 @@ fn test_agent_env_var_valid_values() {
     let orig_max_tokens = std::env::var(agent_env_vars::MAX_TOKENS);
     let orig_top_p = std::env::var(agent_env_vars::TOP_P);
 
-    unsafe { std::env::set_var(agent_env_vars::MAX_TOKENS, "5000"); }
+    unsafe {
+        std::env::set_var(agent_env_vars::MAX_TOKENS, "5000");
+    }
     assert_eq!(agent_env_vars::max_tokens(), 5000);
 
-    unsafe { std::env::set_var(agent_env_vars::TOP_P, "0.9"); }
+    unsafe {
+        std::env::set_var(agent_env_vars::TOP_P, "0.9");
+    }
     assert!((agent_env_vars::top_p() - 0.9).abs() < 0.001);
 
     // Restore
     match orig_max_tokens {
-        Ok(v) => unsafe { std::env::set_var(agent_env_vars::MAX_TOKENS, v); },
-        Err(_) => unsafe { std::env::remove_var(agent_env_vars::MAX_TOKENS); },
+        Ok(v) => unsafe {
+            std::env::set_var(agent_env_vars::MAX_TOKENS, v);
+        },
+        Err(_) => unsafe {
+            std::env::remove_var(agent_env_vars::MAX_TOKENS);
+        },
     }
     match orig_top_p {
-        Ok(v) => unsafe { std::env::set_var(agent_env_vars::TOP_P, v); },
-        Err(_) => unsafe { std::env::remove_var(agent_env_vars::TOP_P); },
+        Ok(v) => unsafe {
+            std::env::set_var(agent_env_vars::TOP_P, v);
+        },
+        Err(_) => unsafe {
+            std::env::remove_var(agent_env_vars::TOP_P);
+        },
     }
 }
 
@@ -276,13 +322,19 @@ fn test_agent_env_var_valid_values() {
 fn test_concurrent_limit_env_var() {
     let orig = std::env::var(agent_env_vars::CONCURRENT_LIMIT);
 
-    unsafe { std::env::set_var(agent_env_vars::CONCURRENT_LIMIT, "5"); }
+    unsafe {
+        std::env::set_var(agent_env_vars::CONCURRENT_LIMIT, "5");
+    }
     assert_eq!(agent_env_vars::concurrent_limit(), 5);
 
     // Restore
     match orig {
-        Ok(v) => unsafe { std::env::set_var(agent_env_vars::CONCURRENT_LIMIT, v); },
-        Err(_) => unsafe { std::env::remove_var(agent_env_vars::CONCURRENT_LIMIT); },
+        Ok(v) => unsafe {
+            std::env::set_var(agent_env_vars::CONCURRENT_LIMIT, v);
+        },
+        Err(_) => unsafe {
+            std::env::remove_var(agent_env_vars::CONCURRENT_LIMIT);
+        },
     }
 }
 
@@ -290,13 +342,19 @@ fn test_concurrent_limit_env_var() {
 fn test_context_selector_tokens_env_var() {
     let orig = std::env::var(agent_env_vars::CONTEXT_SELECTOR_TOKENS);
 
-    unsafe { std::env::set_var(agent_env_vars::CONTEXT_SELECTOR_TOKENS, "2000"); }
+    unsafe {
+        std::env::set_var(agent_env_vars::CONTEXT_SELECTOR_TOKENS, "2000");
+    }
     assert_eq!(agent_env_vars::context_selector_tokens(), 2000);
 
     // Restore
     match orig {
-        Ok(v) => unsafe { std::env::set_var(agent_env_vars::CONTEXT_SELECTOR_TOKENS, v); },
-        Err(_) => unsafe { std::env::remove_var(agent_env_vars::CONTEXT_SELECTOR_TOKENS); },
+        Ok(v) => unsafe {
+            std::env::set_var(agent_env_vars::CONTEXT_SELECTOR_TOKENS, v);
+        },
+        Err(_) => unsafe {
+            std::env::remove_var(agent_env_vars::CONTEXT_SELECTOR_TOKENS);
+        },
     }
 }
 
@@ -304,15 +362,21 @@ fn test_context_selector_tokens_env_var() {
 fn test_llm_timeout_env_vars() {
     let orig = std::env::var(agent_env_vars::LLM_TIMEOUT_SECS);
 
-    unsafe { std::env::set_var(agent_env_vars::LLM_TIMEOUT_SECS, "120"); }
+    unsafe {
+        std::env::set_var(agent_env_vars::LLM_TIMEOUT_SECS, "120");
+    }
     assert_eq!(agent_env_vars::llm_timeout_secs(), Some(120));
     assert_eq!(agent_env_vars::ollama_timeout_secs(), 120);
     assert_eq!(agent_env_vars::cloud_timeout_secs(), 120);
 
     // Restore
     match orig {
-        Ok(v) => unsafe { std::env::set_var(agent_env_vars::LLM_TIMEOUT_SECS, v); },
-        Err(_) => unsafe { std::env::remove_var(agent_env_vars::LLM_TIMEOUT_SECS); },
+        Ok(v) => unsafe {
+            std::env::set_var(agent_env_vars::LLM_TIMEOUT_SECS, v);
+        },
+        Err(_) => unsafe {
+            std::env::remove_var(agent_env_vars::LLM_TIMEOUT_SECS);
+        },
     }
 }
 
@@ -320,7 +384,9 @@ fn test_llm_timeout_env_vars() {
 fn test_llm_timeout_defaults() {
     // Clear env var to test defaults
     let orig = std::env::var(agent_env_vars::LLM_TIMEOUT_SECS);
-    unsafe { std::env::remove_var(agent_env_vars::LLM_TIMEOUT_SECS); }
+    unsafe {
+        std::env::remove_var(agent_env_vars::LLM_TIMEOUT_SECS);
+    }
 
     // When env var is not set, should return None
     assert_eq!(agent_env_vars::llm_timeout_secs(), None);
@@ -331,8 +397,12 @@ fn test_llm_timeout_defaults() {
 
     // Restore
     match orig {
-        Ok(v) => unsafe { std::env::set_var(agent_env_vars::LLM_TIMEOUT_SECS, v); },
-        Err(_) => unsafe { std::env::remove_var(agent_env_vars::LLM_TIMEOUT_SECS); },
+        Ok(v) => unsafe {
+            std::env::set_var(agent_env_vars::LLM_TIMEOUT_SECS, v);
+        },
+        Err(_) => unsafe {
+            std::env::remove_var(agent_env_vars::LLM_TIMEOUT_SECS);
+        },
     }
 }
 

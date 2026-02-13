@@ -3,11 +3,10 @@
 #[cfg(feature = "email")]
 use async_trait::async_trait;
 
-
+#[cfg(feature = "email")]
+use super::super::{Error, Message, Result};
 #[cfg(feature = "email")]
 use super::MessageChannel;
-#[cfg(feature = "email")]
-use super::super::{Message, Result, Error};
 
 /// Email channel for sending messages via SMTP.
 #[cfg(feature = "email")]
@@ -131,9 +130,7 @@ impl MessageChannel for EmailChannel {
         }
 
         if self.to_addresses.is_empty() {
-            return Err(Error::SendFailed(
-                "No recipients configured".to_string(),
-            ));
+            return Err(Error::SendFailed("No recipients configured".to_string()));
         }
 
         let html_body = self.build_email_body(message);
@@ -177,7 +174,8 @@ impl MessageChannel for EmailChannel {
         let password = self.password.clone();
 
         tokio::task::spawn_blocking(move || {
-            let creds = lettre::transport::smtp::authentication::Credentials::new(username, password);
+            let creds =
+                lettre::transport::smtp::authentication::Credentials::new(username, password);
             let relay = format!("{}:{}", smtp_server, smtp_port);
             let mailer = lettre::SmtpTransport::relay(&relay)
                 .map_err(|e| Error::SendFailed(format!("Invalid SMTP server: {}", e)))?
@@ -240,16 +238,24 @@ impl super::ChannelFactory for EmailChannelFactory {
             .unwrap_or("email")
             .to_string();
 
-        let mut channel = EmailChannel::new(name, smtp_server.to_string(), smtp_port, username, password, from_address);
+        let mut channel = EmailChannel::new(
+            name,
+            smtp_server.to_string(),
+            smtp_port,
+            username,
+            password,
+            from_address,
+        );
 
         if let Some(recipients) = config.get("recipients")
-            && let Some(arr) = recipients.as_array() {
-                for addr in arr {
-                    if let Some(str_addr) = addr.as_str() {
-                        channel = channel.add_recipient(str_addr.to_string());
-                    }
+            && let Some(arr) = recipients.as_array()
+        {
+            for addr in arr {
+                if let Some(str_addr) = addr.as_str() {
+                    channel = channel.add_recipient(str_addr.to_string());
                 }
             }
+        }
 
         if !config
             .get("use_tls")

@@ -33,7 +33,7 @@ mod metric_value_serde {
 // Handles both string form ("Array") and object form ({ "Array": { "element_type": ... }})
 mod metric_data_type_serde {
     use super::*;
-    use serde::de::{MapAccess, Visitor, Error};
+    use serde::de::{Error, MapAccess, Visitor};
     use std::fmt;
 
     /// Helper to parse MetricDataType from a string value
@@ -111,7 +111,9 @@ mod metric_data_type_serde {
                             options: Vec<String>,
                         }
                         let data = map.next_value::<EnumData>()?;
-                        Ok(MetricDataType::Enum { options: data.options })
+                        Ok(MetricDataType::Enum {
+                            options: data.options,
+                        })
                     }
                     _ => Err(serde::de::Error::custom(format!(
                         "unknown data type '{}'",
@@ -337,9 +339,7 @@ pub enum MetricDataType {
     Binary,
     /// Enum type with fixed set of string options
     /// Must be deserialized from object: { "Enum": { "options": [...] } }
-    Enum {
-        options: Vec<String>,
-    },
+    Enum { options: Vec<String> },
 }
 
 impl<'de> Deserialize<'de> for MetricDataType {
@@ -350,7 +350,6 @@ impl<'de> Deserialize<'de> for MetricDataType {
         metric_data_type_serde::deserialize(deserializer)
     }
 }
-
 
 /// Command that can be sent to a device.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -543,11 +542,15 @@ mod tests {
         let result: serde_json::Value = serde_json::from_str(&json.to_string()).unwrap();
 
         // Deserialize to MetricDataType
-        let data_type: MetricDataType = serde_json::from_value(result["data_type"].clone()).unwrap();
+        let data_type: MetricDataType =
+            serde_json::from_value(result["data_type"].clone()).unwrap();
 
         match data_type {
             MetricDataType::Array { element_type } => {
-                assert!(element_type.is_none(), "element_type should be None for plain string");
+                assert!(
+                    element_type.is_none(),
+                    "element_type should be None for plain string"
+                );
             }
             _ => panic!("Expected Array variant, got {:?}", data_type),
         }
@@ -595,7 +598,7 @@ mod tests {
             MetricDataType::Array { element_type } => {
                 assert!(element_type.is_some(), "element_type should be Some");
                 match *element_type.unwrap() {
-                    MetricDataType::String => {},
+                    MetricDataType::String => {}
                     _ => panic!("Expected String element_type"),
                 }
             }

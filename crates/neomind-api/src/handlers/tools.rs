@@ -42,11 +42,7 @@ fn get_tool_registry() -> Arc<ToolRegistry> {
     REGISTRY
         .get_or_init(|| {
             // Create a registry with basic system help tool for testing
-            Arc::new(
-                ToolRegistryBuilder::new()
-                    .with_system_help_tool()
-                    .build()
-            )
+            Arc::new(ToolRegistryBuilder::new().with_system_help_tool().build())
         })
         .clone()
 }

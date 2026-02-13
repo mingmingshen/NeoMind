@@ -1,52 +1,7 @@
 /// Tests for useDataSource hook
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, act, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-
-// Mock dependencies
-vi.mock('@/store', () => ({
-  useStore: vi.fn(() => ({
-    devices: [],
-    addDevice: vi.fn(),
-  })),
-}))
-
-vi.mock('@/hooks/useEvents', () => ({
-  useEvents: vi.fn(() => ({
-    subscribe: vi.fn(),
-    unsubscribe: vi.fn(),
-  })),
-}))
-
-vi.mock('@/lib/api', () => ({
-  api: {
-    getDeviceCurrent: vi.fn(() => Promise.resolve({
-      device_id: 'test-device',
-      metrics: { temperature: { value: 25 } },
-      commands: [],
-    })),
-    sendCommand: vi.fn(() => Promise.resolve()),
-  },
-}))
+import { describe, it, expect } from 'vitest'
 
 describe('useDataSource Hook', () => {
-  let queryClient: QueryClient
-
-  beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
-    })
-  })
-
-  type WrapperProps = { children: React.ReactNode }
-  const wrapper = ({ children }: WrapperProps) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  )
-
   describe('Data Source Interface', () => {
     it('should define UseDataSourceResult interface', () => {
       const result = {
@@ -125,6 +80,11 @@ describe('useDataSource Hook', () => {
       const dataSourceList: Array<{
         id: string
         type: 'device' | 'transform' | 'extension-command'
+        deviceId?: string
+        metric?: string
+        transformId?: string
+        extensionId?: string
+        extensionCommand?: string
       }> = [
         { id: '1', type: 'device' as const, deviceId: '1', metric: 'temp' },
         { id: '2', type: 'transform' as const, transformId: '2' },

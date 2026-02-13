@@ -9,9 +9,12 @@
 
 use neomind_messages::{
     category::MessageCategory,
-    channels::{ConsoleChannel, MemoryChannel, MemoryChannelFactory, ConsoleChannelFactory, MessageChannel, ChannelFactory},
+    channels::{
+        ChannelFactory, ConsoleChannel, ConsoleChannelFactory, MemoryChannel, MemoryChannelFactory,
+        MessageChannel,
+    },
     manager::MessageManager,
-    message::{Message, MessageSeverity, MessageStatus, MessageId},
+    message::{Message, MessageId, MessageSeverity, MessageStatus},
 };
 use std::sync::Arc;
 
@@ -78,10 +81,7 @@ async fn test_message_with_metadata() {
 
 #[tokio::test]
 async fn test_message_status_transitions() {
-    let mut message = Message::system(
-        "Test".to_string(),
-        "Test message".to_string(),
-    );
+    let mut message = Message::system("Test".to_string(), "Test message".to_string());
 
     assert_eq!(message.status, MessageStatus::Active);
 
@@ -189,10 +189,14 @@ async fn test_message_manager_filter_by_status() {
     let active = manager.list_messages_by_status(MessageStatus::Active).await;
     assert_eq!(active.len(), 1);
 
-    let acknowledged = manager.list_messages_by_status(MessageStatus::Acknowledged).await;
+    let acknowledged = manager
+        .list_messages_by_status(MessageStatus::Acknowledged)
+        .await;
     assert_eq!(acknowledged.len(), 1);
 
-    let resolved = manager.list_messages_by_status(MessageStatus::Resolved).await;
+    let resolved = manager
+        .list_messages_by_status(MessageStatus::Resolved)
+        .await;
     assert_eq!(resolved.len(), 1);
 }
 
@@ -218,11 +222,15 @@ async fn test_message_manager_filter_by_category() {
         .await
         .unwrap();
 
-    let system_alerts = manager.list_messages_by_category(MessageCategory::System.as_str()).await;
+    let system_alerts = manager
+        .list_messages_by_category(MessageCategory::System.as_str())
+        .await;
     assert_eq!(system_alerts.len(), 1);
     assert_eq!(system_alerts[0].title, "System Alert");
 
-    let device_alerts = manager.list_messages_by_category(MessageCategory::Alert.as_str()).await;
+    let device_alerts = manager
+        .list_messages_by_category(MessageCategory::Alert.as_str())
+        .await;
     assert_eq!(device_alerts.len(), 1);
     assert_eq!(device_alerts[0].title, "Device Alert");
 }
@@ -342,10 +350,7 @@ async fn test_message_manager_stats() {
 #[tokio::test]
 async fn test_console_channel() {
     let channel = ConsoleChannel::new("console".to_string());
-    let message = Message::system(
-        "Test".to_string(),
-        "Test message".to_string(),
-    );
+    let message = Message::system("Test".to_string(), "Test message".to_string());
 
     // Console channel should send without error
     let result = channel.send(&message).await;
@@ -355,10 +360,7 @@ async fn test_console_channel() {
 #[tokio::test]
 async fn test_memory_channel() {
     let channel = MemoryChannel::new("test_channel".to_string());
-    let message = Message::system(
-        "Test".to_string(),
-        "Test message".to_string(),
-    );
+    let message = Message::system("Test".to_string(), "Test message".to_string());
 
     channel.send(&message).await.unwrap();
 
@@ -372,10 +374,7 @@ async fn test_channel_factory_console() {
     let factory = ConsoleChannelFactory;
     let channel = factory.create(&serde_json::json!({})).unwrap();
 
-    let message = Message::system(
-        "Test".to_string(),
-        "Test message".to_string(),
-    );
+    let message = Message::system("Test".to_string(), "Test message".to_string());
     let result = channel.send(&message).await;
 
     assert!(result.is_ok());
@@ -385,7 +384,9 @@ async fn test_channel_factory_console() {
 async fn test_channel_factory_memory() {
     // Just test that the factory creates a channel that works
     let factory = MemoryChannelFactory;
-    let channel = factory.create(&serde_json::json!({"name": "test"})).unwrap();
+    let channel = factory
+        .create(&serde_json::json!({"name": "test"}))
+        .unwrap();
 
     let message = Message::alert(
         MessageSeverity::Warning,
@@ -736,10 +737,7 @@ async fn test_manager_system_message_helper() {
     let manager = MessageManager::new();
 
     let created = manager
-        .system_message(
-            "System Info".to_string(),
-            "System is running".to_string(),
-        )
+        .system_message("System Info".to_string(), "System is running".to_string())
         .await
         .unwrap();
 
@@ -749,10 +747,7 @@ async fn test_manager_system_message_helper() {
 
 #[tokio::test]
 async fn test_message_is_active() {
-    let message = Message::system(
-        "Test".to_string(),
-        "Test message".to_string(),
-    );
+    let message = Message::system("Test".to_string(), "Test message".to_string());
 
     assert!(message.is_active());
 }

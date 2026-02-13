@@ -3,12 +3,12 @@
 //! Tests verify that all adapters (MQTT, HTTP, Webhook) process data
 //! consistently using the UnifiedExtractor.
 
+use neomind_devices::mdl::{MetricDataType, MetricValue};
+use neomind_devices::mdl_format::MetricDefinition;
 use neomind_devices::{
     registry::DeviceRegistry,
     unified_extractor::{ExtractionConfig, ExtractionMode, UnifiedExtractor},
 };
-use neomind_devices::mdl::{MetricDataType, MetricValue};
-use neomind_devices::mdl_format::MetricDefinition;
 use serde_json::json;
 
 async fn create_test_registry_with_template() -> DeviceRegistry {
@@ -63,7 +63,7 @@ fn test_unified_extractor_dot_notation() {
     let registry = std::sync::Arc::new(
         tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(create_test_registry_with_template())
+            .block_on(create_test_registry_with_template()),
     );
     let extractor = UnifiedExtractor::new(registry);
 
@@ -78,7 +78,9 @@ fn test_unified_extractor_dot_notation() {
 
     // Test dot notation extraction
     assert_eq!(
-        extractor.extract_by_path(&data, "values.battery", 0).unwrap(),
+        extractor
+            .extract_by_path(&data, "values.battery", 0)
+            .unwrap(),
         Some(json!(85))
     );
     assert_eq!(
@@ -92,7 +94,9 @@ fn test_unified_extractor_dot_notation() {
 
     // Non-existent path returns None (not an error)
     assert_eq!(
-        extractor.extract_by_path(&data, "missing.field", 0).unwrap(),
+        extractor
+            .extract_by_path(&data, "missing.field", 0)
+            .unwrap(),
         None
     );
 }
@@ -102,7 +106,7 @@ fn test_unified_extractor_array_notation() {
     let registry = std::sync::Arc::new(
         tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(create_test_registry_with_template())
+            .block_on(create_test_registry_with_template()),
     );
     let extractor = UnifiedExtractor::new(registry);
 
@@ -118,7 +122,9 @@ fn test_unified_extractor_array_notation() {
         Some(json!({"name": "temp1", "value": 23.5}))
     );
     assert_eq!(
-        extractor.extract_by_path(&data, "sensors[1].value", 0).unwrap(),
+        extractor
+            .extract_by_path(&data, "sensors[1].value", 0)
+            .unwrap(),
         Some(json!(24.1))
     );
 }
@@ -134,7 +140,7 @@ fn test_unified_extractor_max_depth() {
     let registry = std::sync::Arc::new(
         tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(create_test_registry_with_template())
+            .block_on(create_test_registry_with_template()),
     );
     let extractor = UnifiedExtractor::with_config(registry, config);
 
@@ -146,9 +152,7 @@ fn test_unified_extractor_max_depth() {
         }
     });
 
-    assert!(extractor
-        .extract_by_path(&data, "a.b.c", 0)
-        .is_err());
+    assert!(extractor.extract_by_path(&data, "a.b.c", 0).is_err());
 }
 
 #[tokio::test]
@@ -229,7 +233,7 @@ fn test_unified_extractor_value_conversion() {
     let registry = std::sync::Arc::new(
         tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(create_test_registry_with_template())
+            .block_on(create_test_registry_with_template()),
     );
     let extractor = UnifiedExtractor::new(registry);
 
@@ -281,7 +285,7 @@ fn test_unified_path_extraction_edge_cases() {
     let registry = std::sync::Arc::new(
         tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(create_test_registry_with_template())
+            .block_on(create_test_registry_with_template()),
     );
     let extractor = UnifiedExtractor::new(registry);
 
@@ -299,14 +303,18 @@ fn test_unified_path_extraction_edge_cases() {
 
     // Trailing dot
     assert_eq!(
-        extractor.extract_by_path(&json!({"a": 1}), "a.", 0).unwrap(),
+        extractor
+            .extract_by_path(&json!({"a": 1}), "a.", 0)
+            .unwrap(),
         None
     );
 
     // Array out of bounds
-    assert!(extractor
-        .extract_by_path(&json!({"arr": [1, 2]}), "arr[5]", 0)
-        .is_ok()); // Returns Ok(None), not an error
+    assert!(
+        extractor
+            .extract_by_path(&json!({"arr": [1, 2]}), "arr[5]", 0)
+            .is_ok()
+    ); // Returns Ok(None), not an error
 }
 
 #[tokio::test]
@@ -324,7 +332,9 @@ async fn test_unified_extractor_with_real_device_payload() {
         }
     });
 
-    let result = extractor.extract("sensor001", "test_sensor", &real_payload).await;
+    let result = extractor
+        .extract("sensor001", "test_sensor", &real_payload)
+        .await;
 
     assert_eq!(result.mode, ExtractionMode::TemplateDriven);
     assert!(result.raw_stored);

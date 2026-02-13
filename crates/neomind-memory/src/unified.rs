@@ -52,7 +52,7 @@
 
 use crate::budget::TokenBudget;
 use crate::error::{MemoryError, Result};
-use crate::long_term::{KnowledgeEntry, KnowledgeCategory, LongTermMemory};
+use crate::long_term::{KnowledgeCategory, KnowledgeEntry, LongTermMemory};
 use crate::mid_term::{ConversationEntry, MidTermMemory};
 use crate::short_term::{MemoryMessage, ShortTermMemory};
 use serde::{Deserialize, Serialize};
@@ -155,11 +155,7 @@ pub struct MemoryItem {
 
 impl MemoryItem {
     /// Create a new memory item.
-    pub fn new(
-        content: impl Into<String>,
-        source_layer: MemoryLayer,
-        score: f64,
-    ) -> Self {
+    pub fn new(content: impl Into<String>, source_layer: MemoryLayer, score: f64) -> Self {
         Self {
             content: content.into(),
             source_layer,
@@ -248,7 +244,8 @@ impl MemoryResults {
 
     /// Sort by relevance score.
     pub fn sort_by_relevance(mut self) -> Self {
-        self.items.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        self.items
+            .sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
         self
     }
 }
@@ -337,12 +334,14 @@ impl UnifiedMemory {
     /// Add a message to short-term memory.
     pub async fn add(&self, role: impl Into<String>, content: impl Into<String>) -> Result<()> {
         let mut memory = self.short_term.write().await;
-        memory.add(role, content)}
+        memory.add(role, content)
+    }
 
     /// Add a pre-built message to short-term memory.
     pub async fn add_message(&self, message: MemoryMessage) -> Result<()> {
         let mut memory = self.short_term.write().await;
-        memory.add_message(message)}
+        memory.add_message(message)
+    }
 
     /// Get all short-term messages.
     pub async fn get_short_term(&self) -> Vec<MemoryMessage> {
@@ -372,9 +371,8 @@ impl UnifiedMemory {
         answer: impl Into<String>,
     ) -> Result<()> {
         let memory = self.mid_term.write().await;
-        memory
-            .add_conversation(session_id, question, answer)
-            .await}
+        memory.add_conversation(session_id, question, answer).await
+    }
 
     /// Get conversations for a session.
     pub async fn get_session(&self, session_id: &str) -> Vec<ConversationEntry> {
@@ -385,9 +383,8 @@ impl UnifiedMemory {
     /// Remove a session from mid-term memory.
     pub async fn remove_session(&self, session_id: &str) -> Result<usize> {
         let memory = self.mid_term.write().await;
-        memory
-            .remove_session(session_id)
-            .await}
+        memory.remove_session(session_id).await
+    }
 
     /// Clear mid-term memory.
     pub async fn clear_mid_term(&self) {
@@ -400,7 +397,8 @@ impl UnifiedMemory {
     /// Add knowledge to long-term memory.
     pub async fn add_knowledge(&self, entry: KnowledgeEntry) -> Result<()> {
         let memory = self.long_term.write().await;
-        memory.add(entry).await}
+        memory.add(entry).await
+    }
 
     /// Search long-term memory.
     pub async fn search_long_term(&self, query: &str) -> Vec<KnowledgeEntry> {
@@ -487,10 +485,7 @@ impl UnifiedMemory {
         };
 
         // Collect unique session IDs
-        let sessions: HashSet<String> = entries
-            .iter()
-            .map(|e| e.session_id.clone())
-            .collect();
+        let sessions: HashSet<String> = entries.iter().map(|e| e.session_id.clone()).collect();
 
         for session_id in sessions {
             let session_entries: Vec<_> = entries
@@ -538,7 +533,11 @@ impl UnifiedMemory {
 
         // Determine target layers
         let target_layers = match query.layer {
-            Some(MemoryLayer::All) => vec![MemoryLayer::ShortTerm, MemoryLayer::MidTerm, MemoryLayer::LongTerm],
+            Some(MemoryLayer::All) => vec![
+                MemoryLayer::ShortTerm,
+                MemoryLayer::MidTerm,
+                MemoryLayer::LongTerm,
+            ],
             Some(layer) => vec![layer],
             None => self.auto_select_layers(&query.query),
         };
@@ -608,7 +607,11 @@ impl UnifiedMemory {
     }
 
     /// Query a specific layer.
-    async fn query_layer(&self, layer: &MemoryLayer, query: &MemoryQuery) -> Result<Vec<MemoryItem>> {
+    async fn query_layer(
+        &self,
+        layer: &MemoryLayer,
+        query: &MemoryQuery,
+    ) -> Result<Vec<MemoryItem>> {
         match layer {
             MemoryLayer::ShortTerm => {
                 let memory = self.short_term.read().await;
@@ -630,9 +633,7 @@ impl UnifiedMemory {
 
                 let items: Vec<_> = results
                     .into_iter()
-                    .map(|r| {
-                        MemoryItem::from_mid_term(r.entry, r.score as f64)
-                    })
+                    .map(|r| MemoryItem::from_mid_term(r.entry, r.score as f64))
                     .collect();
 
                 Ok(items)
@@ -668,10 +669,7 @@ impl UnifiedMemory {
 
         // Get entry and session counts for mid-term
         let all_entries = mid_term.get_all().await;
-        let session_ids: HashSet<_> = all_entries
-            .iter()
-            .map(|e| e.session_id.clone())
-            .collect();
+        let session_ids: HashSet<_> = all_entries.iter().map(|e| e.session_id.clone()).collect();
 
         // Get long-term entry count
         let long_term_count = long_term.len().await;
@@ -761,10 +759,8 @@ fn simple_relevance(query: &str, content: &str) -> f64 {
     }
 
     // Word overlap
-    let query_words: std::collections::HashSet<_> =
-        query_lower.split_whitespace().collect();
-    let content_words: std::collections::HashSet<_> =
-        content_lower.split_whitespace().collect();
+    let query_words: std::collections::HashSet<_> = query_lower.split_whitespace().collect();
+    let content_words: std::collections::HashSet<_> = content_lower.split_whitespace().collect();
 
     if query_words.is_empty() {
         return 0.0;

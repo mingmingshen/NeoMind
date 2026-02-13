@@ -3,8 +3,7 @@
 //! Tests data transformation functionality.
 
 use neomind_automation::{
-    TransformEngine, TransformAutomation, TransformScope,
-    TransformOperation, AggregationFunc,
+    AggregationFunc, TransformAutomation, TransformEngine, TransformOperation, TransformScope,
 };
 // use serde_json::json; // Not used in tests
 
@@ -17,11 +16,8 @@ fn test_transform_engine_new() {
 
 #[test]
 fn test_transform_automation_builder() {
-    let transform = TransformAutomation::new(
-        "test-transform",
-        "Test Transform",
-        TransformScope::Global,
-    );
+    let transform =
+        TransformAutomation::new("test-transform", "Test Transform", TransformScope::Global);
 
     assert_eq!(transform.metadata.id, "test-transform");
     assert_eq!(transform.metadata.name, "Test Transform");
@@ -40,8 +36,14 @@ fn test_transform_automation_with_js_code() {
     );
 
     assert_eq!(transform.metadata.id, "test-transform");
-    assert_eq!(transform.intent, Some("Count the items in the detections array".to_string()));
-    assert_eq!(transform.js_code, Some("return input.detections ? input.detections.length : 0;".to_string()));
+    assert_eq!(
+        transform.intent,
+        Some("Count the items in the detections array".to_string())
+    );
+    assert_eq!(
+        transform.js_code,
+        Some("return input.detections ? input.detections.length : 0;".to_string())
+    );
 }
 
 #[test]
@@ -64,21 +66,17 @@ fn test_transform_automation_builder_methods() {
 
 #[test]
 fn test_transform_automation_with_operations() {
-    let transform = TransformAutomation::new(
-        "multi",
-        "Multi Operation",
-        TransformScope::Global,
-    )
-    .with_operation(TransformOperation::Single {
-        json_path: "$.status".to_string(),
-        output_metric: "status".to_string(),
-    })
-    .with_operation(TransformOperation::ArrayAggregation {
-        json_path: "$.sensors".to_string(),
-        aggregation: AggregationFunc::Mean,
-        value_path: Some("temp".to_string()),
-        output_metric: "avg_temp".to_string(),
-    });
+    let transform = TransformAutomation::new("multi", "Multi Operation", TransformScope::Global)
+        .with_operation(TransformOperation::Single {
+            json_path: "$.status".to_string(),
+            output_metric: "status".to_string(),
+        })
+        .with_operation(TransformOperation::ArrayAggregation {
+            json_path: "$.sensors".to_string(),
+            aggregation: AggregationFunc::Mean,
+            value_path: Some("temp".to_string()),
+            output_metric: "avg_temp".to_string(),
+        });
 
     assert!(transform.operations.is_some());
     assert_eq!(transform.operations.as_ref().unwrap().len(), 2);
@@ -86,11 +84,7 @@ fn test_transform_automation_with_operations() {
 
 #[test]
 fn test_transform_scope() {
-    let global = TransformAutomation::new(
-        "global",
-        "Global Transform",
-        TransformScope::Global,
-    );
+    let global = TransformAutomation::new("global", "Global Transform", TransformScope::Global);
 
     let by_type = TransformAutomation::new(
         "by-type",

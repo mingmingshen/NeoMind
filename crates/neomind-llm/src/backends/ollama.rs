@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use neomind_core::llm::backend::{
     BackendCapabilities, BackendId, BackendMetrics, FinishReason, LlmError, LlmOutput, LlmRuntime,
-    StreamChunk, TokenUsage, StreamConfig,
+    StreamChunk, StreamConfig, TokenUsage,
 };
 use neomind_core::message::{Content, ContentPart, Message, MessageRole};
 
@@ -109,10 +109,16 @@ impl OllamaRuntime {
     }
 
     /// Create a new Ollama runtime with custom stream configuration.
-    pub fn with_stream_config(config: OllamaConfig, stream_config: StreamConfig) -> Result<Self, LlmError> {
+    pub fn with_stream_config(
+        config: OllamaConfig,
+        stream_config: StreamConfig,
+    ) -> Result<Self, LlmError> {
         tracing::debug!("Creating Ollama runtime with endpoint: {}", config.endpoint);
-        tracing::debug!("Stream config: max_thinking_chars={}, max_stream_duration={}s",
-            stream_config.max_thinking_chars, stream_config.max_stream_duration_secs);
+        tracing::debug!(
+            "Stream config: max_thinking_chars={}, max_stream_duration={}s",
+            stream_config.max_thinking_chars,
+            stream_config.max_stream_duration_secs
+        );
 
         // Configure HTTP client with connection pooling for better performance
         // - pool_max_idle_per_host: Keep up to 5 idle connections ready for reuse
@@ -121,12 +127,12 @@ impl OllamaRuntime {
         // - http2_prior_knowledge: Skip ALPN negotiation for local Ollama
         let client = Client::builder()
             .timeout(config.timeout())
-            .pool_max_idle_per_host(5)                      // Keep 5 idle connections
-            .pool_idle_timeout(Duration::from_secs(90))      // Close after 90s idle
-            .connect_timeout(Duration::from_secs(5))         // Fast connection fail
+            .pool_max_idle_per_host(5) // Keep 5 idle connections
+            .pool_idle_timeout(Duration::from_secs(90)) // Close after 90s idle
+            .connect_timeout(Duration::from_secs(5)) // Fast connection fail
             .http2_keep_alive_interval(Duration::from_secs(30)) // Keep HTTP/2 alive
-            .http2_keep_alive_timeout(Duration::from_secs(10))  // Keep-alive timeout
-            .http2_adaptive_window(true)                     // Adaptive flow control
+            .http2_keep_alive_timeout(Duration::from_secs(10)) // Keep-alive timeout
+            .http2_adaptive_window(true) // Adaptive flow control
             .build()
             .map_err(|e| LlmError::Network(e.to_string()))?;
 
@@ -148,7 +154,10 @@ impl OllamaRuntime {
     ///
     /// The warmup request uses minimal tokens (1 token) to reduce overhead.
     pub async fn warmup(&self) -> Result<(), LlmError> {
-        tracing::info!("Warming up model: {} (this may take a moment...)", self.model);
+        tracing::info!(
+            "Warming up model: {} (this may take a moment...)",
+            self.model
+        );
 
         let url = format!("{}/api/chat", self.config.endpoint);
         let warmup_request = serde_json::json!({
@@ -174,7 +183,11 @@ impl OllamaRuntime {
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            tracing::warn!("Model warmup returned non-success status: {} - {}", status, error_text);
+            tracing::warn!(
+                "Model warmup returned non-success status: {} - {}",
+                status,
+                error_text
+            );
             // Don't fail on warmup errors - the model may still work
             Ok(())
         }
@@ -186,7 +199,9 @@ impl OllamaRuntime {
         tools: &[neomind_core::llm::backend::ToolDefinition],
     ) -> String {
         let mut result = String::from("## Tool Calling Requirements\n");
-        result.push_str("You must call tools using JSON format. Do not just describe what to do.\n\n");
+        result.push_str(
+            "You must call tools using JSON format. Do not just describe what to do.\n\n",
+        );
         result.push_str("Format:\n");
         result.push_str("[{\"name\": \"tool_name\", \"arguments\": {\"param\": \"value\"}}]\n\n");
 
@@ -205,28 +220,29 @@ impl OllamaRuntime {
 
             if let Some(props) = tool.parameters.get("properties")
                 && let Some(obj) = props.as_object()
-                    && !obj.is_empty() {
-                        result.push_str("Parameters:\n");
-                        for (name, prop) in obj {
-                            let desc = prop
-                                .get("description")
-                                .and_then(|d| d.as_str())
-                                .unwrap_or("No description");
-                            let type_name = prop
-                                .get("type")
-                                .and_then(|t| t.as_str())
-                                .unwrap_or("unknown");
-                            result.push_str(&format!("- {}: {} ({})\n", name, desc, type_name));
-                        }
-                    }
+                && !obj.is_empty()
+            {
+                result.push_str("Parameters:\n");
+                for (name, prop) in obj {
+                    let desc = prop
+                        .get("description")
+                        .and_then(|d| d.as_str())
+                        .unwrap_or("No description");
+                    let type_name = prop
+                        .get("type")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("unknown");
+                    result.push_str(&format!("- {}: {} ({})\n", name, desc, type_name));
+                }
+            }
 
             if let Some(required) = tool.parameters.get("required")
                 && let Some(arr) = required.as_array()
-                    && !arr.is_empty() {
-                        let required_names: Vec<&str> =
-                            arr.iter().filter_map(|v| v.as_str()).collect();
-                        result.push_str(&format!("Required: {}\n", required_names.join(", ")));
-                    }
+                && !arr.is_empty()
+            {
+                let required_names: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+                result.push_str(&format!("Required: {}\n", required_names.join(", ")));
+            }
 
             result.push('\n');
         }
@@ -248,8 +264,7 @@ impl OllamaRuntime {
         tools: Option<&[neomind_core::llm::backend::ToolDefinition]>,
         supports_native_tools: bool,
     ) -> Vec<OllamaMessage> {
-        let tool_instructions = if !supports_native_tools && tools.is_some_and(|t| !t.is_empty())
-        {
+        let tool_instructions = if !supports_native_tools && tools.is_some_and(|t| !t.is_empty()) {
             Some(Self::format_tools_for_text_calling(tools.unwrap()))
         } else {
             None
@@ -263,9 +278,10 @@ impl OllamaRuntime {
 
                 // Inject tool instructions into system message for models without native tool support
                 if msg.role == MessageRole::System
-                    && let Some(instructions) = &tool_instructions {
-                        text = format!("{}\n\n{}", text, instructions);
-                    }
+                    && let Some(instructions) = &tool_instructions
+                {
+                    text = format!("{}\n\n{}", text, instructions);
+                }
 
                 // Extract images from multimodal content
                 let images = extract_images_from_content(&msg.content);
@@ -472,7 +488,7 @@ impl LlmRuntime for OllamaRuntime {
             } else if caps.max_context >= 8192 {
                 Some(caps.max_context)
             } else {
-                None  // Let Ollama use its default
+                None // Let Ollama use its default
             }
         });
 
@@ -489,7 +505,7 @@ impl LlmRuntime for OllamaRuntime {
                 top_p: input.params.top_p,
                 top_k: input.params.top_k,
                 num_ctx,
-                repeat_penalty: Some(1.1),  // Prevent content repetition
+                repeat_penalty: Some(1.1), // Prevent content repetition
                 stop: stop_sequences,
             })
         } else {
@@ -502,10 +518,10 @@ impl LlmRuntime for OllamaRuntime {
 
         // Determine the think parameter
         let think: Option<OllamaThink> = match user_requested_thinking {
-            Some(false) => Some(OllamaThink::Bool(false)),  // Explicitly disable
-            Some(true) if model_supports_thinking => Some(OllamaThink::Bool(true)),  // Explicitly enable
-            Some(true) => None,  // Model doesn't support thinking, don't send parameter
-            None => None,  // Use model default
+            Some(false) => Some(OllamaThink::Bool(false)), // Explicitly disable
+            Some(true) if model_supports_thinking => Some(OllamaThink::Bool(true)), // Explicitly enable
+            Some(true) => None, // Model doesn't support thinking, don't send parameter
+            None => None,       // Use model default
         };
 
         // When tools are present, disable thinking to prevent wasting tokens
@@ -529,8 +545,7 @@ impl LlmRuntime for OllamaRuntime {
             format,
         };
 
-        let request_json =
-            serde_json::to_string(&request).map_err(LlmError::Serialization)?;
+        let request_json = serde_json::to_string(&request).map_err(LlmError::Serialization)?;
         tracing::debug!("Ollama: sending request to model: {}", model);
 
         let response = self
@@ -754,7 +769,7 @@ impl LlmRuntime for OllamaRuntime {
             } else if caps.max_context >= 8192 {
                 Some(caps.max_context)
             } else {
-                None  // Let Ollama use its default
+                None // Let Ollama use its default
             }
         });
 
@@ -771,7 +786,7 @@ impl LlmRuntime for OllamaRuntime {
                 top_p: input.params.top_p,
                 top_k: input.params.top_k,
                 num_ctx,
-                repeat_penalty: Some(1.1),  // Prevent content repetition
+                repeat_penalty: Some(1.1), // Prevent content repetition
                 stop: stop_sequences,
             })
         } else {
@@ -789,10 +804,10 @@ impl LlmRuntime for OllamaRuntime {
         // - Some(true) -> explicitly enable thinking
         // - None -> use model default (pass nothing)
         let think: Option<OllamaThink> = match user_requested_thinking {
-            Some(false) => Some(OllamaThink::Bool(false)),  // Explicitly disable
-            Some(true) if model_supports_thinking => Some(OllamaThink::Bool(true)),  // Explicitly enable
-            Some(true) => None,  // Model doesn't support thinking, don't send parameter
-            None => None,  // Use model default
+            Some(false) => Some(OllamaThink::Bool(false)), // Explicitly disable
+            Some(true) if model_supports_thinking => Some(OllamaThink::Bool(true)), // Explicitly enable
+            Some(true) => None, // Model doesn't support thinking, don't send parameter
+            None => None,       // Use model default
         };
 
         // Determine if we should send thinking to the client (for display purposes)
@@ -818,9 +833,11 @@ impl LlmRuntime for OllamaRuntime {
         let format: Option<String> = None;
 
         // Log request details before creating the request
-        tracing::debug!("Ollama: stream request config - has_tools={}, think={:?}",
+        tracing::debug!(
+            "Ollama: stream request config - has_tools={}, think={:?}",
             native_tools.as_ref().is_some_and(|t| !t.is_empty()),
-            think);
+            think
+        );
 
         // Capture stream_config for use in async block
         let stream_config = self.stream_config.clone();
@@ -895,7 +912,9 @@ impl LlmRuntime for OllamaRuntime {
                     while let Some(chunk_result) = byte_stream.next().await {
                         // Check for early termination flag
                         if terminate_early {
-                            tracing::info!("[ollama.rs] Early termination requested, ending stream.");
+                            tracing::info!(
+                                "[ollama.rs] Early termination requested, ending stream."
+                            );
                             break;
                         }
 
@@ -903,9 +922,11 @@ impl LlmRuntime for OllamaRuntime {
 
                         // P0.2: Check and report progress at intervals
                         if stream_config.progress_enabled
-                            && last_progress_report.elapsed() > Duration::from_secs(5) {
+                            && last_progress_report.elapsed() > Duration::from_secs(5)
+                        {
                             let elapsed_secs = elapsed.as_secs();
-                            let max_duration = Duration::from_secs(stream_config.max_stream_duration_secs);
+                            let max_duration =
+                                Duration::from_secs(stream_config.max_stream_duration_secs);
                             let remaining = max_duration.saturating_sub(elapsed);
 
                             // Send progress update through a special content marker
@@ -915,21 +936,29 @@ impl LlmRuntime for OllamaRuntime {
                                 "elapsed": elapsed_secs,
                                 "remaining": remaining.as_secs(),
                                 "stage": "streaming"
-                            }).to_string();
+                            })
+                            .to_string();
 
-                            tracing::debug!("Stream progress: {}s elapsed, {}s remaining",
-                                elapsed_secs, remaining.as_secs());
+                            tracing::debug!(
+                                "Stream progress: {}s elapsed, {}s remaining",
+                                elapsed_secs,
+                                remaining.as_secs()
+                            );
 
                             last_progress_report = Instant::now();
                         }
 
                         // P0.2: Check warning thresholds
                         if stream_config.progress_enabled {
-                            for (i, threshold) in stream_config.warning_thresholds.iter().enumerate() {
+                            for (i, threshold) in
+                                stream_config.warning_thresholds.iter().enumerate()
+                            {
                                 if i >= last_warning_index
-                                    && elapsed >= Duration::from_secs(*threshold) {
+                                    && elapsed >= Duration::from_secs(*threshold)
+                                {
                                     let elapsed_secs = elapsed.as_secs();
-                                    let max_duration = Duration::from_secs(stream_config.max_stream_duration_secs);
+                                    let max_duration =
+                                        Duration::from_secs(stream_config.max_stream_duration_secs);
                                     let remaining = max_duration.saturating_sub(elapsed);
 
                                     // Send warning through progress mechanism
@@ -939,10 +968,14 @@ impl LlmRuntime for OllamaRuntime {
                                             elapsed_secs, remaining.as_secs()),
                                         "elapsed": elapsed_secs,
                                         "remaining": remaining.as_secs()
-                                    }).to_string();
+                                    })
+                                    .to_string();
 
-                                    tracing::info!("Stream warning at {}s: {}s remaining",
-                                        elapsed_secs, remaining.as_secs());
+                                    tracing::info!(
+                                        "Stream warning at {}s: {}s remaining",
+                                        elapsed_secs,
+                                        remaining.as_secs()
+                                    );
 
                                     last_warning_index = i + 1;
                                 }
@@ -950,10 +983,13 @@ impl LlmRuntime for OllamaRuntime {
                         }
 
                         // Check for timeout
-                        let max_duration = Duration::from_secs(stream_config.max_stream_duration_secs);
+                        let max_duration =
+                            Duration::from_secs(stream_config.max_stream_duration_secs);
                         if elapsed > max_duration {
-                            let error_msg =
-                                format!("Stream timeout after {} seconds", stream_config.max_stream_duration_secs);
+                            let error_msg = format!(
+                                "Stream timeout after {} seconds",
+                                stream_config.max_stream_duration_secs
+                            );
                             println!("[ollama.rs] {}", error_msg);
                             tracing::warn!("{}", error_msg);
                             let _ = tx.send(Err(LlmError::Generation(error_msg))).await;
@@ -1008,7 +1044,9 @@ impl LlmRuntime for OllamaRuntime {
                                             // Handle native tool calls - convert to XML format for compatibility
                                             if !ollama_chunk.message.tool_calls.is_empty() {
                                                 // BUSINESS LOG: Tool calls detected
-                                                let tool_names: Vec<&str> = ollama_chunk.message.tool_calls
+                                                let tool_names: Vec<&str> = ollama_chunk
+                                                    .message
+                                                    .tool_calls
                                                     .iter()
                                                     .map(|t| t.function.name.as_str())
                                                     .collect();
@@ -1065,14 +1103,17 @@ impl LlmRuntime for OllamaRuntime {
                                             // IMPORTANT: Skip processing thinking/content if tool_calls were already sent
                                             if tool_calls_sent {
                                                 // Skip - don't send any more chunks to the client
-                                            } else if !ollama_chunk.message.thinking.is_empty() && !skip_remaining_thinking {
+                                            } else if !ollama_chunk.message.thinking.is_empty()
+                                                && !skip_remaining_thinking
+                                            {
                                                 // IMPORTANT: Process content BEFORE checking done flag
                                                 // The final chunk with done=true may still contain content that must be sent
                                                 // CRITICAL FIX: Only send thinking if user requested it AND model supports it
                                                 // qwen3 models generate thinking but we filter it out for performance
 
                                                 // Track thinking characters for loop detection
-                                                let thinking_content = &ollama_chunk.message.thinking;
+                                                let thinking_content =
+                                                    &ollama_chunk.message.thinking;
                                                 thinking_chars += thinking_content.chars().count();
                                                 total_chars += thinking_content.chars().count();
 
@@ -1083,20 +1124,24 @@ impl LlmRuntime for OllamaRuntime {
 
                                                 // Check if thinking has gone on too long
                                                 if let Some(start) = thinking_start_time
-                                                    && start.elapsed() > stream_config.max_thinking_time() {
-                                                        tracing::warn!(
-                                                            "[ollama.rs] Thinking timeout ({:?} elapsed, {} chars). Skipping remaining thinking, waiting for content.",
-                                                            start.elapsed(),
-                                                            thinking_chars
-                                                        );
-                                                        // Skip future thinking chunks but continue stream for content
-                                                        skip_remaining_thinking = true;
-                                                    }
+                                                    && start.elapsed()
+                                                        > stream_config.max_thinking_time()
+                                                {
+                                                    tracing::warn!(
+                                                        "[ollama.rs] Thinking timeout ({:?} elapsed, {} chars). Skipping remaining thinking, waiting for content.",
+                                                        start.elapsed(),
+                                                        thinking_chars
+                                                    );
+                                                    // Skip future thinking chunks but continue stream for content
+                                                    skip_remaining_thinking = true;
+                                                }
 
                                                 // Detect consecutive identical thinking chunks (model stuck in loop)
                                                 if thinking_content == &last_thinking_chunk {
                                                     consecutive_same_thinking += 1;
-                                                    if consecutive_same_thinking > stream_config.max_thinking_loop {
+                                                    if consecutive_same_thinking
+                                                        > stream_config.max_thinking_loop
+                                                    {
                                                         tracing::warn!(
                                                             "[ollama.rs] Model stuck in thinking loop ({} identical chunks: \"{}\"). Skipping remaining thinking, waiting for content.",
                                                             consecutive_same_thinking,
@@ -1111,7 +1156,8 @@ impl LlmRuntime for OllamaRuntime {
                                                 }
 
                                                 // SAFETY CHECK: Detect if model is stuck in thinking loop
-                                                if thinking_chars > stream_config.max_thinking_chars {
+                                                if thinking_chars > stream_config.max_thinking_chars
+                                                {
                                                     tracing::warn!(
                                                         "[ollama.rs] Max thinking chars reached ({} > {}). Skipping remaining thinking chunks, waiting for content.",
                                                         thinking_chars,
@@ -1147,13 +1193,17 @@ impl LlmRuntime for OllamaRuntime {
 
                                             // Then send response content (final answer)
                                             // Only process content if tool_calls haven't been sent yet
-                                            if !tool_calls_sent && !ollama_chunk.message.content.is_empty() {
+                                            if !tool_calls_sent
+                                                && !ollama_chunk.message.content.is_empty()
+                                            {
                                                 let content = &ollama_chunk.message.content;
                                                 content_buffer.push_str(content);
 
                                                 // Detect if content is actually thinking (qwen3-vl puts thinking in content field)
                                                 // Skip this detection if we've exceeded thinking limit
-                                                if !detected_thinking_in_content && !skip_remaining_thinking {
+                                                if !detected_thinking_in_content
+                                                    && !skip_remaining_thinking
+                                                {
                                                     // Check initial buffer for thinking patterns
                                                     let is_likely_thinking = content_buffer
                                                         .starts_with("好的，用户")
@@ -1171,13 +1221,19 @@ impl LlmRuntime for OllamaRuntime {
                                                 }
 
                                                 // If we've exceeded thinking limit, treat everything as content from now on
-                                                if skip_remaining_thinking && detected_thinking_in_content {
+                                                if skip_remaining_thinking
+                                                    && detected_thinking_in_content
+                                                {
                                                     // Reset - treat remaining as real content
                                                     detected_thinking_in_content = false;
                                                     // Send any buffered thinking content first (if not already sent)
                                                     if !content_buffer.is_empty() {
-                                                        let _ =
-                                                            tx.send(Ok((content_buffer.clone(), false))).await;
+                                                        let _ = tx
+                                                            .send(Ok((
+                                                                content_buffer.clone(),
+                                                                false,
+                                                            )))
+                                                            .await;
                                                         content_buffer.clear();
                                                     }
                                                 }
@@ -1192,7 +1248,9 @@ impl LlmRuntime for OllamaRuntime {
                                                     );
 
                                                     // Check thinking limit
-                                                    if thinking_chars <= stream_config.max_thinking_chars {
+                                                    if thinking_chars
+                                                        <= stream_config.max_thinking_chars
+                                                    {
                                                         let _ = tx
                                                             .send(Ok((content.clone(), true)))
                                                             .await;
@@ -1216,13 +1274,14 @@ impl LlmRuntime for OllamaRuntime {
                                             if ollama_chunk.done {
                                                 // BUSINESS LOG: Stream completion summary
                                                 // Use accumulated counters, not final chunk (which is often empty)
-                                                let actual_content_len = total_chars.saturating_sub(thinking_chars);
+                                                let actual_content_len =
+                                                    total_chars.saturating_sub(thinking_chars);
 
                                                 tracing::info!(
                                                     "✅ LLM stream complete: thinking={} chars, content={} chars, total_chunks={}",
                                                     thinking_chars,
                                                     actual_content_len,
-                                                    total_bytes / 300  // Rough chunk count estimate
+                                                    total_bytes / 300 // Rough chunk count estimate
                                                 );
 
                                                 // Warn if no content was generated (possible token budget issue)

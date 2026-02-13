@@ -147,9 +147,7 @@ impl VectorDocument {
     fn matches_filter(&self, filter: &HashMap<String, serde_json::Value>) -> bool {
         for (key, expected_value) in filter {
             let actual_value = match key.as_str() {
-                "category" => {
-                    self.category.as_ref().map(|c| serde_json::json!(c))
-                }
+                "category" => self.category.as_ref().map(|c| serde_json::json!(c)),
                 "tags" => Some(serde_json::json!(self.tags)),
                 _ => self.metadata.get(key).cloned(),
             };
@@ -164,8 +162,7 @@ impl VectorDocument {
 }
 
 /// Similarity metric for vector comparison.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SimilarityMetric {
     /// Cosine similarity (default).
     #[default]
@@ -244,12 +241,13 @@ impl VectorStore {
     pub async fn insert(&self, doc: VectorDocument) -> Result<(), Error> {
         // Validate dimension if set
         if let Some(expected_dim) = self.dimension
-            && doc.embedding.len() != expected_dim {
-                return Err(Error::InvalidDimension {
-                    expected: expected_dim,
-                    found: doc.embedding.len(),
-                });
-            }
+            && doc.embedding.len() != expected_dim
+        {
+            return Err(Error::InvalidDimension {
+                expected: expected_dim,
+                found: doc.embedding.len(),
+            });
+        }
 
         let mut docs = self.documents.write().await;
         let id = doc.id.clone();
@@ -262,7 +260,11 @@ impl VectorStore {
     }
 
     /// Add document to HNSW-style graph index.
-    async fn add_to_graph_index(&self, doc: &VectorDocument, docs: &HashMap<String, VectorDocument>) {
+    async fn add_to_graph_index(
+        &self,
+        doc: &VectorDocument,
+        docs: &HashMap<String, VectorDocument>,
+    ) {
         let mut graph = self.graph_index.write().await;
         let id = doc.id.clone();
 
@@ -289,11 +291,14 @@ impl VectorStore {
         neighbors.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         neighbors.truncate(self.max_connections);
 
-        graph.insert(id.clone(), HnswNode {
-            id,
-            neighbors,
-            layer,
-        });
+        graph.insert(
+            id.clone(),
+            HnswNode {
+                id,
+                neighbors,
+                layer,
+            },
+        );
     }
 
     /// Insert multiple documents in batch.
@@ -314,7 +319,8 @@ impl VectorStore {
 
         // Validate query dimension
         if let Some(expected_dim) = self.dimension
-            && query.len() != expected_dim {
+            && query.len() != expected_dim
+        {
             return Err(Error::InvalidDimension {
                 expected: expected_dim,
                 found: query.len(),
@@ -326,15 +332,17 @@ impl VectorStore {
         for doc in docs.values() {
             // Apply metadata filter if specified
             if let Some(ref filter) = options.metadata_filter
-                && !doc.matches_filter(filter) {
-                    continue;
-                }
+                && !doc.matches_filter(filter)
+            {
+                continue;
+            }
 
             let score = self.similarity(query, &doc.embedding);
 
             // Apply min_score threshold
             if let Some(min_score) = options.min_score
-                && score < min_score {
+                && score < min_score
+            {
                 continue;
             }
 
@@ -346,7 +354,11 @@ impl VectorStore {
         }
 
         // Sort by score (descending)
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Return top_k
         results.truncate(options.top_k);
@@ -370,11 +382,8 @@ impl VectorStore {
         top_k: usize,
         min_score: f32,
     ) -> Result<Vec<SearchResult>, Error> {
-        self.search_with_options(
-            query,
-            SearchOptions::new(top_k).with_min_score(min_score),
-        )
-        .await
+        self.search_with_options(query, SearchOptions::new(top_k).with_min_score(min_score))
+            .await
     }
 
     /// Batch search: search multiple queries at once.
@@ -410,7 +419,11 @@ impl VectorStore {
         }
 
         // Re-sort and truncate
-        vector_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        vector_results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         vector_results.truncate(top_k);
         Ok(vector_results)
     }
@@ -489,13 +502,9 @@ impl VectorStore {
     fn similarity(&self, a: &Embedding, b: &Embedding) -> f32 {
         match self.metric {
             SimilarityMetric::Cosine => self.cosine_similarity(a, b),
-            SimilarityMetric::Euclidean => {
-                1.0 / (1.0 + self.euclidean_distance(a, b))
-            }
+            SimilarityMetric::Euclidean => 1.0 / (1.0 + self.euclidean_distance(a, b)),
             SimilarityMetric::DotProduct => self.dot_product(a, b),
-            SimilarityMetric::Manhattan => {
-                1.0 / (1.0 + self.manhattan_distance(a, b))
-            }
+            SimilarityMetric::Manhattan => 1.0 / (1.0 + self.manhattan_distance(a, b)),
         }
     }
 
@@ -527,10 +536,7 @@ impl VectorStore {
 
     /// Manhattan distance between two vectors.
     fn manhattan_distance(&self, a: &Embedding, b: &Embedding) -> f32 {
-        a.iter()
-            .zip(b.iter())
-            .map(|(x, y)| (x - y).abs())
-            .sum()
+        a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()).sum()
     }
 }
 
@@ -563,7 +569,8 @@ impl PersistentVectorStore {
         {
             let singleton = VECTOR_STORE_SINGLETON.lock().unwrap();
             if let Some(store) = singleton.as_ref()
-                && store.path == path_str {
+                && store.path == path_str
+            {
                 return Ok(store.clone());
             }
         }
@@ -838,10 +845,8 @@ mod tests {
     async fn test_search_with_filter() {
         let store = VectorStore::new();
 
-        let doc1 = VectorDocument::new("doc1", vec![1.0, 0.0])
-            .with_category("sensors");
-        let doc2 = VectorDocument::new("doc2", vec![0.9, 0.0])
-            .with_category("actuators");
+        let doc1 = VectorDocument::new("doc1", vec![1.0, 0.0]).with_category("sensors");
+        let doc2 = VectorDocument::new("doc2", vec![0.9, 0.0]).with_category("actuators");
 
         store.insert(doc1).await.unwrap();
         store.insert(doc2).await.unwrap();
@@ -895,7 +900,10 @@ mod tests {
 
         // Hybrid search with keyword should boost doc1
         let query = vec![0.5, 0.5];
-        let results = store.hybrid_search(&query, "temperature", 2, 0.2).await.unwrap();
+        let results = store
+            .hybrid_search(&query, "temperature", 2, 0.2)
+            .await
+            .unwrap();
 
         // doc1 should be first due to keyword boost
         assert_eq!(results[0].id, "doc1");

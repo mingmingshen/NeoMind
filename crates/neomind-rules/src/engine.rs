@@ -16,8 +16,8 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 use super::dependencies::DependencyManager;
-use super::dsl::{ParsedRule, RuleAction, RuleCondition, RuleError};
 use super::device_integration::DeviceActionExecutor;
+use super::dsl::{ParsedRule, RuleAction, RuleCondition, RuleError};
 use super::extension_integration::{ExtensionActionExecutor, try_parse_extension_action};
 
 /// Optional message manager for creating messages from rule actions.
@@ -201,9 +201,11 @@ impl CompiledRule {
             if let Some(device_id) = cond.get("device_id").and_then(|v| v.as_str()) {
                 // Also check if there's a device name that needs to be mapped
                 if let Some(name) = cond.get("deviceName").and_then(|v| v.as_str())
-                    && !name.is_empty() && !device_id.is_empty() {
-                        mapping.insert(name.to_string(), device_id.to_string());
-                    }
+                    && !name.is_empty()
+                    && !device_id.is_empty()
+                {
+                    mapping.insert(name.to_string(), device_id.to_string());
+                }
                 // Direct mapping: the parsed DSL uses device_id as the key
                 // but the value is stored under the actual device ID
                 if !device_id.is_empty() {
@@ -227,7 +229,11 @@ impl CompiledRule {
 
     /// Resolve device_id using the source.uiCondition mapping.
     /// Returns the actual device ID if found, otherwise returns the original device_id.
-    fn resolve_device_id(&self, dsl_device_id: &str, mapping: &std::collections::HashMap<String, String>) -> String {
+    fn resolve_device_id(
+        &self,
+        dsl_device_id: &str,
+        mapping: &std::collections::HashMap<String, String>,
+    ) -> String {
         // First check if the dsl_device_id is already a valid device ID
         if let Some(resolved) = mapping.get(dsl_device_id) {
             return resolved.clone();
@@ -237,7 +243,11 @@ impl CompiledRule {
     }
 
     /// Evaluate a condition with the given value provider.
-    fn evaluate_condition(&self, condition: &RuleCondition, value_provider: &dyn ValueProvider) -> bool {
+    fn evaluate_condition(
+        &self,
+        condition: &RuleCondition,
+        value_provider: &dyn ValueProvider,
+    ) -> bool {
         // Build device ID mapping from source (cache this for efficiency)
         let device_id_mapping = self.build_device_id_mapping();
 
@@ -252,7 +262,12 @@ impl CompiledRule {
         device_id_mapping: &std::collections::HashMap<String, String>,
     ) -> bool {
         match condition {
-            RuleCondition::Device { device_id, metric, operator, threshold } => {
+            RuleCondition::Device {
+                device_id,
+                metric,
+                operator,
+                threshold,
+            } => {
                 let resolved_id = self.resolve_device_id(device_id, device_id_mapping);
                 if let Some(value) = value_provider.get_value(&resolved_id, metric) {
                     operator.evaluate(value, *threshold)
@@ -260,7 +275,12 @@ impl CompiledRule {
                     false
                 }
             }
-            RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+            RuleCondition::Extension {
+                extension_id,
+                metric,
+                operator,
+                threshold,
+            } => {
                 // Extension conditions use extension_id directly, no mapping needed
                 if let Some(value) = value_provider.get_value(extension_id, metric) {
                     operator.evaluate(value, *threshold)
@@ -268,7 +288,12 @@ impl CompiledRule {
                     false
                 }
             }
-            RuleCondition::DeviceRange { device_id, metric, min, max } => {
+            RuleCondition::DeviceRange {
+                device_id,
+                metric,
+                min,
+                max,
+            } => {
                 let resolved_id = self.resolve_device_id(device_id, device_id_mapping);
                 if let Some(value) = value_provider.get_value(&resolved_id, metric) {
                     value >= *min && value <= *max
@@ -276,7 +301,12 @@ impl CompiledRule {
                     false
                 }
             }
-            RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+            RuleCondition::ExtensionRange {
+                extension_id,
+                metric,
+                min,
+                max,
+            } => {
                 // Extension range conditions use extension_id directly, no mapping needed
                 if let Some(value) = value_provider.get_value(extension_id, metric) {
                     value >= *min && value <= *max
@@ -284,12 +314,12 @@ impl CompiledRule {
                     false
                 }
             }
-            RuleCondition::And(conditions) => {
-                conditions.iter().all(|c| self.evaluate_condition_with_mapping(c, value_provider, device_id_mapping))
-            }
-            RuleCondition::Or(conditions) => {
-                conditions.iter().any(|c| self.evaluate_condition_with_mapping(c, value_provider, device_id_mapping))
-            }
+            RuleCondition::And(conditions) => conditions.iter().all(|c| {
+                self.evaluate_condition_with_mapping(c, value_provider, device_id_mapping)
+            }),
+            RuleCondition::Or(conditions) => conditions.iter().any(|c| {
+                self.evaluate_condition_with_mapping(c, value_provider, device_id_mapping)
+            }),
             RuleCondition::Not(condition) => {
                 !self.evaluate_condition_with_mapping(condition, value_provider, device_id_mapping)
             }
@@ -369,7 +399,10 @@ impl RuleEngine {
 
     /// Set the message manager for creating messages from rule actions.
     /// This must be called after construction as it requires async access.
-    pub async fn set_message_manager(&self, message_manager: Arc<neomind_messages::MessageManager>) {
+    pub async fn set_message_manager(
+        &self,
+        message_manager: Arc<neomind_messages::MessageManager>,
+    ) {
         *self.message_manager.write().await = Some(message_manager);
     }
 
@@ -411,7 +444,9 @@ impl RuleEngine {
         {
             let mut running = self.scheduler_running.write().unwrap();
             if *running {
-                return Err(RuleError::Validation("Scheduler is already running".to_string()));
+                return Err(RuleError::Validation(
+                    "Scheduler is already running".to_string(),
+                ));
             }
             *running = true;
         }
@@ -513,10 +548,7 @@ impl RuleEngine {
         let mut handle_guard = self.scheduler_handle.write().unwrap();
         *handle_guard = Some(handle);
 
-        tracing::info!(
-            interval_sec = interval.as_secs(),
-            "Rule scheduler started"
-        );
+        tracing::info!(interval_sec = interval.as_secs(), "Rule scheduler started");
 
         Ok(())
     }
@@ -528,7 +560,9 @@ impl RuleEngine {
         {
             let running = self.scheduler_running.read().unwrap();
             if !*running {
-                return Err(RuleError::Validation("Scheduler is not running".to_string()));
+                return Err(RuleError::Validation(
+                    "Scheduler is not running".to_string(),
+                ));
             }
         }
 
@@ -614,7 +648,11 @@ impl RuleEngine {
     }
 
     /// Remove a dependency between rules.
-    pub fn remove_dependency(&self, dependent: &RuleId, dependency: &RuleId) -> Result<(), RuleError> {
+    pub fn remove_dependency(
+        &self,
+        dependent: &RuleId,
+        dependency: &RuleId,
+    ) -> Result<(), RuleError> {
         let mut dep_manager = self.dependency_manager.write().unwrap();
         dep_manager.remove_dependency(dependent, dependency);
         Ok(())
@@ -802,7 +840,7 @@ impl RuleEngine {
 
     /// Execute a single action - supports all action types.
     async fn execute_action(&self, action: &RuleAction) -> Result<String, String> {
-        use super::dsl::{HttpMethod, AlertSeverity};
+        use super::dsl::{AlertSeverity, HttpMethod};
 
         match action {
             RuleAction::Notify { message, channels } => {
@@ -831,10 +869,15 @@ impl RuleEngine {
                                     result.command,
                                     result.result
                                 );
-                                Ok(format!("EXTENSION: {}.{}", result.extension_id, result.command))
+                                Ok(format!(
+                                    "EXTENSION: {}.{}",
+                                    result.extension_id, result.command
+                                ))
                             }
                             Ok(result) => {
-                                let err = result.error.unwrap_or_else(|| "Execution failed".to_string());
+                                let err = result
+                                    .error
+                                    .unwrap_or_else(|| "Execution failed".to_string());
                                 tracing::error!("EXTENSION EXECUTE failed: {}", err);
                                 Err(err)
                             }
@@ -850,22 +893,21 @@ impl RuleEngine {
                             ext_action.extension_id,
                             ext_action.command
                         );
-                        Ok(format!("EXTENSION: {}.{} (logged only)", ext_action.extension_id, ext_action.command))
+                        Ok(format!(
+                            "EXTENSION: {}.{} (logged only)",
+                            ext_action.extension_id, ext_action.command
+                        ))
                     }
                 } else {
                     // This is a device action - use device executor
                     let executor = self.device_action_executor.read().await;
                     if let Some(ex) = executor.as_ref() {
                         match ex.execute_action(action, None, None).await {
-                            Ok(result) if result.success => {
-                                Ok(result.actions_executed.join(", "))
-                            }
-                            Ok(result) => {
-                                Err(result.error.unwrap_or_else(|| "Execution failed".to_string()))
-                            }
-                            Err(e) => {
-                                Err(e.to_string())
-                            }
+                            Ok(result) if result.success => Ok(result.actions_executed.join(", ")),
+                            Ok(result) => Err(result
+                                .error
+                                .unwrap_or_else(|| "Execution failed".to_string())),
+                            Err(e) => Err(e.to_string()),
                         }
                     } else {
                         // Fallback: just log (no actual execution)
@@ -892,23 +934,29 @@ impl RuleEngine {
                 tracing::info!("{}", log_msg);
                 Ok(log_msg)
             }
-            RuleAction::Set { device_id, property, value } => {
+            RuleAction::Set {
+                device_id,
+                property,
+                value,
+            } => {
                 // Try to use DeviceActionExecutor if available
                 let executor = self.device_action_executor.read().await;
                 if let Some(ex) = executor.as_ref() {
                     // Convert Set to Execute command
                     let params = std::collections::HashMap::from([
                         ("property".to_string(), serde_json::json!(property)),
-                        ("value".to_string(), serde_json::to_value(value).unwrap_or(serde_json::Value::Null)),
+                        (
+                            "value".to_string(),
+                            serde_json::to_value(value).unwrap_or(serde_json::Value::Null),
+                        ),
                     ]);
 
-                    match ex.execute_command_with_retry(device_id, "set", &params).await {
-                        Ok(_) => {
-                            Ok(format!("SET: {}.{} = {:?}", device_id, property, value))
-                        }
-                        Err(e) => {
-                            Err(format!("SET failed: {}", e))
-                        }
+                    match ex
+                        .execute_command_with_retry(device_id, "set", &params)
+                        .await
+                    {
+                        Ok(_) => Ok(format!("SET: {}.{} = {:?}", device_id, property, value)),
+                        Err(e) => Err(format!("SET failed: {}", e)),
                     }
                 } else {
                     // Fallback: just log (no actual execution)
@@ -918,7 +966,10 @@ impl RuleEngine {
                         property,
                         value
                     );
-                    Ok(format!("SET: {}.{} = {} (logged only)", device_id, property, value))
+                    Ok(format!(
+                        "SET: {}.{} = {} (logged only)",
+                        device_id, property, value
+                    ))
                 }
             }
             RuleAction::Delay { duration } => {
@@ -926,7 +977,11 @@ impl RuleEngine {
                 tokio::time::sleep(*duration).await;
                 Ok(format!("DELAY: {:?} completed", duration))
             }
-            RuleAction::CreateAlert { title, message, severity } => {
+            RuleAction::CreateAlert {
+                title,
+                message,
+                severity,
+            } => {
                 use neomind_messages::{Message, MessageSeverity as MessageSev};
 
                 let sev = match severity {
@@ -972,11 +1027,21 @@ impl RuleEngine {
                         AlertSeverity::Error => "ERROR",
                         AlertSeverity::Critical => "CRITICAL",
                     };
-                    tracing::warn!("MESSAGE [{}]: {} - {} (no MessageManager configured)", sev_str, title, message);
+                    tracing::warn!(
+                        "MESSAGE [{}]: {} - {} (no MessageManager configured)",
+                        sev_str,
+                        title,
+                        message
+                    );
                     Ok(format!("MESSAGE [{}]: {} (logged only)", sev_str, title))
                 }
             }
-            RuleAction::HttpRequest { method, url, headers, body } => {
+            RuleAction::HttpRequest {
+                method,
+                url,
+                headers,
+                body,
+            } => {
                 let method_str = match method {
                     HttpMethod::Get => reqwest::Method::GET,
                     HttpMethod::Post => reqwest::Method::POST,
@@ -1038,7 +1103,10 @@ impl RuleEngine {
                             status_code
                         );
 
-                        Ok(format!("HTTP: {} {} -> {} ({})", method_str, url, status_code, body_result))
+                        Ok(format!(
+                            "HTTP: {} {} -> {} ({})",
+                            method_str, url, status_code, body_result
+                        ))
                     }
                     Err(e) => {
                         tracing::error!("HTTP request failed: {} {} - {}", method_str, url, e);

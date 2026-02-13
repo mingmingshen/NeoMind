@@ -136,15 +136,15 @@ impl ConnectionTestResult {
 }
 
 fn default_temperature() -> f32 {
-    0.6  // Lowered for faster, more focused responses
+    0.6 // Lowered for faster, more focused responses
 }
 
 fn default_top_p() -> f32 {
-    0.85  // Lowered to reduce thinking time
+    0.85 // Lowered to reduce thinking time
 }
 
 fn default_top_k() -> usize {
-    20  // Significantly reduced for faster sampling
+    20 // Significantly reduced for faster sampling
 }
 
 fn default_max_tokens() -> usize {
@@ -220,6 +220,50 @@ impl LlmBackendInstance {
                     max_context: 128000,
                 },
             ),
+            LlmBackendType::Qwen => (
+                Some("https://dashscope.aliyuncs.com/compatible-mode/v1".to_string()),
+                "qwen-plus".to_string(),
+                BackendCapabilities {
+                    supports_streaming: true,
+                    supports_multimodal: true,
+                    supports_thinking: false,
+                    supports_tools: true,
+                    max_context: 128000,
+                },
+            ),
+            LlmBackendType::DeepSeek => (
+                Some("https://api.deepseek.com/v1".to_string()),
+                "deepseek-chat".to_string(),
+                BackendCapabilities {
+                    supports_streaming: true,
+                    supports_multimodal: false,
+                    supports_thinking: true,
+                    supports_tools: true,
+                    max_context: 128000,
+                },
+            ),
+            LlmBackendType::GLM => (
+                Some("https://open.bigmodel.cn/api/paas/v4".to_string()),
+                "glm-4-flash".to_string(),
+                BackendCapabilities {
+                    supports_streaming: true,
+                    supports_multimodal: true,
+                    supports_thinking: false,
+                    supports_tools: true,
+                    max_context: 128000,
+                },
+            ),
+            LlmBackendType::MiniMax => (
+                Some("https://api.minimax.chat/v1".to_string()),
+                "abab6.5s-chat".to_string(),
+                BackendCapabilities {
+                    supports_streaming: true,
+                    supports_multimodal: false,
+                    supports_thinking: false,
+                    supports_tools: false,
+                    max_context: 512000,
+                },
+            ),
         };
 
         Self {
@@ -253,6 +297,10 @@ impl LlmBackendInstance {
             LlmBackendType::Anthropic => "anthropic",
             LlmBackendType::Google => "google",
             LlmBackendType::XAi => "xai",
+            LlmBackendType::Qwen => "qwen",
+            LlmBackendType::DeepSeek => "deepseek",
+            LlmBackendType::GLM => "glm",
+            LlmBackendType::MiniMax => "minimax",
         }
     }
 
@@ -308,6 +356,34 @@ impl LlmBackendInstance {
                 supports_tools: false,
                 max_context: 128000,
             },
+            LlmBackendType::Qwen => BackendCapabilities {
+                supports_streaming: true,
+                supports_multimodal: true,
+                supports_thinking: false,
+                supports_tools: true,
+                max_context: 128000,
+            },
+            LlmBackendType::DeepSeek => BackendCapabilities {
+                supports_streaming: true,
+                supports_multimodal: false,
+                supports_thinking: true,
+                supports_tools: true,
+                max_context: 128000,
+            },
+            LlmBackendType::GLM => BackendCapabilities {
+                supports_streaming: true,
+                supports_multimodal: true,
+                supports_thinking: false,
+                supports_tools: true,
+                max_context: 128000,
+            },
+            LlmBackendType::MiniMax => BackendCapabilities {
+                supports_streaming: true,
+                supports_multimodal: false,
+                supports_thinking: false,
+                supports_tools: false,
+                max_context: 512000,
+            },
         }
     }
 
@@ -334,7 +410,11 @@ impl LlmBackendInstance {
             LlmBackendType::OpenAi
             | LlmBackendType::Anthropic
             | LlmBackendType::Google
-            | LlmBackendType::XAi => {
+            | LlmBackendType::XAi
+            | LlmBackendType::Qwen
+            | LlmBackendType::DeepSeek
+            | LlmBackendType::GLM
+            | LlmBackendType::MiniMax => {
                 if self.api_key.as_ref().is_none_or(|k| k.is_empty()) {
                     return Err(format!("{:?} requires an API key", self.backend_type));
                 }
@@ -370,9 +450,10 @@ impl LlmBackendStore {
         {
             let singleton = LLM_BACKEND_STORE_SINGLETON.lock().unwrap();
             if let Some(store) = singleton.as_ref()
-                && store.path == path_str {
-                    return Ok(store.clone());
-                }
+                && store.path == path_str
+            {
+                return Ok(store.clone());
+            }
         }
 
         // Use the same database as settings store
@@ -461,11 +542,12 @@ impl LlmBackendStore {
     pub fn delete_instance(&self, id: &str) -> Result<bool, Error> {
         // Check if it's the active backend
         if let Ok(Some(active_id)) = self.get_active_backend_id()
-            && active_id == id {
-                return Err(Error::InvalidInput(
-                    "Cannot delete the active backend".to_string(),
-                ));
-            }
+            && active_id == id
+        {
+            return Err(Error::InvalidInput(
+                "Cannot delete the active backend".to_string(),
+            ));
+        }
 
         let write_txn = self.db.begin_write()?;
         let existed = {
@@ -597,9 +679,10 @@ impl LlmBackendStore {
         }
 
         if let Some(active_id) = data.get("active_id").and_then(|v| v.as_str())
-            && self.load_instance(active_id)?.is_some() {
-                self.set_active_backend(active_id)?;
-            }
+            && self.load_instance(active_id)?.is_some()
+        {
+            self.set_active_backend(active_id)?;
+        }
 
         Ok(())
     }

@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio::time::{interval, Duration};
+use tokio::time::{Duration, interval};
 
 use super::adapter::{ConnectionStatus, DeviceAdapter};
 use super::mdl::{DeviceError, MetricValue};
@@ -20,8 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 // Import storage types for command history persistence
 use neomind_storage::device_registry::{
-    CommandHistoryRecord as StorageCommandRecord,
-    CommandStatus as StorageCommandStatus,
+    CommandHistoryRecord as StorageCommandRecord, CommandStatus as StorageCommandStatus,
 };
 
 /// Command history record
@@ -376,18 +375,20 @@ impl DeviceService {
                         // If status was disconnected, mark as connected
                         if entry.status == ConnectionStatus::Disconnected {
                             entry.status = ConnectionStatus::Connected;
-                            tracing::info!("Device {} marked as connected due to metric activity", device_id);
+                            tracing::info!(
+                                "Device {} marked as connected due to metric activity",
+                                device_id
+                            );
                             drop(status);
                             // Publish DeviceOnline event so frontend can refresh
                             let device_type = "_unknown".to_string(); // Will be looked up by frontend
-                            event_bus_for_publish.publish(
-                                neomind_core::NeoMindEvent::DeviceOnline {
+                            event_bus_for_publish
+                                .publish(neomind_core::NeoMindEvent::DeviceOnline {
                                     device_id: device_id.clone(),
                                     device_type,
                                     timestamp: chrono::Utc::now().timestamp(),
-                                }
-                            )
-                            .await;
+                                })
+                                .await;
                         } else {
                             drop(status);
                         }
@@ -403,7 +404,9 @@ impl DeviceService {
                             let metric_value: MetricValue = match &value {
                                 neomind_core::MetricValue::Integer(i) => MetricValue::Integer(*i),
                                 neomind_core::MetricValue::Float(f) => MetricValue::Float(*f),
-                                neomind_core::MetricValue::String(s) => MetricValue::String(s.clone()),
+                                neomind_core::MetricValue::String(s) => {
+                                    MetricValue::String(s.clone())
+                                }
                                 neomind_core::MetricValue::Boolean(b) => MetricValue::Boolean(*b),
                                 neomind_core::MetricValue::Json(j) => {
                                     // Try to convert JSON to appropriate type
@@ -487,7 +490,8 @@ impl DeviceService {
                     let elapsed = now - last_seen;
                     tracing::info!(
                         "Device {} is stale (last seen {}s ago), marking as offline",
-                        device_id, elapsed
+                        device_id,
+                        elapsed
                     );
 
                     // Update status
@@ -499,13 +503,16 @@ impl DeviceService {
                     }
 
                     // Publish offline event with reason
-                    let _ = event_bus.publish(
-                        neomind_core::NeoMindEvent::DeviceOffline {
+                    let _ = event_bus
+                        .publish(neomind_core::NeoMindEvent::DeviceOffline {
                             device_id: device_id.clone(),
-                            reason: Some(format!("Heartbeat timeout: no activity for {} seconds", elapsed)),
+                            reason: Some(format!(
+                                "Heartbeat timeout: no activity for {} seconds",
+                                elapsed
+                            )),
                             timestamp: now,
-                        }
-                    ).await;
+                        })
+                        .await;
                 }
             }
         });
@@ -595,7 +602,10 @@ impl DeviceService {
             tracing::info!("Setting telemetry storage for adapter '{}'", adapter_id);
             adapter.set_telemetry_storage(storage.clone());
         } else {
-            tracing::warn!("Cannot set telemetry storage for adapter '{}': DeviceService telemetry_storage is None", adapter_id);
+            tracing::warn!(
+                "Cannot set telemetry storage for adapter '{}': DeviceService telemetry_storage is None",
+                adapter_id
+            );
         }
         drop(telemetry_storage);
 
@@ -625,14 +635,14 @@ impl DeviceService {
     pub async fn get_adapter_info(&self, adapter_id: &str) -> Option<AdapterInfo> {
         let adapters = self.adapters.read().await;
         adapters.get(adapter_id).map(|adapter| AdapterInfo {
-                id: adapter_id.to_string(),
-                name: adapter.name().to_string(),
-                adapter_type: adapter.adapter_type().to_string(),
-                running: adapter.is_running(),
-                device_count: adapter.device_count(),
-                status: format!("{:?}", adapter.connection_status()),
-                last_activity: chrono::Utc::now().timestamp(),
-            })
+            id: adapter_id.to_string(),
+            name: adapter.name().to_string(),
+            adapter_type: adapter.adapter_type().to_string(),
+            running: adapter.is_running(),
+            device_count: adapter.device_count(),
+            status: format!("{:?}", adapter.connection_status()),
+            last_activity: chrono::Utc::now().timestamp(),
+        })
     }
 
     /// List all adapters with their information
@@ -677,9 +687,10 @@ impl DeviceService {
     pub async fn start_adapter(&self, adapter_id: &str) -> Result<(), DeviceError> {
         let adapters = self.adapters.read().await;
         if let Some(adapter) = adapters.get(adapter_id) {
-            adapter.start().await.map_err(|e| {
-                DeviceError::Communication(format!("Failed to start adapter: {}", e))
-            })
+            adapter
+                .start()
+                .await
+                .map_err(|e| DeviceError::Communication(format!("Failed to start adapter: {}", e)))
         } else {
             Err(DeviceError::NotFoundStr(format!(
                 "Adapter not found: {}",
@@ -692,9 +703,10 @@ impl DeviceService {
     pub async fn stop_adapter(&self, adapter_id: &str) -> Result<(), DeviceError> {
         let adapters = self.adapters.read().await;
         if let Some(adapter) = adapters.get(adapter_id) {
-            adapter.stop().await.map_err(|e| {
-                DeviceError::Communication(format!("Failed to stop adapter: {}", e))
-            })
+            adapter
+                .stop()
+                .await
+                .map_err(|e| DeviceError::Communication(format!("Failed to stop adapter: {}", e)))
         } else {
             Err(DeviceError::NotFoundStr(format!(
                 "Adapter not found: {}",
@@ -714,13 +726,15 @@ impl DeviceService {
         tokio::spawn({
             let event_bus = self.event_bus.clone();
             async move {
-                let _ = event_bus.publish(neomind_core::NeoMindEvent::Custom {
-                    event_type: "DeviceTypeRegistered".to_string(),
-                    data: serde_json::json!({
-                        "device_type": device_type,
-                        "timestamp": chrono::Utc::now().timestamp(),
-                    }),
-                }).await;
+                let _ = event_bus
+                    .publish(neomind_core::NeoMindEvent::Custom {
+                        event_type: "DeviceTypeRegistered".to_string(),
+                        data: serde_json::json!({
+                            "device_type": device_type,
+                            "timestamp": chrono::Utc::now().timestamp(),
+                        }),
+                    })
+                    .await;
             }
         });
 
@@ -746,13 +760,15 @@ impl DeviceService {
             let event_bus = self.event_bus.clone();
             let device_type = device_type.to_string();
             async move {
-                let _ = event_bus.publish(neomind_core::NeoMindEvent::Custom {
-                    event_type: "DeviceTypeUnregistered".to_string(),
-                    data: serde_json::json!({
-                        "device_type": device_type,
-                        "timestamp": chrono::Utc::now().timestamp(),
-                    }),
-                }).await;
+                let _ = event_bus
+                    .publish(neomind_core::NeoMindEvent::Custom {
+                        event_type: "DeviceTypeUnregistered".to_string(),
+                        data: serde_json::json!({
+                            "device_type": device_type,
+                            "timestamp": chrono::Utc::now().timestamp(),
+                        }),
+                    })
+                    .await;
             }
         });
 
@@ -811,14 +827,16 @@ impl DeviceService {
         tokio::spawn({
             let event_bus = self.event_bus.clone();
             async move {
-                let _ = event_bus.publish(neomind_core::NeoMindEvent::Custom {
-                    event_type: "DeviceRegistered".to_string(),
-                    data: serde_json::json!({
-                        "device_id": device_id,
-                        "device_type": device_type,
-                        "timestamp": chrono::Utc::now().timestamp(),
-                    }),
-                }).await;
+                let _ = event_bus
+                    .publish(neomind_core::NeoMindEvent::Custom {
+                        event_type: "DeviceRegistered".to_string(),
+                        data: serde_json::json!({
+                            "device_id": device_id,
+                            "device_type": device_type,
+                            "timestamp": chrono::Utc::now().timestamp(),
+                        }),
+                    })
+                    .await;
             }
         });
 
@@ -874,13 +892,17 @@ impl DeviceService {
 
     /// Find a device by its telemetry topic
     /// This is used by MQTT adapters to route messages from custom topics
-    pub async fn find_device_by_telemetry_topic(&self, topic: &str) -> Option<(String, DeviceConfig)> {
+    pub async fn find_device_by_telemetry_topic(
+        &self,
+        topic: &str,
+    ) -> Option<(String, DeviceConfig)> {
         let devices = self.list_devices().await;
         for device in devices {
             if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic
-                && telemetry_topic == topic {
-                    return Some((device.device_id.clone(), device));
-                }
+                && telemetry_topic == topic
+            {
+                return Some((device.device_id.clone(), device));
+            }
         }
         None
     }
@@ -904,13 +926,15 @@ impl DeviceService {
             let event_bus = self.event_bus.clone();
             let device_id = device_id.to_string();
             async move {
-                let _ = event_bus.publish(neomind_core::NeoMindEvent::Custom {
-                    event_type: "DeviceUnregistered".to_string(),
-                    data: serde_json::json!({
-                        "device_id": device_id,
-                        "timestamp": chrono::Utc::now().timestamp(),
-                    }),
-                }).await;
+                let _ = event_bus
+                    .publish(neomind_core::NeoMindEvent::Custom {
+                        event_type: "DeviceUnregistered".to_string(),
+                        data: serde_json::json!({
+                            "device_id": device_id,
+                            "timestamp": chrono::Utc::now().timestamp(),
+                        }),
+                    })
+                    .await;
             }
         });
 
@@ -1161,7 +1185,10 @@ impl DeviceService {
             || metric_name.starts_with("aggregated.");
 
         // Validate metric exists in template (skip validation in simple mode or for virtual metrics)
-        if !is_virtual_metric && !template.metrics.is_empty() && !template.metrics.iter().any(|m| m.name == metric_name) {
+        if !is_virtual_metric
+            && !template.metrics.is_empty()
+            && !template.metrics.iter().any(|m| m.name == metric_name)
+        {
             return Err(DeviceError::InvalidMetric(format!(
                 "Metric '{}' not found in template '{}'",
                 metric_name, template.device_type
@@ -1169,7 +1196,11 @@ impl DeviceService {
         }
 
         if is_virtual_metric {
-            tracing::trace!("Querying virtual metric {} for device {}", metric_name, device_id);
+            tracing::trace!(
+                "Querying virtual metric {} for device {}",
+                metric_name,
+                device_id
+            );
         }
 
         // Query from telemetry storage
@@ -1182,13 +1213,22 @@ impl DeviceService {
                 .query(device_id, metric_name, start, end)
                 .await
                 .map_err(|e| {
-                    tracing::error!("Telemetry query failed for {}/{}: {}", device_id, metric_name, e);
+                    tracing::error!(
+                        "Telemetry query failed for {}/{}: {}",
+                        device_id,
+                        metric_name,
+                        e
+                    );
                     DeviceError::Communication(format!("Telemetry query failed: {}", e))
                 })?;
 
             Ok(points.into_iter().map(|p| (p.timestamp, p.value)).collect())
         } else {
-            tracing::warn!("Telemetry storage not configured when querying {}/{}", device_id, metric_name);
+            tracing::warn!(
+                "Telemetry storage not configured when querying {}/{}",
+                device_id,
+                metric_name
+            );
             Err(DeviceError::InvalidParameter(
                 "Telemetry storage not configured".into(),
             ))
@@ -1230,26 +1270,27 @@ impl DeviceService {
             // Query all metrics for this device from the last hour
             // Use telemetry_storage to list all metrics for this device
             if let Some(storage) = self.telemetry_storage.read().await.as_ref()
-                && let Ok(all_metrics) = storage.list_metrics(device_id).await {
-                    for metric_name in all_metrics {
-                        if !metric_name.is_empty() {
-                            // Query latest value for this metric
-                            match self
-                                .query_telemetry(device_id, &metric_name, Some(now - 3600), Some(now))
-                                .await
-                            {
-                                Ok(points) => {
-                                    if let Some((_, value)) = points.last() {
-                                        result.insert(metric_name.clone(), value.clone());
-                                    }
+                && let Ok(all_metrics) = storage.list_metrics(device_id).await
+            {
+                for metric_name in all_metrics {
+                    if !metric_name.is_empty() {
+                        // Query latest value for this metric
+                        match self
+                            .query_telemetry(device_id, &metric_name, Some(now - 3600), Some(now))
+                            .await
+                        {
+                            Ok(points) => {
+                                if let Some((_, value)) = points.last() {
+                                    result.insert(metric_name.clone(), value.clone());
                                 }
-                                Err(_) => {
-                                    // Metric not available yet, skip
-                                }
+                            }
+                            Err(_) => {
+                                // Metric not available yet, skip
                             }
                         }
                     }
                 }
+            }
         }
 
         Ok(result)
@@ -1383,16 +1424,16 @@ impl DeviceService {
                 && let Some(record) = device_commands
                     .iter_mut()
                     .find(|r| r.command_id == command_id)
-                {
-                    record.status = status;
-                    record.result = result;
-                    record.error = error;
-                    if is_terminal {
-                        record.completed_at = Some(chrono::Utc::now().timestamp());
-                    }
-                    // Clone for storage after updating
-                    record_for_storage = Some(record.clone());
+            {
+                record.status = status;
+                record.result = result;
+                record.error = error;
+                if is_terminal {
+                    record.completed_at = Some(chrono::Utc::now().timestamp());
                 }
+                // Clone for storage after updating
+                record_for_storage = Some(record.clone());
+            }
         }
 
         // Persist to storage if record was found and updated
@@ -1443,9 +1484,9 @@ impl DeviceService {
         };
 
         // List all commands from storage (limit to reasonable number)
-        let storage_commands = store.list_all_commands(Some(1000)).map_err(|e| {
-            DeviceError::Storage(format!("Failed to load command history: {}", e))
-        })?;
+        let storage_commands = store
+            .list_all_commands(Some(1000))
+            .map_err(|e| DeviceError::Storage(format!("Failed to load command history: {}", e)))?;
 
         if storage_commands.is_empty() {
             return Ok(());
@@ -1460,9 +1501,10 @@ impl DeviceService {
 
             // Update command ID counter based on loaded records
             if let Some(suffix) = record.command_id.strip_prefix("cmd_")
-                && let Ok(num) = suffix.parse::<u64>() {
-                    max_counter = max_counter.max(num);
-                }
+                && let Ok(num) = suffix.parse::<u64>()
+            {
+                max_counter = max_counter.max(num);
+            }
 
             history
                 .entry(device_id)
@@ -1490,7 +1532,11 @@ impl DeviceService {
 
         let storage_record = command_to_storage(record);
         if let Err(e) = store.save_command(&storage_record) {
-            tracing::warn!("Failed to save command {} to storage: {}", record.command_id, e);
+            tracing::warn!(
+                "Failed to save command {} to storage: {}",
+                record.command_id,
+                e
+            );
         }
     }
 

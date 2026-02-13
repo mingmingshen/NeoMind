@@ -52,9 +52,8 @@ type HmacSha256 = Hmac<Sha256>;
 
 /// Helper function to safely create HMAC instance
 fn create_hmac(key: &[u8]) -> Result<HmacSha256, AuthError> {
-    HmacSha256::new_from_slice(key).map_err(|_| {
-        AuthError::InvalidInput("Invalid JWT secret length".to_string())
-    })
+    HmacSha256::new_from_slice(key)
+        .map_err(|_| AuthError::InvalidInput("Invalid JWT secret length".to_string()))
 }
 
 // Table definitions
@@ -249,7 +248,7 @@ impl AuthUserState {
         Self {
             users: Arc::new(RwLock::new(HashMap::new())),
             sessions: Arc::new(RwLock::new(HashMap::new())),
-            db_path: ":memory:",  // Placeholder, won't be used
+            db_path: ":memory:", // Placeholder, won't be used
             jwt_secret,
             session_duration: 7 * 24 * 60 * 60,
         }
@@ -465,9 +464,10 @@ impl AuthUserState {
         // Save to database synchronously (ensures persistence before returning)
         if let Err(e) = Self::save_user_to_db(self.db_path, &user) {
             error!(category = "auth", username = username, error = %e, "Failed to save user to database");
-            return Err(AuthError::DatabaseError(
-                format!("Failed to save user: {}", e),
-            ));
+            return Err(AuthError::DatabaseError(format!(
+                "Failed to save user: {}",
+                e
+            )));
         }
 
         // Add to in-memory cache after successful DB save
@@ -501,9 +501,7 @@ impl AuthUserState {
         // Clone user data before releasing lock
         let (user_id, user_role, user_created_at) = {
             let users = self.users.read().await;
-            let user = users
-                .get(username)
-                .ok_or(AuthError::InvalidCredentials)?;
+            let user = users.get(username).ok_or(AuthError::InvalidCredentials)?;
 
             if !user.active {
                 return Err(AuthError::UserDisabled);
@@ -579,9 +577,7 @@ impl AuthUserState {
     /// Delete user.
     pub async fn delete_user(&self, username: &str) -> Result<(), AuthError> {
         let mut users = self.users.write().await;
-        users
-            .remove(username)
-            .ok_or(AuthError::UserNotFound)?;
+        users.remove(username).ok_or(AuthError::UserNotFound)?;
         Ok(())
     }
 
@@ -599,9 +595,7 @@ impl AuthUserState {
         }
 
         let mut users = self.users.write().await;
-        let user = users
-            .get_mut(username)
-            .ok_or(AuthError::UserNotFound)?;
+        let user = users.get_mut(username).ok_or(AuthError::UserNotFound)?;
 
         if !Self::verify_password(old_password, &user.password_hash) {
             return Err(AuthError::InvalidCredentials);
@@ -714,9 +708,10 @@ pub async fn optional_jwt_auth_middleware(
 ) -> Response {
     if let Some(auth_header) = headers.get("authorization").and_then(|v| v.to_str().ok())
         && let Some(token) = auth_header.strip_prefix("Bearer ")
-            && let Ok(session_info) = state.auth.user_state.validate_token(token) {
-                req.extensions_mut().insert(session_info);
-            }
+        && let Ok(session_info) = state.auth.user_state.validate_token(token)
+    {
+        req.extensions_mut().insert(session_info);
+    }
 
     next.run(req).await
 }

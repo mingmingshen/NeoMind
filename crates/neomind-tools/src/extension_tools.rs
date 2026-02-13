@@ -3,17 +3,17 @@
 //! This module provides the bridge between the Extension system and the Tool system,
 //! automatically generating tools from extension command descriptors.
 
-use std::sync::Arc;
-use std::collections::HashMap;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::error::Result as ToolResult;
-use crate::tool::{Tool, ToolOutput, ToolDefinition};
-use neomind_core::tools::{ToolCategory, ToolExample};
+use crate::tool::{Tool, ToolDefinition, ToolOutput};
+use neomind_core::extension::registry::ExtensionRegistry;
 use neomind_core::extension::*;
 use neomind_core::extension::{DynExtension, ExtensionCommand};
-use neomind_core::extension::registry::ExtensionRegistry;
+use neomind_core::tools::{ToolCategory, ToolExample};
 
 /// Extension tool wrapper - exposes an extension command as a Tool.
 ///
@@ -92,13 +92,16 @@ impl ExtensionTool {
         let parameters = self.build_parameters_schema();
 
         // Convert samples to ToolExample format
-        let examples: Vec<ToolExample> = self.command.samples.iter().map(|sample| {
-            ToolExample {
+        let examples: Vec<ToolExample> = self
+            .command
+            .samples
+            .iter()
+            .map(|sample| ToolExample {
                 arguments: sample.clone(),
                 result: json!({"status": "success"}),
                 description: format!("Example for {}", self.command.name),
-            }
-        }).collect();
+            })
+            .collect();
 
         ToolDefinition {
             name,
@@ -222,15 +225,13 @@ impl Tool for ExtensionTool {
         match result {
             Ok(value) => Ok(ToolOutput::success(value)),
             Err(e) => match e {
-                ExtensionError::CommandNotFound(cmd) => Ok(ToolOutput::error(format!(
-                    "Command not found: {}",
-                    cmd
-                ))),
+                ExtensionError::CommandNotFound(cmd) => {
+                    Ok(ToolOutput::error(format!("Command not found: {}", cmd)))
+                }
                 ExtensionError::ExecutionFailed(msg) => Ok(ToolOutput::error(msg)),
-                ExtensionError::InvalidArguments(msg) => Ok(ToolOutput::error(format!(
-                    "Invalid arguments: {}",
-                    msg
-                ))),
+                ExtensionError::InvalidArguments(msg) => {
+                    Ok(ToolOutput::error(format!("Invalid arguments: {}", msg)))
+                }
                 ExtensionError::Timeout => Ok(ToolOutput::error("Operation timed out".to_string())),
                 ExtensionError::Io(e) => Ok(ToolOutput::error(format!("IO error: {}", e))),
                 ExtensionError::Json(e) => Ok(ToolOutput::error(format!("JSON error: {}", e))),
@@ -310,10 +311,7 @@ impl ExtensionToolGenerator {
     }
 
     /// Generate tool definitions for LLM consumption.
-    pub async fn generate_definitions(
-        &self,
-        extensions: Vec<DynExtension>,
-    ) -> Vec<ToolDefinition> {
+    pub async fn generate_definitions(&self, extensions: Vec<DynExtension>) -> Vec<ToolDefinition> {
         let tools = self.generate(extensions).await;
         tools.into_iter().map(|t| t.to_tool_definition()).collect()
     }
@@ -406,11 +404,7 @@ impl ExtensionToolExecutor {
     /// Execute an extension command by tool name.
     ///
     /// Tool names should be in format "{extension_id}:{command_id}".
-    pub async fn execute_by_tool_name(
-        &self,
-        tool_name: &str,
-        args: &Value,
-    ) -> Result<Value> {
+    pub async fn execute_by_tool_name(&self, tool_name: &str, args: &Value) -> Result<Value> {
         let parts: Vec<&str> = tool_name.split(':').collect();
         if parts.len() != 2 {
             return Err(ExtensionError::InvalidArguments(format!(
@@ -431,9 +425,9 @@ impl ExtensionToolExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neomind_core::extension::*;
     use std::sync::Arc;
     use tokio::sync::RwLock;
-    use neomind_core::extension::*;
 
     // Mock extension for testing
     struct MockExtension {
@@ -479,30 +473,26 @@ mod tests {
         )
         .with_description("A test extension");
 
-        let commands = vec![
-            ExtensionCommand {
-                name: "test_command".to_string(),
-                display_name: "Test Command".to_string(),
-                payload_template: String::new(),
-                parameters: vec![
-                    ParameterDefinition {
-                        name: "input".to_string(),
-                        display_name: "Input".to_string(),
-                        description: "Input value".to_string(),
-                        param_type: MetricDataType::String,
-                        required: true,
-                        default_value: None,
-                        min: None,
-                        max: None,
-                        options: vec![],
-                    }
-                ],
-                fixed_values: HashMap::new(),
-                samples: vec![],
-                llm_hints: "A test command for processing input".to_string(),
-                parameter_groups: vec![],
-            }
-        ];
+        let commands = vec![ExtensionCommand {
+            name: "test_command".to_string(),
+            display_name: "Test Command".to_string(),
+            payload_template: String::new(),
+            parameters: vec![ParameterDefinition {
+                name: "input".to_string(),
+                display_name: "Input".to_string(),
+                description: "Input value".to_string(),
+                param_type: MetricDataType::String,
+                required: true,
+                default_value: None,
+                min: None,
+                max: None,
+                options: vec![],
+            }],
+            fixed_values: HashMap::new(),
+            samples: vec![],
+            llm_hints: "A test command for processing input".to_string(),
+            parameter_groups: vec![],
+        }];
 
         let ext = MockExtension { metadata, commands };
         Arc::new(RwLock::new(Box::new(ext)))

@@ -7,10 +7,10 @@
 //! - Health monitoring and automatic reconnection
 
 use crate::{DynIntegration, IntegrationCommand, IntegrationEvent, IntegrationResponse};
+use futures::StreamExt;
 use neomind_core::event::{MetricValue, NeoMindEvent};
 use neomind_core::eventbus::EventBus;
 use neomind_core::integration::IntegrationType;
-use futures::StreamExt;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -542,8 +542,8 @@ impl IntegrationRegistryBuilder {
 mod tests {
     use super::*;
     use crate::IntegrationMetadata;
-    use neomind_core::integration::IntegrationState;
     use futures::Stream;
+    use neomind_core::integration::IntegrationState;
     use std::pin::Pin;
 
     // Mock integration for testing

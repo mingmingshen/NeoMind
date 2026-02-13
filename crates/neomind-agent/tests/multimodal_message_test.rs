@@ -6,17 +6,15 @@
 //! 3. Images are preserved in the conversion
 
 use neomind_agent::agent::types::{AgentMessage, AgentMessageImage};
-use neomind_core::message::{Message, MessageRole, Content, ContentPart};
+use neomind_core::message::{Content, ContentPart, Message, MessageRole};
 
 #[test]
 fn test_agent_message_with_images() {
     // Create a user message with images
-    let images = vec![
-        AgentMessageImage {
-            data: "data:image/png;base64,iVBORw0KGgo...".to_string(),
-            mime_type: Some("image/png".to_string()),
-        },
-    ];
+    let images = vec![AgentMessageImage {
+        data: "data:image/png;base64,iVBORw0KGgo...".to_string(),
+        mime_type: Some("image/png".to_string()),
+    }];
 
     let msg = AgentMessage::user_with_images("What color is this image?", images);
 
@@ -30,12 +28,10 @@ fn test_agent_message_with_images() {
 #[test]
 fn test_agent_message_to_core_multimodal() {
     // Create a user message with images
-    let images = vec![
-        AgentMessageImage {
-            data: "data:image/png;base64,iVBORw0KGgo...".to_string(),
-            mime_type: Some("image/png".to_string()),
-        },
-    ];
+    let images = vec![AgentMessageImage {
+        data: "data:image/png;base64,iVBORw0KGgo...".to_string(),
+        mime_type: Some("image/png".to_string()),
+    }];
 
     let msg = AgentMessage::user_with_images("Describe this image", images);
 
@@ -141,8 +137,16 @@ fn test_multiple_images_preserved() {
 fn test_message_image_data_url_parsing() {
     // Test various data URL formats
     let test_cases = vec![
-        ("data:image/png;base64,iVBORw0...", "image/png", "iVBORw0..."),
-        ("data:image/jpeg;base64,/9j/4AAQ...", "image/jpeg", "/9j/4AAQ..."),
+        (
+            "data:image/png;base64,iVBORw0...",
+            "image/png",
+            "iVBORw0...",
+        ),
+        (
+            "data:image/jpeg;base64,/9j/4AAQ...",
+            "image/jpeg",
+            "/9j/4AAQ...",
+        ),
         ("data:image/webp;base64,UklGR...", "image/webp", "UklGR..."),
     ];
 
@@ -157,9 +161,17 @@ fn test_message_image_data_url_parsing() {
 
         match &core_msg.content {
             Content::Parts(parts) => {
-                if let Some(ContentPart::ImageBase64 { data, mime_type, .. }) = parts.get(1) {
+                if let Some(ContentPart::ImageBase64 {
+                    data, mime_type, ..
+                }) = parts.get(1)
+                {
                     assert_eq!(data, expected_data, "Data mismatch for {}", data_url);
-                    assert_eq!(mime_type, &expected_mime.to_string(), "MIME type mismatch for {}", data_url);
+                    assert_eq!(
+                        mime_type,
+                        &expected_mime.to_string(),
+                        "MIME type mismatch for {}",
+                        data_url
+                    );
                 } else {
                     panic!("Expected ImageBase64 part");
                 }

@@ -42,14 +42,16 @@ pub async fn get_device_telemetry_handler(
     let aggregate = params.get("aggregate").cloned();
 
     // Query device with template once to avoid duplicate database calls
-    let device_with_template = state.devices.service.get_device_with_template(&device_id).await;
+    let device_with_template = state
+        .devices
+        .service
+        .get_device_with_template(&device_id)
+        .await;
 
     // Get device template to find available metrics
     // Also include virtual metrics (metrics in storage but not in template)
     let template_metric_names: std::collections::HashSet<String> = match &device_with_template {
-        Ok((_, template)) => {
-            template.metrics.iter().map(|m| m.name.clone()).collect()
-        }
+        Ok((_, template)) => template.metrics.iter().map(|m| m.name.clone()).collect(),
         Err(_) => std::collections::HashSet::new(),
     };
 
@@ -63,20 +65,32 @@ pub async fn get_device_telemetry_handler(
                 }
             } else {
                 // Include template metrics + true virtual metrics (Transform-generated only)
-                let mut all_metrics: Vec<String> = template.metrics.iter().map(|m| m.name.clone()).collect();
+                let mut all_metrics: Vec<String> =
+                    template.metrics.iter().map(|m| m.name.clone()).collect();
 
                 // Transform-generated metric namespaces (with dot notation)
-                let transform_namespaces = ["transform.", "virtual.", "computed.", "derived.", "aggregated."];
+                let transform_namespaces = [
+                    "transform.",
+                    "virtual.",
+                    "computed.",
+                    "derived.",
+                    "aggregated.",
+                ];
 
                 // Add only Transform-generated virtual metrics from storage (exclude auto-extracted)
-                if let Ok(storage_metrics) = state.devices.telemetry.list_metrics(&device_id).await {
+                if let Ok(storage_metrics) = state.devices.telemetry.list_metrics(&device_id).await
+                {
                     for metric in storage_metrics {
                         // Skip template metrics and _raw
-                        if metric == "_raw" || template_metric_names.contains(&metric) || all_metrics.contains(&metric) {
+                        if metric == "_raw"
+                            || template_metric_names.contains(&metric)
+                            || all_metrics.contains(&metric)
+                        {
                             continue;
                         }
                         // Only add Transform-generated metrics (must start with transform namespace)
-                        let is_transform_metric = transform_namespaces.iter().any(|p| metric.starts_with(p));
+                        let is_transform_metric =
+                            transform_namespaces.iter().any(|p| metric.starts_with(p));
                         if is_transform_metric {
                             all_metrics.push(metric);
                         }
@@ -120,7 +134,8 @@ pub async fn get_device_telemetry_handler(
             Some(_agg_type) => {
                 // Aggregated query - aggregate function returns AggregatedData directly
                 match state
-                    .devices.telemetry
+                    .devices
+                    .telemetry
                     .aggregate(&device_id, metric_name, start, end)
                     .await
                 {
@@ -141,7 +156,8 @@ pub async fn get_device_telemetry_handler(
                 // Raw query - use DeviceService first; fallback to time_series_storage when
                 // device is not in registry (e.g. auto-discovered) or query_telemetry fails
                 match state
-                    .devices.service
+                    .devices
+                    .service
                     .query_telemetry(&device_id, metric_name, Some(start), Some(end))
                     .await
                 {
@@ -164,7 +180,8 @@ pub async fn get_device_telemetry_handler(
                         // Fallback: query time_series_storage directly so historical data
                         // is available even when device is not in registry
                         match state
-                            .devices.telemetry
+                            .devices
+                            .telemetry
                             .query(&device_id, metric_name, start, end)
                             .await
                         {
@@ -225,7 +242,8 @@ pub async fn get_device_telemetry_summary_handler(
     // Get device template to find available metrics
     // Also include virtual metrics from transforms
     let (mut template_metrics, use_raw): (Vec<String>, bool) = match state
-        .devices.service
+        .devices
+        .service
         .get_device_with_template(&device_id)
         .await
     {
@@ -237,7 +255,10 @@ pub async fn get_device_telemetry_summary_handler(
                     _ => (vec!["_raw".to_string()], true),
                 }
             } else {
-                (template.metrics.iter().map(|m| m.name.clone()).collect(), false)
+                (
+                    template.metrics.iter().map(|m| m.name.clone()).collect(),
+                    false,
+                )
             }
         }
         Err(_) => {
@@ -252,10 +273,17 @@ pub async fn get_device_telemetry_summary_handler(
     // Get all metrics from storage to identify virtual metrics
     // True virtual metrics = Transform-generated (start with transform., virtual., computed., derived.)
     // Auto-extracted metrics = have dot notation like values.battery - exclude these
-    let mut virtual_metrics_set: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut virtual_metrics_set: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
 
     // Transform-generated metric namespaces (with dot notation)
-    let transform_namespaces = ["transform.", "virtual.", "computed.", "derived.", "aggregated."];
+    let transform_namespaces = [
+        "transform.",
+        "virtual.",
+        "computed.",
+        "derived.",
+        "aggregated.",
+    ];
 
     if let Ok(all_storage_metrics) = state.devices.telemetry.list_metrics(&device_id).await {
         // Get template metric names for comparison
@@ -266,8 +294,16 @@ pub async fn get_device_telemetry_summary_handler(
             .collect();
 
         // Debug: log all storage metrics
-        tracing::info!("Device {} storage metrics: {:?}", device_id, all_storage_metrics);
-        tracing::info!("Device {} template metrics: {:?}", device_id, template_metric_names);
+        tracing::info!(
+            "Device {} storage metrics: {:?}",
+            device_id,
+            all_storage_metrics
+        );
+        tracing::info!(
+            "Device {} template metrics: {:?}",
+            device_id,
+            template_metric_names
+        );
 
         // Only mark as virtual if:
         // 1. Not in template
@@ -277,9 +313,14 @@ pub async fn get_device_telemetry_summary_handler(
             if metric != "_raw" && !template_metric_names.contains(&metric) {
                 // Check if this is a true Transform-generated virtual metric
                 // Transform metrics use dot notation: transform.count, virtual.avg
-                let is_transform_metric = transform_namespaces.iter().any(|p| metric.starts_with(p));
+                let is_transform_metric =
+                    transform_namespaces.iter().any(|p| metric.starts_with(p));
 
-                tracing::debug!("Metric '{}': is_transform={}, in_storage=true", metric, is_transform_metric);
+                tracing::debug!(
+                    "Metric '{}': is_transform={}, in_storage=true",
+                    metric,
+                    is_transform_metric
+                );
 
                 if is_transform_metric {
                     virtual_metrics_set.insert(metric.clone());
@@ -290,23 +331,38 @@ pub async fn get_device_telemetry_summary_handler(
             }
         }
 
-        tracing::info!("Device {} virtual metrics: {:?}", device_id, virtual_metrics_set);
+        tracing::info!(
+            "Device {} virtual metrics: {:?}",
+            device_id,
+            virtual_metrics_set
+        );
     }
 
     // Build metric info with virtual flag
-    let mut metric_info_map: std::collections::HashMap<String, (String, String, String, bool)> = std::collections::HashMap::new();
+    let mut metric_info_map: std::collections::HashMap<String, (String, String, String, bool)> =
+        std::collections::HashMap::new();
 
     if use_raw {
         // Raw mode - all metrics are raw data
         for metric in &template_metrics {
             metric_info_map.insert(
                 metric.clone(),
-                ("Raw Payload Data".to_string(), "JSON".to_string(), "string".to_string(), false),
+                (
+                    "Raw Payload Data".to_string(),
+                    "JSON".to_string(),
+                    "string".to_string(),
+                    false,
+                ),
             );
         }
     } else {
         // Template mode - add template metrics
-        if let Ok((_, template)) = state.devices.service.get_device_with_template(&device_id).await {
+        if let Ok((_, template)) = state
+            .devices
+            .service
+            .get_device_with_template(&device_id)
+            .await
+        {
             for m in &template.metrics {
                 let data_type_str = match m.data_type {
                     neomind_devices::mdl::MetricDataType::Integer => "integer".to_string(),
@@ -330,27 +386,33 @@ pub async fn get_device_telemetry_summary_handler(
         if !metric_info_map.contains_key(virtual_metric) {
             metric_info_map.insert(
                 virtual_metric.clone(),
-                (virtual_metric.clone(), "-".to_string(), "float".to_string(), true),
+                (
+                    virtual_metric.clone(),
+                    "-".to_string(),
+                    "float".to_string(),
+                    true,
+                ),
             );
         }
     }
 
-    let metric_info: Vec<(String, (String, String, String, bool))> = metric_info_map
-        .into_iter()
-        .collect();
+    let metric_info: Vec<(String, (String, String, String, bool))> =
+        metric_info_map.into_iter().collect();
 
     let mut summary_data: HashMap<String, serde_json::Value> = HashMap::new();
 
     for (metric_name, (display_name, unit, data_type, is_virtual)) in metric_info.iter() {
         // Get aggregated statistics - aggregate() returns AggregatedData directly
         if let Ok(agg) = state
-            .devices.telemetry
+            .devices
+            .telemetry
             .aggregate(&device_id, metric_name, start, end)
             .await
         {
             // Get latest value
             let latest = state
-                .devices.telemetry
+                .devices
+                .telemetry
                 .latest(&device_id, metric_name)
                 .await
                 .ok()
@@ -374,23 +436,24 @@ pub async fn get_device_telemetry_summary_handler(
         } else {
             // Try to get current value from DeviceService
             if let Ok(current_values) = state.devices.service.get_current_metrics(&device_id).await
-                && let Some(val) = current_values.get(metric_name) {
-                    summary_data.insert(
-                        metric_name.to_string(),
-                        json!({
-                            "display_name": display_name,
-                            "unit": unit,
-                            "data_type": data_type,
-                            "is_virtual": is_virtual,
-                            "current": metric_value_to_json(val),
-                            "current_timestamp": chrono::Utc::now().timestamp(),
-                            "avg": null,
-                            "min": null,
-                            "max": null,
-                            "count": 0,
-                        }),
-                    );
-                }
+                && let Some(val) = current_values.get(metric_name)
+            {
+                summary_data.insert(
+                    metric_name.to_string(),
+                    json!({
+                        "display_name": display_name,
+                        "unit": unit,
+                        "data_type": data_type,
+                        "is_virtual": is_virtual,
+                        "current": metric_value_to_json(val),
+                        "current_timestamp": chrono::Utc::now().timestamp(),
+                        "avg": null,
+                        "min": null,
+                        "max": null,
+                        "count": 0,
+                    }),
+                );
+            }
         }
     }
 
@@ -420,14 +483,17 @@ fn metric_value_to_json(value: &neomind_devices::MetricValue) -> serde_json::Val
         // Return binary data as base64 string for frontend to detect images
         MetricValue::Binary(v) => json!(STANDARD.encode(v)),
         MetricValue::Array(arr) => {
-            let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
-                MetricValue::Float(f) => json!(*f),
-                MetricValue::Integer(i) => json!(*i),
-                MetricValue::String(s) => json!(s),
-                MetricValue::Boolean(b) => json!(*b),
-                MetricValue::Null => json!(null),
-                MetricValue::Array(_) | MetricValue::Binary(_) => json!(null),
-            }).collect();
+            let json_arr: Vec<serde_json::Value> = arr
+                .iter()
+                .map(|v| match v {
+                    MetricValue::Float(f) => json!(*f),
+                    MetricValue::Integer(i) => json!(*i),
+                    MetricValue::String(s) => json!(s),
+                    MetricValue::Boolean(b) => json!(*b),
+                    MetricValue::Null => json!(null),
+                    MetricValue::Array(_) | MetricValue::Binary(_) => json!(null),
+                })
+                .collect();
             json!(json_arr)
         }
         MetricValue::Null => json!(null),
@@ -452,7 +518,8 @@ pub async fn get_device_command_history_handler(
 
     // Get command history from DeviceService
     let commands = state
-        .devices.service
+        .devices
+        .service
         .get_command_history(&device_id, Some(limit))
         .await;
 
@@ -498,7 +565,8 @@ pub async fn list_device_metrics_debug_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Query all metrics for this device from storage
     let metrics = state
-        .devices.telemetry
+        .devices
+        .telemetry
         .list_metrics(&device_id)
         .await
         .unwrap_or_default();
@@ -506,11 +574,7 @@ pub async fn list_device_metrics_debug_handler(
     // For each metric, get the latest data point
     let mut metric_info = serde_json::Map::new();
     for metric in &metrics {
-        if let Ok(Some(point)) = state
-            .devices.telemetry
-            .latest(&device_id, metric)
-            .await
-        {
+        if let Ok(Some(point)) = state.devices.telemetry.latest(&device_id, metric).await {
             metric_info.insert(
                 metric.clone(),
                 json!({
@@ -567,7 +631,8 @@ pub async fn analyze_metric_timestamps_handler(
     let end = now + 60; // 1 minute in future
 
     let points = state
-        .devices.telemetry
+        .devices
+        .telemetry
         .query(&device_id, &metric, start, end)
         .await
         .unwrap_or_default();
@@ -599,11 +664,7 @@ pub async fn analyze_metric_timestamps_handler(
         }
         // If gap > 30 minutes, consider it significant
         if gap > 1800 {
-            gaps.push((
-                timestamps[i - 1],
-                timestamps[i],
-                gap,
-            ));
+            gaps.push((timestamps[i - 1], timestamps[i], gap));
         }
     }
 

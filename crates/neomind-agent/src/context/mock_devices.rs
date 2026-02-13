@@ -9,14 +9,15 @@
 //! - Industrial sensors
 //! - Energy monitoring
 
-use crate::context::{Resource, Capability, CapabilityType, AccessType};
+use crate::context::{AccessType, Capability, CapabilityType, Resource};
 
 /// Generate 30 mock devices for testing.
 pub fn generate_mock_devices() -> Vec<Resource> {
     vec![
         // === 客厅 (Living Room) - 7 devices ===
         Resource::device("living_temp_sensor", "客厅温度传感器", "dht22_sensor")
-            .with_alias("室温传感器").with_alias("客厅温度")
+            .with_alias("室温传感器")
+            .with_alias("客厅温度")
             .with_location("客厅")
             .with_capability(Capability {
                 name: "temperature".to_string(),
@@ -34,9 +35,9 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("%".to_string()),
                 access: AccessType::Read,
             }),
-
         Resource::device("living_humidity_sensor", "客厅湿度传感器", "dht22_sensor")
-            .with_alias("湿度传感器").with_alias("客厅湿度")
+            .with_alias("湿度传感器")
+            .with_alias("客厅湿度")
             .with_location("客厅")
             .with_capability(Capability {
                 name: "humidity".to_string(),
@@ -46,9 +47,9 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("%".to_string()),
                 access: AccessType::Read,
             }),
-
         Resource::device("living_light_main", "客厅主灯", "switch_dimmer")
-            .with_alias("主灯").with_alias("客厅灯")
+            .with_alias("主灯")
+            .with_alias("客厅灯")
             .with_location("客厅")
             .with_capability(Capability {
                 name: "power".to_string(),
@@ -66,9 +67,9 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("%".to_string()),
                 access: AccessType::ReadWrite,
             }),
-
         Resource::device("living_lightAccent", "客厅氛围灯", "rgb_light")
-            .with_alias("氛围灯").with_alias("彩灯")
+            .with_alias("氛围灯")
+            .with_alias("彩灯")
             .with_location("客厅")
             .with_capability(Capability {
                 name: "power".to_string(),
@@ -86,9 +87,9 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: None,
                 access: AccessType::Write,
             }),
-
         Resource::device("living_ac", "客厅空调", "ac_unit")
-            .with_alias("空调").with_alias("AC")
+            .with_alias("空调")
+            .with_alias("AC")
             .with_location("客厅")
             .with_capability(Capability {
                 name: "power".to_string(),
@@ -110,13 +111,18 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 name: "mode".to_string(),
                 cap_type: CapabilityType::Command,
                 data_type: "string".to_string(),
-                valid_values: Some(vec!["cool".to_string(), "heat".to_string(), "fan".to_string(), "auto".to_string()]),
+                valid_values: Some(vec![
+                    "cool".to_string(),
+                    "heat".to_string(),
+                    "fan".to_string(),
+                    "auto".to_string(),
+                ]),
                 unit: None,
                 access: AccessType::Write,
             }),
-
         Resource::device("living_air_purifier", "客厅空气净化器", "air_purifier")
-            .with_alias("净化器").with_alias("空气净化")
+            .with_alias("净化器")
+            .with_alias("空气净化")
             .with_location("客厅")
             .with_capability(Capability {
                 name: "power".to_string(),
@@ -134,9 +140,9 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: None,
                 access: AccessType::Read,
             }),
-
         Resource::device("living_curtain", "客厅窗帘", "curtain_motor")
-            .with_alias("窗帘").with_alias("电动窗帘")
+            .with_alias("窗帘")
+            .with_alias("电动窗帘")
             .with_location("客厅")
             .with_capability(Capability {
                 name: "position".to_string(),
@@ -146,10 +152,10 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("%".to_string()),
                 access: AccessType::ReadWrite,
             }),
-
         // === 卧室 (Bedroom) - 6 devices ===
         Resource::device("bedroom_temp_sensor", "卧室温度传感器", "dht22_sensor")
-            .with_alias("卧室温度").with_alias("室温")
+            .with_alias("卧室温度")
+            .with_alias("室温")
             .with_location("卧室")
             .with_capability(Capability {
                 name: "temperature".to_string(),
@@ -159,7 +165,6 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("°C".to_string()),
                 access: AccessType::Read,
             }),
-
         Resource::device("bedroom_light", "卧室灯", "switch_dimmer")
             .with_alias("床头灯")
             .with_location("卧室")
@@ -179,7 +184,6 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("%".to_string()),
                 access: AccessType::ReadWrite,
             }),
-
         Resource::device("bedroom_ac", "卧室空调", "ac_unit")
             .with_alias("卧室AC")
             .with_location("卧室")
@@ -199,7 +203,6 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("°C".to_string()),
                 access: AccessType::Write,
             }),
-
         Resource::device("bedroom_curtain", "卧室窗帘", "curtain_motor")
             .with_alias("窗帘")
             .with_location("卧室")
@@ -211,9 +214,9 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("%".to_string()),
                 access: AccessType::ReadWrite,
             }),
-
         Resource::device("bedroom_co2_sensor", "卧室二氧化碳传感器", "co2_sensor")
-            .with_alias("CO2传感器").with_alias("空气质量")
+            .with_alias("CO2传感器")
+            .with_alias("空气质量")
             .with_location("卧室")
             .with_capability(Capability {
                 name: "co2".to_string(),
@@ -223,7 +226,6 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("ppm".to_string()),
                 access: AccessType::Read,
             }),
-
         Resource::device("bedroom_plug", "卧室插座", "smart_plug")
             .with_alias("智能插座")
             .with_location("卧室")
@@ -243,7 +245,6 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("kWh".to_string()),
                 access: AccessType::Read,
             }),
-
         // === 厨房 (Kitchen) - 5 devices ===
         Resource::device("kitchen_temp_sensor", "厨房温度传感器", "temp_sensor")
             .with_alias("厨房温度")
@@ -256,9 +257,9 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("°C".to_string()),
                 access: AccessType::Read,
             }),
-
         Resource::device("kitchen_smoke_detector", "厨房烟雾报警器", "smoke_detector")
-            .with_alias("烟雾传感器").with_alias("火灾报警")
+            .with_alias("烟雾传感器")
+            .with_alias("火灾报警")
             .with_location("厨房")
             .with_capability(Capability {
                 name: "smoke_level".to_string(),
@@ -268,9 +269,9 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: None,
                 access: AccessType::Read,
             }),
-
         Resource::device("kitchen_gas_detector", "厨房燃气报警器", "gas_detector")
-            .with_alias("燃气传感器").with_alias("甲烷传感器")
+            .with_alias("燃气传感器")
+            .with_alias("甲烷传感器")
             .with_location("厨房")
             .with_capability(Capability {
                 name: "gas_level".to_string(),
@@ -280,7 +281,6 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("LEL".to_string()),
                 access: AccessType::Read,
             }),
-
         Resource::device("kitchen_light", "厨房灯", "switch")
             .with_location("厨房")
             .with_capability(Capability {
@@ -291,7 +291,6 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: None,
                 access: AccessType::ReadWrite,
             }),
-
         Resource::device("kitchen_water_leak", "厨房漏水检测", "water_leak_sensor")
             .with_alias("漏水传感器")
             .with_location("厨房")
@@ -303,7 +302,6 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: None,
                 access: AccessType::Read,
             }),
-
         // === 浴室 (Bathroom) - 4 devices ===
         Resource::device("bathroom_temp_sensor", "浴室温度传感器", "temp_sensor")
             .with_alias("浴室温度")
@@ -316,19 +314,21 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("°C".to_string()),
                 access: AccessType::Read,
             }),
-
-        Resource::device("bathroom_humidity_sensor", "浴室湿度传感器", "humidity_sensor")
-            .with_alias("浴室湿度")
-            .with_location("浴室")
-            .with_capability(Capability {
-                name: "humidity".to_string(),
-                cap_type: CapabilityType::Metric,
-                data_type: "float".to_string(),
-                valid_values: None,
-                unit: Some("%".to_string()),
-                access: AccessType::Read,
-            }),
-
+        Resource::device(
+            "bathroom_humidity_sensor",
+            "浴室湿度传感器",
+            "humidity_sensor",
+        )
+        .with_alias("浴室湿度")
+        .with_location("浴室")
+        .with_capability(Capability {
+            name: "humidity".to_string(),
+            cap_type: CapabilityType::Metric,
+            data_type: "float".to_string(),
+            valid_values: None,
+            unit: Some("%".to_string()),
+            access: AccessType::Read,
+        }),
         Resource::device("bathroom_light", "浴室灯", "switch")
             .with_location("浴室")
             .with_capability(Capability {
@@ -339,9 +339,9 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: None,
                 access: AccessType::ReadWrite,
             }),
-
         Resource::device("bathroom_heater", "浴室浴霸", "bathroom_heater")
-            .with_alias("浴霸").with_alias("取暖器")
+            .with_alias("浴霸")
+            .with_alias("取暖器")
             .with_location("浴室")
             .with_capability(Capability {
                 name: "power".to_string(),
@@ -359,7 +359,6 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: None,
                 access: AccessType::Write,
             }),
-
         // === 阳台 (Balcony) - 3 devices ===
         Resource::device("balcony_temp_sensor", "阳台温度传感器", "temp_sensor")
             .with_alias("阳台温度")
@@ -372,9 +371,9 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("°C".to_string()),
                 access: AccessType::Read,
             }),
-
         Resource::device("balcony_light_sensor", "阳台光照传感器", "light_sensor")
-            .with_alias("光照传感器").with_alias("亮度传感器")
+            .with_alias("光照传感器")
+            .with_alias("亮度传感器")
             .with_location("阳台")
             .with_capability(Capability {
                 name: "illuminance".to_string(),
@@ -384,9 +383,9 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("lux".to_string()),
                 access: AccessType::Read,
             }),
-
         Resource::device("balcony_rain_sensor", "阳台雨滴传感器", "rain_sensor")
-            .with_alias("雨滴传感器").with_alias("下雨检测")
+            .with_alias("雨滴传感器")
+            .with_alias("下雨检测")
             .with_location("阳台")
             .with_capability(Capability {
                 name: "raining".to_string(),
@@ -396,7 +395,6 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: None,
                 access: AccessType::Read,
             }),
-
         // === 门厅 (Entrance) - 3 devices ===
         Resource::device("entrance_light", "门厅灯", "switch")
             .with_alias("玄关灯")
@@ -409,9 +407,9 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: None,
                 access: AccessType::ReadWrite,
             }),
-
         Resource::device("door_lock", "智能门锁", "smart_lock")
-            .with_alias("门锁").with_alias("智能锁")
+            .with_alias("门锁")
+            .with_alias("智能锁")
             .with_location("门厅")
             .with_capability(Capability {
                 name: "locked".to_string(),
@@ -429,9 +427,9 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: Some("%".to_string()),
                 access: AccessType::Read,
             }),
-
         Resource::device("doorbell_camera", "门铃摄像头", "doorbell_camera")
-            .with_alias("可视门铃").with_alias("监控")
+            .with_alias("可视门铃")
+            .with_alias("监控")
             .with_location("门厅")
             .with_capability(Capability {
                 name: "motion_detected".to_string(),
@@ -441,7 +439,6 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 unit: None,
                 access: AccessType::Read,
             }),
-
         // === 车库 (Garage) - 2 devices ===
         Resource::device("garage_door", "车库门", "garage_door")
             .with_alias("卷帘门")
@@ -450,11 +447,14 @@ pub fn generate_mock_devices() -> Vec<Resource> {
                 name: "position".to_string(),
                 cap_type: CapabilityType::Command,
                 data_type: "string".to_string(),
-                valid_values: Some(vec!["open".to_string(), "closed".to_string(), "stopped".to_string()]),
+                valid_values: Some(vec![
+                    "open".to_string(),
+                    "closed".to_string(),
+                    "stopped".to_string(),
+                ]),
                 unit: None,
                 access: AccessType::ReadWrite,
             }),
-
         Resource::device("garage_light", "车库灯", "switch")
             .with_location("车库")
             .with_capability(Capability {
@@ -475,66 +475,164 @@ pub fn generate_mock_devices() -> Vec<Resource> {
 /// - 8 rooms per floor (客厅, 卧室, 厨房, 浴室, 书房, 阳台, 餐厅, 走廊)
 /// - Multiple device types per room
 pub fn generate_large_scale_devices(count: usize) -> Vec<Resource> {
-    let floors = &["1楼", "2楼", "3楼", "4楼", "5楼", "6楼", "7楼", "8楼", "9楼", "10楼"];
-    let rooms = &["客厅", "卧室", "厨房", "浴室", "书房", "阳台", "餐厅", "走廊"];
+    let floors = &[
+        "1楼", "2楼", "3楼", "4楼", "5楼", "6楼", "7楼", "8楼", "9楼", "10楼",
+    ];
+    let rooms = &[
+        "客厅", "卧室", "厨房", "浴室", "书房", "阳台", "餐厅", "走廊",
+    ];
 
     let mut devices = Vec::new();
     let mut device_id = 0;
 
     // Device templates that will be instantiated for each room
-    let device_templates: Vec<(&str, &str, Vec<(&str, CapabilityType, AccessType, Option<&str>)>)> = vec![
+    let device_templates: Vec<(
+        &str,
+        &str,
+        Vec<(&str, CapabilityType, AccessType, Option<&str>)>,
+    )> = vec![
         // Temperature sensor
-        ("temp_sensor", "温度传感器", vec![
-            ("temperature", CapabilityType::Metric, AccessType::Read, Some("°C")),
-        ]),
+        (
+            "temp_sensor",
+            "温度传感器",
+            vec![(
+                "temperature",
+                CapabilityType::Metric,
+                AccessType::Read,
+                Some("°C"),
+            )],
+        ),
         // Humidity sensor
-        ("humidity_sensor", "湿度传感器", vec![
-            ("humidity", CapabilityType::Metric, AccessType::Read, Some("%")),
-        ]),
+        (
+            "humidity_sensor",
+            "湿度传感器",
+            vec![(
+                "humidity",
+                CapabilityType::Metric,
+                AccessType::Read,
+                Some("%"),
+            )],
+        ),
         // Light (with dimmer)
-        ("light_dimmer", "灯", vec![
-            ("power", CapabilityType::Command, AccessType::ReadWrite, None),
-            ("brightness", CapabilityType::Command, AccessType::ReadWrite, Some("%")),
-        ]),
+        (
+            "light_dimmer",
+            "灯",
+            vec![
+                (
+                    "power",
+                    CapabilityType::Command,
+                    AccessType::ReadWrite,
+                    None,
+                ),
+                (
+                    "brightness",
+                    CapabilityType::Command,
+                    AccessType::ReadWrite,
+                    Some("%"),
+                ),
+            ],
+        ),
         // Simple switch
-        ("switch", "开关", vec![
-            ("power", CapabilityType::Command, AccessType::ReadWrite, None),
-        ]),
+        (
+            "switch",
+            "开关",
+            vec![(
+                "power",
+                CapabilityType::Command,
+                AccessType::ReadWrite,
+                None,
+            )],
+        ),
         // AC unit
-        ("ac_unit", "空调", vec![
-            ("power", CapabilityType::Command, AccessType::ReadWrite, None),
-            ("temperature", CapabilityType::Command, AccessType::Write, Some("°C")),
-            ("mode", CapabilityType::Command, AccessType::Write, None),
-        ]),
+        (
+            "ac_unit",
+            "空调",
+            vec![
+                (
+                    "power",
+                    CapabilityType::Command,
+                    AccessType::ReadWrite,
+                    None,
+                ),
+                (
+                    "temperature",
+                    CapabilityType::Command,
+                    AccessType::Write,
+                    Some("°C"),
+                ),
+                ("mode", CapabilityType::Command, AccessType::Write, None),
+            ],
+        ),
         // Curtain
-        ("curtain", "窗帘", vec![
-            ("position", CapabilityType::Command, AccessType::ReadWrite, Some("%")),
-        ]),
+        (
+            "curtain",
+            "窗帘",
+            vec![(
+                "position",
+                CapabilityType::Command,
+                AccessType::ReadWrite,
+                Some("%"),
+            )],
+        ),
         // Smart plug
-        ("smart_plug", "插座", vec![
-            ("power", CapabilityType::Command, AccessType::ReadWrite, None),
-            ("energy", CapabilityType::Metric, AccessType::Read, Some("kWh")),
-        ]),
+        (
+            "smart_plug",
+            "插座",
+            vec![
+                (
+                    "power",
+                    CapabilityType::Command,
+                    AccessType::ReadWrite,
+                    None,
+                ),
+                (
+                    "energy",
+                    CapabilityType::Metric,
+                    AccessType::Read,
+                    Some("kWh"),
+                ),
+            ],
+        ),
         // Motion sensor
-        ("motion_sensor", "人体传感器", vec![
-            ("motion", CapabilityType::Metric, AccessType::Read, None),
-        ]),
+        (
+            "motion_sensor",
+            "人体传感器",
+            vec![("motion", CapabilityType::Metric, AccessType::Read, None)],
+        ),
         // Door/window sensor
-        ("door_sensor", "门窗传感器", vec![
-            ("open", CapabilityType::Metric, AccessType::Read, None),
-        ]),
+        (
+            "door_sensor",
+            "门窗传感器",
+            vec![("open", CapabilityType::Metric, AccessType::Read, None)],
+        ),
         // CO2 sensor
-        ("co2_sensor", "二氧化碳传感器", vec![
-            ("co2", CapabilityType::Metric, AccessType::Read, Some("ppm")),
-        ]),
+        (
+            "co2_sensor",
+            "二氧化碳传感器",
+            vec![("co2", CapabilityType::Metric, AccessType::Read, Some("ppm"))],
+        ),
         // PM2.5 sensor
-        ("pm25_sensor", "PM2.5传感器", vec![
-            ("pm25", CapabilityType::Metric, AccessType::Read, Some("µg/m³")),
-        ]),
+        (
+            "pm25_sensor",
+            "PM2.5传感器",
+            vec![(
+                "pm25",
+                CapabilityType::Metric,
+                AccessType::Read,
+                Some("µg/m³"),
+            )],
+        ),
         // Light sensor
-        ("light_sensor", "光照传感器", vec![
-            ("illuminance", CapabilityType::Metric, AccessType::Read, Some("lux")),
-        ]),
+        (
+            "light_sensor",
+            "光照传感器",
+            vec![(
+                "illuminance",
+                CapabilityType::Metric,
+                AccessType::Read,
+                Some("lux"),
+            )],
+        ),
     ];
 
     for (floor_idx, floor) in floors.iter().enumerate() {
@@ -557,7 +655,8 @@ pub fn generate_large_scale_devices(count: usize) -> Vec<Resource> {
                 }
 
                 let template_idx = (room_hash + i) % device_templates.len();
-                let (device_type, device_name_suffix, capabilities) = &device_templates[template_idx];
+                let (device_type, device_name_suffix, capabilities) =
+                    &device_templates[template_idx];
 
                 let id = format!("{}_{}_{}", floor, room, device_type);
                 let name = format!("{}{}", location, device_name_suffix);
@@ -622,18 +721,21 @@ pub fn generate_large_scale_devices(count: usize) -> Vec<Resource> {
     // Ensure we have exactly the requested count
     while devices.len() < count {
         let idx = devices.len();
-        devices.push(Resource::device(
-            format!("extra_device_{}", idx),
-            format!("额外设备{}", idx),
-            "generic"
-        ).with_capability(Capability {
-            name: "status".to_string(),
-            cap_type: CapabilityType::Metric,
-            data_type: "string".to_string(),
-            valid_values: None,
-            unit: None,
-            access: AccessType::Read,
-        }));
+        devices.push(
+            Resource::device(
+                format!("extra_device_{}", idx),
+                format!("额外设备{}", idx),
+                "generic",
+            )
+            .with_capability(Capability {
+                name: "status".to_string(),
+                cap_type: CapabilityType::Metric,
+                data_type: "string".to_string(),
+                valid_values: None,
+                unit: None,
+                access: AccessType::Read,
+            }),
+        );
     }
 
     devices.truncate(count);
@@ -651,11 +753,15 @@ pub fn get_device_summary() -> String {
         std::collections::HashMap::new();
 
     for device in &devices {
-        let location = device.as_device()
+        let location = device
+            .as_device()
             .and_then(|d| d.location.as_deref())
             .unwrap_or("其他");
 
-        by_location.entry(location).or_default().push(device.name.as_str());
+        by_location
+            .entry(location)
+            .or_default()
+            .push(device.name.as_str());
     }
 
     // Format by location
@@ -704,7 +810,10 @@ pub fn get_device_summary() -> String {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
-    use crate::context::{ResourceIndex, ResourceResolver, DynamicToolGenerator, Capability, CapabilityType, AccessType};
+    use crate::context::{
+        AccessType, Capability, CapabilityType, DynamicToolGenerator, ResourceIndex,
+        ResourceResolver,
+    };
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
@@ -725,47 +834,85 @@ mod integration_tests {
 
         // Test 1: Query temperature in living room
         let resolved = resolver.resolve("客厅温度是多少").await;
-        assert_eq!(resolved.intent, crate::context::resource_resolver::IntentCategory::QueryData);
-        assert!(!resolved.resources.is_empty(), "Should find temperature devices in living room");
+        assert_eq!(
+            resolved.intent,
+            crate::context::resource_resolver::IntentCategory::QueryData
+        );
+        assert!(
+            !resolved.resources.is_empty(),
+            "Should find temperature devices in living room"
+        );
 
         // Test 2: Control living room light
         let resolved = resolver.resolve("打开客厅灯").await;
-        assert_eq!(resolved.intent, crate::context::resource_resolver::IntentCategory::ControlDevice);
-        assert!(!resolved.actions.is_empty(), "Should generate action for controlling living room light");
+        assert_eq!(
+            resolved.intent,
+            crate::context::resource_resolver::IntentCategory::ControlDevice
+        );
+        assert!(
+            !resolved.actions.is_empty(),
+            "Should generate action for controlling living room light"
+        );
 
         // Test 3: List all devices
         let resolved = resolver.resolve("列出所有设备").await;
-        assert_eq!(resolved.intent, crate::context::resource_resolver::IntentCategory::ListDevices);
+        assert_eq!(
+            resolved.intent,
+            crate::context::resource_resolver::IntentCategory::ListDevices
+        );
 
         // Test 4: Query by location
         let resolved = resolver.resolve("卧室有什么设备").await;
-        assert!(!resolved.resources.is_empty(), "Should find devices in bedroom");
+        assert!(
+            !resolved.resources.is_empty(),
+            "Should find devices in bedroom"
+        );
 
         // Test 5: Fuzzy search by alias
         let resolved = resolver.resolve("打开主灯").await;
-        assert!(!resolved.resources.is_empty(), "Should find living room main light by alias");
+        assert!(
+            !resolved.resources.is_empty(),
+            "Should find living room main light by alias"
+        );
 
         // Test 6: Query by capability
         let resolved = resolver.resolve("有哪些温度传感器").await;
-        assert!(!resolved.resources.is_empty(), "Should find temperature sensors");
+        assert!(
+            !resolved.resources.is_empty(),
+            "Should find temperature sensors"
+        );
 
         // Test 7: Ambiguous query should trigger clarification
         let resolved = resolver.resolve("温度是多少").await;
-        assert!(resolved.clarification.is_some() || !resolved.resources.is_empty(),
-            "Ambiguous query should either have clarification or find multiple devices");
+        assert!(
+            resolved.clarification.is_some() || !resolved.resources.is_empty(),
+            "Ambiguous query should either have clarification or find multiple devices"
+        );
 
         // Test 8: Control device in bedroom
         let resolved = resolver.resolve("关闭卧室空调").await;
-        assert_eq!(resolved.intent, crate::context::resource_resolver::IntentCategory::ControlDevice);
-        assert!(!resolved.actions.is_empty(), "Should generate action for controlling bedroom AC");
+        assert_eq!(
+            resolved.intent,
+            crate::context::resource_resolver::IntentCategory::ControlDevice
+        );
+        assert!(
+            !resolved.actions.is_empty(),
+            "Should generate action for controlling bedroom AC"
+        );
 
         // Test 9: Query humidity
         let resolved = resolver.resolve("客厅湿度").await;
-        assert!(!resolved.resources.is_empty(), "Should find humidity sensor in living room");
+        assert!(
+            !resolved.resources.is_empty(),
+            "Should find humidity sensor in living room"
+        );
 
         // Test 10: Device summary
         let stats = index.read().await.stats().await;
-        assert_eq!(stats.total_resources, 30, "Should have 30 resources registered");
+        assert_eq!(
+            stats.total_resources, 30,
+            "Should have 30 resources registered"
+        );
     }
 
     /// Test dynamic tool generation with 30 devices.
@@ -789,14 +936,29 @@ mod integration_tests {
 
         // Verify tool names
         let tool_names: Vec<_> = tools.iter().map(|t| t.name.clone()).collect();
-        assert!(tool_names.contains(&"search_resources".to_string()), "Should have search_resources tool");
-        assert!(tool_names.contains(&"list_devices".to_string()), "Should have list_devices tool");
-        assert!(tool_names.contains(&"query_data".to_string()), "Should have query_data tool");
-        assert!(tool_names.contains(&"control_device".to_string()), "Should have control_device tool");
+        assert!(
+            tool_names.contains(&"search_resources".to_string()),
+            "Should have search_resources tool"
+        );
+        assert!(
+            tool_names.contains(&"list_devices".to_string()),
+            "Should have list_devices tool"
+        );
+        assert!(
+            tool_names.contains(&"query_data".to_string()),
+            "Should have query_data tool"
+        );
+        assert!(
+            tool_names.contains(&"control_device".to_string()),
+            "Should have control_device tool"
+        );
 
         // Verify list_devices tool has device context
         let list_devices = tools.iter().find(|t| t.name == "list_devices").unwrap();
-        assert!(list_devices.description.contains("30"), "Should mention 30 devices");
+        assert!(
+            list_devices.description.contains("30"),
+            "Should mention 30 devices"
+        );
     }
 
     /// Test search performance with 30 devices.
@@ -826,10 +988,16 @@ mod integration_tests {
             let elapsed = start.elapsed();
 
             // Search should be fast (< 10ms)
-            assert!(elapsed.as_millis() < 10, "Search for '{}' should be fast, took {:?}", query, elapsed);
+            assert!(
+                elapsed.as_millis() < 10,
+                "Search for '{}' should be fast, took {:?}",
+                query,
+                elapsed
+            );
 
             // Most queries should find something
-            if query != "打开灯" {  // This one is ambiguous
+            if query != "打开灯" {
+                // This one is ambiguous
                 assert!(!results.is_empty(), "Query '{}' should find results", query);
             }
         }
@@ -851,7 +1019,10 @@ mod integration_tests {
         let summary = generator.device_summary().await;
 
         // Verify summary contains expected content
-        assert!(summary.contains("系统设备"), "Should have system devices header");
+        assert!(
+            summary.contains("系统设备"),
+            "Should have system devices header"
+        );
         assert!(summary.contains("客厅"), "Should mention living room");
         assert!(summary.contains("卧室"), "Should mention bedroom");
         assert!(summary.contains("厨房"), "Should mention kitchen");
@@ -861,7 +1032,7 @@ mod integration_tests {
 #[cfg(test)]
 mod large_scale_tests {
     use super::*;
-    use crate::context::{ResourceIndex, ResourceResolver, DynamicToolGenerator};
+    use crate::context::{DynamicToolGenerator, ResourceIndex, ResourceResolver};
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
@@ -885,13 +1056,19 @@ mod large_scale_tests {
         }
 
         // Should have multiple types
-        assert!(type_counts.len() >= 5, "Should have at least 5 different device types");
+        assert!(
+            type_counts.len() >= 5,
+            "Should have at least 5 different device types"
+        );
 
         // Each device should have at least one capability
         for device in &devices {
             if let Some(dev_data) = device.as_device() {
-                assert!(!dev_data.capabilities.is_empty(),
-                    "Device {} should have capabilities", device.name);
+                assert!(
+                    !dev_data.capabilities.is_empty(),
+                    "Device {} should have capabilities",
+                    device.name
+                );
             }
         }
     }
@@ -936,8 +1113,11 @@ mod large_scale_tests {
             // All queries should get some results or clarification
             let has_results = !resolved.resources.is_empty();
             let has_clarification = resolved.clarification.is_some();
-            assert!(has_results || has_clarification,
-                "Query '{}' should have results or clarification", query);
+            assert!(
+                has_results || has_clarification,
+                "Query '{}' should have results or clarification",
+                query
+            );
         }
 
         let avg_time = total_time / test_queries.len() as u32;
@@ -947,8 +1127,16 @@ mod large_scale_tests {
         println!("  Max: {:?}", max_time);
 
         // Performance assertions
-        assert!(max_time.as_millis() < 50, "Max search time should be under 50ms, got {:?}", max_time);
-        assert!(avg_time.as_millis() < 20, "Average search time should be under 20ms, got {:?}", avg_time);
+        assert!(
+            max_time.as_millis() < 50,
+            "Max search time should be under 50ms, got {:?}",
+            max_time
+        );
+        assert!(
+            avg_time.as_millis() < 20,
+            "Average search time should be under 20ms, got {:?}",
+            avg_time
+        );
     }
 
     /// Test dynamic tool generation with 300 devices.
@@ -974,8 +1162,11 @@ mod large_scale_tests {
 
         // list_devices tool should mention 300 devices
         let list_devices = tools.iter().find(|t| t.name == "list_devices").unwrap();
-        assert!(list_devices.description.contains("300"),
-            "Should mention 300 devices, got: {}", list_devices.description);
+        assert!(
+            list_devices.description.contains("300"),
+            "Should mention 300 devices, got: {}",
+            list_devices.description
+        );
 
         println!("Generated {} tools from 300 devices", tools.len());
     }
@@ -1019,12 +1210,14 @@ mod large_scale_tests {
             let tools = generator.generate_tools_for_query(query).await;
 
             // Verify response quality
-            let has_intent = matches!(resolved.intent,
-                crate::context::resource_resolver::IntentCategory::ListDevices |
-                crate::context::resource_resolver::IntentCategory::QueryData |
-                crate::context::resource_resolver::IntentCategory::ControlDevice |
-                crate::context::resource_resolver::IntentCategory::SystemStatus |
-                crate::context::resource_resolver::IntentCategory::General);
+            let has_intent = matches!(
+                resolved.intent,
+                crate::context::resource_resolver::IntentCategory::ListDevices
+                    | crate::context::resource_resolver::IntentCategory::QueryData
+                    | crate::context::resource_resolver::IntentCategory::ControlDevice
+                    | crate::context::resource_resolver::IntentCategory::SystemStatus
+                    | crate::context::resource_resolver::IntentCategory::General
+            );
 
             let has_response = !resolved.actions.is_empty()
                 || resolved.clarification.is_some()
@@ -1032,22 +1225,40 @@ mod large_scale_tests {
 
             if has_intent && has_response && elapsed.as_millis() < 100 {
                 successful_turns += 1;
-                println!("✓ [{}] '{}' -> intent={:?}, resources={}, actions={}, tools={}, time={:?}",
-                    scenario, query, resolved.intent, resolved.resources.len(),
-                    resolved.actions.len(), tools.len(), elapsed);
+                println!(
+                    "✓ [{}] '{}' -> intent={:?}, resources={}, actions={}, tools={}, time={:?}",
+                    scenario,
+                    query,
+                    resolved.intent,
+                    resolved.resources.len(),
+                    resolved.actions.len(),
+                    tools.len(),
+                    elapsed
+                );
             } else {
-                println!("✗ [{}] '{}' -> intent={:?}, resources={}, actions={}, time={:?}",
-                    scenario, query, resolved.intent, resolved.resources.len(),
-                    resolved.actions.len(), elapsed);
+                println!(
+                    "✗ [{}] '{}' -> intent={:?}, resources={}, actions={}, time={:?}",
+                    scenario,
+                    query,
+                    resolved.intent,
+                    resolved.resources.len(),
+                    resolved.actions.len(),
+                    elapsed
+                );
             }
         }
 
         let success_rate = (successful_turns as f32 / total_turns as f32) * 100.0;
-        println!("\nConversation success rate: {:.1}% ({}/{})",
-            success_rate, successful_turns, total_turns);
+        println!(
+            "\nConversation success rate: {:.1}% ({}/{})",
+            success_rate, successful_turns, total_turns
+        );
 
-        assert!(success_rate >= 80.0,
-            "Success rate should be at least 80%, got {:.1}%", success_rate);
+        assert!(
+            success_rate >= 80.0,
+            "Success rate should be at least 80%, got {:.1}%",
+            success_rate
+        );
     }
 
     /// Test resource distribution across floors with 300 devices.
@@ -1077,7 +1288,9 @@ mod large_scale_tests {
         }
 
         println!("Device distribution by floor:");
-        for floor in ["1楼", "2楼", "3楼", "4楼", "5楼", "6楼", "7楼", "8楼", "9楼", "10楼"] {
+        for floor in [
+            "1楼", "2楼", "3楼", "4楼", "5楼", "6楼", "7楼", "8楼", "9楼", "10楼",
+        ] {
             let count = floor_counts.get(floor).unwrap_or(&0);
             println!("  {}: {} devices", floor, count);
         }
@@ -1085,7 +1298,12 @@ mod large_scale_tests {
         // Each floor should have at least some devices
         for floor in ["1楼", "2楼", "3楼", "4楼", "5楼"] {
             let count = floor_counts.get(floor).unwrap_or(&0);
-            assert!(count >= &20, "Floor {} should have at least 20 devices, got {}", floor, count);
+            assert!(
+                count >= &20,
+                "Floor {} should have at least 20 devices, got {}",
+                floor,
+                count
+            );
         }
     }
 
@@ -1103,9 +1321,9 @@ mod large_scale_tests {
 
         // These queries are ambiguous and should trigger clarification
         let ambiguous_queries = vec![
-            "温度是多少",  // Which floor? Which room?
-            "打开灯",      // Which floor? Which room?
-            "空调状态",    // Which AC?
+            "温度是多少", // Which floor? Which room?
+            "打开灯",     // Which floor? Which room?
+            "空调状态",   // Which AC?
         ];
 
         for query in ambiguous_queries {
@@ -1115,11 +1333,18 @@ mod large_scale_tests {
             let has_clarification = resolved.clarification.is_some();
             let has_many_results = resolved.resources.len() > 10;
 
-            println!("Ambiguous query '{}': clarification={}, results={}",
-                query, has_clarification, resolved.resources.len());
+            println!(
+                "Ambiguous query '{}': clarification={}, results={}",
+                query,
+                has_clarification,
+                resolved.resources.len()
+            );
 
-            assert!(has_clarification || has_many_results,
-                "Ambiguous query '{}' should have clarification or many results", query);
+            assert!(
+                has_clarification || has_many_results,
+                "Ambiguous query '{}' should have clarification or many results",
+                query
+            );
         }
     }
 
@@ -1145,14 +1370,24 @@ mod large_scale_tests {
         for (query, _scenario) in precise_queries {
             let resolved = resolver.resolve(query).await;
 
-            println!("Precise query '{}': intent={:?}, resources={}, confidence={:.2}",
-                query, resolved.intent, resolved.resources.len(), resolved.confidence);
+            println!(
+                "Precise query '{}': intent={:?}, resources={}, confidence={:.2}",
+                query,
+                resolved.intent,
+                resolved.resources.len(),
+                resolved.confidence
+            );
 
             // Should have high confidence and some resources
-            assert!(resolved.confidence >= 0.5,
-                "Precise query should have confidence >= 0.5, got {:.2}", resolved.confidence);
-            assert!(!resolved.resources.is_empty(),
-                "Precise query should find resources");
+            assert!(
+                resolved.confidence >= 0.5,
+                "Precise query should have confidence >= 0.5, got {:.2}",
+                resolved.confidence
+            );
+            assert!(
+                !resolved.resources.is_empty(),
+                "Precise query should find resources"
+            );
         }
     }
 
@@ -1174,9 +1409,15 @@ mod large_scale_tests {
         println!("Registration of 300 devices: {:?}", registration_time);
         println!("Total resources: {}", stats.total_resources);
 
-        assert_eq!(stats.total_resources, 300, "All 300 devices should be registered");
-        assert!(registration_time.as_millis() < 500,
-            "Registration should complete in under 500ms, got {:?}", registration_time);
+        assert_eq!(
+            stats.total_resources, 300,
+            "All 300 devices should be registered"
+        );
+        assert!(
+            registration_time.as_millis() < 500,
+            "Registration should complete in under 500ms, got {:?}",
+            registration_time
+        );
     }
 
     /// Test memory efficiency with 300 devices.
@@ -1197,7 +1438,7 @@ mod large_scale_tests {
         let first_generation = start.elapsed();
 
         let start = std::time::Instant::now();
-        let tools2 = generator.generate_tools().await;  // Should use cache
+        let tools2 = generator.generate_tools().await; // Should use cache
         let cached_generation = start.elapsed();
 
         println!("Tool generation (300 devices):");
@@ -1205,8 +1446,10 @@ mod large_scale_tests {
         println!("  Cached: {:?}", cached_generation);
 
         // Cached generation should be much faster
-        assert!(cached_generation < first_generation,
-            "Cached generation should be faster than first");
+        assert!(
+            cached_generation < first_generation,
+            "Cached generation should be faster than first"
+        );
 
         // Results should be identical
         assert_eq!(tools1.len(), tools2.len(), "Cached tools should match");

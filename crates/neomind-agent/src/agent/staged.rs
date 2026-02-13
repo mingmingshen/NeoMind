@@ -281,7 +281,8 @@ impl IntentClassifier {
                 } else {
                     // Each match contributes based on keyword character count, capped at 1.0
                     // Longer keywords get more weight (use character count, not bytes)
-                    let weighted_score: f32 = matched_keywords.iter()
+                    let weighted_score: f32 = matched_keywords
+                        .iter()
                         .map(|kw| {
                             let char_count = kw.chars().count() as f32;
                             // 0.15 per character, with min 0.2 and max 0.5 per keyword

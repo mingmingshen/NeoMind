@@ -3,7 +3,6 @@
 //! This tool allows the LLM to search for available tools by keyword,
 //! reducing the need to include all tool definitions in every prompt.
 
-
 use async_trait::async_trait;
 use serde_json::Value;
 

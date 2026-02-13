@@ -44,6 +44,10 @@ pub mod endpoints {
     pub const ANTHROPIC: &str = "https://api.anthropic.com/v1";
     pub const GOOGLE: &str = "https://generativelanguage.googleapis.com";
     pub const XAI: &str = "https://api.x.ai/v1";
+    pub const QWEN: &str = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+    pub const DEEPSEEK: &str = "https://api.deepseek.com/v1";
+    pub const GLM: &str = "https://open.bigmodel.cn/api/paas/v4";
+    pub const MINIMAX: &str = "https://api.minimax.chat/v1";
 }
 
 /// 默认模型常量

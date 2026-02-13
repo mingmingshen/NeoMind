@@ -143,10 +143,7 @@ pub enum NeoMindEvent {
     },
 
     /// Message was resolved
-    MessageResolved {
-        message_id: String,
-        timestamp: i64,
-    },
+    MessageResolved { message_id: String, timestamp: i64 },
 
     // ========== Agent Events (User-defined AI Agents) ==========
     /// Agent execution started
@@ -185,7 +182,7 @@ pub enum NeoMindEvent {
     AgentProgress {
         agent_id: String,
         execution_id: String,
-        stage: String, // "collecting", "analyzing", "executing", "completed"
+        stage: String,       // "collecting", "analyzing", "executing", "completed"
         stage_label: String, // Human-readable stage name
         #[serde(skip_serializing_if = "Option::is_none")]
         progress: Option<f32>, // 0.0 to 1.0 if available
@@ -568,7 +565,9 @@ impl NeoMindEvent {
     pub fn is_message_event(&self) -> bool {
         matches!(
             self,
-            Self::MessageCreated { .. } | Self::MessageAcknowledged { .. } | Self::MessageResolved { .. }
+            Self::MessageCreated { .. }
+                | Self::MessageAcknowledged { .. }
+                | Self::MessageResolved { .. }
         )
     }
 

@@ -1,27 +1,44 @@
 //! AI Agent executor - runs agents and records decision processes.
 
-use neomind_core::{EventBus, MetricValue, NeoMindEvent, message::{Content, ContentPart, Message, MessageRole}};
-use neomind_storage::{
-    AgentMemory, AgentStore, AgentExecutionRecord, AiAgent, DataCollected,
-    Decision, DecisionProcess, ExecutionResult as StorageExecutionResult, ExecutionStatus,
-    GeneratedReport, ReasoningStep, TrendPoint, AgentResource, ResourceType, LearnedPattern,
-    // New conversation types
-    ConversationTurn, TurnInput, TurnOutput,
-    LlmBackendStore,
+use futures::future::join_all;
+use neomind_core::llm::backend::LlmRuntime;
+use neomind_core::{
+    EventBus, MetricValue, NeoMindEvent,
+    message::{Content, ContentPart, Message, MessageRole},
 };
 use neomind_devices::DeviceService;
+use neomind_llm::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
 use neomind_messages::MessageManager;
-use neomind_llm::{OllamaConfig, OllamaRuntime, CloudConfig, CloudRuntime};
-use neomind_core::llm::backend::LlmRuntime;
+use neomind_storage::{
+    AgentExecutionRecord,
+    AgentMemory,
+    AgentResource,
+    AgentStore,
+    AiAgent,
+    // New conversation types
+    ConversationTurn,
+    DataCollected,
+    Decision,
+    DecisionProcess,
+    ExecutionResult as StorageExecutionResult,
+    ExecutionStatus,
+    GeneratedReport,
+    LearnedPattern,
+    LlmBackendStore,
+    ReasoningStep,
+    ResourceType,
+    TrendPoint,
+    TurnInput,
+    TurnOutput,
+};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::collections::HashMap;
-use futures::future::join_all;
 
 // Import DataSourceId for type-safe extension metric queries
 use neomind_core::datasource::DataSourceId;
 
-use crate::LlmBackend;
+use crate::agent::types::LlmBackend;
 use crate::error::{NeoMindError, Result as AgentResult};
 use crate::prompts::CONVERSATION_CONTEXT_ZH;
 
@@ -90,14 +107,14 @@ fn get_time_context() -> String {
     // Try to load timezone from settings
     let timezone = SettingsStore::open(SETTINGS_DB_PATH)
         .ok()
-        .and_then(|store| store.load_global_timezone().ok())
-        .flatten()
+        .map(|store| store.get_global_timezone())
         .unwrap_or_else(|| "Asia/Shanghai".to_string());
 
     let now = chrono::Utc::now();
 
     // Parse timezone
-    let tz = timezone.parse::<chrono_tz::Tz>()
+    let tz = timezone
+        .parse::<chrono_tz::Tz>()
         .unwrap_or(chrono_tz::Tz::Asia__Shanghai);
 
     // Get current time in the configured timezone
@@ -195,7 +212,7 @@ fn try_recover_truncated_json(json_str: &str) -> Option<(String, bool)> {
             '}' if !in_string => open_braces = open_braces.saturating_sub(1),
             '[' if !in_string => open_brackets += 1,
             ']' if !in_string => open_brackets = open_brackets.saturating_sub(1),
-                            _ => {}
+            _ => {}
         }
         if escape_next && ch != '\\' {
             escape_next = false;
@@ -309,10 +326,7 @@ fn extract_semantic_patterns(
 
 /// Extract the symptom (condition) that triggered a decision.
 /// Returns static string slices where possible to avoid allocations.
-fn extract_symptom(
-    situation_analysis: &str,
-    decision: &Decision,
-) -> String {
+fn extract_symptom(situation_analysis: &str, decision: &Decision) -> String {
     // Try to extract from situation analysis - use static strings for common cases
     if !situation_analysis.is_empty() {
         // Look for key phrases indicating conditions
@@ -346,15 +360,16 @@ fn extract_threshold_from_data(
     // Try to extract numeric value from decision description
     for item in data {
         if let Some(val) = item.values.get("value")
-            && let Some(num) = val.as_f64() {
-                // Check if baseline exists
-                if let Some(&baseline) = baselines.get(&item.source) {
-                    let deviation = ((num - baseline) / baseline * 100.0).abs();
-                    if deviation > 10.0 {
-                        return Some(deviation);
-                    }
+            && let Some(num) = val.as_f64()
+        {
+            // Check if baseline exists
+            if let Some(&baseline) = baselines.get(&item.source) {
+                let deviation = ((num - baseline) / baseline * 100.0).abs();
+                if deviation > 10.0 {
+                    return Some(deviation);
                 }
             }
+        }
     }
     None
 }
@@ -406,7 +421,8 @@ fn build_medium_term_summary(
     if !memory.baselines.is_empty() {
         parts.push(format!(
             "基线指标: {}",
-            memory.baselines
+            memory
+                .baselines
                 .iter()
                 .map(|(k, v)| format!("{}={:.1}", k, v))
                 .collect::<Vec<_>>()
@@ -460,7 +476,7 @@ fn clean_and_truncate_text(text: &str, max_chars: usize) -> String {
     // Quick check for extreme repetition (same char repeated > 50 times)
     let mut streak = 1;
     for i in 1..char_count.min(1000) {
-        if chars[i] == chars[i-1] {
+        if chars[i] == chars[i - 1] {
             streak += 1;
             if streak > 50 {
                 // High repetition detected, truncate early
@@ -479,9 +495,11 @@ fn clean_and_truncate_text(text: &str, max_chars: usize) -> String {
             continue;
         }
 
-        let mut phrase_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut phrase_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         for i in 0..=(char_count.saturating_sub(*window_size)) {
-            let phrase: String = chars.iter()
+            let phrase: String = chars
+                .iter()
                 .skip(i)
                 .take(*window_size)
                 .collect::<String>()
@@ -500,7 +518,10 @@ fn clean_and_truncate_text(text: &str, max_chars: usize) -> String {
                     let safe_pos = pos.saturating_sub(50);
                     let truncated: String = chars.iter().take(safe_pos).collect();
                     return if truncated.chars().count() > max_chars {
-                        format!("{}...", truncated.chars().take(max_chars).collect::<String>())
+                        format!(
+                            "{}...",
+                            truncated.chars().take(max_chars).collect::<String>()
+                        )
                     } else {
                         truncated
                     };
@@ -528,20 +549,13 @@ fn clean_and_truncate_text(text: &str, max_chars: usize) -> String {
 ///
 /// Target: < 200 characters for small models (qwen3:1.7b)
 #[allow(dead_code)]
-fn compact_history_context(
-    _history_context: &str,
-    memory: &AgentMemory,
-) -> String {
+fn compact_history_context(_history_context: &str, memory: &AgentMemory) -> String {
     let mut parts = Vec::new();
 
     // === STRATEGY 1: Recent trend (最简化的趋势) ===
     // Instead of listing each execution, show the pattern
     if !memory.short_term.summaries.is_empty() {
-        let last_3: Vec<_> = memory.short_term.summaries
-            .iter()
-            .rev()
-            .take(3)
-            .collect();
+        let last_3: Vec<_> = memory.short_term.summaries.iter().rev().take(3).collect();
 
         // Count patterns
         let success_count = last_3.iter().filter(|s| s.success).count();
@@ -569,24 +583,24 @@ fn compact_history_context(
 
     if !patterns.is_empty()
         && let Some(best) = patterns.iter().max_by(|a, b| {
-            a.confidence.partial_cmp(&b.confidence).unwrap_or(std::cmp::Ordering::Equal)
-        }) {
-            // Ultra-compact: "模式: 温度>30度告警 (80%)"
-            parts.push(format!(
-                "模式: {} ({}%)",
-                truncate_to(&best.description, 25),
-                (best.confidence * 100.0) as u32
-            ));
-        }
+            a.confidence
+                .partial_cmp(&b.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+    {
+        // Ultra-compact: "模式: 温度>30度告警 (80%)"
+        parts.push(format!(
+            "模式: {} ({}%)",
+            truncate_to(&best.description, 25),
+            (best.confidence * 100.0) as u32
+        ));
+    }
 
     // === STRATEGY 3: Key baseline (关键基线) ===
     // Only show baselines that are relevant to common metrics
     if !memory.baselines.is_empty() {
         // Show at most 2 most relevant baselines
-        let baseline_items: Vec<_> = memory.baselines
-            .iter()
-            .take(2)
-            .collect();
+        let baseline_items: Vec<_> = memory.baselines.iter().take(2).collect();
 
         if !baseline_items.is_empty() {
             let baseline_str = baseline_items
@@ -624,7 +638,6 @@ pub struct EventTriggerData {
     pub value: MetricValue,
     pub timestamp: i64,
 }
-
 
 /// State for tracking tool chaining progress
 #[derive(Debug, Clone)]
@@ -685,9 +698,16 @@ impl ChainState {
         context.push_str(&format!("当前是第 {} 轮执行。\n\n", self.depth));
 
         for (i, result) in self.previous_results.iter().enumerate() {
-            context.push_str(&format!("### 执行步骤 {} - {}\n", i + 1, result.action_type));
+            context.push_str(&format!(
+                "### 执行步骤 {} - {}\n",
+                i + 1,
+                result.action_type
+            ));
             context.push_str(&format!("- **目标**: {}\n", result.target));
-            context.push_str(&format!("- **状态**: {}\n", if result.success { "成功" } else { "失败" }));
+            context.push_str(&format!(
+                "- **状态**: {}\n",
+                if result.success { "成功" } else { "失败" }
+            ));
             if let Some(ref result_str) = result.result {
                 // Only include non-trivial results
                 if !result_str.is_empty() && result_str != "Command sent successfully" {
@@ -775,7 +795,8 @@ pub struct AgentExecutor {
     recent_executions: Arc<RwLock<HashMap<(String, String, String), i64>>>,
     /// LLM runtime cache: backend_id -> runtime
     /// Key format: "{backend_type}:{endpoint}:{model}" for cache invalidation
-    llm_runtime_cache: Arc<RwLock<HashMap<String, Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>>>>,
+    llm_runtime_cache:
+        Arc<RwLock<HashMap<String, Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>>>>,
     /// Phase 3.3: Extension registry for dynamic tool loading
     extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
 }
@@ -812,10 +833,8 @@ fn score_turn_relevance(
 
     // Factor 3: Device overlap (30% weight)
     // Turns that handled the same devices are highly relevant
-    let current_devices: std::collections::HashSet<_> = current_data
-        .iter()
-        .map(|d| d.source.as_str())
-        .collect();
+    let current_devices: std::collections::HashSet<_> =
+        current_data.iter().map(|d| d.source.as_str()).collect();
 
     let turn_devices: std::collections::HashSet<_> = turn
         .input
@@ -825,12 +844,8 @@ fn score_turn_relevance(
         .collect();
 
     if !current_devices.is_empty() {
-        let overlap = current_devices
-            .intersection(&turn_devices)
-            .count();
-        let union = current_devices
-            .union(&turn_devices)
-            .count();
+        let overlap = current_devices.intersection(&turn_devices).count();
+        let union = current_devices.union(&turn_devices).count();
         let jaccard = if union > 0 {
             overlap as f64 / union as f64
         } else {
@@ -873,7 +888,10 @@ impl AgentExecutor {
     }
 
     /// Set the LLM runtime for intent parsing.
-    pub async fn set_llm_runtime(&mut self, llm: Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>) {
+    pub async fn set_llm_runtime(
+        &mut self,
+        llm: Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>,
+    ) {
         self.llm_runtime = Some(llm);
     }
 
@@ -887,7 +905,9 @@ impl AgentExecutor {
     // ========================================================================
 
     /// Get the extension registry.
-    pub fn extension_registry(&self) -> Option<Arc<neomind_core::extension::registry::ExtensionRegistry>> {
+    pub fn extension_registry(
+        &self,
+    ) -> Option<Arc<neomind_core::extension::registry::ExtensionRegistry>> {
         self.extension_registry.clone()
     }
 
@@ -933,12 +953,13 @@ impl AgentExecutor {
         command: &str,
         args: &serde_json::Value,
     ) -> AgentResult<serde_json::Value> {
-        let registry = self.extension_registry.as_ref()
-            .ok_or_else(|| NeoMindError::Config(
-                "Extension registry not configured".to_string(),
-            ))?;
+        let registry = self
+            .extension_registry
+            .as_ref()
+            .ok_or_else(|| NeoMindError::Config("Extension registry not configured".to_string()))?;
 
-        registry.execute_command(extension_id, command, args)
+        registry
+            .execute_command(extension_id, command, args)
             .await
             .map_err(|e| NeoMindError::Tool(e.to_string()))
     }
@@ -960,15 +981,17 @@ impl AgentExecutor {
         details: Option<&str>,
     ) {
         if let Some(ref bus) = self.event_bus {
-            let _ = bus.publish(neomind_core::NeoMindEvent::AgentProgress {
-                agent_id: agent_id.to_string(),
-                execution_id: execution_id.to_string(),
-                stage: stage.to_string(),
-                stage_label: stage_label.to_string(),
-                progress: None,
-                details: details.map(|d| d.to_string()),
-                timestamp: chrono::Utc::now().timestamp(),
-            }).await;
+            let _ = bus
+                .publish(neomind_core::NeoMindEvent::AgentProgress {
+                    agent_id: agent_id.to_string(),
+                    execution_id: execution_id.to_string(),
+                    stage: stage.to_string(),
+                    stage_label: stage_label.to_string(),
+                    progress: None,
+                    details: details.map(|d| d.to_string()),
+                    timestamp: chrono::Utc::now().timestamp(),
+                })
+                .await;
         }
     }
 
@@ -981,15 +1004,17 @@ impl AgentExecutor {
         description: &str,
     ) {
         if let Some(ref bus) = self.event_bus {
-            let _ = bus.publish(neomind_core::NeoMindEvent::AgentThinking {
-                agent_id: agent_id.to_string(),
-                execution_id: execution_id.to_string(),
-                step_number,
-                step_type: "progress".to_string(),
-                description: description.to_string(),
-                details: None,
-                timestamp: chrono::Utc::now().timestamp(),
-            }).await;
+            let _ = bus
+                .publish(neomind_core::NeoMindEvent::AgentThinking {
+                    agent_id: agent_id.to_string(),
+                    execution_id: execution_id.to_string(),
+                    step_number,
+                    step_type: "progress".to_string(),
+                    description: description.to_string(),
+                    details: None,
+                    timestamp: chrono::Utc::now().timestamp(),
+                })
+                .await;
         }
     }
 
@@ -1010,149 +1035,239 @@ impl AgentExecutor {
         // If agent has a specific backend ID, try to use it
         if let Some(ref backend_id) = agent.llm_backend_id
             && let Some(ref store) = self.llm_backend_store
-                && let Ok(Some(backend)) = store.load_instance(backend_id) {
-                    use neomind_storage::LlmBackendType;
+            && let Ok(Some(backend)) = store.load_instance(backend_id)
+        {
+            use neomind_storage::LlmBackendType;
 
-                    // Build cache key
-                    let endpoint = backend.endpoint.clone().unwrap_or_default();
-                    let model = backend.model.clone();
-                    let cache_key = Self::build_runtime_cache_key(
-                        format!("{:?}", backend.backend_type).as_str(),
-                        endpoint.as_str(),
-                        model.as_str()
-                    );
+            // Build cache key
+            let endpoint = backend.endpoint.clone().unwrap_or_default();
+            let model = backend.model.clone();
+            let cache_key = Self::build_runtime_cache_key(
+                format!("{:?}", backend.backend_type).as_str(),
+                endpoint.as_str(),
+                model.as_str(),
+            );
 
-                    // Check cache first
-                    {
-                        let cache = self.llm_runtime_cache.read().await;
-                        if let Some(runtime) = cache.get(&cache_key) {
-                            tracing::debug!(
-                                agent_id = %agent.id,
-                                backend = %backend_id,
-                                "LLM runtime cache hit"
-                            );
-                            return Ok(Some(runtime.clone()));
-                        }
-                    }
-
-                    // Cache miss - create new runtime
+            // Check cache first
+            {
+                let cache = self.llm_runtime_cache.read().await;
+                if let Some(runtime) = cache.get(&cache_key) {
                     tracing::debug!(
                         agent_id = %agent.id,
                         backend = %backend_id,
-                        "LLM runtime cache miss, creating new runtime"
+                        "LLM runtime cache hit"
                     );
-
-                    let runtime = match backend.backend_type {
-                        LlmBackendType::Ollama => {
-                            let endpoint = backend.endpoint.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("OLLAMA_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(120);
-                            OllamaRuntime::new(
-                                OllamaConfig::new(&model)
-                                    .with_endpoint(&endpoint)
-                                    .with_timeout_secs(timeout)
-                            )
-                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
-                        }
-                        LlmBackendType::OpenAi => {
-                            let api_key = backend.api_key.clone().unwrap_or_default();
-                            let endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("OPENAI_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(60);
-                            CloudRuntime::new(
-                                CloudConfig::custom(&api_key, &endpoint)
-                                    .with_model(&model)
-                                    .with_timeout_secs(timeout)
-                            )
-                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
-                        }
-                        LlmBackendType::Anthropic => {
-                            let api_key = backend.api_key.clone().unwrap_or_default();
-                            let _endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://api.anthropic.com/v1".to_string());
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("ANTHROPIC_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(60);
-                            CloudRuntime::new(
-                                CloudConfig::anthropic(&api_key)
-                                    .with_model(&model)
-                                    .with_timeout_secs(timeout)
-                            )
-                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
-                        }
-                        LlmBackendType::Google => {
-                            let api_key = backend.api_key.clone().unwrap_or_default();
-                            let _endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string());
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("GOOGLE_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(60);
-                            CloudRuntime::new(
-                                CloudConfig::google(&api_key)
-                                    .with_model(&model)
-                                    .with_timeout_secs(timeout)
-                            )
-                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
-                        }
-                        LlmBackendType::XAi => {
-                            let api_key = backend.api_key.clone().unwrap_or_default();
-                            let _endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://api.x.ai/v1".to_string());
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("XAI_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(60);
-                            CloudRuntime::new(
-                                CloudConfig::grok(&api_key)
-                                    .with_model(&model)
-                                    .with_timeout_secs(timeout)
-                            )
-                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
-                        }
-                    };
-
-                    match runtime {
-                        Ok(rt) => {
-                            // Store in cache
-                            let mut cache = self.llm_runtime_cache.write().await;
-                            cache.insert(cache_key, rt.clone());
-                            tracing::info!(
-                                agent_id = %agent.id,
-                                backend = %backend_id,
-                                "LLM runtime created and cached"
-                            );
-                            return Ok(Some(rt));
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                agent_id = %agent.id,
-                                backend_type = ?backend.backend_type,
-                                error = %e,
-                                "Failed to create LLM runtime for agent '{}'", agent.name
-                            );
-                        }
-                    }
+                    return Ok(Some(runtime.clone()));
                 }
+            }
+
+            // Cache miss - create new runtime
+            tracing::debug!(
+                agent_id = %agent.id,
+                backend = %backend_id,
+                "LLM runtime cache miss, creating new runtime"
+            );
+
+            let runtime = match backend.backend_type {
+                LlmBackendType::Ollama => {
+                    let endpoint = backend
+                        .endpoint
+                        .clone()
+                        .unwrap_or_else(|| "http://localhost:11434".to_string());
+                    let model = backend.model.clone();
+                    let timeout = std::env::var("OLLAMA_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(120);
+                    OllamaRuntime::new(
+                        OllamaConfig::new(&model)
+                            .with_endpoint(&endpoint)
+                            .with_timeout_secs(timeout),
+                    )
+                    .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                }
+                LlmBackendType::OpenAi => {
+                    let api_key = backend.api_key.clone().unwrap_or_default();
+                    let endpoint = backend
+                        .endpoint
+                        .clone()
+                        .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+                    let model = backend.model.clone();
+                    let timeout = std::env::var("OPENAI_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(60);
+                    CloudRuntime::new(
+                        CloudConfig::custom(&api_key, &endpoint)
+                            .with_model(&model)
+                            .with_timeout_secs(timeout),
+                    )
+                    .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                }
+                LlmBackendType::Anthropic => {
+                    let api_key = backend.api_key.clone().unwrap_or_default();
+                    let _endpoint = backend
+                        .endpoint
+                        .clone()
+                        .unwrap_or_else(|| "https://api.anthropic.com/v1".to_string());
+                    let model = backend.model.clone();
+                    let timeout = std::env::var("ANTHROPIC_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(60);
+                    CloudRuntime::new(
+                        CloudConfig::anthropic(&api_key)
+                            .with_model(&model)
+                            .with_timeout_secs(timeout),
+                    )
+                    .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                }
+                LlmBackendType::Google => {
+                    let api_key = backend.api_key.clone().unwrap_or_default();
+                    let _endpoint = backend.endpoint.clone().unwrap_or_else(|| {
+                        "https://generativelanguage.googleapis.com/v1beta".to_string()
+                    });
+                    let model = backend.model.clone();
+                    let timeout = std::env::var("GOOGLE_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(60);
+                    CloudRuntime::new(
+                        CloudConfig::google(&api_key)
+                            .with_model(&model)
+                            .with_timeout_secs(timeout),
+                    )
+                    .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                }
+                LlmBackendType::XAi => {
+                    let api_key = backend.api_key.clone().unwrap_or_default();
+                    let _endpoint = backend
+                        .endpoint
+                        .clone()
+                        .unwrap_or_else(|| "https://api.x.ai/v1".to_string());
+                    let model = backend.model.clone();
+                    let timeout = std::env::var("XAI_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(60);
+                    CloudRuntime::new(
+                        CloudConfig::grok(&api_key)
+                            .with_model(&model)
+                            .with_timeout_secs(timeout),
+                    )
+                    .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                }
+                LlmBackendType::Qwen => {
+                    let api_key = backend.api_key.clone().unwrap_or_default();
+                    let endpoint = backend.endpoint.clone().unwrap_or_else(|| {
+                        "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string()
+                    });
+                    let model = backend.model.clone();
+                    let timeout = std::env::var("QWEN_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(60);
+                    CloudRuntime::new(
+                        CloudConfig::custom(&api_key, &endpoint)
+                            .with_model(&model)
+                            .with_timeout_secs(timeout),
+                    )
+                    .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                }
+                LlmBackendType::DeepSeek => {
+                    let api_key = backend.api_key.clone().unwrap_or_default();
+                    let endpoint = backend
+                        .endpoint
+                        .clone()
+                        .unwrap_or_else(|| "https://api.deepseek.com".to_string());
+                    let model = backend.model.clone();
+                    let timeout = std::env::var("DEEPSEEK_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(60);
+                    CloudRuntime::new(
+                        CloudConfig::custom(&api_key, &endpoint)
+                            .with_model(&model)
+                            .with_timeout_secs(timeout),
+                    )
+                    .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                }
+                LlmBackendType::GLM => {
+                    let api_key = backend.api_key.clone().unwrap_or_default();
+                    let endpoint = backend
+                        .endpoint
+                        .clone()
+                        .unwrap_or_else(|| "https://open.bigmodel.cn/api/paas/v4".to_string());
+                    let model = backend.model.clone();
+                    let timeout = std::env::var("GLM_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(60);
+                    CloudRuntime::new(
+                        CloudConfig::custom(&api_key, &endpoint)
+                            .with_model(&model)
+                            .with_timeout_secs(timeout),
+                    )
+                    .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                }
+                LlmBackendType::MiniMax => {
+                    let api_key = backend.api_key.clone().unwrap_or_default();
+                    let endpoint = backend
+                        .endpoint
+                        .clone()
+                        .unwrap_or_else(|| "https://api.minimax.chat/v1".to_string());
+                    let model = backend.model.clone();
+                    let timeout = std::env::var("MINIMAX_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(60);
+                    CloudRuntime::new(
+                        CloudConfig::custom(&api_key, &endpoint)
+                            .with_model(&model)
+                            .with_timeout_secs(timeout),
+                    )
+                    .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                }
+            };
+
+            match runtime {
+                Ok(rt) => {
+                    // Store in cache
+                    let mut cache = self.llm_runtime_cache.write().await;
+                    cache.insert(cache_key, rt.clone());
+                    tracing::info!(
+                        agent_id = %agent.id,
+                        backend = %backend_id,
+                        "LLM runtime created and cached"
+                    );
+                    return Ok(Some(rt));
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        agent_id = %agent.id,
+                        backend_type = ?backend.backend_type,
+                        error = %e,
+                        "Failed to create LLM runtime for agent '{}'", agent.name
+                    );
+                }
+            }
+        }
 
         // Fall back to default runtime
         Ok(self.llm_runtime.clone())
     }
 
     /// Parse user intent from natural language using LLM or keyword-based fallback.
-    pub async fn parse_intent(&self, user_prompt: &str) -> AgentResult<neomind_storage::ParsedIntent> {
+    pub async fn parse_intent(
+        &self,
+        user_prompt: &str,
+    ) -> AgentResult<neomind_storage::ParsedIntent> {
         // Try LLM-based parsing if available
         if let Some(ref llm) = self.llm_runtime
-            && let Ok(intent) = self.parse_intent_with_llm(llm, user_prompt).await {
-                return Ok(intent);
-            }
+            && let Ok(intent) = self.parse_intent_with_llm(llm, user_prompt).await
+        {
+            return Ok(intent);
+        }
 
         // Fall back to keyword-based parsing
         self.parse_intent_keywords(user_prompt).await
@@ -1164,7 +1279,7 @@ impl AgentExecutor {
         llm: &Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>,
         user_prompt: &str,
     ) -> AgentResult<neomind_storage::ParsedIntent> {
-        use neomind_core::llm::backend::{LlmInput, GenerationParams};
+        use neomind_core::llm::backend::{GenerationParams, LlmInput};
 
         // Get current time context for temporal understanding
         let time_context = get_time_context();
@@ -1210,15 +1325,17 @@ Respond in JSON format:
         const LLM_TIMEOUT_SECS: u64 = 300;
         let llm_result = match tokio::time::timeout(
             std::time::Duration::from_secs(LLM_TIMEOUT_SECS),
-            llm.generate(input)
-        ).await {
+            llm.generate(input),
+        )
+        .await
+        {
             Ok(result) => result,
             Err(_) => {
-                tracing::warn!(
-                    "LLM intent parsing timed out after {}s",
+                tracing::warn!("LLM intent parsing timed out after {}s", LLM_TIMEOUT_SECS);
+                return Err(NeoMindError::Llm(format!(
+                    "LLM timeout after {}s",
                     LLM_TIMEOUT_SECS
-                );
-                return Err(NeoMindError::Llm(format!("LLM timeout after {}s", LLM_TIMEOUT_SECS)));
+                )));
             }
         };
 
@@ -1228,30 +1345,37 @@ Respond in JSON format:
                 let json_str = output.text.trim();
                 // Extract JSON if it's wrapped in markdown code blocks
                 let json_str = if json_str.contains("```json") {
-                    json_str.split("```json").nth(1)
+                    json_str
+                        .split("```json")
+                        .nth(1)
                         .and_then(|s| s.split("```").next())
                         .unwrap_or(json_str)
                         .trim()
                 } else if json_str.contains("```") {
-                    json_str.split("```").nth(1)
-                        .unwrap_or(json_str)
-                        .trim()
+                    json_str.split("```").nth(1).unwrap_or(json_str).trim()
                 } else {
                     json_str
                 };
 
-                serde_json::from_str(json_str)
-                    .map_err(|_| NeoMindError::Llm("Failed to parse LLM intent response".to_string()))
+                serde_json::from_str(json_str).map_err(|_| {
+                    NeoMindError::Llm("Failed to parse LLM intent response".to_string())
+                })
             }
             Err(_) => Err(NeoMindError::Llm("LLM call failed".to_string())),
         }
     }
 
     /// Parse intent using keyword-based fallback.
-    async fn parse_intent_keywords(&self, user_prompt: &str) -> AgentResult<neomind_storage::ParsedIntent> {
+    async fn parse_intent_keywords(
+        &self,
+        user_prompt: &str,
+    ) -> AgentResult<neomind_storage::ParsedIntent> {
         let prompt_lower = user_prompt.to_lowercase();
 
-        let (intent_type, confidence) = if prompt_lower.contains("报告") || prompt_lower.contains("汇总") || prompt_lower.contains("每天") {
+        let (intent_type, confidence) = if prompt_lower.contains("报告")
+            || prompt_lower.contains("汇总")
+            || prompt_lower.contains("每天")
+        {
             (neomind_storage::IntentType::ReportGeneration, 0.8)
         } else if prompt_lower.contains("异常") || prompt_lower.contains("检测") {
             (neomind_storage::IntentType::AnomalyDetection, 0.8)
@@ -1305,13 +1429,20 @@ Respond in JSON format:
 
         for (_agent_id, agent) in event_agents.iter() {
             // Check if this agent has event-based schedule
-            if matches!(agent.schedule.schedule_type, neomind_storage::ScheduleType::Event) {
+            if matches!(
+                agent.schedule.schedule_type,
+                neomind_storage::ScheduleType::Event
+            ) {
                 // Check if agent's event filter matches this event
-                if self.matches_event_filter(agent, &device_id, metric, value).await {
+                if self
+                    .matches_event_filter(agent, &device_id, metric, value)
+                    .await
+                {
                     // Check for duplicate execution within the last 5 seconds
                     let key = (agent.id.clone(), device_id.clone(), metric.to_string());
                     let recent = self.recent_executions.read().await;
-                    let is_duplicate = recent.get(&key)
+                    let is_duplicate = recent
+                        .get(&key)
                         .map(|&timestamp| now - timestamp < 5)
                         .unwrap_or(false);
                     drop(recent);
@@ -1387,7 +1518,10 @@ Respond in JSON format:
                                 );
 
                                 // Execute the agent with event data (includes the triggering metric value directly)
-                                match executor.execute_agent_with_event(agent_clone, event_trigger_data).await {
+                                match executor
+                                    .execute_agent_with_event(agent_clone, event_trigger_data)
+                                    .await
+                                {
                                     Ok(record) => {
                                         tracing::info!(
                                             agent_id = %agent_id_for_log,
@@ -1487,7 +1621,12 @@ Respond in JSON format:
             let total_active = agents.len();
             let event_agents: HashMap<String, AiAgent> = agents
                 .into_iter()
-                .filter(|a| matches!(a.schedule.schedule_type, neomind_storage::ScheduleType::Event))
+                .filter(|a| {
+                    matches!(
+                        a.schedule.schedule_type,
+                        neomind_storage::ScheduleType::Event
+                    )
+                })
                 .map(|a| (a.id.clone(), a))
                 .collect();
 
@@ -1562,13 +1701,15 @@ Respond in JSON format:
             "Emitting AgentExecutionStarted event"
         );
         if let Some(ref bus) = self.event_bus {
-            let _ = bus.publish(NeoMindEvent::AgentExecutionStarted {
-                agent_id: agent_id.clone(),
-                agent_name: agent_name.clone(),
-                execution_id: execution_id.clone(),
-                trigger_type: "manual".to_string(),
-                timestamp,
-            }).await;
+            let _ = bus
+                .publish(NeoMindEvent::AgentExecutionStarted {
+                    agent_id: agent_id.clone(),
+                    agent_name: agent_name.clone(),
+                    execution_id: execution_id.clone(),
+                    trigger_type: "manual".to_string(),
+                    timestamp,
+                })
+                .await;
             tracing::info!("AgentExecutionStarted event published");
         } else {
             tracing::warn!("No event_bus available, agent events will not be published");
@@ -1589,7 +1730,8 @@ Respond in JSON format:
         let record = match execution_result {
             Ok((decision_process, result)) => {
                 // Update stats
-                let _ = self.store
+                let _ = self
+                    .store
                     .update_agent_stats(&agent_id, true, duration_ms)
                     .await;
 
@@ -1607,7 +1749,8 @@ Respond in JSON format:
             }
             Err(e) => {
                 // Update stats with failure
-                let _ = self.store
+                let _ = self
+                    .store
                     .update_agent_stats(&agent_id, false, duration_ms)
                     .await;
 
@@ -1686,21 +1829,24 @@ Respond in JSON format:
             neomind_storage::AgentStatus::Error
         };
 
-        let _ = self.store
+        let _ = self
+            .store
             .update_agent_status(&agent_id, new_status, record.error.clone())
             .await;
 
         // Emit agent execution completed event
         let completion_timestamp = chrono::Utc::now().timestamp();
         if let Some(ref bus) = self.event_bus {
-            let _ = bus.publish(NeoMindEvent::AgentExecutionCompleted {
-                agent_id: agent_id.clone(),
-                execution_id: execution_id.clone(),
-                success: record.status == ExecutionStatus::Completed,
-                duration_ms: record.duration_ms,
-                error: record.error.clone(),
-                timestamp: completion_timestamp,
-            }).await;
+            let _ = bus
+                .publish(NeoMindEvent::AgentExecutionCompleted {
+                    agent_id: agent_id.clone(),
+                    execution_id: execution_id.clone(),
+                    success: record.status == ExecutionStatus::Completed,
+                    duration_ms: record.duration_ms,
+                    error: record.error.clone(),
+                    timestamp: completion_timestamp,
+                })
+                .await;
         }
 
         tracing::info!(
@@ -1764,18 +1910,22 @@ Respond in JSON format:
             "Emitting AgentExecutionStarted event (event-triggered)"
         );
         if let Some(ref bus) = self.event_bus {
-            let _ = bus.publish(NeoMindEvent::AgentExecutionStarted {
-                agent_id: agent_id.clone(),
-                agent_name: agent_name.clone(),
-                execution_id: execution_id.clone(),
-                trigger_type: format!("event:{}", event_metric_name),
-                timestamp,
-            }).await;
+            let _ = bus
+                .publish(NeoMindEvent::AgentExecutionStarted {
+                    agent_id: agent_id.clone(),
+                    agent_name: agent_name.clone(),
+                    execution_id: execution_id.clone(),
+                    trigger_type: format!("event:{}", event_metric_name),
+                    timestamp,
+                })
+                .await;
         }
 
         // Execute with error handling for stability
         // Use execute_with_chaining_and_event to support multi-round tool chaining
-        let execution_result = self.execute_with_chaining_and_event(context, event_data).await;
+        let execution_result = self
+            .execute_with_chaining_and_event(context, event_data)
+            .await;
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
@@ -1788,7 +1938,8 @@ Respond in JSON format:
         let record = match execution_result {
             Ok((decision_process, result)) => {
                 // Update stats
-                let _ = self.store
+                let _ = self
+                    .store
                     .update_agent_stats(&agent_id, true, duration_ms)
                     .await;
 
@@ -1806,7 +1957,8 @@ Respond in JSON format:
             }
             Err(e) => {
                 // Update stats with failure
-                let _ = self.store
+                let _ = self
+                    .store
                     .update_agent_stats(&agent_id, false, duration_ms)
                     .await;
 
@@ -1860,21 +2012,24 @@ Respond in JSON format:
             neomind_storage::AgentStatus::Error
         };
 
-        let _ = self.store
+        let _ = self
+            .store
             .update_agent_status(&agent_id, new_status, record.error.clone())
             .await;
 
         // Emit agent execution completed event
         let completion_timestamp = chrono::Utc::now().timestamp();
         if let Some(ref bus) = self.event_bus {
-            let _ = bus.publish(NeoMindEvent::AgentExecutionCompleted {
-                agent_id: agent_id.clone(),
-                execution_id: execution_id.clone(),
-                success: record.status == ExecutionStatus::Completed,
-                duration_ms: record.duration_ms,
-                error: record.error.clone(),
-                timestamp: completion_timestamp,
-            }).await;
+            let _ = bus
+                .publish(NeoMindEvent::AgentExecutionCompleted {
+                    agent_id: agent_id.clone(),
+                    execution_id: execution_id.clone(),
+                    success: record.status == ExecutionStatus::Completed,
+                    duration_ms: record.duration_ms,
+                    error: record.error.clone(),
+                    timestamp: completion_timestamp,
+                })
+                .await;
         }
 
         tracing::info!(
@@ -1949,7 +2104,6 @@ Respond in JSON format:
         Ok(records)
     }
 
-
     /// Check if an action result is chainable (contains data useful for next round)
     fn is_chainable_action(action: &neomind_storage::ActionExecuted) -> bool {
         // Extension commands that return data are chainable
@@ -2016,7 +2170,8 @@ Respond in JSON format:
             }
 
             // Execute one round with retry
-            let (decision_process, execution_result) = self.execute_with_retry(context.clone()).await?;
+            let (decision_process, execution_result) =
+                self.execute_with_retry(context.clone()).await?;
 
             // Collect results from this round
             all_actions_executed.extend(execution_result.actions_executed.clone());
@@ -2036,7 +2191,8 @@ Respond in JSON format:
             }
 
             // Check if we have chainable results
-            let has_chainable = execution_result.actions_executed
+            let has_chainable = execution_result
+                .actions_executed
                 .iter()
                 .any(Self::is_chainable_action);
 
@@ -2049,15 +2205,13 @@ Respond in JSON format:
             }
 
             // Check if decisions indicate more work needed
-            let needs_more_work = decision_process.decisions
-                .iter()
-                .any(|d| {
-                    d.decision_type == "needs_more_data"
-                        || d.action.to_lowercase().contains("continue")
-                        || d.action.to_lowercase().contains("further")
-                        || d.action.to_lowercase().contains("下一步")
-                        || d.action.to_lowercase().contains("继续")
-                });
+            let needs_more_work = decision_process.decisions.iter().any(|d| {
+                d.decision_type == "needs_more_data"
+                    || d.action.to_lowercase().contains("continue")
+                    || d.action.to_lowercase().contains("further")
+                    || d.action.to_lowercase().contains("下一步")
+                    || d.action.to_lowercase().contains("继续")
+            });
 
             if !needs_more_work {
                 tracing::debug!(
@@ -2076,8 +2230,12 @@ Respond in JSON format:
                 &context.execution_id,
                 "chaining",
                 &format!("Tool chaining round {}", chain_state.depth + 1),
-                Some(&format!("Continuing analysis with results from {} previous action(s)...", chain_state.previous_results.len()))
-            ).await;
+                Some(&format!(
+                    "Continuing analysis with results from {} previous action(s)...",
+                    chain_state.previous_results.len()
+                )),
+            )
+            .await;
         }
 
         // Merge decision processes from all rounds
@@ -2086,8 +2244,7 @@ Respond in JSON format:
             if chain_state.depth > 1 {
                 final_dp.situation_analysis = format!(
                     "{}\n\n[工具链式调用: 共执行 {} 轮]",
-                    final_dp.situation_analysis,
-                    chain_state.depth
+                    final_dp.situation_analysis, chain_state.depth
                 );
             }
             final_dp
@@ -2109,7 +2266,8 @@ Respond in JSON format:
         let success_rate = if all_actions_executed.is_empty() {
             1.0
         } else {
-            all_actions_executed.iter().filter(|a| a.success).count() as f32 / all_actions_executed.len() as f32
+            all_actions_executed.iter().filter(|a| a.success).count() as f32
+                / all_actions_executed.len() as f32
         };
 
         let total_actions = all_actions_executed.len();
@@ -2119,7 +2277,10 @@ Respond in JSON format:
             report: None, // Reports are generated per-round, not in chaining
             notifications_sent: all_notifications_sent,
             summary: if chain_state.depth > 1 {
-                format!("Completed {} execution rounds via tool chaining", chain_state.depth)
+                format!(
+                    "Completed {} execution rounds via tool chaining",
+                    chain_state.depth
+                )
             } else {
                 summary_conclusion
             },
@@ -2135,7 +2296,6 @@ Respond in JSON format:
 
         Ok((merged_decision_process, merged_execution_result))
     }
-
 
     /// Execute with tool chaining support (event-triggered variant)
     async fn execute_with_chaining_and_event(
@@ -2184,7 +2344,9 @@ Respond in JSON format:
             }
 
             // Execute one round with retry (event variant)
-            let (decision_process, execution_result) = self.execute_with_retry_and_event(context.clone(), event_data.clone()).await?;
+            let (decision_process, execution_result) = self
+                .execute_with_retry_and_event(context.clone(), event_data.clone())
+                .await?;
 
             // Collect results from this round
             all_actions_executed.extend(execution_result.actions_executed.clone());
@@ -2204,7 +2366,8 @@ Respond in JSON format:
             }
 
             // Check if we have chainable results
-            let has_chainable = execution_result.actions_executed
+            let has_chainable = execution_result
+                .actions_executed
                 .iter()
                 .any(Self::is_chainable_action);
 
@@ -2217,15 +2380,13 @@ Respond in JSON format:
             }
 
             // Check if decisions indicate more work needed
-            let needs_more_work = decision_process.decisions
-                .iter()
-                .any(|d| {
-                    d.decision_type == "needs_more_data"
-                        || d.action.to_lowercase().contains("continue")
-                        || d.action.to_lowercase().contains("further")
-                        || d.action.to_lowercase().contains("下一步")
-                        || d.action.to_lowercase().contains("继续")
-                });
+            let needs_more_work = decision_process.decisions.iter().any(|d| {
+                d.decision_type == "needs_more_data"
+                    || d.action.to_lowercase().contains("continue")
+                    || d.action.to_lowercase().contains("further")
+                    || d.action.to_lowercase().contains("下一步")
+                    || d.action.to_lowercase().contains("继续")
+            });
 
             if !needs_more_work {
                 tracing::debug!(
@@ -2244,8 +2405,12 @@ Respond in JSON format:
                 &context.execution_id,
                 "chaining",
                 &format!("Tool chaining round {}", chain_state.depth + 1),
-                Some(&format!("Continuing analysis with results from {} previous action(s)...", chain_state.previous_results.len()))
-            ).await;
+                Some(&format!(
+                    "Continuing analysis with results from {} previous action(s)...",
+                    chain_state.previous_results.len()
+                )),
+            )
+            .await;
         }
 
         // Merge decision processes from all rounds
@@ -2254,8 +2419,7 @@ Respond in JSON format:
             if chain_state.depth > 1 {
                 final_dp.situation_analysis = format!(
                     "{}\n\n[工具链式调用: 共执行 {} 轮]",
-                    final_dp.situation_analysis,
-                    chain_state.depth
+                    final_dp.situation_analysis, chain_state.depth
                 );
             }
             final_dp
@@ -2277,7 +2441,8 @@ Respond in JSON format:
         let success_rate = if all_actions_executed.is_empty() {
             1.0
         } else {
-            all_actions_executed.iter().filter(|a| a.success).count() as f32 / all_actions_executed.len() as f32
+            all_actions_executed.iter().filter(|a| a.success).count() as f32
+                / all_actions_executed.len() as f32
         };
 
         let total_actions = all_actions_executed.len();
@@ -2287,7 +2452,10 @@ Respond in JSON format:
             report: None, // Reports are generated per-round, not in chaining
             notifications_sent: all_notifications_sent,
             summary: if chain_state.depth > 1 {
-                format!("Completed {} execution rounds via tool chaining", chain_state.depth)
+                format!(
+                    "Completed {} execution rounds via tool chaining",
+                    chain_state.depth
+                )
             } else {
                 summary_conclusion
             },
@@ -2333,9 +2501,7 @@ Respond in JSON format:
             }
         }
 
-        Err(last_error.unwrap_or_else(|| {
-            NeoMindError::Llm("Max retries exceeded".to_string())
-        }))
+        Err(last_error.unwrap_or_else(|| NeoMindError::Llm("Max retries exceeded".to_string())))
     }
 
     /// Execute with retry for stability (with event data).
@@ -2348,7 +2514,10 @@ Respond in JSON format:
         let mut last_error = None;
 
         for attempt in 0..=max_retries {
-            match self.execute_internal_with_event(context.clone(), event_data.clone()).await {
+            match self
+                .execute_internal_with_event(context.clone(), event_data.clone())
+                .await
+            {
                 Ok(result) => return Ok(result),
                 Err(e) => {
                     tracing::warn!(
@@ -2368,9 +2537,7 @@ Respond in JSON format:
             }
         }
 
-        Err(last_error.unwrap_or_else(|| {
-            NeoMindError::Llm("Max retries exceeded".to_string())
-        }))
+        Err(last_error.unwrap_or_else(|| NeoMindError::Llm("Max retries exceeded".to_string())))
     }
 
     /// Internal execution logic.
@@ -2383,7 +2550,14 @@ Respond in JSON format:
         let execution_id = context.execution_id.clone();
 
         // Progress: Collecting data
-        self.send_progress(&agent_id, &execution_id, "collecting", "Collecting data", Some("Gathering sensor data...")).await;
+        self.send_progress(
+            &agent_id,
+            &execution_id,
+            "collecting",
+            "Collecting data",
+            Some("Gathering sensor data..."),
+        )
+        .await;
 
         // Step 1: Collect data
         let data_collected = self.collect_data(&agent).await?;
@@ -2391,25 +2565,40 @@ Respond in JSON format:
         // Send thinking events for each data source collected
         let mut step_num = 1;
         for data in &data_collected {
-            self.send_thinking(&agent_id, &execution_id, step_num,
-                &format!("Collected data source: {}", data.source)
-            ).await;
+            self.send_thinking(
+                &agent_id,
+                &execution_id,
+                step_num,
+                &format!("Collected data source: {}", data.source),
+            )
+            .await;
             step_num += 1;
             // Small delay for visual effect
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
 
         // Progress: Analyzing
-        self.send_progress(&agent_id, &execution_id, "analyzing", "Analyzing",
-            Some(&format!("Analyzing {} data points...", data_collected.len()))
-        ).await;
+        self.send_progress(
+            &agent_id,
+            &execution_id,
+            "analyzing",
+            "Analyzing",
+            Some(&format!(
+                "Analyzing {} data points...",
+                data_collected.len()
+            )),
+        )
+        .await;
 
         // Step 1.5: Parse intent if not already done
         let parsed_intent = if agent.parsed_intent.is_none() {
             match self.parse_intent(&agent.user_prompt).await {
                 Ok(intent) => {
                     // Update agent with parsed intent
-                    let _ = self.store.update_agent_parsed_intent(&agent.id, Some(intent.clone())).await;
+                    let _ = self
+                        .store
+                        .update_agent_parsed_intent(&agent.id, Some(intent.clone()))
+                        .await;
                     Some(intent)
                 }
                 Err(e) => {
@@ -2427,24 +2616,46 @@ Respond in JSON format:
         }
 
         // Step 2: Analyze situation with LLM
-        let (situation_analysis, reasoning_steps, decisions, conclusion) =
-            self.analyze_situation_with_intent(&agent, &data_collected, parsed_intent.as_ref(), &context.execution_id).await?;
+        let (situation_analysis, reasoning_steps, decisions, conclusion) = self
+            .analyze_situation_with_intent(
+                &agent,
+                &data_collected,
+                parsed_intent.as_ref(),
+                &context.execution_id,
+            )
+            .await?;
 
         // Send thinking event for analysis completion
-        self.send_thinking(&agent_id, &execution_id, step_num,
-            &format!("Analysis completed: Generated {} decision(s)", decisions.len())
-        ).await;
+        self.send_thinking(
+            &agent_id,
+            &execution_id,
+            step_num,
+            &format!(
+                "Analysis completed: Generated {} decision(s)",
+                decisions.len()
+            ),
+        )
+        .await;
         step_num += 1;
 
         // Progress: Executing decisions
-        self.send_progress(&agent_id, &execution_id, "executing", "Executing decisions",
-            Some(&format!("Executing {} decision(s)...", decisions.len()))
-        ).await;
+        self.send_progress(
+            &agent_id,
+            &execution_id,
+            "executing",
+            "Executing decisions",
+            Some(&format!("Executing {} decision(s)...", decisions.len())),
+        )
+        .await;
 
         // Send initial executing status
-        self.send_thinking(&agent_id, &execution_id, step_num,
-            &format!("Starting execution of {} decision(s)", decisions.len())
-        ).await;
+        self.send_thinking(
+            &agent_id,
+            &execution_id,
+            step_num,
+            &format!("Starting execution of {} decision(s)", decisions.len()),
+        )
+        .await;
         step_num += 1;
 
         // Step 3: Execute decisions
@@ -2453,31 +2664,51 @@ Respond in JSON format:
 
         // Send thinking events for each action executed
         for action in &actions_executed {
-            self.send_thinking(&agent_id, &execution_id, step_num,
-                &format!("Executing: {} -> {}", action.action_type, action.target)
-            ).await;
+            self.send_thinking(
+                &agent_id,
+                &execution_id,
+                step_num,
+                &format!("Executing: {} -> {}", action.action_type, action.target),
+            )
+            .await;
             step_num += 1;
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
 
         // Send thinking events for notifications
         for notification in &notifications_sent {
-            self.send_thinking(&agent_id, &execution_id, step_num,
-                &format!("Sending notification: {}", notification.message)
-            ).await;
+            self.send_thinking(
+                &agent_id,
+                &execution_id,
+                step_num,
+                &format!("Sending notification: {}", notification.message),
+            )
+            .await;
             step_num += 1;
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
 
         // Send completion event for executing stage
         if actions_executed.is_empty() && notifications_sent.is_empty() {
-            self.send_thinking(&agent_id, &execution_id, step_num,
-                "Execution completed: No additional actions required"
-            ).await;
+            self.send_thinking(
+                &agent_id,
+                &execution_id,
+                step_num,
+                "Execution completed: No additional actions required",
+            )
+            .await;
         } else {
-            self.send_thinking(&agent_id, &execution_id, step_num,
-                &format!("Execution completed: {} action(s), {} notification(s)", actions_executed.len(), notifications_sent.len())
-            ).await;
+            self.send_thinking(
+                &agent_id,
+                &execution_id,
+                step_num,
+                &format!(
+                    "Execution completed: {} action(s), {} notification(s)",
+                    actions_executed.len(),
+                    notifications_sent.len()
+                ),
+            )
+            .await;
         }
 
         // Step 4: Generate report if needed
@@ -2486,15 +2717,17 @@ Respond in JSON format:
         // Step 5: Update memory with learnings
         // Determine success based on whether we had any major errors
         let memory_success = true; // We got here successfully, update_memory will store the result
-        let updated_memory = self.update_memory(
-            &agent,
-            &data_collected,
-            &decisions,
-            &situation_analysis,
-            &conclusion,
-            &execution_id,
-            memory_success,
-        ).await?;
+        let updated_memory = self
+            .update_memory(
+                &agent,
+                &data_collected,
+                &decisions,
+                &situation_analysis,
+                &conclusion,
+                &execution_id,
+                memory_success,
+            )
+            .await?;
 
         // Save updated memory
         self.store
@@ -2573,32 +2806,54 @@ Respond in JSON format:
         let mut step_num = 1u32;
 
         // Progress: Collecting data
-        self.send_progress(&agent_id, &execution_id, "collecting", "Collecting data", Some("Gathering sensor data...")).await;
+        self.send_progress(
+            &agent_id,
+            &execution_id,
+            "collecting",
+            "Collecting data",
+            Some("Gathering sensor data..."),
+        )
+        .await;
 
         // Step 1: Collect data including event data
         let data_collected = self.collect_data_with_event(&agent, &event_data).await?;
 
         // Send thinking events for each data source collected
         for data in &data_collected {
-            self.send_thinking(&agent_id, &execution_id, step_num,
-                &format!("📡 收集 {}: {} 个数据点", data.source, data.data_type)
-            ).await;
+            self.send_thinking(
+                &agent_id,
+                &execution_id,
+                step_num,
+                &format!("📡 收集 {}: {} 个数据点", data.source, data.data_type),
+            )
+            .await;
             step_num += 1;
             // Small delay for visual effect
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
 
         // Progress: Analyzing
-        self.send_progress(&agent_id, &execution_id, "analyzing", "Analyzing",
-            Some(&format!("Analyzing {} data points...", data_collected.len()))
-        ).await;
+        self.send_progress(
+            &agent_id,
+            &execution_id,
+            "analyzing",
+            "Analyzing",
+            Some(&format!(
+                "Analyzing {} data points...",
+                data_collected.len()
+            )),
+        )
+        .await;
 
         // Step 1.5: Parse intent if not already done
         let parsed_intent = if agent.parsed_intent.is_none() {
             match self.parse_intent(&agent.user_prompt).await {
                 Ok(intent) => {
                     // Update agent with parsed intent
-                    let _ = self.store.update_agent_parsed_intent(&agent.id, Some(intent.clone())).await;
+                    let _ = self
+                        .store
+                        .update_agent_parsed_intent(&agent.id, Some(intent.clone()))
+                        .await;
                     Some(intent)
                 }
                 Err(e) => {
@@ -2616,24 +2871,46 @@ Respond in JSON format:
         }
 
         // Step 2: Analyze situation with LLM
-        let (situation_analysis, reasoning_steps, decisions, conclusion) =
-            self.analyze_situation_with_intent(&agent, &data_collected, parsed_intent.as_ref(), &context.execution_id).await?;
+        let (situation_analysis, reasoning_steps, decisions, conclusion) = self
+            .analyze_situation_with_intent(
+                &agent,
+                &data_collected,
+                parsed_intent.as_ref(),
+                &context.execution_id,
+            )
+            .await?;
 
         // Send thinking event for analysis completion
-        self.send_thinking(&agent_id, &execution_id, step_num,
-            &format!("Analysis completed: Generated {} decision(s)", decisions.len())
-        ).await;
+        self.send_thinking(
+            &agent_id,
+            &execution_id,
+            step_num,
+            &format!(
+                "Analysis completed: Generated {} decision(s)",
+                decisions.len()
+            ),
+        )
+        .await;
         step_num += 1;
 
         // Progress: Executing decisions
-        self.send_progress(&agent_id, &execution_id, "executing", "Executing decisions",
-            Some(&format!("Executing {} decision(s)...", decisions.len()))
-        ).await;
+        self.send_progress(
+            &agent_id,
+            &execution_id,
+            "executing",
+            "Executing decisions",
+            Some(&format!("Executing {} decision(s)...", decisions.len())),
+        )
+        .await;
 
         // Send initial executing status
-        self.send_thinking(&agent_id, &execution_id, step_num,
-            &format!("Starting execution of {} decision(s)", decisions.len())
-        ).await;
+        self.send_thinking(
+            &agent_id,
+            &execution_id,
+            step_num,
+            &format!("Starting execution of {} decision(s)", decisions.len()),
+        )
+        .await;
         step_num += 1;
 
         // Step 3: Execute decisions
@@ -2642,31 +2919,51 @@ Respond in JSON format:
 
         // Send thinking events for each action executed
         for action in &actions_executed {
-            self.send_thinking(&agent_id, &execution_id, step_num,
-                &format!("Executing: {} -> {}", action.action_type, action.target)
-            ).await;
+            self.send_thinking(
+                &agent_id,
+                &execution_id,
+                step_num,
+                &format!("Executing: {} -> {}", action.action_type, action.target),
+            )
+            .await;
             step_num += 1;
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
 
         // Send thinking events for notifications
         for notification in &notifications_sent {
-            self.send_thinking(&agent_id, &execution_id, step_num,
-                &format!("Sending notification: {}", notification.message)
-            ).await;
+            self.send_thinking(
+                &agent_id,
+                &execution_id,
+                step_num,
+                &format!("Sending notification: {}", notification.message),
+            )
+            .await;
             step_num += 1;
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
 
         // Send completion event for executing stage
         if actions_executed.is_empty() && notifications_sent.is_empty() {
-            self.send_thinking(&agent_id, &execution_id, step_num,
-                "Execution completed: No additional actions required"
-            ).await;
+            self.send_thinking(
+                &agent_id,
+                &execution_id,
+                step_num,
+                "Execution completed: No additional actions required",
+            )
+            .await;
         } else {
-            self.send_thinking(&agent_id, &execution_id, step_num,
-                &format!("Execution completed: {} action(s), {} notification(s)", actions_executed.len(), notifications_sent.len())
-            ).await;
+            self.send_thinking(
+                &agent_id,
+                &execution_id,
+                step_num,
+                &format!(
+                    "Execution completed: {} action(s), {} notification(s)",
+                    actions_executed.len(),
+                    notifications_sent.len()
+                ),
+            )
+            .await;
         }
 
         // Step 4: Generate report if needed
@@ -2675,15 +2972,17 @@ Respond in JSON format:
         // Step 5: Update memory with learnings
         // Determine success based on whether we had any major errors
         let memory_success = true; // We got here successfully, update_memory will store the result
-        let updated_memory = self.update_memory(
-            &agent,
-            &data_collected,
-            &decisions,
-            &situation_analysis,
-            &conclusion,
-            &execution_id,
-            memory_success,
-        ).await?;
+        let updated_memory = self
+            .update_memory(
+                &agent,
+                &data_collected,
+                &decisions,
+                &situation_analysis,
+                &conclusion,
+                &execution_id,
+                memory_success,
+            )
+            .await?;
 
         // Save updated memory
         self.store
@@ -2765,17 +3064,23 @@ Respond in JSON format:
         );
 
         // Split resources by type for parallel processing
-        let metric_resources: Vec<_> = agent.resources.iter()
+        let metric_resources: Vec<_> = agent
+            .resources
+            .iter()
             .filter(|r| r.resource_type == ResourceType::Metric)
             .cloned()
             .collect();
 
-        let device_resources: Vec<_> = agent.resources.iter()
+        let device_resources: Vec<_> = agent
+            .resources
+            .iter()
             .filter(|r| r.resource_type == ResourceType::Device)
             .map(|r| r.resource_id.clone())
             .collect();
 
-        let extension_metric_resources: Vec<_> = agent.resources.iter()
+        let extension_metric_resources: Vec<_> = agent
+            .resources
+            .iter()
             .filter(|r| r.resource_type == ResourceType::ExtensionMetric)
             .cloned()
             .collect();
@@ -2797,7 +3102,9 @@ Respond in JSON format:
         }
 
         // Collect metric data in parallel
-        let metric_data = self.collect_metric_data_parallel(agent, metric_resources, timestamp).await?;
+        let metric_data = self
+            .collect_metric_data_parallel(agent, metric_resources, timestamp)
+            .await?;
         tracing::debug!(
             agent_id = %agent.id,
             metric_data_count = metric_data.len(),
@@ -2805,7 +3112,9 @@ Respond in JSON format:
         );
 
         // Collect device data in parallel
-        let device_data = self.collect_device_data_parallel(agent, device_resources, timestamp).await?;
+        let device_data = self
+            .collect_device_data_parallel(agent, device_resources, timestamp)
+            .await?;
         tracing::debug!(
             agent_id = %agent.id,
             device_data_count = device_data.len(),
@@ -2813,7 +3122,9 @@ Respond in JSON format:
         );
 
         // Collect extension metric data in parallel
-        let extension_data = self.collect_extension_metric_data_parallel(agent, extension_metric_resources, timestamp).await?;
+        let extension_data = self
+            .collect_extension_metric_data_parallel(agent, extension_metric_resources, timestamp)
+            .await?;
         tracing::debug!(
             agent_id = %agent.id,
             extension_data_count = extension_data.len(),
@@ -2859,7 +3170,7 @@ Respond in JSON format:
     /// Collect data from multiple metric resources in parallel.
     async fn collect_metric_data_parallel(
         &self,
-        _agent: &AiAgent,  // Reserved for future use
+        _agent: &AiAgent, // Reserved for future use
         resources: Vec<AgentResource>,
         timestamp: i64,
     ) -> AgentResult<Vec<DataCollected>> {
@@ -2869,12 +3180,16 @@ Respond in JSON format:
             return Ok(vec![]);
         }
 
-        let storage = self.time_series_storage.clone().ok_or(NeoMindError::validation(
-            "Time series storage not available".to_string()
-        ))?;
+        let storage = self
+            .time_series_storage
+            .clone()
+            .ok_or(NeoMindError::validation(
+                "Time series storage not available".to_string(),
+            ))?;
 
         // Create parallel futures for each metric resource
-        let collect_futures: Vec<_> = resources.into_iter()
+        let collect_futures: Vec<_> = resources
+            .into_iter()
             .filter_map(|resource| {
                 // Parse device_id and metric from resource_id (format: "device_id:metric_name")
                 let parts: Vec<&str> = resource.resource_id.split(':').collect();
@@ -2884,31 +3199,36 @@ Respond in JSON format:
                 let (device_id, metric_name) = (parts[0], parts[1]);
 
                 // Extract config
-                let time_range_minutes = resource.config
+                let time_range_minutes = resource
+                    .config
                     .get("data_collection")
                     .and_then(|dc| dc.get("time_range_minutes"))
                     .and_then(|v| v.as_u64())
                     .unwrap_or(60);
 
-                let include_history = resource.config
+                let include_history = resource
+                    .config
                     .get("data_collection")
                     .and_then(|dc| dc.get("include_history"))
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
 
-                let max_points = resource.config
+                let max_points = resource
+                    .config
                     .get("data_collection")
                     .and_then(|dc| dc.get("max_points"))
                     .and_then(|v| v.as_u64())
                     .unwrap_or(1000) as usize;
 
-                let include_trend = resource.config
+                let include_trend = resource
+                    .config
                     .get("data_collection")
                     .and_then(|dc| dc.get("include_trend"))
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
 
-                let include_baseline = resource.config
+                let include_baseline = resource
+                    .config
                     .get("data_collection")
                     .and_then(|dc| dc.get("include_baseline"))
                     .and_then(|v| v.as_bool())
@@ -2932,7 +3252,8 @@ Respond in JSON format:
                         include_trend,
                         include_baseline,
                         timestamp,
-                    ).await
+                    )
+                    .await
                 })
             })
             .collect();
@@ -2941,16 +3262,22 @@ Respond in JSON format:
         // Each query gets a maximum of 10 seconds to complete
         const QUERY_TIMEOUT_SECS: u64 = 10;
 
-        let timeout_futures: Vec<_> = collect_futures.into_iter()
+        let timeout_futures: Vec<_> = collect_futures
+            .into_iter()
             .map(|fut| async move {
-                match tokio::time::timeout(
-                    std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
-                    fut
-                ).await {
+                match tokio::time::timeout(std::time::Duration::from_secs(QUERY_TIMEOUT_SECS), fut)
+                    .await
+                {
                     Ok(result) => result,
                     Err(_) => {
-                        tracing::warn!("Data collection query timed out after {}s", QUERY_TIMEOUT_SECS);
-                        Err(NeoMindError::Llm(format!("Query timeout after {}s", QUERY_TIMEOUT_SECS)))
+                        tracing::warn!(
+                            "Data collection query timed out after {}s",
+                            QUERY_TIMEOUT_SECS
+                        );
+                        Err(NeoMindError::Llm(format!(
+                            "Query timeout after {}s",
+                            QUERY_TIMEOUT_SECS
+                        )))
                     }
                 }
             })
@@ -2959,7 +3286,8 @@ Respond in JSON format:
         let results = join_all(timeout_futures).await;
 
         // Filter out errors and collect successful results
-        let collected: Vec<_> = results.into_iter()
+        let collected: Vec<_> = results
+            .into_iter()
             .filter_map(|r| r.ok())
             .flatten()
             .collect();
@@ -2975,8 +3303,8 @@ Respond in JSON format:
         time_range_minutes: u64,
         include_history: bool,
         max_points: usize,
-        _include_trend: bool,  // Reserved for future use
-        _include_baseline: bool,  // Reserved for future use
+        _include_trend: bool,    // Reserved for future use
+        _include_baseline: bool, // Reserved for future use
         timestamp: i64,
     ) -> AgentResult<Option<DataCollected>> {
         let end_time = chrono::Utc::now().timestamp();
@@ -2991,7 +3319,9 @@ Respond in JSON format:
             "[COLLECT] Querying metric"
         );
 
-        let result = storage.query_range(device_id, metric_name, start_time, end_time).await
+        let result = storage
+            .query_range(device_id, metric_name, start_time, end_time)
+            .await
             .map_err(|e| NeoMindError::Storage(format!("Query failed: {}", e)))?;
 
         if result.points.is_empty() {
@@ -3051,19 +3381,23 @@ Respond in JSON format:
 
             let history_values: Vec<_> = result.points[start_idx..]
                 .iter()
-                .map(|p| serde_json::json!({
-                    "value": p.value,
-                    "timestamp": p.timestamp
-                }))
+                .map(|p| {
+                    serde_json::json!({
+                        "value": p.value,
+                        "timestamp": p.timestamp
+                    })
+                })
                 .collect();
 
             // Calculate statistics for numeric values
-            let stats = calculate_stats(&result.points[start_idx..]).map(|nums| serde_json::json!({
+            let stats = calculate_stats(&result.points[start_idx..]).map(|nums| {
+                serde_json::json!({
                     "min": nums.min,
                     "max": nums.max,
                     "avg": nums.avg,
                     "count": nums.count
-                }));
+                })
+            });
 
             values_json["history"] = serde_json::json!(history_values);
             values_json["history_count"] = serde_json::json!(history_values.len());
@@ -3083,7 +3417,7 @@ Respond in JSON format:
     /// Collect data from multiple device resources in parallel.
     async fn collect_device_data_parallel(
         &self,
-        _agent: &AiAgent,  // Reserved for future use
+        _agent: &AiAgent, // Reserved for future use
         device_ids: Vec<String>,
         timestamp: i64,
     ) -> AgentResult<Vec<DataCollected>> {
@@ -3093,11 +3427,19 @@ Respond in JSON format:
             return Ok(vec![]);
         }
 
-        let device_service = self.device_service.as_ref()
-            .ok_or(NeoMindError::validation("Device service not available".to_string()))?;
+        let device_service = self
+            .device_service
+            .as_ref()
+            .ok_or(NeoMindError::validation(
+                "Device service not available".to_string(),
+            ))?;
 
-        let storage = self.time_series_storage.clone()
-            .ok_or(NeoMindError::validation("Time series storage not available".to_string()))?;
+        let storage = self
+            .time_series_storage
+            .clone()
+            .ok_or(NeoMindError::validation(
+                "Time series storage not available".to_string(),
+            ))?;
 
         // Collect device info and metrics in parallel with timeout
         const QUERY_TIMEOUT_SECS: u64 = 10;
@@ -3122,7 +3464,8 @@ Respond in JSON format:
             .collect();
 
         let results = join_all(timeout_futures).await;
-        let collected: Vec<_> = results.into_iter()
+        let collected: Vec<_> = results
+            .into_iter()
             .filter_map(|r| r.ok())
             .flat_map(|v| v.into_iter())
             .collect();
@@ -3162,8 +3505,7 @@ Respond in JSON format:
             let end_time = chrono::Utc::now().timestamp();
             let start_time = end_time - (3600); // Last 1 hour for regular metrics
 
-            let metrics = storage.list_metrics(device_id).await
-                .unwrap_or_default();
+            let metrics = storage.list_metrics(device_id).await.unwrap_or_default();
 
             tracing::debug!(
                 device_id = %device_id,
@@ -3173,10 +3515,16 @@ Respond in JSON format:
 
             // Image metrics to check separately (only collect one image)
             let image_metric_names = vec![
-                "values.image", "image", "snapshot", "values.snapshot",
-                "camera.image", "camera.snapshot",
-                "picture", "values.picture",
-                "frame", "values.frame",
+                "values.image",
+                "image",
+                "snapshot",
+                "values.snapshot",
+                "camera.image",
+                "camera.snapshot",
+                "picture",
+                "values.picture",
+                "frame",
+                "values.frame",
             ];
 
             let mut image_found = false;
@@ -3195,13 +3543,17 @@ Respond in JSON format:
                     (start_time, end_time) // 1 hour for regular metrics
                 };
 
-                if let Ok(result) = storage.query_range(device_id, &metric_name, time_range.0, time_range.1).await
-                    && !result.points.is_empty() {
+                if let Ok(result) = storage
+                    .query_range(device_id, &metric_name, time_range.0, time_range.1)
+                    .await
+                    && !result.points.is_empty()
+                {
                     let latest = &result.points[result.points.len() - 1];
                     let is_image = is_image_metric(&metric_name, &latest.value);
 
                     if is_image {
-                        let (image_url, image_base64, image_mime) = extract_image_data(&latest.value);
+                        let (image_url, image_base64, image_mime) =
+                            extract_image_data(&latest.value);
 
                         let values_json = serde_json::json!({
                             "value": latest.value,
@@ -3266,11 +3618,19 @@ Respond in JSON format:
             return Ok(Vec::new());
         }
 
-        let registry = self.extension_registry.clone()
-            .ok_or(NeoMindError::validation("Extension registry not available".to_string()))?;
+        let registry = self
+            .extension_registry
+            .clone()
+            .ok_or(NeoMindError::validation(
+                "Extension registry not available".to_string(),
+            ))?;
 
-        let storage = self.time_series_storage.clone()
-            .ok_or(NeoMindError::validation("Time series storage not available".to_string()))?;
+        let storage = self
+            .time_series_storage
+            .clone()
+            .ok_or(NeoMindError::validation(
+                "Time series storage not available".to_string(),
+            ))?;
 
         // Collect extension metric data in parallel with timeout
         const QUERY_TIMEOUT_SECS: u64 = 10;
@@ -3473,7 +3833,8 @@ Respond in JSON format:
             .collect();
 
         let results = join_all(timeout_futures).await;
-        let collected: Vec<_> = results.into_iter()
+        let collected: Vec<_> = results
+            .into_iter()
             .filter_map(|r| r.ok())
             .filter_map(|v| v)
             .collect();
@@ -3499,13 +3860,24 @@ Respond in JSON format:
         let mut memory_summary = serde_json::Map::new();
 
         // Add last conclusion only
-        if let Some(conclusion) = agent.memory.state_variables.get("last_conclusion").and_then(|v| v.as_str()) {
+        if let Some(conclusion) = agent
+            .memory
+            .state_variables
+            .get("last_conclusion")
+            .and_then(|v| v.as_str())
+        {
             memory_summary.insert("last_conclusion".to_string(), serde_json::json!(conclusion));
         }
 
         // Add condensed recent analyses (only conclusions)
-        if let Some(analyses) = agent.memory.state_variables.get("recent_analyses").and_then(|v| v.as_array()) {
-            let condensed: Vec<_> = analyses.iter()
+        if let Some(analyses) = agent
+            .memory
+            .state_variables
+            .get("recent_analyses")
+            .and_then(|v| v.as_array())
+        {
+            let condensed: Vec<_> = analyses
+                .iter()
                 .take(2)
                 .filter_map(|a| {
                     a.get("conclusion")
@@ -3515,12 +3887,20 @@ Respond in JSON format:
                 })
                 .collect();
             if !condensed.is_empty() {
-                memory_summary.insert("recent_conclusions".to_string(), serde_json::json!(condensed));
+                memory_summary.insert(
+                    "recent_conclusions".to_string(),
+                    serde_json::json!(condensed),
+                );
             }
         }
 
         // Add execution count
-        if let Some(count) = agent.memory.state_variables.get("total_executions").and_then(|v| v.as_i64()) {
+        if let Some(count) = agent
+            .memory
+            .state_variables
+            .get("total_executions")
+            .and_then(|v| v.as_i64())
+        {
             memory_summary.insert("total_executions".to_string(), serde_json::json!(count));
         }
 
@@ -3544,7 +3924,7 @@ Respond in JSON format:
         event_data: &EventTriggerData,
     ) -> AgentResult<Vec<DataCollected>> {
         let mut data = Vec::new();
-        let _timestamp = chrono::Utc::now().timestamp();  // Reserved for future use
+        let _timestamp = chrono::Utc::now().timestamp(); // Reserved for future use
 
         // First, add the triggering event data directly
         let event_value_json = serde_json::to_value(&event_data.value).unwrap_or_default();
@@ -3627,8 +4007,10 @@ Respond in JSON format:
     /// that the LLM can understand and use to make decisions about which
     /// commands to execute.
     fn build_available_commands_description(agent: &AiAgent) -> String {
-        let mut device_commands: std::collections::HashMap<String, Vec<&AgentResource>> = std::collections::HashMap::new();
-        let mut extension_commands: std::collections::HashMap<String, Vec<&AgentResource>> = std::collections::HashMap::new();
+        let mut device_commands: std::collections::HashMap<String, Vec<&AgentResource>> =
+            std::collections::HashMap::new();
+        let mut extension_commands: std::collections::HashMap<String, Vec<&AgentResource>> =
+            std::collections::HashMap::new();
 
         // Group commands by device or extension
         for resource in &agent.resources {
@@ -3636,7 +4018,11 @@ Respond in JSON format:
                 ResourceType::Command => {
                     // Parse device_id from resource_id (format: "device_id:command_name")
                     let parts: Vec<&str> = resource.resource_id.split(':').collect();
-                    let device_id = if parts.len() >= 1 { parts[0] } else { "unknown" };
+                    let device_id = if parts.len() >= 1 {
+                        parts[0]
+                    } else {
+                        "unknown"
+                    };
 
                     device_commands
                         .entry(device_id.to_string())
@@ -3646,7 +4032,11 @@ Respond in JSON format:
                 ResourceType::ExtensionTool => {
                     // Parse extension_id from resource_id (format: "extension:extension_id:command_name")
                     let parts: Vec<&str> = resource.resource_id.split(':').collect();
-                    let ext_id = if parts.len() >= 2 { parts[1] } else { "unknown" };
+                    let ext_id = if parts.len() >= 2 {
+                        parts[1]
+                    } else {
+                        "unknown"
+                    };
 
                     extension_commands
                         .entry(ext_id.to_string())
@@ -3673,17 +4063,29 @@ Respond in JSON format:
                 for cmd in commands {
                     // Extract command name from resource_id
                     let parts: Vec<&str> = cmd.resource_id.split(':').collect();
-                    let command_name = if parts.len() >= 2 { parts[1] } else { &cmd.resource_id };
+                    let command_name = if parts.len() >= 2 {
+                        parts[1]
+                    } else {
+                        &cmd.resource_id
+                    };
 
                     // Get display name or use command name
-                    let display_name = if !cmd.name.is_empty() { &cmd.name } else { command_name };
+                    let display_name = if !cmd.name.is_empty() {
+                        &cmd.name
+                    } else {
+                        command_name
+                    };
 
                     // Format: "device_id:command_name" - display_name
-                    descriptions.push(format!("- `{}:{}` - {}", device_id, command_name, display_name));
+                    descriptions.push(format!(
+                        "- `{}:{}` - {}",
+                        device_id, command_name, display_name
+                    ));
 
                     // Add parameters info if available
                     if let Some(params) = cmd.config.get("parameters").and_then(|v| v.as_array()) {
-                        let param_names: Vec<_> = params.iter()
+                        let param_names: Vec<_> = params
+                            .iter()
                             .filter_map(|p| p.get("name").and_then(|n| n.as_str()))
                             .collect();
                         if !param_names.is_empty() {
@@ -3706,17 +4108,29 @@ Respond in JSON format:
                 for cmd in commands {
                     // Extract command name from resource_id (format: "extension:ext_id:command_name")
                     let parts: Vec<&str> = cmd.resource_id.split(':').collect();
-                    let command_name = if parts.len() >= 3 { parts[2] } else { &cmd.resource_id };
+                    let command_name = if parts.len() >= 3 {
+                        parts[2]
+                    } else {
+                        &cmd.resource_id
+                    };
 
                     // Get display name or use command name
-                    let display_name = if !cmd.name.is_empty() { &cmd.name } else { command_name };
+                    let display_name = if !cmd.name.is_empty() {
+                        &cmd.name
+                    } else {
+                        command_name
+                    };
 
                     // Format: "extension:ext_id:command_name" - display_name
-                    descriptions.push(format!("- `extension:{}:{}` - {}", ext_id, command_name, display_name));
+                    descriptions.push(format!(
+                        "- `extension:{}:{}` - {}",
+                        ext_id, command_name, display_name
+                    ));
 
                     // Add parameters info if available
                     if let Some(params) = cmd.config.get("parameters").and_then(|v| v.as_array()) {
-                        let param_names: Vec<_> = params.iter()
+                        let param_names: Vec<_> = params
+                            .iter()
                             .filter_map(|p| p.get("name").and_then(|n| n.as_str()))
                             .collect();
                         if !param_names.is_empty() {
@@ -3746,8 +4160,10 @@ Respond in JSON format:
     /// Build available data sources description for LLM.
     /// This tells the agent what data sources are configured, even if no data is currently available.
     fn build_available_data_sources_description(agent: &AiAgent) -> String {
-        let mut device_metrics: std::collections::HashMap<String, Vec<&AgentResource>> = std::collections::HashMap::new();
-        let mut extension_metrics: std::collections::HashMap<String, Vec<&AgentResource>> = std::collections::HashMap::new();
+        let mut device_metrics: std::collections::HashMap<String, Vec<&AgentResource>> =
+            std::collections::HashMap::new();
+        let mut extension_metrics: std::collections::HashMap<String, Vec<&AgentResource>> =
+            std::collections::HashMap::new();
         let mut device_resources: Vec<&AgentResource> = Vec::new();
 
         // Group data sources by type
@@ -3756,7 +4172,11 @@ Respond in JSON format:
                 ResourceType::Metric => {
                     // Parse device_id from resource_id (format: "device_id:metric_name")
                     let parts: Vec<&str> = resource.resource_id.split(':').collect();
-                    let device_id = if parts.len() >= 1 { parts[0] } else { "unknown" };
+                    let device_id = if parts.len() >= 1 {
+                        parts[0]
+                    } else {
+                        "unknown"
+                    };
 
                     device_metrics
                         .entry(device_id.to_string())
@@ -3766,7 +4186,11 @@ Respond in JSON format:
                 ResourceType::ExtensionMetric => {
                     // Parse extension_id from resource_id (format: "extension:extension_id:metric")
                     let parts: Vec<&str> = resource.resource_id.split(':').collect();
-                    let ext_id = if parts.len() >= 2 { parts[1] } else { "unknown" };
+                    let ext_id = if parts.len() >= 2 {
+                        parts[1]
+                    } else {
+                        "unknown"
+                    };
 
                     extension_metrics
                         .entry(ext_id.to_string())
@@ -3780,7 +4204,8 @@ Respond in JSON format:
             }
         }
 
-        if device_metrics.is_empty() && extension_metrics.is_empty() && device_resources.is_empty() {
+        if device_metrics.is_empty() && extension_metrics.is_empty() && device_resources.is_empty()
+        {
             return String::new();
         }
 
@@ -3796,23 +4221,37 @@ Respond in JSON format:
                 for metric in metrics {
                     // Extract metric name from resource_id
                     let parts: Vec<&str> = metric.resource_id.split(':').collect();
-                    let metric_name = if parts.len() >= 2 { parts[1] } else { &metric.resource_id };
+                    let metric_name = if parts.len() >= 2 {
+                        parts[1]
+                    } else {
+                        &metric.resource_id
+                    };
 
                     // Get display name or use metric name
-                    let display_name = if !metric.name.is_empty() { &metric.name } else { metric_name };
+                    let display_name = if !metric.name.is_empty() {
+                        &metric.name
+                    } else {
+                        metric_name
+                    };
 
                     // Get data type and unit from config
-                    let data_type = metric.config
+                    let data_type = metric
+                        .config
                         .get("data_type")
                         .and_then(|v| v.as_str())
                         .unwrap_or("number");
-                    let unit = metric.config
-                        .get("unit")
-                        .and_then(|v| v.as_str());
+                    let unit = metric.config.get("unit").and_then(|v| v.as_str());
 
-                    let unit_str = if let Some(u) = unit { format!(" ({})", u) } else { String::new() };
+                    let unit_str = if let Some(u) = unit {
+                        format!(" ({})", u)
+                    } else {
+                        String::new()
+                    };
 
-                    descriptions.push(format!("- `{}:{}` - {}{} [{}]", device_id, metric_name, display_name, unit_str, data_type));
+                    descriptions.push(format!(
+                        "- `{}:{}` - {}{} [{}]",
+                        device_id, metric_name, display_name, unit_str, data_type
+                    ));
                 }
 
                 descriptions.push(String::new()); // Empty line between devices
@@ -3824,7 +4263,11 @@ Respond in JSON format:
             descriptions.push("## 可用设备\n".to_string());
 
             for resource in device_resources {
-                let display_name = if !resource.name.is_empty() { &resource.name } else { &resource.resource_id };
+                let display_name = if !resource.name.is_empty() {
+                    &resource.name
+                } else {
+                    &resource.resource_id
+                };
                 descriptions.push(format!("- `{}` - {}", resource.resource_id, display_name));
             }
 
@@ -3849,7 +4292,11 @@ Respond in JSON format:
                         metric.resource_id.clone()
                     };
 
-                    let display_name = if !metric.name.is_empty() { &metric.name } else { &metric_path };
+                    let display_name = if !metric.name.is_empty() {
+                        &metric.name
+                    } else {
+                        &metric_path
+                    };
 
                     descriptions.push(format!("- `{}:{}` - {}", ext_id, metric_path, display_name));
                 }
@@ -3871,7 +4318,8 @@ Respond in JSON format:
                    * `query:device_id:metric:yesterday` - 查询昨天\n\
                    * `query:device_id:metric:last_week` - 查询上周\n\
                  - 支持的时间单位: m(分钟), h(小时), d(天), w(周)\n\
-                 - 示例: `query:sensor1:temperature:24h` 查询传感器最近24小时温度".to_string()
+                 - 示例: `query:sensor1:temperature:24h` 查询传感器最近24小时温度"
+                    .to_string(),
             );
         }
 
@@ -3900,7 +4348,10 @@ Respond in JSON format:
                     agent_id = %agent.id,
                     "LLM runtime available, performing LLM-based analysis"
                 );
-                match self.analyze_with_llm(llm, agent, data, parsed_intent, execution_id).await {
+                match self
+                    .analyze_with_llm(llm, agent, data, parsed_intent, execution_id)
+                    .await
+                {
                     Ok(result) => {
                         tracing::info!(
                             agent_id = %agent.id,
@@ -3945,7 +4396,7 @@ Respond in JSON format:
         parsed_intent: Option<&neomind_storage::ParsedIntent>,
         execution_id: &str,
     ) -> AgentResult<(String, Vec<ReasoningStep>, Vec<Decision>, String)> {
-        use neomind_core::llm::backend::{LlmInput, GenerationParams};
+        use neomind_core::llm::backend::{GenerationParams, LlmInput};
 
         let current_time = chrono::Utc::now();
         let time_str = current_time.format("%Y-%m-%d %H:%M:%S UTC").to_string();
@@ -3961,7 +4412,10 @@ Respond in JSON format:
 
         // Check if any data contains images
         let _has_images = data.iter().any(|d| {
-            d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false)
+            d.values
+                .get("_is_image")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
         });
 
         // Collect image parts first to check if we actually have valid image data
@@ -3969,7 +4423,11 @@ Respond in JSON format:
         let mut image_parts = Vec::new();
         if let Some(storage) = self.time_series_storage.clone() {
             for d in data.iter() {
-                let is_image = d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false);
+                let is_image = d
+                    .values
+                    .get("_is_image")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 if !is_image {
                     continue;
                 }
@@ -3984,26 +4442,30 @@ Respond in JSON format:
                     let end_time = chrono::Utc::now().timestamp();
                     let start_time = end_time - 300; // Last 5 minutes
 
-                    if let Ok(result) = storage.query_range(device_id, metric_name, start_time, end_time).await
-                        && !result.points.is_empty() {
+                    if let Ok(result) = storage
+                        .query_range(device_id, metric_name, start_time, end_time)
+                        .await
+                        && !result.points.is_empty()
+                    {
                         let latest = &result.points[result.points.len() - 1];
-                        
+
                         // Extract image data from storage
-                        let (image_url, image_base64, image_mime) = extract_image_data(&latest.value);
-                        
+                        let (image_url, image_base64, image_mime) =
+                            extract_image_data(&latest.value);
+
                         // Use URL if available, otherwise base64
                         if let Some(url) = image_url {
                             image_parts.push((
                                 d.source.clone(),
                                 d.data_type.clone(),
-                                ImageContent::Url(url)
+                                ImageContent::Url(url),
                             ));
                         } else if let Some(base64) = image_base64 {
                             let mime = image_mime.as_deref().unwrap_or("image/jpeg");
                             image_parts.push((
                                 d.source.clone(),
                                 d.data_type.clone(),
-                                ImageContent::Base64(base64, mime.to_string())
+                                ImageContent::Base64(base64, mime.to_string()),
                             ));
                         }
                     }
@@ -4029,10 +4491,15 @@ Respond in JSON format:
         // Build text data summary for non-image data
         // IMPORTANT: Filter out memory-related data to avoid confusing small models
         let max_metrics = 6;
-        let text_data_summary: Vec<_> = data.iter()
+        let text_data_summary: Vec<_> = data
+            .iter()
             .filter(|d| {
                 // Exclude images
-                if d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if d.values
+                    .get("_is_image")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
                     return false;
                 }
                 // Exclude memory-related data types (confuses small models)
@@ -4048,7 +4515,10 @@ Respond in JSON format:
                 let value_str = if let Some(v) = d.values.get("value") {
                     format!("{}", v) // Compact value representation
                 } else if let Some(v) = d.values.get("history") {
-                    format!("[历史数据: {}个点]", v.as_array().map(|a| a.len()).unwrap_or(0))
+                    format!(
+                        "[历史数据: {}个点]",
+                        v.as_array().map(|a| a.len()).unwrap_or(0)
+                    )
                 } else {
                     // Fallback to compact JSON - use character-safe truncation
                     let json_str = serde_json::to_string(&d.values).unwrap_or_default();
@@ -4079,39 +4549,45 @@ Respond in JSON format:
         // Add memory summary if available
         if !agent.memory.state_variables.is_empty() {
             // Get recent analyses from memory
-            if let Some(analyses) = agent.memory.state_variables.get("recent_analyses").and_then(|v| v.as_array())
-                && !analyses.is_empty() {
-                    let summary: Vec<_> = analyses.iter()
-                        .take(1) // Reduced to 1 for small models
-                        .filter_map(|a| {
-                            a.get("analysis").and_then(|an| an.as_str()).map(|txt| {
-                                let conclusion = a.get("conclusion")
-                                    .and_then(|c| c.as_str())
-                                    .unwrap_or("");
-                                if !conclusion.is_empty() {
-                                    format!("- 分析: {} | 结论: {}", txt, conclusion)
-                                } else {
-                                    format!("- 分析: {}", txt)
-                                }
-                            })
+            if let Some(analyses) = agent
+                .memory
+                .state_variables
+                .get("recent_analyses")
+                .and_then(|v| v.as_array())
+                && !analyses.is_empty()
+            {
+                let summary: Vec<_> = analyses
+                    .iter()
+                    .take(1) // Reduced to 1 for small models
+                    .filter_map(|a| {
+                        a.get("analysis").and_then(|an| an.as_str()).map(|txt| {
+                            let conclusion =
+                                a.get("conclusion").and_then(|c| c.as_str()).unwrap_or("");
+                            if !conclusion.is_empty() {
+                                format!("- 分析: {} | 结论: {}", txt, conclusion)
+                            } else {
+                                format!("- 分析: {}", txt)
+                            }
                         })
-                        .collect();
+                    })
+                    .collect();
 
-                    if !summary.is_empty() {
-                        history_parts.push(format!(
-                            "\n## 历史分析 (最近{}次)\n{}",
-                            summary.len(),
-                            summary.join("\n")
-                        ));
-                    }
+                if !summary.is_empty() {
+                    history_parts.push(format!(
+                        "\n## 历史分析 (最近{}次)\n{}",
+                        summary.len(),
+                        summary.join("\n")
+                    ));
                 }
+            }
 
             // === SEMANTIC PATTERNS (Long-term memory) ===
             // Use learned_patterns instead of raw decision_patterns
             // Organized by pattern_type for better context
             if !agent.memory.learned_patterns.is_empty() {
                 // Group patterns by type and show only the best from each category
-                let mut pattern_groups: std::collections::HashMap<&str, Vec<&LearnedPattern>> = std::collections::HashMap::new();
+                let mut pattern_groups: std::collections::HashMap<&str, Vec<&LearnedPattern>> =
+                    std::collections::HashMap::new();
                 for pattern in &agent.memory.learned_patterns {
                     pattern_groups
                         .entry(pattern.pattern_type.as_str())
@@ -4122,12 +4598,22 @@ Respond in JSON format:
                 // Take only high-confidence patterns (>= 0.7) from each category
                 let mut semantic_patterns = Vec::new();
                 for (category, patterns) in pattern_groups.iter() {
-                    if let Some(&best) = patterns.iter()
-                        .filter(|p| p.confidence >= 0.7)
-                        .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap_or(std::cmp::Ordering::Equal))
+                    if let Some(&best) =
+                        patterns
+                            .iter()
+                            .filter(|p| p.confidence >= 0.7)
+                            .max_by(|a, b| {
+                                a.confidence
+                                    .partial_cmp(&b.confidence)
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            })
                     {
-                        semantic_patterns.push(format!("- [{}] {} (置信度: {:.0}%)",
-                            category, best.description, best.confidence * 100.0));
+                        semantic_patterns.push(format!(
+                            "- [{}] {} (置信度: {:.0}%)",
+                            category,
+                            best.description,
+                            best.confidence * 100.0
+                        ));
                     }
                 }
 
@@ -4141,27 +4627,27 @@ Respond in JSON format:
 
             // === BASELINES (Reference values) ===
             if !agent.memory.baselines.is_empty() {
-                let baseline_info: Vec<_> = agent.memory.baselines
+                let baseline_info: Vec<_> = agent
+                    .memory
+                    .baselines
                     .iter()
                     .take(3) // Reduced for small models
                     .map(|(metric, value)| format!("- {}: 基线值 {:.2}", metric, value))
                     .collect();
-                history_parts.push(format!(
-                    "\n## 指标基线\n{}",
-                    baseline_info.join("\n")
-                ));
+                history_parts.push(format!("\n## 指标基线\n{}", baseline_info.join("\n")));
             }
         }
 
         // === CONTEXT MANAGEMENT ===
         // === HISTORY CONTEXT - DISABLED for small models ===
         // The compressed history context is NOT used to avoid confusing qwen3:1.7b
-        let _history_context = "";  // Intentionally unused
+        let _history_context = ""; // Intentionally unused
 
         // === USER MESSAGES (用户发送的消息) ===
         // Build user messages context for adding to user message (not system message)
         let user_messages_for_user_msg = if !agent.user_messages.is_empty() {
-            let user_msgs_text: Vec<String> = agent.user_messages
+            let user_msgs_text: Vec<String> = agent
+                .user_messages
                 .iter()
                 .enumerate()
                 .map(|(i, msg)| {
@@ -4190,8 +4676,16 @@ Respond in JSON format:
 
             // 1. Recent success pattern (learned from what works)
             if !agent.memory.short_term.summaries.is_empty() {
-                let last_3: Vec<_> = agent.memory.short_term.summaries.iter().rev().take(3).collect();
-                let success_rate = last_3.iter().filter(|s| s.success).count() as f32 / last_3.len() as f32;
+                let last_3: Vec<_> = agent
+                    .memory
+                    .short_term
+                    .summaries
+                    .iter()
+                    .rev()
+                    .take(3)
+                    .collect();
+                let success_rate =
+                    last_3.iter().filter(|s| s.success).count() as f32 / last_3.len() as f32;
 
                 if success_rate >= 0.8 {
                     parts.push("Recent: Success pattern established".to_string());
@@ -4202,12 +4696,16 @@ Respond in JSON format:
 
             // 2. Action patterns (what actions typically work)
             if !agent.memory.learned_patterns.is_empty() {
-                let high_confidence: Vec<_> = agent.memory.learned_patterns.iter()
+                let high_confidence: Vec<_> = agent
+                    .memory
+                    .learned_patterns
+                    .iter()
                     .filter(|p| p.confidence >= 0.75)
                     .collect();
 
                 if !high_confidence.is_empty() {
-                    let pattern_summary = high_confidence.iter()
+                    let pattern_summary = high_confidence
+                        .iter()
                         .map(|p| truncate_to(&p.description, 20))
                         .collect::<Vec<_>>()
                         .join(", ");
@@ -4221,10 +4719,11 @@ Respond in JSON format:
                 for (metric, baseline) in agent.memory.baselines.iter().take(2) {
                     for d in data.iter().take(3) {
                         if let Some(val) = d.values.get("value").and_then(|v| v.as_f64())
-                            && (val - baseline).abs() / baseline.abs().max(0.1) > 0.3 {
-                                parts.push(format!("Anomaly: {} changed significantly", metric));
-                                break;
-                            }
+                            && (val - baseline).abs() / baseline.abs().max(0.1) > 0.3
+                        {
+                            parts.push(format!("Anomaly: {} changed significantly", metric));
+                            break;
+                        }
                     }
                 }
             }
@@ -4238,7 +4737,8 @@ Respond in JSON format:
 
         // === SYSTEM PROMPT - Restore original working structure ===
         // This was the proven working format - don't over-engineer it
-        let role_prompt = "You are an IoT automation assistant. Output ONLY valid JSON. No other text.";
+        let role_prompt =
+            "You are an IoT automation assistant. Output ONLY valid JSON. No other text.";
 
         // Get current time context for temporal understanding
         let time_context = get_time_context();
@@ -4279,15 +4779,14 @@ Respond in JSON format:
 
         // Build messages - multimodal if images present
         let messages = if has_valid_images {
-            let mut parts = vec![ContentPart::text(
-                format!("## 当前数据\n{}\n\n重要：只输出JSON格式，不要有任何其他文字。",
-                    if text_data_summary.is_empty() {
-                        "仅有图像数据".to_string()
-                    } else {
-                        text_data_summary.join("\n")
-                    }
-                )
-            )];
+            let mut parts = vec![ContentPart::text(format!(
+                "## 当前数据\n{}\n\n重要：只输出JSON格式，不要有任何其他文字。",
+                if text_data_summary.is_empty() {
+                    "仅有图像数据".to_string()
+                } else {
+                    text_data_summary.join("\n")
+                }
+            ))];
 
             // Add images
             for (source, _data_type, image_content) in &image_parts {
@@ -4351,8 +4850,10 @@ Respond in JSON format:
         const LLM_TIMEOUT_SECS: u64 = 300;
         let llm_result = match tokio::time::timeout(
             std::time::Duration::from_secs(LLM_TIMEOUT_SECS),
-            llm.generate(input)
-        ).await {
+            llm.generate(input),
+        )
+        .await
+        {
             Ok(result) => result,
             Err(_) => {
                 tracing::warn!(
@@ -4360,7 +4861,10 @@ Respond in JSON format:
                     "LLM generation timed out after {}s",
                     LLM_TIMEOUT_SECS
                 );
-                return Err(NeoMindError::Llm(format!("LLM timeout after {}s", LLM_TIMEOUT_SECS)));
+                return Err(NeoMindError::Llm(format!(
+                    "LLM timeout after {}s",
+                    LLM_TIMEOUT_SECS
+                )));
             }
         };
 
@@ -4369,14 +4873,14 @@ Respond in JSON format:
                 let json_str = output.text.trim();
                 // Extract JSON if wrapped in markdown
                 let json_str = if json_str.contains("```json") {
-                    json_str.split("```json").nth(1)
+                    json_str
+                        .split("```json")
+                        .nth(1)
                         .and_then(|s| s.split("```").next())
                         .unwrap_or(json_str)
                         .trim()
                 } else if json_str.contains("```") {
-                    json_str.split("```").nth(1)
-                        .unwrap_or(json_str)
-                        .trim()
+                    json_str.split("```").nth(1).unwrap_or(json_str).trim()
                 } else {
                     json_str
                 };
@@ -4429,7 +4933,8 @@ Respond in JSON format:
 
                 match serde_json::from_str::<LlmResponse>(json_str) {
                     Ok(response) => {
-                        let reasoning_steps: Vec<neomind_storage::ReasoningStep> = response.reasoning_steps
+                        let reasoning_steps: Vec<neomind_storage::ReasoningStep> = response
+                            .reasoning_steps
                             .into_iter()
                             .enumerate()
                             .map(|(_i, step)| neomind_storage::ReasoningStep {
@@ -4442,7 +4947,8 @@ Respond in JSON format:
                             })
                             .collect();
 
-                        let decisions: Vec<neomind_storage::Decision> = response.decisions
+                        let decisions: Vec<neomind_storage::Decision> = response
+                            .decisions
                             .into_iter()
                             .map(|d| neomind_storage::Decision {
                                 decision_type: d.decision_type,
@@ -4457,28 +4963,32 @@ Respond in JSON format:
                         if let Some(ref bus) = self.event_bus {
                             let event_timestamp = chrono::Utc::now().timestamp();
                             for step in &reasoning_steps {
-                                let _ = bus.publish(NeoMindEvent::AgentThinking {
-                                    agent_id: agent.id.clone(),
-                                    execution_id: execution_id.to_string(),
-                                    step_number: step.step_number,
-                                    step_type: step.step_type.clone(),
-                                    description: step.description.clone(),
-                                    details: None,
-                                    timestamp: event_timestamp,
-                                }).await;
+                                let _ = bus
+                                    .publish(NeoMindEvent::AgentThinking {
+                                        agent_id: agent.id.clone(),
+                                        execution_id: execution_id.to_string(),
+                                        step_number: step.step_number,
+                                        step_type: step.step_type.clone(),
+                                        description: step.description.clone(),
+                                        details: None,
+                                        timestamp: event_timestamp,
+                                    })
+                                    .await;
                             }
 
                             // Emit AgentDecision events for each decision
                             for decision in &decisions {
-                                let _ = bus.publish(NeoMindEvent::AgentDecision {
-                                    agent_id: agent.id.clone(),
-                                    execution_id: execution_id.to_string(),
-                                    description: decision.description.clone(),
-                                    rationale: decision.rationale.clone(),
-                                    action: decision.action.clone(),
-                                    confidence: 0.8_f32,
-                                    timestamp: event_timestamp,
-                                }).await;
+                                let _ = bus
+                                    .publish(NeoMindEvent::AgentDecision {
+                                        agent_id: agent.id.clone(),
+                                        execution_id: execution_id.to_string(),
+                                        description: decision.description.clone(),
+                                        rationale: decision.rationale.clone(),
+                                        action: decision.action.clone(),
+                                        confidence: 0.8_f32,
+                                        timestamp: event_timestamp,
+                                    })
+                                    .await;
                             }
                         }
 
@@ -4505,27 +5015,36 @@ Respond in JSON format:
                             );
                             match serde_json::from_str::<LlmResponse>(&extracted_json) {
                                 Ok(response) => {
-                                    let reasoning_steps: Vec<neomind_storage::ReasoningStep> = response.reasoning_steps
-                                        .into_iter()
-                                        .enumerate()
-                                        .map(|(_i, step)| neomind_storage::ReasoningStep {
-                                            step_number: extract_step_number(&step.step, (_i + 1) as u32),
-                                            description: step.description,
-                                            step_type: "llm_analysis".to_string(),
-                                            input: Some(text_data_summary.join("\n")),
-                                            output: response.situation_analysis.clone(),
-                                            confidence: step.confidence,
-                                        })
-                                        .collect();
+                                    let reasoning_steps: Vec<neomind_storage::ReasoningStep> =
+                                        response
+                                            .reasoning_steps
+                                            .into_iter()
+                                            .enumerate()
+                                            .map(|(_i, step)| neomind_storage::ReasoningStep {
+                                                step_number: extract_step_number(
+                                                    &step.step,
+                                                    (_i + 1) as u32,
+                                                ),
+                                                description: step.description,
+                                                step_type: "llm_analysis".to_string(),
+                                                input: Some(text_data_summary.join("\n")),
+                                                output: response.situation_analysis.clone(),
+                                                confidence: step.confidence,
+                                            })
+                                            .collect();
 
-                                    let decisions: Vec<neomind_storage::Decision> = response.decisions
+                                    let decisions: Vec<neomind_storage::Decision> = response
+                                        .decisions
                                         .into_iter()
                                         .map(|decision| neomind_storage::Decision {
                                             decision_type: decision.decision_type,
                                             description: decision.description,
                                             action: decision.action,
                                             rationale: decision.rationale,
-                                            expected_outcome: format!("Confidence: {:.0}%", decision.confidence * 100.0),
+                                            expected_outcome: format!(
+                                                "Confidence: {:.0}%",
+                                                decision.confidence * 100.0
+                                            ),
                                         })
                                         .collect();
 
@@ -4554,27 +5073,36 @@ Respond in JSON format:
                             }
                             match serde_json::from_str::<LlmResponse>(&recovered_json) {
                                 Ok(response) => {
-                                    let reasoning_steps: Vec<neomind_storage::ReasoningStep> = response.reasoning_steps
-                                        .into_iter()
-                                        .enumerate()
-                                        .map(|(_i, step)| neomind_storage::ReasoningStep {
-                                            step_number: extract_step_number(&step.step, (_i + 1) as u32),
-                                            description: step.description,
-                                            step_type: "llm_analysis".to_string(),
-                                            input: Some(text_data_summary.join("\n")),
-                                            output: response.situation_analysis.clone(),
-                                            confidence: step.confidence,
-                                        })
-                                        .collect();
+                                    let reasoning_steps: Vec<neomind_storage::ReasoningStep> =
+                                        response
+                                            .reasoning_steps
+                                            .into_iter()
+                                            .enumerate()
+                                            .map(|(_i, step)| neomind_storage::ReasoningStep {
+                                                step_number: extract_step_number(
+                                                    &step.step,
+                                                    (_i + 1) as u32,
+                                                ),
+                                                description: step.description,
+                                                step_type: "llm_analysis".to_string(),
+                                                input: Some(text_data_summary.join("\n")),
+                                                output: response.situation_analysis.clone(),
+                                                confidence: step.confidence,
+                                            })
+                                            .collect();
 
-                                    let decisions: Vec<neomind_storage::Decision> = response.decisions
+                                    let decisions: Vec<neomind_storage::Decision> = response
+                                        .decisions
                                         .into_iter()
                                         .map(|decision| neomind_storage::Decision {
                                             decision_type: decision.decision_type,
                                             description: decision.description,
                                             action: decision.action,
                                             rationale: decision.rationale,
-                                            expected_outcome: format!("Confidence: {:.0}%", decision.confidence * 100.0),
+                                            expected_outcome: format!(
+                                                "Confidence: {:.0}%",
+                                                decision.confidence * 100.0
+                                            ),
                                         })
                                         .collect();
 
@@ -4583,7 +5111,10 @@ Respond in JSON format:
                                         reasoning_steps,
                                         decisions,
                                         if was_truncated {
-                                            format!("{} (Response was truncated, some content may be incomplete)", response.conclusion)
+                                            format!(
+                                                "{} (Response was truncated, some content may be incomplete)",
+                                                response.conclusion
+                                            )
                                         } else {
                                             response.conclusion
                                         },
@@ -4597,94 +5128,123 @@ Respond in JSON format:
 
                         // Lenient extraction: parse as Value and extract fields (handles different LLM JSON shapes)
                         if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str)
-                            && let Some(obj) = value.as_object() {
-                                let situation_analysis: String = obj
-                                    .get("situation_analysis")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let conclusion: String = obj
-                                    .get("conclusion")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let mut reasoning_steps = Vec::new();
-                                if let Some(arr) = obj.get("reasoning_steps").and_then(|v| v.as_array()) {
-                                    for (i, item) in arr.iter().enumerate() {
-                                        let step_num = (i + 1) as u32;
-                                        let description: String = item
-                                            .get("description")
-                                            .and_then(|v| v.as_str())
-                                            .or_else(|| item.get("output").and_then(|v| v.as_str()))
-                                            .unwrap_or("")
-                                            .to_string();
-                                        if description.is_empty() {
-                                            continue;
-                                        }
-                                        let confidence = item
-                                            .get("confidence")
-                                            .and_then(|v| v.as_f64())
-                                            .unwrap_or(0.8) as f32;
-                                        reasoning_steps.push(neomind_storage::ReasoningStep {
-                                            step_number: step_num,
-                                            description,
-                                            step_type: "llm_analysis".to_string(),
-                                            input: Some(text_data_summary.join("\n")),
-                                            output: situation_analysis.clone(),
-                                            confidence,
-                                        });
+                            && let Some(obj) = value.as_object()
+                        {
+                            let situation_analysis: String = obj
+                                .get("situation_analysis")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let conclusion: String = obj
+                                .get("conclusion")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let mut reasoning_steps = Vec::new();
+                            if let Some(arr) = obj.get("reasoning_steps").and_then(|v| v.as_array())
+                            {
+                                for (i, item) in arr.iter().enumerate() {
+                                    let step_num = (i + 1) as u32;
+                                    let description: String = item
+                                        .get("description")
+                                        .and_then(|v| v.as_str())
+                                        .or_else(|| item.get("output").and_then(|v| v.as_str()))
+                                        .unwrap_or("")
+                                        .to_string();
+                                    if description.is_empty() {
+                                        continue;
                                     }
-                                }
-                                let mut decisions = Vec::new();
-                                if let Some(arr) = obj.get("decisions").and_then(|v| v.as_array()) {
-                                    for item in arr {
-                                        let decision_type = item.get("decision_type").and_then(|v| v.as_str()).unwrap_or("analysis").to_string();
-                                        let description = item.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                        let action = item.get("action").and_then(|v| v.as_str()).unwrap_or("review").to_string();
-                                        let rationale = item.get("rationale").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                        decisions.push(neomind_storage::Decision {
-                                            decision_type,
-                                            description,
-                                            action,
-                                            rationale,
-                                            expected_outcome: conclusion.clone(),
-                                        });
-                                    }
-                                }
-                                if !situation_analysis.is_empty() || !conclusion.is_empty() {
-                                    tracing::info!(
-                                        agent_id = %agent.id,
-                                        "Extracted decision process from JSON via lenient parsing"
-                                    );
-                                    return Ok((
-                                        if situation_analysis.is_empty() { conclusion.chars().take(500).collect::<String>() } else { situation_analysis.clone() },
-                                        if reasoning_steps.is_empty() {
-                                            vec![neomind_storage::ReasoningStep {
-                                                step_number: 1,
-                                                description: "LLM analysis completed".to_string(),
-                                                step_type: "llm_analysis".to_string(),
-                                                input: Some(format!("{} data sources", data.len())),
-                                                output: situation_analysis.clone(),
-                                                confidence: 0.7,
-                                            }]
-                                        } else {
-                                            reasoning_steps
-                                        },
-                                        if decisions.is_empty() {
-                                            vec![neomind_storage::Decision {
-                                                decision_type: "analysis".to_string(),
-                                                description: "See situation analysis for details".to_string(),
-                                                action: "review".to_string(),
-                                                rationale: "LLM provided structured analysis".to_string(),
-                                                expected_outcome: conclusion.clone(),
-                                            }]
-                                        } else {
-                                            decisions
-                                        },
-                                        if conclusion.is_empty() { "分析完成。".to_string() } else { conclusion },
-                                    ));
+                                    let confidence = item
+                                        .get("confidence")
+                                        .and_then(|v| v.as_f64())
+                                        .unwrap_or(0.8)
+                                        as f32;
+                                    reasoning_steps.push(neomind_storage::ReasoningStep {
+                                        step_number: step_num,
+                                        description,
+                                        step_type: "llm_analysis".to_string(),
+                                        input: Some(text_data_summary.join("\n")),
+                                        output: situation_analysis.clone(),
+                                        confidence,
+                                    });
                                 }
                             }
+                            let mut decisions = Vec::new();
+                            if let Some(arr) = obj.get("decisions").and_then(|v| v.as_array()) {
+                                for item in arr {
+                                    let decision_type = item
+                                        .get("decision_type")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("analysis")
+                                        .to_string();
+                                    let description = item
+                                        .get("description")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let action = item
+                                        .get("action")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("review")
+                                        .to_string();
+                                    let rationale = item
+                                        .get("rationale")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    decisions.push(neomind_storage::Decision {
+                                        decision_type,
+                                        description,
+                                        action,
+                                        rationale,
+                                        expected_outcome: conclusion.clone(),
+                                    });
+                                }
+                            }
+                            if !situation_analysis.is_empty() || !conclusion.is_empty() {
+                                tracing::info!(
+                                    agent_id = %agent.id,
+                                    "Extracted decision process from JSON via lenient parsing"
+                                );
+                                return Ok((
+                                    if situation_analysis.is_empty() {
+                                        conclusion.chars().take(500).collect::<String>()
+                                    } else {
+                                        situation_analysis.clone()
+                                    },
+                                    if reasoning_steps.is_empty() {
+                                        vec![neomind_storage::ReasoningStep {
+                                            step_number: 1,
+                                            description: "LLM analysis completed".to_string(),
+                                            step_type: "llm_analysis".to_string(),
+                                            input: Some(format!("{} data sources", data.len())),
+                                            output: situation_analysis.clone(),
+                                            confidence: 0.7,
+                                        }]
+                                    } else {
+                                        reasoning_steps
+                                    },
+                                    if decisions.is_empty() {
+                                        vec![neomind_storage::Decision {
+                                            decision_type: "analysis".to_string(),
+                                            description: "See situation analysis for details"
+                                                .to_string(),
+                                            action: "review".to_string(),
+                                            rationale: "LLM provided structured analysis"
+                                                .to_string(),
+                                            expected_outcome: conclusion.clone(),
+                                        }]
+                                    } else {
+                                        decisions
+                                    },
+                                    if conclusion.is_empty() {
+                                        "分析完成。".to_string()
+                                    } else {
+                                        conclusion
+                                    },
+                                ));
+                            }
+                        }
 
                         // Final fallback: use raw text - show actual content, not placeholder
                         let raw_text = output.text.trim();
@@ -4695,36 +5255,36 @@ Respond in JSON format:
                         };
                         let char_count = raw_text.chars().count();
                         let conclusion = if char_count > 500 {
-                            raw_text.chars().skip(char_count.saturating_sub(500)).collect::<String>()
+                            raw_text
+                                .chars()
+                                .skip(char_count.saturating_sub(500))
+                                .collect::<String>()
                                 + "..."
                         } else {
                             raw_text.to_string()
                         };
 
-                        let reasoning_steps = vec![
-                            neomind_storage::ReasoningStep {
-                                step_number: 1,
-                                description: if situation_analysis.chars().count() > 200 {
-                                    situation_analysis.chars().take(200).collect::<String>() + "..."
-                                } else {
-                                    situation_analysis.clone()
-                                },
-                                step_type: "llm_analysis".to_string(),
-                                input: Some(format!("{} data sources", data.len())),
-                                output: situation_analysis.clone(),
-                                confidence: 0.7,
-                            }
-                        ];
+                        let reasoning_steps = vec![neomind_storage::ReasoningStep {
+                            step_number: 1,
+                            description: if situation_analysis.chars().count() > 200 {
+                                situation_analysis.chars().take(200).collect::<String>() + "..."
+                            } else {
+                                situation_analysis.clone()
+                            },
+                            step_type: "llm_analysis".to_string(),
+                            input: Some(format!("{} data sources", data.len())),
+                            output: situation_analysis.clone(),
+                            confidence: 0.7,
+                        }];
 
-                        let decisions = vec![
-                            neomind_storage::Decision {
-                                decision_type: "analysis".to_string(),
-                                description: "See situation analysis for details".to_string(),
-                                action: "review".to_string(),
-                                rationale: "LLM provided text response instead of structured JSON".to_string(),
-                                expected_outcome: "Manual review of analysis recommended".to_string(),
-                            }
-                        ];
+                        let decisions = vec![neomind_storage::Decision {
+                            decision_type: "analysis".to_string(),
+                            description: "See situation analysis for details".to_string(),
+                            action: "review".to_string(),
+                            rationale: "LLM provided text response instead of structured JSON"
+                                .to_string(),
+                            expected_outcome: "Manual review of analysis recommended".to_string(),
+                        }];
 
                         tracing::info!(
                             agent_id = %agent.id,
@@ -4732,12 +5292,7 @@ Respond in JSON format:
                             "Using raw LLM response as fallback (content preserved)"
                         );
 
-                        Ok((
-                            situation_analysis,
-                            reasoning_steps,
-                            decisions,
-                            conclusion,
-                        ))
+                        Ok((situation_analysis, reasoning_steps, decisions, conclusion))
                     }
                 }
             }
@@ -4838,16 +5393,23 @@ Respond in JSON format:
         // Check if any data meets the condition
         for data_item in data {
             if let Some(value) = data_item.values.get("value")
-                && let Some(num) = value.as_f64() {
-                    if condition_lower.contains("大于") || condition_lower.contains(">") || condition_lower.contains("超过") {
-                        if let Some(threshold) = extract_threshold(&condition_lower) {
-                            return num > threshold;
-                        }
-                    } else if (condition_lower.contains("小于") || condition_lower.contains("<") || condition_lower.contains("低于"))
-                        && let Some(threshold) = extract_threshold(&condition_lower) {
-                            return num < threshold;
-                        }
+                && let Some(num) = value.as_f64()
+            {
+                if condition_lower.contains("大于")
+                    || condition_lower.contains(">")
+                    || condition_lower.contains("超过")
+                {
+                    if let Some(threshold) = extract_threshold(&condition_lower) {
+                        return num > threshold;
+                    }
+                } else if (condition_lower.contains("小于")
+                    || condition_lower.contains("<")
+                    || condition_lower.contains("低于"))
+                    && let Some(threshold) = extract_threshold(&condition_lower)
+                {
+                    return num < threshold;
                 }
+            }
         }
 
         false
@@ -4865,11 +5427,13 @@ Respond in JSON format:
 
         // Find the command resource to get parameters
         let command_resource_id = format!("{}:{}", device_id, command_name);
-        let resource = agent.resources.iter()
-            .find(|r| r.resource_type == ResourceType::Command && r.resource_id == command_resource_id);
+        let resource = agent.resources.iter().find(|r| {
+            r.resource_type == ResourceType::Command && r.resource_id == command_resource_id
+        });
 
         let parameters = if let Some(ref res) = resource {
-            res.config.get("parameters")
+            res.config
+                .get("parameters")
                 .and_then(|v| v.as_object())
                 .cloned()
                 .unwrap_or_default()
@@ -4892,11 +5456,9 @@ Respond in JSON format:
         );
 
         // Execute the command via DeviceService
-        let execution_result = device_service.send_command(
-            device_id,
-            command_name,
-            params_map,
-        ).await;
+        let execution_result = device_service
+            .send_command(device_id, command_name, params_map)
+            .await;
 
         let (success, result) = match execution_result {
             Ok(_) => (true, Some("Command sent successfully".to_string())),
@@ -4914,7 +5476,10 @@ Respond in JSON format:
 
         Some(neomind_storage::ActionExecuted {
             action_type: "device_command".to_string(),
-            description: format!("Execute {} on {} (reason: {})", command_name, device_id, decision.rationale),
+            description: format!(
+                "Execute {} on {} (reason: {})",
+                command_name, device_id, decision.rationale
+            ),
             target: device_id.to_string(),
             parameters: serde_json::to_value(&parameters).unwrap_or_default(),
             success,
@@ -4946,15 +5511,14 @@ Respond in JSON format:
             serde_json::json!({})
         } else {
             // Try to parse as JSON, otherwise wrap as string
-            serde_json::from_str(&command_args).unwrap_or_else(|_| serde_json::json!({ "reason": command_args }))
+            serde_json::from_str(&command_args)
+                .unwrap_or_else(|_| serde_json::json!({ "reason": command_args }))
         };
 
         // Execute the extension command
-        let execution_result = extension_registry.execute_command(
-            extension_id,
-            command_name,
-            &args_value,
-        ).await;
+        let execution_result = extension_registry
+            .execute_command(extension_id, command_name, &args_value)
+            .await;
 
         let (success, result) = match execution_result {
             Ok(resp) => (true, Some(format!("Success: {}", resp))),
@@ -4972,7 +5536,10 @@ Respond in JSON format:
 
         Some(neomind_storage::ActionExecuted {
             action_type: "extension_command".to_string(),
-            description: format!("Execute {} on extension {} (reason: {})", command_name, extension_id, decision.rationale),
+            description: format!(
+                "Execute {} on extension {} (reason: {})",
+                command_name, extension_id, decision.rationale
+            ),
             target: extension_id.to_string(),
             parameters: args_value,
             success,
@@ -4999,29 +5566,44 @@ Respond in JSON format:
                     let ext_id = &rest[..second_colon];
                     let command_name = &rest[second_colon + 1..];
                     if !ext_id.is_empty() && !command_name.is_empty() {
-                        return Some(("extension".to_string(), ext_id.trim().to_string(), command_name.trim().to_string()));
+                        return Some((
+                            "extension".to_string(),
+                            ext_id.trim().to_string(),
+                            command_name.trim().to_string(),
+                        ));
                     }
                 }
             }
 
             // Otherwise treat as "device_id:command_name"
             if !prefix.is_empty() && !rest.is_empty() {
-                return Some(("device".to_string(), prefix.trim().to_string(), rest.trim().to_string()));
+                return Some((
+                    "device".to_string(),
+                    prefix.trim().to_string(),
+                    rest.trim().to_string(),
+                ));
             }
         }
 
         // Try to parse as "device:command" (common format)
         if action.contains("device:") || action.contains("设备:") {
             // Extract device:command pattern using regex-like parsing
-            let parts: Vec<&str> = action.split(|c| c == ':' || c == '：')
+            let parts: Vec<&str> = action
+                .split(|c| c == ':' || c == '：')
                 .map(|s| s.trim())
                 .collect();
             if parts.len() >= 3 {
                 // Format: "device:xxx:command" or similar
-                let cmd_keyword_idx = parts.iter().position(|&p| p == "device" || p == "设备" || p == "command" || p == "指令");
+                let cmd_keyword_idx = parts
+                    .iter()
+                    .position(|&p| p == "device" || p == "设备" || p == "command" || p == "指令");
                 if let Some(idx) = cmd_keyword_idx {
                     if idx + 1 < parts.len() {
-                        return Some(("device".to_string(), parts[idx + 1].to_string(), parts[idx + 2].to_string()));
+                        return Some((
+                            "device".to_string(),
+                            parts[idx + 1].to_string(),
+                            parts[idx + 2].to_string(),
+                        ));
                     }
                 }
             }
@@ -5035,7 +5617,10 @@ Respond in JSON format:
         &self,
         agent: &AiAgent,
         decisions: &[Decision],
-    ) -> AgentResult<(Vec<neomind_storage::ActionExecuted>, Vec<neomind_storage::NotificationSent>)> {
+    ) -> AgentResult<(
+        Vec<neomind_storage::ActionExecuted>,
+        Vec<neomind_storage::NotificationSent>,
+    )> {
         let mut actions_executed = Vec::new();
         let mut notifications_sent = Vec::new();
 
@@ -5075,7 +5660,9 @@ Respond in JSON format:
             // When LLM returns decision_type == "command", parse the action field
             // and execute only that specific command
             if decision.decision_type == "command" {
-                if let Some((cmd_type, target_id, command_name)) = Self::parse_command_from_action(&decision.action) {
+                if let Some((cmd_type, target_id, command_name)) =
+                    Self::parse_command_from_action(&decision.action)
+                {
                     tracing::info!(
                         agent_id = %agent.id,
                         cmd_type = %cmd_type,
@@ -5088,23 +5675,24 @@ Respond in JSON format:
                     match cmd_type.as_str() {
                         "extension" => {
                             // Execute extension command
-                            if let Some(action_executed) = self.execute_extension_command_for_agent(
-                                agent,
-                                &target_id,
-                                &command_name,
-                                decision,
-                            ).await {
+                            if let Some(action_executed) = self
+                                .execute_extension_command_for_agent(
+                                    agent,
+                                    &target_id,
+                                    &command_name,
+                                    decision,
+                                )
+                                .await
+                            {
                                 actions_executed.push(action_executed);
                             }
                         }
                         "device" => {
                             // Execute device command
-                            if let Some(action_executed) = self.execute_single_command(
-                                agent,
-                                &target_id,
-                                &command_name,
-                                decision,
-                            ).await {
+                            if let Some(action_executed) = self
+                                .execute_single_command(agent, &target_id, &command_name, decision)
+                                .await
+                            {
                                 actions_executed.push(action_executed);
                             }
                         }
@@ -5118,7 +5706,8 @@ Respond in JSON format:
                     }
                 } else {
                     // Fallback: try to find matching command in resources
-                    if let Some(cmd_name) = extract_command_from_description(&decision.description) {
+                    if let Some(cmd_name) = extract_command_from_description(&decision.description)
+                    {
                         // Find a matching command in resources (both device and extension)
                         for resource in &agent.resources {
                             let is_device_cmd = resource.resource_type == ResourceType::Command
@@ -5132,12 +5721,12 @@ Respond in JSON format:
                                 match resource.resource_type {
                                     ResourceType::Command => {
                                         if parts.len() == 2 {
-                                            if let Some(action_executed) = self.execute_single_command(
-                                                agent,
-                                                parts[0],
-                                                parts[1],
-                                                decision,
-                                            ).await {
+                                            if let Some(action_executed) = self
+                                                .execute_single_command(
+                                                    agent, parts[0], parts[1], decision,
+                                                )
+                                                .await
+                                            {
                                                 actions_executed.push(action_executed);
                                             }
                                             break;
@@ -5145,12 +5734,12 @@ Respond in JSON format:
                                     }
                                     ResourceType::ExtensionTool => {
                                         if parts.len() >= 3 && parts[0] == "extension" {
-                                            if let Some(action_executed) = self.execute_extension_command_for_agent(
-                                                agent,
-                                                parts[1],
-                                                parts[2],
-                                                decision,
-                                            ).await {
+                                            if let Some(action_executed) = self
+                                                .execute_extension_command_for_agent(
+                                                    agent, parts[1], parts[2], decision,
+                                                )
+                                                .await
+                                            {
                                                 actions_executed.push(action_executed);
                                             }
                                             break;
@@ -5174,11 +5763,11 @@ Respond in JSON format:
             }
 
             // === Handle alert-type decisions ===
-            let is_alert_decision = decision.decision_type.to_lowercase().contains("alert") ||
-                                   decision.action.to_lowercase().contains("alert") ||
-                                   decision.action.to_lowercase().contains("报警") ||
-                                   decision.action.to_lowercase().contains("notify") ||
-                                   decision.action.to_lowercase().contains("通知");
+            let is_alert_decision = decision.decision_type.to_lowercase().contains("alert")
+                || decision.action.to_lowercase().contains("alert")
+                || decision.action.to_lowercase().contains("报警")
+                || decision.action.to_lowercase().contains("notify")
+                || decision.action.to_lowercase().contains("通知");
 
             if is_alert_decision {
                 tracing::info!(
@@ -5187,7 +5776,8 @@ Respond in JSON format:
                     decision_action = %decision.action,
                     "Alert-type decision detected, sending notification"
                 );
-                self.send_alert_for_decision(agent, decision, &mut notifications_sent).await;
+                self.send_alert_for_decision(agent, decision, &mut notifications_sent)
+                    .await;
             }
 
             // === LEGACY: Handle condition_met decisions ===
@@ -5205,22 +5795,23 @@ Respond in JSON format:
                                 let command_name = parts[1];
 
                                 // Get parameters from resource config
-                                let parameters = resource.config.get("parameters")
+                                let parameters = resource
+                                    .config
+                                    .get("parameters")
                                     .and_then(|v| v.as_object())
                                     .cloned()
                                     .unwrap_or_default();
 
                                 // Convert parameters to HashMap for DeviceService
-                                let params_map: std::collections::HashMap<String, serde_json::Value> = parameters
-                                    .into_iter()
-                                    .collect();
+                                let params_map: std::collections::HashMap<
+                                    String,
+                                    serde_json::Value,
+                                > = parameters.into_iter().collect();
 
                                 // Actually execute the command via DeviceService
-                                let execution_result = device_service.send_command(
-                                    device_id,
-                                    command_name,
-                                    params_map,
-                                ).await;
+                                let execution_result = device_service
+                                    .send_command(device_id, command_name, params_map)
+                                    .await;
 
                                 let (success, result) = match execution_result {
                                     Ok(_) => (true, Some("Command sent successfully".to_string())),
@@ -5237,16 +5828,22 @@ Respond in JSON format:
                                 };
 
                                 // Re-create parameters for ActionExecuted record
-                                let parameters_for_record = resource.config.get("parameters")
+                                let parameters_for_record = resource
+                                    .config
+                                    .get("parameters")
                                     .and_then(|v| v.as_object())
                                     .cloned()
                                     .unwrap_or_default();
 
                                 actions_executed.push(neomind_storage::ActionExecuted {
                                     action_type: "device_command".to_string(),
-                                    description: format!("Execute {} on {}", command_name, device_id),
+                                    description: format!(
+                                        "Execute {} on {}",
+                                        command_name, device_id
+                                    ),
                                     target: device_id.to_string(),
-                                    parameters: serde_json::to_value(parameters_for_record).unwrap_or_default(),
+                                    parameters: serde_json::to_value(parameters_for_record)
+                                        .unwrap_or_default(),
                                     success,
                                     result,
                                 });
@@ -5256,11 +5853,17 @@ Respond in JSON format:
                 }
 
                 // Send notifications for alert actions
-                let should_send_alert = agent.parsed_intent.as_ref()
-                    .map(|i| i.actions.iter().any(|a| {
-                        a.contains("alert") || a.contains("notification") ||
-                        a.contains("报警") || a.contains("通知")
-                    }))
+                let should_send_alert = agent
+                    .parsed_intent
+                    .as_ref()
+                    .map(|i| {
+                        i.actions.iter().any(|a| {
+                            a.contains("alert")
+                                || a.contains("notification")
+                                || a.contains("报警")
+                                || a.contains("通知")
+                        })
+                    })
                     .unwrap_or(false);
 
                 // Debug log for notification trigger
@@ -5274,17 +5877,18 @@ Respond in JSON format:
                 );
 
                 if should_send_alert {
-                    self.send_alert_for_decision(agent, decision, &mut notifications_sent).await;
+                    self.send_alert_for_decision(agent, decision, &mut notifications_sent)
+                        .await;
                 }
             }
 
             // NEW: Send alert for alert-type decisions regardless of parsed_intent
             // Check if this decision is an alert decision
-            let is_alert_decision = decision.decision_type.to_lowercase().contains("alert") ||
-                                   decision.action.to_lowercase().contains("alert") ||
-                                   decision.action.to_lowercase().contains("报警") ||
-                                   decision.action.to_lowercase().contains("notify") ||
-                                   decision.action.to_lowercase().contains("通知");
+            let is_alert_decision = decision.decision_type.to_lowercase().contains("alert")
+                || decision.action.to_lowercase().contains("alert")
+                || decision.action.to_lowercase().contains("报警")
+                || decision.action.to_lowercase().contains("notify")
+                || decision.action.to_lowercase().contains("通知");
 
             if is_alert_decision {
                 tracing::info!(
@@ -5293,14 +5897,16 @@ Respond in JSON format:
                     decision_action = %decision.action,
                     "Alert-type decision detected, sending notification"
                 );
-                self.send_alert_for_decision(agent, decision, &mut notifications_sent).await;
+                self.send_alert_for_decision(agent, decision, &mut notifications_sent)
+                    .await;
             }
 
             // Execute specific actions based on decision.action
-            if decision.action.to_lowercase().contains("execute_command") ||
-               decision.action.to_lowercase().contains("command") ||
-               decision.action.to_lowercase().contains("执行指令") ||
-               decision.action.to_lowercase().contains("控制") {
+            if decision.action.to_lowercase().contains("execute_command")
+                || decision.action.to_lowercase().contains("command")
+                || decision.action.to_lowercase().contains("执行指令")
+                || decision.action.to_lowercase().contains("控制")
+            {
                 // Execute commands defined in agent resources
                 if let Some(ref device_service) = self.device_service {
                     // Check if decision.description specifies which commands to execute
@@ -5308,13 +5914,15 @@ Respond in JSON format:
                     let mentioned_command = extract_command_from_description(&decision.description);
                     let mentioned_device = extract_device_from_description(&decision.description);
 
-                    let commands_to_execute: Vec<_> = agent.resources.iter()
+                    let commands_to_execute: Vec<_> = agent
+                        .resources
+                        .iter()
                         .filter(|r| r.resource_type == ResourceType::Command)
                         .filter(|r| {
                             // Filter by mentioned command if specified
                             if let Some(ref cmd_name) = mentioned_command {
-                                r.resource_id.ends_with(&format!(":{}", cmd_name)) ||
-                                r.resource_id.contains(cmd_name)
+                                r.resource_id.ends_with(&format!(":{}", cmd_name))
+                                    || r.resource_id.contains(cmd_name)
                             } else if let Some(ref dev_id) = mentioned_device {
                                 r.resource_id.starts_with(&format!("{}:", dev_id))
                             } else {
@@ -5347,15 +5955,16 @@ Respond in JSON format:
                             let command_name = parts[1];
 
                             // Get parameters from resource config
-                            let parameters = resource.config.get("parameters")
+                            let parameters = resource
+                                .config
+                                .get("parameters")
                                 .and_then(|v| v.as_object())
                                 .cloned()
                                 .unwrap_or_default();
 
                             // Convert parameters to HashMap for DeviceService
-                            let params_map: std::collections::HashMap<String, serde_json::Value> = parameters
-                                .into_iter()
-                                .collect();
+                            let params_map: std::collections::HashMap<String, serde_json::Value> =
+                                parameters.into_iter().collect();
 
                             tracing::info!(
                                 agent_id = %agent.id,
@@ -5365,11 +5974,9 @@ Respond in JSON format:
                             );
 
                             // Actually execute the command via DeviceService
-                            let execution_result = device_service.send_command(
-                                device_id,
-                                command_name,
-                                params_map,
-                            ).await;
+                            let execution_result = device_service
+                                .send_command(device_id, command_name, params_map)
+                                .await;
 
                             let (success, result) = match execution_result {
                                 Ok(_) => (true, Some("Command sent successfully".to_string())),
@@ -5386,16 +5993,22 @@ Respond in JSON format:
                             };
 
                             // Re-create parameters for ActionExecuted record
-                            let parameters_for_record = resource.config.get("parameters")
+                            let parameters_for_record = resource
+                                .config
+                                .get("parameters")
                                 .and_then(|v| v.as_object())
                                 .cloned()
                                 .unwrap_or_default();
 
                             actions_executed.push(neomind_storage::ActionExecuted {
                                 action_type: "device_command".to_string(),
-                                description: format!("Execute {} on {} (triggered by decision: {})", command_name, device_id, decision.action),
+                                description: format!(
+                                    "Execute {} on {} (triggered by decision: {})",
+                                    command_name, device_id, decision.action
+                                ),
                                 target: device_id.to_string(),
-                                parameters: serde_json::to_value(parameters_for_record).unwrap_or_default(),
+                                parameters: serde_json::to_value(parameters_for_record)
+                                    .unwrap_or_default(),
                                 success,
                                 result,
                             });
@@ -5415,19 +6028,24 @@ Respond in JSON format:
         decision: &neomind_storage::Decision,
         notifications_sent: &mut Vec<neomind_storage::NotificationSent>,
     ) {
-        let alert_message = format!("Agent '{}' - {}: {}", agent.name, decision.decision_type, decision.description);
+        let alert_message = format!(
+            "Agent '{}' - {}: {}",
+            agent.name, decision.decision_type, decision.description
+        );
 
         // Send via MessageManager if available
         if let Some(ref message_manager) = self.message_manager {
             use neomind_messages::{Message, MessageSeverity};
 
             // Determine severity based on decision type
-            let severity = if decision.decision_type.to_lowercase().contains("critical") ||
-                             decision.decision_type.to_lowercase().contains("emergency") ||
-                             decision.decision_type.to_lowercase().contains("紧急") {
+            let severity = if decision.decision_type.to_lowercase().contains("critical")
+                || decision.decision_type.to_lowercase().contains("emergency")
+                || decision.decision_type.to_lowercase().contains("紧急")
+            {
                 MessageSeverity::Critical
-            } else if decision.decision_type.to_lowercase().contains("warning") ||
-                       decision.decision_type.to_lowercase().contains("警告") {
+            } else if decision.decision_type.to_lowercase().contains("warning")
+                || decision.decision_type.to_lowercase().contains("警告")
+            {
                 MessageSeverity::Warning
             } else {
                 MessageSeverity::Info
@@ -5486,13 +6104,15 @@ Respond in JSON format:
                 "MessageManager not available, using EventBus fallback"
             );
             if let Some(ref bus) = self.event_bus {
-                let _ = bus.publish(NeoMindEvent::MessageCreated {
-                    message_id: uuid::Uuid::new_v4().to_string(),
-                    title: format!("Agent Alert: {}", agent.name),
-                    severity: "info".to_string(),
-                    message: decision.description.clone(),
-                    timestamp: chrono::Utc::now().timestamp(),
-                }).await;
+                let _ = bus
+                    .publish(NeoMindEvent::MessageCreated {
+                        message_id: uuid::Uuid::new_v4().to_string(),
+                        title: format!("Agent Alert: {}", agent.name),
+                        severity: "info".to_string(),
+                        message: decision.description.clone(),
+                        timestamp: chrono::Utc::now().timestamp(),
+                    })
+                    .await;
 
                 notifications_sent.push(neomind_storage::NotificationSent {
                     channel: "event_bus".to_string(),
@@ -5516,36 +6136,47 @@ Respond in JSON format:
             && matches!(
                 intent.intent_type,
                 neomind_storage::IntentType::ReportGeneration
-            ) {
-                let content = self.generate_report_content(agent, data).await?;
+            )
+        {
+            let content = self.generate_report_content(agent, data).await?;
 
-                return Ok(Some(GeneratedReport {
-                    report_type: "summary".to_string(),
-                    content,
-                    data_summary: data
-                        .iter()
-                        .map(|d| neomind_storage::DataSummary {
-                            source: d.source.clone(),
-                            metric: d.data_type.clone(),
-                            count: 1,
-                            statistics: d.values.clone(),
-                        })
-                        .collect(),
-                    generated_at: chrono::Utc::now().timestamp(),
-                }));
-            }
+            return Ok(Some(GeneratedReport {
+                report_type: "summary".to_string(),
+                content,
+                data_summary: data
+                    .iter()
+                    .map(|d| neomind_storage::DataSummary {
+                        source: d.source.clone(),
+                        metric: d.data_type.clone(),
+                        count: 1,
+                        statistics: d.values.clone(),
+                    })
+                    .collect(),
+                generated_at: chrono::Utc::now().timestamp(),
+            }));
+        }
 
         Ok(None)
     }
 
     /// Generate report content.
-    async fn generate_report_content(&self, agent: &AiAgent, data: &[DataCollected]) -> AgentResult<String> {
+    async fn generate_report_content(
+        &self,
+        agent: &AiAgent,
+        data: &[DataCollected],
+    ) -> AgentResult<String> {
         let mut report = format!("# {} - 报告\n\n", agent.name);
-        report.push_str(&format!("生成时间: {}\n\n", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")));
+        report.push_str(&format!(
+            "生成时间: {}\n\n",
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
+        ));
 
         report.push_str("## 数据摘要\n\n");
         for data_item in data {
-            report.push_str(&format!("- **{}**: {}\n", data_item.source, data_item.values));
+            report.push_str(&format!(
+                "- **{}**: {}\n",
+                data_item.source, data_item.values
+            ));
         }
 
         report.push_str("\n## 分析结果\n\n");
@@ -5619,12 +6250,8 @@ Respond in JSON format:
 
         // 3. Add patterns to Long-Term Memory
         if !decisions.is_empty() {
-            let semantic_patterns = extract_semantic_patterns(
-                decisions,
-                situation_analysis,
-                data,
-                &memory.baselines,
-            );
+            let semantic_patterns =
+                extract_semantic_patterns(decisions, situation_analysis, data, &memory.baselines);
 
             for pattern in semantic_patterns {
                 memory.add_pattern(pattern);
@@ -5632,9 +6259,8 @@ Respond in JSON format:
         }
 
         // === TREND AND BASELINE TRACKING ===
-        let is_numeric_data = |data_type: &str| {
-            !matches!(data_type, "device_info" | "state" | "info")
-        };
+        let is_numeric_data =
+            |data_type: &str| !matches!(data_type, "device_info" | "state" | "info");
 
         for data_item in data {
             if !is_numeric_data(&data_item.data_type) {
@@ -5642,31 +6268,37 @@ Respond in JSON format:
             }
 
             if let Some(value) = data_item.values.get("value")
-                && let Some(num) = value.as_f64() {
-                    // Add to trend data (limit to 1000 points)
-                    memory.trend_data.push(TrendPoint {
-                        timestamp: data_item.timestamp,
-                        metric: data_item.source.clone(),
-                        value: num,
-                        context: Some(serde_json::json!(data_item.data_type)),
-                    });
+                && let Some(num) = value.as_f64()
+            {
+                // Add to trend data (limit to 1000 points)
+                memory.trend_data.push(TrendPoint {
+                    timestamp: data_item.timestamp,
+                    metric: data_item.source.clone(),
+                    value: num,
+                    context: Some(serde_json::json!(data_item.data_type)),
+                });
 
-                    if memory.trend_data.len() > 1000 {
-                        memory.trend_data = memory.trend_data.split_off(memory.trend_data.len() - 1000);
-                    }
-
-                    // Update baseline using exponential moving average
-                    let baseline = memory.baselines.entry(data_item.source.clone()).or_insert(num);
-                    *baseline = *baseline * 0.9 + num * 0.1;
+                if memory.trend_data.len() > 1000 {
+                    memory.trend_data = memory.trend_data.split_off(memory.trend_data.len() - 1000);
                 }
+
+                // Update baseline using exponential moving average
+                let baseline = memory
+                    .baselines
+                    .entry(data_item.source.clone())
+                    .or_insert(num);
+                *baseline = *baseline * 0.9 + num * 0.1;
+            }
         }
 
         // === LEGACY STATE_VARIABLES (for backward compatibility) ===
         // Track execution count
-        let execution_count = memory.state_variables
+        let execution_count = memory
+            .state_variables
             .get("total_executions")
             .and_then(|v| v.as_i64())
-            .unwrap_or(0) + 1;
+            .unwrap_or(0)
+            + 1;
         memory.state_variables.insert(
             "total_executions".to_string(),
             serde_json::json!(execution_count),
@@ -5675,7 +6307,8 @@ Respond in JSON format:
         // Store metrics we've seen
         for data_item in data {
             if is_numeric_data(&data_item.data_type) {
-                let metrics_seen = memory.state_variables
+                let metrics_seen = memory
+                    .state_variables
                     .entry("metrics_seen".to_string())
                     .or_insert(serde_json::json!([]));
                 if let Some(arr) = metrics_seen.as_array_mut() {
@@ -5716,17 +6349,15 @@ Respond in JSON format:
 
         let system_prompt = format!(
             "{}\n\n{}\n\n## 你的任务\n{}\n\n{}",
-            role_prompt,
-            time_context,
-            agent.user_prompt,
-            CONVERSATION_CONTEXT_ZH
+            role_prompt, time_context, agent.user_prompt, CONVERSATION_CONTEXT_ZH
         );
         messages.push(Message::system(system_prompt));
 
         // 2. Add user messages as important context - these are the user's latest instructions
         // User messages take priority over initial configuration and historical patterns
         if !agent.user_messages.is_empty() {
-            let user_msgs_text: Vec<String> = agent.user_messages
+            let user_msgs_text: Vec<String> = agent
+                .user_messages
                 .iter()
                 .enumerate()
                 .map(|(i, msg)| {
@@ -5749,19 +6380,21 @@ Respond in JSON format:
 
         // 3. Add conversation summary if available
         if let Some(ref summary) = agent.conversation_summary {
-            messages.push(Message::system(format!(
-                "## 历史对话摘要\n\n{}",
-                summary
-            )));
+            messages.push(Message::system(format!("## 历史对话摘要\n\n{}", summary)));
         }
 
         // 4. Add recent conversation turns as context with intelligent filtering
         // Use relevance scoring to select the most valuable conversation turns
         let context_window = agent.context_window_size;
-        let current_trigger = if event_data.is_some() { "event" } else { "scheduled" };
+        let current_trigger = if event_data.is_some() {
+            "event"
+        } else {
+            "scheduled"
+        };
 
         // Score all turns by relevance and select top N
-        let mut scored_turns: Vec<_> = agent.conversation_history
+        let mut scored_turns: Vec<_> = agent
+            .conversation_history
             .iter()
             .map(|turn| {
                 let score = score_turn_relevance(turn, current_data, current_trigger);
@@ -5775,10 +6408,7 @@ Respond in JSON format:
         // Sort by relevance score (descending) and take top N
         scored_turns.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        let recent_turns: Vec<_> = scored_turns
-            .into_iter()
-            .take(context_window)
-            .collect();
+        let recent_turns: Vec<_> = scored_turns.into_iter().take(context_window).collect();
 
         if !recent_turns.is_empty() {
             messages.push(Message::system(format!(
@@ -5806,7 +6436,9 @@ Respond in JSON format:
 
                 // Add decisions if any
                 if !turn.output.decisions.is_empty() {
-                    let decisions_summary: Vec<String> = turn.output.decisions
+                    let decisions_summary: Vec<String> = turn
+                        .output
+                        .decisions
                         .iter()
                         .map(|d| format!("- {}", d.description))
                         .collect();
@@ -5821,7 +6453,8 @@ Respond in JSON format:
                 "## 当前执行\n\n请参考上述历史，分析当前情况。特别注意：\n\
                 - 与之前数据相比的变化趋势\n\
                 - 之前报告的问题是否持续\n\
-                - 避免重复相同的分析或决策".to_string()
+                - 避免重复相同的分析或决策"
+                    .to_string(),
             ));
         }
 
@@ -5839,7 +6472,11 @@ Respond in JSON format:
         let current_input = format!(
             "## 当前数据\n\n数据来源:\n{}\n\n触发方式: {}\n\n请分析当前情况并做出决策。",
             data_text,
-            if event_data.is_some() { "事件触发" } else { "定时/手动" }
+            if event_data.is_some() {
+                "事件触发"
+            } else {
+                "定时/手动"
+            }
         );
 
         messages.push(Message::user(current_input));
@@ -5865,7 +6502,8 @@ Respond in JSON format:
         let clean_conclusion = clean_and_truncate_text(&decision_process.conclusion, 150);
 
         // Also truncate reasoning step descriptions
-        let cleaned_steps: Vec<neomind_storage::ReasoningStep> = decision_process.reasoning_steps
+        let cleaned_steps: Vec<neomind_storage::ReasoningStep> = decision_process
+            .reasoning_steps
             .iter()
             .map(|step| neomind_storage::ReasoningStep {
                 description: clean_and_truncate_text(&step.description, 100),
@@ -5874,7 +6512,8 @@ Respond in JSON format:
             .collect();
 
         // Truncate decision descriptions
-        let cleaned_decisions: Vec<neomind_storage::Decision> = decision_process.decisions
+        let cleaned_decisions: Vec<neomind_storage::Decision> = decision_process
+            .decisions
             .iter()
             .map(|dec| neomind_storage::Decision {
                 description: clean_and_truncate_text(&dec.description, 100),
@@ -5907,9 +6546,7 @@ Respond in JSON format:
 /// Calculate statistics from time series data points.
 /// Returns None if no numeric values are found.
 fn calculate_stats(points: &[neomind_storage::DataPoint]) -> Option<Stats> {
-    let nums: Vec<f64> = points.iter()
-        .filter_map(|p| p.value.as_f64())
-        .collect();
+    let nums: Vec<f64> = points.iter().filter_map(|p| p.value.as_f64()).collect();
 
     if nums.is_empty() {
         return None;
@@ -5981,7 +6618,9 @@ fn is_image_metric(metric_name: &str, value: &serde_json::Value) -> bool {
 
 /// Extract image data from a metric value.
 /// Returns (url, base64_data, mime_type) - at most one will be Some.
-fn extract_image_data(value: &serde_json::Value) -> (Option<String>, Option<String>, Option<String>) {
+fn extract_image_data(
+    value: &serde_json::Value,
+) -> (Option<String>, Option<String>, Option<String>) {
     if let Some(s) = value.as_str() {
         if s.starts_with("http://") || s.starts_with("https://") {
             (Some(s.to_string()), None, None)
@@ -6015,11 +6654,23 @@ fn extract_image_data(value: &serde_json::Value) -> (Option<String>, Option<Stri
         }
     } else if let Some(obj) = value.as_object() {
         // Try various field names
-        if let Some(url) = obj.get("image_url").or(obj.get("url")).and_then(|v| v.as_str()) {
+        if let Some(url) = obj
+            .get("image_url")
+            .or(obj.get("url"))
+            .and_then(|v| v.as_str())
+        {
             return (Some(url.to_string()), None, None);
         }
-        if let Some(base64) = obj.get("base64").or(obj.get("data")).or(obj.get("image_data")).and_then(|v| v.as_str()) {
-            let mime = obj.get("mime_type").or(obj.get("type")).and_then(|v| v.as_str())
+        if let Some(base64) = obj
+            .get("base64")
+            .or(obj.get("data"))
+            .or(obj.get("image_data"))
+            .and_then(|v| v.as_str())
+        {
+            let mime = obj
+                .get("mime_type")
+                .or(obj.get("type"))
+                .and_then(|v| v.as_str())
                 .unwrap_or("image/jpeg");
             return (None, Some(base64.to_string()), Some(mime.to_string()));
         }
@@ -6058,24 +6709,26 @@ fn extract_conditions(text: &str) -> Vec<String> {
 
     // Look for patterns like "大于30", "小于50", "超过", "低于"
     if (text.contains("大于") || text.contains("超过"))
-        && let Some(start) = text.find("大于").or_else(|| text.find("超过")) {
-            // Use character-based slicing to handle multi-byte UTF-8 characters
-            let start_char = text[..start].chars().count();
-            let remaining: String = text.chars().skip(start_char).take(12).collect();
-            if !remaining.is_empty() {
-                conditions.push(remaining);
-            }
+        && let Some(start) = text.find("大于").or_else(|| text.find("超过"))
+    {
+        // Use character-based slicing to handle multi-byte UTF-8 characters
+        let start_char = text[..start].chars().count();
+        let remaining: String = text.chars().skip(start_char).take(12).collect();
+        if !remaining.is_empty() {
+            conditions.push(remaining);
         }
+    }
 
     if (text.contains("小于") || text.contains("低于"))
-        && let Some(start) = text.find("小于").or_else(|| text.find("低于")) {
-            // Use character-based slicing to handle multi-byte UTF-8 characters
-            let start_char = text[..start].chars().count();
-            let remaining: String = text.chars().skip(start_char).take(12).collect();
-            if !remaining.is_empty() {
-                conditions.push(remaining);
-            }
+        && let Some(start) = text.find("小于").or_else(|| text.find("低于"))
+    {
+        // Use character-based slicing to handle multi-byte UTF-8 characters
+        let start_char = text[..start].chars().count();
+        let remaining: String = text.chars().skip(start_char).take(12).collect();
+        if !remaining.is_empty() {
+            conditions.push(remaining);
         }
+    }
 
     conditions
 }
@@ -6111,9 +6764,11 @@ fn extract_threshold(text: &str) -> Option<f64> {
 
 /// Build JSON Schema parameters from extension command parameters.
 /// Helper for V2 extension integration.
-fn build_parameters_schema(parameters: &[neomind_core::extension::ParameterDefinition]) -> serde_json::Value {
-    use std::collections::HashMap;
+fn build_parameters_schema(
+    parameters: &[neomind_core::extension::ParameterDefinition],
+) -> serde_json::Value {
     use neomind_core::extension::MetricDataType;
+    use std::collections::HashMap;
 
     let mut properties = HashMap::new();
     let mut required = Vec::new();

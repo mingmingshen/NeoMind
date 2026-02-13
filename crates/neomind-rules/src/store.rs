@@ -140,9 +140,10 @@ impl RuleStore {
         {
             let singleton = RULE_STORE_SINGLETON.lock().unwrap();
             if let Some(store) = singleton.as_ref()
-                && store.path == path_str {
-                    return Ok(store.clone());
-                }
+                && store.path == path_str
+            {
+                return Ok(store.clone());
+            }
         }
 
         // Open database
@@ -160,14 +161,16 @@ impl RuleStore {
 
     /// Create an in-memory store.
     pub fn memory() -> Result<Arc<Self>> {
-        let temp_path = std::env::temp_dir().join(format!("rules_store_{}.redb", uuid::Uuid::new_v4()));
+        let temp_path =
+            std::env::temp_dir().join(format!("rules_store_{}.redb", uuid::Uuid::new_v4()));
         Self::open(temp_path)
     }
 
     fn open_db(path_str: &str) -> Result<(Database, Option<PathBuf>)> {
         let (db, temp_path) = if path_str == ":memory:" {
             // Use temp file for in-memory mode
-            let temp_path = std::env::temp_dir().join(format!("rules_store_{}.redb", uuid::Uuid::new_v4()));
+            let temp_path =
+                std::env::temp_dir().join(format!("rules_store_{}.redb", uuid::Uuid::new_v4()));
             let db = Database::create(&temp_path)?;
             (db, Some(temp_path))
         } else {
@@ -461,8 +464,7 @@ impl RuleStore {
             count: rules.len(),
             rules,
         };
-        serde_json::to_string_pretty(&export)
-            .map_err(|e| StoreError::Serialization(e.to_string()))
+        serde_json::to_string_pretty(&export).map_err(|e| StoreError::Serialization(e.to_string()))
     }
 
     /// Import rules from JSON.

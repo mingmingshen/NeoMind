@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio::time::{interval, Duration};
+use tokio::time::{Duration, interval};
 
 use neomind_core::{MetricValue, NeoMindEvent};
 
@@ -54,7 +54,10 @@ impl DeviceSimulator {
     }
 
     /// Start the simulator
-    pub async fn start(&self, event_bus: Arc<neomind_core::eventbus::EventBus>) -> anyhow::Result<()> {
+    pub async fn start(
+        &self,
+        event_bus: Arc<neomind_core::eventbus::EventBus>,
+    ) -> anyhow::Result<()> {
         let mut running = self.running.write().await;
         if *running {
             return Ok(());
@@ -108,7 +111,10 @@ impl DeviceSimulator {
             tracing::info!("Device simulator stopped");
         });
 
-        tracing::info!("Device simulator started with {} devices", self.devices.read().await.len());
+        tracing::info!(
+            "Device simulator started with {} devices",
+            self.devices.read().await.len()
+        );
         Ok(())
     }
 
@@ -138,11 +144,7 @@ impl DeviceSimulator {
     }
 
     /// Get historical telemetry data for a device
-    pub async fn get_telemetry_history(
-        &self,
-        device_id: &str,
-        hours: u64,
-    ) -> Vec<MetricData> {
+    pub async fn get_telemetry_history(&self, device_id: &str, hours: u64) -> Vec<MetricData> {
         let devices = self.devices.read().await;
         if let Some(device) = devices.iter().find(|d| d.id == device_id) {
             device.generate_historical_data(hours)
@@ -283,9 +285,7 @@ impl SimulatedDevice {
                 base_values.insert("illuminance".to_string(), 500.0);
                 50.0
             }
-            SimulatedDeviceType::Custom(_) => {
-                1.0
-            }
+            SimulatedDeviceType::Custom(_) => 1.0,
         };
 
         Self {

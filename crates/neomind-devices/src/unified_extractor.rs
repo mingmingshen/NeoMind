@@ -167,18 +167,14 @@ impl UnifiedExtractor {
                 for metric_def in &template.metrics {
                     trace!(
                         "Attempting to extract metric '{}' (path: {}) for device '{}'",
-                        metric_def.name,
-                        metric_def.name,
-                        device_id
+                        metric_def.name, metric_def.name, device_id
                     );
                     match self.extract_by_path(raw_data, &metric_def.name, 0) {
                         Ok(Some(value)) => {
                             let metric_value = self.value_to_metric_value(&value);
                             info!(
                                 "Successfully extracted metric '{}' for device '{}': value={:?}",
-                                metric_def.name,
-                                device_id,
-                                metric_value
+                                metric_def.name, device_id, metric_value
                             );
                             metrics.push(ExtractedMetric {
                                 name: metric_def.name.clone(),
@@ -190,8 +186,7 @@ impl UnifiedExtractor {
                             // Path not found in data - not an error, metric might be optional
                             debug!(
                                 "Metric '{}' not found in payload for device '{}', skipping",
-                                metric_def.name,
-                                device_id
+                                metric_def.name, device_id
                             );
                         }
                         Err(e) => {
@@ -283,7 +278,10 @@ impl UnifiedExtractor {
         }
 
         // Count non-empty parts to determine actual path depth
-        let actual_depth = parts.iter().filter(|p| !p.trim().is_empty() && **p != "$").count();
+        let actual_depth = parts
+            .iter()
+            .filter(|p| !p.trim().is_empty() && **p != "$")
+            .count();
         if actual_depth > self.config.max_depth {
             return Err(format!(
                 "Max depth {} exceeded: path has {} levels",
@@ -305,39 +303,40 @@ impl UnifiedExtractor {
 
             // Handle array notation [index]
             if let Some(bracket_start) = part.find('[')
-                && let Some(bracket_end) = part.find(']') {
-                    let key = &part[0..bracket_start];
-                    let index_str = &part[bracket_start + 1..bracket_end];
+                && let Some(bracket_end) = part.find(']')
+            {
+                let key = &part[0..bracket_start];
+                let index_str = &part[bracket_start + 1..bracket_end];
 
-                    // First navigate to the key
-                    if !key.is_empty() {
-                        match current {
-                            Value::Object(map) => {
-                                current = map.get(key).ok_or_else(|| {
-                                    format!("Key '{}' not found at part {}", key, i)
-                                })?;
-                            }
-                            _ => return Ok(None),
-                        }
-                    }
-
-                    // Then access the array index
-                    let index: usize = index_str
-                        .parse()
-                        .map_err(|_| format!("Invalid array index: {}", index_str))?;
-
+                // First navigate to the key
+                if !key.is_empty() {
                     match current {
-                        Value::Array(arr) => {
-                            // Return None for out of bounds instead of error
-                            current = match arr.get(index) {
-                                Some(v) => v,
-                                None => return Ok(None),
-                            };
+                        Value::Object(map) => {
+                            current = map
+                                .get(key)
+                                .ok_or_else(|| format!("Key '{}' not found at part {}", key, i))?;
                         }
                         _ => return Ok(None),
                     }
-                    continue;
                 }
+
+                // Then access the array index
+                let index: usize = index_str
+                    .parse()
+                    .map_err(|_| format!("Invalid array index: {}", index_str))?;
+
+                match current {
+                    Value::Array(arr) => {
+                        // Return None for out of bounds instead of error
+                        current = match arr.get(index) {
+                            Some(v) => v,
+                            None => return Ok(None),
+                        };
+                    }
+                    _ => return Ok(None),
+                }
+                continue;
+            }
 
             // Regular object key access
             match current {
@@ -388,8 +387,7 @@ impl UnifiedExtractor {
         if depth > self.config.max_depth {
             trace!(
                 "Max depth {} reached for device '{}' in auto-extract",
-                self.config.max_depth,
-                device_id
+                self.config.max_depth, device_id
             );
             return;
         }
@@ -411,48 +409,65 @@ impl UnifiedExtractor {
                 if let Value::Object(nested_obj) = value {
                     // First check: if this object only contains other objects (no primitives/arrays),
                     // skip it and recurse directly - don't create a metric for this intermediate layer
-                    let has_only_objects = nested_obj.iter().all(|(_, v)| {
-                        matches!(v, Value::Object(_))
-                    });
+                    let has_only_objects = nested_obj
+                        .iter()
+                        .all(|(_, v)| matches!(v, Value::Object(_)));
 
                     if has_only_objects && !nested_obj.is_empty() {
                         // This is a pure intermediate object layer - skip and dive deeper
                         trace!(
                             "Skipping intermediate object layer '{}' for device '{}' (auto-extract) - recursing into children",
-                            current_path,
-                            device_id
+                            current_path, device_id
                         );
-                        self.auto_extract_recursive(value, device_id, metrics, &current_path, depth + 1);
+                        self.auto_extract_recursive(
+                            value,
+                            device_id,
+                            metrics,
+                            &current_path,
+                            depth + 1,
+                        );
                     } else if !nested_obj.is_empty() {
                         // Check if the nested object only contains primitive values (numbers, strings, booleans, null)
                         let has_only_primitives = nested_obj.iter().all(|(_, v)| {
-                            matches!(v, Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_))
+                            matches!(
+                                v,
+                                Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)
+                            )
                         });
 
                         if has_only_primitives {
                             // This looks like a metrics object - expand it without storing the parent
                             trace!(
                                 "Expanding nested object '{}' for device '{}' (auto-extract) - only has primitives",
-                                current_path,
-                                device_id
+                                current_path, device_id
                             );
-                            self.auto_extract_recursive(value, device_id, metrics, &current_path, depth + 1);
+                            self.auto_extract_recursive(
+                                value,
+                                device_id,
+                                metrics,
+                                &current_path,
+                                depth + 1,
+                            );
                         } else {
                             // Mixed object (contains both objects and primitives) - expand to get primitives,
                             // but don't store this intermediate layer either
                             trace!(
                                 "Expanding mixed object '{}' for device '{}' (auto-extract) - has both objects and primitives",
-                                current_path,
-                                device_id
+                                current_path, device_id
                             );
-                            self.auto_extract_recursive(value, device_id, metrics, &current_path, depth + 1);
+                            self.auto_extract_recursive(
+                                value,
+                                device_id,
+                                metrics,
+                                &current_path,
+                                depth + 1,
+                            );
                         }
                     } else {
                         // Empty object - skip
                         trace!(
                             "Skipping empty object '{}' for device '{}' (auto-extract)",
-                            current_path,
-                            device_id
+                            current_path, device_id
                         );
                     }
                 } else if let Value::Array(arr) = value {
@@ -568,11 +583,15 @@ mod tests {
         });
 
         assert_eq!(
-            extractor.extract_by_path(&data, "values.battery", 0).unwrap(),
+            extractor
+                .extract_by_path(&data, "values.battery", 0)
+                .unwrap(),
             Some(json!(85))
         );
         assert_eq!(
-            extractor.extract_by_path(&data, "values.devMac", 0).unwrap(),
+            extractor
+                .extract_by_path(&data, "values.devMac", 0)
+                .unwrap(),
             Some(json!("AA:BB:CC:DD"))
         );
         assert_eq!(
@@ -596,7 +615,9 @@ mod tests {
             Some(json!({"name": "temp1", "value": 23.5}))
         );
         assert_eq!(
-            extractor.extract_by_path(&data, "sensors[1].value", 0).unwrap(),
+            extractor
+                .extract_by_path(&data, "sensors[1].value", 0)
+                .unwrap(),
             Some(json!(24.1))
         );
     }
@@ -613,7 +634,9 @@ mod tests {
         });
 
         assert_eq!(
-            extractor.extract_by_path(&data, "data.values.battery", 0).unwrap(),
+            extractor
+                .extract_by_path(&data, "data.values.battery", 0)
+                .unwrap(),
             Some(json!(85))
         );
     }
@@ -661,9 +684,7 @@ mod tests {
             }
         });
 
-        assert!(extractor
-            .extract_by_path(&data, "a.b.c", 0)
-            .is_err());
+        assert!(extractor.extract_by_path(&data, "a.b.c", 0).is_err());
     }
 
     #[tokio::test]

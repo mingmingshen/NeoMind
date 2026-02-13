@@ -35,7 +35,9 @@ fn test_metric_data_type_serialize() {
     let json = serde_json::to_string(&dt).unwrap();
     assert_eq!(json, "\"binary\"");
 
-    let dt = MetricDataType::Enum { options: vec!["opt1".to_string(), "opt2".to_string()] };
+    let dt = MetricDataType::Enum {
+        options: vec!["opt1".to_string(), "opt2".to_string()],
+    };
     let json = serde_json::to_string(&dt).unwrap();
     assert_eq!(json, "{\"enum\":[\"opt1\",\"opt2\"]}");
 }
@@ -137,19 +139,17 @@ fn test_extension_command() {
         name: "detect_objects".to_string(),
         display_name: "Detect Objects".to_string(),
         payload_template: "{ \"image_path\": {{image_path}} }".to_string(),
-        parameters: vec![
-            ParameterDefinition {
-                name: "image_path".to_string(),
-                display_name: "Image Path".to_string(),
-                description: "Path to image file".to_string(),
-                param_type: MetricDataType::String,
-                required: true,
-                default_value: None,
-                min: None,
-                max: None,
-                options: vec![],
-            }
-        ],
+        parameters: vec![ParameterDefinition {
+            name: "image_path".to_string(),
+            display_name: "Image Path".to_string(),
+            description: "Path to image file".to_string(),
+            param_type: MetricDataType::String,
+            required: true,
+            default_value: None,
+            min: None,
+            max: None,
+            options: vec![],
+        }],
         fixed_values,
         samples: vec![],
         llm_hints: "Detect objects in an image using YOLO".to_string(),
@@ -198,17 +198,16 @@ fn test_extension_metadata_builder() {
     assert_eq!(meta.name, "Live Weather Provider");
     assert_eq!(meta.version.major, 1);
     // V2: extension_type removed
-    assert_eq!(meta.description, Some("Provides real-time weather data".to_string()));
+    assert_eq!(
+        meta.description,
+        Some("Provides real-time weather data".to_string())
+    );
     assert_eq!(meta.author, Some("NeoMind Team".to_string()));
 }
 
 #[test]
 fn test_extension_metadata_serialization() {
-    let meta = ExtensionMetadata::new(
-        "test.ext",
-        "Test Extension",
-        semver::Version::new(0, 1, 0),
-    );
+    let meta = ExtensionMetadata::new("test.ext", "Test Extension", semver::Version::new(0, 1, 0));
 
     let json = serde_json::to_string(&meta).unwrap();
     let parsed: ExtensionMetadata = serde_json::from_str(&json).unwrap();

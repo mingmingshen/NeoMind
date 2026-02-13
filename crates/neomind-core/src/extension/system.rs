@@ -47,7 +47,9 @@ pub enum MetricDataType {
     #[default]
     String,
     Binary,
-    Enum { options: Vec<String> },
+    Enum {
+        options: Vec<String>,
+    },
 }
 
 /// Parameter metric value (for command parameters and metric values).
@@ -270,7 +272,11 @@ pub trait Extension: Send + Sync {
     ///
     /// Returns the result but does NOT auto-store metrics.
     /// Metric storage is handled separately via `produce_metrics()`.
-    async fn execute_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value>;
+    async fn execute_command(
+        &self,
+        command: &str,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value>;
 
     /// Produce metric data (SYNCHRONOUS version for dylib compatibility)
     ///
@@ -345,11 +351,7 @@ pub struct ExtensionMetadata {
 }
 
 impl ExtensionMetadata {
-    pub fn new(
-        id: impl Into<String>,
-        name: impl Into<String>,
-        version: semver::Version,
-    ) -> Self {
+    pub fn new(id: impl Into<String>, name: impl Into<String>, version: semver::Version) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
@@ -560,13 +562,10 @@ mod tests {
 
     #[test]
     fn test_extension_metadata() {
-        let meta = ExtensionMetadata::new(
-            "test-ext",
-            "Test Extension",
-            semver::Version::new(1, 0, 0),
-        )
-        .with_description("A test extension")
-        .with_author("Test Author");
+        let meta =
+            ExtensionMetadata::new("test-ext", "Test Extension", semver::Version::new(1, 0, 0))
+                .with_description("A test extension")
+                .with_author("Test Author");
 
         assert_eq!(meta.id, "test-ext");
         assert_eq!(meta.name, "Test Extension");
@@ -592,10 +591,7 @@ mod tests {
 
     #[test]
     fn test_extension_metric_value() {
-        let val = ExtensionMetricValue::new(
-            "temperature",
-            ParamMetricValue::Float(23.5)
-        );
+        let val = ExtensionMetricValue::new("temperature", ParamMetricValue::Float(23.5));
         assert_eq!(val.name, "temperature");
         assert!(matches!(val.value, ParamMetricValue::Float(23.5)));
     }

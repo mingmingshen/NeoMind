@@ -1,10 +1,10 @@
 //! Sandboxed WASM module management.
 
-use std::time::Instant;
 use std::sync::Arc;
+use std::time::Instant;
 
 use serde_json::json;
-use wasmtime::{Engine, Module, Store, Linker, AsContextMut, Val};
+use wasmtime::{AsContextMut, Engine, Linker, Module, Store, Val};
 use wasmtime_wasi::WasiCtxBuilder;
 
 use super::{SandboxConfig, SandboxError};
@@ -130,23 +130,23 @@ impl SandboxModule {
             let linker = Linker::new(&engine);
 
             // Build WASI context with minimal permissions
-            let wasi_ctx = WasiCtxBuilder::new()
-                .inherit_stdio()
-                .build();
+            let wasi_ctx = WasiCtxBuilder::new().inherit_stdio().build();
 
             // Create store with WASI context and fuel limiting
             let mut store = Store::new(&engine, wasi_ctx);
-            store.set_fuel(max_fuel)
+            store
+                .set_fuel(max_fuel)
                 .map_err(|e| SandboxError::Runtime(format!("Failed to set fuel: {}", e)))?;
 
             // Instantiate the module
             let instance = linker
                 .instantiate_async(&mut store, &module)
                 .await
-                .map_err(|e| SandboxError::Runtime(format!("Failed to instantiate module: {}", e)))?;
+                .map_err(|e| {
+                    SandboxError::Runtime(format!("Failed to instantiate module: {}", e))
+                })?;
 
             // Try to get the function export
-            
 
             match instance.get_func(&mut store, &function_name) {
                 Some(func) => {
@@ -161,7 +161,9 @@ impl SandboxModule {
                         let mut results = [];
                         func.call_async(&mut store, &[], &mut results)
                             .await
-                            .map_err(|e| SandboxError::Runtime(format!("Function call failed: {}", e)))?;
+                            .map_err(|e| {
+                                SandboxError::Runtime(format!("Function call failed: {}", e))
+                            })?;
                         Ok(json!({
                             "success": true,
                             "message": format!("Function {} executed successfully", function_name),
@@ -184,7 +186,9 @@ impl SandboxModule {
                         }
                         func.call_async(&mut store, &[], &mut results)
                             .await
-                            .map_err(|e| SandboxError::Runtime(format!("Function call failed: {}", e)))?;
+                            .map_err(|e| {
+                                SandboxError::Runtime(format!("Function call failed: {}", e))
+                            })?;
                         Ok(json!({
                             "success": true,
                             "message": format!("Function {} executed", function_name),
@@ -237,10 +241,7 @@ impl SandboxModule {
 
         let elapsed = start.elapsed();
 
-        tracing::info!(
-            "Execution completed: elapsed_ms={}",
-            elapsed.as_millis()
-        );
+        tracing::info!("Execution completed: elapsed_ms={}", elapsed.as_millis());
 
         Ok(result)
     }

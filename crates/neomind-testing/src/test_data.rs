@@ -5,8 +5,8 @@
 
 use chrono::{Datelike, Timelike, Utc};
 use rand::Rng;
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -40,13 +40,16 @@ impl TestDataGenerator {
         let mut rng = StdRng::seed_from_u64(self.seed);
 
         for i in 0..points {
-            let timestamp = now - chrono::Duration::seconds((points - i) as i64 * interval_seconds as i64);
+            let timestamp =
+                now - chrono::Duration::seconds((points - i) as i64 * interval_seconds as i64);
             let value = match &pattern {
                 DataPattern::Constant { base } => *base,
                 DataPattern::Linear { start, slope } => start + slope * i as f64,
-                DataPattern::SineWave { amplitude, frequency, offset } => {
-                    offset + amplitude * (i as f64 * frequency).sin()
-                }
+                DataPattern::SineWave {
+                    amplitude,
+                    frequency,
+                    offset,
+                } => offset + amplitude * (i as f64 * frequency).sin(),
                 DataPattern::Random { min, max } => rng.gen_range(*min..=*max),
                 DataPattern::DailyCycle { base, amplitude } => {
                     let hour = (timestamp.hour() as f64 - 14.0) * std::f64::consts::PI / 12.0;
@@ -60,7 +63,11 @@ impl TestDataGenerator {
                 DataPattern::TrendWithNoise { base, trend, noise } => {
                     base + trend * i as f64 + rng.gen_range(-*noise..=*noise)
                 }
-                DataPattern::Anomaly { normal, anomaly_value, anomaly_rate } => {
+                DataPattern::Anomaly {
+                    normal,
+                    anomaly_value,
+                    anomaly_rate,
+                } => {
                     if rng.gen_bool(*anomaly_rate) {
                         *anomaly_value
                     } else {
@@ -91,13 +98,11 @@ impl TestDataGenerator {
         for i in 0..device_count {
             let device_id = format!("device-{}", i + 1);
             let adjusted_pattern = match &pattern {
-                DataPattern::TrendWithNoise { base, trend, noise } => {
-                    DataPattern::TrendWithNoise {
-                        base: base + i as f64 * 2.0,
-                        trend: *trend,
-                        noise: *noise,
-                    }
-                }
+                DataPattern::TrendWithNoise { base, trend, noise } => DataPattern::TrendWithNoise {
+                    base: base + i as f64 * 2.0,
+                    trend: *trend,
+                    noise: *noise,
+                },
                 _ => pattern.clone(),
             };
 
@@ -115,10 +120,7 @@ impl TestDataGenerator {
     }
 
     /// Generate a complete scenario with multiple devices and metrics
-    pub fn generate_scenario_data(
-        &self,
-        scenario: TestScenario,
-    ) -> ScenarioData {
+    pub fn generate_scenario_data(&self, scenario: TestScenario) -> ScenarioData {
         match scenario {
             TestScenario::WarehouseMonitoring => {
                 let mut devices = HashMap::new();
@@ -132,11 +134,14 @@ impl TestDataGenerator {
                             amplitude: 5.0,
                         };
                         let points = self.generate_time_series(pattern, 144, 600); // 5 min intervals, 12 hours
-                        devices.insert(device_id, MetricSeries {
-                            metric_name: "temperature".to_string(),
-                            unit: "°C".to_string(),
-                            data: points,
-                        });
+                        devices.insert(
+                            device_id,
+                            MetricSeries {
+                                metric_name: "temperature".to_string(),
+                                unit: "°C".to_string(),
+                                data: points,
+                            },
+                        );
                     }
 
                     // Humidity sensors
@@ -147,11 +152,14 @@ impl TestDataGenerator {
                             amplitude: -10.0,
                         };
                         let points = self.generate_time_series(pattern, 144, 600);
-                        devices.insert(device_id, MetricSeries {
-                            metric_name: "humidity".to_string(),
-                            unit: "%".to_string(),
-                            data: points,
-                        });
+                        devices.insert(
+                            device_id,
+                            MetricSeries {
+                                metric_name: "humidity".to_string(),
+                                unit: "%".to_string(),
+                                data: points,
+                            },
+                        );
                     }
                 }
 
@@ -175,11 +183,14 @@ impl TestDataGenerator {
                         noise: 15.0,
                     };
                     let points = self.generate_time_series(pattern, 336, 300); // 7 days, 5 min intervals
-                    devices.insert(device_id, MetricSeries {
-                        metric_name: "power".to_string(),
-                        unit: "W".to_string(),
-                        data: points,
-                    });
+                    devices.insert(
+                        device_id,
+                        MetricSeries {
+                            metric_name: "power".to_string(),
+                            unit: "W".to_string(),
+                            data: points,
+                        },
+                    );
                 }
 
                 ScenarioData {
@@ -201,11 +212,14 @@ impl TestDataGenerator {
                     anomaly_rate: 0.05, // 5% anomaly rate
                 };
                 let points = self.generate_time_series(pattern, 288, 300); // 24 hours
-                devices.insert(device_id, MetricSeries {
-                    metric_name: "temperature".to_string(),
-                    unit: "°C".to_string(),
-                    data: points,
-                });
+                devices.insert(
+                    device_id,
+                    MetricSeries {
+                        metric_name: "temperature".to_string(),
+                        unit: "°C".to_string(),
+                        data: points,
+                    },
+                );
 
                 ScenarioData {
                     scenario_name: "Anomaly Detection".to_string(),
@@ -234,7 +248,11 @@ pub enum DataPattern {
     Linear { start: f64, slope: f64 },
 
     /// Sine wave oscillation
-    SineWave { amplitude: f64, frequency: f64, offset: f64 },
+    SineWave {
+        amplitude: f64,
+        frequency: f64,
+        offset: f64,
+    },
 
     /// Random values within range
     Random { min: f64, max: f64 },
@@ -249,7 +267,11 @@ pub enum DataPattern {
     TrendWithNoise { base: f64, trend: f64, noise: f64 },
 
     /// Normal data with occasional anomalies
-    Anomaly { normal: f64, anomaly_value: f64, anomaly_rate: f64 },
+    Anomaly {
+        normal: f64,
+        anomaly_value: f64,
+        anomaly_rate: f64,
+    },
 }
 
 /// A single time series data point
@@ -325,10 +347,12 @@ impl AnomalyBuilder {
     pub fn generate(&self, total_points: usize, interval_seconds: u64) -> Vec<TimeSeriesPoint> {
         let mut result = Vec::new();
         let now = Utc::now();
-        let anomaly_set: std::collections::HashSet<_> = self.anomaly_indices.iter().cloned().collect();
+        let anomaly_set: std::collections::HashSet<_> =
+            self.anomaly_indices.iter().cloned().collect();
 
         for i in 0..total_points {
-            let timestamp = now - chrono::Duration::seconds((total_points - i) as i64 * interval_seconds as i64);
+            let timestamp = now
+                - chrono::Duration::seconds((total_points - i) as i64 * interval_seconds as i64);
             let value = if anomaly_set.contains(&i) {
                 self.anomaly_value
             } else {
@@ -364,7 +388,11 @@ mod tests {
     fn test_generate_sine_wave() {
         let data_gen = TestDataGenerator::with_seed(42);
         let data = data_gen.generate_time_series(
-            DataPattern::SineWave { amplitude: 10.0, frequency: 0.1, offset: 20.0 },
+            DataPattern::SineWave {
+                amplitude: 10.0,
+                frequency: 0.1,
+                offset: 20.0,
+            },
             100,
             60,
         );
@@ -372,7 +400,10 @@ mod tests {
         assert_eq!(data.len(), 100);
         // Check that values oscillate
         let min_val = data.iter().map(|p| p.value).fold(f64::INFINITY, f64::min);
-        let max_val = data.iter().map(|p| p.value).fold(f64::NEG_INFINITY, f64::max);
+        let max_val = data
+            .iter()
+            .map(|p| p.value)
+            .fold(f64::NEG_INFINITY, f64::max);
         assert!(min_val < 15.0); // offset - amplitude
         assert!(max_val > 25.0); // offset + amplitude
     }

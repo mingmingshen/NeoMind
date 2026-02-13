@@ -8,8 +8,11 @@
 //! The system gracefully degrades if LLM is unavailable or returns invalid data.
 
 use crate::discovery::types::*;
-use crate::discovery::{StructureAnalyzer, StatisticsAnalyzer, HexAnalyzer, ValuePattern, ValueStatistics, DataType, ValueRange, InferredType};
-use neomind_core::{LlmRuntime, Message, GenerationParams, llm::backend::LlmInput};
+use crate::discovery::{
+    DataType, HexAnalyzer, InferredType, StatisticsAnalyzer, StructureAnalyzer, ValuePattern,
+    ValueRange, ValueStatistics,
+};
+use neomind_core::{GenerationParams, LlmRuntime, Message, llm::backend::LlmInput};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,10 +37,10 @@ impl Default for InferenceConfig {
     fn default() -> Self {
         Self {
             llm_enabled: true,
-            llm_timeout: Duration::from_secs(30),  // Increased for batch processing
+            llm_timeout: Duration::from_secs(30), // Increased for batch processing
             min_llm_confidence: 0.3,
             use_heuristic_fallback: true,
-            max_batch_size: 20,  // Increased to handle more fields at once
+            max_batch_size: 20, // Increased to handle more fields at once
         }
     }
 }
@@ -78,11 +81,7 @@ pub struct FieldSemantic {
 
 impl FieldSemantic {
     /// Create a new field semantic
-    pub fn new(
-        semantic_type: SemanticType,
-        standard_name: String,
-        display_name: String,
-    ) -> Self {
+    pub fn new(semantic_type: SemanticType, standard_name: String, display_name: String) -> Self {
         Self {
             semantic_type,
             standard_name,
@@ -196,8 +195,10 @@ impl SemanticInference {
         if self.is_llm_available() {
             match tokio::time::timeout(
                 self.config.llm_timeout,
-                self.llm_field_inference(field_name, field_values, context)
-            ).await {
+                self.llm_field_inference(field_name, field_values, context),
+            )
+            .await
+            {
                 Ok(Some(result)) if result.confidence >= self.config.min_llm_confidence => {
                     return result;
                 }
@@ -244,15 +245,18 @@ impl SemanticInference {
 
             match tokio::time::timeout(
                 self.config.llm_timeout * 2,
-                self.llm_batch_inference(&batch, context)
-            ).await {
+                self.llm_batch_inference(&batch, context),
+            )
+            .await
+            {
                 Ok(llm_results) => {
                     for (field_name, values) in fields {
                         if let Some(semantic) = llm_results.get(field_name.as_str())
-                            && semantic.confidence >= self.config.min_llm_confidence {
-                                results.insert((*field_name).clone(), semantic.clone());
-                                continue;
-                            }
+                            && semantic.confidence >= self.config.min_llm_confidence
+                        {
+                            results.insert((*field_name).clone(), semantic.clone());
+                            continue;
+                        }
                         // Use heuristic for remaining fields
                         let semantic = self.heuristic_inference(field_name, values, context);
                         results.insert((*field_name).clone(), semantic);
@@ -282,11 +286,9 @@ impl SemanticInference {
     ) -> DiscoveredMetric {
         let field_name = Self::extract_field_name(&path.path);
 
-        let semantic = self.infer_field_semantic(
-            &field_name,
-            &path.sample_values,
-            context,
-        ).await;
+        let semantic = self
+            .infer_field_semantic(&field_name, &path.sample_values, context)
+            .await;
 
         DiscoveredMetric {
             name: semantic.standard_name.clone(),
@@ -311,7 +313,13 @@ impl SemanticInference {
         device_id: &str,
         samples: &[serde_json::Value],
     ) -> Vec<DiscoveredMetric> {
-        self.analyze_samples_hybrid_with_options(device_id, samples, &InferenceContext::default(), false).await
+        self.analyze_samples_hybrid_with_options(
+            device_id,
+            samples,
+            &InferenceContext::default(),
+            false,
+        )
+        .await
     }
 
     /// Perform hybrid analysis on device samples using all analyzers
@@ -327,7 +335,8 @@ impl SemanticInference {
         samples: &[serde_json::Value],
         context: &InferenceContext,
     ) -> Vec<DiscoveredMetric> {
-        self.analyze_samples_hybrid_with_options(device_id, samples, context, true).await
+        self.analyze_samples_hybrid_with_options(device_id, samples, context, true)
+            .await
     }
 
     /// Internal analysis implementation with LLM toggle
@@ -354,7 +363,8 @@ impl SemanticInference {
         );
 
         // Collect sample values by path for statistics analysis
-        let mut path_values: std::collections::HashMap<String, Vec<serde_json::Value>> = std::collections::HashMap::new();
+        let mut path_values: std::collections::HashMap<String, Vec<serde_json::Value>> =
+            std::collections::HashMap::new();
 
         for sample in samples {
             self.collect_path_values(&mut path_values, sample, "$");
@@ -363,8 +373,10 @@ impl SemanticInference {
         // Identify array element paths that should be grouped
         // For example: sensors[0].name, sensors[0].value, sensors[1].name, sensors[1].value
         // should be grouped into a single "sensors" array metric
-        let mut array_parent_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut array_element_patterns: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        let mut array_parent_paths: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        let mut array_element_patterns: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
 
         for path_info in &structure_result.paths {
             if path_info.is_array_element {
@@ -373,7 +385,10 @@ impl SemanticInference {
                 let parent_path = if let Some(idx) = path_info.path.find('[') {
                     let before_bracket = &path_info.path[..idx];
                     // Remove trailing dot if present (e.g., "sensors.[0]." -> "sensors")
-                    before_bracket.strip_suffix('.').unwrap_or(before_bracket).to_string()
+                    before_bracket
+                        .strip_suffix('.')
+                        .unwrap_or(before_bracket)
+                        .to_string()
                 } else {
                     continue;
                 };
@@ -381,17 +396,25 @@ impl SemanticInference {
                 // Also check if there's more after the array access (nested object in array)
                 // If the path has structure like "sensors[0].xxx", we want to treat "sensors" as the array path
                 array_parent_paths.insert(parent_path.clone());
-                array_element_patterns.entry(parent_path).or_default().push(path_info.path.clone());
+                array_element_patterns
+                    .entry(parent_path)
+                    .or_default()
+                    .push(path_info.path.clone());
             }
         }
 
         // Stage 4: Batch Semantic Inference - Single LLM call for all fields (only if use_llm is true)
         // Build a map of field_name -> values for batch processing
         // Skip array element paths (they will be grouped under parent array path)
-        let mut fields_for_batch: std::collections::HashMap<String, Vec<serde_json::Value>> = std::collections::HashMap::new();
+        let mut fields_for_batch: std::collections::HashMap<String, Vec<serde_json::Value>> =
+            std::collections::HashMap::new();
         for path_info in &structure_result.paths {
             // Skip array element paths - they will be handled as part of the parent array
-            if path_info.is_array_element && array_element_patterns.values().any(|paths| paths.contains(&path_info.path)) {
+            if path_info.is_array_element
+                && array_element_patterns
+                    .values()
+                    .any(|paths| paths.contains(&path_info.path))
+            {
                 continue;
             }
 
@@ -402,12 +425,17 @@ impl SemanticInference {
         }
 
         // Single LLM call for all fields (only if LLM is enabled and use_llm is true)
-        let batch_semantics: std::collections::HashMap<String, FieldSemantic> = if use_llm && self.is_llm_available() && !fields_for_batch.is_empty() {
+        let batch_semantics: std::collections::HashMap<String, FieldSemantic> = if use_llm
+            && self.is_llm_available()
+            && !fields_for_batch.is_empty()
+        {
             let batch: Vec<_> = fields_for_batch.iter().collect();
             match tokio::time::timeout(
-                self.config.llm_timeout * 3,  // Longer timeout for batch
-                self.llm_batch_inference(&batch, context)
-            ).await {
+                self.config.llm_timeout * 3, // Longer timeout for batch
+                self.llm_batch_inference(&batch, context),
+            )
+            .await
+            {
                 Ok(results) => {
                     tracing::info!("LLM batch inference completed for {} fields", results.len());
                     results
@@ -426,7 +454,11 @@ impl SemanticInference {
         // Stage 2 & 3 & 4: Process each path with combined analysis
         for path_info in &structure_result.paths {
             // Skip array element paths - they will be handled as part of the parent array
-            if path_info.is_array_element && array_element_patterns.values().any(|paths| paths.contains(&path_info.path)) {
+            if path_info.is_array_element
+                && array_element_patterns
+                    .values()
+                    .any(|paths| paths.contains(&path_info.path))
+            {
                 continue;
             }
 
@@ -446,13 +478,14 @@ impl SemanticInference {
                 if has_child_primitives {
                     trace!(
                         "Skipping intermediate object path '{}' - has child primitive paths",
-                    path_info.path
-                );
+                        path_info.path
+                    );
                     continue;
                 }
             }
 
-            let values = path_values.get(&path_info.path)
+            let values = path_values
+                .get(&path_info.path)
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]);
 
@@ -476,7 +509,10 @@ impl SemanticInference {
             let stats_result = self.stats_analyzer.analyze_path(&path_info.path, values);
 
             // Hex Analysis
-            let hex_info = self.hex_analyzer.analyze_value(&path_info.path, values.first().unwrap_or(&serde_json::Value::Null));
+            let hex_info = self.hex_analyzer.analyze_value(
+                &path_info.path,
+                values.first().unwrap_or(&serde_json::Value::Null),
+            );
 
             // Semantic Inference - use batch result or fall back to individual inference
             let field_name = Self::extract_field_name(&path_info.path);
@@ -491,7 +527,8 @@ impl SemanticInference {
             } else if use_llm {
                 // No batch result (LLM failed or timeout), use individual inference with fallback
                 // ONLY do this if use_llm is true
-                self.infer_field_semantic(&field_name, values, context).await
+                self.infer_field_semantic(&field_name, values, context)
+                    .await
             } else {
                 // Fast mode: skip LLM entirely, use heuristics directly
                 self.heuristic_inference(&field_name, values, context)
@@ -503,7 +540,11 @@ impl SemanticInference {
                     min: num.min,
                     max: num.max,
                     avg: num.mean,
-                    std_dev: if num.std_dev > 0.0 { Some(num.std_dev) } else { None },
+                    std_dev: if num.std_dev > 0.0 {
+                        Some(num.std_dev)
+                    } else {
+                        None
+                    },
                     count: num.count,
                 })
             } else {
@@ -511,7 +552,8 @@ impl SemanticInference {
             };
 
             // Determine unit: combine statistics detection with semantic suggestion
-            let unit = stats_result.unit
+            let unit = stats_result
+                .unit
                 .clone()
                 .or(semantic.recommended_unit.clone());
 
@@ -567,9 +609,10 @@ impl SemanticInference {
             for sample in samples.iter().take(10) {
                 // Navigate to the array path in the sample
                 if let Some(array_value) = Self::navigate_to_path(sample, &parent_path)
-                    && array_value.is_array() {
-                        array_samples.push(array_value.clone());
-                    }
+                    && array_value.is_array()
+                {
+                    array_samples.push(array_value.clone());
+                }
             }
 
             if !array_samples.is_empty() {
@@ -613,14 +656,20 @@ impl SemanticInference {
             serde_json::Value::Object(map) => {
                 for (key, val) in map {
                     let new_path = format!("{}.{}", current_path, key);
-                    path_values.entry(new_path.clone()).or_default().push(val.clone());
+                    path_values
+                        .entry(new_path.clone())
+                        .or_default()
+                        .push(val.clone());
                     self.collect_path_values(path_values, val, &new_path);
                 }
             }
             serde_json::Value::Array(arr) => {
                 for (idx, val) in arr.iter().enumerate() {
                     let new_path = format!("{}[{}]", current_path, idx);
-                    path_values.entry(new_path.clone()).or_default().push(val.clone());
+                    path_values
+                        .entry(new_path.clone())
+                        .or_default()
+                        .push(val.clone());
                     self.collect_path_values(path_values, val, &new_path);
                 }
             }
@@ -639,13 +688,15 @@ impl SemanticInference {
     ) -> Option<FieldSemantic> {
         let llm = self.llm.as_ref()?;
 
-        let sample_values: String = field_values.iter()
+        let sample_values: String = field_values
+            .iter()
             .take(5)
             .map(|v| v.to_string())
             .collect::<Vec<_>>()
             .join(", ");
 
-        let device_hint = context.device_type_hint
+        let device_hint = context
+            .device_type_hint
             .as_deref()
             .unwrap_or("unknown device");
 
@@ -670,8 +721,10 @@ impl SemanticInference {
 
         let input = LlmInput {
             messages: vec![
-                Message::system("You are an IoT data analyst. Analyze device fields and determine their semantic meaning. \
-                              Respond ONLY with valid JSON, no additional text."),
+                Message::system(
+                    "You are an IoT data analyst. Analyze device fields and determine their semantic meaning. \
+                              Respond ONLY with valid JSON, no additional text.",
+                ),
                 Message::user(prompt),
             ],
             params: GenerationParams {
@@ -686,9 +739,18 @@ impl SemanticInference {
 
         match llm.generate(input).await {
             Ok(output) => {
-                let response = output.text.trim().trim_start_matches("```json").trim_start_matches("```").trim();
+                let response = output
+                    .text
+                    .trim()
+                    .trim_start_matches("```json")
+                    .trim_start_matches("```")
+                    .trim();
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(response) {
-                    return Some(Self::parse_llm_semantic_result(field_name, parsed, InferenceSource::AI));
+                    return Some(Self::parse_llm_semantic_result(
+                        field_name,
+                        parsed,
+                        InferenceSource::AI,
+                    ));
                 }
                 tracing::warn!("Failed to parse LLM response as JSON: {}", response);
                 None
@@ -712,9 +774,11 @@ impl SemanticInference {
         };
         let mut results = HashMap::new();
 
-        let fields_desc = fields.iter()
+        let fields_desc = fields
+            .iter()
             .map(|(name, values)| {
-                let samples = values.iter()
+                let samples = values
+                    .iter()
                     .take(3)
                     .map(|v| v.to_string())
                     .collect::<Vec<_>>()
@@ -724,7 +788,8 @@ impl SemanticInference {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let device_hint = context.device_type_hint
+        let device_hint = context
+            .device_type_hint
             .as_deref()
             .unwrap_or("unknown device");
 
@@ -751,7 +816,9 @@ impl SemanticInference {
 
         let input = LlmInput {
             messages: vec![
-                Message::system("You are an IoT data analyst. Analyze device fields. Respond ONLY with valid JSON."),
+                Message::system(
+                    "You are an IoT data analyst. Analyze device fields. Respond ONLY with valid JSON.",
+                ),
                 Message::user(prompt),
             ],
             params: GenerationParams {
@@ -765,14 +832,24 @@ impl SemanticInference {
         };
 
         if let Ok(output) = llm.generate(input).await {
-            let response = output.text.trim().trim_start_matches("```json").trim_start_matches("```").trim();
+            let response = output
+                .text
+                .trim()
+                .trim_start_matches("```json")
+                .trim_start_matches("```")
+                .trim();
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(response)
-                && let Some(obj) = parsed.as_object() {
-                    for (field_name, semantic_data) in obj {
-                        let semantic = Self::parse_llm_semantic_result(field_name, semantic_data.clone(), InferenceSource::AI);
-                        results.insert(field_name.clone(), semantic);
-                    }
+                && let Some(obj) = parsed.as_object()
+            {
+                for (field_name, semantic_data) in obj {
+                    let semantic = Self::parse_llm_semantic_result(
+                        field_name,
+                        semantic_data.clone(),
+                        InferenceSource::AI,
+                    );
+                    results.insert(field_name.clone(), semantic);
                 }
+            }
         }
 
         results
@@ -788,8 +865,6 @@ impl SemanticInference {
         device_category: &str,
         metrics: &[crate::discovery::DiscoveredMetric],
     ) -> Vec<(String, MetricEnhancement)> {
-        
-
         let llm = match self.llm.as_ref() {
             Some(l) => l,
             None => return vec![],
@@ -800,10 +875,14 @@ impl SemanticInference {
         }
 
         // Build the metrics description for LLM
-        let metrics_desc = metrics.iter()
+        let metrics_desc = metrics
+            .iter()
             .map(|m| {
                 let value_desc = if let Some(ref range) = m.value_range {
-                    format!("min={:.2}, max={:.2}, avg={:.2}", range.min, range.max, range.avg)
+                    format!(
+                        "min={:.2}, max={:.2}, avg={:.2}",
+                        range.min, range.max, range.avg
+                    )
                 } else if let DataType::Boolean = m.data_type {
                     "true/false".to_string()
                 } else {
@@ -851,7 +930,9 @@ impl SemanticInference {
 
         let input = LlmInput {
             messages: vec![
-                Message::system("You are an IoT expert. Generate user-friendly descriptions for device metrics. Respond ONLY with valid JSON."),
+                Message::system(
+                    "You are an IoT expert. Generate user-friendly descriptions for device metrics. Respond ONLY with valid JSON.",
+                ),
                 Message::user(prompt),
             ],
             params: GenerationParams {
@@ -865,37 +946,46 @@ impl SemanticInference {
         };
 
         match tokio::time::timeout(
-            Duration::from_secs(45),  // Longer timeout for enhancement
-            llm.generate(input)
-        ).await {
+            Duration::from_secs(45), // Longer timeout for enhancement
+            llm.generate(input),
+        )
+        .await
+        {
             Ok(Ok(output)) => {
-                let response = output.text.trim().trim_start_matches("```json").trim_start_matches("```").trim();
+                let response = output
+                    .text
+                    .trim()
+                    .trim_start_matches("```json")
+                    .trim_start_matches("```")
+                    .trim();
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(response)
-                    && let Some(obj) = parsed.get("metrics").and_then(|v| v.as_object()) {
-                        tracing::info!("LLM enhancement completed for {} metrics", obj.len());
-                        let mut results = Vec::new();
-                        for (metric_name, enhancement_data) in obj {
-                            results.push((
-                                metric_name.clone(),
-                                MetricEnhancement {
-                                    display_name: enhancement_data.get("display_name")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or(metric_name)
-                                        .to_string(),
-                                    description: enhancement_data.get("description")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("")
-                                        .to_string(),
-                                    unit: enhancement_data.get("unit")
-                                        .and_then(|v| {
-                                            if v.is_null() { None } else { v.as_str() }
-                                        })
-                                        .map(|s| s.to_string()),
-                                }
-                            ));
-                        }
-                        return results;
+                    && let Some(obj) = parsed.get("metrics").and_then(|v| v.as_object())
+                {
+                    tracing::info!("LLM enhancement completed for {} metrics", obj.len());
+                    let mut results = Vec::new();
+                    for (metric_name, enhancement_data) in obj {
+                        results.push((
+                            metric_name.clone(),
+                            MetricEnhancement {
+                                display_name: enhancement_data
+                                    .get("display_name")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or(metric_name)
+                                    .to_string(),
+                                description: enhancement_data
+                                    .get("description")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                unit: enhancement_data
+                                    .get("unit")
+                                    .and_then(|v| if v.is_null() { None } else { v.as_str() })
+                                    .map(|s| s.to_string()),
+                            },
+                        ));
                     }
+                    return results;
+                }
                 tracing::warn!("Failed to parse LLM enhancement response");
                 vec![]
             }
@@ -927,7 +1017,10 @@ impl SemanticInference {
         let stats_result = self.stats_analyzer.analyze_path(field_name, field_values);
 
         // Use hex analyzer for hex-like values
-        let hex_info = self.hex_analyzer.analyze_value(field_name, field_values.first().unwrap_or(&serde_json::Value::Null));
+        let hex_info = self.hex_analyzer.analyze_value(
+            field_name,
+            field_values.first().unwrap_or(&serde_json::Value::Null),
+        );
 
         // Determine confidence based on match quality
         let mut confidence = 0.5;
@@ -940,8 +1033,10 @@ impl SemanticInference {
             // Check if statistics pattern matches semantic type
             let matches_pattern = matches!(
                 (&semantic_type, &stats_result.pattern),
-                (SemanticType::Temperature, ValuePattern::TemperatureCelsius | ValuePattern::TemperatureFahrenheit)
-                    | (SemanticType::Humidity, ValuePattern::Percentage)
+                (
+                    SemanticType::Temperature,
+                    ValuePattern::TemperatureCelsius | ValuePattern::TemperatureFahrenheit
+                ) | (SemanticType::Humidity, ValuePattern::Percentage)
                     | (SemanticType::Battery, ValuePattern::Percentage)
                     | (SemanticType::Switch, ValuePattern::BooleanLike)
             );
@@ -954,17 +1049,19 @@ impl SemanticInference {
 
         // Hex handling
         if hex_info.is_hex
-            && let Some(decoded) = hex_info.decoded_integer {
-                reasoning = format!("Hex value detected, decoded as {}", decoded);
-            }
+            && let Some(decoded) = hex_info.decoded_integer
+        {
+            reasoning = format!("Hex value detected, decoded as {}", decoded);
+        }
 
         // Build result
         let standard_name = Self::standardize_name(field_name);
         // Use field_name directly as display_name (JSON key)
         let display_name = field_name.to_string();
-        let recommended_unit = stats_result.unit.clone().or_else(|| {
-            semantic_type.default_unit().map(|u| u.to_string())
-        });
+        let recommended_unit = stats_result
+            .unit
+            .clone()
+            .or_else(|| semantic_type.default_unit().map(|u| u.to_string()));
 
         FieldSemantic {
             semantic_type,
@@ -979,7 +1076,11 @@ impl SemanticInference {
     }
 
     /// Default fallback (Tier 3)
-    fn default_fallback(&self, field_name: &str, field_values: &[serde_json::Value]) -> FieldSemantic {
+    fn default_fallback(
+        &self,
+        field_name: &str,
+        field_values: &[serde_json::Value],
+    ) -> FieldSemantic {
         let first_value = field_values.first();
         let data_type_hint = match first_value {
             Some(serde_json::Value::Number(n)) if n.is_i64() => "integer",
@@ -998,15 +1099,23 @@ impl SemanticInference {
             display_name,
             recommended_unit: None,
             confidence: 0.2,
-            reasoning: format!("Default fallback - could not infer semantic meaning for '{}'", field_name),
+            reasoning: format!(
+                "Default fallback - could not infer semantic meaning for '{}'",
+                field_name
+            ),
             source_fields: vec![field_name.to_string()],
             source: InferenceSource::Default,
         }
     }
 
     /// Parse LLM semantic inference result
-    fn parse_llm_semantic_result(field_name: &str, value: serde_json::Value, source: InferenceSource) -> FieldSemantic {
-        let semantic_type_str = value.get("semantic_type")
+    fn parse_llm_semantic_result(
+        field_name: &str,
+        value: serde_json::Value,
+        source: InferenceSource,
+    ) -> FieldSemantic {
+        let semantic_type_str = value
+            .get("semantic_type")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
 
@@ -1035,29 +1144,36 @@ impl SemanticInference {
             _ => SemanticType::Unknown,
         };
 
-        let standard_name = value.get("standard_name")
+        let standard_name = value
+            .get("standard_name")
             .and_then(|v| v.as_str())
             .unwrap_or(&Self::standardize_name(field_name))
             .to_string();
 
-        let display_name = value.get("display_name")
+        let display_name = value
+            .get("display_name")
             .and_then(|v| v.as_str())
             .unwrap_or(field_name)
             .to_string();
 
-        let confidence = value.get("confidence")
+        let confidence = value
+            .get("confidence")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.5) as f32;
 
-        let reasoning = value.get("reasoning")
+        let reasoning = value
+            .get("reasoning")
             .and_then(|v| v.as_str())
             .unwrap_or("AI inference")
             .to_string();
 
-        let recommended_unit = value.get("unit")
-            .and_then(|v| {
-                if v.is_null() { None } else { v.as_str().map(|s| s.to_string()) }
-            });
+        let recommended_unit = value.get("unit").and_then(|v| {
+            if v.is_null() {
+                None
+            } else {
+                v.as_str().map(|s| s.to_string())
+            }
+        });
 
         FieldSemantic {
             semantic_type,
@@ -1076,10 +1192,7 @@ impl SemanticInference {
         let parts: Vec<&str> = path.split('.').collect();
         let last = parts.last().unwrap_or(&path);
 
-        last.split('[')
-            .next()
-            .unwrap_or(last)
-            .to_string()
+        last.split('[').next().unwrap_or(last).to_string()
     }
 
     /// Standardize a field name
@@ -1208,7 +1321,9 @@ impl SemanticInference {
             if has_objects {
                 InferredType::Array(Box::new(InferredType::Object))
             } else if has_arrays {
-                InferredType::Array(Box::new(InferredType::Array(Box::new(InferredType::Unknown))))
+                InferredType::Array(Box::new(InferredType::Array(Box::new(
+                    InferredType::Unknown,
+                ))))
             } else if has_numbers {
                 // Could be integer or float, use number for now
                 InferredType::Array(Box::new(InferredType::Float))
@@ -1275,7 +1390,8 @@ mod tests {
             "reasoning": "Field name contains 'temp'"
         });
 
-        let result = SemanticInference::parse_llm_semantic_result("temp_celsius", json, InferenceSource::AI);
+        let result =
+            SemanticInference::parse_llm_semantic_result("temp_celsius", json, InferenceSource::AI);
         assert_eq!(result.semantic_type, SemanticType::Temperature);
         assert_eq!(result.standard_name, "temperature");
         assert_eq!(result.display_name, "温度");

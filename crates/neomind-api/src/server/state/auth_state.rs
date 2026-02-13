@@ -23,10 +23,7 @@ pub struct AuthState {
 
 impl AuthState {
     /// Create a new authentication state.
-    pub fn new(
-        api_key_state: Arc<ApiKeyAuthState>,
-        user_state: Arc<AuthUserState>,
-    ) -> Self {
+    pub fn new(api_key_state: Arc<ApiKeyAuthState>, user_state: Arc<AuthUserState>) -> Self {
         Self {
             api_key_state,
             user_state,

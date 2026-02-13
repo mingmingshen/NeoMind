@@ -1,14 +1,16 @@
 //! AI Agent Conversation History Integration Test
 
-use std::sync::Arc;
-use neomind_core::{EventBus, message::{Message, MessageRole, Content}, MetricValue, NeoMindEvent};
-use neomind_storage::{
-    AgentStore, AgentSchedule, AgentResource, AgentStats, AgentStatus, AiAgent, AgentMemory,
-    WorkingMemory, ShortTermMemory, LongTermMemory,
-    DataCollected, DecisionProcess, Decision, ReasoningStep,
-    ConversationTurn, TurnInput, TurnOutput, ScheduleType,
-};
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
+use neomind_core::{
+    EventBus, MetricValue, NeoMindEvent,
+    message::{Content, Message, MessageRole},
+};
+use neomind_storage::{
+    AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
+    ConversationTurn, DataCollected, Decision, DecisionProcess, LongTermMemory, ReasoningStep,
+    ScheduleType, ShortTermMemory, TurnInput, TurnOutput, WorkingMemory,
+};
+use std::sync::Arc;
 
 /// Test context
 struct TestContext {
@@ -43,11 +45,7 @@ impl TestContext {
         })
     }
 
-    async fn create_test_agent(
-        &self,
-        name: &str,
-        user_prompt: &str,
-    ) -> anyhow::Result<AiAgent> {
+    async fn create_test_agent(&self, name: &str, user_prompt: &str) -> anyhow::Result<AiAgent> {
         let now = chrono::Utc::now().timestamp();
 
         let agent = AiAgent {
@@ -101,12 +99,17 @@ impl TestContext {
     }
 
     async fn load_agent(&self, agent_id: &str) -> anyhow::Result<AiAgent> {
-        Ok(self.store.get_agent(agent_id).await?
+        Ok(self
+            .store
+            .get_agent(agent_id)
+            .await?
             .ok_or_else(|| anyhow::anyhow!("Agent not found"))?)
     }
 
     async fn get_conversation_history(&self, agent_id: &str) -> Vec<ConversationTurn> {
-        self.store.get_conversation_history(agent_id, None).await
+        self.store
+            .get_conversation_history(agent_id, None)
+            .await
             .unwrap_or_default()
     }
 }
@@ -119,10 +122,7 @@ async fn test_conversation_history_basic() -> anyhow::Result<()> {
 
     println!("\n=== 测试基础对话历史 ===");
 
-    let agent = ctx.create_test_agent(
-        "测试Agent",
-        "监控传感器数据",
-    ).await?;
+    let agent = ctx.create_test_agent("测试Agent", "监控传感器数据").await?;
 
     let agent_id = agent.id.clone();
     println!("创建 Agent: {}", agent.name);
@@ -173,10 +173,9 @@ async fn test_all_agent_roles() -> anyhow::Result<()> {
     for (name, prompt) in &agent_configs {
         println!("\n--- 测试类型: {} ---", name);
 
-        let agent = ctx.create_test_agent(
-            &format!("{}_test", name),
-            prompt,
-        ).await?;
+        let agent = ctx
+            .create_test_agent(&format!("{}_test", name), prompt)
+            .await?;
 
         println!("创建: {}", agent.name);
 
@@ -199,10 +198,9 @@ async fn test_conversation_persistence() -> anyhow::Result<()> {
 
     println!("\n=== 测试对话持久化 ===");
 
-    let agent = ctx.create_test_agent(
-        "持久化测试",
-        "测试数据持久化",
-    ).await?;
+    let agent = ctx
+        .create_test_agent("持久化测试", "测试数据持久化")
+        .await?;
 
     let agent_id = agent.id.clone();
 
@@ -213,7 +211,11 @@ async fn test_conversation_persistence() -> anyhow::Result<()> {
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-        println!("执行 #{}: 历史长度 = {}", i + 1, agent.conversation_history.len());
+        println!(
+            "执行 #{}: 历史长度 = {}",
+            i + 1,
+            agent.conversation_history.len()
+        );
     }
 
     // Get history from store
@@ -245,10 +247,9 @@ async fn test_context_window_messages() -> anyhow::Result<()> {
 
     println!("\n=== 测试上下文窗口消息构建 ===");
 
-    let mut agent = ctx.create_test_agent(
-        "上下文测试",
-        "监控温度传感器",
-    ).await?;
+    let mut agent = ctx
+        .create_test_agent("上下文测试", "监控温度传感器")
+        .await?;
 
     agent.context_window_size = 3;
     let agent_id = agent.id.clone();
@@ -262,23 +263,28 @@ async fn test_context_window_messages() -> anyhow::Result<()> {
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-        println!("执行 #{}: 历史={}, ContextWindow={}",
-            i + 1, agent.conversation_history.len(), agent.context_window_size);
+        println!(
+            "执行 #{}: 历史={}, ContextWindow={}",
+            i + 1,
+            agent.conversation_history.len(),
+            agent.context_window_size
+        );
     }
 
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
 
     // Build conversation messages
-    let messages = ctx.executor.build_conversation_messages(
-        &agent,
-        &[],
-        None,
-    );
+    let messages = ctx.executor.build_conversation_messages(&agent, &[], None);
 
     println!("\n构建的消息数量: {}", messages.len());
     for (i, msg) in messages.iter().enumerate() {
         let content_len = msg.content.as_text().len();
-        println!("  #{}: role={:?}, content长度={}", i + 1, msg.role, content_len);
+        println!(
+            "  #{}: role={:?}, content长度={}",
+            i + 1,
+            msg.role,
+            content_len
+        );
     }
 
     assert!(messages.len() > 0);
@@ -293,10 +299,7 @@ async fn test_conversation_turn_structure() -> anyhow::Result<()> {
 
     println!("\n=== 测试对话轮次结构 ===");
 
-    let agent = ctx.create_test_agent(
-        "结构测试",
-        "分析数据趋势",
-    ).await?;
+    let agent = ctx.create_test_agent("结构测试", "分析数据趋势").await?;
 
     // Execute once
     let record = ctx.executor.execute_agent(agent.clone()).await?;
@@ -304,7 +307,10 @@ async fn test_conversation_turn_structure() -> anyhow::Result<()> {
     println!("执行状态: {:?}", record.status);
     println!("决策过程:");
     println!("  情况分析: {}", record.decision_process.situation_analysis);
-    println!("  推理步骤: {}", record.decision_process.reasoning_steps.len());
+    println!(
+        "  推理步骤: {}",
+        record.decision_process.reasoning_steps.len()
+    );
     println!("  结论: {}", record.decision_process.conclusion);
 
     // Load conversation history
@@ -347,10 +353,7 @@ async fn test_multiple_executions_accumulation() -> anyhow::Result<()> {
 
     println!("\n=== 测试多次执行累积 ===");
 
-    let agent = ctx.create_test_agent(
-        "累积测试",
-        "监控数据变化",
-    ).await?;
+    let agent = ctx.create_test_agent("累积测试", "监控数据变化").await?;
 
     let agent_id = agent.id.clone();
     let executions = 10;
@@ -365,7 +368,11 @@ async fn test_multiple_executions_accumulation() -> anyhow::Result<()> {
 
         if i % 3 == 0 {
             let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-            println!("  执行 #{}: 历史长度 = {}", i + 1, agent.conversation_history.len());
+            println!(
+                "  执行 #{}: 历史长度 = {}",
+                i + 1,
+                agent.conversation_history.len()
+            );
         }
 
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
@@ -390,10 +397,7 @@ async fn test_conversation_history_ordering() -> anyhow::Result<()> {
 
     println!("\n=== 测试对话历史顺序 ===");
 
-    let agent = ctx.create_test_agent(
-        "顺序测试",
-        "验证历史顺序",
-    ).await?;
+    let agent = ctx.create_test_agent("顺序测试", "验证历史顺序").await?;
 
     let agent_id = agent.id.clone();
     let mut timestamps = Vec::new();
@@ -416,8 +420,10 @@ async fn test_conversation_history_ordering() -> anyhow::Result<()> {
 
     // Verify timestamps are increasing
     for i in 1..timestamps.len() {
-        assert!(timestamps[i] >= timestamps[i - 1],
-            "Timestamps should be non-decreasing");
+        assert!(
+            timestamps[i] >= timestamps[i - 1],
+            "Timestamps should be non-decreasing"
+        );
     }
 
     println!("\n✅ 顺序验证通过！");
@@ -439,17 +445,12 @@ async fn test_agent_role_prompts() -> anyhow::Result<()> {
     for (name, prompt) in &agent_configs {
         println!("\n--- 类型: {} ---", name);
 
-        let agent = ctx.create_test_agent(
-            &format!("{}_agent", name),
-            prompt,
-        ).await?;
+        let agent = ctx
+            .create_test_agent(&format!("{}_agent", name), prompt)
+            .await?;
 
         // Build messages to see the agent-specific prompt
-        let messages = ctx.executor.build_conversation_messages(
-            &agent,
-            &[],
-            None,
-        );
+        let messages = ctx.executor.build_conversation_messages(&agent, &[], None);
 
         // First message should be system prompt
         if let Some(first_msg) = messages.first() {
@@ -470,7 +471,10 @@ async fn test_agent_role_prompts() -> anyhow::Result<()> {
 async fn test_full_lifecycle() -> anyhow::Result<()> {
     let ctx = TestContext::new().await?;
 
-    println!("\n{}", "============================================================");
+    println!(
+        "\n{}",
+        "============================================================"
+    );
     println!("=== 完整 Agent 对话生命周期测试 ===");
     println!("============================================================");
 
@@ -506,7 +510,11 @@ async fn test_full_lifecycle() -> anyhow::Result<()> {
         }
 
         let agent = ctx.store.get_agent(agent_id).await?.unwrap();
-        println!("  ✅ {} 完成 (历史: {} 轮次)", name, agent.conversation_history.len());
+        println!(
+            "  ✅ {} 完成 (历史: {} 轮次)",
+            name,
+            agent.conversation_history.len()
+        );
     }
 
     println!("\n--- 验证阶段 ---");
@@ -523,7 +531,10 @@ async fn test_full_lifecycle() -> anyhow::Result<()> {
         assert_eq!(history.len(), 3);
     }
 
-    println!("\n{}", "============================================================");
+    println!(
+        "\n{}",
+        "============================================================"
+    );
     println!("✅ 完整生命周期测试全部通过！");
     println!("============================================================");
 
@@ -536,10 +547,9 @@ async fn test_conversation_turn_fields() -> anyhow::Result<()> {
 
     println!("\n=== 测试对话轮次字段完整性 ===");
 
-    let agent = ctx.create_test_agent(
-        "字段完整性测试",
-        "测试所有字段",
-    ).await?;
+    let agent = ctx
+        .create_test_agent("字段完整性测试", "测试所有字段")
+        .await?;
 
     let _ = ctx.executor.execute_agent(agent.clone()).await?;
 
@@ -550,9 +560,15 @@ async fn test_conversation_turn_fields() -> anyhow::Result<()> {
     let turn = &history[0];
 
     // Verify all required fields
-    assert!(!turn.execution_id.is_empty(), "execution_id should not be empty");
+    assert!(
+        !turn.execution_id.is_empty(),
+        "execution_id should not be empty"
+    );
     assert!(turn.timestamp > 0, "timestamp should be positive");
-    assert!(!turn.trigger_type.is_empty(), "trigger_type should not be empty");
+    assert!(
+        !turn.trigger_type.is_empty(),
+        "trigger_type should not be empty"
+    );
     assert!(turn.duration_ms >= 0, "duration_ms should be non-negative");
 
     println!("\n字段验证:");
@@ -564,8 +580,14 @@ async fn test_conversation_turn_fields() -> anyhow::Result<()> {
 
     // Verify TurnOutput fields
     println!("\nTurnOutput 字段:");
-    println!("  ✓ situation_analysis: {} 字符", turn.output.situation_analysis.len());
-    println!("  ✓ reasoning_steps: {} 项", turn.output.reasoning_steps.len());
+    println!(
+        "  ✓ situation_analysis: {} 字符",
+        turn.output.situation_analysis.len()
+    );
+    println!(
+        "  ✓ reasoning_steps: {} 项",
+        turn.output.reasoning_steps.len()
+    );
     println!("  ✓ decisions: {} 个", turn.output.decisions.len());
     println!("  ✓ conclusion: {} 字符", turn.output.conclusion.len());
 

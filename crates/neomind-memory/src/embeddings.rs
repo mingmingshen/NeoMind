@@ -293,7 +293,10 @@ impl LocalEmbedding {
     }
 
     /// Create with custom cache directory.
-    pub fn new_with_cache(model_name: impl Into<String>, _cache_dir: impl Into<StdPathBuf>) -> Result<Self, Error> {
+    pub fn new_with_cache(
+        model_name: impl Into<String>,
+        _cache_dir: impl Into<StdPathBuf>,
+    ) -> Result<Self, Error> {
         Self::new(model_name)
     }
 
@@ -317,15 +320,15 @@ impl LocalEmbedding {
     pub fn recommended_models(language: &str) -> Vec<&'static str> {
         match language.to_lowercase().as_str() {
             "zh" | "chinese" | "中文" => vec![
-                "bge-small-zh-v1.5",  // Best for Chinese
+                "bge-small-zh-v1.5", // Best for Chinese
             ],
             "en" | "english" => vec![
-                "BAAI/bge-small-en-v1.5",  // Fast, good quality
-                "all-MiniLM-L6-v2",        // Smallest, fastest
-                "nomic-embed-text-v1.5",   // Larger, better quality
+                "BAAI/bge-small-en-v1.5", // Fast, good quality
+                "all-MiniLM-L6-v2",       // Smallest, fastest
+                "nomic-embed-text-v1.5",  // Larger, better quality
             ],
             _ => vec![
-                "intfloat/multilingual-e5-large",  // Multilingual
+                "intfloat/multilingual-e5-large", // Multilingual
             ],
         }
     }
@@ -547,7 +550,8 @@ impl EmbeddingModel for OllamaEmbedding {
             prompt: text,
         };
 
-        let resp: reqwest::Response = self.client
+        let resp: reqwest::Response = self
+            .client
             .post(&url)
             .json(&req)
             .timeout(Duration::from_secs(60))
@@ -558,7 +562,10 @@ impl EmbeddingModel for OllamaEmbedding {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text: String = resp.text().await.unwrap_or_default();
-            return Err(Error::Embedding(format!("Ollama API error {}: {}", status, text)));
+            return Err(Error::Embedding(format!(
+                "Ollama API error {}: {}",
+                status, text
+            )));
         }
 
         let data: OllamaEmbedResponse = resp
@@ -642,7 +649,8 @@ impl EmbeddingModel for OpenAIEmbedding {
         let url = "https://api.openai.com/v1/embeddings";
         let inputs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
 
-        let resp: reqwest::Response = self.client
+        let resp: reqwest::Response = self
+            .client
             .post(url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&OpenAIEmbedRequest {
@@ -657,7 +665,10 @@ impl EmbeddingModel for OpenAIEmbedding {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text: String = resp.text().await.unwrap_or_default();
-            return Err(Error::Embedding(format!("OpenAI API error {}: {}", status, text)));
+            return Err(Error::Embedding(format!(
+                "OpenAI API error {}: {}",
+                status, text
+            )));
         }
 
         let data: OpenAIEmbedResponse = resp
@@ -751,7 +762,8 @@ impl EmbeddingModel for CachedEmbeddingModel {
 
         // Compute uncached embeddings
         if !uncached_texts.is_empty() {
-            let uncached_embeddings: Vec<Vec<f32>> = self.inner.embed_batch(&uncached_texts).await?;
+            let uncached_embeddings: Vec<Vec<f32>> =
+                self.inner.embed_batch(&uncached_texts).await?;
 
             let mut cache = self.cache.lock().await;
             for (idx, (text, embedding)) in uncached_texts
@@ -791,7 +803,8 @@ pub fn create_embedding_model(config: EmbeddingConfig) -> Result<Box<dyn Embeddi
             }
         }
         EmbeddingProvider::Ollama => {
-            let endpoint = config.endpoint
+            let endpoint = config
+                .endpoint
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
             let mut ollama = OllamaEmbedding::new(&config.model, &endpoint);
             ollama.dimension = OllamaEmbedding::model_dimension(&config.model);
@@ -803,9 +816,7 @@ pub fn create_embedding_model(config: EmbeddingConfig) -> Result<Box<dyn Embeddi
                 .ok_or_else(|| Error::Config("OpenAI API key is required".to_string()))?;
             Box::new(OpenAIEmbedding::new(&config.model, api_key))
         }
-        EmbeddingProvider::Simple => {
-            Box::new(SimpleEmbeddingWrapper(SimpleEmbedding::default()))
-        }
+        EmbeddingProvider::Simple => Box::new(SimpleEmbeddingWrapper(SimpleEmbedding::default())),
     };
 
     // Wrap with cache if cache_size is set
@@ -954,9 +965,18 @@ mod tests {
 
     #[test]
     fn test_model_dimension() {
-        assert_eq!(OpenAIEmbedding::model_dimension("text-embedding-3-small"), 1536);
-        assert_eq!(OpenAIEmbedding::model_dimension("text-embedding-3-large"), 3072);
-        assert_eq!(OpenAIEmbedding::model_dimension("text-embedding-ada-002"), 1536);
+        assert_eq!(
+            OpenAIEmbedding::model_dimension("text-embedding-3-small"),
+            1536
+        );
+        assert_eq!(
+            OpenAIEmbedding::model_dimension("text-embedding-3-large"),
+            3072
+        );
+        assert_eq!(
+            OpenAIEmbedding::model_dimension("text-embedding-ada-002"),
+            1536
+        );
     }
 
     #[test]

@@ -187,7 +187,9 @@ fn json_to_metric_value(value: &serde_json::Value) -> Option<MetricValue> {
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 Some(MetricValue::Integer(i))
-            } else { n.as_f64().map(MetricValue::Float) }
+            } else {
+                n.as_f64().map(MetricValue::Float)
+            }
         }
         serde_json::Value::String(s) => Some(MetricValue::String(s.clone())),
         serde_json::Value::Bool(b) => Some(MetricValue::Boolean(*b)),
@@ -324,7 +326,9 @@ fn commands_from_json_value(value: serde_json::Value) -> Vec<CommandDefinition> 
             // Otherwise use the first key itself
             let default_key = String::from("command");
             let first_key = obj.keys().next().unwrap_or(&default_key);
-            let command_name = if ["cmd", "command", "action", "type", "method", "op"].contains(&first_key.as_str()) {
+            let command_name = if ["cmd", "command", "action", "type", "method", "op"]
+                .contains(&first_key.as_str())
+            {
                 // Use the value of this key as the command name
                 if let Some(serde_json::Value::String(name_val)) = obj.get(first_key) {
                     // Sanitize the name: lowercase, replace non-alphanumeric with underscore
@@ -959,7 +963,11 @@ mod tests {
 
         // Parameters should include cmd, flattened params fields, request_id (order may vary)
         assert_eq!(commands[0].parameters.len(), 5);
-        let param_names: Vec<&str> = commands[0].parameters.iter().map(|p| p.name.as_str()).collect();
+        let param_names: Vec<&str> = commands[0]
+            .parameters
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
         assert!(param_names.contains(&"cmd"));
         assert!(param_names.contains(&"request_id"));
         assert!(param_names.contains(&"enable_ai"));
@@ -984,13 +992,21 @@ mod tests {
 
         // Check parameters: cmd, request_id, duration_sec (order may vary)
         assert_eq!(commands[0].parameters.len(), 3);
-        let param_names: Vec<&str> = commands[0].parameters.iter().map(|p| p.name.as_str()).collect();
+        let param_names: Vec<&str> = commands[0]
+            .parameters
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
         assert!(param_names.contains(&"cmd"));
         assert!(param_names.contains(&"request_id"));
         assert!(param_names.contains(&"duration_sec"));
 
         // Find cmd parameter and check its default value
-        let cmd_param = commands[0].parameters.iter().find(|p| p.name == "cmd").unwrap();
+        let cmd_param = commands[0]
+            .parameters
+            .iter()
+            .find(|p| p.name == "cmd")
+            .unwrap();
         if let Some(MetricValue::String(val)) = &cmd_param.default_value {
             assert_eq!(val, "sleep");
         } else {
@@ -1058,7 +1074,11 @@ mod tests {
 
         // Parameters: action, brightness, color (params is flattened, order may vary)
         assert_eq!(commands[0].parameters.len(), 3);
-        let param_names: Vec<&str> = commands[0].parameters.iter().map(|p| p.name.as_str()).collect();
+        let param_names: Vec<&str> = commands[0]
+            .parameters
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
         assert!(param_names.contains(&"action"));
         assert!(param_names.contains(&"brightness"));
         assert!(param_names.contains(&"color"));

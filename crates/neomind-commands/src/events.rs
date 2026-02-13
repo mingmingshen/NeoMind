@@ -134,19 +134,22 @@ impl EventFilter {
     /// Check if an event matches this filter.
     pub fn matches(&self, event: &CommandEvent) -> bool {
         if let Some(ref device_id) = self.device_id
-            && &event.device_id != device_id {
-                return false;
-            }
+            && &event.device_id != device_id
+        {
+            return false;
+        }
 
         if let Some(ref status) = self.status
-            && event.current_status != *status {
-                return false;
-            }
+            && event.current_status != *status
+        {
+            return false;
+        }
 
         if let Some(ref event_types) = self.event_types
-            && !event_types.contains(&event.event_type) {
-                return false;
-            }
+            && !event_types.contains(&event.event_type)
+        {
+            return false;
+        }
 
         true
     }

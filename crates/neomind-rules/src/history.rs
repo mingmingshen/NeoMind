@@ -184,21 +184,25 @@ impl RuleHistoryStorage {
             .iter()
             .filter(|entry| {
                 if let Some(ref rule_id) = filter.rule_id
-                    && &entry.rule_id != rule_id {
-                        return false;
-                    }
+                    && &entry.rule_id != rule_id
+                {
+                    return false;
+                }
                 if let Some(success) = filter.success
-                    && entry.success != success {
-                        return false;
-                    }
+                    && entry.success != success
+                {
+                    return false;
+                }
                 if let Some(start) = filter.start
-                    && entry.timestamp < start {
-                        return false;
-                    }
+                    && entry.timestamp < start
+                {
+                    return false;
+                }
                 if let Some(end) = filter.end
-                    && entry.timestamp >= end {
-                        return false;
-                    }
+                    && entry.timestamp >= end
+                {
+                    return false;
+                }
                 true
             })
             .cloned()

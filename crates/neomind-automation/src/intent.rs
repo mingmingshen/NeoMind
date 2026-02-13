@@ -5,11 +5,11 @@
 
 use std::sync::Arc;
 
-use crate::types::*;
 use crate::error::{AutomationError, Result};
+use crate::types::*;
 
-use neomind_core::{LlmRuntime, Message, GenerationParams};
 use neomind_core::llm::backend::LlmInput;
+use neomind_core::{GenerationParams, LlmRuntime, Message};
 
 /// Intent analyzer for determining automation type
 pub struct IntentAnalyzer {
@@ -53,22 +53,56 @@ impl IntentAnalyzer {
 
         // Indicators for transform (data processing)
         let transform_keywords = [
-            "calculate", "compute", "aggregate", "average", "sum", "count",
-            "extract", "parse", "transform", "convert", "process",
-            "statistics", "metric", "virtual", "derived",
-            "array", "group by", "filter", "map",
-            "data from", "get value", "field",
+            "calculate",
+            "compute",
+            "aggregate",
+            "average",
+            "sum",
+            "count",
+            "extract",
+            "parse",
+            "transform",
+            "convert",
+            "process",
+            "statistics",
+            "metric",
+            "virtual",
+            "derived",
+            "array",
+            "group by",
+            "filter",
+            "map",
+            "data from",
+            "get value",
+            "field",
         ];
 
         // Indicators for rule (conditional automation)
         let rule_keywords = [
-            "when", "if", "whenever", "once",
-            "exceeds", "above", "below", "greater", "less",
-            "equals", "matches", "is",
-            "send alert", "notify", "send message",
-            "turn on", "turn off", "switch", "set",
-            "trigger", "activate", "deactivate",
-            "then", "after that",
+            "when",
+            "if",
+            "whenever",
+            "once",
+            "exceeds",
+            "above",
+            "below",
+            "greater",
+            "less",
+            "equals",
+            "matches",
+            "is",
+            "send alert",
+            "notify",
+            "send message",
+            "turn on",
+            "turn off",
+            "switch",
+            "set",
+            "trigger",
+            "activate",
+            "deactivate",
+            "then",
+            "after that",
         ];
 
         let mut transform_score = 0i32;
@@ -119,7 +153,8 @@ impl IntentAnalyzer {
             (
                 AutomationType::Rule,
                 55,
-                "This could be either a transform or rule. Defaulting to rule for automation.".to_string(),
+                "This could be either a transform or rule. Defaulting to rule for automation."
+                    .to_string(),
             )
         };
 
@@ -184,15 +219,18 @@ Guidelines:
         };
 
         let confidence = analysis["confidence"].as_u64().unwrap_or(50) as u8;
-        let reasoning = analysis["reasoning"].as_str()
+        let reasoning = analysis["reasoning"]
+            .as_str()
             .unwrap_or("AI analysis completed")
             .to_string();
 
-        let suggested_name = analysis["suggested_name"].as_str()
+        let suggested_name = analysis["suggested_name"]
+            .as_str()
             .unwrap_or("New Automation")
             .to_string();
 
-        let suggested_description = analysis["suggested_description"].as_str()
+        let suggested_description = analysis["suggested_description"]
+            .as_str()
             .unwrap_or(description)
             .to_string();
 
@@ -206,7 +244,11 @@ Guidelines:
                 automation_type: recommended_type,
                 transform: None,
                 rule: None,
-                estimated_complexity: if recommended_type == AutomationType::Transform { 2 } else { 1 },
+                estimated_complexity: if recommended_type == AutomationType::Transform {
+                    2
+                } else {
+                    1
+                },
             }),
             warnings: Vec::new(),
         })
@@ -230,11 +272,11 @@ fn extract_json_from_response(response: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::Stream;
+    use neomind_core::llm::backend::{LlmError, LlmInput, StreamChunk};
     use neomind_core::*;
-    use neomind_core::llm::backend::{LlmInput, LlmError, StreamChunk};
     use std::pin::Pin;
     use std::result::Result;
-    use futures::Stream;
 
     // Mock LLM for testing
     struct MockLlm;
@@ -266,7 +308,10 @@ mod tests {
             })
         }
 
-        async fn generate_stream(&self, _input: LlmInput) -> Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, LlmError> {
+        async fn generate_stream(
+            &self,
+            _input: LlmInput,
+        ) -> Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, LlmError> {
             use futures::stream;
             Ok(Box::pin(stream::empty()))
         }

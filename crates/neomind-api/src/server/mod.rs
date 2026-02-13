@@ -66,11 +66,9 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
         use crate::server::extension_metrics::ExtensionMetricsCollector;
         use std::time::Duration;
 
-        let collector = ExtensionMetricsCollector::new(
-            extension_registry,
-            metrics_storage,
-            event_bus,
-        ).with_interval(Duration::from_secs(60));
+        let collector =
+            ExtensionMetricsCollector::new(extension_registry, metrics_storage, event_bus)
+                .with_interval(Duration::from_secs(60));
 
         collector.run().await;
     });
@@ -113,7 +111,10 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
         let mut interval = tokio::time::interval(Duration::from_secs(300));
         loop {
             interval.tick().await;
-            let session_store = state_for_cleanup_task.agents.session_manager.session_store();
+            let session_store = state_for_cleanup_task
+                .agents
+                .session_manager
+                .session_store();
             match session_store.cleanup_stale_pending_streams() {
                 Ok(count) => {
                     if count > 0 {

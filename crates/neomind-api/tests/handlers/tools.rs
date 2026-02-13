@@ -1,9 +1,9 @@
 //! Tests for tools handlers.
 
-use neomind_api::handlers::tools::*;
-use neomind_api::handlers::ServerState;
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
+use neomind_api::handlers::ServerState;
+use neomind_api::handlers::tools::*;
 
 async fn create_test_server_state() -> ServerState {
     crate::common::create_test_server_state().await
@@ -95,7 +95,10 @@ mod tests {
         assert!(value.get("formatted").is_some());
         let formatted = value.get("formatted").unwrap().as_str().unwrap();
         assert!(!formatted.is_empty());
-        assert!(formatted.contains("可用工具") || formatted.contains("Available tools") || formatted.contains("可用工具列表"));
+        assert!(
+            formatted.contains("可用工具")
+                || formatted.contains("Available tools")
+                || formatted.contains("可用工具列表")
+        );
     }
-
 }

@@ -40,6 +40,18 @@ pub enum CloudProvider {
 
     /// Custom OpenAI-compatible endpoint
     Custom,
+
+    /// Qwen (Alibaba DashScope)
+    Qwen,
+
+    /// DeepSeek (https://api.deepseek.com)
+    DeepSeek,
+
+    /// Zhipu GLM (智谱)
+    GLM,
+
+    /// MiniMax (https://api.minimax.chat)
+    MiniMax,
 }
 
 impl CloudProvider {
@@ -51,6 +63,10 @@ impl CloudProvider {
             Self::Google => "https://generativelanguage.googleapis.com/v1beta",
             Self::Grok => "https://api.x.ai/v1",
             Self::Custom => "",
+            Self::Qwen => "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            Self::DeepSeek => "https://api.deepseek.com/v1",
+            Self::GLM => "https://open.bigmodel.cn/api/paas/v4",
+            Self::MiniMax => "https://api.minimax.chat/v1",
         }
     }
 
@@ -62,6 +78,10 @@ impl CloudProvider {
             Self::Google => "gemini-1.5-flash",
             Self::Grok => "grok-beta",
             Self::Custom => "unknown",
+            Self::Qwen => "qwen-max-latest",
+            Self::DeepSeek => "deepseek-v3",
+            Self::GLM => "glm-4-plus",
+            Self::MiniMax => "m2-1-19b",
         }
     }
 
@@ -73,6 +93,10 @@ impl CloudProvider {
             Self::Google => "/chat/completions", // Using OpenAI compatibility
             Self::Grok => "/chat/completions",
             Self::Custom => "/chat/completions",
+            Self::Qwen => "/chat/completions",
+            Self::DeepSeek => "/chat/completions",
+            Self::GLM => "/chat/completions",
+            Self::MiniMax => "/chat/completions",
         }
     }
 }
@@ -163,6 +187,50 @@ impl CloudConfig {
         }
     }
 
+    /// Create a Qwen (Alibaba DashScope) config.
+    pub fn qwen(api_key: impl Into<String>) -> Self {
+        Self {
+            api_key: api_key.into(),
+            provider: CloudProvider::Qwen,
+            model: None,
+            base_url: None,
+            timeout_secs: 60,
+        }
+    }
+
+    /// Create a DeepSeek config.
+    pub fn deepseek(api_key: impl Into<String>) -> Self {
+        Self {
+            api_key: api_key.into(),
+            provider: CloudProvider::DeepSeek,
+            model: None,
+            base_url: None,
+            timeout_secs: 60,
+        }
+    }
+
+    /// Create a Zhipu GLM config.
+    pub fn glm(api_key: impl Into<String>) -> Self {
+        Self {
+            api_key: api_key.into(),
+            provider: CloudProvider::GLM,
+            model: None,
+            base_url: None,
+            timeout_secs: 60,
+        }
+    }
+
+    /// Create a MiniMax config.
+    pub fn minimax(api_key: impl Into<String>) -> Self {
+        Self {
+            api_key: api_key.into(),
+            provider: CloudProvider::MiniMax,
+            model: None,
+            base_url: None,
+            timeout_secs: 60,
+        }
+    }
+
     /// Set the model.
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = Some(model.into());
@@ -221,6 +289,10 @@ impl CloudRuntime {
             CloudProvider::OpenAI => limits.openai,
             CloudProvider::Google => limits.google,
             CloudProvider::Grok => (50, Duration::from_secs(60)),
+            CloudProvider::Qwen => (100, Duration::from_secs(60)),
+            CloudProvider::DeepSeek => (100, Duration::from_secs(60)),
+            CloudProvider::GLM => (100, Duration::from_secs(60)),
+            CloudProvider::MiniMax => (100, Duration::from_secs(60)),
             CloudProvider::Custom => (10, Duration::from_secs(1)),
         };
 
@@ -324,11 +396,15 @@ impl LlmRuntime for CloudRuntime {
     fn backend_id(&self) -> BackendId {
         // Return backend ID based on the cloud provider
         match self.config.provider {
-            CloudProvider::OpenAI => BackendId::new(BackendId::OPENAI),
+            CloudProvider::OpenAI => BackendId::new("openai"),
             CloudProvider::Anthropic => BackendId::new("anthropic"),
             CloudProvider::Google => BackendId::new("google"),
             CloudProvider::Grok => BackendId::new("grok"),
             CloudProvider::Custom => BackendId::new("custom"),
+            CloudProvider::Qwen => BackendId::new("qwen"),
+            CloudProvider::DeepSeek => BackendId::new("deepseek"),
+            CloudProvider::GLM => BackendId::new("glm"),
+            CloudProvider::MiniMax => BackendId::new("minimax"),
         }
     }
 
@@ -466,7 +542,7 @@ impl LlmRuntime for CloudRuntime {
 
         let request = ChatCompletionRequest {
             model: model.clone(),
-            messages: Vec::new(), // Will be filled by caller
+            messages: self.messages_to_api(&input.messages),
             temperature: input.params.temperature,
             top_p: input.params.top_p,
             max_tokens: input.params.max_tokens,
@@ -535,13 +611,13 @@ impl LlmRuntime for CloudRuntime {
                                     if let Some(json) = line.strip_prefix("data: ")
                                         && let Ok(evt) =
                                             serde_json::from_str::<StreamChunkEvent>(json)
-                                            && let Some(choice) = evt.choices.first() {
-                                                let delta = &choice.delta.content;
-                                                if !delta.is_empty() {
-                                                    let _ =
-                                                        tx.send(Ok((delta.clone(), false))).await;
-                                                }
-                                            }
+                                        && let Some(choice) = evt.choices.first()
+                                    {
+                                        let delta = &choice.delta.content;
+                                        if !delta.is_empty() {
+                                            let _ = tx.send(Ok((delta.clone(), false))).await;
+                                        }
+                                    }
                                 }
                             }
                             Err(e) => {
@@ -565,6 +641,10 @@ impl LlmRuntime for CloudRuntime {
             CloudProvider::Anthropic => 200000,
             CloudProvider::Google => 1000000,
             CloudProvider::Grok => 128000,
+            CloudProvider::Qwen => 128000,
+            CloudProvider::DeepSeek => 128000,
+            CloudProvider::GLM => 128000,
+            CloudProvider::MiniMax => 512000,
             CloudProvider::Custom => 4096,
         }
     }
@@ -572,20 +652,38 @@ impl LlmRuntime for CloudRuntime {
     fn supports_multimodal(&self) -> bool {
         matches!(
             self.config.provider,
-            CloudProvider::OpenAI | CloudProvider::Anthropic | CloudProvider::Google
+            CloudProvider::OpenAI
+                | CloudProvider::Anthropic
+                | CloudProvider::Google
+                | CloudProvider::Qwen
+                | CloudProvider::DeepSeek
+                | CloudProvider::GLM
+                | CloudProvider::MiniMax
         )
     }
 
     fn capabilities(&self) -> BackendCapabilities {
+        let supports_multimodal = self.supports_multimodal();
+        let supports_function_calling = matches!(
+            self.config.provider,
+            CloudProvider::OpenAI
+                | CloudProvider::Qwen
+                | CloudProvider::DeepSeek
+                | CloudProvider::GLM
+                | CloudProvider::MiniMax
+                | CloudProvider::Google
+                | CloudProvider::Grok
+        );
+
         BackendCapabilities {
             streaming: true,
-            multimodal: self.supports_multimodal(),
-            function_calling: matches!(self.config.provider, CloudProvider::OpenAI),
+            multimodal: supports_multimodal,
+            function_calling: supports_function_calling,
             multiple_models: true,
             max_context: Some(self.max_context_length()),
             modalities: vec!["text".to_string()],
             thinking_display: false,
-            supports_images: self.supports_multimodal(),
+            supports_images: supports_multimodal,
             supports_audio: false,
         }
     }
@@ -603,15 +701,16 @@ fn extract_data_url(url: &str) -> (String, String) {
     if url.starts_with("data:") {
         // Format: data:image/png;base64,iVBORw0KGgo...
         if let Some(rest) = url.strip_prefix("data:")
-            && let Some((mime_and_encoding, data)) = rest.split_once(',') {
-                // mime_and_encoding is like "image/png;base64"
-                let media_type = mime_and_encoding
-                    .split(';')
-                    .next()
-                    .unwrap_or("image/png")
-                    .to_string();
-                return (media_type, data.to_string());
-            }
+            && let Some((mime_and_encoding, data)) = rest.split_once(',')
+        {
+            // mime_and_encoding is like "image/png;base64"
+            let media_type = mime_and_encoding
+                .split(';')
+                .next()
+                .unwrap_or("image/png")
+                .to_string();
+            return (media_type, data.to_string());
+        }
     }
     // Fallback
     ("image/png".to_string(), url.to_string())
@@ -689,10 +788,10 @@ enum ApiContentPart {
 #[derive(Debug, Serialize)]
 struct AnthropicImageSource {
     #[serde(rename = "type")]
-    typ: String,  // "base64"
+    typ: String, // "base64"
     #[serde(rename = "media_type")]
-    media_type: String,  // "image/png", "image/jpeg", etc.
-    data: String,  // base64 data without prefix
+    media_type: String, // "image/png", "image/jpeg", etc.
+    data: String, // base64 data without prefix
 }
 
 #[derive(Debug, Deserialize)]

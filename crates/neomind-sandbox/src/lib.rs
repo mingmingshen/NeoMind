@@ -86,10 +86,10 @@ pub struct Sandbox {
     pub(crate) engine: Engine,
     /// Configuration.
     #[allow(dead_code)]
-    config: SandboxConfig,  // Reserved for future use (e.g., execution limits)
+    config: SandboxConfig, // Reserved for future use (e.g., execution limits)
     /// Host API for sandboxed modules.
     #[allow(dead_code)]
-    host_api: Arc<HostApi>,  // Exposed via getter method
+    host_api: Arc<HostApi>, // Exposed via getter method
     /// Loaded modules.
     modules: RwLock<HashMap<String, SandboxModule>>,
 }

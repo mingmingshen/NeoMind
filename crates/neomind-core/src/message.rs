@@ -111,7 +111,6 @@ pub enum ImageDetail {
     Auto,
 }
 
-
 impl ContentPart {
     /// Create a text part.
     pub fn text(text: impl Into<String>) -> Self {

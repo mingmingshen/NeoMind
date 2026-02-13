@@ -6,8 +6,8 @@
 use std::sync::Arc;
 
 use crate::error::{AutomationError, Result};
-use neomind_core::{LlmRuntime, Message, GenerationParams};
 use neomind_core::llm::backend::LlmInput;
+use neomind_core::{GenerationParams, LlmRuntime, Message};
 
 /// Threshold recommender for automation conditions
 pub struct ThresholdRecommender {
@@ -30,7 +30,7 @@ impl ThresholdRecommender {
     ) -> Result<ThresholdRecommendation> {
         if data_points.is_empty() {
             return Err(AutomationError::IntentAnalysisFailed(
-                "No data points provided for threshold recommendation".into()
+                "No data points provided for threshold recommendation".into(),
             ));
         }
 
@@ -38,12 +38,9 @@ impl ThresholdRecommender {
         let stats = self.calculate_statistics(data_points);
 
         // Use LLM for contextual recommendation
-        let llm_recommendation = self.llm_recommend_threshold(
-            device_id,
-            metric,
-            &stats,
-            intent.clone(),
-        ).await?;
+        let llm_recommendation = self
+            .llm_recommend_threshold(device_id, metric, &stats, intent.clone())
+            .await?;
 
         Ok(ThresholdRecommendation {
             device_id: device_id.to_string(),
@@ -67,12 +64,15 @@ impl ThresholdRecommender {
         let mut results = Vec::new();
 
         for request in requests {
-            match self.recommend_threshold(
-                &request.device_id,
-                &request.metric,
-                &request.data_points,
-                request.intent.clone(),
-            ).await {
+            match self
+                .recommend_threshold(
+                    &request.device_id,
+                    &request.metric,
+                    &request.data_points,
+                    request.intent.clone(),
+                )
+                .await
+            {
                 Ok(rec) => results.push(rec),
                 Err(_) => {
                     // Add a fallback recommendation
@@ -125,16 +125,10 @@ impl ThresholdRecommender {
             0.0
         };
 
-        let median = if n > 0 {
-            sorted[n / 2]
-        } else {
-            0.0
-        };
+        let median = if n > 0 { sorted[n / 2] } else { 0.0 };
 
         // Standard deviation
-        let variance = data_points.iter()
-            .map(|&x| (x - mean).powi(2))
-            .sum::<f64>() / n as f64;
+        let variance = data_points.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / n as f64;
         let std_dev = variance.sqrt();
 
         Statistics {
@@ -210,7 +204,9 @@ Guidelines:
 
         let input = LlmInput {
             messages: vec![
-                Message::system("You are an IoT data analyst. Recommend optimal thresholds for automation conditions. Respond ONLY with valid JSON."),
+                Message::system(
+                    "You are an IoT data analyst. Recommend optimal thresholds for automation conditions. Respond ONLY with valid JSON.",
+                ),
                 Message::user(prompt),
             ],
             params: GenerationParams {
@@ -229,13 +225,16 @@ Guidelines:
             .map_err(|e| AutomationError::IntentAnalysisFailed(format!("Invalid JSON: {}", e)))?;
 
         Ok(LlmThresholdRecommendation {
-            value: result.get("threshold")
+            value: result
+                .get("threshold")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(stats.mean),
-            confidence: result.get("confidence")
+            confidence: result
+                .get("confidence")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.7) as f32,
-            reasoning: result.get("reasoning")
+            reasoning: result
+                .get("reasoning")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Based on statistical analysis")
                 .to_string(),
@@ -243,11 +242,17 @@ Guidelines:
     }
 
     /// Detect anomalies in data
-    pub fn detect_anomalies(&self, data_points: &[f64], _threshold: f64, std_dev_multiplier: f64) -> Vec<usize> {
+    pub fn detect_anomalies(
+        &self,
+        data_points: &[f64],
+        _threshold: f64,
+        std_dev_multiplier: f64,
+    ) -> Vec<usize> {
         let stats = self.calculate_statistics(data_points);
         let anomaly_threshold = stats.mean + (stats.std_dev * std_dev_multiplier);
 
-        data_points.iter()
+        data_points
+            .iter()
             .enumerate()
             .filter(|(_, value)| **value > anomaly_threshold)
             .map(|(i, _)| i)
@@ -267,14 +272,18 @@ Guidelines:
             ThresholdIntent::AlertWhenHigh => {
                 if threshold < stats.mean {
                     ThresholdValidation::Warning {
-                        message: format!("Threshold ({}) is below the mean ({}). This may cause frequent alerts.",
-                            threshold, stats.mean),
+                        message: format!(
+                            "Threshold ({}) is below the mean ({}). This may cause frequent alerts.",
+                            threshold, stats.mean
+                        ),
                         suggested_value: stats.percentile_75,
                     }
                 } else if threshold > stats.max {
                     ThresholdValidation::Warning {
-                        message: format!("Threshold ({}) exceeds maximum observed value ({}). Alert may never trigger.",
-                            threshold, stats.max),
+                        message: format!(
+                            "Threshold ({}) exceeds maximum observed value ({}). Alert may never trigger.",
+                            threshold, stats.max
+                        ),
                         suggested_value: stats.max * 0.95,
                     }
                 } else {
@@ -284,14 +293,18 @@ Guidelines:
             ThresholdIntent::AlertWhenLow => {
                 if threshold > stats.mean {
                     ThresholdValidation::Warning {
-                        message: format!("Threshold ({}) is above the mean ({}). This may cause frequent alerts.",
-                            threshold, stats.mean),
+                        message: format!(
+                            "Threshold ({}) is above the mean ({}). This may cause frequent alerts.",
+                            threshold, stats.mean
+                        ),
                         suggested_value: stats.percentile_25,
                     }
                 } else if threshold < stats.min {
                     ThresholdValidation::Warning {
-                        message: format!("Threshold ({}) is below minimum observed value ({}). Alert may never trigger.",
-                            threshold, stats.min),
+                        message: format!(
+                            "Threshold ({}) is below minimum observed value ({}). Alert may never trigger.",
+                            threshold, stats.min
+                        ),
                         suggested_value: stats.min * 1.05,
                     }
                 } else {
@@ -302,17 +315,17 @@ Guidelines:
                 let anomaly_threshold = stats.mean + 2.0 * stats.std_dev;
                 if threshold < stats.mean || threshold > anomaly_threshold {
                     ThresholdValidation::Warning {
-                        message: format!("For anomaly detection, consider using mean ± 2*std_dev = ±{:.2}",
-                            2.0 * stats.std_dev),
+                        message: format!(
+                            "For anomaly detection, consider using mean ± 2*std_dev = ±{:.2}",
+                            2.0 * stats.std_dev
+                        ),
                         suggested_value: anomaly_threshold,
                     }
                 } else {
                     ThresholdValidation::Valid
                 }
             }
-            ThresholdIntent::MaintainRange => {
-                ThresholdValidation::Valid
-            }
+            ThresholdIntent::MaintainRange => ThresholdValidation::Valid,
         }
     }
 }
@@ -386,10 +399,12 @@ struct LlmThresholdRecommendation {
 }
 
 fn extract_json_from_response(response: &str) -> Result<String> {
-    let start = response.find('{')
+    let start = response
+        .find('{')
         .ok_or_else(|| AutomationError::IntentAnalysisFailed("No JSON object found".into()))?;
 
-    let end = response.rfind('}')
+    let end = response
+        .rfind('}')
         .ok_or_else(|| AutomationError::IntentAnalysisFailed("Incomplete JSON object".into()))?;
 
     Ok(response[start..=end].to_string())
@@ -463,7 +478,8 @@ mod tests {
         let stats = calculate_statistics_direct(&data);
         let anomaly_threshold = stats.mean + 2.0 * stats.std_dev;
 
-        let anomalies: Vec<_> = data.iter()
+        let anomalies: Vec<_> = data
+            .iter()
             .enumerate()
             .filter(|(_, value)| **value > anomaly_threshold)
             .map(|(i, _)| i)
@@ -486,21 +502,29 @@ mod tests {
     }
 
     // Helper functions to avoid needing the full struct
-    fn validate_threshold_direct(threshold: f64, data_points: &[f64], intent: &ThresholdIntent) -> ThresholdValidation {
+    fn validate_threshold_direct(
+        threshold: f64,
+        data_points: &[f64],
+        intent: &ThresholdIntent,
+    ) -> ThresholdValidation {
         let stats = calculate_statistics_direct(data_points);
 
         match intent {
             ThresholdIntent::AlertWhenHigh => {
                 if threshold < stats.mean {
                     ThresholdValidation::Warning {
-                        message: format!("Threshold ({}) is below the mean ({}).",
-                            threshold, stats.mean),
+                        message: format!(
+                            "Threshold ({}) is below the mean ({}).",
+                            threshold, stats.mean
+                        ),
                         suggested_value: stats.percentile_75,
                     }
                 } else if threshold > stats.max {
                     ThresholdValidation::Warning {
-                        message: format!("Threshold ({}) exceeds maximum observed value ({}).",
-                            threshold, stats.max),
+                        message: format!(
+                            "Threshold ({}) exceeds maximum observed value ({}).",
+                            threshold, stats.max
+                        ),
                         suggested_value: stats.max * 0.95,
                     }
                 } else {
@@ -510,14 +534,18 @@ mod tests {
             ThresholdIntent::AlertWhenLow => {
                 if threshold > stats.mean {
                     ThresholdValidation::Warning {
-                        message: format!("Threshold ({}) is above the mean ({}).",
-                            threshold, stats.mean),
+                        message: format!(
+                            "Threshold ({}) is above the mean ({}).",
+                            threshold, stats.mean
+                        ),
                         suggested_value: stats.percentile_25,
                     }
                 } else if threshold < stats.min {
                     ThresholdValidation::Warning {
-                        message: format!("Threshold ({}) is below minimum observed value ({}).",
-                            threshold, stats.min),
+                        message: format!(
+                            "Threshold ({}) is below minimum observed value ({}).",
+                            threshold, stats.min
+                        ),
                         suggested_value: stats.min * 1.05,
                     }
                 } else {
@@ -547,9 +575,7 @@ mod tests {
         let percentile_75 = sorted[(n as f64 * 0.75).floor() as usize];
         let median = sorted[n / 2];
 
-        let variance = data_points.iter()
-            .map(|&x| (x - mean).powi(2))
-            .sum::<f64>() / n as f64;
+        let variance = data_points.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / n as f64;
         let std_dev = variance.sqrt();
 
         Statistics {

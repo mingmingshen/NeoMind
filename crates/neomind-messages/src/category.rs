@@ -3,8 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Message category determines the type and handling of the message.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum MessageCategory {
     /// Alert - requires attention and action
     #[serde(rename = "alert")]
@@ -51,16 +50,24 @@ impl std::fmt::Display for MessageCategory {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_category_from_str() {
-        assert_eq!(MessageCategory::from_string("alert"), Some(MessageCategory::Alert));
-        assert_eq!(MessageCategory::from_string("system"), Some(MessageCategory::System));
-        assert_eq!(MessageCategory::from_string("business"), Some(MessageCategory::Business));
+        assert_eq!(
+            MessageCategory::from_string("alert"),
+            Some(MessageCategory::Alert)
+        );
+        assert_eq!(
+            MessageCategory::from_string("system"),
+            Some(MessageCategory::System)
+        );
+        assert_eq!(
+            MessageCategory::from_string("business"),
+            Some(MessageCategory::Business)
+        );
         assert_eq!(MessageCategory::from_string("invalid"), None);
     }
 

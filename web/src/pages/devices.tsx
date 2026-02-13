@@ -81,6 +81,11 @@ export function DevicesPage() {
   const [deviceTypePage, setDeviceTypePage] = useState(1)
   const deviceTypesPerPage = 10
 
+  // Draft devices pagination state
+  const [draftPage, setDraftPage] = useState(1)
+  const draftsPerPage = 10
+  const [draftsCount, setDraftsCount] = useState(0)
+
   // Auto-onboarding configuration (simplified to 3 fields)
   interface OnboardConfig {
     enabled: boolean
@@ -191,6 +196,13 @@ export function DevicesPage() {
   useEffect(() => {
     setDevicePage(1)
   }, [devices.length])
+
+  // Reset drafts pagination when switching to drafts tab
+  useEffect(() => {
+    if (activeTab === 'drafts') {
+      setDraftPage(1)
+    }
+  }, [activeTab])
 
   // Paginated data
   const paginatedDevices = devices.slice(
@@ -639,6 +651,13 @@ export function DevicesPage() {
             currentPage={deviceTypePage}
             onPageChange={setDeviceTypePage}
           />
+        ) : !deviceDetailView && activeTab === 'drafts' && draftsCount > draftsPerPage ? (
+          <Pagination
+            total={draftsCount}
+            pageSize={draftsPerPage}
+            currentPage={draftPage}
+            onPageChange={setDraftPage}
+          />
         ) : undefined
       }
     >
@@ -796,6 +815,10 @@ export function DevicesPage() {
           {/* Draft Devices Tab (Auto-onboarding) */}
           <PageTabsContent value="drafts" activeTab={activeTab}>
             <PendingDevicesList
+              page={draftPage}
+              onPageChange={setDraftPage}
+              itemsPerPage={draftsPerPage}
+              onDraftsCountChange={setDraftsCount}
               onRefresh={() => {
                 fetchDevices()
                 fetchDeviceTypes()

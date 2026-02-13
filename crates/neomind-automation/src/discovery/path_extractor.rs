@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use crate::discovery::types::*;
-use neomind_core::{LlmRuntime, Message, GenerationParams, llm::backend::LlmInput};
+use neomind_core::{GenerationParams, LlmRuntime, Message, llm::backend::LlmInput};
 
 /// Extracts data paths from device samples
 pub struct DataPathExtractor {
@@ -20,20 +20,15 @@ impl DataPathExtractor {
     }
 
     /// Extract all accessible paths from samples
-    pub async fn extract_paths(
-        &self,
-        samples: &[DeviceSample],
-    ) -> Result<Vec<DiscoveredPath>> {
+    pub async fn extract_paths(&self, samples: &[DeviceSample]) -> Result<Vec<DiscoveredPath>> {
         if samples.is_empty() {
             return Err(DiscoveryError::InsufficientData(
-                "No samples provided for path extraction".into()
+                "No samples provided for path extraction".into(),
             ));
         }
 
         // First, try to extract from JSON samples
-        let json_samples: Vec<_> = samples.iter()
-            .filter_map(|s| s.parsed.as_ref())
-            .collect();
+        let json_samples: Vec<_> = samples.iter().filter_map(|s| s.parsed.as_ref()).collect();
 
         if !json_samples.is_empty() {
             self.extract_from_json_samples(&json_samples).await
@@ -53,13 +48,7 @@ impl DataPathExtractor {
 
         // Recursively extract all paths from each sample
         for (idx, sample) in samples.iter().enumerate() {
-            self.extract_paths_recursive(
-                sample,
-                String::new(),
-                &mut paths,
-                idx,
-                total_samples,
-            );
+            self.extract_paths_recursive(sample, String::new(), &mut paths, idx, total_samples);
         }
 
         // Convert to DiscoveredPath with analysis
@@ -71,7 +60,8 @@ impl DataPathExtractor {
 
         // Sort by coverage and path length
         result.sort_by(|a, b| {
-            b.coverage.partial_cmp(&a.coverage)
+            b.coverage
+                .partial_cmp(&a.coverage)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then(a.path.len().cmp(&b.path.len()))
         });
@@ -91,10 +81,22 @@ impl DataPathExtractor {
         match value {
             serde_json::Value::Null => {
                 // Record null value at this path
-                self.record_path_value(paths, &current_path, DataType::Null, sample_index, total_samples);
+                self.record_path_value(
+                    paths,
+                    &current_path,
+                    DataType::Null,
+                    sample_index,
+                    total_samples,
+                );
             }
             serde_json::Value::Bool(_b) => {
-                self.record_path_value(paths, &current_path, DataType::Boolean, sample_index, total_samples);
+                self.record_path_value(
+                    paths,
+                    &current_path,
+                    DataType::Boolean,
+                    sample_index,
+                    total_samples,
+                );
             }
             serde_json::Value::Number(n) => {
                 let data_type = if n.is_i64() {
@@ -102,21 +104,40 @@ impl DataPathExtractor {
                 } else {
                     DataType::Float
                 };
-                self.record_path_value(paths, &current_path, data_type, sample_index, total_samples);
+                self.record_path_value(
+                    paths,
+                    &current_path,
+                    data_type,
+                    sample_index,
+                    total_samples,
+                );
             }
             serde_json::Value::String(s) => {
-                self.record_path_value(paths, &current_path, DataType::String, sample_index, total_samples);
+                self.record_path_value(
+                    paths,
+                    &current_path,
+                    DataType::String,
+                    sample_index,
+                    total_samples,
+                );
 
                 // Check for encoded data (base64, hex)
                 if self.looks_like_base64(s) {
-                    paths.entry(format!("{}_decoded", current_path))
+                    paths
+                        .entry(format!("{}_decoded", current_path))
                         .or_insert_with(|| PathInfo::new(DataType::Binary))
                         .add_sample(sample_index, serde_json::Value::String(s.clone()));
                 }
             }
             serde_json::Value::Array(arr) => {
                 // Record array path
-                self.record_path_value(paths, &current_path, DataType::Array, sample_index, total_samples);
+                self.record_path_value(
+                    paths,
+                    &current_path,
+                    DataType::Array,
+                    sample_index,
+                    total_samples,
+                );
 
                 // Process array elements
                 for (idx, element) in arr.iter().enumerate() {
@@ -125,12 +146,24 @@ impl DataPathExtractor {
                     } else {
                         format!("{}.{}", current_path, idx)
                     };
-                    self.extract_paths_recursive(element, element_path, paths, sample_index, total_samples);
+                    self.extract_paths_recursive(
+                        element,
+                        element_path,
+                        paths,
+                        sample_index,
+                        total_samples,
+                    );
                 }
             }
             serde_json::Value::Object(obj) => {
                 // Record object path
-                self.record_path_value(paths, &current_path, DataType::Object, sample_index, total_samples);
+                self.record_path_value(
+                    paths,
+                    &current_path,
+                    DataType::Object,
+                    sample_index,
+                    total_samples,
+                );
 
                 // Process object fields
                 for (key, value) in obj {
@@ -139,7 +172,13 @@ impl DataPathExtractor {
                     } else {
                         format!("{}.{}", current_path, key)
                     };
-                    self.extract_paths_recursive(value, field_path, paths, sample_index, total_samples);
+                    self.extract_paths_recursive(
+                        value,
+                        field_path,
+                        paths,
+                        sample_index,
+                        total_samples,
+                    );
                 }
             }
         }
@@ -154,7 +193,8 @@ impl DataPathExtractor {
         sample_index: usize,
         _total_samples: usize,
     ) {
-        let entry = paths.entry(path.to_string())
+        let entry = paths
+            .entry(path.to_string())
             .or_insert_with(|| PathInfo::new(data_type.clone()));
 
         entry.add_sample(sample_index, serde_json::Value::Null);
@@ -188,9 +228,10 @@ impl DataPathExtractor {
                 }
 
                 if data_type.is_numeric()
-                    && let Some(n) = value.as_f64() {
-                        numeric_values.push(n);
-                    }
+                    && let Some(n) = value.as_f64()
+                {
+                    numeric_values.push(n);
+                }
 
                 sample_values.push(value);
             }
@@ -239,11 +280,7 @@ impl DataPathExtractor {
     /// - "field[0]" - array index (bracket notation)
     /// - "field[]" - array wildcard (returns first element or all elements as array)
     /// - "field.0" - array index (dot notation)
-    fn extract_by_path(
-        &self,
-        value: &serde_json::Value,
-        path: &str,
-    ) -> Option<serde_json::Value> {
+    fn extract_by_path(&self, value: &serde_json::Value, path: &str) -> Option<serde_json::Value> {
         if path.is_empty() {
             return Some(value.clone());
         }
@@ -269,10 +306,8 @@ impl DataPathExtractor {
                 while bracket_iter.peek() == Some(&'[') {
                     bracket_iter.next(); // consume '['
 
-                    let index_str: String = bracket_iter
-                        .by_ref()
-                        .take_while(|c| *c != ']')
-                        .collect();
+                    let index_str: String =
+                        bracket_iter.by_ref().take_while(|c| *c != ']').collect();
                     bracket_iter.next(); // consume ']'
 
                     if index_str.is_empty() {
@@ -348,7 +383,10 @@ impl DataPathExtractor {
             tools: None,
         };
 
-        let response = self.llm.generate(input).await
+        let response = self
+            .llm
+            .generate(input)
+            .await
             .map_err(|e| DiscoveryError::Llm(format!("LLM call failed: {}", e)))?;
 
         // Parse LLM response
@@ -361,17 +399,19 @@ impl DataPathExtractor {
             r#"Analyze the following raw device data samples and extract the data structure.
 
 Samples:
-"#
+"#,
         );
 
         for (idx, sample) in samples.iter().enumerate() {
             let preview = if sample.raw_data.len() > 100 {
-                format!("{}... ({} bytes total)",
+                format!(
+                    "{}... ({} bytes total)",
                     String::from_utf8_lossy(&sample.raw_data[..100]),
                     sample.raw_data.len()
                 )
             } else {
-                format!("{} ({} bytes)",
+                format!(
+                    "{} ({} bytes)",
                     String::from_utf8_lossy(&sample.raw_data),
                     sample.raw_data.len()
                 )
@@ -381,7 +421,9 @@ Samples:
 
             // Try to show as hex for binary data
             if sample.parsed.is_none() {
-                let hex_preview: String = sample.raw_data.iter()
+                let hex_preview: String = sample
+                    .raw_data
+                    .iter()
                     .take(32)
                     .map(|b| format!("{:02x}", b))
                     .collect::<Vec<_>>()
@@ -412,7 +454,7 @@ If the data appears to be:
 - Hex encoded binary: describe the byte structure
 - Base64 encoded: note that and describe the inner structure
 - Raw binary: describe any visible patterns
-"#
+"#,
         );
 
         prompt
@@ -443,7 +485,8 @@ If the data appears to be:
                         is_consistent: true,
                         coverage: 1.0, // LLM-provided paths assumed consistent
                         sample_values: field["sample_values"]
-                            .as_array().cloned()
+                            .as_array()
+                            .cloned()
                             .unwrap_or_default(),
                         value_range: None,
                         is_array: false,
@@ -474,14 +517,21 @@ If the data appears to be:
                     if in_json_block {
                         break;
                     }
-                } else if in_json_block || line.trim().starts_with('{') || line.trim().starts_with('[') {
+                } else if in_json_block
+                    || line.trim().starts_with('{')
+                    || line.trim().starts_with('[')
+                {
                     in_json_block = true;
                     json_lines.push(line);
                 }
             }
 
             if !json_lines.is_empty() {
-                let joined: String = json_lines.iter().map(|s| s.to_string()).collect::<Vec<_>>().join("\n");
+                let joined: String = json_lines
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 return Ok(joined);
             }
         }
@@ -493,19 +543,18 @@ If the data appears to be:
 
         // Find first JSON object
         if let Some(start) = response.find('{')
-            && let Some(end) = response.rfind('}') {
-                return Ok(response[start..=end].to_string());
-            }
+            && let Some(end) = response.rfind('}')
+        {
+            return Ok(response[start..=end].to_string());
+        }
 
-        Err(DiscoveryError::Parse("No JSON found in LLM response".into()))
+        Err(DiscoveryError::Parse(
+            "No JSON found in LLM response".into(),
+        ))
     }
 
     /// Validate a path against all samples
-    pub fn validate_path(
-        &self,
-        path: &str,
-        samples: &[DeviceSample],
-    ) -> PathValidity {
+    pub fn validate_path(&self, path: &str, samples: &[DeviceSample]) -> PathValidity {
         if samples.is_empty() {
             return PathValidity::Invalid;
         }
@@ -560,7 +609,8 @@ If the data appears to be:
             return false;
         }
 
-        s.chars().all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=')
+        s.chars()
+            .all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=')
     }
 
     /// Get suggested access paths for a semantic type
@@ -665,7 +715,10 @@ mod tests {
         async fn generate(
             &self,
             _input: neomind_core::llm::backend::LlmInput,
-        ) -> std::result::Result<neomind_core::llm::backend::LlmOutput, neomind_core::llm::backend::LlmError> {
+        ) -> std::result::Result<
+            neomind_core::llm::backend::LlmOutput,
+            neomind_core::llm::backend::LlmError,
+        > {
             Ok(neomind_core::llm::backend::LlmOutput {
                 text: r#"{"fields": [{"name": "temperature", "type": "float", "sample_values": [25.5, 26.0, 24.8]}]}"#.to_string(),
                 finish_reason: neomind_core::llm::backend::FinishReason::Stop,
@@ -677,15 +730,18 @@ mod tests {
         async fn generate_stream(
             &self,
             _input: neomind_core::llm::backend::LlmInput,
-        ) -> std::result::Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, neomind_core::llm::backend::LlmError> {
+        ) -> std::result::Result<
+            Pin<Box<dyn Stream<Item = StreamChunk> + Send>>,
+            neomind_core::llm::backend::LlmError,
+        > {
             use futures::stream;
             Ok(Box::pin(stream::empty()))
         }
     }
 
-    use std::pin::Pin;
     use futures::Stream;
     use neomind_core::llm::backend::StreamChunk;
+    use std::pin::Pin;
 
     #[tokio::test]
     async fn test_extract_from_json_samples() {
@@ -693,18 +749,9 @@ mod tests {
         let extractor = DataPathExtractor::new(llm);
 
         let samples = vec![
-            DeviceSample::from_json(
-                serde_json::json!({"temp": 25.5, "hum": 60}),
-                "test"
-            ),
-            DeviceSample::from_json(
-                serde_json::json!({"temp": 26.0, "hum": 61}),
-                "test"
-            ),
-            DeviceSample::from_json(
-                serde_json::json!({"temp": 24.8, "hum": 59}),
-                "test"
-            ),
+            DeviceSample::from_json(serde_json::json!({"temp": 25.5, "hum": 60}), "test"),
+            DeviceSample::from_json(serde_json::json!({"temp": 26.0, "hum": 61}), "test"),
+            DeviceSample::from_json(serde_json::json!({"temp": 24.8, "hum": 59}), "test"),
         ];
 
         let paths = extractor.extract_paths(&samples).await.unwrap();
@@ -734,7 +781,7 @@ mod tests {
                     ]
                 }
             }),
-            "test"
+            "test",
         )];
 
         let paths = extractor.extract_paths(&samples).await.unwrap();
@@ -787,24 +834,15 @@ mod tests {
         };
 
         let samples = vec![
-            DeviceSample::from_json(
-                serde_json::json!({"temp": 25.5, "hum": 60}),
-                "test"
-            ),
-            DeviceSample::from_json(
-                serde_json::json!({"temp": 26.0}),
-                "test"
-            ),
-            DeviceSample::from_json(
-                serde_json::json!({"other": 123}),
-                "test"
-            ),
+            DeviceSample::from_json(serde_json::json!({"temp": 25.5, "hum": 60}), "test"),
+            DeviceSample::from_json(serde_json::json!({"temp": 26.0}), "test"),
+            DeviceSample::from_json(serde_json::json!({"other": 123}), "test"),
         ];
 
         // Consistent path
         assert_eq!(
             extractor.validate_path("temp", &samples),
-            PathValidity::Inconsistent  // 2 out of 3 samples have "temp"
+            PathValidity::Inconsistent // 2 out of 3 samples have "temp"
         );
 
         // Partially present
@@ -861,7 +899,8 @@ mod tests {
             },
         ];
 
-        let suggestions = extractor.suggest_paths_for_semantic(&discovered, SemanticType::Temperature);
+        let suggestions =
+            extractor.suggest_paths_for_semantic(&discovered, SemanticType::Temperature);
 
         assert!(!suggestions.is_empty());
     }

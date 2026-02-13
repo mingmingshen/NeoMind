@@ -12,15 +12,15 @@
 
 pub mod executor;
 pub mod intent_parser;
-pub mod scheduler;
 pub mod llm_pool;
+pub mod scheduler;
 
-use neomind_storage::{AiAgent, AgentExecutionRecord, AgentSchedule, AgentStatus, ExecutionStatus};
+use neomind_storage::{AgentExecutionRecord, AgentSchedule, AgentStatus, AiAgent, ExecutionStatus};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-pub use executor::{AgentExecutor, AgentExecutorConfig, ExecutionContext, AgentExecutionResult};
+pub use executor::{AgentExecutionResult, AgentExecutor, AgentExecutorConfig, ExecutionContext};
 pub use intent_parser::IntentParser;
 pub use scheduler::{AgentScheduler, ScheduledTask, SchedulerConfig, SchedulerError};
 
@@ -158,7 +158,7 @@ impl AiAgentManager {
             conversation_summary: Default::default(),
             context_window_size: Default::default(),
             enable_tool_chaining: false, // Default disabled for backward compatibility
-            max_chain_depth: 3, // Default max depth
+            max_chain_depth: 3,          // Default max depth
         };
 
         // Save agent to storage
@@ -323,10 +323,12 @@ impl AiAgentManager {
     async fn reload_active_agents(&self) -> Result<(), crate::error::NeoMindError> {
         use neomind_storage::{AgentFilter, AgentStatus, ScheduleType};
 
-        let agents = self.list_agents(AgentFilter {
-            status: Some(AgentStatus::Active),
-            ..Default::default()
-        }).await?;
+        let agents = self
+            .list_agents(AgentFilter {
+                status: Some(AgentStatus::Active),
+                ..Default::default()
+            })
+            .await?;
 
         let mut scheduled_count = 0;
         let mut skipped_count = 0;
@@ -397,7 +399,10 @@ impl AiAgentManager {
     }
 
     /// Set the global default timezone for the scheduler.
-    pub async fn set_global_timezone(&self, timezone: String) -> Result<(), crate::error::NeoMindError> {
+    pub async fn set_global_timezone(
+        &self,
+        timezone: String,
+    ) -> Result<(), crate::error::NeoMindError> {
         self.scheduler
             .set_default_timezone(timezone)
             .await

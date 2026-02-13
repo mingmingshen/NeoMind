@@ -179,11 +179,7 @@ impl AgentEvent {
     }
 
     /// Create a progress event.
-    pub fn progress(
-        message: impl Into<String>,
-        stage: impl Into<String>,
-        elapsed: u64,
-    ) -> Self {
+    pub fn progress(message: impl Into<String>, stage: impl Into<String>, elapsed: u64) -> Self {
         Self::Progress {
             message: message.into(),
             stage: Some(stage.into()),
@@ -471,9 +467,10 @@ impl AgentMessage {
             "user" => {
                 // Check if this message has images - create multimodal message
                 if let Some(ref images) = self.images
-                    && !images.is_empty() {
-                        return self.to_core_multimodal();
-                    }
+                    && !images.is_empty()
+                {
+                    return self.to_core_multimodal();
+                }
                 Message::user(&self.content)
             }
             "assistant" => {
@@ -516,11 +513,7 @@ impl AgentMessage {
                 // Extract mime type from "data:image/png;base64,"
                 let mime = image.mime_type.clone().unwrap_or_else(|| {
                     if let Some(start) = prefix.strip_prefix("data:") {
-                        start
-                            .split(';')
-                            .next()
-                            .unwrap_or("image/png")
-                            .to_string()
+                        start.split(';').next().unwrap_or("image/png").to_string()
                     } else {
                         "image/png".to_string()
                     }
@@ -529,7 +522,10 @@ impl AgentMessage {
                 (mime, data)
             } else {
                 // Not a data URL, use as-is
-                (image.mime_type.clone().unwrap_or("image/png".to_string()), image.data.as_str())
+                (
+                    image.mime_type.clone().unwrap_or("image/png".to_string()),
+                    image.data.as_str(),
+                )
             };
 
             parts.push(ContentPart::image_base64(base64_data, mime_type));
@@ -732,6 +728,48 @@ pub enum LlmBackend {
     Ollama { endpoint: String, model: String },
     /// OpenAI-compatible API
     OpenAi {
+        api_key: String,
+        endpoint: String,
+        model: String,
+    },
+    /// Anthropic API
+    Anthropic {
+        api_key: String,
+        endpoint: String,
+        model: String,
+    },
+    /// Google AI API
+    Google {
+        api_key: String,
+        endpoint: String,
+        model: String,
+    },
+    /// xAI (Grok) API
+    XAi {
+        api_key: String,
+        endpoint: String,
+        model: String,
+    },
+    /// Qwen (Alibaba DashScope)
+    Qwen {
+        api_key: String,
+        endpoint: String,
+        model: String,
+    },
+    /// DeepSeek API
+    DeepSeek {
+        api_key: String,
+        endpoint: String,
+        model: String,
+    },
+    /// Zhipu GLM API
+    GLM {
+        api_key: String,
+        endpoint: String,
+        model: String,
+    },
+    /// MiniMax API
+    MiniMax {
         api_key: String,
         endpoint: String,
         model: String,

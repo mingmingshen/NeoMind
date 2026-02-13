@@ -2,10 +2,10 @@
 //!
 //! Provides a foundation for building stream-based connectors.
 
+use futures::{SinkExt, Stream, StreamExt, channel::mpsc};
 use neomind_core::integration::connector::{
     BaseConnector as CoreBaseConnector, Connector, ConnectorError, Result,
 };
-use futures::{SinkExt, Stream, StreamExt, channel::mpsc};
 use parking_lot::Mutex;
 use std::pin::Pin;
 use std::sync::Arc;

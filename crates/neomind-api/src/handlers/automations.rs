@@ -7,14 +7,13 @@ use axum::{
     Json,
     extract::{Path, Query, State},
 };
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use std::collections::HashMap;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::collections::HashMap;
 
 use neomind_automation::{
-    Automation, AutomationConverter, AutomationType, IntentResult,
-    transform::JsTransformExecutor,
+    Automation, AutomationConverter, AutomationType, IntentResult, transform::JsTransformExecutor,
 };
 
 use super::{
@@ -208,17 +207,26 @@ pub async fn list_automations_handler(
 
             // Filter by enabled status
             if let Some(enabled) = filter.enabled
-                && a.is_enabled() != enabled {
-                    return false;
-                }
+                && a.is_enabled() != enabled
+            {
+                return false;
+            }
 
             // Search in name/description
             if let Some(search) = &filter.search {
                 let search_lower = search.to_lowercase();
                 let name_matches = a.name().to_lowercase().contains(&search_lower);
                 let desc_matches = match a {
-                    Automation::Transform(t) => t.metadata.description.to_lowercase().contains(&search_lower),
-                    Automation::Rule(r) => r.metadata.description.to_lowercase().contains(&search_lower),
+                    Automation::Transform(t) => t
+                        .metadata
+                        .description
+                        .to_lowercase()
+                        .contains(&search_lower),
+                    Automation::Rule(r) => r
+                        .metadata
+                        .description
+                        .to_lowercase()
+                        .contains(&search_lower),
                 };
                 if !name_matches && !desc_matches {
                     return false;
@@ -247,7 +255,9 @@ pub async fn get_automation_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<Value> {
     let Some(store) = &state.automation.automation_store else {
-        return Err(ErrorResponse::service_unavailable("Automation store not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Automation store not available",
+        ));
     };
 
     match store.get_automation(&id).await {
@@ -258,12 +268,13 @@ pub async fn get_automation_handler(
                 "definition": automation,
             }))
         }
-        Ok(None) => {
-            Err(ErrorResponse::not_found("Automation not found"))
-        }
+        Ok(None) => Err(ErrorResponse::not_found("Automation not found")),
         Err(e) => {
             tracing::error!("Error getting automation: {}", e);
-            Err(ErrorResponse::internal(format!("Failed to get automation: {}", e)))
+            Err(ErrorResponse::internal(format!(
+                "Failed to get automation: {}",
+                e
+            )))
         }
     }
 }
@@ -276,7 +287,9 @@ pub async fn create_automation_handler(
     Json(req): Json<CreateAutomationRequest>,
 ) -> HandlerResult<Value> {
     let Some(store) = &state.automation.automation_store else {
-        return Err(ErrorResponse::service_unavailable("Automation store not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Automation store not available",
+        ));
     };
 
     // Determine automation type
@@ -289,7 +302,10 @@ pub async fn create_automation_handler(
             match serde_json::from_value(req.definition) {
                 Ok(transform) => Automation::Transform(transform),
                 Err(e) => {
-                    return Err(ErrorResponse::bad_request(format!("Invalid transform definition: {}", e)));
+                    return Err(ErrorResponse::bad_request(format!(
+                        "Invalid transform definition: {}",
+                        e
+                    )));
                 }
             }
         }
@@ -298,7 +314,10 @@ pub async fn create_automation_handler(
             match serde_json::from_value(req.definition) {
                 Ok(rule) => Automation::Rule(rule),
                 Err(e) => {
-                    return Err(ErrorResponse::bad_request(format!("Invalid rule definition: {}", e)));
+                    return Err(ErrorResponse::bad_request(format!(
+                        "Invalid rule definition: {}",
+                        e
+                    )));
                 }
             }
         }
@@ -315,7 +334,10 @@ pub async fn create_automation_handler(
         }
         Err(e) => {
             tracing::error!("Error creating automation: {}", e);
-            Err(ErrorResponse::internal(format!("Failed to create automation: {}", e)))
+            Err(ErrorResponse::internal(format!(
+                "Failed to create automation: {}",
+                e
+            )))
         }
     }
 }
@@ -329,7 +351,9 @@ pub async fn update_automation_handler(
     Json(req): Json<UpdateAutomationRequest>,
 ) -> HandlerResult<Value> {
     let Some(store) = &state.automation.automation_store else {
-        return Err(ErrorResponse::service_unavailable("Automation store not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Automation store not available",
+        ));
     };
 
     // Get existing automation
@@ -339,7 +363,10 @@ pub async fn update_automation_handler(
             return Err(ErrorResponse::not_found("Automation not found"));
         }
         Err(e) => {
-            return Err(ErrorResponse::internal(format!("Failed to get automation: {}", e)));
+            return Err(ErrorResponse::internal(format!(
+                "Failed to get automation: {}",
+                e
+            )));
         }
     };
 
@@ -381,9 +408,10 @@ pub async fn update_automation_handler(
                 "message": "Automation updated successfully",
             }))
         }
-        Err(e) => {
-            Err(ErrorResponse::internal(format!("Failed to update automation: {}", e)))
-        }
+        Err(e) => Err(ErrorResponse::internal(format!(
+            "Failed to update automation: {}",
+            e
+        ))),
     }
 }
 
@@ -395,21 +423,20 @@ pub async fn delete_automation_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<Value> {
     let Some(store) = &state.automation.automation_store else {
-        return Err(ErrorResponse::service_unavailable("Automation store not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Automation store not available",
+        ));
     };
 
     match store.delete_automation(&id).await {
-        Ok(true) => {
-            ok(json!({
-                "message": "Automation deleted successfully",
-            }))
-        }
-        Ok(false) => {
-            Err(ErrorResponse::not_found("Automation not found"))
-        }
-        Err(e) => {
-            Err(ErrorResponse::internal(format!("Failed to delete automation: {}", e)))
-        }
+        Ok(true) => ok(json!({
+            "message": "Automation deleted successfully",
+        })),
+        Ok(false) => Err(ErrorResponse::not_found("Automation not found")),
+        Err(e) => Err(ErrorResponse::internal(format!(
+            "Failed to delete automation: {}",
+            e
+        ))),
     }
 }
 
@@ -422,7 +449,9 @@ pub async fn set_automation_status_handler(
     Json(req): Json<SetAutomationStatusRequest>,
 ) -> HandlerResult<Value> {
     let Some(store) = &state.automation.automation_store else {
-        return Err(ErrorResponse::service_unavailable("Automation store not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Automation store not available",
+        ));
     };
 
     // Get existing automation
@@ -432,7 +461,10 @@ pub async fn set_automation_status_handler(
             return Err(ErrorResponse::not_found("Automation not found"));
         }
         Err(e) => {
-            return Err(ErrorResponse::internal(format!("Failed to get automation: {}", e)));
+            return Err(ErrorResponse::internal(format!(
+                "Failed to get automation: {}",
+                e
+            )));
         }
     };
 
@@ -448,15 +480,14 @@ pub async fn set_automation_status_handler(
 
     // Save the updated automation
     match store.save_automation(&existing).await {
-        Ok(_) => {
-            ok(json!({
-                "message": format!("Automation {}", if req.enabled { "enabled" } else { "disabled" }),
-                "enabled": req.enabled,
-            }))
-        }
-        Err(e) => {
-            Err(ErrorResponse::internal(format!("Failed to update automation: {}", e)))
-        }
+        Ok(_) => ok(json!({
+            "message": format!("Automation {}", if req.enabled { "enabled" } else { "disabled" }),
+            "enabled": req.enabled,
+        })),
+        Err(e) => Err(ErrorResponse::internal(format!(
+            "Failed to update automation: {}",
+            e
+        ))),
     }
 }
 
@@ -493,18 +524,47 @@ fn heuristic_analysis(description: &str) -> IntentResult {
 
     // Transform indicators (data processing keywords)
     let transform_keywords = [
-        "calculate", "compute", "aggregate", "average", "sum", "count",
-        "extract", "parse", "transform", "convert", "process",
-        "statistics", "metric", "virtual", "derived",
-        "array", "group by", "filter", "map",
+        "calculate",
+        "compute",
+        "aggregate",
+        "average",
+        "sum",
+        "count",
+        "extract",
+        "parse",
+        "transform",
+        "convert",
+        "process",
+        "statistics",
+        "metric",
+        "virtual",
+        "derived",
+        "array",
+        "group by",
+        "filter",
+        "map",
     ];
 
     // Rule indicators (simple if-then)
     let rule_keywords = [
-        "when", "if", "then", "trigger", "activates",
-        "exceeds", "below", "above", "equals", "threshold",
-        "sensor", "detects", "monitors", "alert",
-        "send", "notify", "execute", "command",
+        "when",
+        "if",
+        "then",
+        "trigger",
+        "activates",
+        "exceeds",
+        "below",
+        "above",
+        "equals",
+        "threshold",
+        "sensor",
+        "detects",
+        "monitors",
+        "alert",
+        "send",
+        "notify",
+        "execute",
+        "command",
     ];
 
     let mut transform_score = 0i32;
@@ -535,30 +595,29 @@ fn heuristic_analysis(description: &str) -> IntentResult {
     }
 
     // Determine result
-    let (recommended_type, confidence, reasoning, warnings) =
-        if transform_score > rule_score + 10 {
-            (
-                AutomationType::Transform,
-                (transform_score - rule_score).min(100) as u8,
-                "This appears to be a data processing automation".to_string(),
-                vec![]
-            )
-        } else if rule_score > transform_score + 10 {
-            (
-                AutomationType::Rule,
-                (rule_score - transform_score).min(100) as u8,
-                "This appears to be a conditional automation".to_string(),
-                vec![]
-            )
-        } else {
-            // Close call - default to rule for automation use cases
-            (
-                AutomationType::Rule,
-                55,
-                "This could be either a transform or rule - defaulting to rule".to_string(),
-                vec!["Moderate confidence - consider specifying the type explicitly".to_string()]
-            )
-        };
+    let (recommended_type, confidence, reasoning, warnings) = if transform_score > rule_score + 10 {
+        (
+            AutomationType::Transform,
+            (transform_score - rule_score).min(100) as u8,
+            "This appears to be a data processing automation".to_string(),
+            vec![],
+        )
+    } else if rule_score > transform_score + 10 {
+        (
+            AutomationType::Rule,
+            (rule_score - transform_score).min(100) as u8,
+            "This appears to be a conditional automation".to_string(),
+            vec![],
+        )
+    } else {
+        // Close call - default to rule for automation use cases
+        (
+            AutomationType::Rule,
+            55,
+            "This could be either a transform or rule - defaulting to rule".to_string(),
+            vec!["Moderate confidence - consider specifying the type explicitly".to_string()],
+        )
+    };
 
     IntentResult {
         recommended_type,
@@ -577,7 +636,9 @@ pub async fn get_conversion_info_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<Value> {
     let Some(store) = &state.automation.automation_store else {
-        return Err(ErrorResponse::service_unavailable("Automation store not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Automation store not available",
+        ));
     };
 
     match store.get_automation(&id).await {
@@ -592,12 +653,11 @@ pub async fn get_conversion_info_handler(
                 "estimated_complexity": recommendation.estimated_complexity,
             }))
         }
-        Ok(None) => {
-            Err(ErrorResponse::not_found("Automation not found"))
-        }
-        Err(e) => {
-            Err(ErrorResponse::internal(format!("Failed to get automation: {}", e)))
-        }
+        Ok(None) => Err(ErrorResponse::not_found("Automation not found")),
+        Err(e) => Err(ErrorResponse::internal(format!(
+            "Failed to get automation: {}",
+            e
+        ))),
     }
 }
 
@@ -610,7 +670,9 @@ pub async fn convert_automation_handler(
     Json(req): Json<ConvertAutomationRequest>,
 ) -> HandlerResult<Value> {
     let Some(store) = &state.automation.automation_store else {
-        return Err(ErrorResponse::service_unavailable("Automation store not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Automation store not available",
+        ));
     };
 
     // Get existing automation
@@ -620,23 +682,34 @@ pub async fn convert_automation_handler(
             return Err(ErrorResponse::not_found("Automation not found"));
         }
         Err(e) => {
-            return Err(ErrorResponse::internal(format!("Failed to get automation: {}", e)));
+            return Err(ErrorResponse::internal(format!(
+                "Failed to get automation: {}",
+                e
+            )));
         }
     };
 
     // Perform conversion - only Transform <-> Rule conversion is supported
     match (existing, req.r#type) {
         (Automation::Transform(_), AutomationType::Transform) => {
-            return Err(ErrorResponse::bad_request("Cannot convert to the same type"));
+            return Err(ErrorResponse::bad_request(
+                "Cannot convert to the same type",
+            ));
         }
         (Automation::Rule(_), AutomationType::Rule) => {
-            return Err(ErrorResponse::bad_request("Cannot convert to the same type"));
+            return Err(ErrorResponse::bad_request(
+                "Cannot convert to the same type",
+            ));
         }
         (Automation::Transform(_), AutomationType::Rule) => {
-            return Err(ErrorResponse::bad_request("Transform to Rule conversion is not directly supported. Create a new Rule based on the Transform's output metrics."));
+            return Err(ErrorResponse::bad_request(
+                "Transform to Rule conversion is not directly supported. Create a new Rule based on the Transform's output metrics.",
+            ));
         }
         (Automation::Rule(_), AutomationType::Transform) => {
-            return Err(ErrorResponse::bad_request("Rule to Transform conversion is not supported. Transforms are for data processing, not reactive automation."));
+            return Err(ErrorResponse::bad_request(
+                "Rule to Transform conversion is not supported. Transforms are for data processing, not reactive automation.",
+            ));
         }
         // Future: Add support for actual conversion here
         _ => {
@@ -654,7 +727,9 @@ pub async fn get_automations_executions_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<Value> {
     let Some(store) = &state.automation.automation_store else {
-        return Err(ErrorResponse::service_unavailable("Automation store not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Automation store not available",
+        ));
     };
 
     let limit = params
@@ -663,25 +738,22 @@ pub async fn get_automations_executions_handler(
         .unwrap_or(10);
 
     match store.get_executions(&id, limit).await {
-        Ok(executions) => {
-            ok(json!({
-                "automation_id": id,
-                "executions": executions,
-                "count": executions.len(),
-            }))
-        }
-        Err(e) => {
-            Err(ErrorResponse::internal(format!("Failed to get executions: {}", e)))
-        }
+        Ok(executions) => ok(json!({
+            "automation_id": id,
+            "executions": executions,
+            "count": executions.len(),
+        })),
+        Err(e) => Err(ErrorResponse::internal(format!(
+            "Failed to get executions: {}",
+            e
+        ))),
     }
 }
 
 /// List all automation templates.
 ///
 /// GET /api/automations/templates
-pub async fn list_templates_handler(
-    State(state): State<ServerState>,
-) -> HandlerResult<Value> {
+pub async fn list_templates_handler(State(state): State<ServerState>) -> HandlerResult<Value> {
     let Some(store) = &state.automation.automation_store else {
         return ok(json!({
             "templates": [],
@@ -690,24 +762,21 @@ pub async fn list_templates_handler(
     };
 
     match store.list_templates() {
-        Ok(templates) => {
-            ok(json!({
-                "templates": templates,
-                "count": templates.len(),
-            }))
-        }
-        Err(e) => {
-            Err(ErrorResponse::internal(format!("Failed to list templates: {}", e)))
-        }
+        Ok(templates) => ok(json!({
+            "templates": templates,
+            "count": templates.len(),
+        })),
+        Err(e) => Err(ErrorResponse::internal(format!(
+            "Failed to list templates: {}",
+            e
+        ))),
     }
 }
 
 /// Export all automations.
 ///
 /// GET /api/automations/export
-pub async fn export_automations_handler(
-    State(state): State<ServerState>,
-) -> HandlerResult<Value> {
+pub async fn export_automations_handler(State(state): State<ServerState>) -> HandlerResult<Value> {
     let Some(store) = &state.automation.automation_store else {
         return ok(json!({
             "automations": [],
@@ -716,16 +785,15 @@ pub async fn export_automations_handler(
     };
 
     match store.list_automations().await {
-        Ok(automations) => {
-            ok(json!({
-                "automations": automations,
-                "count": automations.len(),
-                "exported_at": chrono::Utc::now().to_rfc3339(),
-            }))
-        }
-        Err(e) => {
-            Err(ErrorResponse::internal(format!("Failed to export automations: {}", e)))
-        }
+        Ok(automations) => ok(json!({
+            "automations": automations,
+            "count": automations.len(),
+            "exported_at": chrono::Utc::now().to_rfc3339(),
+        })),
+        Err(e) => Err(ErrorResponse::internal(format!(
+            "Failed to export automations: {}",
+            e
+        ))),
     }
 }
 
@@ -737,13 +805,18 @@ pub async fn import_automations_handler(
     Json(data): Json<Value>,
 ) -> HandlerResult<Value> {
     let Some(store) = &state.automation.automation_store else {
-        return Err(ErrorResponse::service_unavailable("Automation store not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Automation store not available",
+        ));
     };
 
     let automations: Vec<Automation> = match serde_json::from_value(data["automations"].clone()) {
         Ok(a) => a,
         Err(e) => {
-            return Err(ErrorResponse::bad_request(format!("Invalid automations data: {}", e)));
+            return Err(ErrorResponse::bad_request(format!(
+                "Invalid automations data: {}",
+                e
+            )));
         }
     };
 
@@ -792,11 +865,15 @@ pub async fn process_data_handler(
     Json(req): Json<ProcessDataRequest>,
 ) -> HandlerResult<Value> {
     let Some(transform_engine) = &state.automation.transform_engine else {
-        return Err(ErrorResponse::service_unavailable("Transform engine not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Transform engine not available",
+        ));
     };
 
     let Some(store) = &state.automation.automation_store else {
-        return Err(ErrorResponse::service_unavailable("Automation store not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Automation store not available",
+        ));
     };
 
     // Load all transforms
@@ -858,7 +935,10 @@ pub async fn process_data_handler(
         }
         Err(e) => {
             tracing::error!("Transform processing error: {}", e);
-            Err(ErrorResponse::internal(format!("Transform processing failed: {}", e)))
+            Err(ErrorResponse::internal(format!(
+                "Transform processing failed: {}",
+                e
+            )))
         }
     }
 }
@@ -872,11 +952,15 @@ pub async fn test_transform_handler(
     Json(req): Json<ProcessDataRequest>,
 ) -> HandlerResult<Value> {
     let Some(transform_engine) = &state.automation.transform_engine else {
-        return Err(ErrorResponse::service_unavailable("Transform engine not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Transform engine not available",
+        ));
     };
 
     let Some(store) = &state.automation.automation_store else {
-        return Err(ErrorResponse::service_unavailable("Automation store not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Automation store not available",
+        ));
     };
 
     // Load the specific transform
@@ -886,7 +970,10 @@ pub async fn test_transform_handler(
             return Err(ErrorResponse::not_found("Transform not found"));
         }
         Err(e) => {
-            return Err(ErrorResponse::internal(format!("Failed to load transform: {}", e)));
+            return Err(ErrorResponse::internal(format!(
+                "Failed to load transform: {}",
+                e
+            )));
         }
     };
 
@@ -908,26 +995,23 @@ pub async fn test_transform_handler(
         .await;
 
     match result {
-        Ok(transform_result) => {
-            ok(json!({
-                "transform_id": id,
-                "metrics": transform_result.metrics,
-                "count": transform_result.metrics.len(),
-                "warnings": transform_result.warnings,
-            }))
-        }
-        Err(e) => {
-            Err(ErrorResponse::internal(format!("Transform test failed: {}", e)))
-        }
+        Ok(transform_result) => ok(json!({
+            "transform_id": id,
+            "metrics": transform_result.metrics,
+            "count": transform_result.metrics.len(),
+            "warnings": transform_result.warnings,
+        })),
+        Err(e) => Err(ErrorResponse::internal(format!(
+            "Transform test failed: {}",
+            e
+        ))),
     }
 }
 
 /// Get list of all transforms (filtering by type).
 ///
 /// GET /api/automations/transforms
-pub async fn list_transforms_handler(
-    State(state): State<ServerState>,
-) -> HandlerResult<Value> {
+pub async fn list_transforms_handler(State(state): State<ServerState>) -> HandlerResult<Value> {
     let Some(store) = &state.automation.automation_store else {
         return ok(json!({
             "transforms": [],
@@ -950,9 +1034,10 @@ pub async fn list_transforms_handler(
                 "count": transforms.len(),
             }))
         }
-        Err(e) => {
-            Err(ErrorResponse::internal(format!("Failed to list transforms: {}", e)))
-        }
+        Err(e) => Err(ErrorResponse::internal(format!(
+            "Failed to list transforms: {}",
+            e
+        ))),
     }
 }
 
@@ -982,17 +1067,20 @@ pub async fn list_virtual_metrics_handler(
                         metrics_map
                             .entry(transform.output_prefix.clone())
                             .or_default()
-                            .push(format!("{}:{}", transform.metadata.id, transform.metadata.name));
+                            .push(format!(
+                                "{}:{}",
+                                transform.metadata.id, transform.metadata.name
+                            ));
                     }
                     // Check for legacy operation-based transforms
                     if let Some(ref operations) = transform.operations {
                         for operation in operations {
                             let output_metrics = operation.output_metrics();
                             for metric in output_metrics {
-                                metrics_map
-                                    .entry(metric.clone())
-                                    .or_default()
-                                    .push(format!("{}:{}", transform.metadata.id, transform.metadata.name));
+                                metrics_map.entry(metric.clone()).or_default().push(format!(
+                                    "{}:{}",
+                                    transform.metadata.id, transform.metadata.name
+                                ));
                             }
                         }
                     }
@@ -1004,9 +1092,10 @@ pub async fn list_virtual_metrics_handler(
                 "count": metrics_map.len(),
             }))
         }
-        Err(e) => {
-            Err(ErrorResponse::internal(format!("Failed to list virtual metrics: {}", e)))
-        }
+        Err(e) => Err(ErrorResponse::internal(format!(
+            "Failed to list virtual metrics: {}",
+            e
+        ))),
     }
 }
 
@@ -1071,7 +1160,9 @@ pub async fn get_transform_data_source_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<Value> {
     let Some(transform_engine) = &state.automation.transform_engine else {
-        return Err(ErrorResponse::service_unavailable("Transform engine not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Transform engine not available",
+        ));
     };
 
     let registry = transform_engine.output_registry();
@@ -1114,7 +1205,9 @@ pub async fn test_transform_code_handler(
     use neomind_automation::TransformEngine;
 
     let Some(transform_engine) = &state.automation.transform_engine else {
-        return Err(ErrorResponse::service_unavailable("Transform engine not available"));
+        return Err(ErrorResponse::service_unavailable(
+            "Transform engine not available",
+        ));
     };
 
     // Use the current time for the test
@@ -1141,7 +1234,8 @@ pub async fn test_transform_code_handler(
                 .iter()
                 .map(|m| {
                     // Remove prefix from key for cleaner output
-                    let key = m.metric
+                    let key = m
+                        .metric
                         .strip_prefix(&format!("{}.", req.output_prefix))
                         .unwrap_or(&m.metric)
                         .to_string();

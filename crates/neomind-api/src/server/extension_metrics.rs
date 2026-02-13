@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use tracing::{debug, info, warn};
 
-use neomind_core::{datasource::DataSourceId, event::NeoMindEvent, MetricValue as CoreMetricValue};
+use neomind_core::{MetricValue as CoreMetricValue, datasource::DataSourceId, event::NeoMindEvent};
 
 use base64;
 
@@ -85,13 +85,15 @@ impl ExtensionMetricsCollector {
 
         info!(
             category = "extensions",
-            "Extension metrics collector started (interval: {:?})",
-            self.interval
+            "Extension metrics collector started (interval: {:?})", self.interval
         );
 
         // First loop iteration - wait before collecting
         tokio::time::sleep(self.interval).await;
-        info!(category = "extensions", "About to collect metrics for first time");
+        info!(
+            category = "extensions",
+            "About to collect metrics for first time"
+        );
 
         if let Err(e) = self.collect_and_store().await {
             warn!(
@@ -119,7 +121,11 @@ impl ExtensionMetricsCollector {
     async fn collect_and_store(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!(category = "extensions", "collect_and_store() - starting");
         let extensions = self.extension_registry.list().await;
-        info!(category = "extensions", "Got {} extensions", extensions.len());
+        info!(
+            category = "extensions",
+            "Got {} extensions",
+            extensions.len()
+        );
 
         if extensions.is_empty() {
             debug!("No extensions to collect metrics from");
@@ -134,17 +140,28 @@ impl ExtensionMetricsCollector {
 
             // Skip extensions with no metrics
             if info.metrics.is_empty() {
-                info!(category = "extensions", "Extension {} has no metrics, skipping", extension_id);
+                info!(
+                    category = "extensions",
+                    "Extension {} has no metrics, skipping", extension_id
+                );
                 continue;
             }
 
-            info!(category = "extensions", "Extension {} has {} metrics", extension_id, info.metrics.len());
+            info!(
+                category = "extensions",
+                "Extension {} has {} metrics",
+                extension_id,
+                info.metrics.len()
+            );
 
             // Get the actual extension instance
             let extension = match self.extension_registry.get(&extension_id).await {
                 Some(e) => e,
                 None => {
-                    warn!(category = "extensions", "Extension {} not found in registry", extension_id);
+                    warn!(
+                        category = "extensions",
+                        "Extension {} not found in registry", extension_id
+                    );
                     continue;
                 }
             };
@@ -153,8 +170,14 @@ impl ExtensionMetricsCollector {
             // Check if extension has get_all_metrics command
             let has_get_all_metrics = info.commands.iter().any(|c| c.name == "get_all_metrics");
             if has_get_all_metrics {
-                debug!(category = "extensions", "Calling get_all_metrics for extension {}", extension_id);
-                let _ = self.extension_registry.execute_command(&extension_id, "get_all_metrics", &serde_json::json!({})).await;
+                debug!(
+                    category = "extensions",
+                    "Calling get_all_metrics for extension {}", extension_id
+                );
+                let _ = self
+                    .extension_registry
+                    .execute_command(&extension_id, "get_all_metrics", &serde_json::json!({}))
+                    .await;
             }
 
             // Call produce_metrics() to get current values (synchronous call)
@@ -186,7 +209,11 @@ impl ExtensionMetricsCollector {
                 Vec::new()
             });
 
-            info!(category = "extensions", "Got {} metric values", metric_values.len());
+            info!(
+                category = "extensions",
+                "Got {} metric values",
+                metric_values.len()
+            );
 
             if metric_values.is_empty() {
                 debug!(
@@ -199,7 +226,10 @@ impl ExtensionMetricsCollector {
 
             // Store each metric value
             for metric_value in metric_values {
-                info!(category = "extensions", "Storing metric {}", metric_value.name);
+                info!(
+                    category = "extensions",
+                    "Storing metric {}", metric_value.name
+                );
 
                 // Use typed DataSourceId for clean data source identification
                 let source_id = DataSourceId::extension(&extension_id, &metric_value.name);
@@ -223,7 +253,10 @@ impl ExtensionMetricsCollector {
                     }
                     _ => {
                         // Default to string for unknown types
-                        neomind_devices::mdl::MetricValue::String(format!("{:?}", metric_value.value))
+                        neomind_devices::mdl::MetricValue::String(format!(
+                            "{:?}",
+                            metric_value.value
+                        ))
                     }
                 };
 
@@ -234,7 +267,11 @@ impl ExtensionMetricsCollector {
                 // Use DataSourceId device_part() and metric_part() for storage API
                 match self
                     .metrics_storage
-                    .write(&source_id.device_part(), source_id.metric_part(), data_point)
+                    .write(
+                        &source_id.device_part(),
+                        source_id.metric_part(),
+                        data_point,
+                    )
                     .await
                 {
                     Ok(_) => {
@@ -278,9 +315,7 @@ impl ExtensionMetricsCollector {
         if total_metrics > 0 || total_errors > 0 {
             info!(
                 category = "extensions",
-                total_metrics,
-                total_errors,
-                "Extension metrics collection completed"
+                total_metrics, total_errors, "Extension metrics collection completed"
             );
         }
 

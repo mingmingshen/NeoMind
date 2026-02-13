@@ -9,14 +9,13 @@
 //! GET    /api/messages/channels/types        - Available channel types
 //! GET    /api/messages/channels/types/:type/schema - Channel schema
 
-use axum::{Json, extract::{Path, State}};
+use axum::{
+    Json,
+    extract::{Path, State},
+};
 use serde::{Deserialize, Serialize};
 
-use neomind_messages::{
-    ChannelInfo, ChannelStats, MessageChannel, ChannelFactory,
-};
-
-
+use neomind_messages::{ChannelFactory, ChannelInfo, ChannelStats, MessageChannel};
 
 #[cfg(feature = "webhook")]
 use neomind_messages::WebhookChannelFactory;
@@ -24,11 +23,14 @@ use neomind_messages::WebhookChannelFactory;
 #[cfg(feature = "email")]
 use neomind_messages::EmailChannelFactory;
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 
 // Import json macro for handler responses
-use serde_json::json;
 use crate::models::ErrorResponse;
+use serde_json::json;
 
 /// Create channel request.
 #[derive(Debug, Deserialize)]
@@ -174,7 +176,9 @@ pub async fn create_channel_handler(
     // Register channel
     {
         let registry_guard = registry.write().await;
-        registry_guard.register_with_config(req.name.clone(), channel, config_value).await;
+        registry_guard
+            .register_with_config(req.name.clone(), channel, config_value)
+            .await;
     }
 
     let registry_guard = registry.read().await;
@@ -243,10 +247,13 @@ pub async fn get_channel_stats_handler(
 
 /// Router for message channel endpoints.
 pub fn message_channels_router() -> axum::Router<ServerState> {
-    use axum::routing::{get, post, delete};
+    use axum::routing::{delete, get, post};
 
     axum::Router::new()
-        .route("/messages/channels", get(list_channels_handler).post(create_channel_handler))
+        .route(
+            "/messages/channels",
+            get(list_channels_handler).post(create_channel_handler),
+        )
         .route("/messages/channels/stats", get(get_channel_stats_handler))
         .route("/messages/channels/types", get(list_channel_types_handler))
         .route(

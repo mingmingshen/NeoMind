@@ -2,12 +2,15 @@
 //!
 //! Provides endpoints to generate sample data for development/testing.
 
-use axum::{extract::State};
+use axum::extract::State;
 
-use neomind_messages::{Message, MessageSeverity};
 use neomind_core::event::{MetricValue, NeoMindEvent};
+use neomind_messages::{Message, MessageSeverity};
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 
 #[derive(Debug, serde::Serialize)]
 pub struct TestDataSummary {
@@ -26,7 +29,7 @@ pub async fn generate_test_alerts_handler(
     for message in messages {
         match state.core.message_manager.create_message(message).await {
             Ok(_) => created += 1,
-            Err(_) => {}, // Ignore duplicates
+            Err(_) => {} // Ignore duplicates
         }
     }
 
@@ -69,7 +72,13 @@ pub async fn generate_test_data_handler(
     // Create messages
     let messages = generate_test_messages();
     for message in messages {
-        if state.core.message_manager.create_message(message).await.is_ok() {
+        if state
+            .core
+            .message_manager
+            .create_message(message)
+            .await
+            .is_ok()
+        {
             summary.messages_created += 1;
         }
     }
@@ -85,8 +94,7 @@ pub async fn generate_test_data_handler(
 
     summary.message = format!(
         "Generated {} messages and {} events",
-        summary.messages_created,
-        summary.events_published
+        summary.messages_created, summary.events_published
     );
 
     ok(serde_json::to_value(&summary).unwrap())

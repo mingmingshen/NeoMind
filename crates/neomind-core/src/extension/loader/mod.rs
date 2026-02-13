@@ -3,5 +3,5 @@
 pub mod native;
 pub mod wasm;
 
-pub use native::{NativeExtensionLoader, LoadedNativeExtension};
+pub use native::{LoadedNativeExtension, NativeExtensionLoader};
 pub use wasm::WasmExtensionLoader;

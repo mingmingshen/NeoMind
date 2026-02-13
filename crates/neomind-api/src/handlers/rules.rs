@@ -4,12 +4,15 @@ use axum::{
     Json,
     extract::{Path, Query, State},
 };
-use serde_json::{Value, json};
 use chrono;
+use serde_json::{Value, json};
 
-use neomind_rules::{CompiledRule, RuleId, RuleStatus, RuleCondition, RuleAction, ComparisonOperator, MetricDataType as RulesMetricDataType};
-use neomind_rules::dsl::{HttpMethod, AlertSeverity};
 use neomind_devices::MetricDataType as DeviceMetricDataType;
+use neomind_rules::dsl::{AlertSeverity, HttpMethod};
+use neomind_rules::{
+    ComparisonOperator, CompiledRule, MetricDataType as RulesMetricDataType, RuleAction,
+    RuleCondition, RuleId, RuleStatus,
+};
 
 use super::{
     ServerState,
@@ -28,10 +31,10 @@ struct RuleDetailDto {
     trigger_count: u64,
     last_triggered: Option<String>,
     created_at: String,
-    condition: Value,  // Changed to Value to handle different condition types
-    actions: Vec<Value>,  // Changed to Value for frontend-compatible format
+    condition: Value,    // Changed to Value to handle different condition types
+    actions: Vec<Value>, // Changed to Value for frontend-compatible format
     #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<Value>,  // Frontend UI state for proper restoration on edit
+    source: Option<Value>, // Frontend UI state for proper restoration on edit
 }
 
 /// Simple rule info for list responses.
@@ -100,7 +103,12 @@ fn http_method_to_string(method: &HttpMethod) -> &'static str {
 /// Convert RuleCondition to frontend-compatible JSON Value
 fn condition_to_json(cond: &RuleCondition) -> Value {
     match cond {
-        RuleCondition::Device { device_id, metric, operator, threshold } => {
+        RuleCondition::Device {
+            device_id,
+            metric,
+            operator,
+            threshold,
+        } => {
             json!({
                 "device_id": device_id,
                 "metric": metric,
@@ -108,7 +116,12 @@ fn condition_to_json(cond: &RuleCondition) -> Value {
                 "threshold": threshold,
             })
         }
-        RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+        RuleCondition::Extension {
+            extension_id,
+            metric,
+            operator,
+            threshold,
+        } => {
             json!({
                 "extension_id": extension_id,
                 "metric": metric,
@@ -116,7 +129,12 @@ fn condition_to_json(cond: &RuleCondition) -> Value {
                 "threshold": threshold,
             })
         }
-        RuleCondition::DeviceRange { device_id, metric, min, max } => {
+        RuleCondition::DeviceRange {
+            device_id,
+            metric,
+            min,
+            max,
+        } => {
             json!({
                 "device_id": device_id,
                 "metric": metric,
@@ -125,7 +143,12 @@ fn condition_to_json(cond: &RuleCondition) -> Value {
                 "threshold": max,
             })
         }
-        RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+        RuleCondition::ExtensionRange {
+            extension_id,
+            metric,
+            min,
+            max,
+        } => {
             json!({
                 "extension_id": extension_id,
                 "metric": metric,
@@ -158,13 +181,20 @@ fn condition_to_json(cond: &RuleCondition) -> Value {
 /// Convert RuleAction to frontend-compatible JSON Value
 fn action_to_json(action: &RuleAction) -> Value {
     match action {
-        RuleAction::Notify { message, channels: _ } => {
+        RuleAction::Notify {
+            message,
+            channels: _,
+        } => {
             json!({
                 "type": "Notify",
                 "message": message,
             })
         }
-        RuleAction::Execute { device_id, command, params } => {
+        RuleAction::Execute {
+            device_id,
+            command,
+            params,
+        } => {
             json!({
                 "type": "Execute",
                 "device_id": device_id,
@@ -172,14 +202,22 @@ fn action_to_json(action: &RuleAction) -> Value {
                 "params": params,
             })
         }
-        RuleAction::Log { level, message, severity: _ } => {
+        RuleAction::Log {
+            level,
+            message,
+            severity: _,
+        } => {
             json!({
                 "type": "Log",
                 "level": log_level_to_string(level),
                 "message": message,
             })
         }
-        RuleAction::Set { device_id, property, value } => {
+        RuleAction::Set {
+            device_id,
+            property,
+            value,
+        } => {
             json!({
                 "type": "Set",
                 "device_id": device_id,
@@ -193,7 +231,11 @@ fn action_to_json(action: &RuleAction) -> Value {
                 "duration": duration.as_millis(),
             })
         }
-        RuleAction::CreateAlert { title, message, severity } => {
+        RuleAction::CreateAlert {
+            title,
+            message,
+            severity,
+        } => {
             json!({
                 "type": "CreateAlert",
                 "title": title,
@@ -201,7 +243,12 @@ fn action_to_json(action: &RuleAction) -> Value {
                 "severity": alert_severity_to_string(severity),
             })
         }
-        RuleAction::HttpRequest { method, url, headers: _, body: _ } => {
+        RuleAction::HttpRequest {
+            method,
+            url,
+            headers: _,
+            body: _,
+        } => {
             json!({
                 "type": "HttpRequest",
                 "method": http_method_to_string(method),
@@ -217,11 +264,7 @@ impl From<&CompiledRule> for RuleDetailDto {
         let condition_json = condition_to_json(&rule.condition);
 
         // Convert actions to frontend-compatible format
-        let actions_json: Vec<Value> = rule
-            .actions
-            .iter()
-            .map(action_to_json)
-            .collect();
+        let actions_json: Vec<Value> = rule.actions.iter().map(action_to_json).collect();
 
         Self {
             id: rule.id.to_string(),
@@ -280,13 +323,18 @@ pub async fn get_rule_handler(
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
     let rule = state
-        .automation.rule_engine
+        .automation
+        .rule_engine
         .get_rule(&rule_id)
         .await
         .ok_or_else(|| ErrorResponse::not_found("Rule"))?;
 
     let dto = RuleDetailDto::from(&rule);
-    let history = state.automation.rule_engine.get_rule_history(&rule_id).await;
+    let history = state
+        .automation
+        .rule_engine
+        .get_rule_history(&rule_id)
+        .await;
 
     ok(json!({
         "rule": dto,
@@ -344,16 +392,18 @@ pub async fn update_rule_handler(
 
         // Add the rule (this replaces the old one with same ID)
         state
-            .automation.rule_engine
+            .automation
+            .rule_engine
             .add_rule(rule.clone())
             .await
             .map_err(|e| ErrorResponse::internal(format!("Failed to update rule: {}", e)))?;
 
         // Persist to store
         if let Some(ref store) = state.automation.rule_store
-            && let Err(e) = store.save(&rule) {
-                tracing::warn!("Failed to save rule to store: {}", e);
-            }
+            && let Err(e) = store.save(&rule)
+        {
+            tracing::warn!("Failed to save rule to store: {}", e);
+        }
 
         return ok(json!({
             "rule": RuleDetailDto::from(&rule),
@@ -363,7 +413,8 @@ pub async fn update_rule_handler(
 
     // Get the current rule for simple updates (no DSL provided)
     let mut rule = state
-        .automation.rule_engine
+        .automation
+        .rule_engine
         .get_rule(&rule_id)
         .await
         .ok_or_else(|| ErrorResponse::not_found("Rule"))?;
@@ -391,7 +442,8 @@ pub async fn update_rule_handler(
 
     // Re-add the rule (this updates it)
     state
-        .automation.rule_engine
+        .automation
+        .rule_engine
         .add_rule(rule.clone())
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update rule: {}", e)))?;
@@ -423,7 +475,8 @@ pub async fn delete_rule_handler(
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
     let removed = state
-        .automation.rule_engine
+        .automation
+        .rule_engine
         .remove_rule(&rule_id)
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete rule: {}", e)))?;
@@ -461,13 +514,15 @@ pub async fn set_rule_status_handler(
 
     if req.enabled {
         state
-            .automation.rule_engine
+            .automation
+            .rule_engine
             .resume_rule(&rule_id)
             .await
             .map_err(|e| ErrorResponse::internal(format!("Failed to enable rule: {}", e)))?;
     } else {
         state
-            .automation.rule_engine
+            .automation
+            .rule_engine
             .pause_rule(&rule_id)
             .await
             .map_err(|e| ErrorResponse::internal(format!("Failed to disable rule: {}", e)))?;
@@ -475,14 +530,15 @@ pub async fn set_rule_status_handler(
 
     // Also update in persistent store
     if let Some(ref store) = state.automation.rule_store
-        && let Some(rule) = state.automation.rule_engine.get_rule(&rule_id).await {
-            if let Err(e) = store.save(&rule) {
-                tracing::warn!("Failed to update rule status in store: {}", e);
-                // Don't fail the request if persistence fails
-            } else {
-                tracing::debug!("Updated rule {} status in persistent store", rule_id);
-            }
+        && let Some(rule) = state.automation.rule_engine.get_rule(&rule_id).await
+    {
+        if let Err(e) = store.save(&rule) {
+            tracing::warn!("Failed to update rule status in store: {}", e);
+            // Don't fail the request if persistence fails
+        } else {
+            tracing::debug!("Updated rule {} status in persistent store", rule_id);
         }
+    }
 
     ok(json!({
         "rule_id": id,
@@ -499,13 +555,17 @@ pub async fn test_rule_handler(
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> HandlerResult<serde_json::Value> {
     // Check if we should also execute actions (not just test condition)
-    let execute_actions = params.get("execute").map(|v| v == "true" || v == "1").unwrap_or(false);
+    let execute_actions = params
+        .get("execute")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
     let rule_id = RuleId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
     // Get the rule
     let rule = state
-        .automation.rule_engine
+        .automation
+        .rule_engine
         .get_rule(&rule_id)
         .await
         .ok_or_else(|| ErrorResponse::not_found("Rule"))?;
@@ -519,12 +579,25 @@ pub async fn test_rule_handler(
 
     // Extract condition fields using pattern matching
     let (dsl_device_id, metric, operator, threshold) = match &rule.condition {
-        RuleCondition::Device { device_id, metric, operator, threshold } => {
-            (device_id.clone(), metric.clone(), *operator, *threshold)
-        }
-        RuleCondition::DeviceRange { device_id, metric, min: _, max } => {
+        RuleCondition::Device {
+            device_id,
+            metric,
+            operator,
+            threshold,
+        } => (device_id.clone(), metric.clone(), *operator, *threshold),
+        RuleCondition::DeviceRange {
+            device_id,
+            metric,
+            min: _,
+            max,
+        } => {
             // For range conditions, use the max as threshold for testing
-            (device_id.clone(), metric.clone(), ComparisonOperator::GreaterThan, *max)
+            (
+                device_id.clone(),
+                metric.clone(),
+                ComparisonOperator::GreaterThan,
+                *max,
+            )
         }
         _ => {
             return Err(ErrorResponse::bad_request("Cannot test complex conditions"));
@@ -555,7 +628,12 @@ pub async fn test_rule_handler(
         resolved.clone()
     } else {
         // Try to find device by name in the device registry
-        match state.devices.service.get_device_by_name(&dsl_device_id).await {
+        match state
+            .devices
+            .service
+            .get_device_by_name(&dsl_device_id)
+            .await
+        {
             Some(device) => {
                 tracing::debug!(
                     dsl_device_name = %dsl_device_id,
@@ -599,8 +677,14 @@ pub async fn test_rule_handler(
     let mut value_source = "none";
 
     for metric_variant in &metric_variants {
-        tracing::debug!("Trying to query time series for {}/{}", device_id, metric_variant);
-        let result = state.devices.telemetry
+        tracing::debug!(
+            "Trying to query time series for {}/{}",
+            device_id,
+            metric_variant
+        );
+        let result = state
+            .devices
+            .telemetry
             .latest(&device_id, metric_variant)
             .await;
 
@@ -608,7 +692,12 @@ pub async fn test_rule_handler(
             Ok(Some(point)) => {
                 telemetry_value = point.value.as_f64();
                 value_source = "historical";
-                tracing::debug!("Found data for {}/{} with value {:?}", device_id, metric_variant, point.value);
+                tracing::debug!(
+                    "Found data for {}/{} with value {:?}",
+                    device_id,
+                    metric_variant,
+                    point.value
+                );
                 break;
             }
             Ok(None) => {
@@ -616,7 +705,12 @@ pub async fn test_rule_handler(
                 continue;
             }
             Err(e) => {
-                tracing::warn!("Failed to query time series for {}/{}: {}", device_id, metric_variant, e);
+                tracing::warn!(
+                    "Failed to query time series for {}/{}: {}",
+                    device_id,
+                    metric_variant,
+                    e
+                );
                 continue;
             }
         }
@@ -631,7 +725,9 @@ pub async fn test_rule_handler(
         return Err(ErrorResponse::internal(format!(
             "Device '{}' has no data for metric '{}'. Tried variants: {}. Current value unavailable and no historical data found. \
             Please ensure the device has transmitted data at least once.",
-            device_id, metric, metric_variants.join(", "),
+            device_id,
+            metric,
+            metric_variants.join(", "),
         )));
     };
 
@@ -696,7 +792,8 @@ pub async fn create_rule_handler(
 
     // Add the rule to the engine
     state
-        .automation.rule_engine
+        .automation
+        .rule_engine
         .add_rule(rule.clone())
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to create rule: {}", e)))?;
@@ -727,12 +824,17 @@ pub async fn get_rule_history_handler(
 
     // Check if rule exists
     let _rule = state
-        .automation.rule_engine
+        .automation
+        .rule_engine
         .get_rule(&rule_id)
         .await
         .ok_or_else(|| ErrorResponse::not_found("Rule"))?;
 
-    let history = state.automation.rule_engine.get_rule_history(&rule_id).await;
+    let history = state
+        .automation
+        .rule_engine
+        .get_rule_history(&rule_id)
+        .await;
 
     ok(json!({
         "rule_id": id,
@@ -808,9 +910,8 @@ pub async fn import_rules_handler(
 pub async fn get_resources_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    
-    use neomind_rules::{DeviceInfo, MetricInfo, CommandInfo, ParameterInfo};
     use neomind_devices::ConnectionStatus;
+    use neomind_rules::{CommandInfo, DeviceInfo, MetricInfo, ParameterInfo};
 
     let mut devices = Vec::new();
 
@@ -818,58 +919,87 @@ pub async fn get_resources_handler(
     let all_devices = state.devices.service.list_devices().await;
     for device in all_devices {
         // Try to get the template for this device type
-        let template = state.devices.service.get_template(&device.device_type).await;
+        let template = state
+            .devices
+            .service
+            .get_template(&device.device_type)
+            .await;
 
         let (metrics, commands) = if let Some(tpl) = template {
             // Convert from DeviceTypeTemplate (MDL definition)
-            let metrics: Vec<MetricInfo> = tpl.metrics.into_iter().map(|m| MetricInfo {
-                name: m.name,
-                data_type: convert_metric_data_type(m.data_type),
-                unit: if m.unit.is_empty() { None } else { Some(m.unit) },
-                min_value: m.min,
-                max_value: m.max,
-            }).collect();
+            let metrics: Vec<MetricInfo> = tpl
+                .metrics
+                .into_iter()
+                .map(|m| MetricInfo {
+                    name: m.name,
+                    data_type: convert_metric_data_type(m.data_type),
+                    unit: if m.unit.is_empty() {
+                        None
+                    } else {
+                        Some(m.unit)
+                    },
+                    min_value: m.min,
+                    max_value: m.max,
+                })
+                .collect();
 
-            let commands: Vec<CommandInfo> = tpl.commands.into_iter().map(|c| CommandInfo {
-                name: c.name,
-                description: if c.display_name.is_empty() {
-                    c.llm_hints.clone()
-                } else {
-                    c.display_name
-                },
-                parameters: c.parameters.into_iter().map(|p| ParameterInfo {
-                    name: p.name,
-                    param_type: format!("{:?}", p.data_type),
-                    required: true, // MDL doesn't have required flag, assume required
-                    default_value: p.default_value.and_then(|v| serde_json::to_value(v).ok()),
-                }).collect(),
-            }).collect();
+            let commands: Vec<CommandInfo> = tpl
+                .commands
+                .into_iter()
+                .map(|c| CommandInfo {
+                    name: c.name,
+                    description: if c.display_name.is_empty() {
+                        c.llm_hints.clone()
+                    } else {
+                        c.display_name
+                    },
+                    parameters: c
+                        .parameters
+                        .into_iter()
+                        .map(|p| ParameterInfo {
+                            name: p.name,
+                            param_type: format!("{:?}", p.data_type),
+                            required: true, // MDL doesn't have required flag, assume required
+                            default_value: p
+                                .default_value
+                                .and_then(|v| serde_json::to_value(v).ok()),
+                        })
+                        .collect(),
+                })
+                .collect();
 
             (metrics, commands)
         } else {
             // Fallback to generic metrics if no template found
-            (vec![MetricInfo {
-                name: "value".to_string(),
-                data_type: RulesMetricDataType::Number,
-                unit: None,
-                min_value: None,
-                max_value: None,
-            }], vec![
-                CommandInfo {
-                    name: "on".to_string(),
-                    description: "Turn on".to_string(),
-                    parameters: vec![],
-                },
-                CommandInfo {
-                    name: "off".to_string(),
-                    description: "Turn off".to_string(),
-                    parameters: vec![],
-                },
-            ])
+            (
+                vec![MetricInfo {
+                    name: "value".to_string(),
+                    data_type: RulesMetricDataType::Number,
+                    unit: None,
+                    min_value: None,
+                    max_value: None,
+                }],
+                vec![
+                    CommandInfo {
+                        name: "on".to_string(),
+                        description: "Turn on".to_string(),
+                        parameters: vec![],
+                    },
+                    CommandInfo {
+                        name: "off".to_string(),
+                        description: "Turn off".to_string(),
+                        parameters: vec![],
+                    },
+                ],
+            )
         };
 
         // Check device online status
-        let status = state.devices.service.get_device_connection_status(&device.device_id).await;
+        let status = state
+            .devices
+            .service
+            .get_device_connection_status(&device.device_id)
+            .await;
         let online = matches!(status, ConnectionStatus::Connected);
 
         devices.push(DeviceInfo {
@@ -960,7 +1090,12 @@ pub async fn validate_rule_handler(
         "<=" => neomind_rules::ComparisonOperator::LessEqual,
         "==" => neomind_rules::ComparisonOperator::Equal,
         "!=" => neomind_rules::ComparisonOperator::NotEqual,
-        _ => return Err(ErrorResponse::bad_request(format!("Invalid operator: {}", operator_str))),
+        _ => {
+            return Err(ErrorResponse::bad_request(format!(
+                "Invalid operator: {}",
+                operator_str
+            )));
+        }
     };
 
     let threshold = condition_obj
@@ -979,7 +1114,7 @@ pub async fn validate_rule_handler(
     let mut context = ValidationContext::new();
 
     // Add devices
-    use neomind_rules::{DeviceInfo, MetricInfo, MetricDataType};
+    use neomind_rules::{DeviceInfo, MetricDataType, MetricInfo};
 
     let all_devices = state.devices.service.list_devices().await;
     for device in all_devices {
@@ -1023,11 +1158,17 @@ pub async fn validate_rule_handler(
             if let Some(action_type) = action_value.get("type").and_then(|v| v.as_str()) {
                 match action_type {
                     "notify" => {
-                        if let Some(message) = action_value.get("message").and_then(|v| v.as_str()) {
+                        if let Some(message) = action_value.get("message").and_then(|v| v.as_str())
+                        {
                             // Get channels if specified
-                            let channels = action_value.get("channels")
+                            let channels = action_value
+                                .get("channels")
                                 .and_then(|v| v.as_array())
-                                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect());
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| v.as_str().map(String::from))
+                                        .collect()
+                                });
 
                             actions.push(neomind_rules::RuleAction::Notify {
                                 message: message.to_string(),
@@ -1058,4 +1199,3 @@ pub async fn validate_rule_handler(
         "resources": result.available_resources,
     }))
 }
-

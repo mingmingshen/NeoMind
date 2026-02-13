@@ -2,17 +2,18 @@
 //!
 //! This module provides persistent storage for automations using redb.
 
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 
 use redb::{Database, ReadableTable, TableDefinition};
 
-use crate::types::*;
 use crate::error::{AutomationError, Result};
+use crate::types::*;
 
 // Table definitions
 const AUTOMATIONS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("automations");
-const EXECUTIONS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("automation_executions");
+const EXECUTIONS_TABLE: TableDefinition<&str, &[u8]> =
+    TableDefinition::new("automation_executions");
 const TEMPLATES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("automation_templates");
 
 /// Storage for automations
@@ -39,15 +40,14 @@ impl AutomationStore {
         }
         write_txn.commit()?;
 
-        Ok(Self {
-            db: Arc::new(db),
-        })
+        Ok(Self { db: Arc::new(db) })
     }
 
     /// Create a new in-memory store for testing
     pub fn memory() -> Result<Self> {
         // Use a temp file since redb doesn't support true in-memory mode
-        let temp_path = std::env::temp_dir().join(format!("automation_store_{}.redb", uuid::Uuid::new_v4()));
+        let temp_path =
+            std::env::temp_dir().join(format!("automation_store_{}.redb", uuid::Uuid::new_v4()));
         let db = Database::create(&temp_path)?;
 
         // Write transaction to create tables
@@ -59,9 +59,7 @@ impl AutomationStore {
         }
         write_txn.commit()?;
 
-        Ok(Self {
-            db: Arc::new(db),
-        })
+        Ok(Self { db: Arc::new(db) })
     }
 
     /// Save an automation
@@ -135,7 +133,11 @@ impl AutomationStore {
     }
 
     /// Get execution history for an automation
-    pub fn get_executions(&self, automation_id: &str, limit: usize) -> Result<Vec<ExecutionRecord>> {
+    pub fn get_executions(
+        &self,
+        automation_id: &str,
+        limit: usize,
+    ) -> Result<Vec<ExecutionRecord>> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(EXECUTIONS_TABLE)?;
 
@@ -249,31 +251,46 @@ impl SharedAutomationStore {
 
     /// Save an automation
     pub async fn save_automation(&self, automation: &Automation) -> Result<()> {
-        let store = self.store.read().map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
+        let store = self
+            .store
+            .read()
+            .map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
         store.save_automation(automation)
     }
 
     /// Get an automation by ID
     pub async fn get_automation(&self, id: &str) -> Result<Option<Automation>> {
-        let store = self.store.read().map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
+        let store = self
+            .store
+            .read()
+            .map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
         store.get_automation(id)
     }
 
     /// List all automations
     pub async fn list_automations(&self) -> Result<Vec<Automation>> {
-        let store = self.store.read().map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
+        let store = self
+            .store
+            .read()
+            .map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
         store.list_automations()
     }
 
     /// Delete an automation
     pub async fn delete_automation(&self, id: &str) -> Result<bool> {
-        let store = self.store.write().map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
+        let store = self
+            .store
+            .write()
+            .map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
         store.delete_automation(id)
     }
 
     /// Save an execution record
     pub async fn save_execution(&self, execution: &ExecutionRecord) -> Result<()> {
-        let store = self.store.read().map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
+        let store = self
+            .store
+            .read()
+            .map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
         store.save_execution(execution)
     }
 
@@ -283,13 +300,19 @@ impl SharedAutomationStore {
         automation_id: &str,
         limit: usize,
     ) -> Result<Vec<ExecutionRecord>> {
-        let store = self.store.read().map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
+        let store = self
+            .store
+            .read()
+            .map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
         store.get_executions(automation_id, limit)
     }
 
     /// Save a template
     pub fn save_template(&self, template: &AutomationTemplate) -> Result<()> {
-        let store = self.store.read().map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
+        let store = self
+            .store
+            .read()
+            .map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
         store.save_template(template)
     }
 
@@ -299,19 +322,28 @@ impl SharedAutomationStore {
         id: &str,
         automation_type: AutomationType,
     ) -> Result<Option<AutomationTemplate>> {
-        let store = self.store.read().map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
+        let store = self
+            .store
+            .read()
+            .map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
         store.get_template(id, automation_type)
     }
 
     /// List all templates
     pub fn list_templates(&self) -> Result<Vec<AutomationTemplate>> {
-        let store = self.store.read().map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
+        let store = self
+            .store
+            .read()
+            .map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
         store.list_templates()
     }
 
     /// Delete a template
     pub fn delete_template(&self, id: &str, automation_type: AutomationType) -> Result<bool> {
-        let store = self.store.write().map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
+        let store = self
+            .store
+            .write()
+            .map_err(|_| AutomationError::StorageError("Poisoned lock".to_string()))?;
         store.delete_template(id, automation_type)
     }
 }

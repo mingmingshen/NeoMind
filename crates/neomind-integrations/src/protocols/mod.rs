@@ -4,8 +4,8 @@
 //! for various external systems and protocols.
 
 use crate::{IntegrationMetadata, IntegrationState, IntegrationType};
-use neomind_core::integration::IntegrationEvent;
 use futures::Stream;
+use neomind_core::integration::IntegrationEvent;
 use std::pin::Pin;
 
 /// Base integration implementation with common functionality.

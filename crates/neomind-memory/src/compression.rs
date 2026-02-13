@@ -87,7 +87,11 @@ pub struct MessageGroup {
 
 impl MessageGroup {
     /// Create a new message group.
-    pub fn new(id: impl Into<String>, topic: impl Into<String>, messages: Vec<ScoredMessage>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        topic: impl Into<String>,
+        messages: Vec<ScoredMessage>,
+    ) -> Self {
         Self {
             id: id.into(),
             topic: topic.into(),
@@ -287,20 +291,23 @@ impl MemoryCompressor {
     /// Compress a list of message groups.
     pub async fn compress(&self, groups: &[MessageGroup]) -> Result<CompressedMemory> {
         if groups.is_empty() {
-            return Err(MemoryError::InvalidFormat("No groups to compress".to_string()));
+            return Err(MemoryError::InvalidFormat(
+                "No groups to compress".to_string(),
+            ));
         }
 
         let original_count: usize = groups.iter().map(|g| g.message_count()).sum();
         let original_tokens = self.estimate_tokens(groups);
         let group_ids: Vec<String> = groups.iter().map(|g| g.id.clone()).collect();
 
-        let (compressed_content, compressed_count, compressed_tokens, levels) = match self.config.method {
-            CompressionMethod::Concatenate => self.compress_concatenate(groups),
-            CompressionMethod::Chronological => self.compress_chronological(groups),
-            CompressionMethod::TopicBased => self.compress_topic_based(groups),
-            CompressionMethod::Hierarchical => self.compress_hierarchical(groups).await,
-            CompressionMethod::Semantic => self.compress_semantic(groups),
-        };
+        let (compressed_content, compressed_count, compressed_tokens, levels) =
+            match self.config.method {
+                CompressionMethod::Concatenate => self.compress_concatenate(groups),
+                CompressionMethod::Chronological => self.compress_chronological(groups),
+                CompressionMethod::TopicBased => self.compress_topic_based(groups),
+                CompressionMethod::Hierarchical => self.compress_hierarchical(groups).await,
+                CompressionMethod::Semantic => self.compress_semantic(groups),
+            };
 
         let compression_ratio = if original_tokens > 0 {
             compressed_tokens as f64 / original_tokens as f64
@@ -363,7 +370,9 @@ impl MemoryCompressor {
         let mut entries: Vec<_> = groups
             .iter()
             .flat_map(|g| {
-                g.messages.iter().map(move |m| (m.timestamp, &g.topic, &m.content))
+                g.messages
+                    .iter()
+                    .map(move |m| (m.timestamp, &g.topic, &m.content))
             })
             .collect();
 
@@ -400,11 +409,7 @@ impl MemoryCompressor {
             }
 
             // Create a summary for this topic
-            let summary = format!(
-                "[{}: {} messages discussed]",
-                topic,
-                messages.len()
-            );
+            let summary = format!("[{}: {} messages discussed]", topic, messages.len());
             parts.push(summary);
             count += messages.len();
         }
@@ -416,17 +421,17 @@ impl MemoryCompressor {
     }
 
     /// Hierarchical multi-level compression.
-    async fn compress_hierarchical(&self, groups: &[MessageGroup]) -> (String, usize, usize, usize) {
+    async fn compress_hierarchical(
+        &self,
+        groups: &[MessageGroup],
+    ) -> (String, usize, usize, usize) {
         let mut summaries: Vec<SummaryLevel> = Vec::new();
         let levels = self.config.hierarchy_levels;
 
         // Level 0: Group by topic
         let mut by_topic: HashMap<String, Vec<&MessageGroup>> = HashMap::new();
         for group in groups {
-            by_topic
-                .entry(group.topic.clone())
-                .or_default()
-                .push(group);
+            by_topic.entry(group.topic.clone()).or_default().push(group);
         }
 
         // Create level 0 summaries
@@ -466,15 +471,14 @@ impl MemoryCompressor {
                 let combined_content = format!(
                     "[Summary Level {}]\n{}",
                     level,
-                    chunk.iter()
+                    chunk
+                        .iter()
                         .map(|s| s.content.as_str())
                         .collect::<Vec<&str>>()
                         .join("\n")
                 );
-                let all_sources: Vec<String> = chunk
-                    .iter()
-                    .flat_map(|s| s.sources.clone())
-                    .collect();
+                let all_sources: Vec<String> =
+                    chunk.iter().flat_map(|s| s.sources.clone()).collect();
 
                 combined.push(SummaryLevel {
                     level,
@@ -488,16 +492,24 @@ impl MemoryCompressor {
         }
 
         // Return the highest level summary
-        let final_summary = summaries.into_iter().last().unwrap_or_else(|| SummaryLevel {
-            level: 0,
-            content: "[No content to summarize]".to_string(),
-            tokens: 0,
-            sources: Vec::new(),
-        });
+        let final_summary = summaries
+            .into_iter()
+            .last()
+            .unwrap_or_else(|| SummaryLevel {
+                level: 0,
+                content: "[No content to summarize]".to_string(),
+                tokens: 0,
+                sources: Vec::new(),
+            });
 
         let total_count = groups.iter().map(|g| g.message_count()).sum();
 
-        (final_summary.content, total_count, final_summary.tokens, levels)
+        (
+            final_summary.content,
+            total_count,
+            final_summary.tokens,
+            levels,
+        )
     }
 
     /// Semantic compression using content-based clustering.
@@ -507,10 +519,8 @@ impl MemoryCompressor {
     /// This preserves information while reducing token count by 20-40%.
     fn compress_semantic(&self, groups: &[MessageGroup]) -> (String, usize, usize, usize) {
         // Flatten all messages from all groups
-        let all_messages: Vec<&ScoredMessage> = groups
-            .iter()
-            .flat_map(|g| g.messages.iter())
-            .collect();
+        let all_messages: Vec<&ScoredMessage> =
+            groups.iter().flat_map(|g| g.messages.iter()).collect();
 
         if all_messages.is_empty() {
             return ("[No messages to compress]".to_string(), 0, 0, 1);
@@ -703,9 +713,9 @@ impl MemoryCompressor {
 
         // Common stop words to skip
         let stop_words = [
-            "the", "is", "at", "which", "on", "and", "for", "are", "this",
-            "that", "have", "with", "not", "but", "what", "when", "from",
-            "的", "是", "在", "和", "与", "或", "但是", "然后", "因为", "所以", "如果",
+            "the", "is", "at", "which", "on", "and", "for", "are", "this", "that", "have", "with",
+            "not", "but", "what", "when", "from", "的", "是", "在", "和", "与", "或", "但是",
+            "然后", "因为", "所以", "如果",
         ];
 
         for (term, count) in term_freq {
@@ -765,7 +775,12 @@ impl MemoryCompressor {
         } else if key_points.len() == 1 {
             format!("{} ({} msgs)", key_points[0], messages.len())
         } else {
-            format!("{} ({} msgs: {})", topic, messages.len(), key_points.join("; "))
+            format!(
+                "{} ({} msgs: {})",
+                topic,
+                messages.len(),
+                key_points.join("; ")
+            )
         }
     }
 
@@ -803,13 +818,13 @@ impl MemoryCompressor {
             .collect();
 
         if key_points.is_empty() {
-            format!("[Topic '{}' discussed with {} messages]", topic, messages.len())
-        } else {
             format!(
-                "[Topic: {}]\n- {}",
+                "[Topic '{}' discussed with {} messages]",
                 topic,
-                key_points.join("\n- ")
+                messages.len()
             )
+        } else {
+            format!("[Topic: {}]\n- {}", topic, key_points.join("\n- "))
         }
     }
 
@@ -861,7 +876,9 @@ impl MemoryCompressor {
     pub async fn expand(&self, _compressed: &CompressedMemory) -> Result<Vec<ScoredMessage>> {
         // In a real implementation, this would reconstruct from metadata
         // For now, return empty as expansion is not implemented
-        Err(MemoryError::NotFound("Expansion not implemented".to_string()))
+        Err(MemoryError::NotFound(
+            "Expansion not implemented".to_string(),
+        ))
     }
 
     /// Calculate compression statistics.
@@ -872,7 +889,9 @@ impl MemoryCompressor {
             original_tokens: compressed.original_tokens,
             compressed_tokens: compressed.compressed_tokens,
             compression_ratio: compressed.compression_ratio,
-            space_saved: compressed.original_tokens.saturating_sub(compressed.compressed_tokens),
+            space_saved: compressed
+                .original_tokens
+                .saturating_sub(compressed.compressed_tokens),
             space_saved_percent: if compressed.original_tokens > 0 {
                 (compressed.original_tokens - compressed.compressed_tokens) as f64
                     / compressed.original_tokens as f64
@@ -950,17 +969,13 @@ mod tests {
 
     #[test]
     fn test_message_group_with_session() {
-        let group = MessageGroup::new("g1", "topic", vec![])
-            .with_session("session1");
+        let group = MessageGroup::new("g1", "topic", vec![]).with_session("session1");
         assert_eq!(group.session_id, Some("session1".to_string()));
     }
 
     #[test]
     fn test_message_group_average_importance() {
-        let messages = vec![
-            ScoredMessage::new("M1", 0.2),
-            ScoredMessage::new("M2", 0.8),
-        ];
+        let messages = vec![ScoredMessage::new("M1", 0.2), ScoredMessage::new("M2", 0.8)];
 
         let group = MessageGroup::new("g1", "topic", messages);
         assert!((group.average_importance() - 0.5).abs() < 0.01);
@@ -969,10 +984,7 @@ mod tests {
     #[tokio::test]
     async fn test_memory_compressor_creation() {
         let compressor = MemoryCompressor::new();
-        assert_eq!(
-            compressor.config().target_ratio,
-            DEFAULT_TARGET_RATIO
-        );
+        assert_eq!(compressor.config().target_ratio, DEFAULT_TARGET_RATIO);
     }
 
     #[tokio::test]
@@ -993,8 +1005,16 @@ mod tests {
     async fn test_compress_single_group() {
         let compressor = MemoryCompressor::new();
         let messages = vec![
-            ScoredMessage::with_priority("This is a longer message to ensure tokens are estimated", 0.5, Priority::Medium),
-            ScoredMessage::with_priority("Another message with enough content for token estimation", 0.7, Priority::High),
+            ScoredMessage::with_priority(
+                "This is a longer message to ensure tokens are estimated",
+                0.5,
+                Priority::Medium,
+            ),
+            ScoredMessage::with_priority(
+                "Another message with enough content for token estimation",
+                0.7,
+                Priority::High,
+            ),
         ];
 
         let group = MessageGroup::new("g1", "test", messages);

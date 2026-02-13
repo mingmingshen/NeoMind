@@ -7,8 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Tool category for grouping and organization.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub enum ToolCategory {
     /// Device operations (control, query, configure)
     Device,
@@ -71,8 +70,7 @@ pub struct UsageScenario {
 }
 
 /// Tool relationship metadata for guiding LLM behavior.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ToolRelationships {
     /// Tools that should typically be called before this tool
     pub call_after: Vec<String>,
@@ -81,8 +79,6 @@ pub struct ToolRelationships {
     /// Tools that are mutually exclusive with this tool
     pub exclusive_with: Vec<String>,
 }
-
-
 
 /// Result type for tool operations.
 pub type Result<T> = std::result::Result<T, ToolError>;
@@ -357,21 +353,23 @@ pub trait Tool: Send + Sync {
     fn validate_args(&self, args: &Value) -> Result<()> {
         let params = self.parameters();
         if let Some(obj) = params.as_object()
-            && let Some(required) = obj.get("required").and_then(|r| r.as_array()) {
-                let args_obj = args
-                    .as_object()
-                    .ok_or_else(|| ToolError::InvalidArguments("Expected object".to_string()))?;
+            && let Some(required) = obj.get("required").and_then(|r| r.as_array())
+        {
+            let args_obj = args
+                .as_object()
+                .ok_or_else(|| ToolError::InvalidArguments("Expected object".to_string()))?;
 
-                for req in required {
-                    if let Some(req_str) = req.as_str()
-                        && !args_obj.contains_key(req_str) {
-                            return Err(ToolError::InvalidArguments(format!(
-                                "Missing required parameter: {}",
-                                req_str
-                            )));
-                        }
+            for req in required {
+                if let Some(req_str) = req.as_str()
+                    && !args_obj.contains_key(req_str)
+                {
+                    return Err(ToolError::InvalidArguments(format!(
+                        "Missing required parameter: {}",
+                        req_str
+                    )));
                 }
             }
+        }
         Ok(())
     }
 }
