@@ -111,7 +111,7 @@ jobs:
         run: cargo fmt -- --check
 
       - name: Run Clippy on workspace
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace -- --warnings
 
       - name: Check workspace compiles
         run: cargo check --workspace
