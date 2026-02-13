@@ -42,3 +42,10 @@ all = ["mqtt", "http", "embedded-broker"]
 
 [dev-dependencies]
 base64 = { workspace = true }
+
+[lints.clippy]
+# Temporarily suppress clippy warnings for neomind-devices
+redundant_locals = "allow"
+too_many_arguments = "allow"
+type_complexity = "allow"
+result_large_err = "allow"
