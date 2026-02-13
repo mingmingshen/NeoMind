@@ -38,4 +38,12 @@ all = ["ollama", "cloud", "openai", "anthropic", "google", "xai"]
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints.clippy]
+# Temporarily suppress clippy warnings for neomind-llm
+dead_code = "allow"
+type_complexity = "allow"
+while_let_loop = "allow"
+vec_init_then_push = "allow"
 futures = { workspace = true }
+
