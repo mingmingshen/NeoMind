@@ -103,7 +103,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: '.' -> target
+          workspaces: '. -> target'
 
       - name: Check workspace formatting
         run: cargo fmt -- --check
