@@ -78,7 +78,7 @@ jobs:
 
       - name: Rust clippy
         working-directory: ./web/src-tauri
-        run: cargo clippy -- --warnings
+        run: cargo clippy -- -W warnings
 
       - name: Build frontend
         working-directory: ./web
@@ -109,7 +109,7 @@ jobs:
         run: cargo fmt -- --check
 
       - name: Run Clippy on workspace
-        run: cargo clippy --workspace -- --warnings
+        run: cargo clippy --workspace -- -W warnings
 
       - name: Check workspace compiles
         run: cargo check --workspace
