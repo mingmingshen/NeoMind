@@ -30,3 +30,8 @@ default = []
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
 semver = { workspace = true }
+
+[lints.clippy]
+# Temporarily suppress clippy warnings for neomind-tools
+collapsible_if = "allow"
+too_many_arguments = "allow"
