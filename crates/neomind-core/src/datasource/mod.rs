@@ -1,3 +1,5 @@
+#![allow(clippy::needless_return)]
+
 //! Unified Data Source System
 //!
 //! This module provides a unified way to identify and query data from:

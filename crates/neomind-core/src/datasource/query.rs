@@ -1,3 +1,5 @@
+#![allow(clippy::clone_on_copy)]
+
 //! Unified Query Service
 //!
 //! This module provides a single query interface for all data source types.
