@@ -12,31 +12,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Fast checks that run in parallel first
-  quick-checks:
-    name: Quick Checks
-    runs-on: macos-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: './web/package-lock.json'
-
-      - name: Install frontend dependencies
-        working-directory: ./web
-        run: npm ci
-
-      - name: TypeScript type check
-        working-directory: ./web
-        run: npx tsc --noEmit
-
-  rust-backend-check:
-    name: Rust Backend Checks
+  # Fast code quality checks (no compilation)
+  code-quality:
+    name: Code Quality
     runs-on: macos-latest
     steps:
       - name: Checkout code
@@ -52,24 +30,60 @@ jobs:
         with:
           workspaces: '. -> target'
 
-      - name: Check workspace formatting
+      - name: Check formatting
         run: cargo fmt -- --check
 
-      - name: Run Clippy on workspace
+      - name: Run Clippy
         run: cargo clippy --workspace -- -W warnings
 
-      - name: Check workspace compiles
-        run: cargo check --workspace
+  # TypeScript check (runs in parallel)
+  typescript-check:
+    name: TypeScript Check
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './web/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: ./web
+        run: npm ci
+
+      - name: Type check
+        working-directory: ./web
+        run: npx tsc --noEmit
+
+  # Compile + test (runs in parallel with quality checks)
+  rust-test:
+    name: Rust Tests
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
 
       - name: Run workspace tests
         run: cargo test --workspace --no-fail-fast --jobs 4
 
-  # Platform-specific builds (only on main push, after checks pass)
+  # Platform builds (only on main, after all checks pass)
   tauri-build-macos:
     name: macOS Build
     runs-on: macos-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [quick-checks, rust-backend-check]
+    needs: [code-quality, typescript-check, rust-test]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -89,7 +103,7 @@ jobs:
         with:
           workspaces: './web/src-tauri -> target'
 
-      - name: Install frontend dependencies
+      - name: Install dependencies
         working-directory: ./web
         run: npm ci
 
@@ -107,7 +121,7 @@ jobs:
     name: Linux Build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [quick-checks, rust-backend-check]
+    needs: [code-quality, typescript-check, rust-test]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -132,7 +146,7 @@ jobs:
         with:
           workspaces: './web/src-tauri -> target'
 
-      - name: Install frontend dependencies
+      - name: Install dependencies
         working-directory: ./web
         run: npm ci
 
@@ -150,7 +164,7 @@ jobs:
     name: Windows Build
     runs-on: windows-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [quick-checks, rust-backend-check]
+    needs: [code-quality, typescript-check, rust-test]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -170,7 +184,7 @@ jobs:
         with:
           workspaces: './web/src-tauri -> target'
 
-      - name: Install frontend dependencies
+      - name: Install dependencies
         working-directory: ./web
         run: npm ci
 
