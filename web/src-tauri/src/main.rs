@@ -137,9 +137,9 @@ fn clean_shutdown(app_handle: &AppHandle) {
 
 /// Create and set up the system tray menu
 fn create_tray_menu(app: &tauri::App) -> Result<tauri::tray::TrayIcon, Box<dyn std::error::Error>> {
+    use tauri::image::Image;
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
-    use tauri::image::Image;
 
     let show = MenuItem::with_id(app, "show", "Show", true, None::<String>)?;
     let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<String>)?;
@@ -286,7 +286,7 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 {
                     // On Windows, close button should quit the app
                     // Use exit(0) to trigger proper ExitRequested event
-                    api.prevent_close();  // Let Tauri handle the exit
+                    api.prevent_close(); // Let Tauri handle the exit
                     app_handle.exit(0);
                 }
                 #[cfg(not(target_os = "windows"))]
