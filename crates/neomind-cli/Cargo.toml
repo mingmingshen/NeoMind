@@ -23,3 +23,9 @@ reqwest = { version = "0.12", features = ["json"] }
 
 # CLI
 clap = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.1"
+tempfile = "3.14"
+tokio-test = "0.4"
