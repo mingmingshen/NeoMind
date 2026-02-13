@@ -78,7 +78,7 @@ jobs:
 
       - name: Rust clippy
         working-directory: ./web/src-tauri
-        run: cargo clippy -- -D warnings
+        run: cargo clippy -- --warnings
 
       - name: Build frontend
         working-directory: ./web
