@@ -29,3 +29,11 @@ redb = "2.1"
 
 [features]
 default = []
+
+[lints.clippy]
+# Temporarily suppress clippy warnings for neomind-rules
+unnecessary_map_or = "allow"
+collapsible_if = "allow"
+manual_strip = "allow"
+should_implement_trait = "allow"
+type_complexity = "allow"
