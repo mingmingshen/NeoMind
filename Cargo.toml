@@ -23,7 +23,7 @@ resolver = "2"
 
 [workspace.package]
 version = "0.5.8"
-edition = "2024"
+edition = "2021"
 rust-version = "1.85"
 authors = ["NeoMind Contributors"]
 license = "Apache-2.0"
