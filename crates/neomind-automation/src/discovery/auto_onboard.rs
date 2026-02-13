@@ -699,10 +699,10 @@ impl AutoOnboardManager {
 
         // Get the generated type from drafts
         let drafts = self.drafts.read().await;
-        if let Some(draft) = drafts.get(device_id)
-            && let Some(ref gen_type) = draft.generated_type
-        {
-            return Ok(gen_type.clone());
+        if let Some(draft) = drafts.get(device_id) {
+            if let Some(ref gen_type) = draft.generated_type {
+                return Ok(gen_type.clone());
+            }
         }
 
         Err(DiscoveryError::Parse(
@@ -1296,15 +1296,15 @@ impl AutoOnboardManager {
         }
 
         // Look up the device_type from the signature hash
-        if let Some((sig_hash, similarity)) = best_match
-            && let Some(device_type) = type_signatures.get(&sig_hash)
-        {
-            tracing::info!(
-                "Found similar type '{}' with similarity {:.2}%",
-                device_type,
-                similarity * 100.0
-            );
-            return Some(device_type.clone());
+        if let Some((sig_hash, similarity)) = best_match {
+            if let Some(device_type) = type_signatures.get(&sig_hash) {
+                tracing::info!(
+                    "Found similar type '{}' with similarity {:.2}%",
+                    device_type,
+                    similarity * 100.0
+                );
+                return Some(device_type.clone());
+            }
         }
 
         None
@@ -1402,10 +1402,10 @@ impl AutoOnboardManager {
         // Update signature -> device_type mapping
         {
             let mut signatures = self.type_signatures.write().await;
-            if let Some(existing_type) = signatures.get(&signature_hash)
-                && existing_type == old_name
-            {
-                signatures.insert(signature_hash.clone(), new_name.to_string());
+            if let Some(existing_type) = signatures.get(&signature_hash) {
+                if existing_type == old_name {
+                    signatures.insert(signature_hash.clone(), new_name.to_string());
+                }
             }
         }
 

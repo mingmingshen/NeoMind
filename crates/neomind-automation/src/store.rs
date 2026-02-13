@@ -111,7 +111,8 @@ impl AutomationStore {
         let write_txn = self.db.begin_write()?;
         let existed = {
             let mut table = write_txn.open_table(AUTOMATIONS_TABLE)?;
-            table.remove(id)?.is_some()
+            let result = table.remove(id)?.is_some();
+            result
         };
         write_txn.commit()?;
         Ok(existed)
@@ -219,7 +220,8 @@ impl AutomationStore {
         let write_txn = self.db.begin_write()?;
         let existed = {
             let mut table = write_txn.open_table(TEMPLATES_TABLE)?;
-            table.remove(key.as_str())?.is_some()
+            let result = table.remove(key.as_str())?.is_some();
+            result
         };
         write_txn.commit()?;
         Ok(existed)

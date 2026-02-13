@@ -57,10 +57,10 @@ impl BackendFactory for OllamaFactory {
     }
 
     fn validate_config(&self, config: &Value) -> Result<(), LlmError> {
-        if let Some(endpoint) = config.get("endpoint").and_then(|v| v.as_str())
-            && endpoint.is_empty()
-        {
-            return Err(LlmError::InvalidInput("endpoint cannot be empty".into()));
+        if let Some(endpoint) = config.get("endpoint").and_then(|v| v.as_str()) {
+            if endpoint.is_empty() {
+                return Err(LlmError::InvalidInput("endpoint cannot be empty".into()));
+            }
         }
         Ok(())
     }
@@ -80,9 +80,10 @@ impl BackendFactory for OllamaFactory {
             if let Ok(client) = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(2))
                 .build()
-                && let Ok(resp) = client.get("http://localhost:11434/api/tags").send().await
             {
-                return resp.status().is_success();
+                if let Ok(resp) = client.get("http://localhost:11434/api/tags").send().await {
+                    return resp.status().is_success();
+                }
             }
         }
         false

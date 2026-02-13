@@ -902,10 +902,10 @@ pub async fn create_agent(
         });
 
         // Merge data_collection config if provided
-        if let Some(ref metric_config) = metric.config
-            && let Some(data_collection) = metric_config.get("data_collection")
-        {
-            config_json["data_collection"] = data_collection.clone();
+        if let Some(ref metric_config) = metric.config {
+            if let Some(data_collection) = metric_config.get("data_collection") {
+                config_json["data_collection"] = data_collection.clone();
+            }
         }
 
         resources.push(AgentResource {
@@ -1107,10 +1107,10 @@ pub async fn update_agent(
                 let mut config_json = json!({
                     "device_id": metric.device_id,
                 });
-                if let Some(ref config) = metric.config
-                    && let Some(data_collection) = config.get("data_collection")
-                {
-                    config_json["data_collection"] = data_collection.clone();
+                if let Some(ref config) = metric.config {
+                    if let Some(data_collection) = config.get("data_collection") {
+                        config_json["data_collection"] = data_collection.clone();
+                    }
                 }
                 let display_name = if metric.display_name.is_empty() {
                     &metric.metric_name

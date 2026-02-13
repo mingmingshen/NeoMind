@@ -281,15 +281,15 @@ impl IntentAnalyzer {
                 if num_start.is_none() {
                     num_start = Some(i);
                 }
-            } else if let Some(start) = num_start
-                && (c.is_whitespace() || !c.is_ascii_digit())
-            {
-                entities.push(Entity {
-                    entity_type: EntityType::Threshold,
-                    value: query[start..i].to_string(),
-                    position: start,
-                });
-                num_start = None;
+            } else if let Some(start) = num_start {
+                if c.is_whitespace() || !c.is_ascii_digit() {
+                    entities.push(Entity {
+                        entity_type: EntityType::Threshold,
+                        value: query[start..i].to_string(),
+                        position: start,
+                    });
+                    num_start = None;
+                }
             }
         }
         if let Some(start) = num_start {

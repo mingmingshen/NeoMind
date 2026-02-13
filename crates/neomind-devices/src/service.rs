@@ -898,10 +898,10 @@ impl DeviceService {
     ) -> Option<(String, DeviceConfig)> {
         let devices = self.list_devices().await;
         for device in devices {
-            if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic
-                && telemetry_topic == topic
-            {
-                return Some((device.device_id.clone(), device));
+            if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
+                if telemetry_topic == topic {
+                    return Some((device.device_id.clone(), device));
+                }
             }
         }
         None
@@ -1269,9 +1269,8 @@ impl DeviceService {
             // Simple mode: no metrics defined - return all available metrics from storage
             // Query all metrics for this device from the last hour
             // Use telemetry_storage to list all metrics for this device
-            if let Some(storage) = self.telemetry_storage.read().await.as_ref()
-                && let Ok(all_metrics) = storage.list_metrics(device_id).await
-            {
+            if let Some(storage) = self.telemetry_storage.read().await.as_ref() {
+                if let Ok(all_metrics) = storage.list_metrics(device_id).await {
                 for metric_name in all_metrics {
                     if !metric_name.is_empty() {
                         // Query latest value for this metric
@@ -1289,6 +1288,7 @@ impl DeviceService {
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -1420,11 +1420,11 @@ impl DeviceService {
 
         {
             let mut history = self.command_history.write().await;
-            if let Some(device_commands) = history.get_mut(device_id)
-                && let Some(record) = device_commands
+            if let Some(device_commands) = history.get_mut(device_id) {
+                if let Some(record) = device_commands
                     .iter_mut()
                     .find(|r| r.command_id == command_id)
-            {
+                {
                 record.status = status;
                 record.result = result;
                 record.error = error;
@@ -1433,6 +1433,7 @@ impl DeviceService {
                 }
                 // Clone for storage after updating
                 record_for_storage = Some(record.clone());
+                }
             }
         }
 
@@ -1500,10 +1501,10 @@ impl DeviceService {
             let record = command_from_storage(storage_record);
 
             // Update command ID counter based on loaded records
-            if let Some(suffix) = record.command_id.strip_prefix("cmd_")
-                && let Ok(num) = suffix.parse::<u64>()
-            {
-                max_counter = max_counter.max(num);
+            if let Some(suffix) = record.command_id.strip_prefix("cmd_") {
+                if let Ok(num) = suffix.parse::<u64>() {
+                    max_counter = max_counter.max(num);
+                }
             }
 
             history

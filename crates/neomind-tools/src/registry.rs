@@ -623,37 +623,39 @@ pub fn format_for_llm(definitions: &[ToolDefinition]) -> String {
 
                 // Parameters
                 result.push_str("**参数**:\n");
-                if let Some(props) = def.parameters.get("properties")
-                    && let Some(obj) = props.as_object()
-                {
-                    for (name, prop) in obj {
-                        let desc = prop
-                            .get("description")
-                            .and_then(|d| d.as_str())
-                            .unwrap_or("无描述");
-                        let type_name = prop
-                            .get("type")
-                            .and_then(|t| t.as_str())
-                            .unwrap_or("unknown");
-                        result.push_str(&format!("  - `{}`: {} ({})", name, desc, type_name));
+                if let Some(props) = def.parameters.get("properties") {
+                    if let Some(obj) = props.as_object() {
+                        for (name, prop) in obj {
+                            let desc = prop
+                                .get("description")
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("无描述");
+                            let type_name = prop
+                                .get("type")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("unknown");
+                            result.push_str(&format!("  - `{}`: {} ({})", name, desc, type_name));
 
-                        // Check if required
-                        if let Some(required) = def.parameters.get("required")
-                            && let Some(arr) = required.as_array()
-                            && arr.iter().any(|v| v.as_str() == Some(name))
-                        {
-                            result.push_str(" **[必需]**");
+                            // Check if required
+                            if let Some(required) = def.parameters.get("required") {
+                                if let Some(arr) = required.as_array() {
+                                    if arr.iter().any(|v| v.as_str() == Some(name)) {
+                                        result.push_str(" **[必需]**");
+                                    }
+                                }
+                            }
+                            result.push('\n');
                         }
-                        result.push('\n');
                     }
                 }
 
-                if let Some(required) = def.parameters.get("required")
-                    && let Some(arr) = required.as_array()
-                    && !arr.is_empty()
-                {
-                    let required_names: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
-                    result.push_str(&format!("**必需参数**: {}\n", required_names.join(", ")));
+                if let Some(required) = def.parameters.get("required") {
+                    if let Some(arr) = required.as_array() {
+                        if !arr.is_empty() {
+                            let required_names: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+                            result.push_str(&format!("**必需参数**: {}\n", required_names.join(", ")));
+                        }
+                    }
                 }
 
                 result.push('\n');

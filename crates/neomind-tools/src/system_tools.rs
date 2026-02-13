@@ -1837,17 +1837,17 @@ fn set_nested_value(value: &mut Value, key: &str, new_value: Value) {
     for (i, part) in parts.iter().enumerate() {
         if i == parts.len() - 1 {
             // Last part - set the value
-            if let Some(val) = value_to_set.take()
-                && let Some(obj) = current.as_object_mut()
-            {
-                obj.insert(part.to_string(), val);
+            if let Some(val) = value_to_set.take() {
+                if let Some(obj) = current.as_object_mut() {
+                    obj.insert(part.to_string(), val);
+                }
             }
         } else {
             // Navigate deeper
-            if current.get(part).is_none()
-                && let Some(obj) = current.as_object_mut()
-            {
-                obj.insert(part.to_string(), Value::Object(serde_json::Map::new()));
+            if current.get(part).is_none() {
+                if let Some(obj) = current.as_object_mut() {
+                    obj.insert(part.to_string(), Value::Object(serde_json::Map::new()));
+                }
             }
             current = current.get_mut(part).unwrap();
         }

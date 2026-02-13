@@ -257,15 +257,18 @@ impl MessageStore {
                 .open_table(MESSAGES_TABLE)
                 .map_err(|e| Error::Storage(format!("Failed to open messages table: {}", e)))?;
 
-            messages_table
+            let result = messages_table
                 .get(msg.id.as_str())
-                .map_err(|e| Error::Storage(format!("Failed to read message: {}", e)))?
-                .and_then(|v| {
+                .map_err(|e| Error::Storage(format!("Failed to read message: {}", e)))?;
+            match result {
+                Some(v) => {
                     serde_json::from_str::<StoredMessage>(v.value())
                         .ok()
                         .map(|m| m.is_active())
-                })
-                .unwrap_or(false)
+                        .unwrap_or(false)
+                }
+                None => false,
+            }
         };
 
         // Update the message
@@ -315,10 +318,11 @@ impl MessageStore {
                 .open_table(MESSAGES_TABLE)
                 .map_err(|e| Error::Storage(format!("Failed to open messages table: {}", e)))?;
 
-            messages_table
+            let result = messages_table
                 .remove(id)
                 .map_err(|e| Error::Storage(format!("Failed to remove message: {}", e)))?
-                .is_some()
+                .is_some();
+            result
         };
 
         if existed {

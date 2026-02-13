@@ -847,12 +847,13 @@ async fn handle_ws_socket(
                                 conn_meta.increment_received();
 
                                 // Check for pong response to our heartbeat ping
-                                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
-                                    && value.get("type") == Some(&json!("pong")) {
+                                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                                    if value.get("type") == Some(&json!("pong")) {
                                         conn_meta.record_pong().await;
                                         tracing::debug!("Received pong from client");
                                         continue;
                                     }
+                                }
 
                                 if let Ok(chat_req) = serde_json::from_str::<ChatRequest>(&text) {
                                     // Use the sessionId from the request if provided, otherwise use current
@@ -1136,13 +1137,15 @@ async fn handle_ws_socket(
     );
 
     // Cleanup: persist session history AFTER loop ends (when connection closes)
-    if let Some(session_id) = current_session_id.read().await.as_ref()
-        && let Err(e) = state
+    let session_id_opt = current_session_id.read().await.clone();
+    if let Some(session_id) = session_id_opt.as_ref() {
+        if let Err(e) = state
             .agents
             .session_manager
             .persist_history(session_id)
             .await
-    {
-        tracing::warn!(category = "session", error = %e, "Failed to persist history on disconnect");
+        {
+            tracing::warn!(category = "session", error = %e, "Failed to persist history on disconnect");
+        }
     }
 }

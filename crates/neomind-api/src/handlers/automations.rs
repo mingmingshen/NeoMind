@@ -206,10 +206,10 @@ pub async fn list_automations_handler(
             }
 
             // Filter by enabled status
-            if let Some(enabled) = filter.enabled
-                && a.is_enabled() != enabled
-            {
-                return false;
+            if let Some(enabled) = filter.enabled {
+                if a.is_enabled() != enabled {
+                    return false;
+                }
             }
 
             // Search in name/description

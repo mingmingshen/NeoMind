@@ -684,14 +684,16 @@ impl ResourceIndex {
         }
 
         // Location match bonus
-        if let Some(query_loc) = &query.location
-            && let Some(resource_loc) = resource.data.location()
-            && resource_loc
-                .to_lowercase()
-                .contains(&query_loc.to_lowercase())
-        {
-            score += 0.3;
-            matched_fields.push("location".to_string());
+        if let Some(query_loc) = &query.location {
+            if let Some(resource_loc) = resource.data.location() {
+                if resource_loc
+                    .to_lowercase()
+                    .contains(&query_loc.to_lowercase())
+                {
+                    score += 0.3;
+                    matched_fields.push("location".to_string());
+                }
+            }
         }
 
         // Normalize score to 0-1 using sigmoid-like function
@@ -738,10 +740,10 @@ impl ResourceIndex {
 
         let mut online_devices = 0;
         for r in resources.values() {
-            if let ResourceData::Device(d) = &r.data
-                && d.online
-            {
-                online_devices += 1;
+            if let ResourceData::Device(d) = &r.data {
+                if d.online {
+                    online_devices += 1;
+                }
             }
         }
 

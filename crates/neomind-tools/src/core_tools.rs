@@ -812,26 +812,25 @@ pub struct DeviceFilter {
 
 impl DeviceFilter {
     pub fn matches(&self, device: &DeviceInfo) -> bool {
-        if let Some(ref t) = self.r#type
-            && device.device_type != *t
-        {
-            return false;
+        if let Some(ref t) = self.r#type {
+            if device.device_type != *t {
+                return false;
+            }
         }
-        if let Some(ref status) = self.status
-            && device.status != *status
-        {
-            return false;
+        if let Some(ref status) = self.status {
+            if device.status != *status {
+                return false;
+            }
         }
-        if let Some(ref tags) = self.tags
-            && !tags.iter().all(|t| device.tags.contains(t))
-        {
-            return false;
+        if let Some(ref tags) = self.tags {
+            if !tags.iter().all(|t| device.tags.contains(t)) {
+                return false;
+            }
         }
-        if let Some(ref name) = self.name_contains
-            && !device.name.contains(name)
-            && !device.id.contains(name)
-        {
-            return false;
+        if let Some(ref name) = self.name_contains {
+            if !device.name.contains(name) && !device.id.contains(name) {
+                return false;
+            }
         }
         true
     }

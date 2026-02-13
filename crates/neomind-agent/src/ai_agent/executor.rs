@@ -359,14 +359,14 @@ fn extract_threshold_from_data(
 ) -> Option<f64> {
     // Try to extract numeric value from decision description
     for item in data {
-        if let Some(val) = item.values.get("value")
-            && let Some(num) = val.as_f64()
-        {
-            // Check if baseline exists
-            if let Some(&baseline) = baselines.get(&item.source) {
-                let deviation = ((num - baseline) / baseline * 100.0).abs();
-                if deviation > 10.0 {
-                    return Some(deviation);
+        if let Some(val) = item.values.get("value") {
+            if let Some(num) = val.as_f64() {
+                // Check if baseline exists
+                if let Some(&baseline) = baselines.get(&item.source) {
+                    let deviation = ((num - baseline) / baseline * 100.0).abs();
+                    if deviation > 10.0 {
+                        return Some(deviation);
+                    }
                 }
             }
         }
@@ -581,19 +581,19 @@ fn compact_history_context(_history_context: &str, memory: &AgentMemory) -> Stri
         &memory.learned_patterns
     };
 
-    if !patterns.is_empty()
-        && let Some(best) = patterns.iter().max_by(|a, b| {
+    if !patterns.is_empty() {
+        if let Some(best) = patterns.iter().max_by(|a, b| {
             a.confidence
                 .partial_cmp(&b.confidence)
                 .unwrap_or(std::cmp::Ordering::Equal)
-        })
-    {
-        // Ultra-compact: "模式: 温度>30度告警 (80%)"
-        parts.push(format!(
-            "模式: {} ({}%)",
-            truncate_to(&best.description, 25),
-            (best.confidence * 100.0) as u32
-        ));
+        }) {
+            // Ultra-compact: "模式: 温度>30度告警 (80%)"
+            parts.push(format!(
+                "模式: {} ({}%)",
+                truncate_to(&best.description, 25),
+                (best.confidence * 100.0) as u32
+            ));
+        }
     }
 
     // === STRATEGY 3: Key baseline (关键基线) ===
@@ -1033,16 +1033,15 @@ impl AgentExecutor {
         agent: &AiAgent,
     ) -> Result<Option<Arc<dyn LlmRuntime + Send + Sync>>, NeoMindError> {
         // If agent has a specific backend ID, try to use it
-        if let Some(ref backend_id) = agent.llm_backend_id
-            && let Some(ref store) = self.llm_backend_store
-            && let Ok(Some(backend)) = store.load_instance(backend_id)
-        {
-            use neomind_storage::LlmBackendType;
+        if let Some(ref backend_id) = agent.llm_backend_id {
+            if let Some(ref store) = self.llm_backend_store {
+                if let Ok(Some(backend)) = store.load_instance(backend_id) {
+                    use neomind_storage::LlmBackendType;
 
-            // Build cache key
-            let endpoint = backend.endpoint.clone().unwrap_or_default();
-            let model = backend.model.clone();
-            let cache_key = Self::build_runtime_cache_key(
+                    // Build cache key
+                    let endpoint = backend.endpoint.clone().unwrap_or_default();
+                    let model = backend.model.clone();
+                    let cache_key = Self::build_runtime_cache_key(
                 format!("{:?}", backend.backend_type).as_str(),
                 endpoint.as_str(),
                 model.as_str(),
@@ -1251,6 +1250,8 @@ impl AgentExecutor {
                     );
                 }
             }
+                }
+            }
         }
 
         // Fall back to default runtime
@@ -1263,10 +1264,10 @@ impl AgentExecutor {
         user_prompt: &str,
     ) -> AgentResult<neomind_storage::ParsedIntent> {
         // Try LLM-based parsing if available
-        if let Some(ref llm) = self.llm_runtime
-            && let Ok(intent) = self.parse_intent_with_llm(llm, user_prompt).await
-        {
-            return Ok(intent);
+        if let Some(ref llm) = self.llm_runtime {
+            if let Ok(intent) = self.parse_intent_with_llm(llm, user_prompt).await {
+                return Ok(intent);
+            }
         }
 
         // Fall back to keyword-based parsing
@@ -3546,16 +3547,16 @@ Respond in JSON format:
                 if let Ok(result) = storage
                     .query_range(device_id, &metric_name, time_range.0, time_range.1)
                     .await
-                    && !result.points.is_empty()
                 {
-                    let latest = &result.points[result.points.len() - 1];
-                    let is_image = is_image_metric(&metric_name, &latest.value);
+                    if !result.points.is_empty() {
+                        let latest = &result.points[result.points.len() - 1];
+                        let is_image = is_image_metric(&metric_name, &latest.value);
 
-                    if is_image {
-                        let (image_url, image_base64, image_mime) =
-                            extract_image_data(&latest.value);
+                        if is_image {
+                            let (image_url, image_base64, image_mime) =
+                                extract_image_data(&latest.value);
 
-                        let values_json = serde_json::json!({
+                            let values_json = serde_json::json!({
                             "value": latest.value,
                             "timestamp": latest.timestamp,
                             "points_count": result.points.len(),
@@ -3573,7 +3574,7 @@ Respond in JSON format:
                         });
 
                         image_found = true;
-                    } else {
+                        } else {
                         // Regular metric - add latest value
                         let values_json = serde_json::json!({
                             "value": latest.value,
@@ -3589,12 +3590,13 @@ Respond in JSON format:
                         });
                     }
 
-                    tracing::debug!(
-                        device_id = %device_id,
-                        metric_name = %metric_name,
-                        value = %latest.value,
-                        "[COLLECT] Collected metric data"
-                    );
+                        tracing::debug!(
+                            device_id = %device_id,
+                            metric_name = %metric_name,
+                            value = %latest.value,
+                            "[COLLECT] Collected metric data"
+                        );
+                    }
                 }
             }
         }
@@ -4445,15 +4447,15 @@ Respond in JSON format:
                     if let Ok(result) = storage
                         .query_range(device_id, metric_name, start_time, end_time)
                         .await
-                        && !result.points.is_empty()
                     {
-                        let latest = &result.points[result.points.len() - 1];
+                        if !result.points.is_empty() {
+                            let latest = &result.points[result.points.len() - 1];
 
-                        // Extract image data from storage
-                        let (image_url, image_base64, image_mime) =
-                            extract_image_data(&latest.value);
+                            // Extract image data from storage
+                            let (image_url, image_base64, image_mime) =
+                                extract_image_data(&latest.value);
 
-                        // Use URL if available, otherwise base64
+                            // Use URL if available, otherwise base64
                         if let Some(url) = image_url {
                             image_parts.push((
                                 d.source.clone(),
@@ -4468,6 +4470,7 @@ Respond in JSON format:
                                 ImageContent::Base64(base64, mime.to_string()),
                             ));
                         }
+                    }
                     }
                 }
             }
@@ -4554,9 +4557,9 @@ Respond in JSON format:
                 .state_variables
                 .get("recent_analyses")
                 .and_then(|v| v.as_array())
-                && !analyses.is_empty()
             {
-                let summary: Vec<_> = analyses
+                if !analyses.is_empty() {
+                    let summary: Vec<_> = analyses
                     .iter()
                     .take(1) // Reduced to 1 for small models
                     .filter_map(|a| {
@@ -4579,6 +4582,7 @@ Respond in JSON format:
                         summary.join("\n")
                     ));
                 }
+            }
             }
 
             // === SEMANTIC PATTERNS (Long-term memory) ===
@@ -4718,11 +4722,11 @@ Respond in JSON format:
                 // Check if any current data significantly deviates from baseline
                 for (metric, baseline) in agent.memory.baselines.iter().take(2) {
                     for d in data.iter().take(3) {
-                        if let Some(val) = d.values.get("value").and_then(|v| v.as_f64())
-                            && (val - baseline).abs() / baseline.abs().max(0.1) > 0.3
-                        {
-                            parts.push(format!("Anomaly: {} changed significantly", metric));
-                            break;
+                        if let Some(val) = d.values.get("value").and_then(|v| v.as_f64()) {
+                            if (val - baseline).abs() / baseline.abs().max(0.1) > 0.3 {
+                                parts.push(format!("Anomaly: {} changed significantly", metric));
+                                break;
+                            }
                         }
                     }
                 }
@@ -5127,10 +5131,9 @@ Respond in JSON format:
                         }
 
                         // Lenient extraction: parse as Value and extract fields (handles different LLM JSON shapes)
-                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str)
-                            && let Some(obj) = value.as_object()
-                        {
-                            let situation_analysis: String = obj
+                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
+                            if let Some(obj) = value.as_object() {
+                                let situation_analysis: String = obj
                                 .get("situation_analysis")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
@@ -5243,8 +5246,12 @@ Respond in JSON format:
                                         conclusion
                                     },
                                 ));
+                            } else {
+                                // Both situation_analysis and conclusion are empty, fall through to final fallback
+                                tracing::debug!("JSON was valid but contained no useful data, falling back to raw text");
                             }
                         }
+                        }  // Close if let Ok(value)
 
                         // Final fallback: use raw text - show actual content, not placeholder
                         let raw_text = output.text.trim();
@@ -5392,22 +5399,23 @@ Respond in JSON format:
 
         // Check if any data meets the condition
         for data_item in data {
-            if let Some(value) = data_item.values.get("value")
-                && let Some(num) = value.as_f64()
-            {
-                if condition_lower.contains("大于")
-                    || condition_lower.contains(">")
-                    || condition_lower.contains("超过")
-                {
-                    if let Some(threshold) = extract_threshold(&condition_lower) {
-                        return num > threshold;
+            if let Some(value) = data_item.values.get("value") {
+                if let Some(num) = value.as_f64() {
+                    if condition_lower.contains("大于")
+                        || condition_lower.contains(">")
+                        || condition_lower.contains("超过")
+                    {
+                        if let Some(threshold) = extract_threshold(&condition_lower) {
+                            return num > threshold;
+                        }
+                    } else if (condition_lower.contains("小于")
+                        || condition_lower.contains("<")
+                        || condition_lower.contains("低于"))
+                    {
+                        if let Some(threshold) = extract_threshold(&condition_lower) {
+                            return num < threshold;
+                        }
                     }
-                } else if (condition_lower.contains("小于")
-                    || condition_lower.contains("<")
-                    || condition_lower.contains("低于"))
-                    && let Some(threshold) = extract_threshold(&condition_lower)
-                {
-                    return num < threshold;
                 }
             }
         }
@@ -6132,13 +6140,12 @@ Respond in JSON format:
         data: &[DataCollected],
     ) -> AgentResult<Option<GeneratedReport>> {
         // Only generate reports for report generation agents
-        if let Some(ref intent) = agent.parsed_intent
-            && matches!(
+        if let Some(ref intent) = agent.parsed_intent {
+            if matches!(
                 intent.intent_type,
                 neomind_storage::IntentType::ReportGeneration
-            )
-        {
-            let content = self.generate_report_content(agent, data).await?;
+            ) {
+                let content = self.generate_report_content(agent, data).await?;
 
             return Ok(Some(GeneratedReport {
                 report_type: "summary".to_string(),
@@ -6154,6 +6161,7 @@ Respond in JSON format:
                     .collect(),
                 generated_at: chrono::Utc::now().timestamp(),
             }));
+            }
         }
 
         Ok(None)
@@ -6267,27 +6275,27 @@ Respond in JSON format:
                 continue;
             }
 
-            if let Some(value) = data_item.values.get("value")
-                && let Some(num) = value.as_f64()
-            {
-                // Add to trend data (limit to 1000 points)
-                memory.trend_data.push(TrendPoint {
-                    timestamp: data_item.timestamp,
-                    metric: data_item.source.clone(),
-                    value: num,
-                    context: Some(serde_json::json!(data_item.data_type)),
-                });
+            if let Some(value) = data_item.values.get("value") {
+                if let Some(num) = value.as_f64() {
+                    // Add to trend data (limit to 1000 points)
+                    memory.trend_data.push(TrendPoint {
+                        timestamp: data_item.timestamp,
+                        metric: data_item.source.clone(),
+                        value: num,
+                        context: Some(serde_json::json!(data_item.data_type)),
+                    });
 
-                if memory.trend_data.len() > 1000 {
-                    memory.trend_data = memory.trend_data.split_off(memory.trend_data.len() - 1000);
+                    if memory.trend_data.len() > 1000 {
+                        memory.trend_data = memory.trend_data.split_off(memory.trend_data.len() - 1000);
+                    }
+
+                    // Update baseline using exponential moving average
+                    let baseline = memory
+                        .baselines
+                        .entry(data_item.source.clone())
+                        .or_insert(num);
+                    *baseline = *baseline * 0.9 + num * 0.1;
                 }
-
-                // Update baseline using exponential moving average
-                let baseline = memory
-                    .baselines
-                    .entry(data_item.source.clone())
-                    .or_insert(num);
-                *baseline = *baseline * 0.9 + num * 0.1;
             }
         }
 
@@ -6708,25 +6716,25 @@ fn extract_conditions(text: &str) -> Vec<String> {
     let mut conditions = Vec::new();
 
     // Look for patterns like "大于30", "小于50", "超过", "低于"
-    if (text.contains("大于") || text.contains("超过"))
-        && let Some(start) = text.find("大于").or_else(|| text.find("超过"))
-    {
-        // Use character-based slicing to handle multi-byte UTF-8 characters
-        let start_char = text[..start].chars().count();
-        let remaining: String = text.chars().skip(start_char).take(12).collect();
-        if !remaining.is_empty() {
-            conditions.push(remaining);
+    if text.contains("大于") || text.contains("超过") {
+        if let Some(start) = text.find("大于").or_else(|| text.find("超过")) {
+            // Use character-based slicing to handle multi-byte UTF-8 characters
+            let start_char = text[..start].chars().count();
+            let remaining: String = text.chars().skip(start_char).take(12).collect();
+            if !remaining.is_empty() {
+                conditions.push(remaining);
+            }
         }
     }
 
-    if (text.contains("小于") || text.contains("低于"))
-        && let Some(start) = text.find("小于").or_else(|| text.find("低于"))
-    {
-        // Use character-based slicing to handle multi-byte UTF-8 characters
-        let start_char = text[..start].chars().count();
-        let remaining: String = text.chars().skip(start_char).take(12).collect();
-        if !remaining.is_empty() {
-            conditions.push(remaining);
+    if text.contains("小于") || text.contains("低于") {
+        if let Some(start) = text.find("小于").or_else(|| text.find("低于")) {
+            // Use character-based slicing to handle multi-byte UTF-8 characters
+            let start_char = text[..start].chars().count();
+            let remaining: String = text.chars().skip(start_char).take(12).collect();
+            if !remaining.is_empty() {
+                conditions.push(remaining);
+            }
         }
     }
 

@@ -460,34 +460,34 @@ impl ResourceResolver {
                 suggestions.push("list_devices()".to_string());
             }
             IntentCategory::QueryData => {
-                if let Some(action) = resolved.actions.first()
-                    && let Some(target) = &action.target
-                {
-                    let metric = action
-                        .parameters
-                        .get("metric")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("temperature");
-                    suggestions.push(format!(
-                        "query_data(device='{}', metric='{}')",
-                        target, metric
-                    ));
+                if let Some(action) = resolved.actions.first() {
+                    if let Some(target) = &action.target {
+                        let metric = action
+                            .parameters
+                            .get("metric")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("temperature");
+                        suggestions.push(format!(
+                            "query_data(device='{}', metric='{}')",
+                            target, metric
+                        ));
+                    }
                 }
                 suggestions.push("search_resources(query='相关设备类型')".to_string());
             }
             IntentCategory::ControlDevice => {
-                if let Some(action) = resolved.actions.first()
-                    && let Some(target) = &action.target
-                {
-                    let action_type = action
-                        .parameters
-                        .get("action")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("toggle");
-                    suggestions.push(format!(
-                        "control_device(device='{}', action='{}')",
-                        target, action_type
-                    ));
+                if let Some(action) = resolved.actions.first() {
+                    if let Some(target) = &action.target {
+                        let action_type = action
+                            .parameters
+                            .get("action")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("toggle");
+                        suggestions.push(format!(
+                            "control_device(device='{}', action='{}')",
+                            target, action_type
+                        ));
+                    }
                 }
             }
             _ => {

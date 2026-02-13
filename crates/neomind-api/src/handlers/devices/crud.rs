@@ -66,10 +66,10 @@ pub async fn list_devices_handler(
     let mut filtered_configs = Vec::new();
     for config in configs {
         // Filter by device_type
-        if let Some(ref filter_type) = pagination.device_type
-            && &config.device_type != filter_type
-        {
-            continue;
+        if let Some(ref filter_type) = pagination.device_type {
+            if &config.device_type != filter_type {
+                continue;
+            }
         }
 
         // Filter by status

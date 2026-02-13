@@ -256,10 +256,10 @@ impl CommandResultHistory {
             .push(result);
 
         // Keep only last 100 results per rule
-        if let Some(entries) = results.get_mut(&rule_id.to_string())
-            && entries.len() > 100
-        {
-            entries.drain(0..entries.len() - 100);
+        if let Some(entries) = results.get_mut(&rule_id.to_string()) {
+            if entries.len() > 100 {
+                entries.drain(0..entries.len() - 100);
+            }
         }
     }
 

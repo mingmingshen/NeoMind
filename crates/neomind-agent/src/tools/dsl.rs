@@ -1023,11 +1023,12 @@ impl Tool for GetRuleHistoryTool {
             "count": entries.len(),
         });
 
-        if include_stats
-            && let Some(rid) = rule_id
-            && let Some(stats) = self.get_stats(rid).await
-        {
-            result["stats"] = serde_json::to_value(stats).unwrap();
+        if include_stats {
+            if let Some(rid) = rule_id {
+                if let Some(stats) = self.get_stats(rid).await {
+                    result["stats"] = serde_json::to_value(stats).unwrap();
+                }
+            }
         }
 
         Ok(ToolOutput::success(result))

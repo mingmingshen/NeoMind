@@ -139,10 +139,10 @@ impl RuleStore {
         // Check singleton
         {
             let singleton = RULE_STORE_SINGLETON.lock().unwrap();
-            if let Some(store) = singleton.as_ref()
-                && store.path == path_str
-            {
-                return Ok(store.clone());
+            if let Some(store) = singleton.as_ref() {
+                if store.path == path_str {
+                    return Ok(store.clone());
+                }
             }
         }
 
@@ -227,7 +227,8 @@ impl RuleStore {
         let write_txn = self.db.begin_write()?;
         let existed = {
             let mut table = write_txn.open_table(RULES_TABLE)?;
-            table.remove(key.as_str())?.is_some()
+            let result = table.remove(key.as_str())?.is_some();
+            result
         };
         write_txn.commit()?;
         Ok(existed)

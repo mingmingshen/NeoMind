@@ -770,12 +770,14 @@ impl DeviceRegistry {
 
         // Save to storage if enabled
         drop(templates);
-        if self.storage.is_some()
-            && *self.auto_save.read().await
-            && let Some(store) = &self.storage
-            && let Err(e) = store.save_template(&storage_template)
-        {
-            tracing::warn!("Failed to save template to storage: {}", e);
+        if self.storage.is_some() {
+            if *self.auto_save.read().await {
+                if let Some(store) = &self.storage {
+                    if let Err(e) = store.save_template(&storage_template) {
+                        tracing::warn!("Failed to save template to storage: {}", e);
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -797,14 +799,14 @@ impl DeviceRegistry {
     pub async fn unregister_template(&self, device_type: &str) -> Result<(), DeviceError> {
         // Check if any devices are using this template
         let type_index = self.type_index.read().await;
-        if let Some(device_ids) = type_index.get(device_type)
-            && !device_ids.is_empty()
-        {
-            return Err(DeviceError::InvalidParameter(format!(
-                "Cannot unregister template '{}': {} devices still use it",
-                device_type,
-                device_ids.len()
-            )));
+        if let Some(device_ids) = type_index.get(device_type) {
+            if !device_ids.is_empty() {
+                return Err(DeviceError::InvalidParameter(format!(
+                    "Cannot unregister template '{}': {} devices still use it",
+                    device_type,
+                    device_ids.len()
+                )));
+            }
         }
         drop(type_index);
 
@@ -813,12 +815,14 @@ impl DeviceRegistry {
         drop(templates);
 
         // Delete from storage if enabled
-        if self.storage.is_some()
-            && *self.auto_save.read().await
-            && let Some(store) = &self.storage
-            && let Err(e) = store.delete_template(device_type)
-        {
-            tracing::warn!("Failed to delete template from storage: {}", e);
+        if self.storage.is_some() {
+            if *self.auto_save.read().await {
+                if let Some(store) = &self.storage {
+                    if let Err(e) = store.delete_template(device_type) {
+                        tracing::warn!("Failed to delete template from storage: {}", e);
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -915,12 +919,12 @@ impl DeviceRegistry {
 
         // Save to storage FIRST (before modifying memory)
         // This ensures atomicity - if storage fails, nothing is modified in memory
-        if let Some(storage_config) = &storage_config
-            && let Some(store) = &self.storage
-        {
-            store.save_device(storage_config).map_err(|e| {
-                DeviceError::Storage(format!("Failed to save device to storage: {}", e))
-            })?;
+        if let Some(storage_config) = &storage_config {
+            if let Some(store) = &self.storage {
+                store.save_device(storage_config).map_err(|e| {
+                    DeviceError::Storage(format!("Failed to save device to storage: {}", e))
+                })?;
+            }
         }
 
         // Store device configuration in memory
@@ -961,10 +965,10 @@ impl DeviceRegistry {
     ) -> Option<(String, DeviceConfig)> {
         let devices = self.devices.read().await;
         for (device_id, config) in devices.iter() {
-            if let Some(ref telemetry_topic) = config.connection_config.telemetry_topic
-                && telemetry_topic == topic
-            {
-                return Some((device_id.clone(), config.clone()));
+            if let Some(ref telemetry_topic) = config.connection_config.telemetry_topic {
+                if telemetry_topic == topic {
+                    return Some((device_id.clone(), config.clone()));
+                }
             }
         }
         None
@@ -1015,12 +1019,14 @@ impl DeviceRegistry {
         }
 
         // Delete from storage if enabled
-        if self.storage.is_some()
-            && *self.auto_save.read().await
-            && let Some(store) = &self.storage
-            && let Err(e) = store.delete_device(device_id)
-        {
-            tracing::warn!("Failed to delete device from storage: {}", e);
+        if self.storage.is_some() {
+            if *self.auto_save.read().await {
+                if let Some(store) = &self.storage {
+                    if let Err(e) = store.delete_device(device_id) {
+                        tracing::warn!("Failed to delete device from storage: {}", e);
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -1078,9 +1084,8 @@ impl DeviceRegistry {
         }
 
         // Update type index if type changed
-        if let Some(old_type) = old_device_type
-            && old_type != new_device_type
-        {
+        if let Some(old_type) = old_device_type {
+            if old_type != new_device_type {
             // Remove from old type index
             {
                 let mut type_index = self.type_index.write().await;
@@ -1100,14 +1105,16 @@ impl DeviceRegistry {
                     .or_insert_with(Vec::new)
                     .push(device_id.to_string());
             }
+            }
         }
 
         // Update storage if enabled
-        if let Some(storage_config) = storage_config
-            && let Some(store) = &self.storage
-            && let Err(e) = store.update_device(device_id, &storage_config)
-        {
-            tracing::warn!("Failed to update device in storage: {}", e);
+        if let Some(storage_config) = storage_config {
+            if let Some(store) = &self.storage {
+                if let Err(e) = store.update_device(device_id, &storage_config) {
+                    tracing::warn!("Failed to update device in storage: {}", e);
+                }
+            }
         }
 
         Ok(())

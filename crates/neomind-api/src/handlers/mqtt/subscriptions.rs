@@ -99,13 +99,13 @@ pub async fn subscribe_device_handler(
         .ok_or_else(|| ErrorResponse::not_found(format!("Device not found: {}", device_id)))?;
 
     // Get the adapter for this device and subscribe
-    if let Some(ref adapter_id) = device.adapter_id
-        && let Some(adapter) = state.devices.service.get_adapter(adapter_id).await
-    {
-        adapter
-            .subscribe_device(&device_id)
-            .await
-            .map_err(|e| ErrorResponse::internal(format!("Failed to subscribe: {}", e)))?;
+    if let Some(ref adapter_id) = device.adapter_id {
+        if let Some(adapter) = state.devices.service.get_adapter(adapter_id).await {
+            adapter
+                .subscribe_device(&device_id)
+                .await
+                .map_err(|e| ErrorResponse::internal(format!("Failed to subscribe: {}", e)))?;
+        }
     }
 
     ok(json!({

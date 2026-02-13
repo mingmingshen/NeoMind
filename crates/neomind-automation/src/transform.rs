@@ -760,7 +760,9 @@ impl TransformEngine {
                     "data": raw_data,
                 });
 
-                match ext.read().await.execute_command("preprocess", &args).await {
+                let preprocess_result = ext.read().await.execute_command("preprocess", &args).await;
+                drop(ext);
+                match preprocess_result {
                     Ok(preprocessed) => {
                         tracing::debug!(
                             extension_id = %metadata_id,
@@ -916,12 +918,11 @@ impl TransformEngine {
         );
 
         // Try JS-based execution first (new AI-native approach)
-        if let Some(ref js_code) = transform.js_code
-            && !js_code.is_empty()
-        {
-            // Pass extension registry to JS executor for extensions.invoke() support
-            let ext_ref = self.extension_registry.as_ref();
-            match self.js_executor.execute(
+        if let Some(ref js_code) = transform.js_code {
+            if !js_code.is_empty() {
+                // Pass extension registry to JS executor for extensions.invoke() support
+                let ext_ref = self.extension_registry.as_ref();
+                match self.js_executor.execute(
                 js_code,
                 raw_data,
                 &actual_prefix,
@@ -937,6 +938,7 @@ impl TransformEngine {
                 }
             }
             return Ok(TransformResult { metrics, warnings });
+            }
         }
 
         // Fall back to legacy operations

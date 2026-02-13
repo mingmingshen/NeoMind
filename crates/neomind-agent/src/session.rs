@@ -285,10 +285,10 @@ impl SessionManager {
                                 "arguments": call.arguments,
                             });
                             // Add result field if present
-                            if let Some(ref result) = call.result
-                                && let Some(obj_map) = obj.as_object_mut()
-                            {
-                                obj_map.insert("result".to_string(), result.clone());
+                            if let Some(ref result) = call.result {
+                                if let Some(obj_map) = obj.as_object_mut() {
+                                    obj_map.insert("result".to_string(), result.clone());
+                                }
                             }
                             obj
                         })

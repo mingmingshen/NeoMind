@@ -93,12 +93,12 @@ impl ThinkTool {
     /// Format a thought for display.
     fn format_thought(&self, thought: &str, breakdown: Option<&[String]>) -> String {
         let mut result = format!("🧠 Thinking: {}", thought);
-        if let Some(steps) = breakdown
-            && !steps.is_empty()
-        {
-            result.push_str("\n\nPlan:\n");
-            for (i, step) in steps.iter().enumerate() {
-                result.push_str(&format!("  {}. {}\n", i + 1, step));
+        if let Some(steps) = breakdown {
+            if !steps.is_empty() {
+                result.push_str("\n\nPlan:\n");
+                for (i, step) in steps.iter().enumerate() {
+                    result.push_str(&format!("  {}. {}\n", i + 1, step));
+                }
             }
         }
         result

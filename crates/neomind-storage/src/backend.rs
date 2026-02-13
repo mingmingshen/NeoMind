@@ -138,7 +138,8 @@ impl StorageBackend for RedbBackend {
         let txn = self.db.begin_write()?;
         let removed = {
             let mut t = txn.open_table(UNIFIED_TABLE)?;
-            t.remove(&*namespaced)?.is_some()
+            let result = t.remove(&*namespaced)?.is_some();
+            result
         };
         txn.commit()?;
         Ok(removed)

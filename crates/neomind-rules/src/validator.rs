@@ -415,9 +415,8 @@ impl RuleValidator {
             })?;
 
         // Validate threshold against metric constraints
-        if let (Some(min), Some(max)) = (metric_info.min_value, metric_info.max_value)
-            && (*threshold < min || *threshold > max)
-        {
+        if let (Some(min), Some(max)) = (metric_info.min_value, metric_info.max_value) {
+            if *threshold < min || *threshold > max {
             issues.push(ValidationIssue {
                 code: "THRESHOLD_OUT_OF_RANGE".to_string(),
                 message: format!(
@@ -427,6 +426,7 @@ impl RuleValidator {
                 field: Some("condition.threshold".to_string()),
                 severity: ValidationSeverity::Warning,
             });
+            }
         }
 
         // Check if operator is compatible with metric type

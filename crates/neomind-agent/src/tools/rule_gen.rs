@@ -283,14 +283,15 @@ impl ValidateRuleDslTool {
                     if let (Some(metric), Some(device)) = (
                         &metric,
                         device_types.iter().find(|d| d.device_id == *device_id),
-                    ) && !device.metrics.contains(metric)
-                    {
-                        warnings.push(format!(
-                            "Metric '{}' is not available for device '{}'. Available metrics: {}",
-                            metric,
-                            device_id,
-                            device.metrics.join(", ")
-                        ));
+                    ) {
+                        if !device.metrics.contains(metric) {
+                            warnings.push(format!(
+                                "Metric '{}' is not available for device '{}'. Available metrics: {}",
+                                metric,
+                                device_id,
+                                device.metrics.join(", ")
+                            ));
+                        }
                     }
                 }
 
@@ -538,21 +539,22 @@ impl CreateRuleTool {
                     _ => None,
                 };
 
-                if let (Some(_existing_key), Some(_parsed_key)) = (existing_key, parsed_key)
-                    && _existing_key.0 == _parsed_key.0
-                    && _existing_key.1 == _parsed_key.1
-                    && _existing_key.2 == _parsed_key.2
-                    && (_existing_key.3 - _parsed_key.3).abs() < 0.0001
-                {
-                    return Ok(CreateResult {
-                        success: false,
-                        rule_id: None,
-                        message: format!(
-                            "Similar rule already exists: '{}' (ID: {}). Consider modifying the condition.",
-                            existing.name, existing.id
-                        ),
-                        duplicate_name: None,
-                    });
+                if let (Some(_existing_key), Some(_parsed_key)) = (existing_key, parsed_key) {
+                    if _existing_key.0 == _parsed_key.0
+                        && _existing_key.1 == _parsed_key.1
+                        && _existing_key.2 == _parsed_key.2
+                        && (_existing_key.3 - _parsed_key.3).abs() < 0.0001
+                    {
+                        return Ok(CreateResult {
+                            success: false,
+                            rule_id: None,
+                            message: format!(
+                                "Similar rule already exists: '{}' (ID: {}). Consider modifying the condition.",
+                                existing.name, existing.id
+                            ),
+                            duplicate_name: None,
+                        });
+                    }
                 }
             }
         }

@@ -234,10 +234,10 @@ impl DependencyManager {
 
         // Only sort rules that exist
         for rule_id in existing_rules {
-            if !visited.contains(rule_id)
-                && let Some(cycle) = self.visit(rule_id, &mut visited, &mut visiting, &mut sorted)
-            {
-                cycles.push(cycle);
+            if !visited.contains(rule_id) {
+                if let Some(cycle) = self.visit(rule_id, &mut visited, &mut visiting, &mut sorted) {
+                    cycles.push(cycle);
+                }
             }
         }
 

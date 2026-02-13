@@ -209,11 +209,13 @@ fn build_response_from_template(template: &str, data: &Value) -> String {
 
     // Replace {latest} - latest data point
     if result.contains("{latest}") {
-        if let Some(arr) = data["data"].as_array()
-            && !arr.is_empty()
-        {
-            let last_value = arr[arr.len() - 1]["value"].as_f64().unwrap_or(0.0);
-            result = result.replace("{latest}", &format!("最新温度值: {:.1}°C", last_value));
+        if let Some(arr) = data["data"].as_array() {
+            if !arr.is_empty() {
+                let last_value = arr[arr.len() - 1]["value"].as_f64().unwrap_or(0.0);
+                result = result.replace("{latest}", &format!("最新温度值: {:.1}°C", last_value));
+            } else {
+                result = result.replace("{latest}", "无最新数据");
+            }
         } else {
             result = result.replace("{latest}", "无最新数据");
         }
@@ -221,11 +223,13 @@ fn build_response_from_template(template: &str, data: &Value) -> String {
 
     // Replace {earliest} - earliest data point
     if result.contains("{earliest}") {
-        if let Some(arr) = data["data"].as_array()
-            && !arr.is_empty()
-        {
-            let first_value = arr[0]["value"].as_f64().unwrap_or(0.0);
-            result = result.replace("{earliest}", &format!("最早温度值: {:.1}°C", first_value));
+        if let Some(arr) = data["data"].as_array() {
+            if !arr.is_empty() {
+                let first_value = arr[0]["value"].as_f64().unwrap_or(0.0);
+                result = result.replace("{earliest}", &format!("最早温度值: {:.1}°C", first_value));
+            } else {
+                result = result.replace("{earliest}", "无最早数据");
+            }
         } else {
             result = result.replace("{earliest}", "无最早数据");
         }

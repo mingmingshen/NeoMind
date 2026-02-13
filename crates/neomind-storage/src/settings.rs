@@ -567,10 +567,10 @@ impl SettingsStore {
         // Check if we already have a store for this path
         {
             let singleton = SETTINGS_STORE_SINGLETON.lock().unwrap();
-            if let Some(store) = singleton.as_ref()
-                && store.path == path_str
-            {
-                return Ok(store.clone());
+            if let Some(store) = singleton.as_ref() {
+                if store.path == path_str {
+                    return Ok(store.clone());
+                }
             }
         }
 
@@ -692,10 +692,10 @@ impl SettingsStore {
         let iter = table.iter()?;
         for result in iter {
             let (_, data) = result?;
-            if let Ok(entry) = serde_json::from_slice::<ConfigChangeEntry>(data.value())
-                && entry.config_key == config_key
-            {
-                entries.push(entry);
+            if let Ok(entry) = serde_json::from_slice::<ConfigChangeEntry>(data.value()) {
+                if entry.config_key == config_key {
+                    entries.push(entry);
+                }
             }
         }
 
@@ -790,26 +790,27 @@ impl SettingsStore {
     /// Import settings from JSON.
     pub fn import_settings(&self, import: serde_json::Value, source: &str) -> Result<(), Error> {
         // Import LLM settings
-        if let Some(llm_value) = import.get("llm")
-            && let Ok(llm_settings) = serde_json::from_value::<LlmSettings>(llm_value.clone())
-        {
-            self.save_llm_settings_tracked(&llm_settings, source)?;
+        if let Some(llm_value) = import.get("llm") {
+            if let Ok(llm_settings) = serde_json::from_value::<LlmSettings>(llm_value.clone()) {
+                self.save_llm_settings_tracked(&llm_settings, source)?;
+            }
         }
 
         // Import MQTT settings
-        if let Some(mqtt_value) = import.get("mqtt")
-            && let Ok(mqtt_settings) = serde_json::from_value::<MqttSettings>(mqtt_value.clone())
-        {
-            self.save_mqtt_settings_tracked(&mqtt_settings, source)?;
+        if let Some(mqtt_value) = import.get("mqtt") {
+            if let Ok(mqtt_settings) = serde_json::from_value::<MqttSettings>(mqtt_value.clone()) {
+                self.save_mqtt_settings_tracked(&mqtt_settings, source)?;
+            }
         }
 
         // Import external brokers
-        if let Some(brokers_value) = import.get("external_brokers")
-            && let Ok(brokers) =
+        if let Some(brokers_value) = import.get("external_brokers") {
+            if let Ok(brokers) =
                 serde_json::from_value::<Vec<ExternalBroker>>(brokers_value.clone())
-        {
-            for broker in brokers {
-                self.save_external_broker(&broker)?;
+            {
+                for broker in brokers {
+                    self.save_external_broker(&broker)?;
+                }
             }
         }
 
@@ -908,7 +909,8 @@ impl SettingsStore {
         let write_txn = self.db.begin_write()?;
         let existed = {
             let mut table = write_txn.open_table(SETTINGS_TABLE)?;
-            table.remove("llm_config")?.is_some()
+            let result = table.remove("llm_config")?.is_some();
+            result
         };
         write_txn.commit()?;
         Ok(existed)
@@ -983,7 +985,8 @@ impl SettingsStore {
         let write_txn = self.db.begin_write()?;
         let existed = {
             let mut table = write_txn.open_table(SETTINGS_TABLE)?;
-            table.remove("mqtt_config")?.is_some()
+            let result = table.remove("mqtt_config")?.is_some();
+            result
         };
         write_txn.commit()?;
         Ok(existed)
@@ -1042,7 +1045,8 @@ impl SettingsStore {
         let write_txn = self.db.begin_write()?;
         let existed = {
             let mut table = write_txn.open_table(EXTERNAL_BROKERS_TABLE)?;
-            table.remove(id)?.is_some()
+            let result = table.remove(id)?.is_some();
+            result
         };
         write_txn.commit()?;
         Ok(existed)

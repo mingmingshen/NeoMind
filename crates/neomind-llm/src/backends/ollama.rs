@@ -218,30 +218,32 @@ impl OllamaRuntime {
             result.push_str(&format!("### {}\n", tool.name));
             result.push_str(&format!("Description: {}\n", tool.description));
 
-            if let Some(props) = tool.parameters.get("properties")
-                && let Some(obj) = props.as_object()
-                && !obj.is_empty()
-            {
-                result.push_str("Parameters:\n");
-                for (name, prop) in obj {
-                    let desc = prop
-                        .get("description")
-                        .and_then(|d| d.as_str())
-                        .unwrap_or("No description");
-                    let type_name = prop
-                        .get("type")
-                        .and_then(|t| t.as_str())
-                        .unwrap_or("unknown");
-                    result.push_str(&format!("- {}: {} ({})\n", name, desc, type_name));
+            if let Some(props) = tool.parameters.get("properties") {
+                if let Some(obj) = props.as_object() {
+                    if !obj.is_empty() {
+                        result.push_str("Parameters:\n");
+                        for (name, prop) in obj {
+                            let desc = prop
+                                .get("description")
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("No description");
+                            let type_name = prop
+                                .get("type")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("unknown");
+                            result.push_str(&format!("- {}: {} ({})\n", name, desc, type_name));
+                        }
+                    }
                 }
             }
 
-            if let Some(required) = tool.parameters.get("required")
-                && let Some(arr) = required.as_array()
-                && !arr.is_empty()
-            {
-                let required_names: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
-                result.push_str(&format!("Required: {}\n", required_names.join(", ")));
+            if let Some(required) = tool.parameters.get("required") {
+                if let Some(arr) = required.as_array() {
+                    if !arr.is_empty() {
+                        let required_names: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+                        result.push_str(&format!("Required: {}\n", required_names.join(", ")));
+                    }
+                }
             }
 
             result.push('\n');
@@ -277,10 +279,10 @@ impl OllamaRuntime {
                 let mut text = msg.text();
 
                 // Inject tool instructions into system message for models without native tool support
-                if msg.role == MessageRole::System
-                    && let Some(instructions) = &tool_instructions
-                {
-                    text = format!("{}\n\n{}", text, instructions);
+                if msg.role == MessageRole::System {
+                    if let Some(instructions) = &tool_instructions {
+                        text = format!("{}\n\n{}", text, instructions);
+                    }
                 }
 
                 // Extract images from multimodal content
@@ -1123,10 +1125,8 @@ impl LlmRuntime for OllamaRuntime {
                                                 }
 
                                                 // Check if thinking has gone on too long
-                                                if let Some(start) = thinking_start_time
-                                                    && start.elapsed()
-                                                        > stream_config.max_thinking_time()
-                                                {
+                                                if let Some(start) = thinking_start_time {
+                                                    if start.elapsed() > stream_config.max_thinking_time() {
                                                     tracing::warn!(
                                                         "[ollama.rs] Thinking timeout ({:?} elapsed, {} chars). Skipping remaining thinking, waiting for content.",
                                                         start.elapsed(),
@@ -1134,6 +1134,7 @@ impl LlmRuntime for OllamaRuntime {
                                                     );
                                                     // Skip future thinking chunks but continue stream for content
                                                     skip_remaining_thinking = true;
+                                                    }
                                                 }
 
                                                 // Detect consecutive identical thinking chunks (model stuck in loop)

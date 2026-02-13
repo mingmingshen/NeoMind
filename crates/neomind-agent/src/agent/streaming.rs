@@ -1328,10 +1328,10 @@ fn estimate_message_tokens(msg: &AgentMessage) -> usize {
     }
 
     // Add tokens for images (rough estimate)
-    if let Some(images) = &msg.images
-        && !images.is_empty()
-    {
-        tokens += 85 * images.len();
+    if let Some(images) = &msg.images {
+        if !images.is_empty() {
+            tokens += 85 * images.len();
+        }
     }
 
     tokens
@@ -1352,16 +1352,16 @@ fn truncate_agent_message(msg: &AgentMessage, max_len: usize) -> AgentMessage {
     }
 
     // Also truncate thinking if present
-    if let Some(thinking) = &truncated.thinking
-        && thinking.len() > max_len / 2
-    {
-        truncated.thinking = Some(
-            if let Some(last_space) = thinking[..max_len / 2].rfind(' ') {
-                format!("{}...", &thinking[..last_space])
-            } else {
-                format!("{}...", &thinking[..max_len / 2])
-            },
-        );
+    if let Some(thinking) = &truncated.thinking {
+        if thinking.len() > max_len / 2 {
+            truncated.thinking = Some(
+                if let Some(last_space) = thinking[..max_len / 2].rfind(' ') {
+                    format!("{}...", &thinking[..last_space])
+                } else {
+                    format!("{}...", &thinking[..max_len / 2])
+                },
+            );
+        }
     }
 
     truncated
@@ -1974,8 +1974,8 @@ pub async fn process_stream_events_with_safeguards(
                                 }
                             }
                             // Also check for JSON tool calls in thinking
-                            else if let Some((json_start, tool_json, remaining)) = detect_json_tool_calls(thinking_with_new)
-                                && let Ok((_, calls)) = parse_tool_calls(&tool_json) {
+                            else if let Some((json_start, tool_json, remaining)) = detect_json_tool_calls(thinking_with_new) {
+                                if let Ok((_, calls)) = parse_tool_calls(&tool_json) {
                                     let mut duplicate_found = false;
                                     for call in &calls {
                                         let args_hash = hash_tool_args(&call.arguments);
@@ -2005,6 +2005,7 @@ pub async fn process_stream_events_with_safeguards(
                                         tracing::info!("Extracted {} JSON tool calls from thinking content", tool_calls.len());
                                     }
                                 }
+                            }
 
                             // Only yield non-empty thinking content (without tool calls)
                             if !text_to_yield.is_empty() {
@@ -2519,14 +2520,13 @@ pub async fn process_multimodal_stream_events_with_safeguards(
 
     // Add images as ContentPart
     for image_data in &images {
-        if image_data.starts_with("data:image/")
-            && let Some(base64_part) = image_data.split(',').nth(1)
-        {
-            // Extract mime type from data URL
-            let mime_type = if image_data.contains("data:image/png") {
-                "image/png"
-            } else if image_data.contains("data:image/jpeg") {
-                "image/jpeg"
+        if image_data.starts_with("data:image/") {
+            if let Some(base64_part) = image_data.split(',').nth(1) {
+                // Extract mime type from data URL
+                let mime_type = if image_data.contains("data:image/png") {
+                    "image/png"
+                } else if image_data.contains("data:image/jpeg") {
+                    "image/jpeg"
             } else if image_data.contains("data:image/webp") {
                 "image/webp"
             } else if image_data.contains("data:image/gif") {
@@ -2535,6 +2535,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                 "image/png"
             };
             parts.push(ContentPart::image_base64(base64_part, mime_type));
+            }
         }
     }
 
@@ -3087,15 +3088,16 @@ async fn execute_tool_with_retry(
     let result = execute_with_retry_impl(tools, name, arguments.clone(), max_retries).await;
 
     // Cache successful results for cacheable tools
-    if is_tool_cacheable(name)
-        && let Ok(ref output) = result
-        && output.success
-    {
-        let cache_key = ToolResultCache::make_key(name, &arguments);
-        let mut cache_write = cache.write().await;
-        cache_write.insert(cache_key, output.clone());
-        // Periodic cleanup
-        cache_write.cleanup_expired();
+    if is_tool_cacheable(name) {
+        if let Ok(ref output) = result {
+            if output.success {
+                let cache_key = ToolResultCache::make_key(name, &arguments);
+                let mut cache_write = cache.write().await;
+                cache_write.insert(cache_key, output.clone());
+                // Periodic cleanup
+                cache_write.cleanup_expired();
+            }
+        }
     }
 
     result

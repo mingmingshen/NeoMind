@@ -386,13 +386,13 @@ impl LlmInterface {
     /// Get the current LLM runtime, using instance manager if enabled.
     async fn get_runtime(&self) -> AgentResult<Arc<dyn LlmRuntime>> {
         // Try instance manager first if enabled
-        if self.uses_instance_manager()
-            && let Some(manager) = &self.instance_manager
-        {
-            return manager
-                .get_active_runtime()
-                .await
-                .map_err(|e| NeoMindError::Llm(e.to_string()));
+        if self.uses_instance_manager() {
+            if let Some(manager) = &self.instance_manager {
+                return manager
+                    .get_active_runtime()
+                    .await
+                    .map_err(|e| NeoMindError::Llm(e.to_string()));
+            }
         }
 
         // Fall back to direct runtime
@@ -407,11 +407,12 @@ impl LlmInterface {
     /// When using instance manager, reads from the active backend instance.
     /// Otherwise falls back to local ChatConfig values.
     async fn get_effective_params(&self) -> (f32, f32, usize, usize) {
-        if self.uses_instance_manager()
-            && let Some(manager) = &self.instance_manager
-            && let Some(inst) = manager.get_active_instance()
-        {
-            return (inst.temperature, inst.top_p, inst.top_k, inst.max_tokens);
+        if self.uses_instance_manager() {
+            if let Some(manager) = &self.instance_manager {
+                if let Some(inst) = manager.get_active_instance() {
+                    return (inst.temperature, inst.top_p, inst.top_k, inst.max_tokens);
+                }
+            }
         }
         // Fall back to local config
         (self.temperature, self.top_p, self.top_k, self.max_tokens)
@@ -487,12 +488,13 @@ impl LlmInterface {
     /// Returns a conservative default (4096) if the LLM is not ready.
     pub async fn max_context_length(&self) -> usize {
         // Try instance manager first if enabled
-        if self.uses_instance_manager()
-            && let Some(manager) = &self.instance_manager
-            && let Some(instance) = manager.get_active_instance()
-        {
-            // Instance has capabilities with max_context
-            return instance.capabilities.max_context;
+        if self.uses_instance_manager() {
+            if let Some(manager) = &self.instance_manager {
+                if let Some(instance) = manager.get_active_instance() {
+                    // Instance has capabilities with max_context
+                    return instance.capabilities.max_context;
+                }
+            }
         }
 
         // Fall back to querying the runtime directly
@@ -507,12 +509,13 @@ impl LlmInterface {
     /// Returns true if the active backend supports image input, false otherwise.
     pub async fn supports_multimodal(&self) -> bool {
         // Try instance manager first if enabled
-        if self.uses_instance_manager()
-            && let Some(manager) = &self.instance_manager
-            && let Some(instance) = manager.get_active_instance()
-        {
-            // Instance has capabilities with supports_multimodal (storage layer)
-            return instance.capabilities.supports_multimodal;
+        if self.uses_instance_manager() {
+            if let Some(manager) = &self.instance_manager {
+                if let Some(instance) = manager.get_active_instance() {
+                    // Instance has capabilities with supports_multimodal (storage layer)
+                    return instance.capabilities.supports_multimodal;
+                }
+            }
         }
 
         // Fall back to querying the runtime directly
@@ -932,10 +935,10 @@ impl LlmInterface {
         }
 
         // Always include basic tools
-        if !filtered.iter().any(|t| t.name == "list_devices")
-            && let Some(t) = tools.iter().find(|t| t.name == "list_devices")
-        {
-            filtered.push(t.clone());
+        if !filtered.iter().any(|t| t.name == "list_devices") {
+            if let Some(t) = tools.iter().find(|t| t.name == "list_devices") {
+                filtered.push(t.clone());
+            }
         }
 
         filtered.truncate(6); // Limit to 6 tools max
@@ -950,10 +953,10 @@ impl LlmInterface {
 
     /// Check if the LLM backend is ready.
     pub async fn is_ready(&self) -> bool {
-        if self.uses_instance_manager()
-            && let Some(manager) = &self.instance_manager
-        {
-            return manager.get_active_instance().is_some();
+        if self.uses_instance_manager() {
+            if let Some(manager) = &self.instance_manager {
+                return manager.get_active_instance().is_some();
+            }
         }
         let llm_guard = self.llm.read().await;
         llm_guard.as_ref().is_some()

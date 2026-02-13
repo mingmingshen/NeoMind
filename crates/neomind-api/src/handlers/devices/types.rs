@@ -224,13 +224,16 @@ pub async fn validate_device_type_handler(
         if matches!(
             metric.data_type,
             neomind_devices::MetricDataType::Integer | neomind_devices::MetricDataType::Float
-        ) && let (Some(min), Some(max)) = (metric.min, metric.max)
-            && min > max
-        {
-            errors.push(format!(
-                "metrics[{}]: min ({}) 不能大于 max ({})",
-                idx, min, max
-            ));
+        ) {
+            let (min, max) = (metric.min, metric.max);
+            if let (Some(min_val), Some(max_val)) = (min, max) {
+                if min_val > max_val {
+                    errors.push(format!(
+                        "metrics[{}]: min ({}) 不能大于 max ({})",
+                        idx, min_val, max_val
+                    ));
+                }
+            }
         }
     }
 

@@ -2176,13 +2176,15 @@ impl Agent {
 
         // If no tool calls in response content, try parsing from thinking field
         // Some models (like qwen3 with thinking enabled) may put tool calls in thinking
-        if tool_calls.is_empty()
-            && let Some(ref thinking_content) = thinking
-            && let Ok((_, thinking_tool_calls)) = parse_tool_calls(thinking_content)
-            && !thinking_tool_calls.is_empty()
-        {
-            tracing::debug!("Found tool calls in thinking field, using them");
-            tool_calls = thinking_tool_calls;
+        if tool_calls.is_empty() {
+            if let Some(ref thinking_content) = thinking {
+                if let Ok((_, thinking_tool_calls)) = parse_tool_calls(thinking_content) {
+                    if !thinking_tool_calls.is_empty() {
+                        tracing::debug!("Found tool calls in thinking field, using them");
+                        tool_calls = thinking_tool_calls;
+                    }
+                }
+            }
         }
 
         // If no tool calls, return the direct response

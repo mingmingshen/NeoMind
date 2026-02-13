@@ -737,9 +737,8 @@ impl RuleDslParser {
         }
 
         // Handle parenthesized expressions
-        if input.starts_with('(')
-            && let Some(close_pos) = Self::find_matching_paren(input, 0)
-        {
+        if input.starts_with('(') {
+            if let Some(close_pos) = Self::find_matching_paren(input, 0) {
             let inner = &input[1..close_pos];
             let rest = input[close_pos + 1..].trim();
 
@@ -757,6 +756,7 @@ impl RuleDslParser {
             } else {
                 // Just a parenthesized condition
                 return Self::parse_condition(inner);
+            }
             }
         }
 
@@ -910,12 +910,12 @@ impl RuleDslParser {
     /// Parse FOR clause to extract duration.
     fn parse_for_clause(lines: &mut Vec<&str>) -> Option<Duration> {
         for (i, line) in lines.iter().enumerate() {
-            if line.starts_with("FOR")
-                && let Some(rest) = line.strip_prefix("FOR")
-            {
-                let duration_str = rest.trim();
-                lines.remove(i);
-                return Self::parse_duration(duration_str);
+            if line.starts_with("FOR") {
+                if let Some(rest) = line.strip_prefix("FOR") {
+                    let duration_str = rest.trim();
+                    lines.remove(i);
+                    return Self::parse_duration(duration_str);
+                }
             }
         }
         None
@@ -934,11 +934,12 @@ impl RuleDslParser {
             if *line == "END" {
                 break;
             }
-            if in_do_block
-                && !line.is_empty()
-                && let Some(action) = Self::parse_action(line)?
-            {
-                actions.push(action);
+            if in_do_block {
+                if !line.is_empty() {
+                    if let Some(action) = Self::parse_action(line)? {
+                        actions.push(action);
+                    }
+                }
             }
         }
 
@@ -950,16 +951,16 @@ impl RuleDslParser {
         let input = input.trim();
         let mut parts = input.split_whitespace();
 
-        if let (Some(num_str), Some(unit)) = (parts.next(), parts.next())
-            && let Ok(value) = num_str.parse::<u64>()
-        {
-            let duration = match unit {
-                "second" | "seconds" => Duration::from_secs(value),
-                "minute" | "minutes" => Duration::from_secs(value * 60),
-                "hour" | "hours" => Duration::from_secs(value * 3600),
-                _ => return None,
-            };
-            return Some(duration);
+        if let (Some(num_str), Some(unit)) = (parts.next(), parts.next()) {
+            if let Ok(value) = num_str.parse::<u64>() {
+                let duration = match unit {
+                    "second" | "seconds" => Duration::from_secs(value),
+                    "minute" | "minutes" => Duration::from_secs(value * 60),
+                    "hour" | "hours" => Duration::from_secs(value * 3600),
+                    _ => return None,
+                };
+                return Some(duration);
+            }
         }
 
         None

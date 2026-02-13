@@ -351,10 +351,10 @@ async fn generate_recent_operation_suggestions(state: &ServerState) -> Vec<Sugge
 
     for session_info in sessions.iter().take(10) {
         // Check last 10 sessions
-        if let Some(ref title) = session_info.title
-            && !title.is_empty()
-        {
-            *operation_counts.entry(title.clone()).or_insert(0) += 1;
+        if let Some(ref title) = session_info.title {
+            if !title.is_empty() {
+                *operation_counts.entry(title.clone()).or_insert(0) += 1;
+            }
         }
     }
 
@@ -395,11 +395,11 @@ async fn generate_pattern_based_suggestions(state: &ServerState) -> Vec<Suggesti
     for agent in agents {
         for pattern in &agent.memory.learned_patterns {
             if pattern.confidence > 0.7 {
-                if let Some(action) = pattern.data.get("action")
-                    && let Some(action_str) = action.as_str()
-                {
-                    high_confidence_patterns
-                        .push((format!("类似: {}", action_str), pattern.confidence));
+                if let Some(action) = pattern.data.get("action") {
+                    if let Some(action_str) = action.as_str() {
+                        high_confidence_patterns
+                            .push((format!("类似: {}", action_str), pattern.confidence));
+                    }
                 }
                 if !pattern.description.is_empty() {
                     high_confidence_patterns

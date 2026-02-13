@@ -1703,13 +1703,13 @@ impl Tool for GetAgentExecutionDetailTool {
             })?;
 
         // Verify agent_id if provided
-        if let Some(id) = agent_id
-            && execution.agent_id != id
-        {
-            return Err(ToolError::Execution(format!(
-                "Execution '{}' belongs to agent '{}', not '{}'",
-                execution_id, execution.agent_id, id
-            )));
+        if let Some(id) = agent_id {
+            if execution.agent_id != id {
+                return Err(ToolError::Execution(format!(
+                    "Execution '{}' belongs to agent '{}', not '{}'",
+                    execution_id, execution.agent_id, id
+                )));
+            }
         }
 
         // Build detailed response

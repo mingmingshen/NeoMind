@@ -16,18 +16,19 @@ fn get_server_ip() -> String {
     use std::net::IpAddr;
 
     // Try to get local IP by creating a socket
-    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0")
-        && socket.connect("8.8.8.8:80").is_ok()
-        && let Ok(local_addr) = socket.local_addr()
-    {
-        let ip = local_addr.ip();
-        if let IpAddr::V4(ipv4) = ip {
-            let octets = ipv4.octets();
-            if (octets[0] == 192 && octets[1] == 168)
-                || (octets[0] == 10)
-                || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
-            {
-                return ip.to_string();
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect("8.8.8.8:80").is_ok() {
+            if let Ok(local_addr) = socket.local_addr() {
+                let ip = local_addr.ip();
+                if let IpAddr::V4(ipv4) = ip {
+                    let octets = ipv4.octets();
+                    if (octets[0] == 192 && octets[1] == 168)
+                        || (octets[0] == 10)
+                        || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
+                    {
+                        return ip.to_string();
+                    }
+                }
             }
         }
     }
@@ -35,16 +36,16 @@ fn get_server_ip() -> String {
     // Fallback: try to get from network interfaces
     if let Ok(interfaces) = get_if_addrs::get_if_addrs() {
         for iface in interfaces {
-            if !iface.is_loopback()
-                && let get_if_addrs::IfAddr::V4(iface_addr) = iface.addr
-            {
-                let ip = iface_addr.ip;
-                let octets = ip.octets();
-                if (octets[0] == 192 && octets[1] == 168)
-                    || (octets[0] == 10)
-                    || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
-                {
-                    return ip.to_string();
+            if !iface.is_loopback() {
+                if let get_if_addrs::IfAddr::V4(iface_addr) = iface.addr {
+                    let ip = iface_addr.ip;
+                    let octets = ip.octets();
+                    if (octets[0] == 192 && octets[1] == 168)
+                        || (octets[0] == 10)
+                        || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
+                    {
+                        return ip.to_string();
+                    }
                 }
             }
         }

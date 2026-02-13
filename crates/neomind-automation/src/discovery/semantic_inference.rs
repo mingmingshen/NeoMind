@@ -251,11 +251,11 @@ impl SemanticInference {
             {
                 Ok(llm_results) => {
                     for (field_name, values) in fields {
-                        if let Some(semantic) = llm_results.get(field_name.as_str())
-                            && semantic.confidence >= self.config.min_llm_confidence
-                        {
-                            results.insert((*field_name).clone(), semantic.clone());
-                            continue;
+                        if let Some(semantic) = llm_results.get(field_name.as_str()) {
+                            if semantic.confidence >= self.config.min_llm_confidence {
+                                results.insert((*field_name).clone(), semantic.clone());
+                                continue;
+                            }
                         }
                         // Use heuristic for remaining fields
                         let semantic = self.heuristic_inference(field_name, values, context);
@@ -608,10 +608,10 @@ impl SemanticInference {
             let mut array_samples = Vec::new();
             for sample in samples.iter().take(10) {
                 // Navigate to the array path in the sample
-                if let Some(array_value) = Self::navigate_to_path(sample, &parent_path)
-                    && array_value.is_array()
-                {
-                    array_samples.push(array_value.clone());
+                if let Some(array_value) = Self::navigate_to_path(sample, &parent_path) {
+                    if array_value.is_array() {
+                        array_samples.push(array_value.clone());
+                    }
                 }
             }
 
@@ -838,16 +838,16 @@ impl SemanticInference {
                 .trim_start_matches("```json")
                 .trim_start_matches("```")
                 .trim();
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(response)
-                && let Some(obj) = parsed.as_object()
-            {
-                for (field_name, semantic_data) in obj {
-                    let semantic = Self::parse_llm_semantic_result(
-                        field_name,
-                        semantic_data.clone(),
-                        InferenceSource::AI,
-                    );
-                    results.insert(field_name.clone(), semantic);
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(response) {
+                if let Some(obj) = parsed.as_object() {
+                    for (field_name, semantic_data) in obj {
+                        let semantic = Self::parse_llm_semantic_result(
+                            field_name,
+                            semantic_data.clone(),
+                            InferenceSource::AI,
+                        );
+                        results.insert(field_name.clone(), semantic);
+                    }
                 }
             }
         }
@@ -958,33 +958,33 @@ impl SemanticInference {
                     .trim_start_matches("```json")
                     .trim_start_matches("```")
                     .trim();
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(response)
-                    && let Some(obj) = parsed.get("metrics").and_then(|v| v.as_object())
-                {
-                    tracing::info!("LLM enhancement completed for {} metrics", obj.len());
-                    let mut results = Vec::new();
-                    for (metric_name, enhancement_data) in obj {
-                        results.push((
-                            metric_name.clone(),
-                            MetricEnhancement {
-                                display_name: enhancement_data
-                                    .get("display_name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or(metric_name)
-                                    .to_string(),
-                                description: enhancement_data
-                                    .get("description")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                unit: enhancement_data
-                                    .get("unit")
-                                    .and_then(|v| if v.is_null() { None } else { v.as_str() })
-                                    .map(|s| s.to_string()),
-                            },
-                        ));
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(response) {
+                    if let Some(obj) = parsed.get("metrics").and_then(|v| v.as_object()) {
+                        tracing::info!("LLM enhancement completed for {} metrics", obj.len());
+                        let mut results = Vec::new();
+                        for (metric_name, enhancement_data) in obj {
+                            results.push((
+                                metric_name.clone(),
+                                MetricEnhancement {
+                                    display_name: enhancement_data
+                                        .get("display_name")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or(metric_name)
+                                        .to_string(),
+                                    description: enhancement_data
+                                        .get("description")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    unit: enhancement_data
+                                        .get("unit")
+                                        .and_then(|v| if v.is_null() { None } else { v.as_str() })
+                                        .map(|s| s.to_string()),
+                                },
+                            ));
+                        }
+                        return results;
                     }
-                    return results;
                 }
                 tracing::warn!("Failed to parse LLM enhancement response");
                 vec![]
@@ -1048,10 +1048,10 @@ impl SemanticInference {
         }
 
         // Hex handling
-        if hex_info.is_hex
-            && let Some(decoded) = hex_info.decoded_integer
-        {
-            reasoning = format!("Hex value detected, decoded as {}", decoded);
+        if hex_info.is_hex {
+            if let Some(decoded) = hex_info.decoded_integer {
+                reasoning = format!("Hex value detected, decoded as {}", decoded);
+            }
         }
 
         // Build result

@@ -292,14 +292,14 @@ impl SessionStore {
                     "Failed to acquire session store lock".to_string(),
                 ));
             };
-            if let Some(store) = singleton.as_ref()
-                && store.path == path_str
-            {
-                tracing::debug!(
-                    "[SessionStore::open] Returning cached store for: {}",
-                    path_str
-                );
-                return Ok(store.clone());
+            if let Some(store) = singleton.as_ref() {
+                if store.path == path_str {
+                    tracing::debug!(
+                        "[SessionStore::open] Returning cached store for: {}",
+                        path_str
+                    );
+                    return Ok(store.clone());
+                }
             }
         }
 
@@ -361,15 +361,15 @@ impl SessionStore {
                 let start_key = (session_id, 0u64);
                 let end_key = (session_id, u64::MAX);
                 let range = t.range(start_key..=end_key);
-                if let Ok(mut r) = range
-                    && r.next().is_some()
-                {
-                    // Existing history found, don't clear it
-                    tracing::debug!(
-                        "[save_history] Refusing to clear existing history for session {}",
-                        session_id
-                    );
-                    return Ok(());
+                if let Ok(mut r) = range {
+                    if r.next().is_some() {
+                        // Existing history found, don't clear it
+                        tracing::debug!(
+                            "[save_history] Refusing to clear existing history for session {}",
+                            session_id
+                        );
+                        return Ok(());
+                    }
                 }
             }
         }

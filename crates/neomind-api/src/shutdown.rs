@@ -45,22 +45,22 @@ pub async fn cleanup_resources(state: &ServerState) {
     // 1. Stop MQTT adapter through DeviceService (with timeout)
     let device_service = state.devices.service.clone();
     let mqtt_task = tokio::spawn(async move {
-        if let Some(adapter) = device_service.get_adapter("internal-mqtt").await
-            && let Err(e) = adapter.stop().await
-        {
-            tracing::warn!("MQTT adapter stop error: {}", e);
+        if let Some(adapter) = device_service.get_adapter("internal-mqtt").await {
+            if let Err(e) = adapter.stop().await {
+                tracing::warn!("MQTT adapter stop error: {}", e);
+            }
         }
     });
     let _ = tokio::time::timeout(Duration::from_secs(5), mqtt_task).await;
 
     // 2. Note embedded broker status (feature-gated)
     #[cfg(feature = "embedded-broker")]
-    if let Some(broker) = &state.devices.embedded_broker
-        && broker.is_running()
-    {
-        tracing::info!("Embedded MQTT broker was running");
-        // Note: EmbeddedBroker doesn't have a stop method,
-        // it will be cleaned up when the process exits
+    if let Some(broker) = &state.devices.embedded_broker {
+        if broker.is_running() {
+            tracing::info!("Embedded MQTT broker was running");
+            // Note: EmbeddedBroker doesn't have a stop method,
+            // it will be cleaned up when the process exits
+        }
     }
 
     // 3. Flush any pending database writes

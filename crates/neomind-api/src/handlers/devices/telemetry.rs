@@ -435,10 +435,9 @@ pub async fn get_device_telemetry_summary_handler(
             );
         } else {
             // Try to get current value from DeviceService
-            if let Ok(current_values) = state.devices.service.get_current_metrics(&device_id).await
-                && let Some(val) = current_values.get(metric_name)
-            {
-                summary_data.insert(
+            if let Ok(current_values) = state.devices.service.get_current_metrics(&device_id).await {
+                if let Some(val) = current_values.get(metric_name) {
+                    summary_data.insert(
                     metric_name.to_string(),
                     json!({
                         "display_name": display_name,
@@ -453,6 +452,7 @@ pub async fn get_device_telemetry_summary_handler(
                         "count": 0,
                     }),
                 );
+                }
             }
         }
     }

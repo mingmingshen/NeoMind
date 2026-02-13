@@ -1243,84 +1243,84 @@ impl ServerState {
 
             while let Some((event, _metadata)) = rx.recv().await {
                 // Check if this is an unknown device data event
-                if let neomind_core::NeoMindEvent::Custom { event_type, data } = event
-                    && event_type == "unknown_device_data"
-                {
-                    // Extract device_id and sample from the event data
-                    if let Some(device_id) = data.get("device_id").and_then(|v| v.as_str())
-                        && let Some(sample) = data.get("sample")
-                    {
-                        // Extract the actual payload data from sample
-                        let payload_data = sample.get("data").unwrap_or(sample);
+                if let neomind_core::NeoMindEvent::Custom { event_type, data } = event {
+                    if event_type == "unknown_device_data" {
+                        // Extract device_id and sample from the event data
+                        if let Some(device_id) = data.get("device_id").and_then(|v| v.as_str()) {
+                            if let Some(sample) = data.get("sample") {
+                                // Extract the actual payload data from sample
+                                let payload_data = sample.get("data").unwrap_or(sample);
 
-                        let is_binary = data
-                            .get("is_binary")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
+                                let is_binary = data
+                                    .get("is_binary")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
 
-                        // Check if device is already registered - skip auto-onboarding if it is
-                        if device_service_clone.get_device(device_id).await.is_some() {
-                            tracing::debug!(
-                                "Device {} already registered, skipping auto-onboarding",
-                                device_id
-                            );
-                            continue;
-                        }
+                                // Check if device is already registered - skip auto-onboarding if it is
+                                if device_service_clone.get_device(device_id).await.is_some() {
+                                    tracing::debug!(
+                                        "Device {} already registered, skipping auto-onboarding",
+                                        device_id
+                                    );
+                                    continue;
+                                }
 
-                        tracing::info!(
-                            "Processing unknown device data from MQTT: device_id={}, is_binary={}",
-                            device_id,
-                            is_binary
-                        );
-
-                        let source = data
-                            .get("source")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("mqtt")
-                            .to_string();
-
-                        // Extract original_topic if available (for MQTT devices)
-                        let original_topic = data
-                            .get("original_topic")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-
-                        // Extract adapter_id if available (for external brokers)
-                        let adapter_id = data
-                            .get("adapter_id")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-
-                        // Process the payload data through auto-onboarding
-                        match manager
-                            .process_unknown_device_with_topic(
-                                device_id,
-                                &source,
-                                payload_data,
-                                is_binary,
-                                original_topic,
-                                adapter_id,
-                            )
-                            .await
-                        {
-                            Ok(true) => {
                                 tracing::info!(
-                                    "Successfully processed unknown device data: {}",
-                                    device_id
-                                );
-                            }
-                            Ok(false) => {
-                                tracing::debug!(
-                                    "Unknown device data not accepted (disabled or at capacity): {}",
-                                    device_id
-                                );
-                            }
-                            Err(e) => {
-                                tracing::warn!(
-                                    "Failed to process unknown device data for {}: {}",
+                                    "Processing unknown device data from MQTT: device_id={}, is_binary={}",
                                     device_id,
-                                    e
+                                    is_binary
                                 );
+
+                                let source = data
+                                    .get("source")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("mqtt")
+                                    .to_string();
+
+                                // Extract original_topic if available (for MQTT devices)
+                                let original_topic = data
+                                    .get("original_topic")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+
+                                // Extract adapter_id if available (for external brokers)
+                                let adapter_id = data
+                                    .get("adapter_id")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+
+                                // Process the payload data through auto-onboarding
+                                match manager
+                                    .process_unknown_device_with_topic(
+                                        device_id,
+                                        &source,
+                                        payload_data,
+                                        is_binary,
+                                        original_topic,
+                                        adapter_id,
+                                    )
+                                    .await
+                                {
+                                    Ok(true) => {
+                                        tracing::info!(
+                                            "Successfully processed unknown device data: {}",
+                                            device_id
+                                        );
+                                    }
+                                    Ok(false) => {
+                                        tracing::debug!(
+                                            "Unknown device data not accepted (disabled or at capacity): {}",
+                                            device_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "Failed to process unknown device data for {}: {}",
+                                            device_id,
+                                            e
+                                        );
+                                    }
+                                }
                             }
                         }
                     }

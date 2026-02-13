@@ -331,9 +331,8 @@ impl MqttDeviceManager {
 
                 // Restore current_values from time-series storage
                 // Load the latest value for each metric defined in the device type
-                if let Some(ts) = &ts_storage
-                    && let Some(dt) = self.mdl_registry.get(&device_type).await
-                {
+                if let Some(ts) = &ts_storage {
+                    if let Some(dt) = self.mdl_registry.get(&device_type).await {
                     let mut restored_values = std::collections::HashMap::new();
                     for metric in &dt.uplink.metrics {
                         if let Ok(Some(latest)) = ts.latest(&device_id, &metric.name).await {
@@ -353,6 +352,7 @@ impl MqttDeviceManager {
                             restored_count,
                             device_id
                         );
+                    }
                     }
                 }
 
@@ -703,9 +703,8 @@ impl MqttDeviceManager {
                 devices_guard.get(&device_id).map(|d| d.device_type.clone())
             };
 
-            if let Some(device_type_name) = device_type_name
-                && let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(payload)
-            {
+            if let Some(device_type_name) = device_type_name {
+                if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(payload) {
                 // Process device data inline
                 let now = chrono::Utc::now();
 
@@ -773,6 +772,7 @@ impl MqttDeviceManager {
                             timestamp: now.timestamp(),
                         })
                         .await;
+                    }
                 }
 
                 return true;
@@ -780,10 +780,9 @@ impl MqttDeviceManager {
         }
 
         // Case 2: Check device registry for custom telemetry topics (auto-onboarding)
-        if let Some(registry) = device_registry
-            && let Some((device_id, config)) = registry.find_device_by_telemetry_topic(topic).await
-            && let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(payload)
-        {
+        if let Some(registry) = device_registry {
+            if let Some((device_id, config)) = registry.find_device_by_telemetry_topic(topic).await {
+                if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(payload) {
             // Process device data inline
             let now = chrono::Utc::now();
 
@@ -853,7 +852,9 @@ impl MqttDeviceManager {
                     .await;
             }
 
-            return true;
+                return true;
+            }
+        }
         }
 
         // Case 3: Fall back to standard topic format: device/{device_type}/{device_id}/uplink
@@ -1264,9 +1265,8 @@ impl MqttDeviceManager {
 
                 // Persist newly registered device to storage
                 if is_new_device {
-                    if let Some(store) = storage.read().await.as_ref()
-                        && let Some(device) = devices.read().await.get(&device_id).cloned()
-                    {
+                    if let Some(store) = storage.read().await.as_ref() {
+                        if let Some(device) = devices.read().await.get(&device_id).cloned() {
                         if let Err(e) = store.save_device_instance(&device).await {
                             tracing::warn!(
                                 "Failed to persist auto-registered device {}: {}",
@@ -1278,6 +1278,7 @@ impl MqttDeviceManager {
                                 "Persisted auto-registered device {} to storage",
                                 device_id
                             );
+                        }
                         }
                     }
 

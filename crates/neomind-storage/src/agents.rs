@@ -1304,17 +1304,18 @@ impl AgentStore {
             );
             // Get current agent state using the write transaction (it can also read)
             let mut agent = {
-                let table = write_txn.open_table(AGENTS_TABLE)?;
-                match table.get(agent_id)? {
+                let result = match write_txn.open_table(AGENTS_TABLE)?.get(agent_id)? {
                     Some(bytes) => {
-                        let a: AiAgent = serde_json::from_slice(bytes.value())
+                        let value = bytes.value().to_vec();
+                        let a: AiAgent = serde_json::from_slice(&value)
                             .map_err(|e| Error::Serialization(e.to_string()))?;
-                        a
+                        Ok(a)
                     }
                     None => {
-                        return Err(Error::NotFound(format!("Agent {} not found", agent_id)));
+                        Err(Error::NotFound(format!("Agent {} not found", agent_id)))
                     }
-                }
+                };
+                result?
             };
 
             // Update conversation history

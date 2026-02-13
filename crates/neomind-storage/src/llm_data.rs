@@ -337,19 +337,15 @@ impl LongTermMemoryStore {
         let id = id.to_string();
         tokio::spawn(async move {
             // First, read the current memory
-            let memory_data = {
-                let txn = match db.begin_write() {
-                    Ok(t) => t,
+            let memory_data = match db.begin_write() {
+                Ok(txn) => match txn.open_table(MEMORY_TABLE) {
+                    Ok(table) => match table.get(&*id) {
+                        Ok(Some(value)) => value.value().to_vec(),
+                        _ => return,
+                    },
                     Err(_) => return,
-                };
-                let table = match txn.open_table(MEMORY_TABLE) {
-                    Ok(t) => t,
-                    Err(_) => return,
-                };
-                match table.get(&*id) {
-                    Ok(Some(value)) => value.value().to_vec(),
-                    _ => return,
-                }
+                },
+                Err(_) => return,
             };
 
             // Then update with a new transaction
@@ -357,17 +353,17 @@ impl LongTermMemoryStore {
                 memory.last_accessed = Utc::now().timestamp();
                 memory.access_count += 1;
 
-                if let Ok(updated) = serde_json::to_vec(&memory)
-                    && let Ok(txn) = db.begin_write()
-                {
-                    {
-                        let mut table = match txn.open_table(MEMORY_TABLE) {
-                            Ok(t) => t,
-                            Err(_) => return,
-                        };
-                        let _ = table.insert(&*id, &*updated);
-                    } // table dropped here
-                    let _ = txn.commit();
+                if let Ok(updated) = serde_json::to_vec(&memory) {
+                    if let Ok(txn) = db.begin_write() {
+                        {
+                            let mut table = match txn.open_table(MEMORY_TABLE) {
+                                Ok(t) => t,
+                                Err(_) => return,
+                            };
+                            let _ = table.insert(&*id, &*updated);
+                        } // table dropped here
+                        let _ = txn.commit();
+                    }
                 }
             }
         });
@@ -382,14 +378,14 @@ impl LongTermMemoryStore {
 
         for result in table.iter()? {
             let (_key, value) = result?;
-            if let Ok(memory) = serde_json::from_slice::<MemoryEntry>(value.value())
-                && self.matches_filter(&memory, filter)
-            {
-                results.push(memory);
-                if let Some(limit) = filter.limit
-                    && results.len() >= limit
-                {
-                    break;
+            if let Ok(memory) = serde_json::from_slice::<MemoryEntry>(value.value()) {
+                if self.matches_filter(&memory, filter) {
+                    results.push(memory);
+                    if let Some(limit) = filter.limit {
+                        if results.len() >= limit {
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -458,9 +454,8 @@ impl LongTermMemoryStore {
 
         if removed {
             // Update indexes
-            if let Some(data) = memory_data
-                && let Ok(memory) = serde_json::from_slice::<MemoryEntry>(&data)
-            {
+            if let Some(data) = memory_data {
+                if let Ok(memory) = serde_json::from_slice::<MemoryEntry>(&data) {
                 // Update type index
                 let mut type_index = self.type_index.write().await;
                 if let Some(count) = type_index.get_mut(&memory.memory_type) {
@@ -480,6 +475,7 @@ impl LongTermMemoryStore {
                         }
                     }
                 }
+                }
             }
         }
 
@@ -497,11 +493,12 @@ impl LongTermMemoryStore {
 
         for result in table.iter()? {
             let (key, value) = result?;
-            if let Ok(memory) = serde_json::from_slice::<MemoryEntry>(value.value())
-                && let Some(expires_at) = memory.expires_at()
-                && expires_at < now
-            {
-                ids_to_delete.push(key.value().to_string());
+            if let Ok(memory) = serde_json::from_slice::<MemoryEntry>(value.value()) {
+                if let Some(expires_at) = memory.expires_at() {
+                    if expires_at < now {
+                        ids_to_delete.push(key.value().to_string());
+                    }
+                }
             }
         }
         drop(table);
@@ -602,24 +599,24 @@ impl LongTermMemoryStore {
         }
 
         // Check source
-        if let Some(ref source) = filter.source
-            && &memory.source != source
-        {
-            return false;
+        if let Some(ref source) = filter.source {
+            if &memory.source != source {
+                return false;
+            }
         }
 
         // Check session
-        if let Some(ref session_id) = filter.session_id
-            && memory.session_id.as_ref() != Some(session_id)
-        {
-            return false;
+        if let Some(ref session_id) = filter.session_id {
+            if memory.session_id.as_ref() != Some(session_id) {
+                return false;
+            }
         }
 
         // Check importance
-        if let Some(min_importance) = filter.min_importance
-            && memory.importance < min_importance
-        {
-            return false;
+        if let Some(min_importance) = filter.min_importance {
+            if memory.importance < min_importance {
+                return false;
+            }
         }
 
         // Check keywords
@@ -634,15 +631,15 @@ impl LongTermMemoryStore {
         }
 
         // Check time range
-        if let Some(start) = filter.start_time
-            && memory.created_at < start
-        {
-            return false;
+        if let Some(start) = filter.start_time {
+            if memory.created_at < start {
+                return false;
+            }
         }
-        if let Some(end) = filter.end_time
-            && memory.created_at > end
-        {
-            return false;
+        if let Some(end) = filter.end_time {
+            if memory.created_at > end {
+                return false;
+            }
         }
 
         true

@@ -552,7 +552,8 @@ impl LlmBackendStore {
         let write_txn = self.db.begin_write()?;
         let existed = {
             let mut table = write_txn.open_table(LLM_BACKENDS_TABLE)?;
-            table.remove(id)?.is_some()
+            let result = table.remove(id)?.is_some();
+            result
         };
         write_txn.commit()?;
         Ok(existed)
@@ -678,10 +679,11 @@ impl LlmBackendStore {
             }
         }
 
-        if let Some(active_id) = data.get("active_id").and_then(|v| v.as_str())
-            && self.load_instance(active_id)?.is_some()
-        {
-            self.set_active_backend(active_id)?;
+        if let Some(active_id) = data.get("active_id").and_then(|v| v.as_str()) {
+            if self.load_instance(active_id)?.is_some()
+            {
+                self.set_active_backend(active_id)?;
+            }
         }
 
         Ok(())

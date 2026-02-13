@@ -227,10 +227,10 @@ impl DataPathExtractor {
                     _ => {}
                 }
 
-                if data_type.is_numeric()
-                    && let Some(n) = value.as_f64()
-                {
-                    numeric_values.push(n);
+                if data_type.is_numeric() {
+                    if let Some(n) = value.as_f64() {
+                        numeric_values.push(n);
+                    }
                 }
 
                 sample_values.push(value);
@@ -542,10 +542,10 @@ If the data appears to be:
         }
 
         // Find first JSON object
-        if let Some(start) = response.find('{')
-            && let Some(end) = response.rfind('}')
-        {
-            return Ok(response[start..=end].to_string());
+        if let Some(start) = response.find('{') {
+            if let Some(end) = response.rfind('}') {
+                return Ok(response[start..=end].to_string());
+            }
         }
 
         Err(DiscoveryError::Parse(

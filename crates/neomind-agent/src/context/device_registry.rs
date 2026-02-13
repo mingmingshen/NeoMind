@@ -90,10 +90,10 @@ impl DeviceAlias {
         }
 
         // Check location
-        if let Some(loc) = &self.location
-            && loc.to_lowercase().contains(&term_lower)
-        {
-            return true;
+        if let Some(loc) = &self.location {
+            if loc.to_lowercase().contains(&term_lower) {
+                return true;
+            }
         }
 
         false

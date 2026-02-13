@@ -446,10 +446,10 @@ pub async fn update_broker_handler(
     broker.tls = req.tls;
     broker.username = req.username;
     // Only update password if provided (non-empty)
-    if let Some(pwd) = req.password
-        && !pwd.is_empty()
-    {
-        broker.password = Some(pwd);
+    if let Some(pwd) = req.password {
+        if !pwd.is_empty() {
+            broker.password = Some(pwd);
+        }
     }
     // Update certificates
     broker.ca_cert = req.ca_cert;

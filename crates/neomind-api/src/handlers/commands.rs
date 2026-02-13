@@ -144,21 +144,20 @@ pub async fn list_commands_handler(
     let mut filtered: Vec<CommandDto> = all_commands
         .into_iter()
         .filter(|cmd| {
-            if let Some(ref device_id) = params.device_id
-                && &cmd.device_id != device_id
-            {
-                return false;
+            if let Some(ref device_id) = params.device_id {
+                if &cmd.device_id != device_id {
+                    return false;
+                }
             }
-            if let Some(ref status) = params.status
-                && cmd.status != *status
-                && cmd.status != format!("{:?}", status)
-            {
-                return false;
+            if let Some(ref status) = params.status {
+                if cmd.status != *status && cmd.status != format!("{:?}", status) {
+                    return false;
+                }
             }
-            if let Some(ref source) = params.source
-                && cmd.source_type != *source
-            {
-                return false;
+            if let Some(ref source) = params.source {
+                if cmd.source_type != *source {
+                    return false;
+                }
             }
             true
         })

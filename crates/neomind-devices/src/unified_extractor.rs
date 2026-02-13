@@ -302,9 +302,8 @@ impl UnifiedExtractor {
             }
 
             // Handle array notation [index]
-            if let Some(bracket_start) = part.find('[')
-                && let Some(bracket_end) = part.find(']')
-            {
+            if let Some(bracket_start) = part.find('[') {
+                if let Some(bracket_end) = part.find(']') {
                 let key = &part[0..bracket_start];
                 let index_str = &part[bracket_start + 1..bracket_end];
 
@@ -336,6 +335,7 @@ impl UnifiedExtractor {
                     _ => return Ok(None),
                 }
                 continue;
+                }
             }
 
             // Regular object key access

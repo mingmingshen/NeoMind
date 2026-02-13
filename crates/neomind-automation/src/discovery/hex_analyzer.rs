@@ -529,12 +529,14 @@ fn detect_unit_hint(numeric: &[f64], strings: &[String]) -> Option<String> {
     }
 
     // Check for percentage ranges (0-100)
-    if let Some(max_val) = numeric.iter().cloned().reduce(f64::max)
-        && (0.0..=100.0).contains(&max_val)
-        && let Some(min_val) = numeric.iter().cloned().reduce(f64::min)
-        && min_val >= 0.0
-    {
-        return Some("%".to_string());
+    if let Some(max_val) = numeric.iter().cloned().reduce(f64::max) {
+        if (0.0..=100.0).contains(&max_val) {
+            if let Some(min_val) = numeric.iter().cloned().reduce(f64::min) {
+                if min_val >= 0.0 {
+                    return Some("%".to_string());
+                }
+            }
+        }
     }
 
     // Check string values for units

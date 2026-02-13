@@ -240,13 +240,13 @@ impl VectorStore {
     /// Insert a document into the store.
     pub async fn insert(&self, doc: VectorDocument) -> Result<(), Error> {
         // Validate dimension if set
-        if let Some(expected_dim) = self.dimension
-            && doc.embedding.len() != expected_dim
-        {
-            return Err(Error::InvalidDimension {
-                expected: expected_dim,
-                found: doc.embedding.len(),
-            });
+        if let Some(expected_dim) = self.dimension {
+            if doc.embedding.len() != expected_dim {
+                return Err(Error::InvalidDimension {
+                    expected: expected_dim,
+                    found: doc.embedding.len(),
+                });
+            }
         }
 
         let mut docs = self.documents.write().await;
@@ -318,32 +318,32 @@ impl VectorStore {
         let docs = self.documents.read().await;
 
         // Validate query dimension
-        if let Some(expected_dim) = self.dimension
-            && query.len() != expected_dim
-        {
-            return Err(Error::InvalidDimension {
-                expected: expected_dim,
-                found: query.len(),
-            });
+        if let Some(expected_dim) = self.dimension {
+            if query.len() != expected_dim {
+                return Err(Error::InvalidDimension {
+                    expected: expected_dim,
+                    found: query.len(),
+                });
+            }
         }
 
         let mut results: Vec<SearchResult> = Vec::new();
 
         for doc in docs.values() {
             // Apply metadata filter if specified
-            if let Some(ref filter) = options.metadata_filter
-                && !doc.matches_filter(filter)
-            {
-                continue;
+            if let Some(ref filter) = options.metadata_filter {
+                if !doc.matches_filter(filter) {
+                    continue;
+                }
             }
 
             let score = self.similarity(query, &doc.embedding);
 
             // Apply min_score threshold
-            if let Some(min_score) = options.min_score
-                && score < min_score
-            {
-                continue;
+            if let Some(min_score) = options.min_score {
+                if score < min_score {
+                    continue;
+                }
             }
 
             results.push(SearchResult {
@@ -568,10 +568,10 @@ impl PersistentVectorStore {
         // Check if we already have a store for this path
         {
             let singleton = VECTOR_STORE_SINGLETON.lock().unwrap();
-            if let Some(store) = singleton.as_ref()
-                && store.path == path_str
-            {
-                return Ok(store.clone());
+            if let Some(store) = singleton.as_ref() {
+                if store.path == path_str {
+                    return Ok(store.clone());
+                }
             }
         }
 

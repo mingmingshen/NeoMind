@@ -567,9 +567,10 @@ impl SmartFollowUpManager {
         if followups
             .iter()
             .any(|f| f.followup_type == FollowUpType::MissingLocation)
-            && let Some(loc) = &context.current_location
         {
-            return Some(format!("我理解您可能是指「{}」，是否继续？", loc));
+            if let Some(loc) = &context.current_location {
+                return Some(format!("我理解您可能是指「{}」，是否继续？", loc));
+            }
         }
 
         // 如果是模糊意图

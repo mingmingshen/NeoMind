@@ -541,10 +541,10 @@ pub fn compute_quick_stats(values: &[Value]) -> (Option<f64>, Option<f64>, Optio
     let mut nums: Vec<f64> = Vec::new();
 
     for v in values {
-        if let Value::Number(n) = v
-            && let Some(f) = n.as_f64()
-        {
-            nums.push(f);
+        if let Value::Number(n) = v {
+            if let Some(f) = n.as_f64() {
+                nums.push(f);
+            }
         }
     }
 

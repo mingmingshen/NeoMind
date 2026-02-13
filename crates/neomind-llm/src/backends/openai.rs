@@ -608,14 +608,14 @@ impl LlmRuntime for CloudRuntime {
                                         let _ = tx.send(Ok((String::new(), false))).await;
                                         continue;
                                     }
-                                    if let Some(json) = line.strip_prefix("data: ")
-                                        && let Ok(evt) =
-                                            serde_json::from_str::<StreamChunkEvent>(json)
-                                        && let Some(choice) = evt.choices.first()
-                                    {
+                                    if let Some(json) = line.strip_prefix("data: ") {
+                                        if let Ok(evt) = serde_json::from_str::<StreamChunkEvent>(json) {
+                                            if let Some(choice) = evt.choices.first() {
                                         let delta = &choice.delta.content;
                                         if !delta.is_empty() {
                                             let _ = tx.send(Ok((delta.clone(), false))).await;
+                                        }
+                                            }
                                         }
                                     }
                                 }
@@ -700,16 +700,16 @@ impl LlmRuntime for CloudRuntime {
 fn extract_data_url(url: &str) -> (String, String) {
     if url.starts_with("data:") {
         // Format: data:image/png;base64,iVBORw0KGgo...
-        if let Some(rest) = url.strip_prefix("data:")
-            && let Some((mime_and_encoding, data)) = rest.split_once(',')
-        {
-            // mime_and_encoding is like "image/png;base64"
-            let media_type = mime_and_encoding
-                .split(';')
-                .next()
-                .unwrap_or("image/png")
-                .to_string();
-            return (media_type, data.to_string());
+        if let Some(rest) = url.strip_prefix("data:") {
+            if let Some((mime_and_encoding, data)) = rest.split_once(',') {
+                // mime_and_encoding is like "image/png;base64"
+                let media_type = mime_and_encoding
+                    .split(';')
+                    .next()
+                    .unwrap_or("image/png")
+                    .to_string();
+                return (media_type, data.to_string());
+            }
         }
     }
     // Fallback

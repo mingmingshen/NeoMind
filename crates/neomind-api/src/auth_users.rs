@@ -706,11 +706,12 @@ pub async fn optional_jwt_auth_middleware(
     mut req: axum::extract::Request,
     next: Next,
 ) -> Response {
-    if let Some(auth_header) = headers.get("authorization").and_then(|v| v.to_str().ok())
-        && let Some(token) = auth_header.strip_prefix("Bearer ")
-        && let Ok(session_info) = state.auth.user_state.validate_token(token)
-    {
-        req.extensions_mut().insert(session_info);
+    if let Some(auth_header) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            if let Ok(session_info) = state.auth.user_state.validate_token(token) {
+                req.extensions_mut().insert(session_info);
+            }
+        }
     }
 
     next.run(req).await

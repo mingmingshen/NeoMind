@@ -352,10 +352,10 @@ impl TimeSeriesStorage {
         // Extract unique device IDs from "device_id:metric_name" format
         let mut device_ids = std::collections::HashSet::new();
         for metric in metrics {
-            if let Some(device_id) = metric.split(':').next()
-                && !device_id.is_empty()
-            {
-                device_ids.insert(device_id.to_string());
+            if let Some(device_id) = metric.split(':').next() {
+                if !device_id.is_empty() {
+                    device_ids.insert(device_id.to_string());
+                }
             }
         }
 

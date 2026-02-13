@@ -258,7 +258,8 @@ impl ExtensionStore {
         let write_txn = self.db.begin_write()?;
         let existed = {
             let mut table = write_txn.open_table(EXTENSIONS_TABLE)?;
-            table.remove(id)?.is_some()
+            let result = table.remove(id)?.is_some();
+            result
         };
         write_txn.commit()?;
         Ok(existed)

@@ -138,12 +138,12 @@ fn format_value(value: &Value) -> String {
         }
         Value::String(s) => {
             // Check if it's a timestamp
-            if let Ok(ts) = s.parse::<i64>()
-                && ts > 1_000_000_000
-                && ts < 2_000_000_000
-                && let Some(datetime) = timestamp_to_datetime(ts)
-            {
-                return datetime;
+            if let Ok(ts) = s.parse::<i64>() {
+                if ts > 1_000_000_000 && ts < 2_000_000_000 {
+                    if let Some(datetime) = timestamp_to_datetime(ts) {
+                        return datetime;
+                    }
+                }
             }
             s.clone()
         }

@@ -44,12 +44,12 @@ impl AskUserTool {
     /// Format the question for display.
     fn format_question(&self, question: &str, options: Option<&[String]>) -> String {
         let mut result = format!("❓ {}", question);
-        if let Some(opts) = options
-            && !opts.is_empty()
-        {
-            result.push_str("\n\n可选答案:\n");
-            for (i, opt) in opts.iter().enumerate() {
-                result.push_str(&format!("  {}. {}\n", i + 1, opt));
+        if let Some(opts) = options {
+            if !opts.is_empty() {
+                result.push_str("\n\n可选答案:\n");
+                for (i, opt) in opts.iter().enumerate() {
+                    result.push_str(&format!("  {}. {}\n", i + 1, opt));
+                }
             }
         }
         result

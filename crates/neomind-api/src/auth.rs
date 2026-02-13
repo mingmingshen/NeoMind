@@ -256,10 +256,10 @@ impl AuthState {
     /// Validate an API key.
     pub fn validate_key(&self, key: &str) -> bool {
         let hash = self.crypto.hash_api_key(key);
-        if let Ok(keys) = self.api_keys.try_read()
-            && let Some((_, info)) = keys.get(&hash)
-        {
-            return info.active;
+        if let Ok(keys) = self.api_keys.try_read() {
+            if let Some((_, info)) = keys.get(&hash) {
+                return info.active;
+            }
         }
         false
     }
@@ -341,18 +341,18 @@ impl AuthState {
     /// Check if a key has a specific permission.
     pub fn check_permission(&self, key: &str, permission: &str) -> bool {
         let hash = self.crypto.hash_api_key(key);
-        if let Ok(keys) = self.api_keys.try_read()
-            && let Some((_, info)) = keys.get(&hash)
-        {
-            if !info.active {
-                return false;
+        if let Ok(keys) = self.api_keys.try_read() {
+            if let Some((_, info)) = keys.get(&hash) {
+                if !info.active {
+                    return false;
+                }
+                // Wildcard permission grants all
+                if info.permissions.contains(&"*".to_string()) {
+                    return true;
+                }
+                // Check specific permission
+                return info.permissions.contains(&permission.to_string());
             }
-            // Wildcard permission grants all
-            if info.permissions.contains(&"*".to_string()) {
-                return true;
-            }
-            // Check specific permission
-            return info.permissions.contains(&permission.to_string());
         }
         false
     }
@@ -450,7 +450,7 @@ pub async fn optional_auth_middleware(
     mut req: axum::extract::Request,
     next: Next,
 ) -> Response {
-    if let Some(api_key) = headers
+    let api_key = headers
         .get("x-api-key")
         .and_then(|v| v.to_str().ok())
         .or_else(|| {
@@ -458,11 +458,13 @@ pub async fn optional_auth_middleware(
                 .get("authorization")
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.strip_prefix("Bearer "))
-        })
-        && auth.validate_key(api_key)
-    {
-        req.extensions_mut()
-            .insert(ValidatedApiKey(api_key.to_string()));
+        });
+
+    if let Some(key) = api_key {
+        if auth.validate_key(key) {
+            req.extensions_mut()
+                .insert(ValidatedApiKey(key.to_string()));
+        }
     }
 
     next.run(req).await
@@ -479,19 +481,19 @@ pub async fn hybrid_auth_middleware(
     next: Next,
 ) -> Result<Response, AuthError> {
     // First, try to extract and validate JWT token from Authorization header
-    if let Some(auth_header) = headers.get("authorization").and_then(|v| v.to_str().ok())
-        && let Some(token) = auth_header.strip_prefix("Bearer ")
-    {
-        // Try JWT authentication first
-        match state.auth.user_state.validate_token(token) {
-            Ok(session_info) => {
-                // JWT token is valid, store session info and proceed
-                req.extensions_mut().insert(session_info);
-                return Ok(next.run(req).await);
-            }
-            Err(_) => {
-                // JWT token is invalid or expired, fall through to API key check
-                // (but don't fail yet - maybe they're using API key)
+    if let Some(auth_header) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
+        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+            // Try JWT authentication first
+            match state.auth.user_state.validate_token(token) {
+                Ok(session_info) => {
+                    // JWT token is valid, store session info and proceed
+                    req.extensions_mut().insert(session_info);
+                    return Ok(next.run(req).await);
+                }
+                Err(_) => {
+                    // JWT token is invalid or expired, fall through to API key check
+                    // (but don't fail yet - maybe they're using API key)
+                }
             }
         }
     }
@@ -507,12 +509,12 @@ pub async fn hybrid_auth_middleware(
                 .and_then(|v| v.strip_prefix("Bearer "))
         });
 
-    if let Some(key) = api_key
-        && state.auth.api_key_state.validate_key(key)
-    {
-        req.extensions_mut()
-            .insert(ValidatedApiKey(key.to_string()));
-        return Ok(next.run(req).await);
+    if let Some(key) = api_key {
+        if state.auth.api_key_state.validate_key(key) {
+            req.extensions_mut()
+                .insert(ValidatedApiKey(key.to_string()));
+            return Ok(next.run(req).await);
+        }
     }
 
     // Neither JWT nor API key was provided/valid

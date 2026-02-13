@@ -665,14 +665,16 @@ async fn list_plugins(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
 
                 if let Some(ref filter_type) = ty {
                     let json_path = path.with_extension("json");
-                    if let Ok(content) = fs::read_to_string(&json_path)
-                        && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
-                        && json
-                            .get("type")
-                            .and_then(|v| v.as_str())
-                            .is_none_or(|t| t != filter_type)
-                    {
-                        continue;
+                    if let Ok(content) = fs::read_to_string(&json_path) {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if json
+                                .get("type")
+                                .and_then(|v| v.as_str())
+                                .is_none_or(|t| t != filter_type)
+                            {
+                                continue;
+                            }
+                        }
                     }
                 }
 

@@ -157,15 +157,15 @@ impl ConversationContext {
         });
 
         // 如果当前设备/位置不在引用列表中，清空它们
-        if let Some(ref device) = self.current_device
-            && !self.mentioned_devices.iter().any(|e| &e.name == device)
-        {
-            self.current_device = None;
+        if let Some(ref device) = self.current_device {
+            if !self.mentioned_devices.iter().any(|e| &e.name == device) {
+                self.current_device = None;
+            }
         }
-        if let Some(ref location) = self.current_location
-            && !self.mentioned_locations.iter().any(|e| &e.name == location)
-        {
-            self.current_location = None;
+        if let Some(ref location) = self.current_location {
+            if !self.mentioned_locations.iter().any(|e| &e.name == location) {
+                self.current_location = None;
+            }
         }
     }
 
@@ -497,10 +497,10 @@ impl ConversationContext {
         // 检测并替换代词
         let pronouns = ["它", "这个", "那个", "它的", "这个的", "那个的"];
         for pronoun in &pronouns {
-            if enhanced.contains(pronoun)
-                && let Some(resolved) = self.resolve_pronoun(pronoun)
-            {
-                enhanced = enhanced.replace(pronoun, &resolved);
+            if enhanced.contains(pronoun) {
+                if let Some(resolved) = self.resolve_pronoun(pronoun) {
+                    enhanced = enhanced.replace(pronoun, &resolved);
+                }
             }
         }
 
@@ -553,17 +553,17 @@ impl ConversationContext {
         }
 
         // "关闭"
-        if (lower == "关闭" || lower == "关")
-            && let Some(device) = &self.current_device
-        {
-            return Some(format!("关闭{}", device));
+        if (lower == "关闭" || lower == "关") {
+            if let Some(device) = &self.current_device {
+                return Some(format!("关闭{}", device));
+            }
         }
 
         // "温度多少" -> 补充位置
-        if (lower == "温度" || lower == "温度多少")
-            && let Some(location) = &self.current_location
-        {
-            return Some(format!("{}的温度", location));
+        if (lower == "温度" || lower == "温度多少") {
+            if let Some(location) = &self.current_location {
+                return Some(format!("{}的温度", location));
+            }
         }
 
         None

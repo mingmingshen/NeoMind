@@ -399,10 +399,10 @@ pub async fn update_rule_handler(
             .map_err(|e| ErrorResponse::internal(format!("Failed to update rule: {}", e)))?;
 
         // Persist to store
-        if let Some(ref store) = state.automation.rule_store
-            && let Err(e) = store.save(&rule)
-        {
-            tracing::warn!("Failed to save rule to store: {}", e);
+        if let Some(ref store) = state.automation.rule_store {
+            if let Err(e) = store.save(&rule) {
+                tracing::warn!("Failed to save rule to store: {}", e);
+            }
         }
 
         return ok(json!({
@@ -529,14 +529,14 @@ pub async fn set_rule_status_handler(
     }
 
     // Also update in persistent store
-    if let Some(ref store) = state.automation.rule_store
-        && let Some(rule) = state.automation.rule_engine.get_rule(&rule_id).await
-    {
-        if let Err(e) = store.save(&rule) {
-            tracing::warn!("Failed to update rule status in store: {}", e);
-            // Don't fail the request if persistence fails
-        } else {
-            tracing::debug!("Updated rule {} status in persistent store", rule_id);
+    if let Some(ref store) = state.automation.rule_store {
+        if let Some(rule) = state.automation.rule_engine.get_rule(&rule_id).await {
+            if let Err(e) = store.save(&rule) {
+                tracing::warn!("Failed to update rule status in store: {}", e);
+                // Don't fail the request if persistence fails
+            } else {
+                tracing::debug!("Updated rule {} status in persistent store", rule_id);
+            }
         }
     }
 

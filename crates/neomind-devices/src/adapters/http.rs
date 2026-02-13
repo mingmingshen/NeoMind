@@ -432,14 +432,14 @@ impl HttpAdapter {
                                 }
 
                                 // Write to telemetry storage if available
-                                if let Some(storage) = &telemetry_storage
-                                    && let DeviceEvent::Metric {
+                                if let Some(storage) = &telemetry_storage {
+                                    if let DeviceEvent::Metric {
                                         device_id,
                                         metric,
                                         value,
                                         timestamp,
                                     } = event
-                                {
+                                    {
                                     use crate::telemetry::DataPoint;
                                     let data_point = DataPoint {
                                         timestamp,
@@ -447,6 +447,7 @@ impl HttpAdapter {
                                         quality: None,
                                     };
                                     let _ = storage.write(&device_id, &metric, data_point).await;
+                                    }
                                 }
                             }
                         }

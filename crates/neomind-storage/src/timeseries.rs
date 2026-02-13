@@ -414,10 +414,10 @@ impl TimeSeriesStore {
         // Check if we already have a store for this path
         {
             let singleton = TIMESERIES_STORE_SINGLETON.lock().unwrap();
-            if let Some(store) = singleton.as_ref()
-                && store.path == path_str
-            {
-                return Ok(store.clone());
+            if let Some(store) = singleton.as_ref() {
+                if store.path == path_str {
+                    return Ok(store.clone());
+                }
             }
         }
 
@@ -688,13 +688,13 @@ impl TimeSeriesStore {
         // Check cache first
         {
             let cache = self.latest_cache.read().await;
-            if let Some(entry) = cache.get(&cache_key)
-                && entry.cached_at.elapsed() < self.cache_ttl
-            {
-                let mut stats = self.stats.write().await;
-                stats.record_cache_hit();
-                stats.record_read(start.elapsed());
-                return Ok(Some(entry.point.clone()));
+            if let Some(entry) = cache.get(&cache_key) {
+                if entry.cached_at.elapsed() < self.cache_ttl {
+                    let mut stats = self.stats.write().await;
+                    stats.record_cache_hit();
+                    stats.record_read(start.elapsed());
+                    return Ok(Some(entry.point.clone()));
+                }
             }
         }
 
@@ -898,13 +898,14 @@ impl TimeSeriesStore {
                         let key = (device_id.clone(), metric.clone());
                         if cache.len() >= max_cache_size {
                             cache.retain(|k, _| k != &key);
-                            if cache.len() >= max_cache_size
-                                && let Some(lru) = cache
+                            if cache.len() >= max_cache_size {
+                                if let Some(lru) = cache
                                     .iter()
                                     .min_by_key(|(_, e)| e.access_count)
                                     .map(|(k, _)| k.clone())
-                            {
-                                cache.remove(&lru);
+                                {
+                                    cache.remove(&lru);
+                                }
                             }
                         }
                         let entry = cache.entry(key).or_insert_with(|| CacheEntry {
@@ -983,15 +984,15 @@ impl TimeSeriesStore {
             let metric_key = format!("{}:{}", device_id, metric);
             let device_type = ""; // Could be enhanced to look up device type
 
-            if let Some(cutoff) = policy.cutoff_timestamp(device_type, metric)
-                && cutoff < now
-            {
-                let removed = self
-                    .delete_range(device_id, metric, i64::MIN, cutoff)
-                    .await?;
-                if removed > 0 {
-                    total_removed += removed as u64;
-                    metrics_cleaned.insert(metric_key.clone());
+            if let Some(cutoff) = policy.cutoff_timestamp(device_type, metric) {
+                if cutoff < now {
+                    let removed = self
+                        .delete_range(device_id, metric, i64::MIN, cutoff)
+                        .await?;
+                    if removed > 0 {
+                        total_removed += removed as u64;
+                        metrics_cleaned.insert(metric_key.clone());
+                    }
                 }
             }
         }

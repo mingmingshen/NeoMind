@@ -20,13 +20,12 @@ pub fn parse_tool_calls(text: &str) -> Result<(String, Vec<ToolCall>)> {
     let mut tool_calls = Vec::new();
 
     // First, try to parse XML format: <tool_calls><invoke name="tool_name">...</invoke></tool_calls>
-    if let Some(start) = text.find("<tool_calls>")
-        && let Some(end) = text.find("</tool_calls>")
-    {
-        let xml_section = &text[start..end + 13]; // 13 = len("</tool_calls>")
-        content = format!("{}{}", &text[..start], &text[end + 13..]);
+    if let Some(start) = text.find("<tool_calls>") {
+        if let Some(end) = text.find("</tool_calls>") {
+            let xml_section = &text[start..end + 13]; // 13 = len("</tool_calls>")
+            content = format!("{}{}", &text[..start], &text[end + 13..]);
 
-        // Parse <invoke name="..."> entries
+            // Parse <invoke name="..."> entries
         let mut remaining = xml_section;
         while let Some(invoke_start) = remaining.find("<invoke") {
             let invoke_end = match remaining.find("</invoke>") {
@@ -152,6 +151,7 @@ pub fn parse_tool_calls(text: &str) -> Result<(String, Vec<ToolCall>)> {
 
         if !tool_calls.is_empty() {
             return Ok((content.trim().to_string(), tool_calls));
+        }
         }
     }
 
@@ -376,13 +376,14 @@ pub fn remove_tool_calls_from_response(response: &str) -> String {
         if end > start {
             // Check if it's a tool call array
             let json_str = &result[start..end];
-            if let Ok(array) = serde_json::from_str::<Vec<Value>>(json_str)
-                && array
+            if let Ok(array) = serde_json::from_str::<Vec<Value>>(json_str) {
+                if array
                     .iter()
                     .any(|v| v.get("name").is_some() || v.get("tool").is_some())
-            {
-                result.replace_range(start..end, "");
-                continue;
+                {
+                    result.replace_range(start..end, "");
+                    continue;
+                }
             }
         }
         break;
@@ -407,11 +408,11 @@ pub fn remove_tool_calls_from_response(response: &str) -> String {
 
         if end > start {
             let json_str = &result[start..end];
-            if let Ok(value) = serde_json::from_str::<Value>(json_str)
-                && (value.get("name").is_some() || value.get("tool").is_some())
-            {
-                result.replace_range(start..end, "");
-                continue;
+            if let Ok(value) = serde_json::from_str::<Value>(json_str) {
+                if value.get("name").is_some() || value.get("tool").is_some() {
+                    result.replace_range(start..end, "");
+                    continue;
+                }
             }
         }
         break;
