@@ -3,15 +3,14 @@ name: Build NeoMind Desktop App
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*'
+      - '[0-9]*'
   pull_request:
     branches: [main]
   workflow_dispatch:
   release:
     types: [published]
-  push:
-    tags:
-      - 'v*'
-      - '[0-9]*'
 
 jobs:
   build:
