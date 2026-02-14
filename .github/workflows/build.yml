@@ -101,7 +101,7 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: contains(github.ref, 'refs/tags/')
 
     steps:
       - name: Checkout repository
