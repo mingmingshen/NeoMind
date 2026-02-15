@@ -69,16 +69,22 @@ NeoMind 是一个基于 Rust 的边缘 AI 平台，通过大语言模型（LLM�
 
 ### 🖥️ 服务器二进制部署（Linux）
 
-**一键安装：**
+**一键安装（始终安装最新版本）：**
 
 ```bash
-curl -fsSL https://github.com/camthink-ai/NeoMind/releases/download/v0.5.8/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | bash
+```
+
+**安装指定版本：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.5.8 bash
 ```
 
 **手动安装：**
 
 ```bash
-# 下载二进制文件
+# 下载二进制文件（替换 VERSION 为所需版本）
 wget https://github.com/camthink-ai/NeoMind/releases/download/v0.5.8/neomind-server-linux-amd64.tar.gz
 tar xzf neomind-server-linux-amd64.tar.gz
 sudo install -m 755 neomind /usr/local/bin/

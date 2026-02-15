@@ -71,16 +71,22 @@ On first launch, a setup wizard will guide you through:
 
 ### 🖥️ Server Binary Deployment (Linux)
 
-**One-line installation:**
+**One-line installation (always installs latest version):**
 
 ```bash
-curl -fsSL https://github.com/camthink-ai/NeoMind/releases/download/v0.5.8/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | bash
+```
+
+**Install specific version:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.5.8 bash
 ```
 
 **Manual installation:**
 
 ```bash
-# Download binary
+# Download binary (replace VERSION with desired version)
 wget https://github.com/camthink-ai/NeoMind/releases/download/v0.5.8/neomind-server-linux-amd64.tar.gz
 tar xzf neomind-server-linux-amd64.tar.gz
 sudo install -m 755 neomind /usr/local/bin/

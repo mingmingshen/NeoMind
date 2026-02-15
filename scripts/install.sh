@@ -1,6 +1,6 @@
 #!/bin/bash
 # NeoMind Server Installation Script
-# Usage: curl -fsSL https://github.com/camthink-ai/NeoMind/releases/download/v0.5.8/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | bash
 
 set -e
 
@@ -11,8 +11,8 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Configuration
-VERSION="${VERSION:-0.5.8}"
 REPO="camthink-ai/NeoMind"
+VERSION="${VERSION:-latest}"
 BINARY_NAME="neomind"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 DATA_DIR="${DATA_DIR:-/var/lib/neomind}"
@@ -45,8 +45,18 @@ case $OS in
         ;;
 esac
 
-BINARY_FILE="neomind-server-${BINARY_OS}-${BINARY_ARCH}"
-DOWNLOAD_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${BINARY_FILE}.tar.gz"
+# Get latest version if not specified
+if [ "$VERSION" = "latest" ]; then
+    echo "Fetching latest version..."
+    VERSION=$(curl -s https://api.github.com/repos/${REPO}/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/^v//')
+    if [ -z "$VERSION" ]; then
+        echo -e "${RED}Failed to fetch latest version${NC}"
+        exit 1
+    fi
+fi
+
+BINARY_FILE="neomind-server-${BINARY_OS}-${BINARY_ARCH}.tar.gz"
+DOWNLOAD_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${BINARY_FILE}"
 
 echo -e "${GREEN}NeoMind Server Installer${NC}"
 echo "Version: ${VERSION}"
