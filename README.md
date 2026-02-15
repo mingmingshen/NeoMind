@@ -10,7 +10,6 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 
 [![Build Status](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml/badge.svg)](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache-2.0-blue.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/docker-camthink--ai-neomind-blue.svg)](https://github.com/camthink-ai/NeoMind/pkgs/container/neomind/)
 [![Version: 0.5.8](https://img.shields.io/badge/v-0.5.8-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
 
 ## Features
@@ -69,38 +68,6 @@ On first launch, a setup wizard will guide you through:
 1. Creating an admin account
 2. Configuring LLM backend (Ollama recommended for edge deployment)
 3. Connecting to your MQTT broker or discovering devices
-
-### 🐳 Docker Deployment (Recommended for Servers)
-
-**Using Docker Compose:**
-
-```bash
-# Clone repository
-git clone https://github.com/camthink-ai/NeoMind.git
-cd NeoMind
-
-# Start with docker-compose
-docker compose up -d
-
-# View logs
-docker compose logs -f neomind
-```
-
-**Using Docker directly:**
-
-```bash
-# Pull image
-docker pull camthink-ai/neomind:latest
-
-# Run server
-docker run -d \
-  --name neomind \
-  -p 9375:9375 \
-  -v neomind-data:/data \
-  camthink-ai/neomind:latest
-```
-
-The API will be available at `http://localhost:9375`
 
 ### 🖥️ Server Binary Deployment (Linux)
 
@@ -183,13 +150,7 @@ The installer will be in `web/src-tauri/target/release/bundle/`
 | Method | Use Case | Link |
 |--------|----------|------|
 | **Desktop App** | End-user desktop application | [Download](https://github.com/camthink-ai/NeoMind/releases/latest) |
-| **Docker** | Containerized deployment | `docker pull camthink-ai/neomind:latest` |
-| **Server Binary** | Standalone server deployment | [Linux amd64](https://github.com/camthink-ai/NeoMind/releases/download/v0.5.8/neomind-server-linux-amd64.tar.gz) / [ARM64](https://github.com/camthink-ai/NeoMind/releases/download/v0.5.8/neomind-server-linux-arm64.tar.gz) |
-
-**Docker Tags:**
-- `camthink-ai/neomind:latest` - Latest stable release
-- `camthink-ai/neomind:0.5.8` - Version-specific
-- `camthink-ai/neomind:0.5` - Minor version
+| **Server Binary** | Standalone server deployment (Linux amd64) | [Download](https://github.com/camthink-ai/NeoMind/releases/download/v0.5.8/neomind-server-linux-amd64.tar.gz) |
 
 ---
 
@@ -283,8 +244,6 @@ neomind/
 │   ├── install.sh     # Server installation script
 │   └── neomind.service # systemd service file
 ├── docs/              # Documentation
-├── Dockerfile         # Docker build
-├── docker-compose.yml # Docker Compose configuration
 └── config.*.toml      # Configuration files
 ```
 
@@ -490,11 +449,6 @@ curl http://localhost:9375/api/health
 **Status:**
 ```bash
 curl http://localhost:9375/api/health/status
-```
-
-**Docker Health:**
-```bash
-docker exec neomind wget -q -O- http://localhost:9375/api/health
 ```
 
 ---
