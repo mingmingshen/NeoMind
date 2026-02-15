@@ -1,4 +1,5 @@
-# NeoMind Backend - Multi-stage Docker build
+# NeoMind Backend - Multi-stage Docker build for multi-platform
+
 # Stage 1: Build
 FROM rust:1.85-slim AS builder
 
@@ -12,11 +13,11 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /build
 
-# Copy cargo files
-COPY Cargo.toml Cargo.lock ./
-COPY crates ./crates
+# Copy source code
+COPY . .
 
 # Build the API server in release mode
+# This will build for the default target architecture
 RUN cargo build --release -p neomind-api
 
 # Stage 2: Runtime image

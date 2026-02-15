@@ -1,0 +1,43 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# CI/CD
+.gitlab-ci.yml
+.cirrus.yml
+
+# Node modules (web frontend)
+web/node_modules
+web/dist
+web/src-tauri/target
+web/package-lock.json
+web/.vite
+
+# Rust build artifacts
+target/
+**/*.rs.bk
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test data
+data/
+*.redb
+*.db
+
+# Logs
+*.log
