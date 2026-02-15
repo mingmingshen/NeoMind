@@ -140,7 +140,7 @@ jobs:
 
       - name: Build server binary
         run: |
-          cargo build --release --bin neomind-api --target ${{ matrix.target }}
+          cargo build --release -p neomind-api --target ${{ matrix.target }}
 
       - name: Strip binary
         run: |

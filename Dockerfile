@@ -17,8 +17,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 
 # Build the API server in release mode
-# Use --workspace to build all workspace members
-RUN cargo build --release --bin neomind-api
+RUN cargo build --release -p neomind-api
 
 # Stage 2: Runtime image
 FROM debian:bookworm-slim
