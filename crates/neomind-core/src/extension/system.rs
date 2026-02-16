@@ -300,6 +300,62 @@ pub trait Extension: Send + Sync {
     async fn configure(&mut self, _config: &serde_json::Value) -> Result<()> {
         Ok(())
     }
+
+    // =========================================================================
+    // Streaming Support (Optional)
+    // =========================================================================
+
+    /// Get stream capability for this extension
+    ///
+    /// Returns None if the extension doesn't support streaming.
+    fn stream_capability(&self) -> Option<crate::extension::StreamCapability> {
+        None
+    }
+
+    /// Process a single data chunk (stateless mode)
+    ///
+    /// Used for one-shot processing where each request is independent.
+    /// Examples: image analysis, single inference, data transformation.
+    async fn process_chunk(
+        &self,
+        _chunk: crate::extension::DataChunk,
+    ) -> Result<crate::extension::StreamResult> {
+        Err(ExtensionError::NotSupported("Chunk processing not supported".into()))
+    }
+
+    /// Initialize a stream session (stateful mode)
+    ///
+    /// Creates a persistent processing session where the extension maintains state.
+    /// Examples: video stream analysis, audio processing, sensor data filtering.
+    async fn init_session(&self, _session: &crate::extension::StreamSession) -> Result<()> {
+        Err(ExtensionError::NotSupported("Session not supported".into()))
+    }
+
+    /// Process a chunk within an existing session
+    ///
+    /// Called after `init_session` for streaming data processing.
+    async fn process_session_chunk(
+        &self,
+        _session_id: &str,
+        _chunk: crate::extension::DataChunk,
+    ) -> Result<crate::extension::StreamResult> {
+        Err(ExtensionError::NotSupported("Session processing not supported".into()))
+    }
+
+    /// Close a stream session
+    ///
+    /// Releases session resources and returns final statistics.
+    async fn close_session(
+        &self,
+        _session_id: &str,
+    ) -> Result<crate::extension::SessionStats> {
+        Err(ExtensionError::NotSupported("Session not supported".into()))
+    }
+
+    /// Check if streaming is supported (convenience method)
+    fn supports_streaming(&self) -> bool {
+        self.stream_capability().is_some()
+    }
 }
 
 /// Metric value with name for extensions
@@ -422,6 +478,21 @@ pub enum ExtensionError {
 
     #[error("Already registered: {0}")]
     AlreadyRegistered(String),
+
+    #[error("Streaming not supported: {0}")]
+    NotSupported(String),
+
+    #[error("Invalid stream data: {0}")]
+    InvalidStreamData(String),
+
+    #[error("Session not found: {0}")]
+    SessionNotFound(String),
+
+    #[error("Session already exists: {0}")]
+    SessionAlreadyExists(String),
+
+    #[error("Inference failed: {0}")]
+    InferenceFailed(String),
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),

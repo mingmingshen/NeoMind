@@ -64,17 +64,22 @@ pub mod executor;
 pub mod loader;
 pub mod registry;
 pub mod safety;
+pub mod stream;
 pub mod system;
 pub mod types;
 
 pub use executor::{CommandExecutor, CommandResult, UnifiedStorage};
 pub use loader::{NativeExtensionLoader, WasmExtensionLoader};
 pub use registry::{ExtensionInfo, ExtensionRegistry, ExtensionRegistryTrait};
+pub use stream::{
+    ClientInfo, DataChunk, FlowControl, SessionStats, StreamCapability, StreamDataType,
+    StreamDirection, StreamError, StreamMode, StreamResult, StreamSession,
+};
 pub use system::{
-    CExtensionMetadata, CommandDefinition, Extension, ExtensionCommand, ExtensionMetadata,
-    ExtensionMetricValue, ExtensionState, ExtensionStats, MetricDataType, MetricDefinition,
-    MetricDescriptor, ParamMetricValue, ParameterDefinition, ParameterGroup, ToolDescriptor,
-    ValidationRule,
+    ABI_VERSION, CExtensionMetadata, CommandDefinition, Extension, ExtensionCommand,
+    ExtensionMetadata, ExtensionMetricValue, ExtensionState, ExtensionStats, MetricDataType,
+    MetricDefinition, MetricDescriptor, ParamMetricValue, ParameterDefinition, ParameterGroup,
+    ToolDescriptor, ValidationRule,
 };
 pub use types::{DynExtension, ExtensionError, Result};
 

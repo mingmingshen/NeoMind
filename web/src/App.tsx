@@ -118,6 +118,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function SetupRoute({ children }: { children: React.ReactNode }) {
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     const checkSetup = async (): Promise<boolean> => {
@@ -144,9 +145,18 @@ function SetupRoute({ children }: { children: React.ReactNode }) {
       setSetupRequired(true)
       setLoading(false)
     })
+
+    // Fallback timeout to prevent indefinite loading
+    const fallbackTimer = setTimeout(() => {
+      setLoading(false)
+      setError(true)
+    }, 6000)
+
+    return () => clearTimeout(fallbackTimer)
   }, [])
 
-  if (loading) {
+  // Show loading state during initial check
+  if (loading && !error) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-pulse text-muted-foreground">Loading...</div>
@@ -159,7 +169,7 @@ function SetupRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />
   }
 
-  // Show setup page
+  // Show setup page (either setup_required is true, or we encountered an error and allow access)
   return <>{children}</>
 }
 

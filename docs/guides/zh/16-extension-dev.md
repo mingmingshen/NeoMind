@@ -574,12 +574,27 @@ opt-level = "z"
 
 ## 官方仓库
 
-- **[NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions)** - 官方扩展市场、示例和模板
+- **[NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions)** - 社区扩展市场，包含流式扩展示例：
+  - **image-analyzer** - 用于图像处理的无状态流式扩展
+  - **yolo-video** - 用于视频分析的有状态流式扩展
+  - **as-hello** - WASM 扩展示例（AssemblyScript）
+  - **weather-forecast** - 天气数据提供者
 - **[NeoMind-DeviceTypes](https://github.com/camthink-ai/NeoMind-DeviceTypes)** - 支持的设备类型定义
-- **[示例扩展](https://github.com/camthink-ai/NeoMind-Extensions)** - 扩展示例项目
+
+## 流式扩展
+
+NeoMind 支持三种用于数据处理扩展的流式模式：
+
+| 模式 | 描述 | 使用场景 |
+|------|-------------|----------|
+| **无状态 (Stateless)** | 独立处理每个数据块 | 图像分析、简单转换 |
+| **有状态 (Stateful)** | 基于会话，维护上下文 | 视频处理、多块操作 |
+| **推送 (Push)** | 扩展主动推送数据 | 传感器流、实时监控 |
+
+完整示例请参阅 [NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions) 仓库。
 
 ## 下一步
 
 - 创建你的第一个扩展
-- 查看 [示例扩展](https://github.com/neomind-platform/example-extensions)
+- 查看 [流式扩展示例](https://github.com/camthink-ai/NeoMind-Extensions)
 - 加入 NeoMind 社区讨论

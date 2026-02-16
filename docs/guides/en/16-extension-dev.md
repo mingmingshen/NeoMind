@@ -572,12 +572,27 @@ opt-level = "z"
 
 ## Official Repositories
 
-- **[NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions)** - Community extension marketplace, samples, and templates
+- **[NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions)** - Community extension marketplace with streaming examples:
+  - **image-analyzer** - Stateless streaming for image processing
+  - **yolo-video** - Stateful streaming for video analysis
+  - **as-hello** - WASM extension (AssemblyScript)
+  - **weather-forecast** - Weather data provider
 - **[NeoMind-DeviceTypes](https://github.com/camthink-ai/NeoMind-DeviceTypes)** - Supported device type definitions
-- **[Example Extensions](https://github.com/neomind-platform/example-extensions)** - Example extension projects
+
+## Streaming Extensions
+
+NeoMind supports three streaming modes for data processing extensions:
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **Stateless** | Independent processing of each chunk | Image analysis, simple transformations |
+| **Stateful** | Session-based with maintained context | Video processing, multi-chunk operations |
+| **Push** | Extension proactively pushes data | Sensor streams, real-time monitoring |
+
+See the [NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions) repository for complete examples.
 
 ## Next Steps
 
 - Create your first extension
-- View [example extensions](https://github.com/neomind-platform/example-extensions)
+- View [streaming extension examples](https://github.com/camthink-ai/NeoMind-Extensions)
 - Join NeoMind community discussion

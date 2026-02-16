@@ -21,8 +21,9 @@ pub async fn create_router() -> Router {
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
         agents, auth as auth_handlers, auth_users, automations, basic, bulk, commands, config,
-        dashboards, devices, events, extensions, llm_backends, memory, message_channels, messages,
-        mqtt, rules, search, sessions, settings, setup, stats, suggestions, test_data, tools,
+        dashboards, devices, events, extensions, extension_stream, llm_backends, memory,
+        message_channels, messages, mqtt, rules, search, sessions, settings, setup, stats,
+        suggestions, test_data, tools,
     };
 
     // Public routes (no authentication required)
@@ -136,11 +137,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/extensions/discover",
             post(extensions::discover_extensions_handler),
         )
-        // Extension streaming API (public)
-        .route(
-            "/api/extensions/:id/stream",
-            get(extensions::stream_extension_handler),
-        )
         // Test data generation (public - for development)
         .route(
             "/api/test-data/alerts",
@@ -179,6 +175,15 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/extensions/market/updates",
             get(extensions::check_marketplace_updates_handler),
         )
+        // Extension streaming capability endpoints (public - read-only)
+        .route(
+            "/api/extensions/:id/stream/capability",
+            get(extension_stream::get_stream_capability_handler),
+        )
+        .route(
+            "/api/extensions/:id/stream/sessions",
+            get(extension_stream::list_stream_sessions_handler),
+        )
         // API documentation (public)
         .merge(crate::openapi::swagger_ui());
 
@@ -206,6 +211,11 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/events/stream", get(events::event_stream_handler))
         // Chat WebSocket (JWT via ?token= parameter)
         .route("/api/chat", get(sessions::ws_chat_handler))
+        // Extension streaming WebSocket (generic streaming support)
+        .route(
+            "/api/extensions/:id/stream",
+            get(extension_stream::extension_stream_ws),
+        )
         // Apply only rate limiting (no auth middleware - handled in handlers)
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),

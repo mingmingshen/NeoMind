@@ -46,9 +46,14 @@ export default defineConfig({
     hmr: {
       overlay: true
     },
+    // Allow external access for mobile testing
+    strictPort: false,
+    host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:9375',
+        // Use environment variable or default to localhost
+        // This allows accessing the dev server via IP address (e.g., for mobile testing)
+        target: process.env.VITE_API_TARGET || 'http://localhost:9375',
         changeOrigin: true,
         ws: true,
         configure: (proxy, _options) => {
@@ -69,6 +74,10 @@ export default defineConfig({
           })
           proxy.on('proxyReq', (proxyReq, req, _res) => {
             console.log('[Proxy]', req.method, req.url, '->', proxyReq.getHeader('host') + proxyReq.path)
+          })
+          proxy.on('proxyReqWs', (proxyReq, req, socket, options, head) => {
+            // Log WebSocket connection attempts
+            console.log('[Proxy WS]', req.url, '->', options.target + req.url)
           })
         },
       },

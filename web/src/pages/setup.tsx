@@ -182,8 +182,8 @@ export function SetupPage() {
     )
 
     if (result && !result.setup_required) {
-      // Setup already completed, redirect to dashboard
-      navigate('/dashboard')
+      // Setup already completed, redirect to chat
+      navigate('/')
     }
   }
 
@@ -301,7 +301,7 @@ export function SetupPage() {
   const handleComplete = () => {
     // Auto-login with the created account
     login(username, password, true).then(() => {
-      navigate('/dashboard')
+      navigate('/')
     }).catch(() => {
       navigate('/login')
     })
@@ -337,7 +337,7 @@ export function SetupPage() {
 
         {/* Top Header */}
         <header className="relative z-10 backdrop-blur-sm">
-          <div className="flex items-center justify-between px-6 h-16">
+          <div className="flex items-center justify-between px-4 h-14 sm:px-6 sm:h-16">
             <div className="flex items-center gap-3">
               <BrandLogoHorizontal className="h-7" />
             </div>
@@ -365,22 +365,22 @@ export function SetupPage() {
         </header>
 
         {/* Main Content */}
-        <main className="relative z-10 flex-1 flex items-center justify-center px-6 py-12">
-          <div className="w-full max-w-lg">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-8">
+        <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12">
+          <div className="w-full max-w-lg mx-auto">
+            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-4 sm:p-8">
               {/* Welcome Icon */}
-              <div className="flex justify-center mb-6">
-                <div className="flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary dark:bg-primary/20">
-                  <Bot className="size-8" />
+              <div className="flex justify-center mb-4 sm:mb-6">
+                <div className="flex size-12 sm:size-16 items-center justify-center rounded-full bg-primary/10 text-primary dark:bg-primary/20">
+                  <Bot className="size-6 sm:size-8" />
                 </div>
               </div>
 
               {/* Welcome Title */}
-              <h2 className="text-3xl font-semibold mb-3 text-center">{t('setup:title')}</h2>
-              <p className="text-muted-foreground text-center mb-8">{t('setup:welcomeMessage')}</p>
+              <h2 className="text-2xl sm:text-3xl font-semibold mb-2 sm:mb-3 text-center">{t('setup:title')}</h2>
+              <p className="text-muted-foreground text-center mb-4 sm:mb-8 text-sm sm:text-base">{t('setup:welcomeMessage')}</p>
 
               {/* Features List */}
-              <div className="space-y-3 mb-8">
+              <div className="space-y-2 sm:space-y-3 mb-6 sm:mb-8">
                 {[
                   { icon: User, text: t('setup:featureAccount') },
                   { icon: Globe, text: t('setup:featureTimezone') },
@@ -399,7 +399,7 @@ export function SetupPage() {
               {/* Start Button */}
               <Button
                 onClick={() => setStep('account')}
-                className="w-full h-11"
+                className="w-full h-10 sm:h-11"
                 size="default"
               >
                 {t('setup:getStarted')}
@@ -465,9 +465,9 @@ export function SetupPage() {
         </header>
 
         {/* Main Content */}
-        <main className="relative z-10 flex-1 flex items-center justify-center px-6 py-12">
-          <div className="w-full max-w-md">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-8">
+        <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12">
+          <div className="w-full max-w-md mx-auto">
+            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-6 sm:p-8">
               {/* Progress Indicator */}
               <div className="flex items-center justify-center gap-2 mb-6">
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
@@ -693,9 +693,9 @@ export function SetupPage() {
         </header>
 
         {/* Main Content */}
-        <main className="relative z-10 flex-1 flex items-center justify-center px-6 py-12">
-          <div className="w-full max-w-md">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-8">
+        <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12">
+          <div className="w-full max-w-md mx-auto">
+            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-6 sm:p-8">
               {/* Progress Indicator */}
               <div className="flex items-center justify-center gap-2 mb-6">
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
@@ -823,9 +823,9 @@ export function SetupPage() {
         </header>
 
         {/* Main Content */}
-        <main className="relative z-10 flex-1 flex items-center justify-center px-6 py-12">
-          <div className="w-full max-w-md">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-8">
+        <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12">
+          <div className="w-full max-w-md mx-auto">
+            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-6 sm:p-8">
               {/* Progress Indicator */}
               <div className="flex items-center justify-center gap-2 mb-6">
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
@@ -973,9 +973,9 @@ export function SetupPage() {
         </div>
 
         {/* Main Content */}
-        <main className="relative z-10 flex-1 flex items-center justify-center px-6 py-12">
-          <div className="w-full max-w-md text-center">
-            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-8">
+        <main className="relative z-10 flex-1 px-4 py-6 sm:px-6 sm:py-12">
+          <div className="w-full max-w-md mx-auto text-center">
+            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-6 sm:p-8">
               {/* Success Icon */}
               <div className="flex justify-center mb-6">
                 <div className="flex size-16 items-center justify-center rounded-full bg-green-500/10 text-green-500 dark:bg-green-500/20">

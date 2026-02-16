@@ -422,8 +422,8 @@ mod tests {
         let mut detector = CapabilityDetector::new();
 
         // Test a built-in model
-        let result = detector.detect("gpt-4o-mini").unwrap();
-        assert_eq!(result.model, "gpt-4o-mini");
+        let result = detector.detect("gpt-4o").unwrap();
+        assert_eq!(result.model, "gpt-4o");
         assert!(result.from_registry);
         assert!(result.capabilities.streaming);
         assert!(result.capabilities.vision);
