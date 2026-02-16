@@ -191,6 +191,29 @@ function App() {
   const [isTauri, setIsTauri] = useState(false)
   const [initialCheckDone, setInitialCheckDone] = useState(false)
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname)
+
+  // Track path changes
+  useEffect(() => {
+    const handleLocationChange = () => setCurrentPath(window.location.pathname)
+    window.addEventListener('popstate', handleLocationChange)
+    // Also check on pushState/replaceState
+    const originalPushState = history.pushState
+    const originalReplaceState = history.replaceState
+    history.pushState = function(...args) {
+      originalPushState.apply(this, args)
+      handleLocationChange()
+    }
+    history.replaceState = function(...args) {
+      originalReplaceState.apply(this, args)
+      handleLocationChange()
+    }
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange)
+      history.pushState = originalPushState
+      history.replaceState = originalReplaceState
+    }
+  }, [])
 
   // Check if running in Tauri environment
   useEffect(() => {
@@ -224,14 +247,18 @@ function App() {
   }, [isTauri, backendReady])
 
   // Check authentication status on mount (only once)
+  // Skip auth check on setup page to avoid 401 errors
   useEffect(() => {
-    checkAuthStatus()
+    if (currentPath !== '/setup') {
+      checkAuthStatus()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [currentPath])
 
   // Set up WebSocket connection handler to update store
+  // Only connect when authenticated and not on setup page
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && currentPath !== '/setup') {
       import('@/lib/websocket').then(({ ws }) => {
         // Set up connection handler
         const cleanup = ws.onConnection((connected) => {
@@ -242,12 +269,18 @@ function App() {
 
         return cleanup
       })
+    } else if (!isAuthenticated && currentPath !== '/setup') {
+      // Disconnect when not authenticated
+      import('@/lib/websocket').then(({ ws }) => {
+        ws.disconnect()
+      })
     }
-  }, [isAuthenticated, setWsConnected])
+  }, [isAuthenticated, setWsConnected, currentPath])
 
   // Refresh WebSocket connections when authentication status changes
+  // Only connect when authenticated and not on setup page
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && currentPath !== '/setup') {
       // Dynamic import to avoid SSR issues
       import('@/lib/events').then(({ refreshEventConnections }) => {
         refreshEventConnections()
@@ -256,8 +289,16 @@ function App() {
       import('@/lib/websocket').then(({ ws }) => {
         ws.connect()
       })
+    } else if (currentPath === '/setup') {
+      // Disconnect on setup page to avoid 401 errors
+      import('@/lib/websocket').then(({ ws }) => {
+        ws.disconnect()
+      })
+      import('@/lib/events').then(({ closeAllEventsConnections }) => {
+        closeAllEventsConnections()
+      })
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, currentPath])
 
   // Show loading screen in Tauri until backend is ready
   if (isTauri && !backendReady) {
@@ -271,8 +312,8 @@ function App() {
 
   // Auto-redirect to setup if required (fresh install)
   // Check if current path is not already /setup to avoid redirect loop
-  const currentPath = window.location.pathname
-  if (setupRequired && currentPath !== '/setup') {
+  // Also don't redirect if we're already on login page
+  if (setupRequired && currentPath !== '/setup' && currentPath !== '/login') {
     return <Navigate to="/setup" replace />
   }
 
