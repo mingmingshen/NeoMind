@@ -75,7 +75,6 @@ window.addEventListener('unhandledrejection', (event) => {
 // Checks authentication first, then setup status in background
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const [setupRequired, setSetupRequired] = useState<boolean | false>(false)
-  const token = tokenManager.getToken()
 
   useEffect(() => {
     // Check setup status in background - don't block rendering
@@ -98,6 +97,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
     checkSetup()
   }, [])
+
+  // Check token on every render (not in useEffect) to respond immediately to login
+  const token = tokenManager.getToken()
 
   // Not authenticated - redirect to login
   if (!token) {
