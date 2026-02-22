@@ -229,7 +229,10 @@
   "cancelSelection": "取消选择",
   "pagination": {
     "total": "共 {{total}} 条 · 第 {{currentPage}}/{{totalPages}} 页",
-    "perPage": "{{size}} 条/页"
+    "perPage": "{{size}} 条/页",
+    "loading": "加载中...",
+    "noMore": "没有更多了",
+    "noData": "暂无数据"
   },
   "hint": "提示",
   "actionFailed": "操作失败",

@@ -86,10 +86,8 @@ export function ExtensionsPage() {
         title={t("extensions:title", { defaultValue: "Extensions" })}
         subtitle={t("extensions:description", { defaultValue: "Manage dynamic extensions and plugins" })}
         borderedHeader={false}
-      >
-        {/* Header Actions */}
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex gap-2">
+        actions={
+          <>
             <Button
               variant="outline"
               size="sm"
@@ -114,17 +112,17 @@ export function ExtensionsPage() {
               <Upload className="h-4 w-4 mr-2" />
               {t("extensions:uploadExtension", { defaultValue: "Upload" })}
             </Button>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleRefresh}
-            disabled={extensionsLoading}
-          >
-            <RefreshCw className={`h-4 w-4 ${extensionsLoading ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
-
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleRefresh}
+              disabled={extensionsLoading}
+            >
+              <RefreshCw className={`h-4 w-4 ${extensionsLoading ? "animate-spin" : ""}`} />
+            </Button>
+          </>
+        }
+      >
         {/* Extensions Grid */}
         <ExtensionGrid
           extensions={extensions}

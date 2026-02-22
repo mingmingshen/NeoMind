@@ -6,7 +6,7 @@
  * Uses PageLayout + PageTabs structure consistent with other pages.
  */
 
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate, useLocation } from "react-router-dom"
 import { PageLayout } from "@/components/layout/PageLayout"
@@ -16,6 +16,7 @@ import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { useIsMobile } from "@/hooks/useMobile"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -49,6 +50,7 @@ export function AutomationPage() {
   const { t: tAuto } = useTranslation('automation')
   const { toast } = useToast()
   const { handleError } = useErrorHandler()
+  const isMobile = useIsMobile()
 
   // Router integration
   const navigate = useNavigate()
@@ -197,15 +199,29 @@ export function AutomationPage() {
   }, [transforms.length])
 
   // Compute paginated data
-  const paginatedRules = rules.slice(
-    (rulesPage - 1) * RULES_ITEMS_PER_PAGE,
-    rulesPage * RULES_ITEMS_PER_PAGE
-  )
+  // On mobile: show cumulative data (all pages up to current)
+  // On desktop: show only current page
+  const paginatedRules = useMemo(() => {
+    if (isMobile) {
+      return rules.slice(0, rulesPage * RULES_ITEMS_PER_PAGE)
+    } else {
+      return rules.slice(
+        (rulesPage - 1) * RULES_ITEMS_PER_PAGE,
+        rulesPage * RULES_ITEMS_PER_PAGE
+      )
+    }
+  }, [rules, rulesPage, RULES_ITEMS_PER_PAGE, isMobile])
 
-  const paginatedTransforms = transforms.slice(
-    (transformsPage - 1) * TRANSFORMS_ITEMS_PER_PAGE,
-    transformsPage * TRANSFORMS_ITEMS_PER_PAGE
-  )
+  const paginatedTransforms = useMemo(() => {
+    if (isMobile) {
+      return transforms.slice(0, transformsPage * TRANSFORMS_ITEMS_PER_PAGE)
+    } else {
+      return transforms.slice(
+        (transformsPage - 1) * TRANSFORMS_ITEMS_PER_PAGE,
+        transformsPage * TRANSFORMS_ITEMS_PER_PAGE
+      )
+    }
+  }, [transforms, transformsPage, TRANSFORMS_ITEMS_PER_PAGE, isMobile])
 
   // Handlers
   const handleCreate = () => {
@@ -576,46 +592,16 @@ export function AutomationPage() {
     <PageLayout
       title={tAuto('title')}
       subtitle={tAuto('pageDescription')}
-      footer={
-        activeTab === 'rules' && rules.length > RULES_ITEMS_PER_PAGE ? (
-          <Pagination
-            total={rules.length}
-            pageSize={RULES_ITEMS_PER_PAGE}
-            currentPage={rulesPage}
-            onPageChange={setRulesPage}
-          />
-        ) : activeTab === 'transforms' && transforms.length > TRANSFORMS_ITEMS_PER_PAGE ? (
-          <Pagination
-            total={transforms.length}
-            pageSize={TRANSFORMS_ITEMS_PER_PAGE}
-            currentPage={transformsPage}
-            onPageChange={setTransformsPage}
-          />
-        ) : undefined
-      }
-    >
-      {/* Tabs with Actions */}
-      <PageTabs
-        tabs={[
-          { value: 'rules', label: tAuto('tabs.rules'), icon: <Sparkles className="h-4 w-4" /> },
-          { value: 'transforms', label: tAuto('tabs.transforms'), icon: <GitBranch className="h-4 w-4" /> },
-        ]}
-        activeTab={activeTab}
-        onTabChange={(v) => handleTabChange(v as AutomationTab)}
-        actions={[
-          {
-            label: tCommon('create'),
-            onClick: handleCreate,
-          },
-          {
-            label: tCommon('refresh'),
-            variant: 'outline',
-            onClick: loadItems,
-            disabled: loading,
-          },
-        ]}
-        actionsExtra={
-          activeTab === 'rules' ? (
+      hideFooterOnMobile
+      actions={
+        <>
+          <Button size="sm" onClick={handleCreate}>
+            {tCommon('create')}
+          </Button>
+          <Button size="sm" variant="outline" onClick={loadItems} disabled={loading}>
+            {tCommon('refresh')}
+          </Button>
+          {activeTab === 'rules' && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-9 gap-1">
@@ -634,7 +620,8 @@ export function AutomationPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : activeTab === 'transforms' ? (
+          )}
+          {activeTab === 'transforms' && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-9 gap-1">
@@ -653,8 +640,18 @@ export function AutomationPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : null
-        }
+          )}
+        </>
+      }
+    >
+      {/* Tabs with Actions */}
+      <PageTabs
+        tabs={[
+          { value: 'rules', label: tAuto('tabs.rules'), icon: <Sparkles className="h-4 w-4" /> },
+          { value: 'transforms', label: tAuto('tabs.transforms'), icon: <GitBranch className="h-4 w-4" /> },
+        ]}
+        activeTab={activeTab}
+        onTabChange={(v) => handleTabChange(v as AutomationTab)}
       >
         {/* Rules Tab */}
         <PageTabsContent value="rules" activeTab={activeTab}>
@@ -669,6 +666,17 @@ export function AutomationPage() {
             onToggleStatus={handleToggleRule}
             onExecute={handleExecuteRule}
           />
+          {/* Pagination for rules */}
+          {rules.length > RULES_ITEMS_PER_PAGE && (
+            <div className="mt-4">
+              <Pagination
+                total={rules.length}
+                pageSize={RULES_ITEMS_PER_PAGE}
+                currentPage={rulesPage}
+                onPageChange={setRulesPage}
+              />
+            </div>
+          )}
         </PageTabsContent>
 
         {/* Transforms Tab */}
@@ -684,6 +692,17 @@ export function AutomationPage() {
             onToggleStatus={handleToggleTransform}
             onExport={handleExportSingleTransform}
           />
+          {/* Pagination for transforms */}
+          {transforms.length > TRANSFORMS_ITEMS_PER_PAGE && (
+            <div className="mt-4">
+              <Pagination
+                total={transforms.length}
+                pageSize={TRANSFORMS_ITEMS_PER_PAGE}
+                currentPage={transformsPage}
+                onPageChange={setTransformsPage}
+              />
+            </div>
+          )}
         </PageTabsContent>
       </PageTabs>
 

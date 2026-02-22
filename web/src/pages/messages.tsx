@@ -1,7 +1,7 @@
 // Messages Page
 // Unified notification/message system for NeoMind
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
@@ -11,6 +11,7 @@ import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { confirm } from '@/hooks/use-confirm'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
+import { useIsMobile } from '@/hooks/useMobile'
 import type { NotificationMessage, MessageSeverity, MessageStatus, MessageCategory, MessageChannel } from '@/types'
 import type { StandardError } from '@/lib/errors'
 
@@ -124,6 +125,7 @@ export default function MessagesPage() {
   const { handleError } = useErrorHandler()
   const navigate = useNavigate()
   const location = useLocation()
+  const isMobile = useIsMobile()
 
   // Helper to get API base URL for Tauri environment
   const getApiUrl = (path: string) => {
@@ -227,10 +229,20 @@ export default function MessagesPage() {
   }
 
   // Calculate paginated messages
-  const paginatedMessages = messages.slice(
-    (messagePage - 1) * messagesPerPage,
-    messagePage * messagesPerPage
-  )
+  // On mobile: show cumulative data (all pages up to current)
+  // On desktop: show only current page
+  const paginatedMessages = useMemo(() => {
+    if (isMobile) {
+      // Mobile: show all data from page 1 to current page (cumulative)
+      return messages.slice(0, messagePage * messagesPerPage)
+    } else {
+      // Desktop: show only current page
+      return messages.slice(
+        (messagePage - 1) * messagesPerPage,
+        messagePage * messagesPerPage
+      )
+    }
+  }, [messages, messagePage, messagesPerPage, isMobile])
 
   // Channels state
   const [channels, setChannels] = useState<MessageChannel[]>([])
@@ -459,27 +471,24 @@ export default function MessagesPage() {
     <PageLayout
       title={t('messages.title')}
       subtitle={t('messages.description')}
-      footer={
-        activeTab === 'messages' && messages.length > messagesPerPage ? (
-          <Pagination
-            total={messages.length}
-            pageSize={messagesPerPage}
-            currentPage={messagePage}
-            onPageChange={setMessagePage}
-          />
-        ) : undefined
+      hideFooterOnMobile
+      actions={
+        <>
+          {activeTab === 'messages' && (
+            <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
+              {t('messages.create')}
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={activeTab === 'messages' ? fetchMessages : fetchChannels} disabled={loading}>
+            {t('refresh')}
+          </Button>
+        </>
       }
     >
       <PageTabs
         tabs={tabs}
         activeTab={activeTab}
         onTabChange={(v) => handleTabChange(v as TabValue)}
-        actions={[
-          ...(activeTab === 'messages' ? [
-            { label: t('messages.create'), onClick: () => setCreateDialogOpen(true) },
-          ] : []),
-          { label: t('refresh'), variant: 'outline' as const, onClick: activeTab === 'messages' ? fetchMessages : fetchChannels, disabled: loading },
-        ]}
       >
         {/* Messages Tab */}
         <PageTabsContent value="messages" activeTab={activeTab} className="flex flex-col overflow-hidden">
@@ -776,6 +785,17 @@ export default function MessagesPage() {
                 ) : undefined
               }
             />
+            {/* Pagination - shows as footer on desktop, infinite scroll trigger on mobile */}
+            {messages.length > messagesPerPage && (
+              <div className="mt-4">
+                <Pagination
+                  total={messages.length}
+                  pageSize={messagesPerPage}
+                  currentPage={messagePage}
+                  onPageChange={setMessagePage}
+                />
+              </div>
+            )}
           </div>
         </PageTabsContent>
 

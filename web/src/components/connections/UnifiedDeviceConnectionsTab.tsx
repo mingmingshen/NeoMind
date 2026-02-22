@@ -7,7 +7,6 @@ import {
   Edit,
   Trash2,
   TestTube,
-  MoreVertical,
   Webhook,
   Radio,
   Copy,
@@ -21,12 +20,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import {
   Dialog,
   DialogContent,
@@ -716,6 +709,7 @@ export function UnifiedDeviceConnectionsTab() {
               const testResult = testResults[instance.id]
               const isMqtt = instance.plugin_type === 'mqtt'
               const isHttp = instance.plugin_type === 'http'
+              const isBuiltin = (instance as any).isBuiltin
 
               return (
                 <Card
@@ -727,70 +721,74 @@ export function UnifiedDeviceConnectionsTab() {
                 >
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <CardTitle className="text-base">{instance.name}</CardTitle>
-                          {(instance as any).isBuiltin && (
-                            <Badge variant="outline" className="text-xs">内置</Badge>
+                          <CardTitle className="text-base truncate">{instance.name}</CardTitle>
+                          {isBuiltin && (
+                            <Badge variant="outline" className="text-xs shrink-0">内置</Badge>
                           )}
                           {instance.running && (
-                            <Badge variant="default" className="text-xs">{t('plugins:llm.running')}</Badge>
+                            <Badge variant="default" className="text-xs shrink-0">{t('plugins:llm.running')}</Badge>
                           )}
                           {instance.enabled && !instance.running && (
-                            <Badge variant="outline" className="text-xs">{t('plugins:enabled')}</Badge>
+                            <Badge variant="outline" className="text-xs shrink-0">{t('plugins:enabled')}</Badge>
                           )}
                         </div>
-                        <CardDescription className="font-mono text-xs">
-                          {isMqtt && (instance as any).isBuiltin
+                        <CardDescription className="font-mono text-xs truncate">
+                          {isMqtt && isBuiltin
                             ? `${mqttStatus?.server_ip || 'localhost'}:${mqttStatus?.listen_port || 1883}`
                             : isHttp
                             ? `${(instance.config as any)?._url || 'N/A'} (${(instance.config as any)?._poll_interval || 30}s)`
                             : `${instance.config?.broker}:${instance.config?.port}`}
                         </CardDescription>
                       </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {isMqtt && !(instance as any).isBuiltin && (
-                            <>
-                              <DropdownMenuItem onClick={() => {
-                                setEditingInstance(instance)
-                                setConfigDialogOpen(true)
-                              }}>
-                                <Edit className="mr-2 h-4 w-4" />
-                                {t('plugins:edit')}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={async () => {
+                      <div className="flex items-center gap-1 shrink-0 ml-2">
+                        {isMqtt && !isBuiltin && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={async () => {
                                 const result = await handleTest(instance.id)
                                 setTestResults((prev) => ({
                                   ...prev,
                                   [instance.id]: result,
                                 }))
-                              }}>
-                                <TestTube className="mr-2 h-4 w-4" />
-                                {t('plugins:testConnection')}
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                          {/* Hide delete for builtin MQTT instance */}
-                          {!(isMqtt && (instance as any).isBuiltin) && (
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
+                              }}
+                              title={t('plugins:testConnection')}
+                            >
+                              <TestTube className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
                               onClick={() => {
                                 setEditingInstance(instance)
-                                handleDelete(instance.id)
+                                setConfigDialogOpen(true)
                               }}
+                              title={t('plugins:edit')}
                             >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              {t('plugins:delete')}
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+                        {!isBuiltin && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                            onClick={() => {
+                              setEditingInstance(instance)
+                              handleDelete(instance.id)
+                            }}
+                            title={t('plugins:delete')}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </CardHeader>
 

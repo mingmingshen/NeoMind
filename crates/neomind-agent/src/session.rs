@@ -804,6 +804,58 @@ impl SessionManager {
         infos
     }
 
+    /// List sessions with basic info (lightweight version).
+    ///
+    /// Performance optimization: Does NOT load message count or preview.
+    /// Use this for listing sessions where full details aren't needed.
+    /// This is significantly faster than `list_sessions_with_info` for large session counts.
+    pub async fn list_sessions_with_info_light(&self) -> Vec<SessionInfo> {
+        let mut infos = Vec::new();
+
+        // Get all session IDs from database
+        let db_session_ids = match self.store.list_sessions() {
+            Ok(ids) => ids,
+            Err(e) => {
+                tracing::error!(error = %e, message = "Failed to list sessions from database");
+                self.sessions.read().await.keys().cloned().collect()
+            }
+        };
+
+        for session_id in db_session_ids {
+            // Get timestamp from store (in seconds)
+            let timestamp_seconds = self
+                .store
+                .get_session_timestamp(&session_id)
+                .ok()
+                .and_then(|r| r);
+
+            // Convert seconds to milliseconds for frontend compatibility
+            let timestamp_ms =
+                timestamp_seconds.unwrap_or_else(|| chrono::Utc::now().timestamp()) * 1000;
+
+            // Get title from metadata
+            let title = self
+                .store
+                .get_session_metadata(&session_id)
+                .ok()
+                .and_then(|meta| meta.title)
+                .filter(|t| !t.is_empty());
+
+            infos.push(SessionInfo {
+                session_id: session_id.clone(),
+                created_at: timestamp_ms,
+                message_count: 0, // Not loaded in light version
+                title,
+                preview: None, // Not loaded in light version
+            });
+        }
+
+        // Sort by created_at descending (newest first)
+        infos.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        infos
+    }
+
     /// List all active sessions (IDs only).
     /// Returns sessions from both memory and database (for persistence after restart).
     pub async fn list_sessions(&self) -> Vec<String> {

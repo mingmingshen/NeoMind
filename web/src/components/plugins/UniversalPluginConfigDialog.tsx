@@ -110,27 +110,27 @@ interface UniversalPluginConfigDialogProps {
   setTestResults?: (results: Record<string, { success: boolean; message: string }>) => void
 }
 
-export function UniversalPluginConfigDialog({
-  open,
-  onOpenChange,
-  pluginType,
-  instances,
-  editingInstance,
-  onCreate,
-  onUpdate,
-  onDelete,
-  onTest,
-  onRefresh,
-  testResults: externalTestResults,
-  setTestResults: setExternalTestResults,
-}: UniversalPluginConfigDialogProps) {
+export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogProps) {
+  const {
+    open,
+    onOpenChange,
+    pluginType,
+    instances,
+    editingInstance,
+    onCreate,
+    onUpdate,
+    onDelete,
+    onTest,
+    onRefresh,
+    testResults: externalTestResults,
+    setTestResults: setExternalTestResults,
+  } = props
+
   const { t } = useTranslation(["common", "plugins", "devices"])
   const { toast } = useToast()
   const { handleError } = useErrorHandler()
 
   const [saving, setSaving] = useState(false)
-  const [testingId, setTestingId] = useState<string | null>(null)
-  const [showCreateForm, setShowCreateForm] = useState(false)
   const [newInstanceName, setNewInstanceName] = useState("")
   const [internalTestResults, setInternalTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
 
@@ -157,6 +157,9 @@ export function UniversalPluginConfigDialog({
   const setTestResults = setExternalTestResults ?? setInternalTestResults
 
   const isOllamaBackend = pluginType.type === "llm_backend" && pluginType.id === "ollama"
+
+  // Pass test and delete handlers to parent via prop for use in detail view
+  // The dialog itself no longer displays instance lists
 
   // Fetch Ollama models
   const fetchOllamaModels = useCallback(async (endpoint?: string) => {
@@ -193,7 +196,6 @@ export function UniversalPluginConfigDialog({
   // Reset form when dialog opens or plugin type changes
   useEffect(() => {
     if (open) {
-      setShowCreateForm(false)
       setNewInstanceName("")
       setSelectedModel("")
 
@@ -299,7 +301,7 @@ export function UniversalPluginConfigDialog({
       })
       setNewInstanceName("")
       setSelectedModel("")
-      setShowCreateForm(false)
+      onOpenChange(false)
       await onRefresh()
     } catch (error) {
       toast({
@@ -347,7 +349,8 @@ export function UniversalPluginConfigDialog({
     }
   }
 
-  // Handle delete instance
+  // Handle delete instance - exported for parent components to use
+  // This is no longer called from within the dialog
   const handleDelete = async (instance: PluginInstance) => {
     if (!onDelete) return
 
@@ -379,11 +382,11 @@ export function UniversalPluginConfigDialog({
     }
   }
 
-  // Handle test connection
+  // Handle test connection - exported for parent components to use
+  // This is no longer called from within the dialog
   const handleTest = async (instance: PluginInstance) => {
-    if (!onTest) return
+    if (!onTest) return { success: false, message: "Test not available" }
 
-    setTestingId(instance.id)
     try {
       const result = await onTest(instance.id)
       const newResult = { success: result.success, message: result.message || result.error || "" }
@@ -403,6 +406,7 @@ export function UniversalPluginConfigDialog({
           variant: "destructive",
         })
       }
+      return newResult
     } catch (error) {
       const message = String(error)
       setTestResults({
@@ -414,8 +418,7 @@ export function UniversalPluginConfigDialog({
         description: message,
         variant: "destructive",
       })
-    } finally {
-      setTestingId(null)
+      return { success: false, message }
     }
   }
 
@@ -514,305 +517,128 @@ export function UniversalPluginConfigDialog({
         </DialogHeader>
 
         <DialogContentBody className="flex-1 overflow-y-auto px-4 pt-6 pb-4 sm:px-6">
-          {/* Edit Mode */}
-          {isEditing ? (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-medium">{editingInstance.name}</h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Badge variant={getInstanceStatus(editingInstance) ? "default" : "secondary"}>
-                      {getInstanceStatus(editingInstance)
-                        ? t("plugins:active", { defaultValue: "Active" })
-                        : t("plugins:inactive", { defaultValue: "Inactive" })
-                      }
-                    </Badge>
-                  </div>
+          {/* Instance Name Field (only for create mode) */}
+          {!isEditing && (
+            <div className="mb-4">
+              <Label htmlFor="instance-name">
+                {t("plugins:instanceName", { defaultValue: "Instance Name" })}
+              </Label>
+              <Input
+                id="instance-name"
+                value={newInstanceName}
+                onChange={(e) => setNewInstanceName(e.target.value)}
+                placeholder={t("plugins:instanceNamePlaceholder", { defaultValue: "My Instance" })}
+                disabled={saving}
+                autoFocus
+              />
+            </div>
+          )}
+
+          {/* Edit Mode: Show instance info */}
+          {isEditing && (
+            <div className="flex items-center justify-between mb-4 p-3 bg-muted/30 rounded-lg">
+              <div>
+                <h3 className="font-medium">{editingInstance.name}</h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge variant={getInstanceStatus(editingInstance) ? "default" : "secondary"}>
+                    {getInstanceStatus(editingInstance)
+                      ? t("plugins:active", { defaultValue: "Active" })
+                      : t("plugins:inactive", { defaultValue: "Inactive" })
+                    }
+                  </Badge>
                 </div>
-                {onTest && (
+              </div>
+            </div>
+          )}
+
+          {/* Ollama endpoint configuration (only for create mode) */}
+          {!isEditing && isOllamaBackend && (
+            <div className="mb-4">
+              <Label htmlFor="ollama-endpoint">
+                {t("plugins:llm.endpoint", { defaultValue: "Ollama Endpoint" })}
+              </Label>
+              <div className="flex items-center gap-2 mt-1">
+                <Input
+                  id="ollama-endpoint"
+                  value={ollamaEndpoint}
+                  onChange={(e) => setOllamaEndpoint(e.target.value)}
+                  placeholder="http://localhost:11434"
+                  disabled={saving}
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => fetchOllamaModels(ollamaEndpoint)}
+                  disabled={loadingModels}
+                >
+                  <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Ollama model selector */}
+          {isOllamaBackend && ollamaModels.length > 0 && (
+            <div className="mb-4">
+              <Label htmlFor="model-select">
+                {t("plugins:llm.selectModel", { defaultValue: "Select Model" })}
+              </Label>
+              <div className="flex items-center gap-2 mt-1">
+                <Select value={selectedModel} onValueChange={handleModelChange}>
+                  <SelectTrigger id="model-select" className="flex-1">
+                    <SelectValue placeholder={t("plugins:llm.selectModelPlaceholder", { defaultValue: "Select a model..." })} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ollamaModels.map((model) => (
+                      <SelectItem
+                        key={model.name}
+                        value={model.name}
+                        icon={getModelIcon(model)}
+                      >
+                        {model.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!isEditing && (
                   <Button
                     variant="outline"
-                    size="sm"
-                    onClick={() => handleTest(editingInstance)}
-                    disabled={testingId === editingInstance.id}
+                    size="icon"
+                    onClick={() => fetchOllamaModels(ollamaEndpoint)}
+                    disabled={loadingModels}
                   >
-                    <TestTube className="h-4 w-4 mr-1" />
-                    {testingId === editingInstance.id
-                      ? t("common:testing", { defaultValue: "Testing..." })
-                      : t("plugins:test", { defaultValue: "Test" })
-                    }
+                    <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
                   </Button>
                 )}
               </div>
-
-              {/* Show test result if available */}
-              {testResults[editingInstance.id] && (
-                <div className={cn(
-                  "text-xs p-2 rounded mb-4 flex items-center gap-1",
-                  testResults[editingInstance.id].success
-                    ? "bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300"
-                    : "bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300"
-                )}>
-                  {testResults[editingInstance.id].success
-                    ? <Check className="h-3 w-3" />
-                    : <X className="h-3 w-3" />
-                  }
-                  {testResults[editingInstance.id].message}
-                </div>
-              )}
-
-              {/* Ollama model selector for editing */}
-              {isOllamaBackend && ollamaModels.length > 0 && (
-                <div className="mb-4">
-                  <Label htmlFor="model-select">
-                    {t("plugins:llm.selectModel", { defaultValue: "Select Model" })}
-                  </Label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Select value={selectedModel} onValueChange={handleModelChange}>
-                      <SelectTrigger id="model-select" className="flex-1">
-                        <SelectValue placeholder={t("plugins:llm.selectModelPlaceholder", { defaultValue: "Select a model..." })} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ollamaModels.map((model) => (
-                          <SelectItem
-                            key={model.name}
-                            value={model.name}
-                            icon={getModelIcon(model)}
-                          >
-                            {model.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => fetchOllamaModels(ollamaEndpoint)}
-                      disabled={loadingModels}
-                    >
-                      <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
-                    </Button>
-                  </div>
-                  {selectedModel && renderCapabilityBadges()}
-                </div>
-              )}
-
-              {/* Capability display for non-Ollama LLM backends */}
-              {pluginType.type === "llm_backend" && !isOllamaBackend && renderCapabilityBadges()}
-
-              <ConfigFormBuilder
-                schema={schema}
-                onSubmit={handleUpdate}
-                loading={saving}
-                submitLabel={t("common:save", { defaultValue: "Save" })}
-              />
+              {selectedModel && renderCapabilityBadges()}
             </div>
-          ) : (
-            <>
-              {/* Instance List Mode */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-medium">
-                    {t("plugins:instances", { defaultValue: "Instances" })} ({instances.length})
-                  </h3>
-                  {pluginType.can_add_multiple ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setShowCreateForm(!showCreateForm)}
-                    >
-                      <Plus className="mr-2 h-4 w-4" />
-                      {t("plugins:addInstance", { defaultValue: "Add Instance" })}
-                    </Button>
-                  ) : instances.length === 0 ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setShowCreateForm(!showCreateForm)}
-                    >
-                      <Plus className="mr-2 h-4 w-4" />
-                      {t("plugins:configure", { defaultValue: "Configure" })}
-                    </Button>
-                  ) : null}
-                </div>
-
-                {instances.length === 0 ? (
-                  <div className="text-center py-8 border rounded-lg bg-muted/30">
-                    <p className="text-sm text-muted-foreground">
-                      {t("plugins:noInstances", { defaultValue: "No instances configured" })}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {instances.map((instance) => {
-                      const testResult = testResults[instance.id]
-                      const isActive = getInstanceStatus(instance)
-                      const instanceCaps = (instance.config as any)?.capabilities
-
-                      return (
-                        <div
-                          key={instance.id}
-                          className="flex items-center justify-between p-3 border rounded-lg bg-background"
-                        >
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{instance.name}</span>
-                              <Badge variant={isActive ? "default" : "secondary"}>
-                                {isActive
-                                  ? t("plugins:active", { defaultValue: "Active" })
-                                  : t("plugins:inactive", { defaultValue: "Inactive" })
-                                }
-                              </Badge>
-                            </div>
-                            {testResult && (
-                              <div className={cn(
-                                "text-xs mt-1 flex items-center gap-1",
-                                testResult.success ? "text-green-500" : "text-red-500"
-                              )}>
-                                {testResult.success ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-                                {testResult.message}
-                              </div>
-                            )}
-                            {instance.config?.model != null && (
-                              <div className="text-xs text-muted-foreground mt-1">
-                                Model: {String(instance.config.model)}
-                              </div>
-                            )}
-                            {/* Show instance capabilities */}
-                            {instanceCaps && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {instanceCaps.supports_multimodal && (
-                                  <Badge variant="outline" className="text-xs h-5 px-1">
-                                    <Eye className="h-2.5 w-2.5 mr-0.5" />
-                                    Vision
-                                  </Badge>
-                                )}
-                                {instanceCaps.supports_thinking && (
-                                  <Badge variant="outline" className="text-xs h-5 px-1">
-                                    <Brain className="h-2.5 w-2.5 mr-0.5" />
-                                    Thinking
-                                  </Badge>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {onTest && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleTest(instance)}
-                                disabled={testingId === instance.id}
-                              >
-                                <TestTube className="h-4 w-4" />
-                              </Button>
-                            )}
-                            {onDelete && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-destructive hover:text-destructive"
-                                onClick={() => handleDelete(instance)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Create New Instance Form */}
-              {showCreateForm && (
-                <div className="border-t pt-4 space-y-4">
-                  <div>
-                    <Label htmlFor="instance-name">
-                      {t("plugins:instanceName", { defaultValue: "Instance Name" })}
-                    </Label>
-                    <Input
-                      id="instance-name"
-                      value={newInstanceName}
-                      onChange={(e) => setNewInstanceName(e.target.value)}
-                      placeholder={t("plugins:instanceNamePlaceholder", { defaultValue: "My Instance" })}
-                      disabled={saving}
-                    />
-                  </div>
-
-                  {/* Ollama model selector */}
-                  {isOllamaBackend && (
-                    <>
-                      <div>
-                        <Label htmlFor="ollama-endpoint">
-                          {t("plugins:llm.endpoint", { defaultValue: "Ollama Endpoint" })}
-                        </Label>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Input
-                            id="ollama-endpoint"
-                            value={ollamaEndpoint}
-                            onChange={(e) => setOllamaEndpoint(e.target.value)}
-                            placeholder="http://localhost:11434"
-                            disabled={saving}
-                          />
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => fetchOllamaModels(ollamaEndpoint)}
-                            disabled={loadingModels}
-                          >
-                            <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
-                          </Button>
-                        </div>
-                      </div>
-
-                      {ollamaModels.length > 0 && (
-                        <div>
-                          <Label htmlFor="model-select-create">
-                            {t("plugins:llm.selectModel", { defaultValue: "Select Model" })}
-                          </Label>
-                          <Select value={selectedModel} onValueChange={handleModelChange}>
-                            <SelectTrigger id="model-select-create" className="mt-1">
-                              <SelectValue placeholder={t("plugins:llm.selectModelPlaceholder", { defaultValue: "Select a model..." })} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {ollamaModels.map((model) => (
-                                <SelectItem
-                                  key={model.name}
-                                  value={model.name}
-                                  icon={getModelIcon(model)}
-                                >
-                                  {model.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {selectedModel && renderCapabilityBadges()}
-                        </div>
-                      )}
-
-                      {ollamaModels.length === 0 && !loadingModels && (
-                        <p className="text-xs text-muted-foreground">
-                          {t("plugins:llm.noModelsFound", { defaultValue: "No models found. Click refresh to fetch from Ollama." })}
-                        </p>
-                      )}
-                    </>
-                  )}
-
-                  {/* Capability display for non-Ollama LLM backends */}
-                  {pluginType.type === "llm_backend" && !isOllamaBackend && renderCapabilityBadges()}
-
-                  <ConfigFormBuilder
-                    schema={schema}
-                    onSubmit={handleCreate}
-                    loading={saving}
-                    submitLabel={t("common:create", { defaultValue: "Create" })}
-                  />
-                </div>
-              )}
-            </>
           )}
+
+          {/* No models message for Ollama */}
+          {isOllamaBackend && ollamaModels.length === 0 && !loadingModels && (
+            <div className="mb-4 p-3 bg-muted/30 rounded-lg text-sm text-muted-foreground">
+              {t("plugins:llm.noModelsFound", { defaultValue: "No models found. Click refresh to fetch from Ollama." })}
+            </div>
+          )}
+
+          {/* Capability display for non-Ollama LLM backends */}
+          {pluginType.type === "llm_backend" && !isOllamaBackend && (
+            <div className="mb-4">
+              {renderCapabilityBadges()}
+            </div>
+          )}
+
+          {/* Config Form */}
+          <ConfigFormBuilder
+            schema={schema}
+            onSubmit={isEditing ? handleUpdate : (values) => handleCreate(values)}
+            loading={saving}
+            submitLabel={isEditing
+              ? t("common:save", { defaultValue: "Save" })
+              : t("common:create", { defaultValue: "Create" })
+            }
+          />
         </DialogContentBody>
       </DialogContent>
     </Dialog>

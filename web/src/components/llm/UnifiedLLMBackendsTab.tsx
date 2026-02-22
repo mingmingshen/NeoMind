@@ -6,6 +6,9 @@ import {
   Server,
   CheckCircle2,
   Loader2,
+  TestTube,
+  Edit,
+  Trash2,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -264,12 +267,14 @@ export function UnifiedLLMBackendsTab({
   // Handle test connection
   const handleTest = async (id: string) => {
     const result = await onTestBackend(id)
-    return {
-      success: result.success,
-      message: result.success
-        ? `${t('plugins:llm.latency')}: ${result.latency_ms?.toFixed(0) || '0'}ms`
-        : (result.error || 'Failed'),
-    }
+    const message = result.success
+      ? `${t('plugins:llm.latency')}: ${result.latency_ms?.toFixed(0) || '0'}ms`
+      : (result.error || 'Failed')
+
+    setTestResults(prev => ({
+      ...prev,
+      [id]: { success: result.success, message },
+    }))
   }
 
   if (loading) {
@@ -413,13 +418,9 @@ export function UnifiedLLMBackendsTab({
                 <Card
                   key={instance.id}
                   className={cn(
-                    "transition-all duration-200 cursor-pointer hover:shadow-md",
+                    "transition-all duration-200",
                     isActive && "border-green-500"
                   )}
-                  onClick={() => {
-                    setEditingInstance(instance)
-                    setConfigDialogOpen(true)
-                  }}
                 >
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
@@ -432,9 +433,35 @@ export function UnifiedLLMBackendsTab({
                           {instance.config?.model as string || '-'}
                         </CardDescription>
                       </div>
-                      {isActive && (
-                        <CheckCircle2 className="h-5 w-5 text-green-500" />
-                      )}
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => handleTest(instance.id)}
+                        >
+                          <TestTube className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => {
+                            setEditingInstance(instance)
+                            setConfigDialogOpen(true)
+                          }}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          onClick={() => handleDelete(instance.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
 

@@ -5,6 +5,7 @@ use axum::{
     Json,
 };
 use serde_json::json;
+use std::sync::OnceLock;
 use uuid::Uuid;
 
 use super::compat::{config_to_device_instance, format_status_to_str};
@@ -21,6 +22,15 @@ use neomind_devices::{
     adapter::ConnectionStatus as AdapterConnectionStatus,
     mdl::ConnectionStatus as MdlConnectionStatus,
 };
+
+/// Transform-generated metric namespaces.
+/// Cached for performance - avoids recreating this array on every request.
+static TRANSFORM_NAMESPACES: OnceLock<[&str; 5]> = OnceLock::new();
+
+/// Get the transform namespaces array.
+fn get_transform_namespaces() -> &'static [&'static str; 5] {
+    TRANSFORM_NAMESPACES.get_or_init(|| ["transform.", "virtual.", "computed.", "derived.", "aggregated."])
+}
 
 /// Convert AdapterConnectionStatus to MdlConnectionStatus
 fn convert_status(status: AdapterConnectionStatus) -> MdlConnectionStatus {
@@ -49,6 +59,9 @@ fn get_plugin_info(adapter_id: &Option<String>) -> (Option<String>, Option<Strin
 
 /// List devices with pagination and filtering support.
 /// Uses new DeviceService with real device status from event tracking
+///
+/// Performance optimization: Queries device status once per device and reuses it
+/// for both filtering and DTO conversion, eliminating duplicate status queries.
 pub async fn list_devices_handler(
     State(state): State<ServerState>,
     Query(pagination): Query<PaginationQuery>,
@@ -62,9 +75,24 @@ pub async fn list_devices_handler(
     let configs = state.devices.service.list_devices().await;
     let _total = configs.len();
 
-    // Apply filters if provided
-    let mut filtered_configs = Vec::new();
+    // Performance optimization: Query status once per device and cache for filtering + conversion
+    // This eliminates the N+1 query problem where status was queried twice per device
+    struct DeviceWithStatus {
+        config: neomind_devices::DeviceConfig,
+        status: neomind_devices::adapter::ConnectionStatus,
+        last_seen: i64,
+    }
+
+    let mut devices_with_status = Vec::new();
     for config in configs {
+        // Query status once per device
+        let device_status = state
+            .devices
+            .service
+            .get_device_status(&config.device_id)
+            .await;
+        let last_seen = device_status.last_seen;
+
         // Filter by device_type
         if let Some(ref filter_type) = pagination.device_type {
             if &config.device_type != filter_type {
@@ -72,13 +100,8 @@ pub async fn list_devices_handler(
             }
         }
 
-        // Filter by status
+        // Filter by status (using the already-queried status)
         if let Some(ref filter_status) = pagination.status {
-            let device_status = state
-                .devices
-                .service
-                .get_device_status(&config.device_id)
-                .await;
             let status_str = match device_status.status {
                 AdapterConnectionStatus::Connected => "connected",
                 AdapterConnectionStatus::Disconnected => "disconnected",
@@ -91,32 +114,36 @@ pub async fn list_devices_handler(
             }
         }
 
-        filtered_configs.push(config);
+        devices_with_status.push(DeviceWithStatus {
+            config,
+            status: device_status.status,
+            last_seen,
+        });
     }
 
-    let filtered_total = filtered_configs.len();
+    let filtered_total = devices_with_status.len();
 
     // Apply pagination
-    let paginated_configs: Vec<_> = filtered_configs
+    let paginated_devices: Vec<_> = devices_with_status
         .into_iter()
         .skip(offset)
         .take(limit)
         .collect();
 
-    // Convert to DTOs
+    // Convert to DTOs (reusing the cached status)
     let mut dtos = Vec::new();
-    for config in paginated_configs {
+    for device_with_status in paginated_devices {
+        let config = device_with_status.config;
+        let device_status = device_with_status.status;
+        let last_seen_ts = device_with_status.last_seen;
+
         let (plugin_id, plugin_name) = get_plugin_info(&config.adapter_id);
 
-        // Get real device status from DeviceService
-        let device_status = state
-            .devices
-            .service
-            .get_device_status(&config.device_id)
-            .await;
-
-        // Use is_connected() which checks both status and last_seen时效
-        let online = device_status.is_connected();
+        // Use the cached status instead of querying again
+        let online = match device_status {
+            AdapterConnectionStatus::Connected => true,
+            _ => false,
+        };
 
         // Determine status string based on actual connectivity
         let status = if online {
@@ -126,7 +153,8 @@ pub async fn list_devices_handler(
         };
         let status = convert_status(status);
 
-        let last_seen = chrono::DateTime::from_timestamp(device_status.last_seen, 0)
+        // Use cached last_seen instead of querying again
+        let last_seen = chrono::DateTime::from_timestamp(last_seen_ts, 0)
             .unwrap_or_else(chrono::Utc::now);
 
         let instance = config_to_device_instance(&config, status, last_seen);
@@ -282,13 +310,7 @@ pub async fn get_device_current_handler(
     let now = chrono::Utc::now().timestamp();
 
     // Transform-generated metric namespaces (with dot notation)
-    let transform_namespaces = [
-        "transform.",
-        "virtual.",
-        "computed.",
-        "derived.",
-        "aggregated.",
-    ];
+    let transform_namespaces = get_transform_namespaces();
 
     // Get all available metrics from storage first
     let all_storage_metrics: Vec<String> = state

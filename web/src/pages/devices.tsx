@@ -1,8 +1,9 @@
-import { useEffect, useState, useRef, useCallback } from "react"
+import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { useToast } from "@/hooks/use-toast"
 import { useEvents } from "@/hooks/useEvents"
+import { useIsMobile } from "@/hooks/useMobile"
 import { confirm } from "@/hooks/use-confirm"
 import { useNavigate, useLocation, useParams } from "react-router-dom"
 import { PageLayout } from "@/components/layout/PageLayout"
@@ -45,6 +46,7 @@ export function DevicesPage() {
   const { toast } = useToast()
   const { handleError, withErrorHandling } = useErrorHandler()
   const { deviceId: urlDeviceId } = useParams<{ deviceId?: string }>()
+  const isMobile = useIsMobile()
   const devices = useStore((state) => state.devices)
   const devicesLoading = useStore((state) => state.devicesLoading)
   const fetchDevices = useStore((state) => state.fetchDevices)
@@ -188,10 +190,18 @@ export function DevicesPage() {
   }, [deviceTypes.length])
 
   // Paginated device types
-  const paginatedDeviceTypes = deviceTypes.slice(
-    (deviceTypePage - 1) * deviceTypesPerPage,
-    deviceTypePage * deviceTypesPerPage
-  )
+  // On mobile: show cumulative data (all pages up to current)
+  // On desktop: show only current page
+  const paginatedDeviceTypes = useMemo(() => {
+    if (isMobile) {
+      return deviceTypes.slice(0, deviceTypePage * deviceTypesPerPage)
+    } else {
+      return deviceTypes.slice(
+        (deviceTypePage - 1) * deviceTypesPerPage,
+        deviceTypePage * deviceTypesPerPage
+      )
+    }
+  }, [deviceTypes, deviceTypePage, deviceTypesPerPage, isMobile])
 
   // Reset pagination when data changes
   useEffect(() => {
@@ -205,11 +215,19 @@ export function DevicesPage() {
     }
   }, [activeTab])
 
-  // Paginated data
-  const paginatedDevices = devices.slice(
-    (devicePage - 1) * devicesPerPage,
-    devicePage * devicesPerPage
-  )
+  // Paginated devices
+  // On mobile: show cumulative data (all pages up to current)
+  // On desktop: show only current page
+  const paginatedDevices = useMemo(() => {
+    if (isMobile) {
+      return devices.slice(0, devicePage * devicesPerPage)
+    } else {
+      return devices.slice(
+        (devicePage - 1) * devicesPerPage,
+        devicePage * devicesPerPage
+      )
+    }
+  }, [devices, devicePage, devicesPerPage, isMobile])
 
   // Dialog states
   const [discoveryOpen, setDiscoveryOpen] = useState(false)
@@ -637,29 +655,47 @@ export function DevicesPage() {
     <PageLayout
       title={deviceDetailView ? undefined : t('devices:title')}
       subtitle={deviceDetailView ? undefined : t('devices:subtitle')}
-      footer={
-        !deviceDetailView && activeTab === 'devices' && devices.length > devicesPerPage ? (
-          <Pagination
-            total={devices.length}
-            pageSize={devicesPerPage}
-            currentPage={devicePage}
-            onPageChange={setDevicePage}
-          />
-        ) : !deviceDetailView && activeTab === 'types' && deviceTypes.length > deviceTypesPerPage ? (
-          <Pagination
-            total={deviceTypes.length}
-            pageSize={deviceTypesPerPage}
-            currentPage={deviceTypePage}
-            onPageChange={setDeviceTypePage}
-          />
-        ) : !deviceDetailView && activeTab === 'drafts' && draftsCount > draftsPerPage ? (
-          <Pagination
-            total={draftsCount}
-            pageSize={draftsPerPage}
-            currentPage={draftPage}
-            onPageChange={setDraftPage}
-          />
-        ) : undefined
+      hideFooterOnMobile
+      actions={
+        !deviceDetailView && (
+          <>
+            {activeTab === 'devices' && (
+              <>
+                <Button size="sm" onClick={() => setAddDeviceDialogOpen(true)}>
+                  {t('devices:addDevice')}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setDiscoveryOpen(true)}>
+                  {t('devices:localNetworkScan')}
+                </Button>
+              </>
+            )}
+            {activeTab === 'types' && (
+              <>
+                <Button size="sm" variant="outline" onClick={handleDeviceTypeImportClick} disabled={importingDeviceType}>
+                  <Upload className="h-4 w-4 mr-1" />
+                  {t('common:import')}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setCloudImportOpen(true)}>
+                  <Cloud className="h-4 w-4 mr-1" />
+                  {t('devices:cloud.fromCloud')}
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleDeviceTypeExportAll} disabled={deviceTypes.length === 0}>
+                  <Download className="h-4 w-4 mr-1" />
+                  {t('common:export')} All
+                </Button>
+                <Button size="sm" onClick={() => setAddDeviceTypeOpen(true)}>
+                  {t('devices:addDeviceType')}
+                </Button>
+              </>
+            )}
+            {activeTab === 'drafts' && (
+              <Button size="sm" variant="outline" onClick={openOnboardConfigDialog}>
+                <Settings className="h-4 w-4 mr-1" />
+                {t('devices:pending.config')}
+              </Button>
+            )}
+          </>
+        )
       }
     >
       {deviceDetailView ? (
@@ -697,57 +733,6 @@ export function DevicesPage() {
           ]}
           activeTab={activeTab}
           onTabChange={(v) => handleTabChange(v as DeviceTabValue)}
-          actions={
-            activeTab === 'devices'
-              ? [
-                  {
-                    label: t('devices:addDevice'),
-                    onClick: () => setAddDeviceDialogOpen(true),
-                  },
-                  {
-                    label: t('devices:localNetworkScan'),
-                    variant: 'outline',
-                    onClick: () => setDiscoveryOpen(true),
-                  },
-                ]
-              : activeTab === 'types'
-              ? [
-                  {
-                    label: t('common:import'),
-                    icon: <Upload className="h-4 w-4" />,
-                    variant: 'outline',
-                    onClick: handleDeviceTypeImportClick,
-                    disabled: importingDeviceType,
-                  },
-                  {
-                    label: t('devices:cloud.fromCloud'),
-                    icon: <Cloud className="h-4 w-4" />,
-                    variant: 'outline',
-                    onClick: () => setCloudImportOpen(true),
-                  },
-                  {
-                    label: t('common:export') + ' All',
-                    icon: <Download className="h-4 w-4" />,
-                    variant: 'outline',
-                    onClick: handleDeviceTypeExportAll,
-                    disabled: deviceTypes.length === 0,
-                  },
-                  {
-                    label: t('devices:addDeviceType'),
-                    onClick: () => setAddDeviceTypeOpen(true),
-                  },
-                ]
-              : activeTab === 'drafts'
-              ? [
-                  {
-                    label: t('devices:pending.config'),
-                    icon: <Settings className="h-4 w-4" />,
-                    variant: 'outline',
-                    onClick: openOnboardConfigDialog,
-                  },
-                ]
-              : []
-          }
         >
           {/* Devices Tab */}
           <PageTabsContent value="devices" activeTab={activeTab}>
@@ -785,6 +770,17 @@ export function DevicesPage() {
                 />
               }
             />
+            {/* Pagination for devices */}
+            {devices.length > devicesPerPage && (
+              <div className="mt-4">
+                <Pagination
+                  total={devices.length}
+                  pageSize={devicesPerPage}
+                  currentPage={devicePage}
+                  onPageChange={setDevicePage}
+                />
+              </div>
+            )}
           </PageTabsContent>
 
           {/* Device Types Tab */}
@@ -811,6 +807,17 @@ export function DevicesPage() {
                 />
               }
             />
+            {/* Pagination for device types */}
+            {deviceTypes.length > deviceTypesPerPage && (
+              <div className="mt-4">
+                <Pagination
+                  total={deviceTypes.length}
+                  pageSize={deviceTypesPerPage}
+                  currentPage={deviceTypePage}
+                  onPageChange={setDeviceTypePage}
+                />
+              </div>
+            )}
           </PageTabsContent>
 
           {/* Draft Devices Tab (Auto-onboarding) */}
@@ -825,6 +832,17 @@ export function DevicesPage() {
                 fetchDeviceTypes()
               }}
             />
+            {/* Pagination for draft devices */}
+            {draftsCount > draftsPerPage && (
+              <div className="mt-4">
+                <Pagination
+                  total={draftsCount}
+                  pageSize={draftsPerPage}
+                  currentPage={draftPage}
+                  onPageChange={setDraftPage}
+                />
+              </div>
+            )}
           </PageTabsContent>
         </PageTabs>
       )}

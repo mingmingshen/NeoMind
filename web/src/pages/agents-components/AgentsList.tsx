@@ -2,8 +2,9 @@
  * Agents List - Unified card-based table design
  */
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Switch } from "@/components/ui/switch"
+import { useIsMobile } from "@/hooks/useMobile"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -62,12 +63,23 @@ export function AgentsList({
 }: AgentsListProps) {
   const { t } = useTranslation(['common', 'agents'])
   const [page, setPage] = useState(1)
+  const isMobile = useIsMobile()
 
   // Reset pagination when data changes
   const totalPages = Math.ceil(agents.length / ITEMS_PER_PAGE) || 1
-  const startIndex = (page - 1) * ITEMS_PER_PAGE
-  const endIndex = startIndex + ITEMS_PER_PAGE
-  const paginatedAgents = agents.slice(startIndex, endIndex)
+
+  // On mobile: show cumulative data (all pages up to current)
+  // On desktop: show only current page
+  const paginatedAgents = useMemo(() => {
+    if (isMobile) {
+      return agents.slice(0, page * ITEMS_PER_PAGE)
+    } else {
+      const startIndex = (page - 1) * ITEMS_PER_PAGE
+      return agents.slice(startIndex, startIndex + ITEMS_PER_PAGE)
+    }
+  }, [agents, page, isMobile])
+
+  const startIndex = isMobile ? 0 : (page - 1) * ITEMS_PER_PAGE
 
   return (
     <>

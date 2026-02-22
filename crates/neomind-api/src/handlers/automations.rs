@@ -31,6 +31,10 @@ pub struct AutomationFilter {
     pub enabled: Option<bool>,
     /// Search in name/description
     pub search: Option<String>,
+    /// Pagination: limit number of results (default: 50, max: 1000)
+    pub limit: Option<usize>,
+    /// Pagination: skip N results (default: 0)
+    pub offset: Option<usize>,
 }
 
 /// Automation type filter.
@@ -57,8 +61,22 @@ impl From<AutomationTypeFilter> for Option<AutomationType> {
 pub struct AutomationListResponse {
     /// List of automations
     pub automations: Vec<AutomationDto>,
-    /// Total count
+    /// Number of items in this page
     pub count: usize,
+    /// Total number of items (before pagination)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total: Option<usize>,
+    /// Pagination metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pagination: Option<PaginationMeta>,
+}
+
+/// Pagination metadata.
+#[derive(Debug, Serialize)]
+pub struct PaginationMeta {
+    pub limit: usize,
+    pub offset: usize,
+    pub has_more: bool,
 }
 
 /// Automation DTO for API responses.
@@ -176,7 +194,9 @@ impl From<Automation> for AutomationDto {
 
 /// List all automations.
 ///
-/// GET /api/automations?type=transform|rule|all&enabled=true|false&search=query
+/// GET /api/automations?type=transform|rule|all&enabled=true|false&search=query&limit=50&offset=0
+///
+/// Performance optimization: Supports pagination to avoid loading all automations into memory.
 pub async fn list_automations_handler(
     Query(filter): Query<AutomationFilter>,
     State(state): State<ServerState>,
@@ -185,8 +205,14 @@ pub async fn list_automations_handler(
         return ok(AutomationListResponse {
             automations: Vec::new(),
             count: 0,
+            total: None,
+            pagination: None,
         });
     };
+
+    // Enforce reasonable pagination limits
+    let limit = filter.limit.unwrap_or(50).min(1000); // Default 50, max 1000
+    let offset = filter.offset.unwrap_or(0);
 
     let automations = store.list_automations().await.unwrap_or_default();
 
@@ -241,9 +267,37 @@ pub async fn list_automations_handler(
     // Sort by updated_at descending
     filtered.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
 
+    let total = filtered.len();
+    let has_more = offset + limit < total;
+
+    // Apply pagination
+    let paginated: Vec<_> = filtered
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect();
+
+    let count = paginated.len();
+
+    // Include pagination metadata only when pagination is explicitly requested
+    let (total_res, pagination_res) = if filter.limit.is_some() || filter.offset.is_some() {
+        (
+            Some(total),
+            Some(PaginationMeta {
+                limit,
+                offset,
+                has_more,
+            }),
+        )
+    } else {
+        (None, None)
+    };
+
     ok(AutomationListResponse {
-        count: filtered.len(),
-        automations: filtered,
+        automations: paginated,
+        count,
+        total: total_res,
+        pagination: pagination_res,
     })
 }
 

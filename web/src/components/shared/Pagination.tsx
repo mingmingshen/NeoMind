@@ -1,7 +1,9 @@
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
+import { useIsMobile } from '@/hooks/useMobile'
+import { useWindowScrollLoad } from '@/hooks/useInfiniteScroll'
 
 export interface PaginationProps {
   total: number
@@ -36,12 +38,52 @@ export function Pagination({
   pageSizeOptions = [10, 20, 50, 100],
   onPageSizeChange,
   className,
-}: PaginationProps) {
+  // Mobile infinite scroll props
+  isLoading = false,
+  onLoadMore,
+  hideOnMobile = true, // Hide pagination UI on mobile when using infinite scroll
+}: PaginationProps & { isLoading?: boolean; onLoadMore?: () => void; hideOnMobile?: boolean }) {
   const { t } = useTranslation('common')
+  const isMobile = useIsMobile()
   const totalPages = Math.ceil(total / pageSize)
 
-  if (totalPages <= 1) return null
+  const hasMore = currentPage < totalPages
 
+  // Always call hook (Hooks rule violation if conditional)
+  // Only enable when on mobile with multiple pages
+  const useMobileInfiniteScroll = isMobile && hideOnMobile && totalPages > 1
+  const { showLoadingIndicator } = useWindowScrollLoad({
+    isLoading,
+    hasMore,
+    onLoadMore: onLoadMore || (() => hasMore && onPageChange(currentPage + 1)),
+    enabled: useMobileInfiniteScroll,
+    containerSelector: '[data-page-scroll-container]',
+  })
+
+  // Early return for no pagination needed (only on desktop)
+  if (!useMobileInfiniteScroll && totalPages <= 1) return null
+
+  // Mobile: Show infinite scroll trigger
+  if (useMobileInfiniteScroll) {
+    return (
+      <div className={cn('flex items-center justify-center py-2', className)}>
+        {showLoadingIndicator && hasMore && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>{t('pagination.loading')}</span>
+          </div>
+        )}
+
+        {!hasMore && total > 0 && (
+          <div className="text-sm text-muted-foreground">
+            {t('pagination.noMore')}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Desktop: Show standard pagination
   // Generate page numbers to show
   const getPageNumbers = () => {
     const pages: (number | string)[] = []

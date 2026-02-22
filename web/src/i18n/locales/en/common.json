@@ -229,7 +229,10 @@
   "cancelSelection": "Cancel Selection",
   "pagination": {
     "total": "{{total}} total · Page {{currentPage}}/{{totalPages}}",
-    "perPage": "{{size}} /page"
+    "perPage": "{{size}} /page",
+    "loading": "Loading...",
+    "noMore": "No more items",
+    "noData": "No data"
   },
   "hint": "Hint",
   "actionFailed": "Action failed",

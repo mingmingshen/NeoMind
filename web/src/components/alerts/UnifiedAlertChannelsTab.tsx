@@ -9,6 +9,7 @@ import {
   Terminal,
   Database,
   Puzzle,
+  Trash2,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -486,13 +487,9 @@ export function UnifiedAlertChannelsTab({
                 <Card
                   key={instance.id}
                   className={cn(
-                    "transition-all duration-200 cursor-pointer hover:shadow-md",
+                    "transition-all duration-200 hover:shadow-md",
                     instance.enabled && "border-green-500"
                   )}
-                  onClick={() => {
-                    setEditingInstance(instance)
-                    setConfigDialogOpen(true)
-                  }}
                 >
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
@@ -506,6 +503,36 @@ export function UnifiedAlertChannelsTab({
                         <CardDescription className="text-xs">
                           {instance.plugin_type}
                         </CardDescription>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {onTestChannel && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={async () => {
+                              const result = await onTestChannel(instance.id)
+                              setTestResults(prev => ({
+                                ...prev,
+                                [instance.id]: result,
+                              }))
+                            }}
+                            title={t('plugins:test')}
+                          >
+                            <TestTube className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {onDeleteChannel && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                            onClick={() => handleDelete(instance.id)}
+                            title={t('plugins:delete')}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </CardHeader>

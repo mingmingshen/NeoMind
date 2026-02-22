@@ -4,11 +4,21 @@ use axum::extract::{Path, Query, State};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::json;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use crate::handlers::{
     common::{ok, HandlerResult},
     ServerState,
 };
+
+/// Transform-generated metric namespaces.
+/// Cached for performance - avoids recreating this array on every request.
+static TRANSFORM_NAMESPACES: OnceLock<[&str; 5]> = OnceLock::new();
+
+/// Get the transform namespaces array.
+fn get_transform_namespaces() -> &'static [&'static str; 5] {
+    TRANSFORM_NAMESPACES.get_or_init(|| ["transform.", "virtual.", "computed.", "derived.", "aggregated."])
+}
 
 /// Get device telemetry data (time series).
 ///
@@ -69,13 +79,7 @@ pub async fn get_device_telemetry_handler(
                     template.metrics.iter().map(|m| m.name.clone()).collect();
 
                 // Transform-generated metric namespaces (with dot notation)
-                let transform_namespaces = [
-                    "transform.",
-                    "virtual.",
-                    "computed.",
-                    "derived.",
-                    "aggregated.",
-                ];
+                let transform_namespaces = get_transform_namespaces();
 
                 // Add only Transform-generated virtual metrics from storage (exclude auto-extracted)
                 if let Ok(storage_metrics) = state.devices.telemetry.list_metrics(&device_id).await
@@ -127,89 +131,100 @@ pub async fn get_device_telemetry_handler(
     }
 
     // Query time series data for each metric
-    let mut telemetry_data: HashMap<String, serde_json::Value> = HashMap::new();
-
-    for metric_name in &target_metrics {
-        let points = match aggregate.as_deref() {
-            Some(_agg_type) => {
-                // Aggregated query - aggregate function returns AggregatedData directly
-                match state
-                    .devices
-                    .telemetry
-                    .aggregate(&device_id, metric_name, start, end)
-                    .await
-                {
-                    Ok(agg) => {
-                        vec![json!({
-                            "timestamp": agg.start_timestamp,
-                            "value": agg.avg,
-                            "count": agg.count,
-                            "min": agg.min,
-                            "max": agg.max,
-                            "sum": agg.sum,
-                        })]
-                    }
-                    Err(_) => vec![],
-                }
-            }
-            None => {
-                // Raw query - use DeviceService first; fallback to time_series_storage when
-                // device is not in registry (e.g. auto-discovered) or query_telemetry fails
-                match state
-                    .devices
-                    .service
-                    .query_telemetry(&device_id, metric_name, Some(start), Some(end))
-                    .await
-                {
-                    Ok(points) => {
-                        let mut result = points
-                            .into_iter()
-                            .take(limit)
-                            .map(|(timestamp, value)| {
-                                json!({
-                                    "timestamp": timestamp,
-                                    "value": metric_value_to_json(&value),
-                                })
-                            })
-                            .collect::<Vec<_>>();
-                        result
-                            .sort_by(|a, b| b["timestamp"].as_i64().cmp(&a["timestamp"].as_i64()));
-                        result
-                    }
-                    Err(_) => {
-                        // Fallback: query time_series_storage directly so historical data
-                        // is available even when device is not in registry
-                        match state
-                            .devices
-                            .telemetry
-                            .query(&device_id, metric_name, start, end)
-                            .await
-                        {
-                            Ok(points) => {
-                                let mut result = points
-                                    .into_iter()
-                                    .take(limit)
-                                    .map(|p| {
-                                        json!({
-                                            "timestamp": p.timestamp,
-                                            "value": metric_value_to_json(&p.value),
-                                        })
-                                    })
-                                    .collect::<Vec<_>>();
-                                result.sort_by(|a, b| {
-                                    b["timestamp"].as_i64().cmp(&a["timestamp"].as_i64())
-                                });
-                                result
-                            }
-                            Err(_) => vec![],
+    //
+    // Performance optimization: Use concurrent queries instead of sequential loop.
+    // This reduces the total query time from O(n * query_time) to O(max_query_time).
+    let telemetry_data: HashMap<String, serde_json::Value> = if aggregate.is_some() {
+        // Aggregate queries - run concurrently
+        let aggregate_futures: Vec<_> = target_metrics
+            .iter()
+            .map(|metric_name| {
+                let telemetry = state.devices.telemetry.clone();
+                let device_id = device_id.clone();
+                let metric_name = metric_name.clone();
+                async move {
+                    let points = match telemetry
+                        .aggregate(&device_id, &metric_name, start, end)
+                        .await
+                    {
+                        Ok(agg) => {
+                            vec![json!({
+                                "timestamp": agg.start_timestamp,
+                                "value": agg.avg,
+                                "count": agg.count,
+                                "min": agg.min,
+                                "max": agg.max,
+                                "sum": agg.sum,
+                            })]
                         }
-                    }
+                        Err(_) => vec![],
+                    };
+                    (metric_name, json!(points))
                 }
-            }
-        };
+            })
+            .collect();
 
-        telemetry_data.insert(metric_name.to_string(), json!(points));
-    }
+        let results = futures::future::join_all(aggregate_futures).await;
+        results.into_iter().collect()
+    } else {
+        // Raw queries - run concurrently
+        let query_futures: Vec<_> = target_metrics
+            .iter()
+            .map(|metric_name| {
+                let telemetry = state.devices.telemetry.clone();
+                let device_service = state.devices.service.clone();
+                let device_id = device_id.clone();
+                let metric_name = metric_name.clone();
+                async move {
+                    let points = match device_service
+                        .query_telemetry(&device_id, &metric_name, Some(start), Some(end))
+                        .await
+                    {
+                        Ok(points) => {
+                            let mut result = points
+                                .into_iter()
+                                .take(limit)
+                                .map(|(timestamp, value)| {
+                                    json!({
+                                        "timestamp": timestamp,
+                                        "value": metric_value_to_json(&value),
+                                    })
+                                })
+                                .collect::<Vec<_>>();
+                            result.sort_by(|a, b| b["timestamp"].as_i64().cmp(&a["timestamp"].as_i64()));
+                            result
+                        }
+                        Err(_) => {
+                            // Fallback to direct telemetry query
+                            match telemetry.query(&device_id, &metric_name, start, end).await {
+                                Ok(points) => {
+                                    let mut result = points
+                                        .into_iter()
+                                        .take(limit)
+                                        .map(|p| {
+                                            json!({
+                                                "timestamp": p.timestamp,
+                                                "value": metric_value_to_json(&p.value),
+                                            })
+                                        })
+                                        .collect::<Vec<_>>();
+                                    result.sort_by(|a, b| {
+                                        b["timestamp"].as_i64().cmp(&a["timestamp"].as_i64())
+                                    });
+                                    result
+                                }
+                                Err(_) => vec![],
+                            }
+                        }
+                    };
+                    (metric_name, json!(points))
+                }
+            })
+            .collect();
+
+        let results = futures::future::join_all(query_futures).await;
+        results.into_iter().collect()
+    };
 
     ok(json!({
         "device_id": device_id,
@@ -277,13 +292,7 @@ pub async fn get_device_telemetry_summary_handler(
         std::collections::HashSet::new();
 
     // Transform-generated metric namespaces (with dot notation)
-    let transform_namespaces = [
-        "transform.",
-        "virtual.",
-        "computed.",
-        "derived.",
-        "aggregated.",
-    ];
+    let transform_namespaces = get_transform_namespaces();
 
     if let Ok(all_storage_metrics) = state.devices.telemetry.list_metrics(&device_id).await {
         // Get template metric names for comparison

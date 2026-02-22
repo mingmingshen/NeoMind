@@ -200,9 +200,16 @@ impl HttpAdapter {
     ) -> Self {
         let (event_tx, _) = broadcast::channel(1000);
 
-        // Build HTTP client with default settings
+        // Build HTTP client with performance optimizations
+        //
+        // Performance improvements:
+        // - Enable connection pooling (pool_max_idle_per_host)
+        // - Set reasonable timeouts to avoid hanging requests
         let client = Client::builder()
-            .pool_max_idle_per_host(0)
+            .pool_max_idle_per_host(10) // Keep up to 10 idle connections per host
+            .pool_idle_timeout(Duration::from_secs(30)) // Close idle connections after 30s
+            .connect_timeout(Duration::from_secs(10)) // Connection timeout
+            .timeout(Duration::from_secs(30)) // Total request timeout
             .build()
             .unwrap_or_default();
 
@@ -377,6 +384,9 @@ impl HttpAdapter {
     }
 
     /// Run the polling loop.
+    ///
+    /// Performance optimization: Calculates sleep duration based on next polling task
+    /// instead of fixed 1-second intervals. Reduces CPU usage when no tasks need polling.
     async fn polling_loop(self: Arc<Self>) {
         let running = self.running.clone();
         let tasks = self.polling_tasks.clone();
@@ -386,7 +396,9 @@ impl HttpAdapter {
             let mut tasks_to_poll = Vec::new();
             let now = Instant::now();
 
-            // Find tasks that need polling
+            // Find tasks that need polling and calculate next sleep duration
+            let mut next_sleep_duration = Duration::from_secs(1); // Default sleep
+
             for task in task_guard.iter_mut() {
                 if !task.is_running {
                     continue;
@@ -396,6 +408,12 @@ impl HttpAdapter {
                     tasks_to_poll.push((task.device_id.clone(), task.config.clone()));
                     task.last_poll = now;
                     task.next_poll = now + Duration::from_secs(task.config.poll_interval);
+                } else {
+                    // Calculate time until this task needs polling
+                    let time_until_next = task.next_poll.saturating_duration_since(now);
+                    if time_until_next < next_sleep_duration {
+                        next_sleep_duration = time_until_next;
+                    }
                 }
             }
             drop(task_guard);
@@ -460,7 +478,10 @@ impl HttpAdapter {
             }
 
             // Sleep before next check
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            // Use dynamic sleep duration based on next task timing
+            // Minimum 100ms, maximum 10 seconds
+            let sleep_duration = next_sleep_duration.max(Duration::from_millis(100)).min(Duration::from_secs(10));
+            tokio::time::sleep(sleep_duration).await;
         }
     }
 }

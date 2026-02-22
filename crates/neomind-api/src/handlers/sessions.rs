@@ -435,6 +435,9 @@ fn default_page_size() -> u32 {
 }
 
 /// List all sessions with pagination.
+///
+/// Performance optimization: Uses lightweight session info (without message count/preview)
+/// to avoid N+1 database queries. For detailed session info, use individual session endpoints.
 pub async fn list_sessions_handler(
     State(state): State<ServerState>,
     Query(query): Query<ListSessionsQuery>,
@@ -444,7 +447,8 @@ pub async fn list_sessions_handler(
         page_size: query.page_size.clamp(1, 100),
     };
 
-    let all_sessions = state.agents.session_manager.list_sessions_with_info().await;
+    // Use lightweight version to avoid loading message count/preview for every session
+    let all_sessions = state.agents.session_manager.list_sessions_with_info_light().await;
     let total_count = all_sessions.len() as u32;
 
     // Calculate pagination
