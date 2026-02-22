@@ -19,6 +19,8 @@ export interface PageLayoutProps {
   borderedHeader?: boolean
   /** Whether to hide footer on mobile (for infinite scroll) */
   hideFooterOnMobile?: boolean
+  /** Whether to fix actions bar on mobile (don't scroll with content) */
+  fixedActionsOnMobile?: boolean
 }
 
 const maxWidthClass = {
@@ -56,6 +58,7 @@ export function PageLayout({
   className,
   borderedHeader = false,
   hideFooterOnMobile = false,
+  fixedActionsOnMobile = false,
 }: PageLayoutProps) {
   const isMobile = useIsMobile()
 

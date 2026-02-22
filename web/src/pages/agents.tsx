@@ -406,14 +406,6 @@ export function AgentsPage() {
     <PageLayout
       title={tAgent('title')}
       subtitle={tAgent('description')}
-      actions={
-        agents.length > 0 && (
-          <Button size="sm" onClick={handleCreate}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            <span className="text-sm">{tAgent('createAgent')}</span>
-          </Button>
-        )
-      }
     >
       {loading ? (
         <div className="flex items-center justify-center py-20">
@@ -432,7 +424,19 @@ export function AgentsPage() {
           />
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <>
+          {/* Top action button - only show when there are agents */}
+          <div className="mb-4 flex justify-start">
+            <Button
+              size="sm"
+              onClick={handleCreate}
+              className="h-9"
+            >
+              <Plus className="h-4 w-4 mr-1.5" />
+              <span className="text-sm">{tAgent('createAgent')}</span>
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {agentsWithExecutingStatus.map((agent) => (
             <AgentCard
               key={agent.id}
@@ -445,6 +449,7 @@ export function AgentsPage() {
             />
           ))}
         </div>
+        </>
       )}
 
       {/* Agent Editor Full Screen */}

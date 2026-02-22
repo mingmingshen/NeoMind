@@ -593,15 +593,29 @@ export function AutomationPage() {
       title={tAuto('title')}
       subtitle={tAuto('pageDescription')}
       hideFooterOnMobile
-      actions={
-        <>
-          <Button size="sm" onClick={handleCreate}>
-            {tCommon('create')}
-          </Button>
-          <Button size="sm" variant="outline" onClick={loadItems} disabled={loading}>
-            {tCommon('refresh')}
-          </Button>
-          {activeTab === 'rules' && (
+    >
+      {/* Tabs with Actions */}
+      <PageTabs
+        tabs={[
+          { value: 'rules', label: tAuto('tabs.rules'), icon: <Sparkles className="h-4 w-4" /> },
+          { value: 'transforms', label: tAuto('tabs.transforms'), icon: <GitBranch className="h-4 w-4" /> },
+        ]}
+        activeTab={activeTab}
+        onTabChange={(v) => handleTabChange(v as AutomationTab)}
+        actions={[
+          {
+            label: tCommon('create'),
+            onClick: handleCreate,
+          },
+          {
+            label: tCommon('refresh'),
+            variant: 'outline',
+            onClick: loadItems,
+            disabled: loading,
+          },
+        ]}
+        actionsExtra={
+          activeTab === 'rules' ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-9 gap-1">
@@ -620,8 +634,7 @@ export function AutomationPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-          {activeTab === 'transforms' && (
+          ) : activeTab === 'transforms' ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-9 gap-1">
@@ -640,18 +653,8 @@ export function AutomationPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-        </>
-      }
-    >
-      {/* Tabs with Actions */}
-      <PageTabs
-        tabs={[
-          { value: 'rules', label: tAuto('tabs.rules'), icon: <Sparkles className="h-4 w-4" /> },
-          { value: 'transforms', label: tAuto('tabs.transforms'), icon: <GitBranch className="h-4 w-4" /> },
-        ]}
-        activeTab={activeTab}
-        onTabChange={(v) => handleTabChange(v as AutomationTab)}
+          ) : null
+        }
       >
         {/* Rules Tab */}
         <PageTabsContent value="rules" activeTab={activeTab}>

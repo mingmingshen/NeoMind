@@ -2,6 +2,7 @@ import { ReactNode } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useIsMobile } from '@/hooks/useMobile'
 
 export interface TabAction {
   label: string
@@ -51,37 +52,44 @@ export function PageTabs({
   children,
   mobileBottomNav = true,
 }: PageTabsProps) {
+  const isMobile = useIsMobile()
+
   // Mobile bottom navigation variant
   if (mobileBottomNav) {
     return (
       <Tabs value={activeTab} onValueChange={onTabChange} className={className}>
-        {/* Desktop: Top tabs bar */}
-        <div className="hidden md:flex mb-4 shrink-0 flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <TabsList
-            className={cn(
-              'inline-flex w-auto flex-wrap overflow-visible rounded-md bg-muted p-0.5',
-              tabsClassName
-            )}
-          >
-            {tabs.map((tab) => (
-              <TabsTrigger
-                key={tab.value}
-                value={tab.value}
-                disabled={tab.disabled}
-                className={cn(
-                  'inline-flex items-center justify-center gap-2 rounded-sm px-4 py-1.5 h-9 text-sm font-medium whitespace-nowrap transition-all',
-                  'data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm',
-                  'data-[state=inactive]:text-muted-foreground hover:text-foreground'
-                )}
-              >
-                {tab.icon && <span className="shrink-0 h-4 w-4">{tab.icon}</span>}
-                <span>{tab.label}</span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
+        {/* Desktop: Top tabs bar - fixed on mobile */}
+        <div className={cn(
+          "mb-4 shrink-0 flex-col gap-3 md:flex md:flex-row md:items-center md:justify-between",
+          "md:mb-4 sticky top-0 bg-background z-10 py-2 -mx-4 px-4 md:mx-0 md:px-0 md:py-0"
+        )}>
+          <div className="hidden md:flex w-full">
+            <TabsList
+              className={cn(
+                'inline-flex w-auto flex-wrap overflow-visible rounded-md bg-muted p-0.5',
+                tabsClassName
+              )}
+            >
+              {tabs.map((tab) => (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  disabled={tab.disabled}
+                  className={cn(
+                    'inline-flex items-center justify-center gap-2 rounded-sm px-4 py-1.5 h-9 text-sm font-medium whitespace-nowrap transition-all',
+                    'data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm',
+                    'data-[state=inactive]:text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {tab.icon && <span className="shrink-0 h-4 w-4">{tab.icon}</span>}
+                  <span>{tab.label}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
 
           {actions.length > 0 && (
-            <div className="flex shrink-0 flex-wrap gap-2">
+            <div className="hidden md:flex shrink-0 flex-wrap gap-2">
               {actions.map((action) => (
                 <Button
                   key={action.label}
@@ -104,27 +112,31 @@ export function PageTabs({
           )}
         </div>
 
-        {/* Mobile: Top actions bar */}
-        <div className="md:hidden mb-3 flex shrink-0 flex-wrap justify-start gap-2">
-          {actions.map((action) => (
-            <Button
-              key={action.label}
-              variant={action.variant || 'default'}
-              size="sm"
-              onClick={action.onClick}
-              disabled={action.disabled || action.loading}
-              className="h-9 text-xs px-2.5 sm:px-3"
-            >
-              {action.loading ? (
-                <span className="mr-1.5 h-4 w-4 animate-spin">⟳</span>
-              ) : action.icon ? (
-                <span className="mr-1.5 shrink-0 h-4 w-4">{action.icon}</span>
-              ) : null}
-              <span className="whitespace-nowrap">{action.label}</span>
-            </Button>
-          ))}
-          {actionsExtra}
-        </div>
+        {/* Mobile: Top actions bar - fixed */}
+        {(actions.length > 0 || actionsExtra) && (
+          <div className="md:hidden sticky top-0 bg-background z-10 py-2 -mx-4 px-4 border-b border-border/40">
+            <div className="flex shrink-0 flex-wrap justify-start gap-2">
+              {actions.map((action) => (
+                <Button
+                  key={action.label}
+                  variant={action.variant || 'default'}
+                  size="sm"
+                  onClick={action.onClick}
+                  disabled={action.disabled || action.loading}
+                  className="h-9 text-xs px-2.5 sm:px-3"
+                >
+                  {action.loading ? (
+                    <span className="mr-1.5 h-4 w-4 animate-spin">⟳</span>
+                  ) : action.icon ? (
+                    <span className="mr-1.5 shrink-0 h-4 w-4">{action.icon}</span>
+                  ) : null}
+                  <span className="whitespace-nowrap">{action.label}</span>
+                </Button>
+              ))}
+              {actionsExtra}
+            </div>
+          </div>
+        )}
 
         {/* Content area - add bottom padding on mobile for bottom nav */}
         <div className="md:mb-0 mb-16">

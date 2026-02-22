@@ -472,23 +472,17 @@ export default function MessagesPage() {
       title={t('messages.title')}
       subtitle={t('messages.description')}
       hideFooterOnMobile
-      actions={
-        <>
-          {activeTab === 'messages' && (
-            <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
-              {t('messages.create')}
-            </Button>
-          )}
-          <Button size="sm" variant="outline" onClick={activeTab === 'messages' ? fetchMessages : fetchChannels} disabled={loading}>
-            {t('refresh')}
-          </Button>
-        </>
-      }
     >
       <PageTabs
         tabs={tabs}
         activeTab={activeTab}
         onTabChange={(v) => handleTabChange(v as TabValue)}
+        actions={[
+          ...(activeTab === 'messages' ? [
+            { label: t('messages.create'), onClick: () => setCreateDialogOpen(true) },
+          ] : []),
+          { label: t('refresh'), variant: 'outline' as const, onClick: activeTab === 'messages' ? fetchMessages : fetchChannels, disabled: loading },
+        ]}
       >
         {/* Messages Tab */}
         <PageTabsContent value="messages" activeTab={activeTab} className="flex flex-col overflow-hidden">

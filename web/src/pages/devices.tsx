@@ -656,47 +656,6 @@ export function DevicesPage() {
       title={deviceDetailView ? undefined : t('devices:title')}
       subtitle={deviceDetailView ? undefined : t('devices:subtitle')}
       hideFooterOnMobile
-      actions={
-        !deviceDetailView && (
-          <>
-            {activeTab === 'devices' && (
-              <>
-                <Button size="sm" onClick={() => setAddDeviceDialogOpen(true)}>
-                  {t('devices:addDevice')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setDiscoveryOpen(true)}>
-                  {t('devices:localNetworkScan')}
-                </Button>
-              </>
-            )}
-            {activeTab === 'types' && (
-              <>
-                <Button size="sm" variant="outline" onClick={handleDeviceTypeImportClick} disabled={importingDeviceType}>
-                  <Upload className="h-4 w-4 mr-1" />
-                  {t('common:import')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setCloudImportOpen(true)}>
-                  <Cloud className="h-4 w-4 mr-1" />
-                  {t('devices:cloud.fromCloud')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={handleDeviceTypeExportAll} disabled={deviceTypes.length === 0}>
-                  <Download className="h-4 w-4 mr-1" />
-                  {t('common:export')} All
-                </Button>
-                <Button size="sm" onClick={() => setAddDeviceTypeOpen(true)}>
-                  {t('devices:addDeviceType')}
-                </Button>
-              </>
-            )}
-            {activeTab === 'drafts' && (
-              <Button size="sm" variant="outline" onClick={openOnboardConfigDialog}>
-                <Settings className="h-4 w-4 mr-1" />
-                {t('devices:pending.config')}
-              </Button>
-            )}
-          </>
-        )
-      }
     >
       {deviceDetailView ? (
         // Device Detail View
@@ -733,6 +692,57 @@ export function DevicesPage() {
           ]}
           activeTab={activeTab}
           onTabChange={(v) => handleTabChange(v as DeviceTabValue)}
+          actions={
+            activeTab === 'devices'
+              ? [
+                  {
+                    label: t('devices:addDevice'),
+                    onClick: () => setAddDeviceDialogOpen(true),
+                  },
+                  {
+                    label: t('devices:localNetworkScan'),
+                    variant: 'outline',
+                    onClick: () => setDiscoveryOpen(true),
+                  },
+                ]
+              : activeTab === 'types'
+              ? [
+                  {
+                    label: t('common:import'),
+                    icon: <Upload className="h-4 w-4" />,
+                    variant: 'outline',
+                    onClick: handleDeviceTypeImportClick,
+                    disabled: importingDeviceType,
+                  },
+                  {
+                    label: t('devices:cloud.fromCloud'),
+                    icon: <Cloud className="h-4 w-4" />,
+                    variant: 'outline',
+                    onClick: () => setCloudImportOpen(true),
+                  },
+                  {
+                    label: t('common:export') + ' All',
+                    icon: <Download className="h-4 w-4" />,
+                    variant: 'outline',
+                    onClick: handleDeviceTypeExportAll,
+                    disabled: deviceTypes.length === 0,
+                  },
+                  {
+                    label: t('devices:addDeviceType'),
+                    onClick: () => setAddDeviceTypeOpen(true),
+                  },
+                ]
+              : activeTab === 'drafts'
+              ? [
+                  {
+                    label: t('devices:pending.config'),
+                    icon: <Settings className="h-4 w-4" />,
+                    variant: 'outline',
+                    onClick: openOnboardConfigDialog,
+                  },
+                ]
+              : []
+          }
         >
           {/* Devices Tab */}
           <PageTabsContent value="devices" activeTab={activeTab}>
