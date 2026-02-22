@@ -476,6 +476,4 @@ END
 
 ## 许可证
 
-MIT OR Apache-2.0
-
-详见 [LICENSE](LICENSE) 全文。
+Apache-2.0,详见 [LICENSE](LICENSE) 全文。

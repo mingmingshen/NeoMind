@@ -135,6 +135,13 @@ export function ResponsiveTable({
                       rowClass
                     )}
                     onClick={() => onRowClick?.(rowData)}
+                    onTouchEnd={(e) => {
+                      if (onRowClick) {
+                        e.preventDefault()
+                        onRowClick(rowData)
+                      }
+                    }}
+                    style={{ touchAction: onRowClick ? 'manipulation' : undefined }}
                   >
                     {columns.map((column) => (
                       <td

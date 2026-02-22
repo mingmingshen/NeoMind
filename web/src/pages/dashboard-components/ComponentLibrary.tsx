@@ -78,9 +78,27 @@ function ComponentItem({ meta, onAdd, t }: ComponentItemProps) {
   const name = translationKeys ? t(translationKeys.name) : meta.name
   const description = translationKeys ? t(translationKeys.description) : meta.description
 
+  // Unified handler for both mouse and touch
+  const handleAdd = () => {
+    onAdd()
+  }
+
+  // Mouse click handler - don't prevent default to allow normal click behavior
+  const handleMouseClick = () => {
+    handleAdd()
+  }
+
+  // Touch end handler for mobile - prevent default to avoid double-firing with click
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    e.preventDefault()
+    handleAdd()
+  }
+
   return (
     <button
-      onClick={onAdd}
+      onClick={handleMouseClick}
+      onTouchEnd={handleTouchEnd}
+      onTouchStart={() => {}}
       className={cn(
         'w-full flex items-center gap-3 p-3 rounded-lg',
         'bg-card/50 hover:bg-accent/50',

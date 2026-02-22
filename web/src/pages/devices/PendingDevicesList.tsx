@@ -762,11 +762,16 @@ export function PendingDevicesList({
                         <button
                           key={index}
                           onClick={() => setSelectedSampleIndex(index)}
+                          onTouchEnd={(e) => {
+                            e.preventDefault()
+                            setSelectedSampleIndex(index)
+                          }}
                           className={`w-7 h-7 text-xs rounded ${
                             selectedSampleIndex === index
                               ? 'bg-primary text-primary-foreground'
                               : 'bg-background hover:bg-muted'
                           }`}
+                          style={{ touchAction: 'manipulation' }}
                         >
                           {index + 1}
                         </button>
@@ -855,7 +860,13 @@ export function PendingDevicesList({
                           {suggestedTypes.map((type) => (
                             <div
                               key={type.device_type}
-                              onMouseDown={() => {
+                              onClick={() => {
+                                setSelectedDeviceType(type.device_type)
+                                setTypeInputValue(type.device_type)
+                                setShowTypeDropdown(false)
+                              }}
+                              onTouchEnd={(e) => {
+                                e.preventDefault()
                                 setSelectedDeviceType(type.device_type)
                                 setTypeInputValue(type.device_type)
                                 setShowTypeDropdown(false)
@@ -865,6 +876,7 @@ export function PendingDevicesList({
                                   ? 'bg-primary/10 border-primary'
                                   : 'hover:bg-muted/50 border-transparent'
                               }`}
+                              style={{ touchAction: 'manipulation' }}
                             >
                               <div className="flex items-center justify-between">
                                 <div className="flex-1 min-w-0">

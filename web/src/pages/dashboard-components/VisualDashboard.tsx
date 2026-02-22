@@ -904,12 +904,24 @@ const ComponentWrapper = memo(function ComponentWrapper({
   const handleDuplicateClick = useCallback(() => onDuplicate(component.id), [component.id, onDuplicate])
 
   // Mobile: tap edit button to show edit bar
-  const handleEditButtonClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
+  const handleEditButtonClick = useCallback(() => {
     if (isMobile && editMode && onSelect) {
       onSelect(component)
     }
   }, [isMobile, editMode, onSelect, component])
+
+  // Handle click with stopPropagation for desktop
+  const handleEditButtonMouseEvent = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    handleEditButtonClick()
+  }, [handleEditButtonClick])
+
+  // Handle touch end for mobile - prevent default to avoid ghost clicks
+  const handleEditButtonTouchEvent = useCallback((e: React.TouchEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    handleEditButtonClick()
+  }, [handleEditButtonClick])
 
   const shouldShowActions = editMode && (isHovered || isTouchHovered) && !isMobile
 
@@ -958,15 +970,8 @@ const ComponentWrapper = memo(function ComponentWrapper({
       {/* Mobile edit button - top right corner */}
       {isMobile && editMode && (
         <button
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            handleEditButtonClick(e)
-          }}
-          onTouchEnd={(e) => {
-            e.preventDefault()
-            handleEditButtonClick(e as any)
-          }}
+          onClick={handleEditButtonMouseEvent}
+          onTouchEnd={handleEditButtonTouchEvent}
           className="absolute top-2 right-2 z-50 flex items-center justify-center min-w-[44px] min-h-[44px] rounded-xl bg-background/90 backdrop-blur text-muted-foreground border border-border/50 shadow-sm transition-all duration-200 active:scale-95 cursor-pointer select-none"
           style={{ touchAction: 'manipulation' }}
         >
@@ -1037,6 +1042,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false)
+
+  // Debug log for mobile testing
+  const [debugLog, setDebugLog] = useState<string[]>([])
 
   // Persist sidebar state to localStorage (default to closed on mobile, open on desktop)
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -1321,6 +1329,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
   // Handle adding a component
   const handleAddComponent = (componentType: string) => {
+    console.log('handleAddComponent called with:', componentType)
     const item = getComponentLibrary(t)
       .flatMap(cat => cat.items)
       .find(i => i.id === componentType)
@@ -1519,6 +1528,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     }
 
     addComponent(newComponent)
+    const successMsg = `Added: ${item?.name} at (${x},${y})`
+    console.log(successMsg)
+    setDebugLog((prev) => [...prev.slice(-5), `${new Date().toLocaleTimeString()}: ${successMsg}`])
     setComponentLibraryOpen(false)
   }
 
@@ -4638,20 +4650,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 <SheetContent
                   side="right"
                   className="w-80 sm:w-96 overflow-y-auto"
-                  onClick={(e) => {
-                    // Handle component button clicks via event delegation
-                    const target = e.target as HTMLElement
-                    const button = target.closest('[data-component-item]')
-                    if (button) {
-                      const componentId = button.getAttribute('data-component-item')
-                      if (componentId) {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        console.log('Adding component via delegation:', componentId)
-                        handleAddComponent(componentId)
-                      }
-                    }
-                  }}
                 >
                   <SheetTitle>{t('visualDashboard.componentLibrary')}</SheetTitle>
                   <div className="mt-4 space-y-6 pb-6">
@@ -4664,12 +4662,19 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                         <div className="grid grid-cols-2 gap-2">
                           {category.items.map((item) => {
                             const Icon = item.icon
+
                             return (
                               <button
                                 key={item.id}
                                 type="button"
-                                data-component-item={item.id}
+                                onClick={() => {
+                                  const msg = `CLICK: ${item.id}`
+                                  console.log(msg)
+                                  setDebugLog((prev) => [...prev, `${new Date().toLocaleTimeString()}: ${msg}`])
+                                  handleAddComponent(item.id)
+                                }}
                                 className="h-auto w-full flex flex-col items-start p-3 text-left overflow-hidden rounded-lg border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors min-h-[88px] cursor-pointer active:scale-[0.98] transition-transform"
+                                style={{ touchAction: 'manipulation' }}
                               >
                                 <Icon className="h-4 w-4 mb-2 text-muted-foreground shrink-0" />
                                 <span className="text-xs font-medium w-full text-left">{item.name}</span>
@@ -4795,10 +4800,20 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             }
           }}
           onCopy={() => {
+            const logMsg = `Copy clicked, id: ${mobileSelectedId}`
+            console.log(logMsg)
+            setDebugLog((prev) => [...prev, `${new Date().toLocaleTimeString()}: ${logMsg}`])
             if (mobileSelectedId) {
+              const execMsg = `Calling duplicateComponent: ${mobileSelectedId}`
+              console.log(execMsg)
+              setDebugLog((prev) => [...prev, `${new Date().toLocaleTimeString()}: ${execMsg}`])
               duplicateComponent(mobileSelectedId)
               setMobileEditBarOpen(false)
               setMobileSelectedId(null)
+            } else {
+              const errMsg = 'No component selected for copying'
+              console.warn(errMsg)
+              setDebugLog((prev) => [...prev, `${new Date().toLocaleTimeString()}: ${errMsg}`])
             }
           }}
           onDelete={() => {
@@ -4810,6 +4825,21 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           }}
           componentName={currentDashboard?.components.find(c => c.id === mobileSelectedId)?.title}
         />
+      )}
+
+      {/* Debug log for mobile - shows recent events */}
+      {isMobile && debugLog.length > 0 && (
+        <div className="fixed top-16 right-2 z-50 max-w-[200px] bg-black/80 text-white text-xs p-2 rounded font-mono max-h-40 overflow-y-auto">
+          {debugLog.map((log, i) => (
+            <div key={i} className="border-b border-white/20 py-0.5">{log}</div>
+          ))}
+          <button
+            onClick={() => setDebugLog([])}
+            className="mt-1 w-full bg-red-500 text-white py-0.5 px-2 rounded"
+          >
+            Clear
+          </button>
+        </div>
       )}
     </div>
   )

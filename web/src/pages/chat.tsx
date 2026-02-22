@@ -499,6 +499,11 @@ export function ChatPage() {
     }
 
     // Set WebSocket session and send message
+    if (!targetSessionId) {
+      handleError(new Error('No valid session ID'), { operation: 'Send message', showToast: false })
+      return
+    }
+
     ws.setSessionId(targetSessionId)
     setIsStreaming(true)
     streamingMessageIdRef.current = crypto.randomUUID()

@@ -421,8 +421,6 @@ export function DashboardGrid({
           onDragStop={handleDragStop}
           onResizeStart={handleResizeStart}
           onResizeStop={handleResizeStop}
-          isDraggable={editMode}
-          isResizable={editMode}
         >
           {components.map((component) => (
             <div key={component.id} className="dashboard-item h-full">

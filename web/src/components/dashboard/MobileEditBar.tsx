@@ -83,7 +83,7 @@ const ActionButton = memo(function ActionButton({
       )}
       style={{ touchAction: 'manipulation' }}
     >
-      <Icon className="w-6 h-6" strokeWidth={2} />
+      <Icon className="w-6 h-6" />
       <span className="text-xs font-medium">{label}</span>
     </button>
   )
@@ -128,7 +128,7 @@ const CompactButton = memo(function CompactButton({
       aria-label={label}
       style={{ touchAction: 'manipulation' }}
     >
-      <Icon className="w-6 h-6" strokeWidth={2} />
+      <Icon className="w-6 h-6" />
     </button>
   )
 })

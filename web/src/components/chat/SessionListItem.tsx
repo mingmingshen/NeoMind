@@ -30,6 +30,11 @@ export const SessionListItem = React.memo<SessionListItemProps>(
       }
     }
 
+    const handleTouchEnd = (e: React.TouchEvent) => {
+      e.preventDefault()
+      handleClick()
+    }
+
     const handleKeyDown = (e: React.KeyboardEvent) => {
       if ((e.key === 'Enter' || e.key === ' ') && session.sessionId) {
         e.preventDefault()
@@ -40,6 +45,7 @@ export const SessionListItem = React.memo<SessionListItemProps>(
     return (
       <div
         onClick={handleClick}
+        onTouchEnd={handleTouchEnd}
         onKeyDown={handleKeyDown}
         role="button"
         tabIndex={0}
@@ -49,6 +55,7 @@ export const SessionListItem = React.memo<SessionListItemProps>(
             ? "bg-primary text-primary-foreground"
             : "hover:bg-muted"
         )}
+        style={{ touchAction: 'manipulation' }}
       >
         <MessageSquare className="h-4 w-4 shrink-0" />
         {/* Title with max width constraint */}

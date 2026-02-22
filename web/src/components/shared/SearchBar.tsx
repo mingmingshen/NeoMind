@@ -186,6 +186,11 @@ export function SearchBar({ placeholder }: SearchBarProps) {
                     idx === selectedIndex ? "bg-accent" : ""
                   }`}
                   onClick={() => handleResultClick(result)}
+                  onTouchEnd={(e) => {
+                    e.preventDefault()
+                    handleResultClick(result)
+                  }}
+                  style={{ touchAction: 'manipulation' }}
                 >
                   <span
                     className={`h-2 w-2 rounded-full ${getTypeColor(result.type)}`}
@@ -225,6 +230,12 @@ export function SearchBar({ placeholder }: SearchBarProps) {
                     setQuery(suggestion.text)
                     performSearch(suggestion.text)
                   }}
+                  onTouchEnd={(e) => {
+                    e.preventDefault()
+                    setQuery(suggestion.text)
+                    performSearch(suggestion.text)
+                  }}
+                  style={{ touchAction: 'manipulation' }}
                 >
                   <span className="truncate">{suggestion.text}</span>
                   <span className="text-xs text-muted-foreground">

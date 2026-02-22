@@ -146,6 +146,10 @@ export function QuickActions({ message, onActionClick }: QuickActionsProps) {
         <button
           key={action.id}
           onClick={() => onActionClick(action.prompt)}
+          onTouchEnd={(e) => {
+            e.preventDefault()
+            onActionClick(action.prompt)
+          }}
           className={cn(
             "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium",
             "transition-all duration-200",
@@ -155,6 +159,7 @@ export function QuickActions({ message, onActionClick }: QuickActionsProps) {
             "border border-[var(--quick-action-border)]",
             "hover:shadow-sm hover:scale-105"
           )}
+          style={{ touchAction: 'manipulation' }}
         >
           {action.icon}
           <span>{action.label}</span>
