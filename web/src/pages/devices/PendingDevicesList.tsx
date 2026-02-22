@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { Badge } from "@/components/ui/badge"
 import { ResponsiveTable } from "@/components/shared"
-import { Eye, Cpu, Globe, Badge as BadgeIcon, Clock, Activity, Check, ChevronDown } from "lucide-react"
+import { Eye, Cpu, Globe, Badge as BadgeIcon, Clock, Activity, Check, ChevronDown, X } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -601,18 +602,18 @@ export function PendingDevicesList({
       {/* Unified Approval/Details Dialog */}
       {showApproveDialog && selectedDraftForApproval && (
         <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
-          <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogContent className="sm:max-w-3xl sm:max-h-[85vh] overflow-hidden flex flex-col">
             <DialogHeader className="pb-2">
               <DialogTitle>{t('devices:pending.approveTitle')}</DialogTitle>
             </DialogHeader>
 
-            <div className="flex-1 overflow-y-auto space-y-6 py-2">
+            <DialogContentBody className="flex-1 overflow-y-auto space-y-6 py-2">
               {/* Device Info Section */}
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                   {t('devices:pending.deviceInfo')}
                 </h3>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm bg-muted/30 rounded-lg p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm bg-muted/30 rounded-lg p-4">
                   <div>
                     <span className="text-muted-foreground">{t('devices:pending.headers.deviceId')}: </span>
                     <span className="font-mono font-medium">{selectedDraftForApproval.device_id}</span>
@@ -961,7 +962,7 @@ export function PendingDevicesList({
                   </div>
                 )}
               </div>
-            </div>
+            </DialogContentBody>
 
             <DialogFooter className="gap-2 pt-4 border-t">
               <Button
@@ -991,13 +992,15 @@ export function PendingDevicesList({
 
       {/* Reject confirmation dialog */}
       <Dialog open={!!rejectDialogDraft} onOpenChange={(open: boolean) => !open && setRejectDialogDraft(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md flex flex-col">
           <DialogHeader>
             <DialogTitle>{t('devices:pending.reject')}</DialogTitle>
             <DialogDescription>
               {rejectDialogDraft && t('devices:pending.rejectConfirm', { deviceId: rejectDialogDraft.device_id })}
             </DialogDescription>
           </DialogHeader>
+          <DialogContentBody className="pt-4">
+          </DialogContentBody>
           <DialogFooter className="gap-2">
             <Button
               variant="outline"

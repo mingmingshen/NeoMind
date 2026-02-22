@@ -3356,10 +3356,7 @@ mod tests {
             "Content should be empty for thinking-only response"
         );
         println!("✓ Thinking-only test passed");
-        println!("  Thinking should be emitted as content: {}", thinking);
-        println!(
-            "  NOTE: In production, thinking content is emitted as final content when no actual content received"
-        );
+        println!("  Thinking: {}", thinking);
     }
 
     /// Test scenario 6: Content split across multiple chunks with Chinese characters

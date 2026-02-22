@@ -41,6 +41,8 @@ import {
   Play,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
+import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import type { Rule, RuleTrigger, RuleCondition, RuleAction, DeviceType, Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor } from '@/types'
 
 // ============================================================================
@@ -1380,6 +1382,8 @@ export function SimpleRuleBuilderSplit({
   const { t } = useTranslation(['automation', 'common', 'dashboardComponents'])
   const tBuilder = (key: string) => t(`automation:ruleBuilder.${key}`)
   const isEditMode = !!rule
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
 
   // Step state
   const [currentStep, setCurrentStep] = useState<Step>('basic')
@@ -1721,6 +1725,9 @@ export function SimpleRuleBuilderSplit({
   )
 }, [name, condition, actions, resources.devices, resources.extensions, forDuration, forUnit, tags, triggerType, cronExpression, tBuilder])
 
+  // Lock body scroll when dialog is open (mobile only to prevent layout shift)
+  useBodyScrollLock(open, { mobileOnly: true })
+
   // Get dialog root for portal rendering
   const dialogRoot = typeof document !== 'undefined'
     ? document.getElementById('dialog-root') || document.body
@@ -1736,31 +1743,46 @@ export function SimpleRuleBuilderSplit({
       )}
     >
         {/* Header - Simplified */}
-        <header className="border-b shrink-0 bg-background">
-          <div className="flex items-center gap-3 px-4 py-3">
+        <header
+          className="border-b shrink-0 bg-background"
+          style={isMobile ? { paddingTop: `${insets.top}px` } : undefined}
+        >
+          <div className={cn(
+            "flex items-center gap-3",
+            isMobile ? "px-4 py-4" : "px-4 py-3"
+          )}>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className={cn("shrink-0", isMobile ? "h-10 w-10" : "h-8 w-8")}
               onClick={() => onOpenChange(false)}
             >
-              <X className="h-4 w-4" />
+              <X className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
             </Button>
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                <Zap className="h-3.5 w-3.5 text-purple-500" />
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <div className={cn(
+                "rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0",
+                isMobile ? "w-8 h-8" : "w-7 h-7"
+              )}>
+                <Zap className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "text-purple-500")} />
               </div>
-              <h1 className="text-sm font-medium">
+              <h1 className={cn(
+                "font-medium truncate",
+                isMobile ? "text-base" : "text-sm"
+              )}>
                 {isEditMode ? t('automation:edit') : t('automation:createRule')}
               </h1>
             </div>
           </div>
         </header>
 
-        {/* Content Area with Three-Column Layout */}
+        {/* Content Area - Hide left sidebar on mobile */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Left Sidebar - Vertical Steps (Compact) */}
-          <aside className="w-[120px] border-r shrink-0 bg-muted/20">
+          {/* Left Sidebar - Vertical Steps (Compact) - Hide on mobile */}
+          <aside className={cn(
+            "border-r shrink-0 bg-muted/20",
+            isMobile ? "hidden" : "w-[120px]"
+          )}>
             <nav className="px-3 py-6 space-y-1">
               {steps.map((step, index) => {
                 const isCompleted = completedSteps.has(step.key)
@@ -1822,7 +1844,10 @@ export function SimpleRuleBuilderSplit({
 
           {/* Main Content */}
           <main className="flex-1 overflow-y-auto">
-            <div className="max-w-4xl mx-auto px-4 py-6">
+            <div className={cn(
+              "max-w-4xl mx-auto",
+              isMobile ? "px-4 py-4" : "px-4 py-6"
+            )}>
               {/* Step 1: Basic Info */}
           {currentStep === 'basic' && (
             <BasicInfoStep
@@ -1898,8 +1923,11 @@ export function SimpleRuleBuilderSplit({
             </div>
           </main>
 
-          {/* Right Preview Panel */}
-          <aside className="w-[360px] border-l shrink-0 bg-muted/10 overflow-y-auto">
+          {/* Right Preview Panel - Hide on mobile */}
+          <aside className={cn(
+            "w-[360px] border-l shrink-0 bg-muted/10 overflow-y-auto",
+            isMobile && "hidden"
+          )}>
             <RulePreviewPanel
               name={name}
               description={description}
@@ -1921,11 +1949,17 @@ export function SimpleRuleBuilderSplit({
         </div>
 
         {/* Step Navigation Footer - Compact */}
-        <footer className="border-t bg-background shrink-0">
-          <div className="px-5 py-3 flex gap-2">
+        <footer
+          className="border-t bg-background shrink-0"
+          style={isMobile ? { paddingBottom: `${insets.bottom}px` } : undefined}
+        >
+          <div className={cn(
+            "flex gap-2",
+            isMobile ? "px-4 py-4" : "px-5 py-3"
+          )}>
             {!isFirstStep && (
-              <Button variant="outline" size="sm" onClick={handlePrevious} disabled={saving}>
-                <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+              <Button variant="outline" size={isMobile ? "default" : "sm"} onClick={handlePrevious} disabled={saving} className={isMobile ? "h-12 min-w-[100px]" : ""}>
+                <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "mr-1")} />
                 {tBuilder('previous')}
               </Button>
             )}
@@ -1933,13 +1967,13 @@ export function SimpleRuleBuilderSplit({
             <div className="flex-1" />
 
             {currentStep === 'review' ? (
-              <Button size="sm" onClick={handleSave} disabled={saving || !name.trim()}>
+              <Button size={isMobile ? "default" : "sm"} onClick={handleSave} disabled={saving || !name.trim()} className={isMobile ? "h-12 min-w-[100px]" : ""}>
                 {saving ? tBuilder('saving') : tBuilder('save')}
               </Button>
             ) : (
-              <Button size="sm" onClick={handleNext} disabled={!name.trim() && currentStep === 'basic'}>
+              <Button size={isMobile ? "default" : "sm"} onClick={handleNext} disabled={!name.trim() && currentStep === 'basic'} className={isMobile ? "h-12 min-w-[100px]" : ""}>
                 {tBuilder('next')}
-                <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "ml-1")} />
               </Button>
             )}
           </div>

@@ -6,12 +6,13 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { Search, Loader2, FileText, Wrench, AlertTriangle } from "lucide-react"
+import { Search, Loader2, FileText, Wrench, AlertTriangle, X } from "lucide-react"
 import { api } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import type { SearchResult } from "@/types"
@@ -134,26 +135,27 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
         </DialogHeader>
 
         {/* Search Input */}
-        <div className="flex gap-2">
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={t('placeholders.search')}
-            className="flex-1"
-            autoFocus
-          />
-          <Button onClick={handleSearch} disabled={loading || !query.trim()}>
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Search className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
+        <DialogContentBody className="flex flex-col gap-4 py-4">
+          <div className="flex gap-2">
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={t('placeholders.search')}
+              className="flex-1"
+              autoFocus
+            />
+            <Button onClick={handleSearch} disabled={loading || !query.trim()}>
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
 
-        {/* Results */}
-        <ScrollArea className="flex-1">
+          {/* Results */}
+          <ScrollArea className="flex-1">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -220,10 +222,11 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
 
         {/* Footer */}
         {hasSearched && results.length > 0 && (
-          <div className="text-xs text-center text-muted-foreground pt-2 border-t">
+          <div className="text-xs text-center text-muted-foreground pt-2 border-t sm:hidden">
             找到 {results.length} 条结果
           </div>
         )}
+        </DialogContentBody>
       </DialogContent>
     </Dialog>
   )

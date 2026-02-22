@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react"
-import { Routes, Route, Navigate } from "react-router-dom"
+import { Routes, Route, Navigate, useLocation } from "react-router-dom"
 import { useStore } from "@/store"
 import { TopNav } from "@/components/layout/TopNav"
 import { Toaster } from "@/components/ui/toaster"
@@ -7,6 +7,7 @@ import { Confirmer } from "@/components/ui/confirmer"
 import { tokenManager } from "@/lib/api"
 import { StartupLoading } from "@/components/StartupLoading"
 import { getCurrentWindow } from "@tauri-apps/api/window"
+import { forceViewportReset } from "@/hooks/useVisualViewport"
 
 // Performance optimization: Lazy load route components to reduce initial bundle size
 // Each page is loaded on-demand, reducing Time to Interactive by ~70%
@@ -189,13 +190,32 @@ function PageLoading() {
 
 function App() {
   const { isAuthenticated, checkAuthStatus, setWsConnected } = useStore()
+  const location = useLocation()
   const [backendReady, setBackendReady] = useState(false)
   const [isTauri, setIsTauri] = useState(false)
   const [initialCheckDone, setInitialCheckDone] = useState(false)
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
-  const [currentPath, setCurrentPath] = useState(() => window.location.pathname)
 
-  // Track path changes
+  // Reset viewport and scroll when route changes (fix mobile keyboard dismissal issues)
+  useEffect(() => {
+    // Force viewport reset to clear any lingering keyboard state
+    forceViewportReset()
+
+    // Reset body scroll lock styles that might have been left behind
+    document.body.style.overflow = ''
+    document.body.style.position = ''
+    document.body.style.top = ''
+    document.body.style.width = ''
+
+    // Force scroll to top
+    window.scrollTo(0, 0)
+
+    // Force layout recalculation
+    void document.body.offsetHeight
+  }, [location.pathname])
+
+  // Track path changes (keep existing logic for other parts of app)
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname)
   useEffect(() => {
     const handleLocationChange = () => setCurrentPath(window.location.pathname)
     window.addEventListener('popstate', handleLocationChange)
@@ -341,10 +361,10 @@ function App() {
           path="/*"
           element={
             <ProtectedRoute>
-              <div className="flex flex-col h-screen h-[100dvh] bg-background">
+              <div className="flex flex-col bg-background" style={{height: 'var(--app-height, 100vh)'}}>
                 <TopNav />
                 <main className="flex flex-1 min-h-0 overflow-hidden" style={{paddingTop: 'var(--topnav-height, 4rem)'}}>
-                  <div className="w-full h-full overflow-hidden">
+                  <div className="w-full h-full overflow-auto" id="main-scroll-container">
                   <Routes>
                     <Route path="/" element={<ChatPage />} />
                     <Route path="/chat" element={<ChatPage />} />

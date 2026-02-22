@@ -360,6 +360,11 @@ a {
     border: none !important;
   }
 
+  /* Exception: Checkbox component - no border */
+  [role="checkbox"] {
+    border: none !important;
+  }
+
   /* Exception: Tabs component - no border */
   [role="tablist"],
   [role="tab"],
@@ -399,6 +404,12 @@ a {
 
   /* Exception: Switch component - keep original size */
   [role="switch"] {
+    min-height: auto !important;
+    min-width: auto !important;
+  }
+
+  /* Exception: Checkbox component - keep original size */
+  [role="checkbox"] {
     min-height: auto !important;
     min-width: auto !important;
   }

@@ -11,6 +11,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
@@ -467,15 +468,14 @@ export function DeviceDetail({
         setMetricHistoryOpen(open)
         if (!open) onMetricBack()
       }}>
-        <DialogContent className="max-w-3xl rounded-2xl">
+        <DialogContent className="sm:max-w-3xl rounded-2xl flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <Clock className="h-5 w-5" />
               {selectedMetric && getMetricDisplayName(selectedMetric)}
             </DialogTitle>
           </DialogHeader>
-          <ScrollArea className="max-h-[500px]">
-            <div className="pr-4">
+          <DialogContentBody className="max-h-[500px] overflow-y-auto pr-4">
               {currentMetricData.length > 0 ? (
                 <Table>
                   <TableHeader>
@@ -531,14 +531,13 @@ export function DeviceDetail({
               ) : (
                 <div className="text-center py-8 text-muted-foreground">{t('devices:detailPage.noHistoryData')}</div>
               )}
-            </div>
-          </ScrollArea>
+          </DialogContentBody>
         </DialogContent>
       </Dialog>
 
       {/* Image Preview Dialog */}
       <Dialog open={imagePreviewOpen} onOpenChange={setImagePreviewOpen}>
-        <DialogContent className="max-w-4xl rounded-2xl p-2">
+        <DialogContent className="sm:max-w-4xl rounded-2xl p-2">
           <button
             onClick={() => setImagePreviewOpen(false)}
             className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white hover:bg-black/70 transition-colors z-10"
@@ -556,14 +555,14 @@ export function DeviceDetail({
       {/* Command Dialog */}
       {selectedCommandDef && (
         <Dialog open={commandDialogOpen} onOpenChange={setCommandDialogOpen}>
-          <DialogContent className="max-w-md rounded-2xl">
+          <DialogContent className="sm:max-w-md rounded-2xl flex flex-col">
             <DialogHeader>
               <DialogTitle className="text-xl">{selectedCommandDef.display_name || selectedCommandDef.name}</DialogTitle>
               <DialogDescription className="font-mono text-xs text-muted-foreground">
                 {selectedCommandDef.name}
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-5 py-4">
+            <DialogContentBody className="space-y-5 py-4">
               {selectedCommandDef.parameters?.map((param) => {
                 const value = dialogParams[param.name]
                 // Format data type for display
@@ -632,7 +631,7 @@ export function DeviceDetail({
                   </div>
                 )
               })}
-            </div>
+            </DialogContentBody>
             <DialogFooter>
               <Button variant="outline" onClick={() => setCommandDialogOpen(false)} className="rounded-full">
                 {t('common:cancel')}

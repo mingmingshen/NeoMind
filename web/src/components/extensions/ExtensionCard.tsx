@@ -8,6 +8,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import {
   DropdownMenu,
@@ -150,7 +151,7 @@ function MetricHistoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px] max-h-[80vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[700px] sm:max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
@@ -162,14 +163,15 @@ function MetricHistoryDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Time Range Selector */}
-        <div className="flex items-center gap-2 border-b pb-4">
-          <span className="text-sm text-muted-foreground">{t('timeRange', { defaultValue: 'Time Range' })}:</span>
-          <div className="flex gap-1">
-            {(['1h', '24h', '7d', '30d'] as const).map((range) => (
-              <Button
-                key={range}
-                variant={timeRange === range ? 'default' : 'outline'}
+        <DialogContentBody className="flex-1 overflow-y-auto pt-6 pb-4">
+          {/* Time Range Selector */}
+          <div className="flex items-center gap-2 border-b pb-4">
+            <span className="text-sm text-muted-foreground">{t('timeRange', { defaultValue: 'Time Range' })}:</span>
+            <div className="flex gap-1 flex-wrap">
+              {(['1h', '24h', '7d', '30d'] as const).map((range) => (
+                <Button
+                  key={range}
+                  variant={timeRange === range ? 'default' : 'outline'}
                 size="sm"
                 className="h-7 text-xs"
                 onClick={() => setTimeRange(range)}
@@ -180,110 +182,105 @@ function MetricHistoryDialog({
                 {range === '30d' && t('30days', { defaultValue: '30D' })}
               </Button>
             ))}
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-muted-foreground">
-            <div className="animate-pulse">{t('loading', { defaultValue: 'Loading...' })}</div>
-          </div>
-        ) : error ? (
-          <div className="flex items-center justify-center py-12 text-destructive">
-            {error}
-          </div>
-        ) : data.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-            <Database className="h-12 w-12 mb-4 opacity-50" />
-            <p>{t('noHistoricalData', { defaultValue: 'No historical data available for this metric' })}</p>
-          </div>
-        ) : (
-          <>
-            {/* Stats Summary */}
-            <div className="grid grid-cols-4 gap-4 py-4 border-b">
-              <div className="text-center">
-                <div className="text-xs text-muted-foreground">{t('latest', { defaultValue: 'Latest' })}</div>
-                <div className="text-lg font-semibold">
-                  {latestValue !== null ? getDisplayValue(latestValue) : '-'}
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-xs text-muted-foreground">{t('min', { defaultValue: 'Min' })}</div>
-                <div className="text-lg font-semibold text-blue-600">
-                  {minValue !== null ? minValue.toFixed(2) : '-'}
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-xs text-muted-foreground">{t('avg', { defaultValue: 'Avg' })}</div>
-                <div className="text-lg font-semibold text-amber-600">
-                  {avgValue !== null ? avgValue.toFixed(2) : '-'}
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-xs text-muted-foreground">{t('max', { defaultValue: 'Max' })}</div>
-                <div className="text-lg font-semibold text-green-600">
-                  {maxValue !== null ? maxValue.toFixed(2) : '-'}
-                </div>
               </div>
             </div>
 
-            {/* Simple Chart Visualization */}
-            {numericValues.length > 0 && (
-              <div className="py-4">
-                <div className="text-sm text-muted-foreground mb-2">{t('valueChart', { defaultValue: 'Value Chart' })}</div>
-                <div className="h-40 flex items-end gap-1 border-l border-b border-muted p-2">
-                  {numericValues.slice().reverse().map((val, i) => {
-                    const height = maxValue !== null && minValue !== null
-                      ? ((val - minValue) / (maxValue - minValue || 1)) * 100
-                      : 50
-                    return (
-                      <div
-                        key={i}
-                        className="flex-1 bg-primary/60 hover:bg-primary transition-colors rounded-t min-w-[2px]"
-                        style={{ height: `${Math.max(height, 5)}%` }}
-                        title={`${new Date(data[data.length - 1 - i].timestamp * 1000).toLocaleString()}: ${val.toFixed(2)}`}
-                      />
-                    )
-                  })}
-                </div>
+            {loading ? (
+              <div className="flex items-center justify-center py-12 text-muted-foreground">
+                <div className="animate-pulse">{t('loading', { defaultValue: 'Loading...' })}</div>
               </div>
+            ) : error ? (
+              <div className="flex items-center justify-center py-12 text-destructive">
+                {error}
+              </div>
+            ) : data.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Database className="h-12 w-12 mb-4 opacity-50" />
+                <p>{t('noHistoricalData', { defaultValue: 'No historical data available for this metric' })}</p>
+              </div>
+            ) : (
+              <>
+                {/* Stats Summary */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 py-4 border-b">
+                  <div className="text-center">
+                    <div className="text-xs text-muted-foreground">{t('latest', { defaultValue: 'Latest' })}</div>
+                    <div className="text-lg font-semibold">
+                      {latestValue !== null ? getDisplayValue(latestValue) : '-'}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xs text-muted-foreground">{t('min', { defaultValue: 'Min' })}</div>
+                    <div className="text-lg font-semibold text-blue-600">
+                      {minValue !== null ? minValue.toFixed(2) : '-'}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xs text-muted-foreground">{t('avg', { defaultValue: 'Avg' })}</div>
+                    <div className="text-lg font-semibold text-amber-600">
+                      {avgValue !== null ? avgValue.toFixed(2) : '-'}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xs text-muted-foreground">{t('max', { defaultValue: 'Max' })}</div>
+                    <div className="text-lg font-semibold text-green-600">
+                      {maxValue !== null ? maxValue.toFixed(2) : '-'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Simple Chart Visualization */}
+                {numericValues.length > 0 && (
+                  <div className="py-4">
+                    <div className="text-sm text-muted-foreground mb-2">{t('valueChart', { defaultValue: 'Value Chart' })}</div>
+                    <div className="h-40 flex items-end gap-1 border-l border-b border-muted p-2">
+                      {numericValues.slice().reverse().map((val, i) => {
+                        const height = maxValue !== null && minValue !== null
+                          ? ((val - minValue) / (maxValue - minValue || 1)) * 100
+                          : 50
+                        return (
+                          <div
+                            key={i}
+                            className="flex-1 bg-primary/60 hover:bg-primary transition-colors rounded-t min-w-[2px]"
+                            style={{ height: `${Math.max(height, 5)}%` }}
+                            title={`${new Date(data[data.length - 1 - i].timestamp * 1000).toLocaleString()}: ${val.toFixed(2)}`}
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Data Table */}
+                <div className="py-4">
+                  <div className="text-sm text-muted-foreground mb-2">
+                    {t('recentData', { defaultValue: 'Recent Data' })} ({data.length} points)
+                  </div>
+                  <div className="max-h-[200px] overflow-y-auto border rounded-md">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted sticky top-0">
+                        <tr>
+                          <th className="p-2 text-left">{t('time', { defaultValue: 'Time' })}</th>
+                          <th className="p-2 text-right">{t('value', { defaultValue: 'Value' })}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.slice(0, 50).map((point, i) => (
+                          <tr key={i} className="border-t">
+                            <td className="p-2 text-muted-foreground">
+                              {formatDate(point.timestamp)} {formatTime(point.timestamp)}
+                            </td>
+                            <td className="p-2 text-right font-mono">
+                              {getDisplayValue(point.value)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
             )}
-
-            {/* Data Table */}
-            <div className="py-4">
-              <div className="text-sm text-muted-foreground mb-2">
-                {t('recentData', { defaultValue: 'Recent Data' })} ({data.length} points)
-              </div>
-              <div className="max-h-[200px] overflow-y-auto border rounded-md">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted sticky top-0">
-                    <tr>
-                      <th className="p-2 text-left">{t('time', { defaultValue: 'Time' })}</th>
-                      <th className="p-2 text-right">{t('value', { defaultValue: 'Value' })}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.slice(0, 50).map((point, i) => (
-                      <tr key={i} className="border-t">
-                        <td className="p-2 text-muted-foreground">
-                          {formatDate(point.timestamp)} {formatTime(point.timestamp)}
-                        </td>
-                        <td className="p-2 text-right font-mono">
-                          {getDisplayValue(point.value)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
-        )}
-
-        <div className="flex justify-end pt-4 border-t">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t('common:close', { defaultValue: 'Close' })}
-          </Button>
-        </div>
+        </DialogContentBody>
       </DialogContent>
     </Dialog>
   )
@@ -311,7 +308,7 @@ function ExtensionCapabilitiesDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[600px] sm:max-h-[85vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Code2 className="h-5 w-5" />
@@ -322,9 +319,10 @@ function ExtensionCapabilitiesDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <Tabs defaultValue="commands" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="commands" className="flex items-center gap-2">
+          <DialogContentBody className="flex-1 overflow-y-auto pt-6 pb-4">
+            <Tabs defaultValue="commands" className="w-full h-full flex flex-col">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="commands" className="flex items-center gap-2">
                 <Terminal className="h-4 w-4" />
                 {t('commands', { defaultValue: 'Commands' })}
                 <Badge variant="secondary" className="h-5 px-1.5 text-xs">
@@ -370,7 +368,7 @@ function ExtensionCapabilitiesDialog({
             {/* Metrics Tab */}
             <TabsContent value="metrics" className="mt-4">
               {extension.metrics && extension.metrics.length > 0 ? (
-                <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">
                   {extension.metrics.map((metric) => (
                     <div
                       key={metric.name}
@@ -413,12 +411,7 @@ function ExtensionCapabilitiesDialog({
               )}
             </TabsContent>
           </Tabs>
-
-          <div className="flex justify-end pt-4 border-t">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              {t('common:close', { defaultValue: 'Close' })}
-            </Button>
-          </div>
+          </DialogContentBody>
         </DialogContent>
       </Dialog>
 
@@ -526,7 +519,7 @@ export function ExtensionCard({
 
           {/* Description */}
           {extension.description && (
-            <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
+            <p className="text-xs text-muted-foreground line-clamp-2 h-8 mb-3 leading-4">
               {extension.description}
             </p>
           )}

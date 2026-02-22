@@ -1,13 +1,7 @@
 import React, { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog"
+import { createPortal } from "react-dom"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogContentBody, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -53,6 +47,8 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { api, fetchAPI } from "@/lib/api"
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock"
+import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import type { DeviceType, MetricDefinition, CommandDefinition } from "@/types"
 
 /**
@@ -123,6 +119,11 @@ export function AddDeviceTypeDialog({
   const { t } = useTranslation(['common', 'devices'])
   const { toast } = useToast()
   const isEditMode = !!editDeviceType
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
+
+  // Lock body scroll when dialog is open
+  useBodyScrollLock(open)
 
   // Step state
   const [currentStep, setCurrentStep] = useState<Step>('basic')
@@ -277,154 +278,246 @@ export function AddDeviceTypeDialog({
   }
 
   // Step navigation config
-  const steps: { key: Step; label: string; icon: React.ReactNode }[] = [
-    { key: 'basic', label: 'Basic Info', icon: <Settings className="h-4 w-4" /> },
-    { key: 'data', label: 'Data Definition', icon: <ArrowDown className="h-4 w-4" /> },
-    { key: 'commands', label: 'Commands', icon: <FileText className="h-4 w-4" /> },
-    { key: 'review', label: 'Review', icon: <Check className="h-4 w-4" /> },
-    { key: 'finish', label: 'Finish', icon: <Sparkles className="h-4 w-4" /> },
+  const steps: { key: Step; label: string; shortLabel: string; icon: React.ReactNode }[] = [
+    { key: 'basic', label: 'Basic Info', shortLabel: 'Basic', icon: <Settings className="h-4 w-4" /> },
+    { key: 'data', label: 'Data Definition', shortLabel: 'Data', icon: <ArrowDown className="h-4 w-4" /> },
+    { key: 'commands', label: 'Commands', shortLabel: 'Commands', icon: <FileText className="h-4 w-4" /> },
+    { key: 'review', label: 'Review', shortLabel: 'Review', icon: <Check className="h-4 w-4" /> },
+    { key: 'finish', label: 'Finish', shortLabel: 'Finish', icon: <Sparkles className="h-4 w-4" /> },
   ]
 
   const stepIndex = steps.findIndex(s => s.key === currentStep)
   const isFirstStep = currentStep === 'basic'
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl h-[90vh] max-h-[90vh] flex flex-col p-0 overflow-hidden [&>[data-radix-dialog-close]]:right-6 [&>[data-radix-dialog-close]]:top-5">
-        {/* Header */}
-        <DialogHeader className="px-6 pt-4 pb-4 border-b">
-          <DialogTitle className="text-xl">
-            {isEditMode ? 'Edit Device Type' : t('devices:types.add.title')}
-          </DialogTitle>
-        </DialogHeader>
-
-        {/* Step Content */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          {/* Step Indicator */}
-          <div className="flex items-center justify-center gap-2 px-6 py-3 shrink-0">
-            {steps.map((step, index) => {
-              const isCompleted = completedSteps.has(step.key)
-              const isCurrent = step.key === currentStep
-              const isPast = index < stepIndex
-
-              return (
-                <div key={step.key} className="flex items-center gap-2">
-                  <div
-                    className={cn(
-                      "w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors shrink-0",
-                      isCompleted && "bg-primary text-primary-foreground",
-                      isCurrent && "bg-primary text-primary-foreground ring-4 ring-primary/20",
-                      !isCompleted && !isCurrent && "bg-muted text-muted-foreground"
-                    )}
-                  >
-                    {isCompleted ? <Check className="h-4 w-4" /> : index + 1}
-                  </div>
-                  <span
-                    className={cn(
-                      "text-xs font-medium whitespace-nowrap",
-                      isCurrent ? "text-primary" : "text-muted-foreground"
-                    )}
-                  >
-                    {step.label}
-                  </span>
-                  {index < steps.length - 1 && (
-                    <div
-                      className={cn(
-                        "w-8 h-0.5 transition-colors",
-                        isPast ? "bg-primary" : "bg-muted"
-                      )}
-                    />
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Scrollable Step Content */}
-          <div className="flex-1 overflow-y-auto px-6">
-            {currentStep === 'basic' && (
-              <BasicInfoStep
-                data={formData}
-                onChange={updateField}
-                errors={formErrors}
-              />
-            )}
-
-            {currentStep === 'data' && (
-              <DataDefinitionStep
-                data={formData}
-                onChange={updateField as (field: keyof DeviceType, value: unknown) => void}
-                errors={formErrors}
-              />
-            )}
-
-            {currentStep === 'commands' && (
-              <CommandsStep
-                data={formData}
-                onChange={setFormData}
-                errors={formErrors}
-              />
-            )}
-
-            {currentStep === 'review' && (
-              <ReviewStep
-                data={formData as DeviceType}
-                onEdit={(step) => setCurrentStep(step)}
-                onValidate={async () => {
-                  const result = await onValidate(formData as DeviceType)
-                  setValidationResult(result)
-                  return result
-                }}
-                validating={validating}
-                validationResult={validationResult}
-              />
-            )}
-
-            {currentStep === 'finish' && (
-              <FinishStep
-                deviceType={formData.device_type || ""}
-                onOpenChange={onOpenChange}
-                isEditMode={isEditMode}
-              />
-            )}
+  // Dialog content layout
+  const content = (
+    <>
+      {/* Header */}
+      <header
+        className="border-b shrink-0 bg-background"
+        style={isMobile ? { paddingTop: `${insets.top}px` } : undefined}
+      >
+        <div className={cn(
+          "flex items-center gap-3",
+          isMobile ? "px-4 py-4" : "px-4 py-3"
+        )}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn("shrink-0", isMobile ? "h-10 w-10" : "h-8 w-8")}
+            onClick={() => onOpenChange(false)}
+          >
+            <X className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
+          </Button>
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className={cn(
+              "rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0",
+              isMobile ? "w-8 h-8" : "w-7 h-7"
+            )}>
+              <Zap className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "text-amber-500")} />
+            </div>
+            <h1 className={cn(
+              "font-medium truncate",
+              isMobile ? "text-base" : "text-sm"
+            )}>
+              {isEditMode ? 'Edit Device Type' : t('devices:types.add.title')}
+            </h1>
           </div>
         </div>
+      </header>
 
-        {/* Footer Navigation */}
-        {currentStep !== 'finish' && (
-          <DialogFooter className="px-6 pb-4 pt-4 border-t gap-2">
+      {/* Content Area - Hide left sidebar on mobile */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Sidebar - Vertical Steps (Compact) - Hide on mobile */}
+        {!isMobile && (
+          <aside className="border-r shrink-0 bg-muted/20 w-[120px]">
+            <nav className="px-3 py-6 space-y-1">
+              {steps.map((step, index) => {
+                const isCompleted = completedSteps.has(step.key)
+                const isCurrent = step.key === currentStep
+                const isPast = index < stepIndex
+
+                return (
+                  <div key={step.key} className="relative">
+                    <button
+                      onClick={() => {
+                        if (isCompleted || isPast) {
+                          setCurrentStep(step.key)
+                        }
+                      }}
+                      className={cn(
+                        "w-full text-left px-2 py-2 rounded-md transition-all flex flex-col items-center gap-1.5",
+                        isCurrent && "bg-background shadow-sm",
+                        !isCurrent && isPast && "hover:bg-background/50 cursor-pointer",
+                        !isCurrent && !isPast && "opacity-50"
+                      )}
+                      title={step.label}
+                    >
+                      <div className="flex items-center justify-center">
+                        {isCompleted ? (
+                          <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
+                            <Check className="h-3 w-3 text-white" />
+                          </div>
+                        ) : isCurrent ? (
+                          <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center ring-4 ring-primary/20">
+                            <span className="text-[10px] font-medium text-primary-foreground">{index + 1}</span>
+                          </div>
+                        ) : (
+                          <div className="w-5 h-5 rounded-full bg-muted-foreground/20 flex items-center justify-center">
+                            <span className="text-[10px] font-medium text-muted-foreground">{index + 1}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-[10px] font-medium text-center leading-tight">
+                        {step.shortLabel}
+                      </div>
+                    </button>
+
+                    {/* Connector line to next step */}
+                    {index < steps.length - 1 && (
+                      <div className="absolute left-[23px] top-8 h-4 w-px">
+                        <div className={cn(
+                          "h-full w-px",
+                          isPast ? "bg-primary" : "bg-border"
+                        )} />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </nav>
+          </aside>
+        )}
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-y-auto">
+          <div className={cn(
+            isMobile ? "px-4 py-4" : "px-4 py-6"
+          )}>
+            <div className="space-y-4">
+              {currentStep === 'basic' && (
+                <BasicInfoStep
+                  data={formData}
+                  onChange={updateField}
+                  errors={formErrors}
+                />
+              )}
+
+              {currentStep === 'data' && (
+                <DataDefinitionStep
+                  data={formData}
+                  onChange={updateField as (field: keyof DeviceType, value: unknown) => void}
+                  errors={formErrors}
+                />
+              )}
+
+              {currentStep === 'commands' && (
+                <CommandsStep
+                  data={formData}
+                  onChange={setFormData}
+                  errors={formErrors}
+                />
+              )}
+
+              {currentStep === 'review' && (
+                <ReviewStep
+                  data={formData as DeviceType}
+                  onEdit={(step) => setCurrentStep(step)}
+                  onValidate={async () => {
+                    const result = await onValidate(formData as DeviceType)
+                    setValidationResult(result)
+                    return result
+                  }}
+                  validating={validating}
+                  validationResult={validationResult}
+                />
+              )}
+
+              {currentStep === 'finish' && (
+                <FinishStep
+                  deviceType={formData.device_type || ""}
+                  onOpenChange={onOpenChange}
+                  isEditMode={isEditMode}
+                />
+              )}
+            </div>
+          </div>
+        </main>
+      </div>
+
+      {/* Footer Navigation */}
+      {currentStep !== 'finish' && (
+        <footer className={cn(
+          "flex flex-row justify-end gap-2 sm:gap-3 border-t bg-background shrink-0",
+          isMobile ? "px-4 py-3" : "px-6 py-4"
+        )}>
+          <div className="flex gap-2 w-full sm:w-auto justify-between sm:justify-end">
             {!isFirstStep && (
-              <Button variant="outline" onClick={handlePrevious}>
-                <ChevronLeft className="h-4 w-4 mr-1" />
+              <Button variant="outline" size={isMobile ? "default" : "sm"} onClick={handlePrevious} className={isMobile ? "h-12 min-w-[100px]" : ""}>
+                <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "mr-1")} />
                 {t('common:previous')}
               </Button>
             )}
 
-            <div className="flex-1" />
+            <div className="flex-1 sm:flex-1" />
 
             {/* Skip button for optional steps */}
             {(currentStep === 'data' || currentStep === 'commands') && (
-              <Button variant="ghost" onClick={handleSkip}>
-                Skip this step
+              <Button variant="ghost" size={isMobile ? "default" : "sm"} className={isMobile ? "h-12 min-w-[100px]" : ""}>
+                Skip
               </Button>
             )}
 
             {currentStep === 'review' ? (
-              <>
-                <Button variant="outline" onClick={handleSave} disabled={adding}>
-                  {adding ? (isEditMode ? 'Saving...' : t('devices:types.adding')) : (isEditMode ? 'Save Changes' : t('common:save'))}
-                </Button>
-              </>
+              <Button variant="outline" size={isMobile ? "default" : "sm"} onClick={handleSave} disabled={adding} className={isMobile ? "h-12 min-w-[100px]" : ""}>
+                {adding ? (isEditMode ? 'Saving...' : t('devices:types.adding')) : (isEditMode ? 'Save' : t('common:save'))}
+              </Button>
             ) : (
-              <Button onClick={handleNext}>
+              <Button size={isMobile ? "default" : "sm"} onClick={handleNext} className={isMobile ? "h-12 min-w-[100px]" : ""}>
                 {t('common:next')}
-                <ChevronRight className="h-4 w-4 ml-1" />
+                <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "ml-1")} />
               </Button>
             )}
-          </DialogFooter>
+          </div>
+        </footer>
+      )}
+    </>
+  )
+
+  // Get portal root
+  const dialogRoot = typeof document !== 'undefined'
+    ? document.getElementById('portal-root') || document.body
+    : null
+
+  if (!dialogRoot) return null
+
+  return createPortal(
+    <div
+      className={cn(
+        "fixed inset-0 z-[100] bg-background flex flex-col",
+        !open && "hidden"
+      )}
+    >
+      {/* Overlay */}
+      <div
+        className={cn(
+          "fixed inset-0 bg-black/80 transition-opacity",
+          open ? "opacity-100" : "opacity-0 pointer-events-none"
         )}
-      </DialogContent>
-    </Dialog>
+        onClick={() => onOpenChange(false)}
+      />
+
+      {/* Main Content */}
+      <div className={cn(
+        "fixed bg-background shadow-lg flex flex-col overflow-hidden",
+        isMobile
+          ? "inset-0 rounded-none"
+          : "left-[50%] top-[50%] -translate-x-1/2 -translate-y-1/2 w-full max-w-4xl h-[90vh] max-h-[90vh] rounded-lg border"
+      )}>
+        {content}
+      </div>
+    </div>,
+    dialogRoot
   )
 }
 
@@ -439,6 +532,7 @@ interface BasicInfoStepProps {
 }
 
 function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
+  const isMobile = useIsMobile()
   const [categoryInput, setCategoryInput] = useState("")
   const [nameInput, setNameInput] = useState(data.name || "")
 
@@ -482,10 +576,12 @@ function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
 
   return (
     <div className="flex flex-col h-full py-4">
-      <div className="text-center mb-6 shrink-0">
-        <h3 className="text-lg font-semibold">Basic Information</h3>
-        <p className="text-sm text-muted-foreground">Enter the basic information for your device type</p>
-      </div>
+      {!isMobile && (
+        <div className="text-center mb-6 shrink-0">
+          <h3 className="text-lg font-semibold">Basic Information</h3>
+          <p className="text-sm text-muted-foreground">Enter the basic information for your device type</p>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         <div className="space-y-6 max-w-2xl mx-auto">
@@ -596,6 +692,7 @@ function DataDefinitionStep({
 }: DataDefinitionStepProps) {
   const { t } = useTranslation(['devices'])
   const { toast } = useToast()
+  const isMobile = useIsMobile()
   const isRawMode = data.mode === 'simple'
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [jsonInput, setJsonInput] = useState('')
@@ -819,10 +916,12 @@ function DataDefinitionStep({
 
   return (
     <div className="flex flex-col h-full py-4">
-      <div className="text-center mb-4 shrink-0">
-        <h3 className="text-lg font-semibold">Data Definition (Uplink)</h3>
-        <p className="text-sm text-muted-foreground">Define how device data is parsed and stored</p>
-      </div>
+      {!isMobile && (
+        <div className="text-center mb-4 shrink-0">
+          <h3 className="text-lg font-semibold">Data Definition (Uplink)</h3>
+          <p className="text-sm text-muted-foreground">Define how device data is parsed and stored</p>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="space-y-4">
@@ -984,7 +1083,7 @@ function DataDefinitionStep({
               {t('devices:metricEditor.jsonDialogDesc')}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <DialogContentBody className="space-y-4 py-4">
             <Textarea
               value={jsonInput}
               onChange={(e) => setJsonInput(e.target.value)}
@@ -1008,7 +1107,7 @@ function DataDefinitionStep({
   "battery": 85
 }`}</pre>
             </div>
-          </div>
+          </DialogContentBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowImportDialog(false)}>
               {t('devices:metricEditor.cancel')}
@@ -1040,6 +1139,7 @@ function CommandsStep({
 }: CommandsStepProps) {
   const { t } = useTranslation(['devices'])
   const { toast } = useToast()
+  const isMobile = useIsMobile()
 
   // Add command
   const addCommand = () => {
@@ -1163,10 +1263,12 @@ function CommandsStep({
 
   return (
     <div className="flex flex-col h-full py-4">
-      <div className="text-center mb-4 shrink-0">
-        <h3 className="text-lg font-semibold">Commands (Downlink)</h3>
-        <p className="text-sm text-muted-foreground">Define commands that can be sent to the device</p>
-      </div>
+      {!isMobile && (
+        <div className="text-center mb-4 shrink-0">
+          <h3 className="text-lg font-semibold">Commands (Downlink)</h3>
+          <p className="text-sm text-muted-foreground">Define commands that can be sent to the device</p>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="space-y-4">
@@ -1251,16 +1353,19 @@ interface ReviewStepProps {
 }
 
 function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: ReviewStepProps) {
+  const isMobile = useIsMobile()
   const handleValidate = async () => {
     await onValidate()
   }
 
   return (
     <div className="flex flex-col h-full py-4">
-      <div className="text-center mb-4 shrink-0">
-        <h3 className="text-lg font-semibold">Review & Confirm</h3>
-        <p className="text-sm text-muted-foreground">Review your device type before saving</p>
-      </div>
+      {!isMobile && (
+        <div className="text-center mb-4 shrink-0">
+          <h3 className="text-lg font-semibold">Review & Confirm</h3>
+          <p className="text-sm text-muted-foreground">Review your device type before saving</p>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="space-y-6 max-w-3xl mx-auto">
@@ -1293,7 +1398,7 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
                 Edit
               </Button>
             </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-muted-foreground">Name:</span>
                 <span className="ml-2 font-medium">{data.name}</span>
@@ -1503,7 +1608,7 @@ function MetricEditorCompact({
       {expanded && (
         <div className="space-y-3 pt-2 border-t">
           {/* First row: Display name and identifier */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">{t('devices:metricEditor.displayName')}</Label>
               <Input
@@ -1779,7 +1884,7 @@ function CommandEditorCompact({
               <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-2">
                 {t('devices:commandEditor.quickStart')}
               </p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {commandTemplates.map((tmpl) => (
                   <Button
                     key={tmpl.name}
@@ -1797,7 +1902,7 @@ function CommandEditorCompact({
 
           {/* Basic fields */}
           <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">{t('devices:commandEditor.displayName')}</Label>
                 <Input
@@ -2278,29 +2383,27 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl h-[85vh] max-h-[85vh] flex flex-col">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b">
-          <div className="flex items-center justify-between">
-            <div>
-              <DialogTitle className="text-xl">{deviceType.name}</DialogTitle>
-              <DialogDescription className="flex items-center gap-2 mt-1">
-                <code className="text-xs bg-muted px-2 py-0.5 rounded">{deviceType.device_type}</code>
-                {isRawMode && (
-                  <Badge variant="secondary" className="text-xs">
-                    <Zap className="h-3 w-3 mr-1" />
-                    Raw Data Mode
-                  </Badge>
-                )}
-              </DialogDescription>
-            </div>
-            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-              Close
-            </Button>
-          </div>
+      <DialogContent className="sm:max-w-4xl sm:h-[85vh] sm:max-h-[85vh] flex flex-col overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 flex-wrap">
+            {deviceType.name}
+            <Badge variant="outline" className="text-xs font-normal">
+              {deviceType.device_type}
+            </Badge>
+            {isRawMode && (
+              <Badge variant="secondary" className="text-xs">
+                <Zap className="h-3 w-3 mr-1" />
+                Raw Data Mode
+              </Badge>
+            )}
+          </DialogTitle>
+          <DialogDescription className="flex items-center gap-2 mt-1">
+            Device type details and capabilities
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="p-6 space-y-6">
+        <DialogContentBody className="flex-1 overflow-y-auto">
+          <div className="space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-4 gap-4">
               <Card className="p-4">
@@ -2498,7 +2601,13 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
               </Card>
             )}
           </div>
-        </div>
+        </DialogContentBody>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
@@ -2685,7 +2794,7 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+      <DialogContent className="sm:max-w-3xl sm:max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Download className="h-5 w-5" />
@@ -2696,7 +2805,7 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto -mx-6 px-6">
+        <DialogContentBody className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -2773,7 +2882,7 @@ export function CloudImportDialog({ open, onOpenChange, onImportComplete }: Clou
               </div>
             </div>
           )}
-        </div>
+        </DialogContentBody>
 
         <DialogFooter>
           <Button

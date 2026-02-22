@@ -10,6 +10,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -77,7 +78,7 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] overflow-hidden">
+      <DialogContent className="sm:max-w-[500px] flex flex-col">
         <DialogHeader>
           <DialogTitle>{t('messages.createTitle')}</DialogTitle>
           <DialogDescription>
@@ -85,9 +86,9 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
-          {/* Category and Severity - side by side */}
-          <div className="grid grid-cols-2 gap-4">
+        <DialogContentBody className="flex flex-col gap-4 py-4 overflow-y-auto">
+          {/* Category and Severity - side by side on desktop only */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="category">{t('messages.category.label')}</Label>
               <Select value={category} onValueChange={(v) => setCategory(v as MessageCategory)}>
@@ -141,8 +142,8 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
             />
           </div>
 
-          {/* Source and Source Type - side by side */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Source and Source Type - side by side on desktop only */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="source">{t('messages.sourceLabel')}</Label>
               <Input
@@ -177,7 +178,7 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
               {t('messages.tags.hint')}
             </p>
           </div>
-        </div>
+        </DialogContentBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>

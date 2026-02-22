@@ -7,6 +7,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -395,8 +396,8 @@ export function DeviceTypeGeneratorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 [&>[data-radix-dialog-close]]:right-6 [&>[data-radix-dialog-close]]:top-7">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden [&>[data-radix-dialog-close]]:right-6 [&>[data-radix-dialog-close]]:top-7">
+        <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-purple-500" />
             {tGen('title')}
@@ -407,7 +408,7 @@ export function DeviceTypeGeneratorDialog({
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)} className="flex-1 flex flex-col min-h-0">
-          <div className="px-6 shrink-0">
+          <div className="px-4 sm:px-6 shrink-0">
             <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="samples" disabled={analyzing}>
                 1. {tGen('tabs.samples')}
@@ -425,7 +426,7 @@ export function DeviceTypeGeneratorDialog({
           </div>
 
           {/* Scrollable content area */}
-          <div className="flex-1 overflow-y-auto px-6">
+          <DialogContentBody className="px-4 sm:px-6">
             <div className="py-4 space-y-4">
               {/* Step 1: Input Samples */}
               {activeTab === 'samples' && (
@@ -806,10 +807,10 @@ export function DeviceTypeGeneratorDialog({
                 </>
               )}
             </div>
-          </div>
+        </DialogContentBody>
         </Tabs>
 
-        <DialogFooter className="px-6 pt-4 pb-6 border-t shrink-0">
+        <DialogFooter className="px-4 sm:px-6 pt-4 pb-4 sm:pb-6 border-t shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={creating}>
             {t('common:cancel')}
           </Button>

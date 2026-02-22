@@ -12,6 +12,8 @@ import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
+import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -183,6 +185,7 @@ interface VariablesPanelProps {
   tBuilder: (key: string) => string
   t: (key: string, params?: Record<string, unknown>) => string
   onInsertVariable?: (variable: string) => void
+  isMobile?: boolean
 }
 
 function VariablesPanel({
@@ -194,6 +197,7 @@ function VariablesPanel({
   tBuilder,
   t,
   onInsertVariable,
+  isMobile = false,
 }: VariablesPanelProps) {
   const [extensions, setExtensions] = useState<ExtensionDataSourceGroup[]>([])
   const [extensionCommands, setExtensionCommands] = useState<ExtensionCommandInfo[]>([])
@@ -430,53 +434,79 @@ return ${resultParam}`
   }, [extensionSources])
 
   return (
-    <div className="w-72 border rounded-lg overflow-hidden bg-background">
+    <div className={cn(
+      "border rounded-lg overflow-hidden bg-background",
+      isMobile ? "w-full" : "w-72"
+    )}>
       {/* Header */}
-      <div className="px-3 py-2 border-b bg-muted/30 flex items-center gap-2">
-        <Database className="h-4 w-4 text-blue-500" />
-        <span className="text-sm font-medium">{tBuilder('availableVars')}</span>
+      <div className={cn(
+        "border-b bg-muted/30 flex items-center gap-2",
+        isMobile ? "px-4 py-3" : "px-3 py-2"
+      )}>
+        <Database className={cn("text-blue-500", isMobile ? "h-5 w-5" : "h-4 w-4")} />
+        <span className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>{tBuilder('availableVars')}</span>
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="device" className="h-[400px]">
-        <div className="px-3 pt-2">
-          <TabsList className="w-full h-8 px-0.5 gap-0.5">
-            <TabsTrigger value="device" className="flex-1 h-7 px-2 text-xs">
-              <Database className="h-3 w-3 mr-1" />
+      <Tabs defaultValue="device" className={cn(isMobile ? "h-[350px]" : "h-[400px]")}>
+        <div className={cn(isMobile ? "px-4 pt-3" : "px-3 pt-2")}>
+          <TabsList className={cn(
+            "w-full gap-0.5",
+            isMobile ? "h-10" : "h-8 px-0.5"
+          )}>
+            <TabsTrigger value="device" className={cn(
+              "flex-1",
+              isMobile ? "h-9 px-3 text-sm" : "h-7 px-2 text-xs"
+            )}>
+              <Database className={cn(isMobile ? "h-4 w-4" : "h-3 w-3", "mr-1")} />
               {tBuilder('device') || 'Device'}
             </TabsTrigger>
-            <TabsTrigger value="extension" className="flex-1 h-7 px-2 text-xs">
-              <Puzzle className="h-3 w-3 mr-1" />
+            <TabsTrigger value="extension" className={cn(
+              "flex-1",
+              isMobile ? "h-9 px-3 text-sm" : "h-7 px-2 text-xs"
+            )}>
+              <Puzzle className={cn(isMobile ? "h-4 w-4" : "h-3 w-3", "mr-1")} />
               {tBuilder('extension') || 'Extension'}
             </TabsTrigger>
           </TabsList>
         </div>
 
         {/* Device Metrics Tab */}
-        <TabsContent value="device" className="h-[340px] overflow-y-auto overflow-x-hidden p-2 mt-0">
+        <TabsContent value="device" className={cn(
+          "overflow-y-auto overflow-x-hidden mt-0",
+          isMobile ? "h-[290px] p-3" : "h-[340px] p-2"
+        )}>
           {deviceTypeMetrics && deviceTypeMetrics.length > 0 ? (
-            <div className="space-y-1">
+            <div className={cn("space-y-1", isMobile ? "space-y-2" : "")}>
               {deviceTypeMetrics.map((metric, idx) => (
                 <div
                   key={idx}
                   className={cn(
-                    "flex items-center justify-between px-2 py-1.5 bg-background border rounded hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer group"
+                    "flex items-center justify-between bg-background border rounded hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer group",
+                    isMobile ? "px-4 py-3" : "px-2 py-1.5"
                   )}
                   onClick={() => onInsertVariable?.(`input.${metric.name}`)}
                 >
                   <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <code className="text-xs font-mono text-blue-600 dark:text-blue-400 truncate">
+                    <code className={cn(
+                      "font-mono text-blue-600 dark:text-blue-400 truncate",
+                      isMobile ? "text-sm" : "text-xs"
+                    )}>
                       {metric.name}
                     </code>
                     {metric.display_name && metric.display_name !== metric.name && (
-                      <span className="text-xs text-muted-foreground truncate">{metric.display_name}</span>
+                      <span className={cn("text-muted-foreground truncate", isMobile ? "text-sm" : "text-xs")}>{metric.display_name}</span>
                     )}
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {metric.unit && (
-                      <span className="text-xs text-muted-foreground">{metric.unit}</span>
+                      <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-xs")}>{metric.unit}</span>
                     )}
-                    <Badge variant="outline" className={cn('text-xs h-5 px-1.5 py-0', getTypeColor(metric.data_type))}>
+                    <Badge variant="outline" className={cn(
+                      'py-0',
+                      isMobile ? 'h-7 px-2 text-sm' : 'h-5 px-1.5 text-xs',
+                      getTypeColor(metric.data_type)
+                    )}>
                       {getTypeIcon(metric.data_type)}
                     </Badge>
                   </div>
@@ -484,23 +514,35 @@ return ${resultParam}`
               ))}
             </div>
           ) : (
-            <div className="text-center text-muted-foreground text-sm py-8 px-4">
-              <Database className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            <div className={cn(
+              "text-center text-muted-foreground py-8 px-4",
+              isMobile ? "text-sm" : "text-sm"
+            )}>
+              <Database className={cn("mx-auto mb-2 opacity-30", isMobile ? "h-10 w-10" : "h-8 w-8")} />
               <div>{tBuilder('noVariablesHint')}</div>
             </div>
           )}
         </TabsContent>
 
         {/* Extension Tab */}
-        <TabsContent value="extension" className="h-[340px] overflow-y-auto overflow-x-hidden p-2 mt-0">
+        <TabsContent value="extension" className={cn(
+          "overflow-y-auto overflow-x-hidden mt-0",
+          isMobile ? "h-[290px] p-3" : "h-[340px] p-2"
+        )}>
           {/* Extension Selector Button */}
           <Popover open={extensionPopoverOpen} onOpenChange={setExtensionPopoverOpen}>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="w-full h-9 justify-start text-sm mb-3">
-                <Puzzle className="h-4 w-4 mr-2" />
+              <Button variant="outline" size={isMobile ? "default" : "sm"} className={cn(
+                "w-full justify-start mb-3",
+                isMobile ? "h-11 text-base" : "h-9 text-sm"
+              )}>
+                <Puzzle className={cn(isMobile ? "h-5 w-5" : "h-4 w-4", "mr-2")} />
                 {tBuilder('selectSources')}
                 {extensionSources && extensionSources.length > 0 && (
-                  <Badge variant="secondary" className="ml-auto h-5 px-1.5 text-xs">
+                  <Badge variant="secondary" className={cn(
+                    "ml-auto",
+                    isMobile ? "h-7 px-2 text-sm" : "h-5 px-1.5 text-xs"
+                  )}>
                     {extensionSources.length}
                   </Badge>
                 )}
@@ -562,37 +604,50 @@ return ${resultParam}`
 
           {/* Selected Extension Sources */}
           {extensionSources && extensionSources.length > 0 && (
-            <div className="space-y-2">
+            <div className={cn("space-y-2", isMobile ? "space-y-3" : "")}>
               {Object.entries(groupedExtensions).map(([extId, commands]) => {
                 const extName = extensionSources.find(s => s.extension_id === extId)?.extension_name || extId
                 return (
                   <div key={extId} className="border rounded bg-purple-50/50 dark:bg-purple-950/20 overflow-hidden">
-                    <div className="px-2.5 py-1.5 border-b bg-purple-100/50 dark:bg-purple-900/30 text-xs font-medium text-purple-700 dark:text-purple-300">
+                    <div className={cn(
+                      "border-b font-medium text-purple-700 dark:text-purple-300",
+                      isMobile ? "px-4 py-2.5 text-sm" : "px-2.5 py-1.5 text-xs"
+                    )}>
                       {extName}
                     </div>
-                    <div className="p-1.5 space-y-1">
+                    <div className={cn("space-y-1", isMobile ? "p-3" : "p-1.5")}>
                       {Object.entries(commands).map(([cmd, fields]) => (
                         <div key={cmd}>
-                          <div className="text-xs text-muted-foreground px-1 py-0.5">{cmd}</div>
+                          <div className={cn("text-muted-foreground px-1 py-0.5", isMobile ? "text-sm" : "text-xs")}>{cmd}</div>
                           {fields.map((field, idx) => (
                             <div
                               key={idx}
-                              className="flex items-center justify-between px-2 py-1.5 bg-background border rounded hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer group"
+                              className={cn(
+                                "flex items-center justify-between bg-background border rounded hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer group",
+                                isMobile ? "px-4 py-3" : "px-2 py-1.5"
+                              )}
                               onClick={() => onInsertVariable?.(`input.extensions.${extId}.${field.field}`)}
                             >
                               <div className="flex items-center gap-2 min-w-0 flex-1">
-                                <code className="font-mono text-purple-600 dark:text-purple-400 truncate text-xs">
+                                <code className={cn(
+                                  "font-mono text-purple-600 dark:text-purple-400 truncate",
+                                  isMobile ? "text-sm" : "text-xs"
+                                )}>
                                   {field.field}
                                 </code>
                                 {field.display_name !== field.field && (
-                                  <span className="text-xs text-muted-foreground truncate">{field.display_name}</span>
+                                  <span className={cn("text-muted-foreground truncate", isMobile ? "text-sm" : "text-xs")}>{field.display_name}</span>
                                 )}
                               </div>
                               <div className="flex items-center gap-1 flex-shrink-0">
                                 {field.unit && (
-                                  <span className="text-xs text-muted-foreground">{field.unit}</span>
+                                  <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-xs")}>{field.unit}</span>
                                 )}
-                                <Badge variant="outline" className={cn('text-xs h-5 px-1.5 py-0', getTypeColor(field.data_type))}>
+                                <Badge variant="outline" className={cn(
+                                  'py-0',
+                                  isMobile ? 'h-7 px-2 text-sm' : 'h-5 px-1.5 text-xs',
+                                  getTypeColor(field.data_type)
+                                )}>
                                   {getTypeIcon(field.data_type)}
                                 </Badge>
                               </div>
@@ -957,6 +1012,8 @@ export function TransformBuilder({
   const { t } = useTranslation(['automation', 'common'])
   const tBuilder = (key: string) => t(`automation:transformBuilder.${key}`)
   const isEditMode = !!transform
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
 
   // Step state
   const [currentStep, setCurrentStep] = useState<Step>('basic')
@@ -1281,6 +1338,9 @@ export function TransformBuilder({
   const stepIndex = steps.findIndex(s => s.key === currentStep)
   const isFirstStep = currentStep === 'basic'
 
+  // Lock body scroll when dialog is open (mobile only to prevent layout shift)
+  useBodyScrollLock(open, { mobileOnly: true })
+
   // Get dialog root for portal rendering
   const dialogRoot = typeof document !== 'undefined'
     ? document.getElementById('dialog-root') || document.body
@@ -1296,31 +1356,46 @@ export function TransformBuilder({
       )}
     >
         {/* Header - Simplified */}
-        <header className="border-b shrink-0 bg-background">
-          <div className="flex items-center gap-3 px-4 py-3">
+        <header
+          className="border-b shrink-0 bg-background"
+          style={isMobile ? { paddingTop: `${insets.top}px` } : undefined}
+        >
+          <div className={cn(
+            "flex items-center gap-3",
+            isMobile ? "px-4 py-4" : "px-4 py-3"
+          )}>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className={cn("shrink-0", isMobile ? "h-10 w-10" : "h-8 w-8")}
               onClick={() => onOpenChange(false)}
             >
-              <X className="h-4 w-4" />
+              <X className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
             </Button>
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                <Code className="h-3.5 w-3.5 text-blue-500" />
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <div className={cn(
+                "rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0",
+                isMobile ? "w-8 h-8" : "w-7 h-7"
+              )}>
+                <Code className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "text-blue-500")} />
               </div>
-              <h1 className="text-sm font-medium">
+              <h1 className={cn(
+                "font-medium truncate",
+                isMobile ? "text-base" : "text-sm"
+              )}>
                 {isEditMode ? tBuilder('editTitle') : tBuilder('title')}
               </h1>
             </div>
           </div>
         </header>
 
-        {/* Content Area with Three-Column Layout */}
+        {/* Content Area - Hide left sidebar on mobile */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Left Sidebar - Vertical Steps (Compact) */}
-          <aside className="w-[120px] border-r shrink-0 bg-muted/20">
+          {/* Left Sidebar - Vertical Steps (Compact) - Hide on mobile */}
+          <aside className={cn(
+            "border-r shrink-0 bg-muted/20",
+            isMobile ? "hidden" : "w-[120px]"
+          )}>
             <nav className="px-3 py-6 space-y-1">
               {steps.map((step, index) => {
                 const isCompleted = completedSteps.has(step.key)
@@ -1382,7 +1457,10 @@ export function TransformBuilder({
 
           {/* Main Content */}
           <main className="flex-1 overflow-y-auto">
-            <div className="max-w-5xl mx-auto px-4 py-6">
+            <div className={cn(
+              "max-w-5xl mx-auto",
+              isMobile ? "px-4 py-4" : "px-4 py-6"
+            )}>
               {/* Step 1: Basic Info */}
           {currentStep === 'basic' && (
             <BasicInfoStep
@@ -1419,6 +1497,7 @@ export function TransformBuilder({
               onInsertVariable={handleInsertVariable}
               t={t}
               tBuilder={tBuilder}
+              isMobile={isMobile}
             />
           )}
 
@@ -1443,8 +1522,11 @@ export function TransformBuilder({
             </div>
           </main>
 
-          {/* Right Preview Panel */}
-          <aside className="w-[360px] border-l shrink-0 bg-muted/10 overflow-y-auto">
+          {/* Right Preview Panel - Hide on mobile */}
+          <aside className={cn(
+            "w-[360px] border-l shrink-0 bg-muted/10 overflow-y-auto",
+            isMobile && "hidden"
+          )}>
             <TransformPreviewPanel
               name={name}
               description={description}
@@ -1463,11 +1545,17 @@ export function TransformBuilder({
         </div>
 
         {/* Step Navigation Footer - Compact */}
-        <footer className="border-t bg-background shrink-0">
-          <div className="px-5 py-3 flex gap-2">
+        <footer
+          className="border-t bg-background shrink-0"
+          style={isMobile ? { paddingBottom: `${insets.bottom}px` } : undefined}
+        >
+          <div className={cn(
+            "flex gap-2",
+            isMobile ? "px-4 py-4" : "px-5 py-3"
+          )}>
             {!isFirstStep && (
-              <Button variant="outline" size="sm" onClick={handlePrevious}>
-                <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+              <Button variant="outline" size={isMobile ? "default" : "sm"} onClick={handlePrevious} className={isMobile ? "h-12 min-w-[100px]" : ""}>
+                <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "mr-1")} />
                 {tBuilder('previous')}
               </Button>
             )}
@@ -1475,12 +1563,13 @@ export function TransformBuilder({
             <div className="flex-1" />
 
             <Button
-              size="sm"
+              size={isMobile ? "default" : "sm"}
               onClick={currentStep === 'test' ? handleSave : handleNext}
               disabled={!name.trim() && currentStep !== 'basic'}
+              className={isMobile ? "h-12 min-w-[100px]" : ""}
             >
               {currentStep === 'test' ? tBuilder('save') : tBuilder('next')}
-              <ChevronRight className="h-3.5 w-3.5 ml-1" />
+              <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "ml-1")} />
             </Button>
           </div>
         </footer>
@@ -1633,6 +1722,7 @@ interface CodeStepProps {
   onInsertVariable: (variable: string) => void
   t: (key: string) => string
   tBuilder: (key: string) => string
+  isMobile?: boolean
 }
 
 function CodeStep({
@@ -1649,6 +1739,7 @@ function CodeStep({
   onInsertVariable,
   tBuilder,
   t,
+  isMobile = false,
 }: CodeStepProps) {
   return (
     <div className="space-y-6 py-4">
@@ -1695,7 +1786,10 @@ function CodeStep({
         </div>
 
         {/* Main Code Editor Area */}
-        <div className="flex gap-3 min-h-[400px]">
+        <div className={cn(
+          "min-h-[400px]",
+          isMobile ? "flex flex-col gap-3" : "flex gap-3"
+        )}>
           {/* Left - Variables Panel with integrated Extension selector */}
           <VariablesPanel
             deviceTypeMetrics={deviceTypeMetrics}
@@ -1705,15 +1799,19 @@ function CodeStep({
             tBuilder={tBuilder}
             t={t}
             onInsertVariable={onInsertVariable}
+            isMobile={isMobile}
           />
 
           {/* Right - Code Editor */}
-          <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          <div className={cn(
+            "flex flex-col min-w-0 min-h-0",
+            isMobile ? "w-full" : "flex-1"
+          )}>
             <CodeEditor
               value={jsCode}
               onChange={onCodeChange}
-              minHeight="400px"
-              maxHeight="600px"
+              minHeight={isMobile ? "300px" : "400px"}
+              maxHeight={isMobile ? "500px" : "600px"}
               className="flex-1"
             />
             {errors.code && (

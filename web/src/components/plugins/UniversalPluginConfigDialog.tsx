@@ -4,9 +4,9 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -496,7 +496,7 @@ export function UniversalPluginConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl sm:max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span className={pluginType.color}>{pluginType.icon}</span>
@@ -513,7 +513,7 @@ export function UniversalPluginConfigDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <DialogContentBody className="flex-1 overflow-y-auto px-4 pt-6 pb-4 sm:px-6">
           {/* Edit Mode */}
           {isEditing ? (
             <div>
@@ -813,13 +813,7 @@ export function UniversalPluginConfigDialog({
               )}
             </>
           )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t("common:close", { defaultValue: "Close" })}
-          </Button>
-        </DialogFooter>
+        </DialogContentBody>
       </DialogContent>
     </Dialog>
   )

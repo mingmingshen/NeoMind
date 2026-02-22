@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogContentBody } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { RefreshCw } from "lucide-react"
+import { RefreshCw, X } from "lucide-react"
 import type { DeviceType, AddDeviceRequest, ConnectionConfig } from "@/types"
 
 function generateRandomId(): string {
@@ -124,12 +124,12 @@ export function AddDeviceDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md flex flex-col">
         <DialogHeader>
           <DialogTitle>{t('devices:add.title')}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <DialogContentBody className="space-y-4 py-4">
           {/* Device Type */}
           <div className="space-y-2">
             <Label htmlFor="device-type">
@@ -150,7 +150,7 @@ export function AddDeviceDialog({
           </div>
 
           {/* Device ID & Name */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="device-id">{t('devices:deviceId')}</Label>
               <div className="flex gap-2">
@@ -241,7 +241,7 @@ export function AddDeviceDialog({
                   className="font-mono text-sm"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="http-method">{t('devices:add.requestMethod')}</Label>
                   <Select
@@ -281,7 +281,7 @@ export function AddDeviceDialog({
               </code>
             </div>
           )}
-        </div>
+        </DialogContentBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

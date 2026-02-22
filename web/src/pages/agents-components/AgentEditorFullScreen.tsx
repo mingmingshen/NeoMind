@@ -18,6 +18,8 @@ import { createPortal } from "react-dom"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -244,6 +246,11 @@ export function AgentEditorFullScreen({
   const { t: tAgent } = useTranslation('agents')
   const { toast } = useToast()
   const { handleError } = useErrorHandler()
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
+
+  // Lock body scroll when dialog is open (mobile only)
+  useBodyScrollLock(open, { mobileOnly: true })
 
   // ========================================================================
   // State
@@ -1081,21 +1088,36 @@ export function AgentEditorFullScreen({
         )}
       >
         {/* Header */}
-        <header className="border-b shrink-0 bg-background">
-          <div className="flex items-center gap-3 px-4 py-3">
+        <header
+          className="border-b shrink-0 bg-background"
+          style={isMobile ? { paddingTop: `${insets.top}px` } : undefined}
+        >
+          <div className={cn(
+            "flex items-center gap-3",
+            isMobile ? "px-4 py-4" : "px-4 py-3"
+          )}>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className={cn(
+                "shrink-0",
+                isMobile ? "h-10 w-10" : "h-8 w-8"
+              )}
               onClick={() => onOpenChange(false)}
             >
-              <X className="h-4 w-4" />
+              <X className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
             </Button>
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                <Sparkles className="h-3.5 w-3.5 text-purple-500" />
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <div className={cn(
+                "rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0",
+                isMobile ? "w-8 h-8" : "w-7 h-7"
+              )}>
+                <Sparkles className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "text-purple-500")} />
               </div>
-              <h1 className="text-sm font-medium">
+              <h1 className={cn(
+                "font-medium truncate",
+                isMobile ? "text-base" : "text-sm"
+              )}>
                 {agent ? tAgent('editAgent') : tAgent('createAgent')}
               </h1>
             </div>
@@ -1123,28 +1145,31 @@ export function AgentEditorFullScreen({
 
             {/* Right: Configuration Form (wider) */}
             <div className="col-span-12 lg:col-span-8 overflow-y-auto">
-              <div className="px-4 py-6 space-y-6">
+              <div className={cn(
+                "space-y-6",
+                isMobile ? "px-4 py-6" : "px-4 py-6"
+              )}>
             {/* Name */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium">
+              <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>
                 {tAgent('creator.basicInfo.name')} <span className="text-destructive">*</span>
               </Label>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={tAgent('creator.basicInfo.namePlaceholder')}
-                className="h-10"
+                className={cn(isMobile ? "h-12 text-base" : "h-10")}
               />
             </div>
 
             {/* Description (Optional) */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium">{tAgent('creator.basicInfo.description')}</Label>
+              <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>{tAgent('creator.basicInfo.description')}</Label>
               <Input
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder={tAgent('creator.basicInfo.descriptionPlaceholder')}
-                className="h-10"
+                className={cn(isMobile ? "h-12 text-base" : "h-10")}
               />
             </div>
 
@@ -1341,16 +1366,20 @@ export function AgentEditorFullScreen({
 
             {/* Execution Schedule */}
             <div className="space-y-3">
-              <Label className="text-sm font-medium">{tAgent('creator.basicInfo.scheduleLabel')}</Label>
+              <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>{tAgent('creator.basicInfo.scheduleLabel')}</Label>
 
               {/* Strategy Cards */}
-              <div className="grid grid-cols-4 gap-2">
+              <div className={cn(
+                "gap-2",
+                isMobile ? "grid grid-cols-2" : "grid grid-cols-4"
+              )}>
                 <ScheduleCard
                   icon={<Clock className="h-5 w-5" />}
                   label={tAgent('creator.schedule.strategies.interval')}
                   description={tAgent('creator.schedule.interval.preview', { value: intervalValue, unit: tAgent('creator.schedule.interval.minutes') })}
                   active={scheduleType === 'interval'}
                   onClick={() => setScheduleType('interval')}
+                  isMobile={isMobile}
                 />
                 <ScheduleCard
                   icon={<Zap className="h-5 w-5" />}
@@ -1358,6 +1387,7 @@ export function AgentEditorFullScreen({
                   description={tAgent('creator.schedule.daily.preview', { hour: scheduleHour, minute: scheduleMinute })}
                   active={scheduleType === 'daily'}
                   onClick={() => setScheduleType('daily')}
+                  isMobile={isMobile}
                 />
                 <ScheduleCard
                   icon={<Bell className="h-5 w-5" />}
@@ -1365,6 +1395,7 @@ export function AgentEditorFullScreen({
                   description={tAgent('creator.schedule.weekly.preview', { day: selectedWeekdays.length > 0 ? selectedWeekdays[0] : 1, hour: scheduleHour, minute: scheduleMinute })}
                   active={scheduleType === 'weekly'}
                   onClick={() => setScheduleType('weekly')}
+                  isMobile={isMobile}
                 />
                 <ScheduleCard
                   icon={<Target className="h-5 w-5" />}
@@ -1372,22 +1403,32 @@ export function AgentEditorFullScreen({
                   description={tAgent('creator.schedule.event.descriptions.device.metric')}
                   active={scheduleType === 'event'}
                   onClick={() => setScheduleType('event')}
+                  isMobile={isMobile}
                 />
               </div>
 
               {/* Schedule Configuration */}
-              <div className="bg-muted/50 rounded-xl p-4 border">
+              <div className={cn("border rounded-xl", isMobile ? "p-4" : "p-4 bg-muted/50")}>
                 {scheduleType === 'interval' && (
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-muted-foreground">{tAgent('creator.schedule.interval.every')}</span>
-                    <div className="flex gap-1">
+                  <div className={cn(
+                    "flex items-center gap-3",
+                    isMobile ? "flex-wrap" : ""
+                  )}>
+                    <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.schedule.interval.every')}</span>
+                    <div className={cn(
+                      "flex gap-1",
+                      isMobile ? "flex-wrap gap-2" : ""
+                    )}>
                       {INTERVALS.map((mins) => (
                         <button
                           key={mins}
                           type="button"
                           onClick={() => setIntervalValue(mins)}
                           className={cn(
-                            "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                            "rounded-lg font-medium transition-colors",
+                            isMobile
+                              ? "px-4 py-3 text-base min-w-[60px]"
+                              : "px-3 py-1.5 text-sm",
                             intervalValue === mins
                               ? "bg-primary text-primary-foreground"
                               : "bg-background hover:bg-muted"
@@ -1401,11 +1442,14 @@ export function AgentEditorFullScreen({
                 )}
 
                 {scheduleType === 'daily' && (
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-muted-foreground">{tAgent('creator.schedule.daily.everyDay')}</span>
+                  <div className={cn(
+                    "flex items-center gap-3",
+                    isMobile ? "flex-col items-start gap-4" : ""
+                  )}>
+                    <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.schedule.daily.everyDay')}</span>
                     <div className="flex items-center gap-1 bg-background rounded-lg p-1">
                       <Select value={scheduleHour.toString()} onValueChange={(v) => setScheduleHour(parseInt(v))}>
-                        <SelectTrigger className="w-20 h-9 border-0 bg-transparent">
+                        <SelectTrigger className={cn("border-0 bg-transparent", isMobile ? "w-24 h-11 text-base" : "w-20 h-9")}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1421,9 +1465,12 @@ export function AgentEditorFullScreen({
                 {scheduleType === 'weekly' && (
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                      <span className="text-sm text-muted-foreground">{tAgent('creator.basicInfo.runOn')}</span>
+                      <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.basicInfo.runOn')}</span>
                     </div>
-                    <div className="flex gap-1 flex-wrap">
+                    <div className={cn(
+                      "flex gap-1 flex-wrap",
+                      isMobile ? "gap-2" : ""
+                    )}>
                       {[0, 1, 2, 3, 4, 5, 6].map((d) => (
                         <button
                           key={d}
@@ -1435,7 +1482,10 @@ export function AgentEditorFullScreen({
                             setSelectedWeekdays(newWeekdays)
                           }}
                           className={cn(
-                            "w-10 h-10 rounded-lg text-sm font-medium transition-colors",
+                            "rounded-lg font-medium transition-colors",
+                            isMobile
+                              ? "w-12 h-12 text-base"
+                              : "w-10 h-10 text-sm",
                             selectedWeekdays.includes(d)
                               ? "bg-primary text-primary-foreground"
                               : "bg-background hover:bg-muted"
@@ -1445,10 +1495,13 @@ export function AgentEditorFullScreen({
                         </button>
                       ))}
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-muted-foreground">{tAgent('creator.schedule.daily.at')}</span>
+                    <div className={cn(
+                      "flex items-center gap-3",
+                      isMobile ? "flex-col items-start gap-4" : ""
+                    )}>
+                      <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.schedule.daily.at')}</span>
                       <Select value={scheduleHour.toString()} onValueChange={(v) => setScheduleHour(parseInt(v))}>
-                        <SelectTrigger className="w-20 h-9">
+                        <SelectTrigger className={cn(isMobile ? "w-24 h-11 text-base" : "w-20 h-9")}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1463,55 +1516,73 @@ export function AgentEditorFullScreen({
 
                 {scheduleType === 'event' && (
                   <div className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-muted-foreground">{tAgent('creator.basicInfo.triggerWhen')}</span>
-                      <div className="flex gap-1">
+                    <div className={cn(
+                      "flex items-center gap-3",
+                      isMobile ? "flex-col items-start gap-3" : ""
+                    )}>
+                      <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.basicInfo.triggerWhen')}</span>
+                      <div className={cn(
+                        "flex gap-1",
+                        isMobile ? "flex-col w-full gap-2" : ""
+                      )}>
                         <button
                           type="button"
                           onClick={() => setEventConfig({ type: 'device.metric', deviceId: 'all' })}
                           className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors",
+                            "flex items-center gap-1.5 rounded-lg transition-colors",
+                            isMobile
+                              ? "px-4 py-3 text-base flex-1 justify-center"
+                              : "px-3 py-1.5 text-sm",
                             eventConfig.type === 'device.metric' ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
                           )}
                         >
-                          <Activity className="h-3.5 w-3.5" />
+                          <Activity className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5")} />
                           {tAgent('creator.basicInfo.metricUpdates')}
                         </button>
                         <button
                           type="button"
                           onClick={() => setEventConfig({ type: 'manual' })}
                           className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors",
+                            "flex items-center gap-1.5 rounded-lg transition-colors",
+                            isMobile
+                              ? "px-4 py-3 text-base flex-1 justify-center"
+                              : "px-3 py-1.5 text-sm",
                             eventConfig.type === 'manual' ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
                           )}
                         >
-                          <Clock className="h-3.5 w-3.5" />
+                          <Clock className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5")} />
                           {tAgent('creator.basicInfo.manualTrigger')}
                         </button>
                       </div>
                     </div>
 
                     {eventConfig.type === 'device.metric' && (
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm text-muted-foreground">{tAgent('creator.basicInfo.fromDevice')}</span>
+                      <div className={cn(
+                        "flex items-center gap-3",
+                        isMobile ? "flex-col items-start gap-3" : ""
+                      )}>
+                        <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.basicInfo.fromDevice')}</span>
                         <select
                           value={eventConfig.deviceId || 'all'}
                           onChange={(e) => setEventConfig({ ...eventConfig, deviceId: e.target.value })}
-                          className="flex-1 h-9 px-3 text-sm rounded-lg border bg-background"
+                          className={cn(
+                            "rounded-lg border bg-background",
+                            isMobile ? "flex-1 h-11 px-4 text-base" : "flex-1 h-9 px-3 text-sm"
+                          )}
                         >
                           <option value="all">{tAgent('creator.schedule.event.allDevices')}</option>
                           {devices.map((d) => (
                             <option key={d.id} value={d.id}>{d.name}</option>
                           ))}
                         </select>
-                        <p className="text-xs text-muted-foreground">
+                        <p className={cn("text-muted-foreground", isMobile ? "text-xs" : "text-xs")}>
                           Agent will fetch data from Resources when device updates
                         </p>
                       </div>
                     )}
 
                     {eventConfig.type === 'manual' && (
-                      <p className="text-xs text-muted-foreground">
+                      <p className={cn("text-muted-foreground", isMobile ? "text-xs" : "text-xs")}>
                         {tAgent('creator.basicInfo.manualHint')}
                       </p>
                     )}
@@ -1522,15 +1593,19 @@ export function AgentEditorFullScreen({
 
             {/* Resources Section */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">{tAgent('creator.resources.title')}</Label>
+              <div className={cn(
+                "flex items-center justify-between",
+                isMobile ? "flex-col items-start gap-3" : ""
+              )}>
+                <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>{tAgent('creator.resources.title')}</Label>
                 <Button
                   type="button"
                   variant="outline"
-                  size="sm"
+                  size={isMobile ? "default" : "sm"}
                   onClick={() => setResourceDialogOpen(true)}
+                  className={isMobile ? "w-full justify-center h-11" : ""}
                 >
-                  <Plus className="h-4 w-4 mr-2" />
+                  <Plus className={cn(isMobile ? "h-5 w-5" : "h-4 w-4", "mr-2")} />
                   {tAgent('creator.resources.addResources')}
                 </Button>
               </div>
@@ -1584,6 +1659,7 @@ export function AgentEditorFullScreen({
                           )
                         )
                       }}
+                      isMobile={isMobile}
                     />
                   ))}
                 </div>
@@ -1595,28 +1671,39 @@ export function AgentEditorFullScreen({
         </main>
 
         {/* Footer with action buttons and summary */}
-        <footer className="border-t bg-background shrink-0">
-          <div className="px-5 py-3 flex gap-2 justify-end">
+        <footer
+          className="border-t bg-background shrink-0"
+          style={isMobile ? { paddingBottom: `${insets.bottom}px` } : undefined}
+        >
+          <div className={cn(
+            "flex gap-2",
+            isMobile ? "px-4 py-4 justify-end" : "px-5 py-3 justify-end"
+          )}>
             <Button
               variant="outline"
-              size="sm"
+              size={isMobile ? "default" : "sm"}
               onClick={() => onOpenChange(false)}
               disabled={saving}
+              className={isMobile ? "min-w-[100px] h-12" : ""}
             >
               {tCommon('cancel')}
             </Button>
             <Button
-              size="sm"
+              size={isMobile ? "default" : "sm"}
               onClick={handleSave}
               disabled={!isValid || saving}
+              className={isMobile ? "min-w-[100px] h-12" : ""}
             >
-              {saving ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : null}
+              {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               {saving ? 'Saving...' : agent ? tCommon('save') : tCommon('create')}
             </Button>
           </div>
           {agentSummary && (
-            <div className="px-5 pb-3 flex items-center gap-2 text-xs text-muted-foreground border-t pt-2 mt-2">
-              <Info className="h-3.5 w-3.5 shrink-0" />
+            <div className={cn(
+              "flex items-center gap-2 text-muted-foreground border-t pt-2",
+              isMobile ? "px-4 pb-2 text-xs" : "px-5 pb-3 text-xs"
+            )}>
+              <Info className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "shrink-0")} />
               <span className="line-clamp-1">{agentSummary}</span>
             </div>
           )}
@@ -1677,14 +1764,184 @@ function ResourceSelectionDialog({
   scheduleType,
 }: ResourceSelectionDialogProps) {
   const { t: tAgent } = useTranslation('agents')
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
+
+  // Lock body scroll when dialog is open (mobile only)
+  useBodyScrollLock(open, { mobileOnly: true })
 
   const isSelected = (id: string) => selectedResources.some(r => r.id === id)
 
+  // Mobile full-screen portal
+  if (isMobile) {
+    return createPortal(
+      <div
+        className={cn(
+          "fixed inset-0 z-[150] bg-background flex flex-col",
+          !open && "hidden"
+        )}
+        style={{
+          paddingTop: `${insets.top}px`,
+          paddingBottom: `${insets.bottom}px`,
+        }}
+      >
+        {/* Mobile Header */}
+        <div className="flex items-center justify-between px-4 py-4 border-b shrink-0">
+          <h2 className="text-base font-semibold">{tAgent('creator.resources.dialog.title')}</h2>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10"
+            onClick={() => onOpenChange(false)}
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+
+        {/* Mobile Content */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Recommendations */}
+          {recommendations.length > 0 && (
+            <div className="px-4 py-3 border-b bg-primary/5 shrink-0">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium">{tAgent('creator.resources.dialog.recommended')}</span>
+                {generatingRecommendations && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {recommendations.map((rec) => (
+                  <RecommendationCard
+                    key={rec.id}
+                    recommendation={rec}
+                    selected={isSelected(rec.id)}
+                    onClick={() => toggleRecommendation(rec)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Available Resources Section */}
+          <div className="px-4 py-3 border-b">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium">{tAgent('creator.resources.dialog.available')}</span>
+              <Badge variant="secondary">{availableResources.length}</Badge>
+            </div>
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={tAgent('creator.resources.dialog.searchPlaceholder')}
+                className="h-11 text-base pl-10"
+              />
+            </div>
+            <div className="space-y-2">
+              {availableResources.map((resource) => {
+                const selected = isSelected(resource.id)
+                return (
+                  <ResourceListItem
+                    key={resource.id}
+                    resource={resource}
+                    selected={selected}
+                    onClick={() => toggleResource(resource)}
+                    isMobile={true}
+                  />
+                )
+              })}
+              {availableResources.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  {tAgent('creator.resources.noResourcesFound')}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Selected Resources Section */}
+          <div className="px-4 py-3">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium">{tAgent('creator.resources.dialog.selected')}</span>
+              <Badge variant={selectedResources.length === 0 ? "secondary" : "default"}>
+                {selectedResources.length}
+              </Badge>
+            </div>
+            {selectedResources.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center py-8">
+                <Target className="h-8 w-8 text-muted-foreground/50 mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  {tAgent('creator.resources.dialog.noResourcesHint')}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {selectedResources.map((resource) => (
+                  <SelectedResourceItem
+                    key={resource.id}
+                    resource={resource}
+                    setSelectedResources={setSelectedResources}
+                    onRemove={() => {
+                      setSelectedResources(prev => prev.filter(r => r.id !== resource.id))
+                    }}
+                    onToggleMetric={(resourceId, metricName) => {
+                      setSelectedResources((prev) =>
+                        prev.map(r =>
+                          r.id === resourceId
+                            ? {
+                                ...r,
+                                selectedMetrics: new Set(
+                                  r.selectedMetrics.has(metricName)
+                                    ? Array.from(r.selectedMetrics).filter(n => n !== metricName)
+                                    : [...r.selectedMetrics, metricName]
+                                ),
+                              }
+                            : r
+                        )
+                      )
+                    }}
+                    onToggleCommand={(resourceId, commandName) => {
+                      setSelectedResources((prev) =>
+                        prev.map(r =>
+                          r.id === resourceId
+                            ? {
+                                ...r,
+                                selectedCommands: new Set(
+                                  r.selectedCommands.has(commandName)
+                                    ? Array.from(r.selectedCommands).filter(n => n !== commandName)
+                                    : [...r.selectedCommands, commandName]
+                                ),
+                              }
+                            : r
+                        )
+                      )
+                    }}
+                    isMobile={true}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile Footer */}
+        <div className="px-4 py-4 border-t flex justify-between items-center shrink-0">
+          <p className="text-sm text-muted-foreground">
+            {tAgent('creator.resources.dialog.selectedCount', { count: selectedResources.length })}
+          </p>
+          <Button className="min-w-[100px] h-12" onClick={() => onOpenChange(false)}>
+            {tAgent('creator.resources.dialog.done')}
+          </Button>
+        </div>
+      </div>,
+      document.body
+    )
+  }
+
+  // Desktop Dialog
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Override overlay z-index */}
       <DialogPrimitive.Overlay className="z-[100] fixed inset-0 bg-black/80" />
-      <DialogContent className="z-[100] max-w-3xl max-h-[80vh] flex flex-col p-0 gap-0 m-0">
+      <DialogContent className="z-[100] sm:max-w-3xl sm:max-h-[80vh] flex flex-col p-0 gap-0 m-0">
         <DialogHeader className="px-6 py-4 border-b">
           <DialogTitle>{tAgent('creator.resources.dialog.title')}</DialogTitle>
         </DialogHeader>
@@ -1844,26 +2101,28 @@ interface ScheduleCardProps {
   description: string
   active: boolean
   onClick: () => void
+  isMobile?: boolean
 }
 
-function ScheduleCard({ icon, label, description, active, onClick }: ScheduleCardProps) {
+function ScheduleCard({ icon, label, description, active, onClick, isMobile = false }: ScheduleCardProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all",
+        "flex flex-col items-center rounded-xl border-2 transition-all",
+        isMobile ? "gap-3 p-4" : "gap-2 p-3",
         active
           ? "border-primary bg-primary/5"
           : "border-transparent hover:border-muted-foreground/30 hover:bg-muted/30"
       )}
     >
-      <div className={cn("p-1.5 rounded-lg", active ? "bg-primary/10" : "bg-muted/50")}>
+      <div className={cn("rounded-lg", active ? "bg-primary/10" : "bg-muted/50", isMobile ? "p-2" : "p-1.5")}>
         {icon}
       </div>
       <div className="text-center">
-        <div className={cn("text-xs font-medium", active ? "text-foreground" : "text-muted-foreground")}>{label}</div>
-        <div className="text-[10px] text-muted-foreground">{description}</div>
+        <div className={cn("font-medium", active ? "text-foreground" : "text-muted-foreground", isMobile ? "text-sm" : "text-xs")}>{label}</div>
+        <div className={cn("text-muted-foreground", isMobile ? "text-xs" : "text-[10px]")}>{description}</div>
       </div>
     </button>
   )
@@ -1913,9 +2172,10 @@ interface ResourceListItemProps {
   resource: AvailableResource
   selected: boolean
   onClick: () => void
+  isMobile?: boolean
 }
 
-function ResourceListItem({ resource, selected, onClick }: ResourceListItemProps) {
+function ResourceListItem({ resource, selected, onClick, isMobile = false }: ResourceListItemProps) {
   const metricCount = resource.metrics.length
   const commandCount = resource.commands.length
 
@@ -1924,27 +2184,29 @@ function ResourceListItem({ resource, selected, onClick }: ResourceListItemProps
       type="button"
       onClick={onClick}
       className={cn(
-        "w-full px-3 py-2.5 rounded-lg text-left transition-colors flex items-center justify-between group",
+        "w-full rounded-lg text-left transition-colors flex items-center justify-between group",
+        isMobile ? "px-4 py-3" : "px-3 py-2.5",
         selected ? "bg-primary/10 border border-primary/30" : "hover:bg-muted/40 border border-transparent"
       )}
     >
       <div className="flex items-center gap-2 min-w-0">
         <div className={cn(
-          "p-1.5 rounded",
+          "rounded",
+          isMobile ? "p-2" : "p-1.5",
           selected ? "bg-primary text-primary-foreground" : "bg-muted"
         )}>
-          {resource.type === 'extension' ? <Puzzle className="h-3.5 w-3.5" /> : <Target className="h-3.5 w-3.5" />}
+          {resource.type === 'extension' ? <Puzzle className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5")} /> : <Target className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5")} />}
         </div>
         <div className="min-w-0">
-          <div className="text-sm font-medium truncate">{resource.name}</div>
-          <div className="text-xs text-muted-foreground">
+          <div className={cn("font-medium truncate", isMobile ? "text-base" : "text-sm")}>{resource.name}</div>
+          <div className={cn("text-muted-foreground", isMobile ? "text-xs" : "text-xs")}>
             {metricCount > 0 && `${metricCount} metric${metricCount > 1 ? 's' : ''}`}
             {metricCount > 0 && commandCount > 0 && ' • '}
             {commandCount > 0 && `${commandCount} command${commandCount > 1 ? 's' : ''}`}
           </div>
         </div>
       </div>
-      {selected && <Check className="h-4 w-4 text-primary shrink-0" />}
+      {selected && <Check className={cn("text-primary shrink-0", isMobile ? "h-5 w-5" : "h-4 w-4")} />}
     </button>
   )
 }
@@ -1955,9 +2217,10 @@ interface SelectedResourceItemProps {
   onRemove: () => void
   onToggleMetric: (resourceId: string, metricName: string) => void
   onToggleCommand: (resourceId: string, commandName: string) => void
+  isMobile?: boolean
 }
 
-function SelectedResourceItem({ resource, setSelectedResources, onRemove, onToggleMetric, onToggleCommand }: SelectedResourceItemProps) {
+function SelectedResourceItem({ resource, setSelectedResources, onRemove, onToggleMetric, onToggleCommand, isMobile = false }: SelectedResourceItemProps) {
   const [expanded, setExpanded] = useState(false)
   const selectedMetricCount = resource.selectedMetrics.size
   const selectedCommandCount = resource.selectedCommands.size
@@ -1968,7 +2231,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
   const hasCommands = resource.allCommands.length > 0
 
   return (
-    <div className="px-3 py-2 rounded-lg bg-background border group">
+    <div className={cn("rounded-lg bg-background border group", isMobile ? "px-4 py-3" : "px-3 py-2")}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <button
@@ -1978,19 +2241,21 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
         >
           <ChevronRight
             className={cn(
-              "h-4 w-4 text-muted-foreground transition-transform",
+              "text-muted-foreground transition-transform",
+              isMobile ? "h-5 w-5" : "h-4 w-4",
               expanded && "rotate-90"
             )}
           />
           <div className={cn(
-            "p-1 rounded",
-            resource.type === 'extension' ? "bg-purple-100 text-purple-600" : "bg-blue-100 text-blue-600"
+            "rounded",
+            isMobile ? "p-2" : "p-1",
+            resource.type === 'extension' ? "bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300" : "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300"
           )}>
-            {resource.type === 'extension' ? <Puzzle className="h-3 w-3" /> : <Target className="h-3 w-3" />}
+            {resource.type === 'extension' ? <Puzzle className={cn(isMobile ? "h-4 w-4" : "h-3 w-3")} /> : <Target className={cn(isMobile ? "h-4 w-4" : "h-3 w-3")} />}
           </div>
-          <span className="text-sm font-medium truncate">{resource.name}</span>
+          <span className={cn("font-medium truncate", isMobile ? "text-base" : "text-sm")}>{resource.name}</span>
           {(hasMetrics || hasCommands) && (
-            <Badge variant="secondary" className="text-xs">
+            <Badge variant="secondary" className={cn(isMobile ? "text-xs" : "text-xs")}>
               {selectedMetricCount}/{allMetricCount} • {selectedCommandCount}/{allCommandCount}
             </Badge>
           )}
@@ -1999,20 +2264,20 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
           type="button"
           variant="ghost"
           size="icon"
-          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+          className={cn("transition-opacity", isMobile ? "h-9 w-9" : "h-6 w-6", isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100")}
           onClick={onRemove}
         >
-          <X className="h-3 w-3" />
+          <X className={cn(isMobile ? "h-4 w-4" : "h-3 w-3")} />
         </Button>
       </div>
 
       {/* Expandable Metrics/Commands */}
       {expanded && (hasMetrics || hasCommands) && (
-        <div className="mt-2 space-y-2 pl-6">
+        <div className={cn("space-y-2", isMobile ? "mt-3 pl-7" : "mt-2 pl-6")}>
           {/* Metrics */}
           {hasMetrics && (
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground flex items-center justify-between">
+            <div className="space-y-2">
+              <div className={cn("text-muted-foreground flex items-center justify-between", isMobile ? "text-sm" : "text-xs")}>
                 <span>Metrics</span>
                 <button
                   type="button"
@@ -2037,12 +2302,15 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                   {selectedMetricCount === allMetricCount ? 'Deselect All' : selectedMetricCount > 0 ? 'Select All' : 'Select All'}
                 </button>
               </div>
-              <div className="grid grid-cols-2 gap-1">
+              <div className={cn("gap-1", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
                 {resource.allMetrics.map((metric) => (
                   <label
                     key={metric.name}
                     className={cn(
-                      "flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer transition-colors",
+                      "flex items-center gap-2 rounded cursor-pointer transition-colors",
+                      isMobile
+                        ? "px-3 py-2.5 text-sm"
+                        : "px-2 py-1 text-xs",
                       resource.selectedMetrics.has(metric.name)
                         ? "bg-primary/10 text-primary"
                         : "hover:bg-muted/50"
@@ -2052,7 +2320,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                       type="checkbox"
                       checked={resource.selectedMetrics.has(metric.name)}
                       onChange={() => onToggleMetric(resource.id, metric.name)}
-                      className="h-3 w-3 rounded"
+                      className={cn("rounded", isMobile ? "h-4 w-4" : "h-3 w-3")}
                     />
                     <span className="truncate">{metric.display_name}</span>
                   </label>
@@ -2063,8 +2331,8 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
 
           {/* Commands */}
           {hasCommands && (
-            <div className="space-y-1">
-              <div className="text-xs text-muted-foreground flex items-center justify-between">
+            <div className="space-y-2">
+              <div className={cn("text-muted-foreground flex items-center justify-between", isMobile ? "text-sm" : "text-xs")}>
                 <span>Commands</span>
                 <button
                   type="button"
@@ -2089,12 +2357,15 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                   {selectedCommandCount === allCommandCount ? 'Deselect All' : selectedCommandCount > 0 ? 'Select All' : 'Select All'}
                 </button>
               </div>
-              <div className="grid grid-cols-2 gap-1">
+              <div className={cn("gap-1", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
                 {resource.allCommands.map((command) => (
                   <label
                     key={command.name}
                     className={cn(
-                      "flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer transition-colors",
+                      "flex items-center gap-2 rounded cursor-pointer transition-colors",
+                      isMobile
+                        ? "px-3 py-2.5 text-sm"
+                        : "px-2 py-1 text-xs",
                       resource.selectedCommands.has(command.name)
                         ? "bg-primary/10 text-primary"
                         : "hover:bg-muted/50"
@@ -2104,7 +2375,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                       type="checkbox"
                       checked={resource.selectedCommands.has(command.name)}
                       onChange={() => onToggleCommand(resource.id, command.name)}
-                      className="h-3 w-3 rounded"
+                      className={cn("rounded", isMobile ? "h-4 w-4" : "h-3 w-3")}
                     />
                     <span className="truncate">{command.display_name}</span>
                   </label>
@@ -2114,7 +2385,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
           )}
 
           {!hasMetrics && !hasCommands && (
-            <p className="text-xs text-muted-foreground italic">No metrics or commands available</p>
+            <p className={cn("text-muted-foreground italic", isMobile ? "text-xs" : "text-xs")}>No metrics or commands available</p>
           )}
         </div>
       )}

@@ -28,6 +28,8 @@ import { AgentDetailPanel } from "./agents-components/AgentDetailPanel"
 import {
   Dialog,
   DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog"
 
 export function AgentsPage() {
@@ -464,11 +466,11 @@ export function AgentsPage() {
 
       {/* Agent Detail Dialog */}
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent className="max-w-5xl max-h-[85vh] p-0 gap-0">
-          <div className="px-6 pt-6 pb-4 border-b flex items-center justify-between">
-            <h2 className="text-lg font-semibold">{tAgent('detailTitle')}</h2>
-          </div>
-          <div className="overflow-y-auto max-h-[calc(85vh-80px)]">
+        <DialogContent className="sm:max-w-5xl sm:max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>{tAgent('detailTitle')}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto">
             {selectedAgent && (
               <AgentDetailPanel
                 agent={selectedAgent}

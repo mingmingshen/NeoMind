@@ -6,6 +6,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,6 +27,7 @@ import {
   Github,
   Star,
   ExternalLink,
+  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
@@ -278,13 +280,13 @@ export function MarketplaceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+      <DialogContent className="sm:max-w-4xl sm:max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Globe className="h-5 w-5" />
-            {t("extensions:market.title", "Extension Marketplace")}
+            <span className="truncate">{t("extensions:market.title", "Extension Marketplace")}</span>
             {marketVersion && (
-              <Badge variant="outline" className="text-xs">
+              <Badge variant="outline" className="text-xs shrink-0">
                 v{marketVersion}
               </Badge>
             )}
@@ -292,9 +294,9 @@ export function MarketplaceDialog({
         </DialogHeader>
 
         {!showDetail ? (
-          <>
+          <DialogContentBody className="flex-1 overflow-y-auto px-4 pt-6 pb-4 sm:px-6">
             {/* Search and Filter */}
-            <div className="flex flex-col sm:flex-row gap-3 py-4">
+            <div className="flex flex-col gap-3 pb-4 sm:flex-row sm:gap-3">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -326,7 +328,7 @@ export function MarketplaceDialog({
             </div>
 
             {/* Extensions List */}
-            <div className="flex-1 overflow-y-auto -mx-1 px-1">
+            <div className="flex-1 overflow-y-auto">
               {loading ? (
                 <div className="flex items-center justify-center h-64">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -348,12 +350,12 @@ export function MarketplaceDialog({
                       <Card
                         key={ext.id}
                         className={cn(
-                          "p-4 hover:bg-accent/50 transition-colors cursor-pointer",
+                          "p-4 hover:bg-accent/50 transition-colors cursor-pointer overflow-hidden",
                           installed && "border-primary/50"
                         )}
                         onClick={() => !installed && loadExtensionDetails(ext.id)}
                       >
-                        <div className="flex items-start justify-between gap-4">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <h3 className="font-semibold truncate">{ext.name}</h3>
@@ -367,7 +369,7 @@ export function MarketplaceDialog({
                                 {ext.version}
                               </Badge>
                             </div>
-                            <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                            <p className="text-sm text-muted-foreground line-clamp-2 mb-2 h-10 leading-5">
                               {ext.description}
                             </p>
                             <div className="flex items-center gap-2 flex-wrap">
@@ -383,11 +385,12 @@ export function MarketplaceDialog({
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 sm:shrink-0 w-full sm:w-auto">
                             {installed ? (
                               <Button
                                 variant="outline"
                                 size="sm"
+                                className="w-full sm:w-auto"
                                 disabled
                                 onClick={(e) => e.stopPropagation()}
                               >
@@ -398,6 +401,7 @@ export function MarketplaceDialog({
                               <Button
                                 variant="default"
                                 size="sm"
+                                className="w-full sm:w-auto"
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   loadExtensionDetails(ext.id)
@@ -415,16 +419,9 @@ export function MarketplaceDialog({
                 </div>
               )}
             </div>
-
-            {/* Footer */}
-            <DialogFooter className="border-t pt-4">
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                {t("common:close", "Close")}
-              </Button>
-            </DialogFooter>
-          </>
+          </DialogContentBody>
         ) : (
-          <>
+          <DialogContentBody className="flex-1 overflow-y-auto px-4 pt-6 pb-4 sm:px-6">
             {/* Detail View */}
             {selectedExtension && (
               <ExtensionDetailView
@@ -437,7 +434,7 @@ export function MarketplaceDialog({
                 }}
               />
             )}
-          </>
+          </DialogContentBody>
         )}
       </DialogContent>
     </Dialog>

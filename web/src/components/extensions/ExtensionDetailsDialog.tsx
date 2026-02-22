@@ -6,6 +6,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,7 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { Settings, FileCode, Info, Loader2, Terminal, Database, Zap, Save, RefreshCw } from "lucide-react"
+import { Settings, FileCode, Info, Loader2, Terminal, Database, Zap, Save, RefreshCw, X } from "lucide-react"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useStore } from "@/store"
 import { formatTimestamp } from "@/lib/utils/format"
@@ -141,11 +142,11 @@ export function ExtensionDetailsDialog({
     switch (param.type) {
       case 'boolean':
         return (
-          <div key={paramName} className="flex items-center justify-between py-2">
-            <div className="flex-1">
-              <Label className="text-sm font-medium">{param.title || paramName}</Label>
+          <div key={paramName} className="flex items-center justify-between py-2 gap-2">
+            <div className="flex-1 min-w-0">
+              <Label className="text-sm font-medium break-words">{param.title || paramName}</Label>
               {param.description && (
-                <p className="text-xs text-muted-foreground mt-1">{param.description}</p>
+                <p className="text-xs text-muted-foreground mt-1 break-words">{param.description}</p>
               )}
             </div>
             <Switch
@@ -231,7 +232,7 @@ export function ExtensionDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[600px] max-h-[85vh] flex flex-col">
+      <DialogContent className="sm:max-w-[600px] sm:max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Extension Details</DialogTitle>
           <DialogDescription>
@@ -244,43 +245,49 @@ export function ExtensionDetailsDialog({
             No extension selected
           </div>
         ) : (
-          <Tabs defaultValue="info" className="w-full flex-1 flex flex-col overflow-hidden" onValueChange={(v) => {
-            if (v === "info") loadDetails()
-            if (v === "config") loadConfig()
-          }}>
-            <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="info">
-                <Info className="mr-2 h-4 w-4" />
-                Info
+          <DialogContentBody className="flex-1 overflow-hidden pt-6 pb-4 px-4 sm:px-6">
+            <Tabs defaultValue="info" className="w-full h-full flex flex-col overflow-hidden" onValueChange={(v) => {
+              if (v === "info") loadDetails()
+              if (v === "config") loadConfig()
+            }}>
+            <TabsList className="w-full inline-flex grid grid-cols-5 sm:grid-cols-5">
+              <TabsTrigger value="info" className="gap-1 sm:gap-2">
+                <Info className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-0" />
+                <span className="hidden sm:inline">Info</span>
+                <span className="sm:hidden text-xs">Info</span>
               </TabsTrigger>
-              <TabsTrigger value="capabilities">
-                <Zap className="mr-2 h-4 w-4" />
-                Capabilities
+              <TabsTrigger value="capabilities" className="gap-1 sm:gap-2">
+                <Zap className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-0" />
+                <span className="hidden sm:inline">Capabilities</span>
+                <span className="sm:hidden text-xs">Caps</span>
               </TabsTrigger>
-              <TabsTrigger value="config">
-                <Settings className="mr-2 h-4 w-4" />
-                Config
+              <TabsTrigger value="config" className="gap-1 sm:gap-2">
+                <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-0" />
+                <span className="hidden sm:inline">Config</span>
+                <span className="sm:hidden text-xs">Cfg</span>
               </TabsTrigger>
-              <TabsTrigger value="stats">
-                <Terminal className="mr-2 h-4 w-4" />
-                Stats
+              <TabsTrigger value="stats" className="gap-1 sm:gap-2">
+                <Terminal className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-0" />
+                <span className="hidden sm:inline">Stats</span>
+                <span className="sm:hidden text-xs">Stats</span>
               </TabsTrigger>
-              <TabsTrigger value="file">
-                <FileCode className="mr-2 h-4 w-4" />
-                File
+              <TabsTrigger value="file" className="gap-1 sm:gap-2">
+                <FileCode className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-0" />
+                <span className="hidden sm:inline">File</span>
+                <span className="sm:hidden text-xs">File</span>
               </TabsTrigger>
             </TabsList>
 
             {/* Info Tab */}
             <TabsContent value="info" className="flex-1 overflow-y-auto mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <Label className="text-muted-foreground text-xs">ID</Label>
-                  <p className="text-sm font-mono">{extension.id}</p>
+                  <p className="text-sm font-mono break-all">{extension.id}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground text-xs">Name</Label>
-                  <p className="text-sm">{extension.name}</p>
+                  <p className="text-sm break-words">{extension.name}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground text-xs">Version</Label>
@@ -305,14 +312,14 @@ export function ExtensionDetailsDialog({
               {extension.description && (
                 <div>
                   <Label className="text-muted-foreground text-xs">Description</Label>
-                  <p className="text-sm">{extension.description}</p>
+                  <p className="text-sm break-words">{extension.description}</p>
                 </div>
               )}
 
               {extension.author && (
                 <div>
                   <Label className="text-muted-foreground text-xs">Author</Label>
-                  <p className="text-sm">{extension.author}</p>
+                  <p className="text-sm break-words">{extension.author}</p>
                 </div>
               )}
 
@@ -344,14 +351,14 @@ export function ExtensionDetailsDialog({
                           key={command.id}
                           className="p-3 rounded-lg border bg-muted/30 space-y-2"
                         >
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="outline" className="text-xs break-all">
                               {command.id}
                             </Badge>
-                            <span className="font-medium text-sm">{command.display_name}</span>
+                            <span className="font-medium text-sm break-words">{command.display_name}</span>
                           </div>
                           {command.description && (
-                            <p className="text-xs text-muted-foreground">{command.description}</p>
+                            <p className="text-xs text-muted-foreground break-words">{command.description}</p>
                           )}
                         </div>
                       ))}
@@ -375,15 +382,15 @@ export function ExtensionDetailsDialog({
                         {extension.metrics.map((metric) => (
                           <div
                             key={metric.name}
-                            className="p-3 rounded-lg border bg-muted/20 flex items-center justify-between"
+                            className="p-3 rounded-lg border bg-muted/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
                           >
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm">{metric.display_name}</span>
-                              <Badge variant="outline" className="text-xs">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium text-sm break-words">{metric.display_name}</span>
+                              <Badge variant="outline" className="text-xs break-all">
                                 {metric.name}
                               </Badge>
                             </div>
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                               <span>{metric.data_type}</span>
                               {metric.unit && <span>({metric.unit})</span>}
                               {metric.min !== undefined && metric.max !== undefined && (
@@ -418,14 +425,14 @@ export function ExtensionDetailsDialog({
                 </div>
               ) : hasConfigParams ? (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between pb-2 border-b">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b">
                     <div>
                       <h3 className="text-sm font-medium">Extension Configuration</h3>
                       <p className="text-xs text-muted-foreground">
                         Configure {extension.name} settings
                       </p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 sm:gap-2">
                       <Button
                         size="sm"
                         variant="outline"
@@ -473,7 +480,7 @@ export function ExtensionDetailsDialog({
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               ) : stats ? (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div className="border rounded-lg p-3">
                     <p className="text-xs text-muted-foreground">Start Count</p>
                     <p className="text-2xl font-semibold">{stats.start_count ?? 0}</p>
@@ -489,7 +496,7 @@ export function ExtensionDetailsDialog({
                   {stats.last_error && (
                     <div className="border rounded-lg p-3 col-span-2">
                       <p className="text-xs text-muted-foreground">Last Error</p>
-                      <p className="text-sm text-destructive">{stats.last_error}</p>
+                      <p className="text-sm text-destructive break-words">{stats.last_error}</p>
                     </div>
                   )}
                 </div>
@@ -513,16 +520,13 @@ export function ExtensionDetailsDialog({
               {extension.loaded_at && (
                 <div>
                   <Label className="text-muted-foreground text-xs">Loaded At</Label>
-                  <p className="text-sm">{formatTimestamp(extension.loaded_at)}</p>
+                  <p className="text-sm break-all">{formatTimestamp(extension.loaded_at)}</p>
                 </div>
               )}
             </TabsContent>
           </Tabs>
+          </DialogContentBody>
         )}
-
-        <DialogFooter>
-          <Button onClick={() => onOpenChange(false)}>Close</Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

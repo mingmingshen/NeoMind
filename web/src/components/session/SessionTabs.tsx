@@ -24,6 +24,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import { useTranslation } from "react-i18next"
 
@@ -278,13 +279,15 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
+        <DialogContent className="flex flex-col">
           <DialogHeader>
             <DialogTitle>{t('session.deleteTitle')}</DialogTitle>
             <DialogDescription>
               {t('session.deleteDescription')}
             </DialogDescription>
           </DialogHeader>
+          <DialogContentBody>
+          </DialogContentBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
               {t('cancel')}

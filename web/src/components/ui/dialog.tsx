@@ -3,6 +3,10 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getPortalRoot } from "@/lib/portal"
+import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
+
+// Symbol to mark DialogHeader components for reliable detection
+const DIALOG_HEADER_SYMBOL = Symbol('DialogHeader')
 
 const Dialog = DialogPrimitive.Root
 
@@ -30,62 +34,187 @@ const DialogOverlay = React.forwardRef<
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
+/**
+ * DialogContent - Main dialog component
+ *
+ * Close button is rendered in DialogHeader for both mobile and desktop
+ * Dialogs without DialogHeader get a fallback close button
+ */
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
-  <DialogPortal>
-    <DialogOverlay />
-    <DialogPrimitive.Content
-      ref={ref}
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { fullScreenOnMobile?: boolean }
+>(({ className, children, fullScreenOnMobile = true, ...props }, ref) => {
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
+
+  // Check if DialogHeader exists in children
+  const hasDialogHeader = React.Children.toArray(children).some((child) => {
+    if (!React.isValidElement(child)) return false
+    const type = child.type as any
+    // Check by Symbol marker (most reliable)
+    if (type?._DIALOG_HEADER_SYMBOL === DIALOG_HEADER_SYMBOL) return true
+    // Check by displayName
+    if (type?.displayName === "DialogHeader") return true
+    // Check by type name (for named functions)
+    if (type?.name === "DialogHeader") return true
+    return false
+  })
+
+  // Mobile: full screen
+  if (isMobile && fullScreenOnMobile) {
+    return (
+      <DialogPortal>
+        <DialogPrimitive.Overlay
+          className={cn(
+            "fixed inset-0 z-50 bg-black/80",
+            "data-[state=open]:animate-in data-[state=closed]:animate-out",
+            "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
+          )}
+        />
+        <DialogPrimitive.Content
+          ref={ref}
+          className={cn(
+            "fixed !left-0 !top-0 !right-0 !bottom-0 !w-full !h-full !max-w-full !translate-x-0 !translate-y-0 !rounded-none z-50 bg-background flex flex-col",
+            "data-[state=open]:animate-in data-[state=closed]:animate-out",
+            "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+            className
+          )}
+          style={{
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
+          }}
+          {...props}
+        >
+          {/* Fallback close button for dialogs without DialogHeader */}
+          {!hasDialogHeader && (
+            <div className="flex justify-end px-4 py-2">
+              <DialogPrimitive.Close className="inline-flex items-center justify-center rounded-md p-2 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
+                <X className="h-5 w-5" />
+                <span className="sr-only">Close</span>
+              </DialogPrimitive.Close>
+            </div>
+          )}
+          {children}
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    )
+  }
+
+  // Desktop: centered dialog
+  return (
+    <DialogPortal>
+      <DialogOverlay />
+      <DialogPrimitive.Content
+        ref={ref}
+        className={cn(
+          "fixed left-[50%] top-[50%] w-full max-w-lg translate-x-[-50%] translate-y-[-50%] border bg-background shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] rounded-lg sm:rounded-xl",
+          "z-50",
+          "m-0 p-4 sm:p-6",
+          !className?.includes("max-h-") && "max-h-[calc(100vh-2rem)] sm:max-h-[85vh]",
+          !className?.includes("overflow-") && "overflow-y-auto",
+          className
+        )}
+        {...props}
+      >
+        {children}
+        {/* Fallback close button for dialogs without DialogHeader */}
+        {!hasDialogHeader && (
+          <DialogPrimitive.Close className="absolute right-4 top-4 inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+          </DialogPrimitive.Close>
+        )}
+      </DialogPrimitive.Content>
+    </DialogPortal>
+  )
+})
+DialogContent.displayName = DialogPrimitive.Content.displayName
+
+/**
+ * DialogHeader - Contains title and close button
+ *
+ * The close button is rendered here (not in DialogContent) for unified layout
+ */
+const DialogHeader = function DialogHeader({
+  className,
+  children,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) {
+  const isMobile = useIsMobile()
+
+  return (
+    <div
       className={cn(
-        "fixed left-[50%] top-[50%] grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] rounded-lg sm:rounded-xl",
-        "z-50",
-        "m-4 mx-0 sm:m-6",
-        "p-4 sm:p-6",
-        "overflow-x-hidden overflow-y-auto", // 允许纵向滚动
-        !className?.includes("max-h-") && "max-h-[calc(100vh-2rem)] sm:max-h-[85vh]",
+        // Header container with title and close button side by side
+        "flex items-center justify-between gap-2",
+        // Mobile styling
+        isMobile && "px-4 py-4 border-b shrink-0 bg-background",
         className
       )}
       {...props}
     >
-      {children}
-      <DialogPrimitive.Close className="absolute right-3 top-3 sm:right-4 sm:top-4 rounded-sm p-1 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
-        <X className="h-4 w-4 sm:h-4 sm:w-4" />
+      {/* Title content */}
+      <div className={cn(
+        "flex flex-col gap-1.5 flex-1 min-w-0",
+        !isMobile && "text-left"
+      )}>
+        {children}
+      </div>
+      {/* Close button */}
+      <DialogPrimitive.Close className={cn(
+        "inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground",
+        // Mobile: larger button
+        isMobile ? "p-2" : "p-0.5"
+      )}>
+        <X className={cn("h-4 w-4", isMobile && "h-5 w-5")} />
         <span className="sr-only">Close</span>
       </DialogPrimitive.Close>
-    </DialogPrimitive.Content>
-  </DialogPortal>
-))
-DialogContent.displayName = DialogPrimitive.Content.displayName
-
-const DialogHeader = ({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) => (
-  <div
-    className={cn(
-      "flex flex-col space-y-1.5 text-center sm:text-left pr-8 sm:pr-10",
-      className
-    )}
-    {...props}
-  />
-)
+    </div>
+  )
+}
 DialogHeader.displayName = "DialogHeader"
+// Add Symbol marker for reliable detection
+;(DialogHeader as any)._DIALOG_HEADER_SYMBOL = DIALOG_HEADER_SYMBOL
 
 const DialogFooter = ({
   className,
   ...props
-}: React.HTMLAttributes<HTMLDivElement>) => (
-  <div
-    className={cn(
-      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 space-y-2 sm:space-y-0 gap-2 sm:gap-0 mt-4 sm:mt-0",
-      className
-    )}
-    {...props}
-  />
-)
+}: React.HTMLAttributes<HTMLDivElement>) => {
+  const isMobile = useIsMobile()
+  return (
+    <div
+      className={cn(
+        "flex flex-row justify-end gap-2 sm:gap-3",
+        "mt-4 sm:mt-0",
+        isMobile && "px-4 py-3 border-t shrink-0 bg-background sticky bottom-0",
+        className
+      )}
+      {...props}
+    />
+  )
+}
 DialogFooter.displayName = "DialogFooter"
+
+const DialogContentBody = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => {
+  const isMobile = useIsMobile()
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        "flex-1 overflow-y-auto",
+        isMobile && "px-4",
+        className
+      )}
+      {...props}
+    />
+  )
+})
+DialogContentBody.displayName = "DialogContentBody"
 
 const DialogTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
@@ -94,7 +223,7 @@ const DialogTitle = React.forwardRef<
   <DialogPrimitive.Title
     ref={ref}
     className={cn(
-      "text-lg font-semibold leading-none tracking-tight",
+      "text-lg font-semibold leading-none",
       className
     )}
     {...props}
@@ -125,4 +254,5 @@ export {
   DialogFooter,
   DialogTitle,
   DialogDescription,
+  DialogContentBody,
 }

@@ -7,6 +7,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -14,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Play, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Loader2, Play, CheckCircle2, AlertTriangle, X } from 'lucide-react'
 import { formatTimestamp } from '@/lib/utils/format'
 import { api } from '@/lib/api'
 
@@ -134,7 +135,7 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-4 py-4">
+        <DialogContentBody className="flex-1 overflow-y-auto space-y-4 py-4">
           {/* Device Selection */}
           <div className="space-y-2">
             <Label htmlFor="test-device">{t('automation:testDevice', { defaultValue: 'Test Device' })}</Label>
@@ -230,7 +231,7 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
               )}
             </Card>
           )}
-        </div>
+        </DialogContentBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

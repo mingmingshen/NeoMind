@@ -15,6 +15,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
@@ -244,13 +245,15 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
+        <DialogContent className="flex flex-col">
           <DialogHeader>
             <DialogTitle>{t('deleteSessionTitle')}</DialogTitle>
             <DialogDescription>
               {t('deleteDesc')}
             </DialogDescription>
           </DialogHeader>
+          <DialogContentBody>
+          </DialogContentBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
               {t('cancel')}
@@ -264,14 +267,14 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
 
       {/* Rename Dialog */}
       <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
-        <DialogContent>
+        <DialogContent className="flex flex-col">
           <DialogHeader>
             <DialogTitle>{t('renameSession')}</DialogTitle>
             <DialogDescription>
               {t('renameDesc')}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
+          <DialogContentBody className="py-4">
             <Input
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
@@ -283,7 +286,7 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
                 }
               }}
             />
-          </div>
+          </DialogContentBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>
               {t('cancel')}
@@ -297,7 +300,7 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
 
       {/* Clear All History Confirmation Dialog */}
       <Dialog open={clearAllDialogOpen} onOpenChange={setClearAllDialogOpen}>
-        <DialogContent>
+        <DialogContent className="flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eraser className="h-5 w-5 text-destructive" />
@@ -307,6 +310,8 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
               {t('clearHistoryDesc', { ns: 'dashboard', count: sessions.length })}
             </DialogDescription>
           </DialogHeader>
+          <DialogContentBody>
+          </DialogContentBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setClearAllDialogOpen(false)} disabled={loading}>
               {t('cancel')}

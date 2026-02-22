@@ -11,10 +11,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Loader2, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Loader2, ArrowRight, AlertCircle, CheckCircle2, X } from 'lucide-react'
 
 export interface AutomationConverterDialogProps {
   open: boolean
@@ -107,7 +108,7 @@ export function AutomationConverterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl flex flex-col">
         <DialogHeader>
           <DialogTitle>{t('automation:convertAutomation', { defaultValue: 'Convert Automation' })}</DialogTitle>
           <DialogDescription>
@@ -115,7 +116,7 @@ export function AutomationConverterDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <DialogContentBody className="space-y-4">
           {/* Current Type Display */}
           <div className="flex items-center justify-center gap-4 p-4 bg-muted rounded-lg">
             <div className="text-center">
@@ -224,7 +225,7 @@ export function AutomationConverterDialog({
               </TabsContent>
             </Tabs>
           ) : null}
-        </div>
+        </DialogContentBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={converting}>

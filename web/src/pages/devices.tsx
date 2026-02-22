@@ -16,6 +16,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
@@ -874,7 +875,7 @@ export function DevicesPage() {
 
       {/* Auto-onboarding Configuration Dialog */}
       <Dialog open={showOnboardConfigDialog} onOpenChange={setShowOnboardConfigDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t('devices:pending.configTitle')}</DialogTitle>
             <DialogDescription>
@@ -882,7 +883,7 @@ export function DevicesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-6 py-4">
+          <DialogContentBody className="space-y-6 py-4">
             {/* Enable/Disable auto-onboarding */}
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
@@ -956,7 +957,7 @@ export function DevicesPage() {
                 💡 {t('devices:pending.configSettings.info')}
               </p>
             </div>
-          </div>
+          </DialogContentBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowOnboardConfigDialog(false)}>

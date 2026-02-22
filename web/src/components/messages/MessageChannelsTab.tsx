@@ -16,6 +16,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -399,7 +400,7 @@ export function MessageChannelsTab({
 
       {/* Create Channel Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md flex flex-col">
           <DialogHeader>
             <DialogTitle>{t('messages.channels.createTitle')}</DialogTitle>
             <DialogDescription>
@@ -407,7 +408,7 @@ export function MessageChannelsTab({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <DialogContentBody className="space-y-4 px-4 pt-6 pb-4 sm:px-6">
             <div>
               <Label htmlFor="channel-name">{t('messages.channels.name')}</Label>
               <Input
@@ -435,7 +436,7 @@ export function MessageChannelsTab({
             </div>
 
             {renderConfigFields()}
-          </div>
+          </DialogContentBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>

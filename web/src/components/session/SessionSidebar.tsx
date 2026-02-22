@@ -130,14 +130,17 @@ export function SessionSidebar({
 
   // Handle switch session
   const handleSwitchSession = async (sessionId: string) => {
-    if (sessionId === currentSessionId) {
-      if (!isDesktop) onClose()
-      return
+    // Mobile: close drawer immediately for better UX
+    if (!isDesktop) {
+      onClose()
     }
-    await switchSession(sessionId)
-    // Navigate to the session URL
-    navigate(`/chat/${sessionId}`)
-    if (!isDesktop) onClose()
+
+    // Only switch if it's a different session
+    if (sessionId !== currentSessionId) {
+      await switchSession(sessionId)
+      // Navigate to the session URL
+      navigate(`/chat/${sessionId}`)
+    }
   }
 
   // Handle delete session

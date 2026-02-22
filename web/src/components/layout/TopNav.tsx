@@ -50,7 +50,8 @@ import {
   SheetClose,
 } from "@/components/ui/sheet"
 import { ThemeToggle } from "./ThemeToggle"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, forwardRef } from "react"
+import { setTopNavHeight } from "@/hooks/useVisualViewport"
 
 type PageType = "dashboard" | "visual-dashboard" | "devices" | "automation" | "agents" | "messages" | "extensions" | "settings"
 
@@ -72,7 +73,26 @@ const navItems: NavItem[] = [
   { id: "settings", path: "/settings", labelKey: "nav.settings", icon: Settings },
 ]
 
-export function TopNav() {
+export const TopNav = forwardRef<HTMLDivElement>((props, ref) => {
+  const innerRef = useRef<HTMLDivElement>(null)
+
+  // Set the nav height in CSS variable after mount and on resize
+  useEffect(() => {
+    const updateNavHeight = () => {
+      if (innerRef.current) {
+        const height = innerRef.current.getBoundingClientRect().height
+        setTopNavHeight(height)
+      }
+    }
+
+    // Update initially
+    updateNavHeight()
+
+    // Update on resize (in case nav changes size)
+    window.addEventListener('resize', updateNavHeight)
+    return () => window.removeEventListener('resize', updateNavHeight)
+  }, [])
+
   const { t, i18n } = useTranslation('common')
   const location = useLocation()
   const user = useStore((state) => state.user)
@@ -135,7 +155,7 @@ export function TopNav() {
 
   return (
     <TooltipProvider delayDuration={500}>
-      <nav className="fixed top-0 left-0 right-0 min-h-16 bg-background/95 backdrop-blur flex items-center px-4 sm:px-6 shadow-sm z-50" style={{paddingTop: 'env(safe-area-inset-top, 0px)'}}>
+      <nav ref={innerRef} className="fixed top-0 left-0 right-0 min-h-16 bg-background/95 backdrop-blur flex items-center px-4 sm:px-6 shadow-sm z-50" style={{paddingTop: 'env(safe-area-inset-top, 0px)'}}>
         {/* Logo - vertically centered in nav */}
         <Link to="/chat" className="flex shrink-0 items-center justify-center mr-4 md:mr-6">
           <BrandLogoWithName />
@@ -452,4 +472,6 @@ export function TopNav() {
       </nav>
     </TooltipProvider>
   )
-}
+})
+
+TopNav.displayName = 'TopNav'

@@ -6,13 +6,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { useStore } from "@/store"
-import { Loader2, Package, Check, Sparkles } from "lucide-react"
+import { Loader2, Package, Check, Sparkles, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import type { ExtensionDiscoveryResult } from "@/types"
 
@@ -231,7 +232,7 @@ export function DiscoverExtensionsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-hidden">
+      <DialogContent className="sm:max-w-[600px] sm:max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 truncate">
             <Sparkles className="h-5 w-5 shrink-0" />
@@ -246,10 +247,10 @@ export function DiscoverExtensionsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-4 overflow-y-auto max-h-[calc(90vh-140px)]">
+        <DialogContentBody className="flex-1 overflow-y-auto px-4 pt-6 pb-4 sm:px-6">
           {/* Loading State */}
           {discovering && (
-            <div className="flex flex-col items-center justify-center py-12">
+            <div className="flex flex-col items-center justify-center py-8">
               <Loader2 className="h-12 w-12 animate-spin text-muted-foreground mb-4" />
               <p className="text-sm text-muted-foreground">
                 {t("discovering")}...
@@ -259,7 +260,7 @@ export function DiscoverExtensionsDialog({
 
           {/* Empty State */}
           {!discovering && discoveredExtensions.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 px-4">
+            <div className="flex flex-col items-center justify-center py-8 px-4">
               <Sparkles className="h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">{t("noExtensionsDiscovered")}</h3>
               <p className="text-sm text-muted-foreground text-center max-w-md">
@@ -386,17 +387,7 @@ export function DiscoverExtensionsDialog({
               )}
             </div>
           )}
-        </div>
-
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={registeringIds.size > 0}
-          >
-            {t("close", { ns: "common" })}
-          </Button>
-        </DialogFooter>
+        </DialogContentBody>
       </DialogContent>
     </Dialog>
   )

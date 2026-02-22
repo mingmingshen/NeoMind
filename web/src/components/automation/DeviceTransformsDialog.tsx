@@ -8,6 +8,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -20,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Database, Play, Edit, Trash2, Loader2, Sparkles } from 'lucide-react'
+import { Database, Play, Edit, Trash2, Loader2, Sparkles, X } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api'
 import { confirm } from '@/hooks/use-confirm'
@@ -255,7 +256,7 @@ export function DeviceTransformsDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto space-y-4 py-4">
+          <DialogContentBody className="flex-1 overflow-y-auto space-y-4 py-4">
             {/* Create Button */}
             <div className="flex justify-between items-center">
               <div className="text-sm text-muted-foreground">
@@ -369,7 +370,7 @@ export function DeviceTransformsDialog({
                 </Table>
               </Card>
             )}
-          </div>
+          </DialogContentBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)}>

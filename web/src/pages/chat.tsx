@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { useParams, useNavigate } from "react-router-dom"
-import { Settings, Send, Sparkles, PanelLeft, Plus, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, RotateCcw } from "lucide-react"
+import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -456,7 +456,7 @@ export function ChatPage() {
   }, [])
 
   // Send message - in welcome mode, create session and navigate
-  const handleSend = async () => {
+  const handleSend = async (e?: React.MouseEvent | React.KeyboardEvent) => {
     const trimmedInput = input.trim()
     if ((!trimmedInput && attachedImages.length === 0) || isStreaming) return
 
@@ -466,21 +466,25 @@ export function ChatPage() {
       return
     }
 
-    // In welcome mode, create session first, then navigate
+    // In welcome mode, create session first, then send message
+    let targetSessionId = sessionId
     if (isWelcomeMode) {
       const newSessionId = await createSession()
       if (!newSessionId) {
         handleError(new Error('Failed to create session'), { operation: 'Create session', showToast: false })
         return
       }
+      targetSessionId = newSessionId
       // Navigate to the new session URL
       navigate(`/chat/${newSessionId}`)
     }
 
+    // Prepare message content
+    const messageContent = trimmedInput || (attachedImages.length > 0 ? "[Image]" : "")
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
-      content: trimmedInput || (attachedImages.length > 0 ? "[Image]" : ""),
+      content: messageContent,
       timestamp: Date.now(),
       images: attachedImages.length > 0 ? [...attachedImages] : undefined,
     }
@@ -494,9 +498,10 @@ export function ChatPage() {
       inputRef.current.style.height = "40px"
     }
 
+    // Set WebSocket session and send message
+    ws.setSessionId(targetSessionId)
     setIsStreaming(true)
     streamingMessageIdRef.current = crypto.randomUUID()
-    // Reset last assistant message ID (new response incoming)
     setLastAssistantMessageId(null)
 
     ws.sendMessage(trimmedInput, attachedImages.length > 0 ? attachedImages : undefined)
@@ -641,7 +646,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="fixed inset-0 flex flex-row overflow-hidden pt-[calc(6.5rem+env(safe-area-inset-top,0px))] lg:pt-[calc(4rem+env(safe-area-inset-top,0px))]">
+    <div className="fixed inset-0 flex flex-row overflow-hidden pt-[calc(4rem+env(safe-area-inset-top,0px))] lg:pt-[calc(4rem+env(safe-area-inset-top,0px))]">
       {/* Pending stream recovery dialog */}
       {pendingStream?.hasPending && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
@@ -716,50 +721,16 @@ export function ChatPage() {
         />
       )}
 
-      {/* Mobile Header - fixed, outside Main Content to avoid affecting flex layout */}
+      {/* Mobile Floating Action Button - only show when has sessions or in chat mode */}
       {!isDesktop && (sessions.length > 0 || !isWelcomeMode) && (
-        <div className="fixed left-0 right-0 z-30 flex flex-col bg-background/50 backdrop-blur-sm border-b border-border/30" style={{top: 'var(--topnav-height, 4rem)', paddingTop: 'env(safe-area-inset-top, 0px)'}}>
-            <div className="h-10 flex items-center px-2.5 gap-1.5">
-              {/* Menu button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setSidebarOpen(true)}
-                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
-              >
-                <PanelLeft className="h-4 w-4" />
-              </Button>
-
-              <div className="flex-1" />
-
-              {/* New session button */}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={async () => {
-                  const newSessionId = await createSession()
-                  if (newSessionId) {
-                    navigate(`/chat/${newSessionId}`)
-                  }
-                }}
-                className="h-7 px-2 gap-1 rounded-lg text-muted-foreground hover:text-foreground"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span className="text-xs">{t('chat:input.newChat')}</span>
-              </Button>
-            </div>
-
-            {/* Connection status - show when not connected */}
-            {(connectionState.status === 'reconnecting' || connectionState.status === 'error') && (
-              <div className="px-3 py-1.5 flex justify-center">
-                <ConnectionStatus
-                  state={connectionState}
-                  onManualReconnect={handleManualReconnect}
-                />
-              </div>
-            )}
-          </div>
-        )}
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="fixed left-4 z-30 h-12 w-12 rounded-full bg-foreground/90 backdrop-blur-sm text-background shadow-lg hover:bg-foreground transition-all active:scale-95 flex items-center justify-center"
+          style={{top: 'calc(4rem + env(safe-area-inset-top, 0px) + 0.5rem)'}}
+        >
+          <MessageSquare className="h-5 w-5" />
+        </button>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -902,6 +873,15 @@ export function ChatPage() {
         {/* Input Area - fixed on mobile, normal flex on desktop */}
         <div className="bg-background sm:static fixed bottom-0 left-0 right-0 z-40 px-2.5 sm:px-4 py-3 sm:py-3 pb-8 sm:pb-4 safe-bottom border-t border-border/30 sm:border-0" style={{paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))'}}>
           <div className="max-w-3xl mx-auto">
+            {/* Connection status - show on mobile when not connected */}
+            {!isDesktop && (connectionState.status === 'reconnecting' || connectionState.status === 'error') && (
+              <div className="mb-2 flex justify-center">
+                <ConnectionStatus
+                  state={connectionState}
+                  onManualReconnect={handleManualReconnect}
+                />
+              </div>
+            )}
             {/* Input toolbar with model selector and image preview */}
             <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-2">
               {/* Model selector */}
@@ -1012,8 +992,6 @@ export function ChatPage() {
                 disabled={isStreaming || !supportsMultimodal}
                 className={cn(
                   "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                  "text-muted-foreground hover:text-foreground hover:bg-muted",
-                  "transition-all disabled:opacity-50 disabled:cursor-not-allowed",
                   !supportsMultimodal && "opacity-50"
                 )}
                 title={supportsMultimodal ? t('chat:model.addImage') : t('chat:model.notSupportImage')}
@@ -1054,12 +1032,12 @@ export function ChatPage() {
               />
 
               <Button
+                type="button"
                 onClick={handleSend}
                 disabled={(!input.trim() && attachedImages.length === 0) || isStreaming}
                 className={cn(
                   "h-10 w-10 sm:h-11 sm:w-11 rounded-full flex-shrink-0",
-                  "bg-foreground hover:bg-foreground/90 text-background",
-                  "transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  "bg-foreground hover:bg-foreground/90 text-background"
                 )}
               >
                 <Send className="h-4 w-4 sm:h-5 sm:w-5" />

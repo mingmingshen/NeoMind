@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { X, ChevronDown, ChevronRight, Info, AlertTriangle, CheckCircle } from 'lucide-react'
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
 
 export interface BuilderHeaderProps {
   title: string
@@ -100,6 +101,9 @@ export function FullScreenBuilder({
   validationMessage,
   footerLeftActions,
 }: FullScreenBuilderProps) {
+  // Lock body scroll when full screen is open (mobile only to prevent layout shift)
+  useBodyScrollLock(open, { mobileOnly: true })
+
   if (!open) return null
 
   const content = (

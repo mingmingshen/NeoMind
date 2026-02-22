@@ -7,6 +7,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -213,8 +214,8 @@ export function AutomationCreatorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] p-0 gap-0 flex flex-col [&>[data-radix-dialog-close]]:right-12 [&>[data-radix-dialog-close]]:top-7">
-        <DialogHeader className="px-6 pt-6 pb-4 border-t-0 border-x-0 border-b shrink-0 pr-12">
+      <DialogContent className="max-w-4xl max-h-[90vh] p-0 gap-0 flex flex-col [&>[data-radix-dialog-close]]:right-12 [&>[data-radix-dialog-close]]:top-7 sm:[&>[data-radix-dialog-close]]:right-12 sm:[&>[data-radix-dialog-close]]:top-7">
+        <DialogHeader className="px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4 border-t-0 border-x-0 border-b shrink-0 pr-10 sm:pr-12">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5" />
             {t('automation:createAutomation')}
@@ -225,7 +226,7 @@ export function AutomationCreatorDialog({
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)} className="flex-1 min-h-0 overflow-hidden flex flex-col">
-          <div className="px-6 pt-4 pb-2 shrink-0">
+          <div className="px-4 pt-3 pb-2 sm:px-6 sm:pt-4 sm:pb-2 shrink-0">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="templates" className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4" />
@@ -239,10 +240,10 @@ export function AutomationCreatorDialog({
           </div>
 
           {/* Templates Tab */}
-          <TabsContent value="templates" className="flex-1 min-h-0 overflow-hidden flex flex-col px-6 py-4">
-            <div className="flex gap-4 h-full overflow-hidden">
+          <TabsContent value="templates" className="flex-1 min-h-0 overflow-hidden flex flex-col px-4 py-3 sm:px-6 sm:py-4">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 h-full overflow-hidden">
               {/* Template List */}
-              <div className="w-1/2 overflow-y-auto pr-2">
+              <div className="w-full sm:w-1/2 overflow-y-auto sm:pr-2">
                 {loadingTemplates ? (
                   <div className="flex items-center justify-center h-40">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -297,7 +298,7 @@ export function AutomationCreatorDialog({
               </div>
 
               {/* Template Parameters */}
-              <div className="w-1/2 overflow-y-auto pl-2 border-l">
+              <div className="w-full sm:w-1/2 overflow-y-auto sm:pl-2 sm:border-t-0 sm:border-l border-t">
                 {selectedTemplate ? (
                   <div className="space-y-4">
                     <div>
@@ -422,14 +423,14 @@ export function AutomationCreatorDialog({
           </TabsContent>
 
           {/* Manual Tab */}
-          <TabsContent value="manual" className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
+          <TabsContent value="manual" className="flex-1 min-h-0 overflow-y-auto px-4 py-3 sm:px-6 sm:py-4 space-y-4">
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-muted-foreground" />
                 <h3 className="font-medium">{t('automation:creator.basicInfo')}</h3>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="manual-name">{t('automation:automationName')} *</Label>
                   <Input
@@ -516,7 +517,7 @@ export function AutomationCreatorDialog({
           </TabsContent>
         </Tabs>
 
-        <DialogFooter className="px-6 py-4 border-t shrink-0">
+        <DialogFooter className="px-4 py-3 sm:px-6 sm:py-4 border-t shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('automation:cancel')}
           </Button>

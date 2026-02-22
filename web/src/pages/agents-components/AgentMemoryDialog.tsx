@@ -7,12 +7,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
-import { Brain, TrendingUp, Trash2, RefreshCw } from "lucide-react"
+import { Brain, TrendingUp, Trash2, RefreshCw, X } from "lucide-react"
 import { api } from "@/lib/api"
 import { formatTimestamp } from "@/lib/utils/format"
 import type { AgentMemory } from "@/types"
@@ -78,7 +79,7 @@ export function AgentMemoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh]">
+      <DialogContent className="sm:max-w-2xl sm:max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Brain className="h-5 w-5 text-primary" />
@@ -94,7 +95,7 @@ export function AgentMemoryDialog({
             <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : memory ? (
-          <ScrollArea className="max-h-[60vh] pr-4">
+          <DialogContentBody className="max-h-[60vh] overflow-y-auto">
             <div className="space-y-6">
               {/* State Variables */}
               {Object.keys(memory.state_variables).length > 0 && (
@@ -177,7 +178,7 @@ export function AgentMemoryDialog({
                 {t('agents:memory.updatedAt')}: {formatTimestamp(memory.updated_at)}
               </div>
             </div>
-          </ScrollArea>
+          </DialogContentBody>
         ) : (
           <div className="text-center py-8 text-muted-foreground">
             {t('agents:memory.noMemory')}

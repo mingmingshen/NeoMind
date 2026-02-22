@@ -34,6 +34,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from '@/components/ui/dialog'
 import { EmptyState, LoadingState } from '@/components/shared'
 import { cn } from '@/lib/utils'
@@ -855,7 +856,7 @@ export function UnifiedDeviceConnectionsTab() {
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-destructive" />
@@ -868,6 +869,12 @@ export function UnifiedDeviceConnectionsTab() {
                 })}
               </DialogDescription>
             </DialogHeader>
+
+            <DialogContentBody className="px-4 pt-6 pb-4 sm:px-6">
+              <p className="text-sm text-muted-foreground">
+                {t('plugins:deleteWarning', { defaultValue: 'This action cannot be undone.' })}
+              </p>
+            </DialogContentBody>
             <DialogFooter>
               <Button
                 variant="outline"

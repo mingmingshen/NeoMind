@@ -6,8 +6,9 @@
  */
 
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Search, Check, Server, Zap, Info, X, ChevronRight, Circle, Loader2, Database, MapPin, Activity, Puzzle } from 'lucide-react'
+import { Search, Check, Server, Zap, Info, X, ChevronRight, ChevronLeft, Circle, Loader2, Database, MapPin, Activity, Puzzle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -16,6 +17,8 @@ import type { DataSource, DataSourceOrList } from '@/types/dashboard'
 import { normalizeDataSource } from '@/types/dashboard'
 import type { MetricDefinition, CommandDefinition } from '@/types'
 import { useDataAvailability } from '@/hooks/useDataAvailability'
+import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
+import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
 import { api } from '@/lib/api'
 import type { Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor, TransformDataSourceInfo } from '@/types'
 
@@ -378,11 +381,16 @@ export function UnifiedDataSourceConfig({
 }: UnifiedDataSourceConfigProps) {
   const { t } = useTranslation('dashboardComponents')
   const { devices, deviceTypes } = useStore()
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<CategoryType>('device-metric')
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const [selectedExtensionId, setSelectedExtensionId] = useState<string | null>(null)
+
+  // Mobile: full-screen selector state
+  const [showMobileSelector, setShowMobileSelector] = useState(false)
 
   // Extension state
   const [extensions, setExtensions] = useState<Extension[]>([])
@@ -754,7 +762,12 @@ export function UnifiedDataSourceConfig({
                 <button
                   key={device.id}
                   type="button"
-                  onClick={() => setSelectedDeviceId(device.id)}
+                  onClick={() => {
+                    if (isMobile) {
+                      setShowMobileSelector(true)
+                    }
+                    setSelectedDeviceId(device.id)
+                  }}
                   className={cn(
                     'w-full flex items-center gap-2 px-3 py-2 text-left border-b transition-all duration-150',
                     isSelected
@@ -779,7 +792,10 @@ export function UnifiedDataSourceConfig({
                       )}
                     </div>
                   </div>
-                  {selectedCount > 0 && (
+                  {isMobile && (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                  )}
+                  {!isMobile && selectedCount > 0 && (
                     <span className="shrink-0 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-medium bg-primary text-primary-foreground rounded-sm">
                       {selectedCount}
                     </span>
@@ -1435,8 +1451,9 @@ export function UnifiedDataSourceConfig({
   }
 
   return (
-    <div className={cn('flex flex-col h-full', className)}>
-      {/* Selected items bar - compact single row */}
+    <>
+      <div className={cn('flex flex-col h-full', className)}>
+        {/* Selected items bar - compact single row */}
       {selectedItems.size > 0 && (
         <div className="px-3 py-2 border-b bg-gradient-to-r from-primary/5 via-primary/5 to-muted/20 flex flex-wrap gap-2 items-center">
           <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
@@ -1545,36 +1562,675 @@ export function UnifiedDataSourceConfig({
       {/* Content area */}
       {usesDeviceSplitLayout ? (
         // Split layout: device list on left, metrics/commands on right
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left: Device list */}
-          <div className="w-56 border-r shrink-0 overflow-hidden flex flex-col">
-            {renderDeviceList()}
+        // Mobile: Show device list only, content opens in full screen
+        isMobile ? (
+          <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {renderDeviceList()}
+            </div>
           </div>
+        ) : (
+          <div className="flex-1 flex overflow-hidden">
+            {/* Left: Device list */}
+            <div className="w-56 border-r shrink-0 overflow-hidden flex flex-col">
+              {renderDeviceList()}
+            </div>
 
-          {/* Right: Device content */}
-          <div className="flex-1 overflow-hidden flex flex-col">
-            {renderDeviceContent()}
+            {/* Right: Device content */}
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {renderDeviceContent()}
+            </div>
           </div>
-        </div>
+        )
       ) : usesExtensionSplitLayout ? (
         // Split layout: extension list on left, metrics/commands on right
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left: Extension list */}
-          <div className="w-56 border-r shrink-0 overflow-hidden flex flex-col">
-            {renderExtensionList()}
+        // Mobile: Show extension list only, content opens in full screen
+        isMobile ? (
+          <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {renderExtensionList()}
+            </div>
           </div>
+        ) : (
+          <div className="flex-1 flex overflow-hidden">
+            {/* Left: Extension list */}
+            <div className="w-56 border-r shrink-0 overflow-hidden flex flex-col">
+              {renderExtensionList()}
+            </div>
 
-          {/* Right: Extension content */}
-          <div className="flex-1 overflow-hidden flex flex-col">
-            {renderExtensionContent()}
+            {/* Right: Extension content */}
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {renderExtensionContent()}
+            </div>
           </div>
-        </div>
+        )
       ) : (
         // Single column layout
         <div className="flex-1 overflow-y-auto p-3">
           {renderCategoryContent()}
         </div>
       )}
+    </div>
+
+    {/* Mobile: Full-screen selector for device/extension content */}
+    {isMobile && showMobileSelector && (
+      <MobileItemSelector
+        isOpen={showMobileSelector}
+        onClose={() => setShowMobileSelector(false)}
+        selectedDevice={selectedDevice}
+        selectedExtension={selectedExtension}
+        selectedCategory={selectedCategory}
+        selectedItems={selectedItems}
+        onSelectItem={handleSelectItem}
+        deviceMetricsMap={deviceMetricsMap}
+        deviceCommandsMap={deviceCommandsMap}
+        extensionMetricsMap={extensionMetricsMap}
+        devices={devices}
+        extensions={extensions}
+        summaries={summaries}
+        availability={availability}
+        checkingData={checkingData}
+        getDeviceInfoProperties={getDeviceInfoProperties}
+        t={t}
+        insets={insets}
+      />
+    )}
+    </>
+  )
+}
+
+// ============================================================================
+// Mobile Item Selector Component
+// ============================================================================
+
+interface MobileItemSelectorProps {
+  isOpen: boolean
+  onClose: () => void
+  selectedDevice: any
+  selectedExtension: any
+  selectedCategory: CategoryType
+  selectedItems: Set<SelectedItem>
+  onSelectItem: (item: SelectedItem) => void
+  deviceMetricsMap: Map<string, MetricDefinition[]>
+  deviceCommandsMap: Map<string, CommandDefinition[]>
+  extensionMetricsMap: Map<string, Array<{ name: string; display_name: string; data_type: string; unit?: string }>>
+  devices: any[]
+  extensions: Extension[]
+  summaries: Map<string, any>
+  availability: Map<string, { hasData: boolean; dataPointCount?: number }>
+  checkingData: boolean
+  getDeviceInfoProperties: (t: (key: string) => string) => Array<{ id: string; name: string }>
+  t: (key: string) => string
+  insets: { top: number; bottom: number; left: number; right: number }
+}
+
+function MobileItemSelector({
+  isOpen,
+  onClose,
+  selectedDevice,
+  selectedExtension,
+  selectedCategory,
+  selectedItems,
+  onSelectItem,
+  deviceMetricsMap,
+  deviceCommandsMap,
+  extensionMetricsMap,
+  devices,
+  extensions,
+  summaries,
+  availability,
+  checkingData,
+  getDeviceInfoProperties,
+  t,
+  insets,
+}: MobileItemSelectorProps) {
+  // Lock body scroll when mobile selector is open
+  useMobileBodyScrollLock(isOpen)
+
+  if (!isOpen) return null
+
+  const title = selectedCategory === 'device-metric' || selectedCategory === 'device-command'
+    ? (selectedDevice?.name || selectedDevice?.id || t('dataSource.selectDevice'))
+    : (selectedExtension?.name || t('extensions:selectExtension') || 'Select Extension')
+
+  return createPortal(
+    <div className="fixed inset-0 z-[200] bg-background animate-in slide-in-from-right-0 duration-200">
+      <div className="flex h-full w-full flex-col">
+        {/* Header */}
+        <div
+          className="flex items-center gap-3 px-4 py-4 border-b shrink-0 bg-background"
+          style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
+        >
+          <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0">
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-base font-semibold truncate">{title}</h1>
+            <p className="text-xs text-muted-foreground truncate">
+              {selectedCategory === 'device-metric' && t('dataSource.selectMetrics')}
+              {selectedCategory === 'device-command' && t('dataSource.selectCommands')}
+              {selectedCategory === 'extension' && (t('dataSource.metrics') || 'Metrics')}
+              {selectedCategory === 'extension-command' && (t('dataSource.commands') || 'Commands')}
+            </p>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto">
+          {selectedCategory === 'device-metric' && selectedDevice && (
+            <MobileMetricsList
+              device={selectedDevice}
+              deviceMetricsMap={deviceMetricsMap}
+              summaries={summaries}
+              availability={availability}
+              checkingData={checkingData}
+              getDeviceInfoProperties={getDeviceInfoProperties}
+              selectedItems={selectedItems}
+              onSelectItem={onSelectItem}
+              t={t}
+            />
+          )}
+
+          {selectedCategory === 'device-command' && selectedDevice && (
+            <MobileCommandsList
+              device={selectedDevice}
+              deviceCommandsMap={deviceCommandsMap}
+              selectedItems={selectedItems}
+              onSelectItem={onSelectItem}
+              t={t}
+            />
+          )}
+
+          {selectedCategory === 'extension' && selectedExtension && (
+            <MobileExtensionMetricsList
+              extension={selectedExtension}
+              extensionMetricsMap={extensionMetricsMap}
+              selectedItems={selectedItems}
+              onSelectItem={onSelectItem}
+              t={t}
+            />
+          )}
+
+          {selectedCategory === 'extension-command' && selectedExtension && (
+            <MobileExtensionCommandsList
+              extension={selectedExtension}
+              selectedItems={selectedItems}
+              onSelectItem={onSelectItem}
+              t={t}
+            />
+          )}
+
+          {selectedCategory === 'device-metric' && !selectedDevice && (
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4 text-center">
+              {t('dataSource.selectDevice')}
+            </div>
+          )}
+
+          {selectedCategory === 'device-command' && !selectedDevice && (
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4 text-center">
+              {t('dataSource.selectDevice')}
+            </div>
+          )}
+
+          {selectedCategory === 'extension' && !selectedExtension && (
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4 text-center">
+              {t('extensions:selectExtension') || 'Select an extension'}
+            </div>
+          )}
+
+          {selectedCategory === 'extension-command' && !selectedExtension && (
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4 text-center">
+              {t('extensions:selectExtension') || 'Select an extension'}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// Mobile metrics list
+interface MobileMetricsListProps {
+  device: any
+  deviceMetricsMap: Map<string, MetricDefinition[]>
+  summaries: Map<string, any>
+  availability: Map<string, { hasData: boolean; dataPointCount?: number }>
+  checkingData: boolean
+  getDeviceInfoProperties: (t: (key: string) => string) => Array<{ id: string; name: string }>
+  selectedItems: Set<SelectedItem>
+  onSelectItem: (item: SelectedItem) => void
+  t: (key: string) => string
+}
+
+function MobileMetricsList({
+  device,
+  deviceMetricsMap,
+  summaries,
+  availability,
+  checkingData,
+  getDeviceInfoProperties,
+  selectedItems,
+  onSelectItem,
+  t,
+}: MobileMetricsListProps) {
+  const metrics = deviceMetricsMap.get(device.id) || []
+  const deviceSummary = summaries.get(device.id) || {}
+  const templateMetricNames = new Set(metrics.map((m: MetricDefinition) => m.name))
+
+  type Item = {
+    key: string
+    propertyName: string
+    propertyDisplayName: string
+    currentValue?: unknown
+    isSelected: boolean
+    hasData: boolean | null
+    dataPointCount?: number
+    itemType: 'template' | 'virtual' | 'info'
+    unit?: string
+  }
+
+  const items: Item[] = []
+
+  // Template metrics
+  for (const metric of metrics) {
+    const itemKey = `device-metric:${device.id}:${metric.name}` as SelectedItem
+    const availabilityKey = `${device.id}:${metric.name}`
+    const metricAvailability = availability.get(availabilityKey)
+    items.push({
+      key: itemKey,
+      propertyName: metric.name,
+      propertyDisplayName: metric.display_name || metric.name,
+      currentValue: device.current_values?.[metric.name],
+      isSelected: selectedItems.has(itemKey),
+      hasData: metricAvailability?.hasData ?? null,
+      dataPointCount: metricAvailability?.dataPointCount,
+      itemType: 'template',
+      unit: metric.unit,
+    })
+  }
+
+  // Virtual metrics
+  for (const [metricId, metricSummary] of Object.entries(deviceSummary)) {
+    const summary = metricSummary as { is_virtual?: boolean; display_name?: string; current?: unknown; unit?: string }
+    if (!templateMetricNames.has(metricId) && summary.is_virtual) {
+      const itemKey = `device-metric:${device.id}:${metricId}` as SelectedItem
+      const availabilityKey = `${device.id}:${metricId}`
+      const metricAvailability = availability.get(availabilityKey)
+      items.push({
+        key: itemKey,
+        propertyName: metricId,
+        propertyDisplayName: summary.display_name || metricId,
+        currentValue: summary.current,
+        isSelected: selectedItems.has(itemKey),
+        hasData: metricAvailability?.hasData ?? null,
+        dataPointCount: metricAvailability?.dataPointCount,
+        itemType: 'virtual',
+        unit: summary.unit,
+      })
+    }
+  }
+
+  // Device info properties
+  for (const infoProp of getDeviceInfoProperties(t)) {
+    const itemKey = `device-info:${device.id}:${infoProp.id}` as SelectedItem
+    let currentValue: unknown = undefined
+
+    switch (infoProp.id) {
+      case 'name': currentValue = device.name; break
+      case 'status': currentValue = device.status; break
+      case 'online': currentValue = device.online; break
+      case 'last_seen': currentValue = device.last_seen; break
+      case 'device_type': currentValue = device.device_type; break
+      case 'plugin_name': currentValue = device.plugin_name; break
+      case 'adapter_id': currentValue = device.adapter_id; break
+    }
+
+    items.push({
+      key: itemKey,
+      propertyName: infoProp.id,
+      propertyDisplayName: infoProp.name,
+      currentValue,
+      isSelected: selectedItems.has(itemKey),
+      hasData: null,
+      itemType: 'info',
+    })
+  }
+
+  // Sort: template -> info -> virtual
+  items.sort((a, b) => {
+    const order = { template: 0, info: 1, virtual: 2 }
+    return order[a.itemType] - order[b.itemType]
+  })
+
+  const formatValue = (val: unknown): string => {
+    if (val === null || val === undefined) return '-'
+    if (typeof val === 'number') return val.toLocaleString('en-US', { maximumFractionDigits: 2 })
+    if (typeof val === 'boolean') return val ? t('dataSource.yes') : t('dataSource.no')
+    return String(val)
+  }
+
+  const ItemBadge = ({ itemType }: { itemType: 'template' | 'virtual' | 'info' }) => {
+    const config = {
+      template: { label: t('dataSource.badgeTemplate'), className: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
+      virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
+      info: { label: t('dataSource.badgeInfo'), className: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
+    }[itemType]
+    return (
+      <span className={`px-2 py-0.5 text-xs font-medium rounded-md border shrink-0 ${config.className}`}>
+        {config.label}
+      </span>
+    )
+  }
+
+  return (
+    <div className="p-4 space-y-3">
+      {items.map(item => (
+        <button
+          key={item.key}
+          type="button"
+          onClick={() => onSelectItem(item.key)}
+          className={cn(
+            'w-full text-left transition-colors duration-150',
+            'group relative rounded-2xl border p-4',
+            item.isSelected
+              ? 'bg-primary/10 border-primary/50'
+              : 'bg-card border-border active:bg-accent/40'
+          )}
+        >
+          <div className="flex items-start gap-3">
+            {/* Check icon */}
+            <div className={cn(
+              'shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-colors mt-0.5',
+              item.isSelected
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground'
+            )}>
+              <Check className={cn(
+                'h-4 w-4',
+                item.isSelected ? 'opacity-100' : 'opacity-0'
+              )} />
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 min-w-0 space-y-2">
+              {/* Header */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <ItemBadge itemType={item.itemType} />
+                <span className={cn(
+                  'text-base font-medium',
+                  item.isSelected ? 'text-foreground' : 'text-foreground/90'
+                )}>
+                  {item.propertyDisplayName}
+                </span>
+              </div>
+
+              {/* Subtitle */}
+              <div className="space-y-1">
+                <code className="text-xs text-muted-foreground px-2 py-1 bg-muted/40 rounded-md block">
+                  {item.propertyName}
+                </code>
+                {item.currentValue !== undefined && item.currentValue !== null && (
+                  <div className="text-sm text-muted-foreground">
+                    {t('dataSource.current')}: <span className="text-foreground font-medium">{formatValue(item.currentValue)}</span>
+                    {item.unit && item.unit !== '-' && <span className="ml-1 text-muted-foreground/60">{item.unit}</span>}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Data indicator */}
+            {item.hasData !== null && (
+              <div className="shrink-0">
+                {item.hasData ? (
+                  <div className="px-2 py-1 rounded-lg bg-green-500/10 border border-green-500/20 text-xs text-green-600 font-medium" title={`${t('dataSource.hasHistoricalData')} (${item.dataPointCount ?? 0} ${t('dataSource.dataPoints')})`}>
+                    {item.dataPointCount ?? 0}
+                  </div>
+                ) : (
+                  <div className="px-2 py-1 rounded-lg bg-muted/30 border border-muted/30 text-xs text-muted-foreground">
+                    {t('dataSource.noData')}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// Mobile commands list
+interface MobileCommandsListProps {
+  device: any
+  deviceCommandsMap: Map<string, CommandDefinition[]>
+  selectedItems: Set<SelectedItem>
+  onSelectItem: (item: SelectedItem) => void
+  t: (key: string) => string
+}
+
+function MobileCommandsList({
+  device,
+  deviceCommandsMap,
+  selectedItems,
+  onSelectItem,
+  t,
+}: MobileCommandsListProps) {
+  const commands = deviceCommandsMap.get(device.id) || []
+
+  if (commands.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4">
+        {t('dataSource.noAvailableCommands')}
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-4 space-y-3">
+      {commands.map(cmd => {
+        const itemKey = `device-command:${device.id}:${cmd.name}` as SelectedItem
+        const isSelected = selectedItems.has(itemKey)
+
+        return (
+          <button
+            key={cmd.name}
+            type="button"
+            onClick={() => onSelectItem(itemKey)}
+            className={cn(
+              'w-full text-left transition-colors duration-150',
+              'group relative rounded-2xl border p-4',
+              isSelected
+                ? 'bg-primary/10 border-primary/50'
+                : 'bg-card border-border active:bg-accent/40'
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                'shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-colors',
+                isSelected
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground'
+              )}>
+                <Check className={cn(
+                  'h-4 w-4',
+                  isSelected ? 'opacity-100' : 'opacity-0'
+                )} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className={cn(
+                  'text-base font-medium truncate',
+                  isSelected ? 'text-foreground' : 'text-foreground/90'
+                )}>
+                  {cmd.display_name || cmd.name}
+                </div>
+                <div className="text-sm text-muted-foreground truncate">
+                  {cmd.name}
+                </div>
+              </div>
+              <Zap className={cn(
+                'h-5 w-5 shrink-0',
+                isSelected ? 'text-amber-500' : 'text-muted-foreground/40'
+              )} />
+            </div>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// Mobile extension metrics list
+interface MobileExtensionMetricsListProps {
+  extension: Extension
+  extensionMetricsMap: Map<string, Array<{ name: string; display_name: string; data_type: string; unit?: string }>>
+  selectedItems: Set<SelectedItem>
+  onSelectItem: (item: SelectedItem) => void
+  t: (key: string) => string
+}
+
+function MobileExtensionMetricsList({
+  extension,
+  extensionMetricsMap,
+  selectedItems,
+  onSelectItem,
+  t,
+}: MobileExtensionMetricsListProps) {
+  const metrics = extensionMetricsMap.get(extension.id) || []
+
+  if (metrics.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4">
+        {t('extensions:noMetrics') || 'No metrics available'}
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-4 space-y-3">
+      {metrics.map(metric => {
+        const itemKey = `extension:${extension.id}:${metric.name}` as SelectedItem
+        const isSelected = selectedItems.has(itemKey)
+
+        return (
+          <button
+            key={metric.name}
+            type="button"
+            onClick={() => onSelectItem(itemKey)}
+            className={cn(
+              'w-full text-left transition-colors duration-150',
+              'group relative rounded-2xl border p-4',
+              isSelected
+                ? 'bg-primary/10 border-primary/50'
+                : 'bg-card border-border active:bg-accent/40'
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                'shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-colors',
+                isSelected
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground'
+              )}>
+                <Check className={cn(
+                  'h-4 w-4',
+                  isSelected ? 'opacity-100' : 'opacity-0'
+                )} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className={cn(
+                  'text-base font-medium truncate',
+                  isSelected ? 'text-foreground' : 'text-foreground/90'
+                )}>
+                  {metric.display_name || metric.name}
+                </div>
+                <div className="text-sm text-muted-foreground truncate">
+                  {metric.name}
+                  {metric.unit && ` (${metric.unit})`}
+                </div>
+              </div>
+            </div>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// Mobile extension commands list
+interface MobileExtensionCommandsListProps {
+  extension: Extension
+  selectedItems: Set<SelectedItem>
+  onSelectItem: (item: SelectedItem) => void
+  t: (key: string) => string
+}
+
+function MobileExtensionCommandsList({
+  extension,
+  selectedItems,
+  onSelectItem,
+  t,
+}: MobileExtensionCommandsListProps) {
+  const commands = extension.commands || []
+
+  if (commands.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4">
+        {t('extensions:noCommands') || 'No commands available'}
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-4 space-y-3">
+      {commands.map((cmd: ExtensionCommandDescriptor) => {
+        const itemKey = `extension-command:${extension.id}:${cmd.id}` as SelectedItem
+        const isSelected = selectedItems.has(itemKey)
+
+        return (
+          <button
+            key={cmd.id}
+            type="button"
+            onClick={() => onSelectItem(itemKey)}
+            className={cn(
+              'w-full text-left transition-colors duration-150',
+              'group relative rounded-2xl border p-4',
+              isSelected
+                ? 'bg-primary/10 border-primary/50'
+                : 'bg-card border-border active:bg-accent/40'
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                'shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-colors',
+                isSelected
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground'
+              )}>
+                <Check className={cn(
+                  'h-4 w-4',
+                  isSelected ? 'opacity-100' : 'opacity-0'
+                )} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className={cn(
+                  'text-base font-medium truncate',
+                  isSelected ? 'text-foreground' : 'text-foreground/90'
+                )}>
+                  {cmd.display_name || cmd.id}
+                </div>
+                <div className="text-sm text-muted-foreground truncate">
+                  {cmd.description || cmd.id}
+                </div>
+              </div>
+              <Zap className={cn(
+                'h-5 w-5 shrink-0',
+                isSelected ? 'text-amber-500' : 'text-muted-foreground/40'
+              )} />
+            </div>
+          </button>
+        )
+      })}
     </div>
   )
 }

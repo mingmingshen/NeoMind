@@ -7,9 +7,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import {
@@ -27,6 +27,7 @@ import {
   ChevronDown,
   ChevronUp,
   Monitor,
+  X,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
@@ -298,7 +299,7 @@ export function ExecutionDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh]">
+      <DialogContent className="sm:max-w-2xl sm:max-h-[85vh] flex flex-col">
         <DialogHeader className="pb-2">
           <DialogTitle className="flex items-center gap-2 text-sm">
             <Sparkles className="h-4 w-4 text-primary" />
@@ -311,7 +312,7 @@ export function ExecutionDetailDialog({
             <Clock className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <ScrollArea className="max-h-[70vh] pr-3">
+          <DialogContentBody className="max-h-[70vh] overflow-y-auto pr-3">
             <div className="space-y-3 pr-1">
               {/* Status Bar - Compact */}
               <div className="flex items-center justify-between py-2 px-3 bg-muted/30 rounded-lg">
@@ -516,7 +517,7 @@ export function ExecutionDetailDialog({
                 </>
               )}
             </div>
-          </ScrollArea>
+          </DialogContentBody>
         )}
 
         <DialogFooter className="pt-2">

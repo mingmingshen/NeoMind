@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   Plus,
   RotateCcw,
+  X,
 } from "lucide-react"
 import {
   Select,
@@ -37,6 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogContentBody,
 } from "@/components/ui/dialog"
 import {
   Table,
@@ -437,11 +439,11 @@ export function DeviceControl({
                 {t('devices:control.quickCommand')}
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="flex flex-col">
               <DialogHeader>
                 <DialogTitle>{t('devices:control.sendCustomCommand')}</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 py-4">
+              <DialogContentBody className="space-y-4 py-4">
                 <div className="space-y-2">
                   <Label>{t('devices:control.targetDevice')}</Label>
                   <p className="text-sm text-muted-foreground">
@@ -459,7 +461,7 @@ export function DeviceControl({
                     className="font-mono text-sm"
                   />
                 </div>
-              </div>
+              </DialogContentBody>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setQuickCommandOpen(false)}>
                   {t('common:cancel')}

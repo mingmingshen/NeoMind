@@ -121,16 +121,6 @@ export function PreferencesTab() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="space-y-1">
-        <h2 className="text-2xl font-bold">
-          {t("settings:preferences")}
-        </h2>
-        <p className="text-muted-foreground text-sm">
-          {t("settings:preferencesDesc")}
-        </p>
-      </div>
-
       {/* Actions */}
       {hasChanges && (
         <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
