@@ -3,7 +3,7 @@
 //! Provides API endpoints for managing visual dashboards with components.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -209,6 +209,21 @@ pub struct RequiredResources {
 pub struct DashboardsResponse {
     pub dashboards: Vec<Dashboard>,
     pub count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<usize>,
+}
+
+/// Pagination query parameters
+#[derive(Debug, Deserialize)]
+pub struct PaginationParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<usize>,
 }
 
 // ============================================================================
@@ -334,12 +349,27 @@ fn stored_template_to_api(template: &StoredTemplate) -> DashboardTemplate {
 // ============================================================================
 
 /// List all dashboards
+///
+/// Performance optimization: Supports pagination via limit/offset query parameters.
+/// Example: GET /api/dashboards?limit=10&offset=20
 pub async fn list_dashboards_handler(
     State(state): State<ServerState>,
+    Query(params): Query<PaginationParams>,
 ) -> HandlerResult<DashboardsResponse> {
+    // Enforce reasonable limits to prevent performance issues
+    let limit = params.limit.unwrap_or(100).min(1000); // Default 100, max 1000
+    let offset = params.offset.unwrap_or(0);
+
+    // Get total count for pagination metadata (only when paginating)
+    let total = if limit < usize::MAX || offset > 0 {
+        state.dashboard_store.count().ok()
+    } else {
+        None
+    };
+
     let dashboards = state
         .dashboard_store
-        .list_all()
+        .list_paginated(Some(limit), Some(offset))
         .map_err(|e| ErrorResponse::internal(format!("Failed to list dashboards: {}", e)))?;
 
     let api_dashboards: Vec<Dashboard> = dashboards.iter().map(stored_to_api).collect();
@@ -348,6 +378,9 @@ pub async fn list_dashboards_handler(
     ok(DashboardsResponse {
         dashboards: api_dashboards,
         count,
+        total,
+        limit: if total.is_some() { Some(limit) } else { None },
+        offset: if total.is_some() { Some(offset) } else { None },
     })
 }
 
@@ -360,14 +393,14 @@ pub async fn get_dashboard_handler(
     if id == "overview" || id == "blank" {
         let templates = default_templates();
         let template = templates
-            .into_iter()
+            .iter()
             .find(|t| t.id == id)
             .ok_or_else(|| ErrorResponse::not_found(format!("Template '{}' not found", id)))?;
 
         let now = chrono::Utc::now().timestamp();
         return ok(Dashboard {
-            id: template.id,
-            name: template.name,
+            id: template.id.clone(),
+            name: template.name.clone(),
             layout: convert_layout(&template.layout),
             components: vec![],
             created_at: now,
@@ -527,9 +560,9 @@ pub async fn get_template_handler(
 ) -> HandlerResult<DashboardTemplate> {
     let templates = default_templates();
     let template = templates
-        .into_iter()
+        .iter()
         .find(|t| t.id == id)
         .ok_or_else(|| ErrorResponse::not_found(format!("Template '{}' not found", id)))?;
 
-    ok(stored_template_to_api(&template))
+    ok(stored_template_to_api(template))
 }

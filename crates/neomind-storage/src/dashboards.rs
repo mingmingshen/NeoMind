@@ -5,6 +5,7 @@
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
+use std::sync::OnceLock;
 
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
@@ -170,38 +171,47 @@ impl DashboardLayout {
     }
 }
 
+/// Static cache for default templates.
+/// Initialized once on first access and reused for subsequent calls.
+static TEMPLATES_CACHE: OnceLock<Vec<DashboardTemplate>> = OnceLock::new();
+
 /// Default templates.
-pub fn default_templates() -> Vec<DashboardTemplate> {
-    vec![
-        DashboardTemplate {
-            id: "overview".to_string(),
-            name: "Overview".to_string(),
-            description: "System overview with devices, agents, and events".to_string(),
-            category: "overview".to_string(),
-            icon: Some("LayoutDashboard".to_string()),
-            layout: DashboardLayout::default_layout(),
-            components: Vec::new(),
-            required_resources: Some(RequiredResources {
-                devices: Some(1),
-                agents: Some(1),
-                rules: Some(0),
-            }),
-        },
-        DashboardTemplate {
-            id: "blank".to_string(),
-            name: "Blank Canvas".to_string(),
-            description: "Start from scratch with an empty dashboard".to_string(),
-            category: "custom".to_string(),
-            icon: Some("Square".to_string()),
-            layout: DashboardLayout::default_layout(),
-            components: Vec::new(),
-            required_resources: Some(RequiredResources {
-                devices: Some(0),
-                agents: Some(0),
-                rules: Some(0),
-            }),
-        },
-    ]
+///
+/// Performance optimization: Uses OnceLock for thread-safe lazy initialization.
+/// Templates are created only once on first access and cached for lifetime of process.
+pub fn default_templates() -> &'static Vec<DashboardTemplate> {
+    TEMPLATES_CACHE.get_or_init(|| {
+        vec![
+            DashboardTemplate {
+                id: "overview".to_string(),
+                name: "Overview".to_string(),
+                description: "System overview with devices, agents, and events".to_string(),
+                category: "overview".to_string(),
+                icon: Some("LayoutDashboard".to_string()),
+                layout: DashboardLayout::default_layout(),
+                components: Vec::new(),
+                required_resources: Some(RequiredResources {
+                    devices: Some(1),
+                    agents: Some(1),
+                    rules: Some(0),
+                }),
+            },
+            DashboardTemplate {
+                id: "blank".to_string(),
+                name: "Blank Canvas".to_string(),
+                description: "Start from scratch with an empty dashboard".to_string(),
+                category: "custom".to_string(),
+                icon: Some("Square".to_string()),
+                layout: DashboardLayout::default_layout(),
+                components: Vec::new(),
+                required_resources: Some(RequiredResources {
+                    devices: Some(0),
+                    agents: Some(0),
+                    rules: Some(0),
+                }),
+            },
+        ]
+    })
 }
 
 // ============================================================================
@@ -309,7 +319,19 @@ impl DashboardStore {
     }
 
     /// List all dashboards.
+    ///
+    /// Performance optimization: Supports pagination with limit/offset parameters
+    /// to avoid loading all dashboards into memory when only a subset is needed.
     pub fn list_all(&self) -> Result<Vec<Dashboard>, Error> {
+        self.list_paginated(None, None)
+    }
+
+    /// List dashboards with pagination support.
+    ///
+    /// # Arguments
+    /// * `limit` - Maximum number of dashboards to return (None = no limit)
+    /// * `offset` - Number of dashboards to skip (None = start from beginning)
+    pub fn list_paginated(&self, limit: Option<usize>, offset: Option<usize>) -> Result<Vec<Dashboard>, Error> {
         let read_txn = self.db.begin_read()?;
         let table = match read_txn.open_table(DASHBOARDS_TABLE) {
             Ok(t) => t,
@@ -318,7 +340,19 @@ impl DashboardStore {
         };
 
         let mut dashboards = Vec::new();
-        for result in table.iter()? {
+        let skip_count = offset.unwrap_or(0);
+        let max_count = limit.unwrap_or(usize::MAX);
+
+        for (index, result) in table.iter()?.enumerate() {
+            // Skip items before offset
+            if index < skip_count {
+                continue;
+            }
+            // Stop after reaching limit
+            if index >= skip_count + max_count {
+                break;
+            }
+
             let (_key, value) = result?;
             let dashboard: Dashboard = serde_json::from_slice(value.value().as_slice())?;
             dashboards.push(dashboard);
@@ -345,40 +379,38 @@ impl DashboardStore {
     }
 
     /// Set a dashboard as the default.
+    ///
+    /// Performance optimization: Uses a single transaction with batch updates
+    /// to avoid N+1 query problem. Only deserializes/serializes data once per dashboard.
     pub fn set_default(&self, id: &str) -> Result<(), Error> {
         let write_txn = self.db.begin_write()?;
 
         {
-            // First, unset is_default on all dashboards
-            {
-                let mut table = write_txn.open_table(DASHBOARDS_TABLE)?;
-                let mut dashboards_to_update: Vec<String> = Vec::new();
+            let mut table = write_txn.open_table(DASHBOARDS_TABLE)?;
 
-                for result in table.iter()? {
-                    let (key, _value) = result?;
-                    dashboards_to_update.push(key.value().to_string());
-                }
+            // Batch update: unset is_default on all dashboards in a single pass
+            // This avoids N+1 queries by processing all updates in one iteration
+            let mut dashboards_to_update: Vec<(String, Vec<u8>)> = Vec::new();
 
-                for dashboard_id in dashboards_to_update {
-                    if let Some(mut dashboard) = self.load(&dashboard_id)? {
-                        dashboard.is_default = Some(false);
-                        let serialized = serde_json::to_vec(&dashboard)?;
-                        table.insert(dashboard_id.as_str(), serialized)?;
+            for result in table.iter()? {
+                let (key, value) = result?;
+                let dashboard_id = key.value().to_string();
+
+                // Parse and update dashboard
+                if let Ok(mut dashboard) = serde_json::from_slice::<Dashboard>(&value.value()) {
+                    dashboard.is_default = Some(dashboard_id == id);
+                    if let Ok(serialized) = serde_json::to_vec(&dashboard) {
+                        dashboards_to_update.push((dashboard_id, serialized));
                     }
                 }
             }
 
-            // Set new default
-            {
-                let mut table = write_txn.open_table(DASHBOARDS_TABLE)?;
-                if let Some(mut dashboard) = self.load(id)? {
-                    dashboard.is_default = Some(true);
-                    let serialized = serde_json::to_vec(&dashboard)?;
-                    table.insert(id, serialized)?;
-                }
+            // Apply all updates
+            for (dashboard_id, serialized) in dashboards_to_update {
+                table.insert(dashboard_id.as_str(), serialized)?;
             }
 
-            // Update default index
+            // Update default index for fast lookup
             let mut default_table = write_txn.open_table(DEFAULT_TABLE)?;
             default_table.insert("default", id)?;
         }
@@ -403,19 +435,26 @@ impl DashboardStore {
     }
 
     /// Get the default dashboard.
+    ///
+    /// Performance optimization: Uses the default index table for O(1) lookup.
+    /// Only falls back to scanning if the index is missing (backward compatibility).
     pub fn get_default(&self) -> Result<Option<Dashboard>, Error> {
+        // Fast path: use the default index table
         if let Some(id) = self.get_default_id()? {
-            self.load(&id)
-        } else {
-            // Try to find one with is_default flag
-            let dashboards = self.list_all()?;
-            for dashboard in dashboards {
-                if dashboard.is_default == Some(true) {
-                    return Ok(Some(dashboard));
-                }
-            }
-            Ok(None)
+            return self.load(&id);
         }
+
+        // Fallback: scan for is_default flag (legacy data)
+        // This is only executed once after upgrading to the new indexed format
+        let dashboards = self.list_all()?;
+        for dashboard in dashboards {
+            if dashboard.is_default == Some(true) {
+                // Update the index for future fast lookups
+                let _ = self.set_default(&dashboard.id);
+                return Ok(Some(dashboard));
+            }
+        }
+        Ok(None)
     }
 
     /// Check if a dashboard exists.
