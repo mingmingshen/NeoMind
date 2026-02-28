@@ -1,7 +1,7 @@
 # Integrations Module
 
 **Package**: `neomind-integrations`
-**Version**: 0.5.8
+**Version**: 0.5.9
 **Completion**: 65%
 **Purpose**: External system integration framework
 

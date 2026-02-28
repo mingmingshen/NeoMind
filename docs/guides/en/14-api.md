@@ -1,7 +1,7 @@
 # API Module
 
 **Package**: `neomind-api`
-**Version**: 0.5.8
+**Version**: 0.5.9
 **Completion**: 90%
 **Purpose**: REST/WebSocket API server
 

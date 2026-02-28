@@ -1,7 +1,7 @@
 # Storage Module
 
 **Package**: `neomind-storage`
-**Version**: 0.5.8
+**Version**: 0.5.9
 **Completion**: 95%
 **Purpose**: Persistent storage layer
 

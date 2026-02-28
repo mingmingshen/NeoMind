@@ -1,7 +1,7 @@
 # Tools Module
 
 **Package**: `neomind-tools`
-**Version**: 0.5.8
+**Version**: 0.5.9
 **Completion**: 80%
 **Purpose**: AI function calling tools
 

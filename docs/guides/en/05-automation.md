@@ -1,7 +1,7 @@
 # Automation Module
 
 **Package**: `neomind-automation`
-**Version**: 0.5.8
+**Version**: 0.5.9
 **Completion**: 75%
 **Purpose**: Data transformation, automation, and intent analysis
 

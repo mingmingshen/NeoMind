@@ -1,7 +1,7 @@
 # Rules Module
 
 **Package**: `neomind-rules`
-**Version**: 0.5.8
+**Version**: 0.5.9
 **Completion**: 75%
 **Purpose**: DSL rule engine
 

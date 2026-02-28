@@ -1,7 +1,7 @@
 # Devices Module
 
 **Package**: `neomind-devices`
-**Version**: 0.5.8
+**Version**: 0.5.9
 **Completion**: 85%
 **Purpose**: Device management and protocol adapters
 

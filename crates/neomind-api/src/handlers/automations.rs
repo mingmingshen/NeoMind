@@ -349,11 +349,28 @@ pub async fn create_automation_handler(
     // Determine automation type
     let automation_type = req.r#type.unwrap_or(AutomationType::Rule);
 
+    // Generate a unique ID for new automations
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = Utc::now().timestamp();
+
     // Create the automation based on type
     let automation = match automation_type {
         AutomationType::Transform => {
+            // Start with base definition and add required fields
+            let mut definition = req.definition.clone();
+
+            // Ensure id and timestamps are set
+            if let Some(obj) = definition.as_object_mut() {
+                obj.insert("id".to_string(), json!(id));
+                obj.insert("name".to_string(), json!(req.name));
+                obj.insert("description".to_string(), json!(req.description));
+                obj.insert("enabled".to_string(), json!(req.enabled));
+                obj.insert("created_at".to_string(), json!(now));
+                obj.insert("updated_at".to_string(), json!(now));
+            }
+
             // Parse transform from definition
-            match serde_json::from_value(req.definition) {
+            match serde_json::from_value(definition) {
                 Ok(transform) => Automation::Transform(transform),
                 Err(e) => {
                     return Err(ErrorResponse::bad_request(format!(
@@ -364,8 +381,21 @@ pub async fn create_automation_handler(
             }
         }
         AutomationType::Rule => {
+            // Start with base definition and add required fields
+            let mut definition = req.definition.clone();
+
+            // Ensure id and timestamps are set
+            if let Some(obj) = definition.as_object_mut() {
+                obj.insert("id".to_string(), json!(id));
+                obj.insert("name".to_string(), json!(req.name));
+                obj.insert("description".to_string(), json!(req.description));
+                obj.insert("enabled".to_string(), json!(req.enabled));
+                obj.insert("created_at".to_string(), json!(now));
+                obj.insert("updated_at".to_string(), json!(now));
+            }
+
             // Parse rule from definition
-            match serde_json::from_value(req.definition) {
+            match serde_json::from_value(definition) {
                 Ok(rule) => Automation::Rule(rule),
                 Err(e) => {
                     return Err(ErrorResponse::bad_request(format!(

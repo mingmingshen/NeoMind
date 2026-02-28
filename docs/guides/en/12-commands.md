@@ -1,7 +1,7 @@
 # Commands Module
 
 **Package**: `neomind-commands`
-**Version**: 0.5.8
+**Version**: 0.5.9
 **Completion**: 70%
 **Purpose**: Device command queue and downlink adapter
 

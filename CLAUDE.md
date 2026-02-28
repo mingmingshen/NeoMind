@@ -930,10 +930,10 @@ See [Tauri Desktop App](#tauri-desktop-app) section for details.
 
 ```bash
 # Using install script (recommended)
-curl -fsSL https://github.com/camthink-ai/NeoMind/releases/download/v0.5.8/install.sh | bash
+curl -fsSL https://github.com/camthink-ai/NeoMind/releases/download/v0.5.9/install.sh | bash
 
 # Or manually
-wget https://github.com/camthink-ai/NeoMind/releases/download/v0.5.8/neomind-server-linux-amd64.tar.gz
+wget https://github.com/camthink-ai/NeoMind/releases/download/v0.5.9/neomind-server-linux-amd64.tar.gz
 tar xzf neomind-server-linux-amd64.tar.gz
 sudo install -m 755 neomind-api /usr/local/bin/
 ```
@@ -1016,7 +1016,7 @@ docker logs -f neomind
 
 **Tags:**
 - `latest` - Latest stable release
-- `0.5.8` - Version-specific tag
+- `0.5.9` - Version-specific tag
 - `0.5` - Minor version tag
 
 **Platforms:**

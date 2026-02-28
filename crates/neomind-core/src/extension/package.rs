@@ -499,6 +499,217 @@ impl ExtensionPackage {
         })
     }
 
+    /// Install the package synchronously (for use in spawn_blocking)
+    /// Takes raw package bytes since from_bytes() doesn't store them
+    pub fn install_sync(data: &[u8], target_dir: &Path) -> Result<InstallResult, PackageError> {
+        let cursor = Cursor::new(data.to_vec());
+        let mut archive = ZipArchive::new(cursor).map_err(|e| PackageError::Zip(e.to_string()))?;
+
+        // Read manifest from archive
+        let manifest_content = Self::read_file_from_zip(&mut archive, "manifest.json")?;
+        let manifest: ExtensionPackageManifest = serde_json::from_str(&manifest_content)?;
+
+        Self::validate_manifest(&manifest)?;
+
+        let ext_id = &manifest.id;
+        let version = &manifest.version;
+
+        // Create extension directory
+        let ext_dir = target_dir.join(ext_id);
+        std::fs::create_dir_all(&ext_dir)?;
+
+        // Extract manifest.json
+        let manifest_path = ext_dir.join("manifest.json");
+        Self::extract_file_sync(&mut archive, "manifest.json", &manifest_path)?;
+
+        // Get binary path for current platform
+        let platform = detect_platform();
+        let binary_rel_path = manifest.binaries.get(&platform)
+            .or_else(|| manifest.binaries.get("wasm"))
+            .cloned()
+            .ok_or_else(|| PackageError::UnsupportedPlatform(platform.clone()))?;
+
+        // Extract binary
+        let binary_file = ext_dir.join(
+            PathBuf::from(&binary_rel_path).file_name().unwrap_or_default()
+        );
+        Self::extract_file_sync(&mut archive, &binary_rel_path, &binary_file)?;
+
+        // For WASM binaries, create a sidecar JSON file
+        if binary_file.extension().and_then(|e| e.to_str()) == Some("wasm") {
+            let sidecar_json = binary_file.with_extension("json");
+            Self::create_wasm_sidecar_json_sync(&manifest, &sidecar_json)?;
+        }
+
+        // Extract frontend directory if exists
+        let frontend_dir = if manifest.frontend.is_some() {
+            let frontend_path = ext_dir.join("frontend");
+            Self::extract_directory_sync(&mut archive, "frontend/", &frontend_path)?;
+            Some(frontend_path)
+        } else {
+            None
+        };
+
+        // Get component definitions
+        let components = manifest.frontend.as_ref()
+            .map(|f| f.components.clone())
+            .unwrap_or_default();
+
+        // Calculate checksum
+        let checksum = Self::calculate_checksum(data);
+
+        Ok(InstallResult {
+            extension_id: ext_id.clone(),
+            version: version.clone(),
+            binary_path: binary_file,
+            manifest_path,
+            frontend_dir,
+            components,
+            checksum,
+        })
+    }
+
+    /// Extract a single file from the archive (synchronous)
+    fn extract_file_sync<R: Read + std::io::Seek>(
+        archive: &mut ZipArchive<R>,
+        src_path: &str,
+        dst_path: &Path,
+    ) -> Result<(), PackageError> {
+        let mut file = archive.by_name(src_path).map_err(|e| {
+            PackageError::MissingFile(format!("{}: {}", src_path, e))
+        })?;
+
+        let mut content = Vec::new();
+        file.read_to_end(&mut content)?;
+
+        // Create parent directory
+        if let Some(parent) = dst_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        std::fs::write(dst_path, content)?;
+        Ok(())
+    }
+
+    /// Extract a directory from the archive (synchronous)
+    fn extract_directory_sync<R: Read + std::io::Seek>(
+        archive: &mut ZipArchive<R>,
+        src_prefix: &str,
+        dst_dir: &Path,
+    ) -> Result<(), PackageError> {
+        std::fs::create_dir_all(dst_dir)?;
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).map_err(|e| {
+                PackageError::Zip(format!("Failed to access file {}: {}", i, e))
+            })?;
+
+            let name = file.name().to_string();
+
+            // Check if file starts with prefix
+            if name.starts_with(src_prefix) && !name.ends_with('/') {
+                // Remove prefix to get relative path
+                let rel_path = name[src_prefix.len()..].to_string();
+                let dst_path = dst_dir.join(&rel_path);
+
+                // Create parent directory
+                if let Some(parent) = dst_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+
+                // Extract file
+                let mut content = Vec::new();
+                file.read_to_end(&mut content)?;
+                std::fs::write(dst_path, content)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Create a sidecar JSON file for WASM extensions (synchronous)
+    fn create_wasm_sidecar_json_sync(
+        manifest: &ExtensionPackageManifest,
+        json_path: &Path,
+    ) -> Result<(), PackageError> {
+        use serde_json::json;
+
+        // Build metrics array if capabilities exist
+        let metrics = manifest.capabilities.as_ref().map(|cap| {
+            cap.metrics.iter().map(|m| {
+                json!({
+                    "name": m.name,
+                    "display_name": m.display_name,
+                    "data_type": m.data_type,
+                    "unit": m.unit,
+                    "min": m.min,
+                    "max": m.max,
+                    "required": false
+                })
+            }).collect::<Vec<_>>()
+        }).unwrap_or_default();
+
+        // Build commands array if capabilities exist
+        let commands = manifest.capabilities.as_ref().map(|cap| {
+            cap.commands.iter().map(|c| {
+                json!({
+                    "name": c.name,
+                    "display_name": c.display_name,
+                    "payload_template": "",
+                    "parameters": c.parameters.as_ref().map(|params| {
+                        if let serde_json::Value::Object(props) = params {
+                            if let Some(properties) = props.get("properties") {
+                                if let serde_json::Value::Object(props_map) = properties {
+                                    return props_map.iter().map(|(name, _)| {
+                                        json!({
+                                            "name": name,
+                                            "display_name": name,
+                                            "description": "",
+                                            "param_type": "String",
+                                            "required": false,
+                                            "default_value": null,
+                                            "min": null,
+                                            "max": null,
+                                            "options": []
+                                        })
+                                    }).collect::<Vec<_>>();
+                                }
+                            }
+                        }
+                        Vec::<serde_json::Value>::new()
+                    }).unwrap_or_default(),
+                    "fixed_values": {},
+                    "samples": [],
+                    "llm_hints": ""
+                })
+            }).collect::<Vec<_>>()
+        }).unwrap_or_default();
+
+        let sidecar_data = json!({
+            "id": manifest.id,
+            "name": manifest.name,
+            "version": manifest.version,
+            "description": manifest.description,
+            "author": manifest.author,
+            "homepage": manifest.homepage,
+            "license": manifest.license,
+            "file_path": None::<String>,
+            "metrics": metrics,
+            "commands": commands
+        });
+
+        let content = serde_json::to_string_pretty(&sidecar_data)
+            .map_err(|e| PackageError::InvalidManifest(format!("Failed to serialize sidecar JSON: {}", e)))?;
+
+        std::fs::write(json_path, content)
+            .map_err(|e| PackageError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to write sidecar JSON: {}", e)
+            )))?;
+
+        Ok(())
+    }
+
     /// Extract a single file from the archive
     async fn extract_file<R: Read + std::io::Seek>(
         &self,

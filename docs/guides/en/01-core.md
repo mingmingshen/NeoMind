@@ -1,7 +1,7 @@
 # Core Module
 
 **Package**: `neomind-core`
-**Version**: 0.5.8
+**Version**: 0.5.9
 **Completion**: 90%
 **Purpose**: Defines core traits and types for the entire project
 

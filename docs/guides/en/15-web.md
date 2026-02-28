@@ -1,6 +1,6 @@
 # Web Frontend Module
 
-**Version**: 0.5.8
+**Version**: 0.5.9
 **Completion**: 85%
 **Purpose**: React + TypeScript Web Application / Tauri Desktop Application
 

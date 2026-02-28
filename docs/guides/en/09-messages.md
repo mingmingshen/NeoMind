@@ -1,7 +1,7 @@
 # Messages Module
 
 **Package**: `neomind-messages`
-**Version**: 0.5.8
+**Version**: 0.5.9
 **Completion**: 70%
 **Purpose**: Message notification system
 

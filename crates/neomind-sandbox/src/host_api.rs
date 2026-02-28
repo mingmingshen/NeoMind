@@ -102,7 +102,7 @@ impl HostApi {
     pub fn new() -> Self {
         let http_client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
-            .user_agent("NeoMind-WASM-Extension/0.5.8")
+            .user_agent("NeoMind-WASM-Extension/0.5.9")
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 

@@ -1,7 +1,7 @@
 # Agent Module
 
 **Package**: `neomind-agent`
-**Version**: 0.5.8
+**Version**: 0.5.9
 **Completion**: 90%
 **Purpose**: AI chat agent with LLM, memory, and tools integration
 

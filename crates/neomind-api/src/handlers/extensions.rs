@@ -3260,66 +3260,92 @@ pub async fn upload_extension_multipart_handler(
 /// POST /api/extensions/upload/file
 /// Upload an extension package file directly (.nep format).
 ///
-/// This endpoint accepts raw binary data of a .nep file.
+/// This endpoint accepts a JSON body with base64-encoded file data.
+///
+/// Request body:
+/// ```json
+/// {
+///   "data": "<base64-encoded .nep file>",
+///   "filename": "extension.nep"
+/// }
+/// ```
 ///
 /// Example with curl:
 /// ```bash
+/// # First encode the file to base64
+/// BASE64_DATA=$(base64 -w 0 extension.nep)
 /// curl -X POST http://localhost:9375/api/extensions/upload/file \
-///   -H "Content-Type: application/octet-stream" \
-///   --data-binary @extension.nep
+///   -H "Content-Type: application/json" \
+///   -d "{\"data\": \"$BASE64_DATA\"}"
 /// ```
+#[derive(Debug, serde::Deserialize)]
+pub struct UploadExtensionFileRequest {
+    /// Base64-encoded .nep file data
+    pub data: String,
+    /// Optional filename
+    pub filename: Option<String>,
+}
+
+#[axum::debug_handler]
 pub async fn upload_extension_file_handler(
     State(state): State<ServerState>,
-    req: axum::extract::Request,
+    Json(req): Json<UploadExtensionFileRequest>,
 ) -> HandlerResult<serde_json::Value> {
-    use neomind_core::extension::package::ExtensionPackage;
-    use http_body_util::BodyExt;
+    // Decode base64 data
+    let body_bytes = STANDARD
+        .decode(&req.data)
+        .map_err(|e| ErrorResponse::bad_request(format!("Invalid base64 data: {}", e)))?;
 
-    // Limit file size to 100MB
-    const MAX_SIZE: usize = 100 * 1024 * 1024;
-
-    // Collect body data with size limit
-    let body_bytes = BodyExt::collect(Limited::new(req.into_body(), MAX_SIZE))
-        .await
-        .map_err(|e| ErrorResponse::bad_request(format!("Failed to read body: {}", e)))?
-        .to_bytes();
-
-    // Check if this looks like a ZIP file (starts with ZIP magic)
+    // Check if this looks like a ZIP file
     if body_bytes.len() < 4 {
         return Err(ErrorResponse::bad_request("File too small to be a valid package"));
     }
 
-    let zip_magic = &[0x50, 0x4B, 0x03, 0x04]; // PK..
-    let zip_empty = &[0x50, 0x4B, 0x05, 0x06]; // PK..
-    let zip_spanned = &[0x50, 0x4B, 0x07, 0x08]; // PK..
+    let zip_magic: &[u8] = &[0x50, 0x4B, 0x03, 0x04];
+    let zip_empty: &[u8] = &[0x50, 0x4B, 0x05, 0x06];
+    let zip_spanned: &[u8] = &[0x50, 0x4B, 0x07, 0x08];
 
     let is_zip = body_bytes.starts_with(zip_magic)
         || body_bytes.starts_with(zip_empty)
         || body_bytes.starts_with(zip_spanned);
 
     if !is_zip {
-        return Err(ErrorResponse::bad_request("File is not a valid ZIP archive (.nep files are ZIP format)"));
+        return Err(ErrorResponse::bad_request("File is not a valid ZIP archive"));
     }
 
-    // Parse the package
-    let package = ExtensionPackage::from_bytes(body_bytes.to_vec())
-        .map_err(|e| ErrorResponse::bad_request(format!("Invalid package: {}", e)))?;
+    // Prepare target directory
+    let data_dir = std::env::var("NEOMIND_DATA_DIR")
+        .unwrap_or_else(|_| "data".to_string());
+    let target_dir = PathBuf::from(data_dir).join("extensions");
 
-    let ext_id = package.manifest.id.clone();
-    let version = package.manifest.version.clone();
-    let name = package.manifest.name.clone();
+    // Parse and install the package in a single blocking task
+    // (ZIP operations involve dyn Read which is not Send)
+    let body_bytes_for_install = body_bytes.clone();
+    let target_dir_clone = target_dir.clone();
+    let install_result = tokio::task::spawn_blocking(move || {
+        use neomind_core::extension::package::ExtensionPackage;
+        // First validate the package
+        let package = ExtensionPackage::from_bytes(body_bytes_for_install.clone())?;
+        // Then install using the sync method
+        ExtensionPackage::install_sync(&body_bytes_for_install, &target_dir_clone)
+    }).await
+        .map_err(|e| ErrorResponse::internal(format!("Task join error: {}", e)))?
+        .map_err(|e| ErrorResponse::internal(format!("Installation failed: {}", e)))?;
+
+    let ext_id = install_result.extension_id.clone();
+    let version = install_result.version.clone();
 
     tracing::info!(
         extension_id = %ext_id,
         version = %version,
-        name = %name,
-        checksum = %package.checksum,
-        size = package.size,
-        "Processing extension package file upload"
+        binary_path = %install_result.binary_path.display(),
+        frontend_dir = ?install_result.frontend_dir,
+        components_count = install_result.components.len(),
+        "Package installed successfully"
     );
 
-    // Check if extension is already registered
-    let registry = &state.extensions.registry;
+    // Check if already registered and unregister if needed
+    let registry = state.extensions.registry.clone();
     let is_registered = registry.contains(&ext_id).await;
 
     if is_registered {
@@ -3328,38 +3354,29 @@ pub async fn upload_extension_file_handler(
             .map_err(|e| ErrorResponse::internal(format!("Failed to unregister existing: {}", e)))?;
     }
 
-    // Install the package
-    let data_dir = std::env::var("NEOMIND_DATA_DIR")
-        .unwrap_or_else(|_| "data".to_string());
-    let target_dir = PathBuf::from(data_dir).join("extensions");
-
-    let install_result = package.install(&target_dir).await
-        .map_err(|e| ErrorResponse::internal(format!("Installation failed: {}", e)))?;
-
-    tracing::info!(
-        extension_id = %install_result.extension_id,
-        binary_path = %install_result.binary_path.display(),
-        manifest_path = %install_result.manifest_path.display(),
-        frontend_dir = ?install_result.frontend_dir,
-        components_count = install_result.components.len(),
-        "Package installed successfully"
-    );
-
     // Load and register the extension binary
-    let _metadata = registry.load_from_path(&install_result.binary_path).await
+    let metadata = registry.load_from_path(&install_result.binary_path).await
         .map_err(|e| ErrorResponse::internal(format!("Failed to load extension binary: {}", e)))?;
+
+    // Determine extension type from binary path
+    let extension_type = install_result.binary_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| if e == "wasm" { "wasm" } else { "native" })
+        .unwrap_or("native")
+        .to_string();
 
     // Save to storage
     if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
         let record = ExtensionRecord::new(
             ext_id.clone(),
-            name.clone(),
+            metadata.name.clone(),
             install_result.binary_path.to_string_lossy().to_string(),
-            package.manifest.extension_type.clone(),
+            extension_type,
             version.clone(),
         )
-        .with_description(package.manifest.description.clone())
-        .with_author(package.manifest.author.clone())
+        .with_description(metadata.description.clone())
+        .with_author(metadata.author.clone())
         .with_checksum(Some(install_result.checksum.clone()))
         .with_auto_start(true)
         .with_frontend_path(install_result.frontend_dir.as_ref()
@@ -3374,10 +3391,10 @@ pub async fn upload_extension_file_handler(
     ok(serde_json::json!({
         "message": "Extension package installed successfully",
         "extension_id": ext_id,
-        "name": name,
+        "name": metadata.name,
         "version": version,
-        "description": package.manifest.description,
-        "author": package.manifest.author,
+        "description": metadata.description,
+        "author": metadata.author,
         "checksum": install_result.checksum,
         "binary_path": install_result.binary_path.to_string_lossy(),
         "manifest_path": install_result.manifest_path.to_string_lossy(),

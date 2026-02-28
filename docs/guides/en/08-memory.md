@@ -1,7 +1,7 @@
 # Memory Module
 
 **Package**: `neomind-memory`
-**Version**: 0.5.8
+**Version**: 0.5.9
 **Completion**: 85%
 **Purpose**: Three-tier memory system (short-term/mid-term/long-term)
 

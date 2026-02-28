@@ -10,7 +10,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 
 [![Build Status](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml/badge.svg)](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache-2.0-blue.svg)](LICENSE)
-[![Version: 0.5.8](https://img.shields.io/badge/v-0.5.8-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
+[![Version: 0.5.9](https://img.shields.io/badge/v-0.5.9-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
 
 ## Features
 
@@ -80,14 +80,14 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 **Install specific version:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.5.8 bash
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.5.9 bash
 ```
 
 **Manual installation:**
 
 ```bash
 # Download binary (replace VERSION with desired version)
-wget https://github.com/camthink-ai/NeoMind/releases/download/v0.5.8/neomind-server-linux-amd64.tar.gz
+wget https://github.com/camthink-ai/NeoMind/releases/download/v0.5.9/neomind-server-linux-amd64.tar.gz
 tar xzf neomind-server-linux-amd64.tar.gz
 sudo install -m 755 neomind /usr/local/bin/
 
@@ -156,7 +156,7 @@ The installer will be in `web/src-tauri/target/release/bundle/`
 | Method | Use Case | Link |
 |--------|----------|------|
 | **Desktop App** | End-user desktop application | [Download](https://github.com/camthink-ai/NeoMind/releases/latest) |
-| **Server Binary** | Standalone server deployment (Linux amd64) | [Download](https://github.com/camthink-ai/NeoMind/releases/download/v0.5.8/neomind-server-linux-amd64.tar.gz) |
+| **Server Binary** | Standalone server deployment (Linux amd64) | [Download](https://github.com/camthink-ai/NeoMind/releases/download/v0.5.9/neomind-server-linux-amd64.tar.gz) |
 
 ---
 
