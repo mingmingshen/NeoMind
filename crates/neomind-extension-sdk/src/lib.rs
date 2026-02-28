@@ -10,15 +10,43 @@
 //! - Helper macros for common patterns
 //! - Type-safe metric and command definitions
 //!
+//! # Architecture (V2 - Process Isolation)
+//!
+//! All extensions run in isolated processes by default:
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │                   NeoMind Main Process                       │
+//! │  - UnifiedExtensionService manages all extensions           │
+//! │  - IPC communication via stdin/stdout                       │
+//! └─────────────────────────────────────────────────────────────┘
+//!                               │
+//!                               ▼
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │                  Extension Runner Process                    │
+//! │  - Your extension runs here in isolation                    │
+//! │  - Native: loaded via FFI                                   │
+//! │  - WASM: executed via wasmtime                              │
+//! │  - Crashes don't affect main process                        │
+//! └─────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! # Benefits of Process Isolation
+//!
+//! - **Crash Safety**: Extension crashes don't affect the main NeoMind process
+//! - **Memory Isolation**: Each extension has its own memory space
+//! - **Resource Limits**: CPU and memory can be limited per extension
+//! - **Independent Lifecycle**: Extensions can be restarted without affecting others
+//!
 //! # Safety Guidelines for Extension Authors
 //!
-//! **CRITICAL**: Extensions run in the same process as the NeoMind server. To prevent
-//! crashes, follow these guidelines:
+//! Although extensions run in isolated processes, following these guidelines
+//! ensures stable and reliable extensions:
 //!
 //! ## 1. Panic Handling
 //!
-//! - **NEVER** use `unwrap()` or `expect()` in production code
-//! - Always use `?` operator or proper error handling with `Result`
+//! - Avoid `unwrap()` or `expect()` in production code
+//! - Use `?` operator or proper error handling with `Result`
 //! - Use `unwrap_or()` or `unwrap_or_default()` for safe defaults
 //!
 //! ## 2. Async Runtime Considerations
@@ -28,25 +56,18 @@
 //! - Do NOT spawn tokio tasks or use `.await` in `produce_metrics()`
 //! - The `execute_command()` method IS async and can use `.await`
 //!
-//! ## 3. Foreign Code Integration
-//!
-//! - When using C/C++ libraries via FFI, ensure they don't call `abort()`
-//! - Catch C++ exceptions at the FFI boundary
-//! - Be careful with callbacks from foreign code
-//!
-//! ## 4. Resource Management
+//! ## 3. Resource Management
 //!
 //! - Always clean up resources in `Drop` implementations
 //! - Use `Arc<Mutex<T>>` or `Arc<RwLock<T>>` for shared state
 //! - Avoid circular references that cause memory leaks
+//! - Release resources promptly when extension is unloaded
 //!
-//! ## 5. Compilation Settings
+//! ## 4. IPC Communication
 //!
-//! Ensure your `Cargo.toml` has:
-//! ```toml
-//! [profile.release]
-//! panic = "unwind"  # NOT "abort" - allows panic catching
-//! ```
+//! - Keep command payloads small and serializable
+//! - Avoid sending large binary data through commands
+//! - Use streaming APIs for large data transfers
 //!
 //! # Quick Start
 //!
