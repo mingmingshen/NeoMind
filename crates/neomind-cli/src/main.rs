@@ -468,7 +468,7 @@ async fn run_server(host: String, port: u16) -> Result<()> {
 
 /// Run plugin management commands.
 async fn run_plugin_cmd(cmd: PluginCommand) -> Result<()> {
-    use neomind_core::extension::{loader::native::NativeExtensionLoader, WasmExtensionLoader};
+    use neomind_core::extension::loader::native::NativeExtensionLoader;
 
     match cmd {
         PluginCommand::Validate { path, verbose } => {
@@ -518,48 +518,62 @@ async fn run_plugin_cmd(cmd: PluginCommand) -> Result<()> {
                     }
                 }
             } else {
-                // Use WasmExtensionLoader for .wasm files
-                let loader = WasmExtensionLoader::new()?;
+                // WASM extensions are validated via extension-runner
+                // For CLI validation, just check the sidecar JSON metadata
+                let json_path = path.with_extension("json");
 
-                // Try to load the extension
-                let result = loader.load(&path).await;
+                if json_path.exists() {
+                    match std::fs::read_to_string(&json_path) {
+                        Ok(content) => {
+                            match serde_json::from_str::<serde_json::Value>(&content) {
+                                Ok(json) => {
+                                    println!("Extension Validation: PASSED (metadata only)");
+                                    println!();
+                                    println!("ID:              {}", json["id"].as_str().unwrap_or("unknown"));
+                                    println!("Name:            {}", json["name"].as_str().unwrap_or("unknown"));
+                                    println!("Version:         {}", json["version"].as_str().unwrap_or("unknown"));
 
-                match result {
-                    Ok(loaded) => {
-                        // Get metadata from the loaded extension
-                        let ext = loaded.extension.blocking_read();
-                        let metadata = ext.metadata();
+                                    if verbose {
+                                        println!("\n--- Verbose Details ---\n");
+                                        println!("Extension path: {}", path.display());
+                                        println!("Metadata path:  {}", json_path.display());
+                                        println!("Current directory: {}", std::env::current_dir()?.display());
+                                    }
 
-                        println!("Extension Validation: PASSED");
-                        println!();
-                        println!("ID:              {}", metadata.id);
-                        println!("Name:            {}", metadata.name);
-                        println!("Version:         {}", metadata.version);
-
-                        if verbose {
-                            println!("\n--- Verbose Details ---\n");
-                            println!("Extension path: {}", path.display());
-                            println!("Current directory: {}", std::env::current_dir()?.display());
-                            if let Some(file_path) = &metadata.file_path {
-                                println!("File path:       {}", file_path.display());
+                                    std::process::exit(0);
+                                }
+                                Err(e) => {
+                                    println!("Extension Validation: FAILED");
+                                    println!();
+                                    println!("Error parsing metadata JSON: {}", e);
+                                    std::process::exit(1);
+                                }
                             }
                         }
-
-                        std::process::exit(0);
+                        Err(e) => {
+                            println!("Extension Validation: FAILED");
+                            println!();
+                            println!("Error reading metadata file: {}", e);
+                            std::process::exit(1);
+                        }
                     }
-                    Err(e) => {
-                        println!("Extension Validation: FAILED");
-                        println!();
-                        println!("Error: {}", e);
-                        println!();
-                        println!("Make sure:");
-                        println!("  1. The extension file exists");
-                        println!("  2. The file has .wasm extension");
-                        println!("  3. A sidecar .json file exists with metadata (optional)");
+                } else {
+                    println!("Extension Validation: PARTIAL");
+                    println!();
+                    println!("WASM file found: {}", path.display());
+                    println!("No sidecar .json metadata file found.");
+                    println!();
+                    println!("Note: WASM extensions are validated at runtime via extension-runner.");
+                    println!("Create a sidecar .json file with metadata for CLI validation.");
 
-                        std::process::exit(1);
+                    if verbose {
+                        println!("\n--- Verbose Details ---\n");
+                        println!("Extension path: {}", path.display());
+                        println!("Expected metadata: {}", json_path.display());
                     }
-                } // Close match result
+
+                    std::process::exit(0);
+                }
             } // Close else block
         } // Close Validate match arm
 
@@ -709,8 +723,6 @@ async fn list_plugins(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
 
 /// Show extension metadata.
 async fn show_plugin_info(path: &PathBuf) -> Result<()> {
-    use neomind_core::extension::WasmExtensionLoader;
-
     if !path.exists() {
         anyhow::bail!("Extension file not found: {}", path.display());
     }
@@ -718,45 +730,51 @@ async fn show_plugin_info(path: &PathBuf) -> Result<()> {
     let is_wasm = path.extension().is_some_and(|e| e == "wasm");
 
     if is_wasm {
-        let loader = WasmExtensionLoader::new()?;
+        // Read metadata from sidecar JSON file
+        let json_path = path.with_extension("json");
 
-        match loader.load(path).await {
-            Ok(loaded) => {
-                // Get metadata from the loaded extension
-                let ext = loaded.extension.blocking_read();
-                let metadata = ext.metadata();
+        if json_path.exists() {
+            match std::fs::read_to_string(&json_path) {
+                Ok(content) => {
+                    match serde_json::from_str::<serde_json::Value>(&content) {
+                        Ok(json) => {
+                            println!("Extension Information");
+                            println!("======================\n");
+                            println!("ID:              {}", json["id"].as_str().unwrap_or("unknown"));
+                            println!("Name:            {}", json["name"].as_str().unwrap_or("unknown"));
+                            println!("Version:         {}", json["version"].as_str().unwrap_or("unknown"));
 
-                println!("Extension Information");
-                println!("======================\n");
-                println!("ID:              {}", metadata.id);
-                println!("Name:            {}", metadata.name);
-                println!("Version:         {}", metadata.version);
-                if let Some(description) = &metadata.description {
-                    println!("Description:     {}", description);
-                }
-                if let Some(author) = &metadata.author {
-                    println!("Author:          {}", author);
-                }
+                            if let Some(desc) = json["description"].as_str() {
+                                println!("Description:     {}", desc);
+                            }
+                            if let Some(author) = json["author"].as_str() {
+                                println!("Author:          {}", author);
+                            }
+                            if let Some(homepage) = json["homepage"].as_str() {
+                                println!("Homepage:        {}", homepage);
+                            }
+                            if let Some(license) = json["license"].as_str() {
+                                println!("License:         {}", license);
+                            }
 
-                if let Some(file_path) = &metadata.file_path {
-                    println!("\nModule:          {}", file_path.display());
+                            println!("\nModule:          {}", path.display());
+                        }
+                        Err(e) => {
+                            eprintln!("Error parsing metadata JSON: {}", e);
+                        }
+                    }
                 }
-
-                if let Some(homepage) = &metadata.homepage {
-                    println!("Homepage:        {}", homepage);
-                }
-                if let Some(license) = &metadata.license {
-                    println!("License:         {}", license);
+                Err(e) => {
+                    eprintln!("Error reading metadata file: {}", e);
                 }
             }
-            Err(e) => {
-                eprintln!("Error loading extension metadata: {}", e);
-                eprintln!();
-                eprintln!("Make sure:");
-                println!("  1. The extension file is valid");
-                println!("  2. A sidecar .json file exists with extension metadata");
-                println!("  3. Run: neomind plugin validate {}", path.display());
-            }
+        } else {
+            println!("WASM Extension");
+            println!("===============\n");
+            println!("Path: {}", path.display());
+            println!();
+            println!("Note: No sidecar .json metadata file found.");
+            println!("      WASM extensions are loaded at runtime via extension-runner.");
         }
     } else {
         println!("Native Extension");
