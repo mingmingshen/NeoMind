@@ -62,6 +62,10 @@ pub struct UnifiedExtensionInfo {
     pub is_running: bool,
     /// Path to the extension binary
     pub path: Option<PathBuf>,
+    /// Metrics provided by this extension
+    pub metrics: Vec<super::system::MetricDescriptor>,
+    /// Commands provided by this extension
+    pub commands: Vec<super::system::ExtensionCommand>,
 }
 
 /// Unified extension service that manages both in-process and isolated extensions
@@ -217,6 +221,10 @@ impl UnifiedExtensionService {
                 is_isolated: true,
                 is_running: info.is_running,
                 path: Some(info.path),
+                // For isolated extensions, metrics/commands would need IPC to fetch
+                // For now, use empty vectors (could be enhanced later)
+                metrics: Vec::new(),
+                commands: Vec::new(),
             });
         }
 
@@ -228,6 +236,8 @@ impl UnifiedExtensionService {
                 is_isolated: false,
                 is_running: info.state == crate::extension::system::ExtensionState::Running,
                 path,
+                metrics: info.metrics,
+                commands: info.commands,
             });
         }
 
@@ -246,6 +256,8 @@ impl UnifiedExtensionService {
                 is_isolated: false,
                 is_running: info.state == crate::extension::system::ExtensionState::Running,
                 path,
+                metrics: info.metrics,
+                commands: info.commands,
             });
         }
 
@@ -256,6 +268,9 @@ impl UnifiedExtensionService {
                 is_isolated: true,
                 is_running: info.is_running,
                 path: Some(info.path),
+                // For isolated extensions, metrics/commands would need IPC to fetch
+                metrics: Vec::new(),
+                commands: Vec::new(),
             });
         }
 

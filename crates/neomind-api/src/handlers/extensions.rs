@@ -800,7 +800,8 @@ async fn publish_extension_metrics(
     };
 
     // Get extension info to know which metrics to extract
-    let extensions = state.extensions.registry.list().await;
+    // Use unified service to get info from both isolated and in-process extensions
+    let extensions = state.extensions.unified_service.list().await;
     let ext_info = match extensions.iter().find(|e| e.metadata.id == extension_id) {
         Some(info) => info,
         None => return, // Extension not found, skip
@@ -1357,8 +1358,24 @@ pub struct CloudExtension {
     pub categories: Vec<String>,
     #[serde(default)]
     pub homepage: Option<String>,
-    #[serde(default)]
+    /// URL to full metadata (can also be specified as metadata_path)
+    #[serde(default, alias = "metadata_path")]
     pub metadata_url: Option<String>,
+    /// Frontend component info from index
+    #[serde(default)]
+    pub frontend: Option<FrontendInfo>,
+    /// Available builds by platform
+    #[serde(default)]
+    pub builds: HashMap<String, ExtensionBuild>,
+}
+
+/// Frontend info from marketplace index
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FrontendInfo {
+    #[serde(default)]
+    pub components: Vec<String>,
+    #[serde(default)]
+    pub entrypoint: Option<String>,
 }
 
 /// Full extension metadata from marketplace
@@ -1381,6 +1398,23 @@ pub struct MarketplaceExtensionMetadata {
     #[serde(default)]
     pub readme_url: Option<String>,
 
+    /// Extension type: native, wasm, frontend-only
+    #[serde(default = "default_extension_type")]
+    #[serde(rename = "type")]
+    pub extension_type: String,
+
+    /// ABI version for native extensions
+    #[serde(default)]
+    pub abi_version: u32,
+
+    /// SDK version used to build the extension
+    #[serde(default)]
+    pub sdk_version: String,
+
+    /// Keywords for search
+    #[serde(default)]
+    pub keywords: Vec<String>,
+
     /// .nep package URL (if available as a package instead of individual binaries)
     #[serde(default)]
     pub package_url: Option<String>,
@@ -1392,13 +1426,22 @@ pub struct MarketplaceExtensionMetadata {
     #[serde(default)]
     pub capabilities: ExtensionCapabilities,
 
+    /// Commands at top level (for backward compatibility, merged into capabilities)
+    #[serde(default)]
+    pub commands: Vec<CommandInfo>,
+
+    /// Metrics at top level (for backward compatibility, merged into capabilities)
+    #[serde(default)]
+    pub metrics: Vec<MetricInfo>,
+
     #[serde(default)]
     pub builds: HashMap<String, ExtensionBuild>,
 
     #[serde(default)]
     pub requirements: ExtensionRequirements,
 
-    #[serde(default)]
+    /// Safety/isolation settings (can also be specified as isolation)
+    #[serde(default, alias = "isolation")]
     pub safety: ExtensionSafety,
 
     /// Configuration parameters for the extension
@@ -1409,9 +1452,17 @@ pub struct MarketplaceExtensionMetadata {
     #[serde(default)]
     pub dashboard_components: Vec<DashboardComponentInfo>,
 
+    /// Frontend components (for backward compatibility)
+    #[serde(default)]
+    pub frontend: Option<FrontendInfo>,
+
     /// Permissions required by the extension
     #[serde(default)]
     pub permissions: Vec<String>,
+}
+
+fn default_extension_type() -> String {
+    "native".to_string()
 }
 
 /// Extension capabilities from metadata
@@ -1448,6 +1499,8 @@ pub struct MetricInfo {
     pub name: String,
     #[serde(default)]
     pub display_name: String,
+    /// Data type (can also be specified as "type")
+    #[serde(default, alias = "type")]
     pub data_type: String,
     #[serde(default)]
     pub unit: String,
@@ -1936,235 +1989,412 @@ pub async fn install_marketplace_extension_handler(
 
     // Check if .nep package is available (preferred method)
     if let Some(ref package_url) = metadata.package_url {
-        let _url = package_url;
-        return ok(MarketplaceInstallResponse {
-            success: false,
-            extension_id: req.id.clone(),
-            downloaded: false,
-            installed: false,
-            path: None,
-            error: Some("This extension is available as a .nep package. Please use the file upload feature to install it.".to_string()),
-        });
-    }
+        tracing::info!("Downloading .nep package for extension {} from {}", req.id, package_url);
 
-    // Fall back to platform-specific binary download
-    // Check if this is a WASM extension (works on all platforms)
-    let is_wasm = metadata.builds.contains_key("wasm");
-    let build_key = if is_wasm { "wasm" } else { platform };
+        // Download the .nep package
+        let package_response = match client
+            .get(package_url)
+            .header("User-Agent", "NeoMind-Extension-Marketplace")
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return ok(MarketplaceInstallResponse {
+                    success: false,
+                    extension_id: req.id.clone(),
+                    downloaded: false,
+                    installed: false,
+                    path: None,
+                    error: Some(format!("Failed to download package: {}", e)),
+                });
+            }
+        };
 
-    if is_wasm && platform == "unknown" {
-        // WASM extensions don't need platform detection
-    } else if !is_wasm && platform == "unknown" {
-        return ok(MarketplaceInstallResponse {
-            success: false,
-            extension_id: req.id,
-            downloaded: false,
-            installed: false,
-            path: None,
-            error: Some("Unsupported platform".to_string()),
-        });
-    }
+        if !package_response.status().is_success() {
+            return ok(MarketplaceInstallResponse {
+                success: false,
+                extension_id: req.id.clone(),
+                downloaded: false,
+                installed: false,
+                path: None,
+                error: Some(format!("Package download failed: {}", package_response.status())),
+            });
+        }
 
-    // Get build info for this platform/WASM
-    let build = metadata.builds.get(build_key).ok_or_else(|| {
-        ErrorResponse::bad_request(format!("No build available for platform: {}", platform))
-    })?;
+        let package_bytes = match package_response.bytes().await {
+            Ok(b) => b,
+            Err(e) => {
+                return ok(MarketplaceInstallResponse {
+                    success: false,
+                    extension_id: req.id.clone(),
+                    downloaded: false,
+                    installed: false,
+                    path: None,
+                    error: Some(format!("Failed to read package data: {}", e)),
+                });
+            }
+        };
 
-    // Download the extension binary
-    tracing::info!("Downloading extension {} from {}", req.id, build.url);
+        // Verify it's a valid ZIP file
+        let zip_magic: &[u8] = &[0x50, 0x4B, 0x03, 0x04];
+        let zip_empty: &[u8] = &[0x50, 0x4B, 0x05, 0x06];
+        let zip_spanned: &[u8] = &[0x50, 0x4B, 0x07, 0x08];
 
-    let download_response = client
-        .get(&build.url)
-        .send()
-        .await
-        .map_err(|e| ErrorResponse::internal(format!("Download failed: {}", e)))?;
+        let is_zip = package_bytes.starts_with(zip_magic)
+            || package_bytes.starts_with(zip_empty)
+            || package_bytes.starts_with(zip_spanned);
 
-    if !download_response.status().is_success() {
-        return ok(MarketplaceInstallResponse {
-            success: false,
-            extension_id: req.id,
-            downloaded: false,
-            installed: false,
-            path: None,
-            error: Some(format!("Download failed: {}", download_response.status())),
-        });
-    }
+        if !is_zip {
+            return ok(MarketplaceInstallResponse {
+                success: false,
+                extension_id: req.id.clone(),
+                downloaded: false,
+                installed: false,
+                path: None,
+                error: Some("Downloaded file is not a valid .nep package (ZIP format)".to_string()),
+            });
+        }
 
-    let bytes = download_response
-        .bytes()
-        .await
-        .map_err(|e| ErrorResponse::internal(format!("Failed to read download: {}", e)))?;
+        // Prepare target directory
+        let data_dir = std::env::var("NEOMIND_DATA_DIR")
+            .unwrap_or_else(|_| "data".to_string());
+        let target_dir = PathBuf::from(data_dir).join("extensions");
 
-    // Verify SHA256 if provided
-    if !build.sha256.is_empty() {
-        let checksum = compute_sha256(&bytes);
-        if checksum != build.sha256 {
+        // Install the package
+        let package_bytes_clone = package_bytes.to_vec();
+        let target_dir_clone = target_dir.clone();
+        let install_result = tokio::task::spawn_blocking(move || {
+            use neomind_core::extension::package::ExtensionPackage;
+            // First validate the package
+            let _package = ExtensionPackage::from_bytes(package_bytes_clone.clone())?;
+            // Then install using the sync method
+            ExtensionPackage::install_sync(&package_bytes_clone, &target_dir_clone)
+        }).await;
+
+        match install_result {
+            Ok(Ok(result)) => {
+                let ext_id = result.extension_id.clone();
+                let version = result.version.clone();
+
+                tracing::info!(
+                    extension_id = %ext_id,
+                    version = %version,
+                    binary_path = %result.binary_path.display(),
+                    "Package installed successfully from marketplace"
+                );
+
+                // Check if already registered and unregister if needed
+                let is_registered = registry.contains(&ext_id).await;
+
+                if is_registered {
+                    tracing::info!("Extension {} already registered, will replace", ext_id);
+                    if let Err(e) = registry.unregister(&ext_id).await {
+                        return ok(MarketplaceInstallResponse {
+                            success: false,
+                            extension_id: req.id.clone(),
+                            downloaded: true,
+                            installed: false,
+                            path: Some(result.binary_path.to_string_lossy().to_string()),
+                            error: Some(format!("Failed to unregister existing extension: {}", e)),
+                        });
+                    }
+                }
+
+                // Load and register the extension binary
+                match registry.load_from_path(&result.binary_path).await {
+                    Ok(ext_metadata) => {
+                        // Determine extension type from binary path
+                        let extension_type = result.binary_path
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .map(|e| if e == "wasm" { "wasm" } else { "native" })
+                            .unwrap_or("native")
+                            .to_string();
+
+                        // Save to storage
+                        if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+                            let record = ExtensionRecord::new(
+                                ext_id.clone(),
+                                ext_metadata.name.clone(),
+                                result.binary_path.to_string_lossy().to_string(),
+                                extension_type,
+                                version.clone(),
+                            )
+                            .with_description(ext_metadata.description.clone())
+                            .with_author(ext_metadata.author.clone())
+                            .with_checksum(Some(result.checksum.clone()))
+                            .with_auto_start(true)
+                            .with_frontend_path(result.frontend_dir.as_ref()
+                                .map(|p| p.to_string_lossy().to_string()));
+
+                            if let Err(e) = store.save(&record) {
+                                tracing::warn!("Failed to save extension to storage: {}", e);
+                            }
+                        }
+
+                        ok(MarketplaceInstallResponse {
+                            success: true,
+                            extension_id: ext_id,
+                            downloaded: true,
+                            installed: true,
+                            path: Some(result.binary_path.to_string_lossy().to_string()),
+                            error: None,
+                        })
+                    }
+                    Err(e) => {
+                        ok(MarketplaceInstallResponse {
+                            success: false,
+                            extension_id: req.id.clone(),
+                            downloaded: true,
+                            installed: false,
+                            path: Some(result.binary_path.to_string_lossy().to_string()),
+                            error: Some(format!("Failed to load extension binary: {}", e)),
+                        })
+                    }
+                }
+            }
+            Ok(Err(e)) => {
+                ok(MarketplaceInstallResponse {
+                    success: false,
+                    extension_id: req.id.clone(),
+                    downloaded: true,
+                    installed: false,
+                    path: None,
+                    error: Some(format!("Package installation failed: {}", e)),
+                })
+            }
+            Err(e) => {
+                ok(MarketplaceInstallResponse {
+                    success: false,
+                    extension_id: req.id.clone(),
+                    downloaded: true,
+                    installed: false,
+                    path: None,
+                    error: Some(format!("Task join error: {}", e)),
+                })
+            }
+        }
+    } else {
+        // Fall back to platform-specific binary download
+        // Check if this is a WASM extension (works on all platforms)
+        let is_wasm = metadata.builds.contains_key("wasm");
+        let build_key = if is_wasm { "wasm" } else { platform };
+
+        if is_wasm && platform == "unknown" {
+            // WASM extensions don't need platform detection
+        } else if !is_wasm && platform == "unknown" {
             return ok(MarketplaceInstallResponse {
                 success: false,
                 extension_id: req.id,
                 downloaded: false,
                 installed: false,
                 path: None,
-                error: Some(format!(
-                    "Checksum verification failed: expected {}, got {}",
-                    build.sha256, checksum
-                )),
+                error: Some("Unsupported platform".to_string()),
             });
         }
-    }
 
-    // Determine file extension and naming based on type
-    let (ext, wasm_filename, json_filename) = if is_wasm {
-        (
-            ".wasm",
-            format!("{}.wasm", req.id.replace("-", "_")),
-            format!("{}.json", req.id.replace("-", "_")),
-        )
-    } else if platform.starts_with("darwin") {
-        (".dylib", String::new(), String::new())
-    } else if platform.starts_with("linux") {
-        (".so", String::new(), String::new())
-    } else if platform.starts_with("windows") {
-        (".dll", String::new(), String::new())
-    } else {
-        ("", String::new(), String::new())
-    };
-
-    // Create extensions directory
-    let extensions_dir = dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".neomind")
-        .join("extensions");
-
-    std::fs::create_dir_all(&extensions_dir).map_err(|e| {
-        ErrorResponse::internal(format!("Failed to create extensions directory: {}", e))
-    })?;
-
-    // Write the extension file(s)
-    let (file_path, json_path) = if is_wasm {
-        // WASM: write both .wasm and .json files
-        let wasm_path = extensions_dir.join(&wasm_filename);
-
-        std::fs::write(&wasm_path, &bytes)
-            .map_err(|e| ErrorResponse::internal(format!("Failed to write WASM file: {}", e)))?;
-
-        // Download and write JSON sidecar
-        let json_path = extensions_dir.join(&json_filename);
-
-        if let Some(json_url) = &build.json_url {
-            let json_response = client
-                .get(json_url)
-                .send()
-                .await
-                .map_err(|e| ErrorResponse::internal(format!("JSON download failed: {}", e)))?;
-
-            if json_response.status().is_success() {
-                let json_bytes = json_response
-                    .bytes()
-                    .await
-                    .map_err(|e| ErrorResponse::internal(format!("Failed to read JSON: {}", e)))?;
-
-                // Verify JSON SHA256 if provided
-                if let Some(ref expected_sha) = build.json_sha256 {
-                    if !expected_sha.is_empty() {
-                        let json_checksum = compute_sha256(&json_bytes);
-                        if json_checksum != *expected_sha {
-                            // Clean up on verification failure
-                            let _ = std::fs::remove_file(&wasm_path);
-                            return ok(MarketplaceInstallResponse {
-                                success: false,
-                                extension_id: req.id,
-                                downloaded: true,
-                                installed: false,
-                                path: None,
-                                error: Some(format!("JSON checksum verification failed")),
-                            });
-                        }
-                    }
-                }
-
-                std::fs::write(&json_path, &json_bytes).map_err(|e| {
-                    ErrorResponse::internal(format!("Failed to write JSON file: {}", e))
-                })?;
-            } else {
-                // Copy local JSON if download fails (fallback)
-                let local_json = format!(
-                    "extensions/{}/{}.json",
-                    req.id.replace("-", "_"),
-                    req.id.replace("-", "_")
-                );
-                if PathBuf::from(&local_json).exists() {
-                    let _ = std::fs::copy(&local_json, &json_path);
-                }
-            }
-        }
-
-        tracing::info!(
-            "WASM extension downloaded to: {:?} + {:?}",
-            wasm_path,
-            json_path
-        );
-        (wasm_path, Some(json_path))
-    } else {
-        // Native: write single binary file
-        let filename = format!("libneomind_extension_{}{}", req.id, ext);
-        let file_path = extensions_dir.join(&filename);
-
-        std::fs::write(&file_path, &bytes).map_err(|e| {
-            ErrorResponse::internal(format!("Failed to write extension file: {}", e))
+        // Get build info for this platform/WASM
+        let build = metadata.builds.get(build_key).ok_or_else(|| {
+            ErrorResponse::bad_request(format!("No build available for platform: {}", platform))
         })?;
 
-        tracing::info!("Extension downloaded to: {:?}", file_path);
-        (file_path, None)
-    };
+        // Download the extension binary
+        tracing::info!("Downloading extension {} from {}", req.id, build.url);
 
-    // Load and register the extension
-    match registry.load_from_path(&file_path).await {
-        Ok(_) => {
-            // Save to persistent storage
-            if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
-                let record = ExtensionRecord::new(
-                    metadata.id.clone(),
-                    metadata.name.clone(),
-                    file_path.to_string_lossy().to_string(),
-                    String::new(),
-                    metadata.version.clone(),
-                )
-                .with_description(Some(metadata.description.clone()))
-                .with_author(Some(metadata.author.clone()))
-                .with_auto_start(true);
+        let download_response = client
+            .get(&build.url)
+            .send()
+            .await
+            .map_err(|e| ErrorResponse::internal(format!("Download failed: {}", e)))?;
 
-                if let Err(e) = store.save(&record) {
-                    tracing::warn!("Failed to save extension to storage: {}", e);
-                }
-            }
-
-            tracing::info!("Extension {} installed successfully", req.id);
-
-            return ok(MarketplaceInstallResponse {
-                success: true,
-                extension_id: req.id,
-                downloaded: true,
-                installed: true,
-                path: Some(file_path.to_string_lossy().to_string()),
-                error: None,
-            });
-        }
-        Err(e) => {
-            // Clean up the downloaded file(s) on failure
-            let _ = std::fs::remove_file(&file_path);
-            if let Some(ref jp) = json_path {
-                let _ = std::fs::remove_file(jp);
-            }
-
+        if !download_response.status().is_success() {
             return ok(MarketplaceInstallResponse {
                 success: false,
                 extension_id: req.id,
-                downloaded: true,
+                downloaded: false,
                 installed: false,
                 path: None,
-                error: Some(format!("Failed to load extension: {}", e)),
+                error: Some(format!("Download failed: {}", download_response.status())),
             });
+        }
+
+        let bytes = download_response
+            .bytes()
+            .await
+            .map_err(|e| ErrorResponse::internal(format!("Failed to read download: {}", e)))?;
+
+        // Verify SHA256 if provided
+        if !build.sha256.is_empty() {
+            let checksum = compute_sha256(&bytes);
+            if checksum != build.sha256 {
+                return ok(MarketplaceInstallResponse {
+                    success: false,
+                    extension_id: req.id,
+                    downloaded: false,
+                    installed: false,
+                    path: None,
+                    error: Some(format!(
+                        "Checksum verification failed: expected {}, got {}",
+                        build.sha256, checksum
+                    )),
+                });
+            }
+        }
+
+        // Determine file extension and naming based on type
+        let (ext, wasm_filename, json_filename) = if is_wasm {
+            (
+                ".wasm",
+                format!("{}.wasm", req.id.replace("-", "_")),
+                format!("{}.json", req.id.replace("-", "_")),
+            )
+        } else if platform.starts_with("darwin") {
+            (".dylib", String::new(), String::new())
+        } else if platform.starts_with("linux") {
+            (".so", String::new(), String::new())
+        } else if platform.starts_with("windows") {
+            (".dll", String::new(), String::new())
+        } else {
+            ("", String::new(), String::new())
+        };
+
+        // Create extensions directory
+        let extensions_dir = dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".neomind")
+            .join("extensions");
+
+        std::fs::create_dir_all(&extensions_dir).map_err(|e| {
+            ErrorResponse::internal(format!("Failed to create extensions directory: {}", e))
+        })?;
+
+        // Write the extension file(s)
+        let (file_path, json_path) = if is_wasm {
+            // WASM: write both .wasm and .json files
+            let wasm_path = extensions_dir.join(&wasm_filename);
+
+            std::fs::write(&wasm_path, &bytes)
+                .map_err(|e| ErrorResponse::internal(format!("Failed to write WASM file: {}", e)))?;
+
+            // Download and write JSON sidecar
+            let json_path = extensions_dir.join(&json_filename);
+
+            if let Some(json_url) = &build.json_url {
+                let json_response = client
+                    .get(json_url)
+                    .send()
+                    .await
+                    .map_err(|e| ErrorResponse::internal(format!("JSON download failed: {}", e)))?;
+
+                if json_response.status().is_success() {
+                    let json_bytes = json_response
+                        .bytes()
+                        .await
+                        .map_err(|e| ErrorResponse::internal(format!("Failed to read JSON: {}", e)))?;
+
+                    // Verify JSON SHA256 if provided
+                    if let Some(ref expected_sha) = build.json_sha256 {
+                        if !expected_sha.is_empty() {
+                            let json_checksum = compute_sha256(&json_bytes);
+                            if json_checksum != *expected_sha {
+                                // Clean up on verification failure
+                                let _ = std::fs::remove_file(&wasm_path);
+                                return ok(MarketplaceInstallResponse {
+                                    success: false,
+                                    extension_id: req.id,
+                                    downloaded: true,
+                                    installed: false,
+                                    path: None,
+                                    error: Some(format!("JSON checksum verification failed")),
+                                });
+                            }
+                        }
+                    }
+
+                    std::fs::write(&json_path, &json_bytes).map_err(|e| {
+                        ErrorResponse::internal(format!("Failed to write JSON file: {}", e))
+                    })?;
+                } else {
+                    // Copy local JSON if download fails (fallback)
+                    let local_json = format!(
+                        "extensions/{}/{}.json",
+                        req.id.replace("-", "_"),
+                        req.id.replace("-", "_")
+                    );
+                    if PathBuf::from(&local_json).exists() {
+                        let _ = std::fs::copy(&local_json, &json_path);
+                    }
+                }
+            }
+
+            tracing::info!(
+                "WASM extension downloaded to: {:?} + {:?}",
+                wasm_path,
+                json_path
+            );
+            (wasm_path, Some(json_path))
+        } else {
+            // Native: write single binary file
+            let filename = format!("libneomind_extension_{}{}", req.id, ext);
+            let file_path = extensions_dir.join(&filename);
+
+            std::fs::write(&file_path, &bytes).map_err(|e| {
+                ErrorResponse::internal(format!("Failed to write extension file: {}", e))
+            })?;
+
+            tracing::info!("Extension downloaded to: {:?}", file_path);
+            (file_path, None)
+        };
+
+        // Load and register the extension
+        match registry.load_from_path(&file_path).await {
+            Ok(_) => {
+                // Save to persistent storage
+                if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+                    let record = ExtensionRecord::new(
+                        metadata.id.clone(),
+                        metadata.name.clone(),
+                        file_path.to_string_lossy().to_string(),
+                        String::new(),
+                        metadata.version.clone(),
+                    )
+                    .with_description(Some(metadata.description.clone()))
+                    .with_author(Some(metadata.author.clone()))
+                    .with_auto_start(true);
+
+                    if let Err(e) = store.save(&record) {
+                        tracing::warn!("Failed to save extension to storage: {}", e);
+                    }
+                }
+
+                tracing::info!("Extension {} installed successfully", req.id);
+
+                return ok(MarketplaceInstallResponse {
+                    success: true,
+                    extension_id: req.id,
+                    downloaded: true,
+                    installed: true,
+                    path: Some(file_path.to_string_lossy().to_string()),
+                    error: None,
+                });
+            }
+            Err(e) => {
+                // Clean up the downloaded file(s) on failure
+                let _ = std::fs::remove_file(&file_path);
+                if let Some(ref jp) = json_path {
+                    let _ = std::fs::remove_file(jp);
+                }
+
+                return ok(MarketplaceInstallResponse {
+                    success: false,
+                    extension_id: req.id,
+                    downloaded: true,
+                    installed: false,
+                    path: None,
+                    error: Some(format!("Failed to load extension: {}", e)),
+                });
+            }
         }
     }
 }
@@ -2569,7 +2799,7 @@ pub enum ComponentCategory {
 }
 
 /// Size constraints for dashboard components.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SizeConstraints {
     pub min_w: u32,
     pub min_h: u32,
@@ -2589,23 +2819,31 @@ pub struct DataBindingConfig {
 }
 
 /// Dashboard component definition from manifest.
+/// Uses String for category to be compatible with neomind-core's definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardComponentDef {
-    pub r#type: String,
+    #[serde(rename = "type")]
+    pub component_type: String,
     pub name: String,
     pub description: String,
-    pub category: ComponentCategory,
+    pub category: String,
     pub icon: Option<String>,
     pub bundle_path: String,
     pub export_name: String,
+    #[serde(default)]
     pub size_constraints: SizeConstraints,
+    #[serde(default)]
     pub has_data_source: bool,
+    #[serde(default)]
     pub has_display_config: bool,
+    #[serde(default)]
     pub has_actions: bool,
+    #[serde(default)]
     pub max_data_sources: u8,
     pub config_schema: Option<serde_json::Value>,
     pub data_source_schema: Option<serde_json::Value>,
     pub default_config: Option<serde_json::Value>,
+    #[serde(default)]
     pub variants: Vec<String>,
     #[serde(default)]
     pub data_binding: Option<DataBindingConfig>,
@@ -2735,11 +2973,20 @@ pub struct ExtensionManifest {
     pub license: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub homepage: Option<String>,
+    /// Frontend configuration with components
     #[serde(default)]
-    pub dashboard_components: Vec<DashboardComponentDef>,
+    pub frontend: Option<FrontendConfigDef>,
     /// Other fields that we don't parse
     #[serde(flatten)]
     pub _other: serde_json::Value,
+}
+
+/// Frontend configuration in manifest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FrontendConfigDef {
+    /// Dashboard components provided by this extension
+    #[serde(default)]
+    pub components: Vec<DashboardComponentDef>,
 }
 
 /// GET /api/extensions/:id/components
@@ -2870,20 +3117,26 @@ fn load_extension_components(
 
     tracing::debug!(
         extension_id = %extension_id,
-        components_count = manifest.dashboard_components.len(),
+        components_count = manifest.frontend.as_ref().map(|f| f.components.len()).unwrap_or(0),
         "Parsed manifest.json"
     );
 
     // Convert component definitions to DTOs
     let base_url = format!("/api/extensions/{}/assets", extension_id);
-    let components: Vec<DashboardComponentDto> = manifest
-        .dashboard_components
+
+    // Get components from frontend.components
+    let components: Vec<DashboardComponentDef> = manifest
+        .frontend
+        .map(|f| f.components)
+        .unwrap_or_default();
+
+    let components: Vec<DashboardComponentDto> = components
         .into_iter()
         .map(|def| DashboardComponentDto {
-            component_type: def.r#type,
+            component_type: def.component_type,
             name: def.name,
             description: def.description,
-            category: format!("{:?}", def.category).to_lowercase(),
+            category: def.category,
             icon: def.icon,
             bundle_url: format!("{}/{}", base_url, def.bundle_path.trim_start_matches('/')),
             export_name: def.export_name,
@@ -2944,7 +3197,7 @@ pub async fn serve_extension_asset_handler(
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| match ext {
-            "js" => "application/javascript",
+            "js" | "cjs" | "mjs" => "application/javascript",
             "json" => "application/json",
             "css" => "text/css",
             "html" => "text/html",
@@ -3345,17 +3598,18 @@ pub async fn upload_extension_file_handler(
     );
 
     // Check if already registered and unregister if needed
-    let registry = state.extensions.registry.clone();
-    let is_registered = registry.contains(&ext_id).await;
+    // Use unified service for consistent extension management
+    let unified_service = state.extensions.unified_service.clone();
+    let is_registered = unified_service.contains(&ext_id).await;
 
     if is_registered {
         tracing::info!("Extension {} already registered, will replace", ext_id);
-        registry.unregister(&ext_id).await
+        unified_service.unload(&ext_id).await
             .map_err(|e| ErrorResponse::internal(format!("Failed to unregister existing: {}", e)))?;
     }
 
-    // Load and register the extension binary
-    let metadata = registry.load_from_path(&install_result.binary_path).await
+    // Load and register the extension binary with process isolation
+    let metadata = unified_service.load(&install_result.binary_path).await
         .map_err(|e| ErrorResponse::internal(format!("Failed to load extension binary: {}", e)))?;
 
     // Determine extension type from binary path

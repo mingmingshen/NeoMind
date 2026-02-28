@@ -9,11 +9,19 @@
 //! - Uses SHARED TimeSeriesStorage with devices (telemetry.redb) for unified data access
 //! - Extension metrics are stored with "extension:" prefix for isolation
 //! - AI Agents can query both device and extension data from the same storage
+//!
+//! ## Process Isolation (V2)
+//!
+//! Extensions are loaded via `UnifiedExtensionService` which provides:
+//! - **Process isolation**: Extensions run in separate processes by default
+//! - **Crash safety**: Extension crashes don't affect the main NeoMind process
+//! - **Unified API**: Single interface for both isolated and in-process extensions
 
 use std::path::Path;
 use std::sync::Arc;
 
 use neomind_core::extension::registry::ExtensionRegistry;
+use neomind_core::extension::unified::{UnifiedExtensionConfig, UnifiedExtensionService};
 
 // Import ExtensionStore for loading persisted extensions
 pub use neomind_storage::extensions::ExtensionStore;
@@ -118,23 +126,54 @@ impl ExtensionMetricsStorage {
 /// Extension management state.
 ///
 /// Fully decoupled from device system with independent storage.
+/// Uses UnifiedExtensionService for process-isolated extension loading.
 #[derive(Clone)]
 pub struct ExtensionState {
     /// Extension registry for managing dynamically loaded extensions
+    /// Note: This is kept for backward compatibility and direct access
     pub registry: Arc<ExtensionRegistry>,
+
+    /// Unified extension service with process isolation support
+    pub unified_service: Arc<UnifiedExtensionService>,
 
     /// Extension metrics storage (separate from device telemetry)
     pub metrics_storage: Arc<ExtensionMetricsStorage>,
 }
 
 impl ExtensionState {
-    /// Create a new extension state.
+    /// Create a new extension state with process isolation enabled by default.
     pub fn new(
         registry: Arc<ExtensionRegistry>,
         metrics_storage: Arc<ExtensionMetricsStorage>,
     ) -> Self {
+        // Create unified service with process isolation by default
+        let config = UnifiedExtensionConfig::default();
+        let unified_service = Arc::new(UnifiedExtensionService::new(
+            Arc::clone(&registry),
+            config,
+        ));
+
         Self {
             registry,
+            unified_service,
+            metrics_storage,
+        }
+    }
+
+    /// Create extension state with custom isolation configuration.
+    pub fn with_config(
+        registry: Arc<ExtensionRegistry>,
+        metrics_storage: Arc<ExtensionMetricsStorage>,
+        config: UnifiedExtensionConfig,
+    ) -> Self {
+        let unified_service = Arc::new(UnifiedExtensionService::new(
+            Arc::clone(&registry),
+            config,
+        ));
+
+        Self {
+            registry,
+            unified_service,
             metrics_storage,
         }
     }
@@ -154,8 +193,16 @@ impl ExtensionState {
             storage_path,
         ))?);
 
+        // Create unified service with process isolation by default
+        let config = UnifiedExtensionConfig::default();
+        let unified_service = Arc::new(UnifiedExtensionService::new(
+            Arc::clone(&registry),
+            config,
+        ));
+
         Ok(Self {
             registry,
+            unified_service,
             metrics_storage,
         })
     }
@@ -165,6 +212,9 @@ impl ExtensionState {
     pub async fn minimal() -> Self {
         Self {
             registry: Arc::new(ExtensionRegistry::new()),
+            unified_service: Arc::new(UnifiedExtensionService::with_defaults(Arc::new(
+                ExtensionRegistry::new(),
+            ))),
             metrics_storage: Arc::new(
                 ExtensionMetricsStorage::memory().expect("Failed to create memory storage"),
             ),
@@ -175,6 +225,8 @@ impl ExtensionState {
     ///
     /// This should be called AFTER the server is fully initialized in an async context.
     /// It loads all extensions marked with `auto_start=true` from the extension store.
+    ///
+    /// Extensions are loaded via UnifiedExtensionService with process isolation by default.
     pub async fn load_from_storage(&self) -> Result<usize, String> {
         // Open extension store
         let store = ExtensionStore::open("data/extensions.redb")
@@ -207,36 +259,41 @@ impl ExtensionState {
                 continue;
             }
 
-            // Use async load for all extensions
-            // Both WASM and native extensions use async loading to avoid Tokio runtime issues
-            let load_result = self.registry.load_from_path(file_path).await;
+            // Use unified service for loading with process isolation
+            let load_result = self.unified_service.load(file_path).await;
 
             match load_result {
-                Ok(_) => {
+                Ok(metadata) => {
                     // Apply saved config if present
                     if let Some(ref config) = record.config {
-                        if let Some(ext) = self.registry.get(&record.id).await {
-                            let mut ext_guard = ext.write().await;
-                            if let Err(e) = ext_guard.configure(config).await {
-                                tracing::warn!(
-                                    extension_id = %record.id,
-                                    error = %e,
-                                    "Failed to apply saved config to extension"
-                                );
-                            } else {
-                                tracing::info!(
-                                    extension_id = %record.id,
-                                    "Applied saved config to extension"
-                                );
-                            }
+                        // Try to apply config via execute_command
+                        if let Err(e) = self
+                            .unified_service
+                            .execute_command(&metadata.id, "configure", config)
+                            .await
+                        {
+                            tracing::warn!(
+                                extension_id = %metadata.id,
+                                error = %e,
+                                "Failed to apply saved config to extension"
+                            );
+                        } else {
+                            tracing::info!(
+                                extension_id = %metadata.id,
+                                "Applied saved config to extension"
+                            );
                         }
                     }
 
+                    // Check if running in isolated mode
+                    let is_isolated = self.unified_service.is_isolated(&metadata.id).await;
+
                     tracing::info!(
-                        extension_id = %record.id,
+                        extension_id = %metadata.id,
                         name = %record.name,
                         extension_type = %record.extension_type,
                         has_config = record.config.is_some(),
+                        is_isolated = is_isolated,
                         "Loaded extension from storage"
                     );
                     loaded_count += 1;
@@ -273,8 +330,10 @@ impl ExtensionState {
     }
 
     /// Auto-discover and register extensions from default directories.
+    ///
+    /// Extensions are loaded via UnifiedExtensionService with process isolation by default.
     pub async fn auto_discover_and_register(&self) -> Result<usize, String> {
-        // Discover extensions using the registry
+        // Discover extensions using the registry (scans filesystem)
         let discovered = self.registry.discover().await;
 
         if discovered.is_empty() {
@@ -289,8 +348,8 @@ impl ExtensionState {
         let mut registered_count = 0;
 
         for (path, metadata) in discovered {
-            // Check if already registered in memory
-            if self.registry.contains(&metadata.id).await {
+            // Check if already registered in memory (via unified service)
+            if self.unified_service.contains(&metadata.id).await {
                 continue;
             }
 
@@ -314,27 +373,31 @@ impl ExtensionState {
                 }
             }
 
-            // Load the extension using async method
-            match self.registry.load_from_path(&path).await {
-                Ok(_) => {
+            // Load the extension using unified service (with process isolation)
+            match self.unified_service.load(&path).await {
+                Ok(loaded_metadata) => {
                     // Save to storage with auto_start enabled (clear uninstalled flag if set)
                     let record = neomind_storage::ExtensionRecord::new(
-                        metadata.id.clone(),
-                        metadata.name.clone(),
+                        loaded_metadata.id.clone(),
+                        loaded_metadata.name.clone(),
                         path.to_string_lossy().to_string(),
                         "native".to_string(),
-                        metadata.version.to_string(),
+                        loaded_metadata.version.to_string(),
                     )
-                    .with_description(metadata.description.clone())
-                    .with_author(metadata.author.clone())
+                    .with_description(loaded_metadata.description.clone())
+                    .with_author(loaded_metadata.author.clone())
                     .with_auto_start(true);
 
                     if let Err(e) = store.save(&record) {
                         tracing::warn!("Failed to save extension record: {}", e);
                     }
 
+                    // Check if running in isolated mode
+                    let is_isolated = self.unified_service.is_isolated(&loaded_metadata.id).await;
+
                     tracing::info!(
-                        extension_id = %metadata.id,
+                        extension_id = %loaded_metadata.id,
+                        is_isolated = is_isolated,
                         "Auto-registered extension"
                     );
                     registered_count += 1;

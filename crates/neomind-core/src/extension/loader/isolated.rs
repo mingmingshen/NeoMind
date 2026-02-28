@@ -248,7 +248,8 @@ mod tests {
     #[test]
     fn test_loader_config_default() {
         let config = IsolatedLoaderConfig::default();
-        assert!(!config.use_isolated_by_default);
+        // Default is now true for process isolation safety
+        assert!(config.use_isolated_by_default);
         assert!(config.force_isolated.is_empty());
         assert!(config.force_in_process.is_empty());
     }
