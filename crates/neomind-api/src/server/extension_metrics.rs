@@ -275,24 +275,66 @@ impl ExtensionMetricsCollector {
             }
 
             // Call produce_metrics() to get current values
-            // Note: produce_metrics is a synchronous method; we wrap it in catch_unwind
-            // and also notify the safety manager on repeated failures.
-            let ext = extension.read().await;
-            let metric_values = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                ext.produce_metrics().unwrap_or_default()
-            })) {
-                Ok(values) => values,
-                Err(_) => {
+            // Note: produce_metrics is a synchronous method; we use spawn_blocking
+            // with its own tokio runtime to isolate extension code and catch panics.
+            let ext_clone = Arc::clone(&extension);
+            let extension_id_for_metrics = extension_id.clone();
+            let safety_manager = Arc::clone(&self.extension_registry.safety_manager());
+
+            let metric_values = match tokio::task::spawn_blocking(move || {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    // Create a new tokio runtime for this thread
+                    // This ensures extensions have access to a runtime even though
+                    // produce_metrics is synchronous
+                    match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(rt) => {
+                            rt.block_on(async {
+                                let ext_guard = ext_clone.read().await;
+                                ext_guard.produce_metrics().unwrap_or_default()
+                            })
+                        }
+                        Err(e) => {
+                            warn!(
+                                category = "extensions",
+                                extension_id = %extension_id_for_metrics,
+                                error = %e,
+                                "Failed to create runtime for metrics collection"
+                            );
+                            Vec::new()
+                        }
+                    }
+                }))
+            }).await {
+                Ok(Ok(values)) => values,
+                Ok(Err(panic_payload)) => {
+                    let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "Unknown panic".to_string()
+                    };
+
                     warn!(
                         category = "extensions",
                         extension_id = %extension_id,
+                        panic_msg = %msg,
                         "Extension produce_metrics() call panicked, returning empty metrics"
                     );
                     // Record panic with safety manager so misbehaving extensions can be disabled
-                    self.extension_registry
-                        .safety_manager()
-                        .record_panic(&extension_id)
-                        .await;
+                    safety_manager.record_panic(&extension_id).await;
+                    Vec::new()
+                }
+                Err(join_error) => {
+                    warn!(
+                        category = "extensions",
+                        extension_id = %extension_id,
+                        error = %join_error,
+                        "Extension metrics task failed"
+                    );
                     Vec::new()
                 }
             };

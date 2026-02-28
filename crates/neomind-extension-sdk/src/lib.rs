@@ -10,6 +10,44 @@
 //! - Helper macros for common patterns
 //! - Type-safe metric and command definitions
 //!
+//! # Safety Guidelines for Extension Authors
+//!
+//! **CRITICAL**: Extensions run in the same process as the NeoMind server. To prevent
+//! crashes, follow these guidelines:
+//!
+//! ## 1. Panic Handling
+//!
+//! - **NEVER** use `unwrap()` or `expect()` in production code
+//! - Always use `?` operator or proper error handling with `Result`
+//! - Use `unwrap_or()` or `unwrap_or_default()` for safe defaults
+//!
+//! ## 2. Async Runtime Considerations
+//!
+//! - The `produce_metrics()` method is SYNCHRONOUS - do NOT use async inside it
+//! - If you need async operations, cache results and return cached values
+//! - Do NOT spawn tokio tasks or use `.await` in `produce_metrics()`
+//! - The `execute_command()` method IS async and can use `.await`
+//!
+//! ## 3. Foreign Code Integration
+//!
+//! - When using C/C++ libraries via FFI, ensure they don't call `abort()`
+//! - Catch C++ exceptions at the FFI boundary
+//! - Be careful with callbacks from foreign code
+//!
+//! ## 4. Resource Management
+//!
+//! - Always clean up resources in `Drop` implementations
+//! - Use `Arc<Mutex<T>>` or `Arc<RwLock<T>>` for shared state
+//! - Avoid circular references that cause memory leaks
+//!
+//! ## 5. Compilation Settings
+//!
+//! Ensure your `Cargo.toml` has:
+//! ```toml
+//! [profile.release]
+//! panic = "unwind"  # NOT "abort" - allows panic catching
+//! ```
+//!
 //! # Quick Start
 //!
 //! ```rust,ignore
@@ -95,6 +133,8 @@
 //!     }
 //!
 //!     fn produce_metrics(&self) -> Result<Vec<ExtensionMetricValue>> {
+//!         // IMPORTANT: This is a SYNCHRONOUS method
+//!         // Do NOT use .await or spawn tokio tasks here
 //!         Ok(vec![
 //!             ExtensionMetricValue {
 //!                 name: "counter".to_string(),

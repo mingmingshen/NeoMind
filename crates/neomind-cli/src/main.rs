@@ -115,22 +115,10 @@ enum PluginCommand {
 // Default is num_cpus, but we use more to handle block_in_place alternatives
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() -> Result<()> {
-    // Set up panic hook to catch panics before they abort
-    std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("\n=== PANIC ===");
-        if let Some(location) = panic_info.location() {
-            eprintln!(
-                "Location: {}:{}:{}",
-                location.file(),
-                location.line(),
-                location.column()
-            );
-        } else {
-            eprintln!("Location: <unknown>");
-        }
-        eprintln!("Message: {}", panic_info);
-        eprintln!("==============\n");
-    }));
+    // Install extension panic hook to catch and log extension panics
+    // This provides better error messages and prevents some panics from crashing the server
+    // IMPORTANT: This cannot catch all panic types (e.g., foreign exceptions from C/C++ code)
+    neomind_core::extension::safety::install_extension_panic_hook();
 
     let args = Args::parse();
 

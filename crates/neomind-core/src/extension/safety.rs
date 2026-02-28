@@ -411,6 +411,14 @@ impl Default for ExtensionSafetyManager {
 }
 
 /// Install a global panic hook that logs extension panics without crashing the server.
+///
+/// IMPORTANT: This hook can prevent the default panic behavior but CANNOT catch
+/// all types of panics. Specifically:
+/// - It can catch Rust panics (panic! macro)
+/// - It CANNOT catch foreign exceptions (C++ exceptions, C abort)
+/// - It CANNOT prevent aborts from panic = "abort" compilation mode
+///
+/// For full protection, extensions should be run in isolated processes.
 pub fn install_extension_panic_hook() {
     use std::panic;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -432,18 +440,42 @@ pub fn install_extension_panic_hook() {
         let payload = panic_info.payload().downcast_ref::<&str>();
         let payload_str = payload.map(|s| s.as_ref()).unwrap_or("unknown");
 
+        // Extract panic message from various sources
+        let message = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            // Try to get location info as fallback
+            if let Some(loc) = panic_info.location() {
+                format!("panic at {}:{}:{}", loc.file(), loc.line(), loc.column())
+            } else {
+                "unknown panic".to_string()
+            }
+        };
+
         error!(
             thread = %thread_name,
+            message = %message,
             payload = %payload_str,
             location = ?location.map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column())),
-            "Panic detected"
+            "Panic detected in extension code"
         );
 
-        // Check if this is an extension-related panic by inspecting the backtrace
-        if let Some(msg) = payload {
-            if msg.contains("Extension") || msg.contains("extension") {
-                error!("Extension-related panic detected, preventing propagation");
-            }
+        // Check if this is an extension-related panic
+        let is_extension_panic = message.contains("extension")
+            || message.contains("Extension")
+            || message.contains("reactor")
+            || message.contains("Tokio")
+            || thread_name.contains("extension");
+
+        if is_extension_panic {
+            error!(
+                thread = %thread_name,
+                "Extension-related panic detected. The extension may be incompatible or buggy."
+            );
+            // Note: We cannot prevent the panic from propagating if it's a foreign exception
+            // The only reliable solution is process isolation for extensions
         }
 
         // Call original hook for default behavior (but don't abort)
@@ -453,6 +485,72 @@ pub fn install_extension_panic_hook() {
     }));
 
     INSTALLED.store(true, Ordering::Relaxed);
+}
+
+/// Execute a closure with panic protection.
+///
+/// This is a helper function that wraps `catch_unwind` with consistent error handling
+/// and logging. Returns the result or an error message.
+///
+/// Note: This CANNOT catch foreign exceptions (C/C++ exceptions, abort).
+/// For complete isolation, use process-level isolation.
+pub fn with_panic_protection<T, F>(context: &str, f: F) -> std::result::Result<T, String>
+where
+    F: FnOnce() -> T + std::panic::UnwindSafe,
+{
+    match std::panic::catch_unwind(f) {
+        Ok(result) => Ok(result),
+        Err(panic_payload) => {
+            let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown panic".to_string()
+            };
+
+            error!(
+                context = %context,
+                panic_msg = %msg,
+                "Operation panicked, caught by panic protection"
+            );
+
+            Err(format!("{} panicked: {}", context, msg))
+        }
+    }
+}
+
+/// Execute a fallible closure with panic protection.
+///
+/// This version handles closures that return Result.
+pub fn with_panic_protection_fallible<T, E, F>(
+    context: &str,
+    f: F,
+) -> std::result::Result<T, E>
+where
+    F: FnOnce() -> std::result::Result<T, E> + std::panic::UnwindSafe,
+    E: From<String>,
+{
+    match std::panic::catch_unwind(f) {
+        Ok(result) => result,
+        Err(panic_payload) => {
+            let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown panic".to_string()
+            };
+
+            error!(
+                context = %context,
+                panic_msg = %msg,
+                "Operation panicked, caught by panic protection"
+            );
+
+            Err(E::from(format!("{} panicked: {}", context, msg)))
+        }
+    }
 }
 
 #[cfg(test)]
