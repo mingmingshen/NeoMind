@@ -59,15 +59,14 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     startup.service("Auto-onboarding events", ServiceStatus::Started);
 
     // Initialize extension metrics collector (decoupled from device system)
-    let extension_registry = state.extensions.registry.clone();
+    let unified_service = state.extensions.unified_service.clone();
     let metrics_storage = state.extensions.metrics_storage.clone();
-    let event_bus = state.core.event_bus.clone();
     let _metrics_task = tokio::spawn(async move {
         use crate::server::extension_metrics::ExtensionMetricsCollector;
         use std::time::Duration;
 
         let collector =
-            ExtensionMetricsCollector::new(extension_registry, metrics_storage, event_bus)
+            ExtensionMetricsCollector::new(unified_service, metrics_storage)
                 .with_interval(Duration::from_secs(60));
 
         collector.run().await;

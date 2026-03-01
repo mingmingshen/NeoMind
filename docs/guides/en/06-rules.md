@@ -472,7 +472,7 @@ engine.register_rule(rule).await?;
 ### Test Rule
 
 ```bash
-curl -X POST http://localhost:3000/api/rules/test \
+curl -X POST http://localhost:9375/api/rules/test \
   -H "Content-Type: application/json" \
   -d '{
     "rule": "ON device.temperature > 30 THEN send_alert(\"High\")",

@@ -732,34 +732,42 @@ pub type CurrentUserExtension = SessionInfo;
 mod tests {
     use super::*;
 
-    fn cleanup_test_db(path: &str) {
-        let _ = std::fs::remove_file(path);
-        let _ = std::fs::remove_file(&format!("{}.lock", path));
+    fn get_project_data_path(filename: &str) -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("data")
+            .join(filename)
     }
 
-    fn make_test_auth(test_name: &str) -> AuthUserState {
-        let db_path = format!("data/test_{}.redb", test_name);
+    fn cleanup_test_db(path: &std::path::Path) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(&format!("{}.lock", path.display()));
+    }
+
+    fn make_test_auth(test_name: &str) -> (AuthUserState, std::path::PathBuf) {
+        let db_path = get_project_data_path(&format!("test_{}.redb", test_name));
         cleanup_test_db(&db_path);
         let jwt_secret = std::env::var("NEOMIND_JWT_SECRET")
             .unwrap_or_else(|_| "test_secret_key_12345678".to_string());
-        AuthUserState::with_config(db_path, jwt_secret)
+        (AuthUserState::with_config(db_path.display().to_string(), jwt_secret), db_path)
     }
 
     #[tokio::test]
     async fn test_user_registration() {
-        let auth = make_test_auth("registration");
+        let (auth, db_path) = make_test_auth("registration");
         let (user, token) = auth
             .register("testuser", "password123", UserRole::User)
             .await
             .unwrap();
         assert_eq!(user.username, "testuser");
         assert!(!token.is_empty());
-        cleanup_test_db("data/test_registration.redb");
+        cleanup_test_db(&db_path);
     }
 
     #[tokio::test]
     async fn test_user_login() {
-        let auth = make_test_auth("login");
+        let (auth, _) = make_test_auth("login");
         auth.register("testuser", "password123", UserRole::User)
             .await
             .unwrap();
@@ -771,7 +779,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_token_validation() {
-        let auth = make_test_auth("token_validation");
+        let (auth, db_path) = make_test_auth("token_validation");
         let (_, token) = auth
             .register("testuser", "password123", UserRole::User)
             .await
@@ -779,6 +787,6 @@ mod tests {
 
         let session = auth.validate_token(&token).unwrap();
         assert_eq!(session.username, "testuser");
-        cleanup_test_db("data/test_token_validation.redb");
+        cleanup_test_db(&db_path);
     }
 }

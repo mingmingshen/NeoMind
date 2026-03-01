@@ -80,7 +80,7 @@ pub fn create_backend(
 
 ## Time-Series Storage
 
-**Important Change (v0.5.x)**: All time-series data is now unified in `data/timeseries.redb`:
+**Important Change (v0.5.x)**: All time-series data is now unified in `data/telemetry.redb`:
 
 | Data Type | device_part | metric_part | Description |
 |-----------|-------------|-------------|-------------|
@@ -349,7 +349,7 @@ impl ExtensionMetricsStorage {
 }
 ```
 
-**Storage Format**: Extension metrics stored in `timeseries.redb` using DataSourceId format:
+**Storage Format**: Extension metrics stored in `data/telemetry.redb` using DataSourceId format:
 
 ```
 DataSourceId: "extension:weather:temperature"

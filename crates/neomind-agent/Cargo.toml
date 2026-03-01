@@ -47,7 +47,6 @@ harness = false
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-# edge_ai-testing = { path = "../neomind-testing" }
 tempfile = "3.4"
 anyhow = "1.0"
 criterion = { version = "0.5", features = ["async_tokio"] }

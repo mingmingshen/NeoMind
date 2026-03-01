@@ -436,17 +436,23 @@ GET    /api/devices/:id/telemetry/summary     # Telemetry summary
 GET    /api/device-types                      # List device types
 POST   /api/device-types                      # Create device type
 GET    /api/device-types/:id                  # Get device type
-PUT    /api/device-types/:id                  # Update device type
+PUT    /api/device-types                      # Validate device type
 DELETE /api/device-types/:id                  # Delete device type
-PUT    /api/device-types/:id/validate         # Validate device type
-POST   /api/device-types/generate-mdl         # Generate MDL
-POST   /api/device-types/from-sample          # Generate from samples
+POST   /api/device-types/generate-from-samples  # Generate from samples
 
-# Discovery
+# MDL Generation
+POST   /api/devices/generate-mdl              # Generate MDL
+
+# Device Discovery & Auto-Onboarding (Drafts)
 POST   /api/devices/discover                   # Device discovery
-GET    /api/devices/pending                   # Pending devices
-POST   /api/devices/pending/:id/confirm       # Confirm device
-DELETE /api/devices/pending/:id/dismiss       # Dismiss device
+GET    /api/devices/drafts                    # List draft devices
+GET    /api/devices/drafts/:id                # Get draft device
+PUT    /api/devices/drafts/:id                # Update draft
+POST   /api/devices/drafts/:id/approve        # Approve draft
+POST   /api/devices/drafts/:id/reject         # Reject draft
+POST   /api/devices/drafts/:id/analyze        # Analyze with LLM
+POST   /api/devices/drafts/:id/enhance        # Enhance with LLM
+GET    /api/devices/drafts/:id/suggest-types  # Suggest types
 ```
 
 ## Usage Examples

@@ -10,7 +10,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
 import { useStore } from "@/store"
 import { Upload, Loader2, FolderOpen, Package, File } from "lucide-react"
@@ -42,9 +41,9 @@ export function ExtensionUploadDialog({
   const { toast } = useToast()
   const registerExtension = useStore((state) => state.registerExtension)
   const fetchExtensions = useStore((state) => state.fetchExtensions)
+  const isAuthenticated = useStore((state) => state.isAuthenticated)
 
   const [filePath, setFilePath] = useState("")
-  const [autoStart, setAutoStart] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadMode, setUploadMode] = useState<'path' | 'file'>('path')
   const [progress, setProgress] = useState<UploadProgress | null>(null)
@@ -73,6 +72,16 @@ export function ExtensionUploadDialog({
     const file = e.target.files?.[0]
     if (!file) return
 
+    // Check authentication status before upload
+    if (!isAuthenticated) {
+      toast({
+        title: t('extensions:authRequired'),
+        description: t('extensions:authRequiredDescription'),
+        variant: 'destructive',
+      })
+      return
+    }
+
     // Check file extension
     if (!file.name.endsWith('.nep') && !file.name.endsWith('.zip')) {
       toast({
@@ -93,6 +102,47 @@ export function ExtensionUploadDialog({
     setUploading(true)
 
     let interval: ReturnType<typeof setInterval> | null = null
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    let isCompleted = false
+
+    // Helper function to handle errors consistently
+    const handleError = (error: unknown) => {
+      if (isCompleted) return
+      isCompleted = true
+
+      if (timeoutId) clearTimeout(timeoutId)
+      if (interval) clearInterval(interval)
+
+      // Handle specific error types
+      let errorMessage = 'Upload failed'
+
+      if (error instanceof Error) {
+        if (error.name === 'AbortError' || error.message.includes('timeout')) {
+          errorMessage = 'Upload timed out. The server may have crashed or is not responding.'
+        } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+          errorMessage = 'Network error. The connection was lost during upload.'
+        } else if (error.message.includes('EPIPE')) {
+          errorMessage = 'Connection closed unexpectedly. The server may have crashed.'
+        } else {
+          errorMessage = error.message
+        }
+      }
+
+      setProgress({
+        filename: file.name,
+        loaded: 0,
+        total: file.size,
+        status: 'error',
+        message: errorMessage,
+      })
+      setUploading(false)
+
+      toast({
+        title: t('extensions:installError'),
+        description: errorMessage,
+        variant: 'destructive',
+      })
+    }
 
     try {
       // Simulate progress
@@ -109,10 +159,36 @@ export function ExtensionUploadDialog({
         })
       }, 100)
 
-      // Use the unified upload API (works for both Tauri and Web)
-      const result = await api.uploadExtensionFile(file)
+      // Create abort controller for timeout
+      const controller = new AbortController()
 
+      // Set timeout for upload (2 minutes for large files)
+      const UPLOAD_TIMEOUT = 120000
+      timeoutId = setTimeout(() => {
+        if (!isCompleted) {
+          controller.abort()
+          handleError(new Error('Upload timeout'))
+        }
+      }, UPLOAD_TIMEOUT)
+
+      // Wrap API call in Promise.race to handle cases where fetch hangs
+      const uploadPromise = api.uploadExtensionFile(file, controller.signal)
+
+      // Create a promise that rejects when aborted
+      const abortPromise = new Promise<never>((_, reject) => {
+        controller.signal.addEventListener('abort', () => {
+          reject(new Error('Upload timeout'))
+        })
+      })
+
+      // Race between upload and abort
+      const result = await Promise.race([uploadPromise, abortPromise])
+
+      if (timeoutId) clearTimeout(timeoutId)
       if (interval) clearInterval(interval)
+
+      if (isCompleted) return
+      isCompleted = true
 
       setProgress(prev => prev ? { ...prev, status: 'processing' } : null)
 
@@ -138,28 +214,23 @@ export function ExtensionUploadDialog({
 
       await fetchExtensions()
 
+      // Sync extension components to dashboard registry
+      try {
+        const { syncExtensionComponents } = await import('@/hooks/useExtensionComponents')
+        await syncExtensionComponents()
+      } catch (e) {
+        console.warn('Failed to sync extension components:', e)
+      }
+
       setTimeout(() => {
         onOpenChange(false)
         resetForm()
       }, 1500)
 
+      setUploading(false)
       onUploadComplete?.(extensionId || file.name)
     } catch (error) {
-      if (interval) clearInterval(interval)
-      setProgress({
-        filename: file.name,
-        loaded: 0,
-        total: file.size,
-        status: 'error',
-        message: error instanceof Error ? error.message : 'Upload failed',
-      })
-      toast({
-        title: t('extensions:installError'),
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
-      })
-    } finally {
-      setUploading(false)
+      handleError(error)
     }
   }
 
@@ -202,9 +273,10 @@ export function ExtensionUploadDialog({
       }
 
       // Use regular register API for native binaries (.so, .dylib, .dll, .wasm)
+      // auto_start defaults to true - extensions should auto-start after registration
       await registerExtension({
         file_path: filePath,
-        auto_start: autoStart,
+        auto_start: true,
       })
       toast({
         title: t("registerSuccess"),
@@ -227,7 +299,6 @@ export function ExtensionUploadDialog({
 
   const resetForm = () => {
     setFilePath("")
-    setAutoStart(false)
     setProgress(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -315,8 +386,18 @@ export function ExtensionUploadDialog({
             <>
               {/* File Upload */}
               <div
-                className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
-                onClick={handleFileSelect}
+                className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                  progress?.status === 'error'
+                    ? 'border-destructive/50 bg-destructive/5 cursor-pointer hover:border-destructive/70'
+                    : 'cursor-pointer hover:border-primary/50'
+                }`}
+                onClick={() => {
+                  // Allow clicking to retry when there's an error
+                  if (progress?.status === 'error') {
+                    resetForm()
+                  }
+                  handleFileSelect()
+                }}
               >
                 <input
                   ref={fileInputRef}
@@ -326,28 +407,45 @@ export function ExtensionUploadDialog({
                   onChange={handleFileInputChange}
                   disabled={uploading}
                 />
-                {uploading && progress ? (
+                {progress && (uploading || progress.status === 'error' || progress.status === 'success') ? (
                   <div className="space-y-3">
-                    <div className="flex items-center justify-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm text-muted-foreground">
-                        {progress.status === 'processing'
-                          ? t('extensions:processing')
-                          : t('extensions:uploading')}
-                      </span>
-                    </div>
-                    <Progress value={(progress.loaded / progress.total) * 100} />
-                    <p className="text-sm text-muted-foreground">{progress.filename}</p>
-                    {progress.status === 'success' && (
+                    {progress.status === 'error' ? (
+                      // Error state - show error with retry option
+                      <>
+                        <div className="flex items-center justify-center gap-2 text-destructive">
+                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="text-sm font-medium">{t('extensions:installFailed')}</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{progress.filename}</p>
+                        <div className="text-destructive/80 text-xs bg-destructive/10 rounded p-2">
+                          {progress.message || t('extensions:installFailed')}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {t('extensions:clickToRetry')}
+                        </p>
+                      </>
+                    ) : progress.status === 'success' ? (
+                      // Success state
                       <div className="flex items-center justify-center gap-2 text-green-600">
                         <File className="h-4 w-4" />
                         <span>{t('extensions:installComplete')}</span>
                       </div>
-                    )}
-                    {progress.status === 'error' && (
-                      <div className="text-red-600 text-sm">
-                        {progress.message || t('extensions:installFailed')}
-                      </div>
+                    ) : (
+                      // Uploading/Processing state
+                      <>
+                        <div className="flex items-center justify-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm text-muted-foreground">
+                            {progress.status === 'processing'
+                              ? t('extensions:processing')
+                              : t('extensions:uploading')}
+                          </span>
+                        </div>
+                        <Progress value={(progress.loaded / progress.total) * 100} />
+                        <p className="text-sm text-muted-foreground">{progress.filename}</p>
+                      </>
                     )}
                   </div>
                 ) : (
@@ -366,23 +464,6 @@ export function ExtensionUploadDialog({
             </>
           )}
 
-          {/* Auto Start Switch */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label htmlFor="auto-start" className="cursor-pointer">
-                {t("autoStart")}
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                {t("autoStartDesc")}
-              </p>
-            </div>
-            <Switch
-              id="auto-start"
-              checked={autoStart}
-              onCheckedChange={setAutoStart}
-              disabled={uploading}
-            />
-          </div>
         </div>
 
         <DialogFooter>

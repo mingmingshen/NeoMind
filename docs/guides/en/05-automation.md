@@ -12,7 +12,7 @@ The Automation module provides a data transformation engine, natural language to
 ## Important Changes (v0.5.x)
 
 ### Transform Metrics Storage
-Transform-generated virtual metrics are now unified in `data/timeseries.redb`:
+Transform-generated virtual metrics are now unified in `data/telemetry.redb`:
 
 ```
 DataSourceId: "transform:{transform_id}:{metric_name}"

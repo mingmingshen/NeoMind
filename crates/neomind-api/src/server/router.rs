@@ -1,6 +1,7 @@
 //! Application router configuration.
 
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{delete, get, post, put},
     Router,
 };
@@ -8,6 +9,7 @@ use axum::{
 use super::assets;
 use super::middleware::rate_limit_middleware;
 use super::types::ServerState;
+use super::types::MAX_EXTENSION_UPLOAD_SIZE;
 use super::types::MAX_REQUEST_BODY_SIZE;
 use crate::auth::hybrid_auth_middleware;
 use crate::auth_users::jwt_auth_middleware;
@@ -834,10 +836,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/extensions",
             post(extensions::register_extension_handler),
         )
-        .route(
-            "/api/extensions/upload/file",
-            post(extensions::upload_extension_file_handler),
-        )
         // Multipart upload temporarily disabled due to Handler trait issues
         // .route(
         //     "/api/extensions/upload/multipart",
@@ -920,18 +918,35 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             jwt_auth_middleware,
         ));
 
+    // Extension upload routes with larger body limit (100MB for large extension packages)
+    // This needs to be a separate router to apply a different body limit
+    // Use DefaultBodyLimit::max() for the route-specific limit
+    let extension_upload_routes = Router::new()
+        .route(
+            "/api/extensions/upload/file",
+            post(extensions::upload_extension_file_handler)
+                .layer(DefaultBodyLimit::max(MAX_EXTENSION_UPLOAD_SIZE)),
+        )
+        // Apply hybrid authentication middleware
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            hybrid_auth_middleware,
+        ))
+        // Apply rate limiting middleware
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ));
+
     // Combine all routes
     // IMPORTANT: More specific routes must come before catch-all routes.
     // Also, routes with their own middleware must be merged BEFORE routes
     // with wildcard middleware to avoid route masking.
 
-    // Add debug-only routes
+    // Add debug-only routes (no body limit here - limits are applied per-router)
     #[cfg(debug_assertions)]
     let debug_routes = Router::new()
         .layer(tower_http::compression::CompressionLayer::new())
-        .layer(tower_http::limit::RequestBodyLimitLayer::new(
-            MAX_REQUEST_BODY_SIZE,
-        ))
         .layer(
             tower_http::cors::CorsLayer::new()
                 .allow_origin(tower_http::cors::Any)
@@ -944,10 +959,20 @@ pub fn create_router_with_state(state: ServerState) -> Router {
     #[cfg(debug_assertions)]
     let router = router.merge(debug_routes);
 
-    let router = router
+    // Apply global body limit to routes that need it (NOT extension upload)
+    let limited_routes = Router::new()
         .merge(jwt_routes)
         .merge(admin_routes)
-        .merge(protected_routes);
+        .merge(protected_routes)
+        // Apply global body limit to these routes
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(
+            MAX_REQUEST_BODY_SIZE,
+        ));
+
+    // Combine all routes - extension_upload_routes has its own larger limit
+    let router = router
+        .merge(limited_routes)
+        .merge(extension_upload_routes);
 
     // Static file routes - serve embedded frontend assets
     let static_routes = Router::new()
@@ -958,11 +983,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
     router
         // Merge static routes before fallback
         .merge(static_routes)
-        // Apply middleware layers
+        // Apply middleware layers (compression, CORS) but NOT body limit - that's applied per-router
         .layer(tower_http::compression::CompressionLayer::new())
-        .layer(tower_http::limit::RequestBodyLimitLayer::new(
-            MAX_REQUEST_BODY_SIZE,
-        ))
         // CORS layer
         .layer(
             tower_http::cors::CorsLayer::new()

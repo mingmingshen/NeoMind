@@ -291,6 +291,19 @@ pub trait Extension: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// Get the complete extension descriptor
+    ///
+    /// This method provides a unified view of all extension capabilities.
+    /// The default implementation combines metadata(), commands(), and metrics().
+    /// Override this method if you want to customize the descriptor.
+    fn descriptor(&self) -> ExtensionDescriptor {
+        ExtensionDescriptor::with_capabilities(
+            self.metadata().clone(),
+            self.commands().to_vec(),
+            self.metrics().to_vec(),
+        )
+    }
+
     /// Optional: Health check
     async fn health_check(&self) -> Result<bool> {
         Ok(true)
@@ -434,6 +447,156 @@ impl ExtensionMetadata {
     pub fn with_config_parameters(mut self, config_parameters: Vec<ParameterDefinition>) -> Self {
         self.config_parameters = Some(config_parameters);
         self
+    }
+}
+
+/// Extension descriptor - contains all static extension capabilities
+///
+/// This is the unified structure for describing an extension's capabilities,
+/// used by both in-process and isolated extensions. It contains all the
+/// information that is determined at load time and doesn't change during runtime.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtensionDescriptor {
+    /// Basic extension metadata (includes config_parameters)
+    pub metadata: ExtensionMetadata,
+
+    /// Commands provided by this extension
+    #[serde(default)]
+    pub commands: Vec<ExtensionCommand>,
+
+    /// Metrics provided by this extension
+    #[serde(default)]
+    pub metrics: Vec<MetricDescriptor>,
+}
+
+impl ExtensionDescriptor {
+    /// Create a new descriptor from metadata
+    pub fn new(metadata: ExtensionMetadata) -> Self {
+        Self {
+            metadata,
+            commands: Vec::new(),
+            metrics: Vec::new(),
+        }
+    }
+
+    /// Create a descriptor with all capabilities
+    pub fn with_capabilities(
+        metadata: ExtensionMetadata,
+        commands: Vec<ExtensionCommand>,
+        metrics: Vec<MetricDescriptor>,
+    ) -> Self {
+        Self {
+            metadata,
+            commands,
+            metrics,
+        }
+    }
+
+    /// Get extension ID
+    pub fn id(&self) -> &str {
+        &self.metadata.id
+    }
+
+    /// Get extension name
+    pub fn name(&self) -> &str {
+        &self.metadata.name
+    }
+
+    /// Check if extension has config parameters
+    pub fn has_config(&self) -> bool {
+        self.metadata.config_parameters.is_some()
+    }
+
+    /// Get config parameters
+    pub fn config_parameters(&self) -> Option<&Vec<ParameterDefinition>> {
+        self.metadata.config_parameters.as_ref()
+    }
+}
+
+/// Extension runtime state - dynamic state that changes during execution
+///
+/// This structure holds the runtime state of an extension, separate from
+/// its static capabilities defined in ExtensionDescriptor.
+#[derive(Debug, Clone)]
+pub struct ExtensionRuntimeState {
+    /// Whether the extension is currently running
+    pub is_running: bool,
+
+    /// Whether the extension is running in isolated mode
+    pub is_isolated: bool,
+
+    /// When the extension was loaded (Unix timestamp)
+    pub loaded_at: Option<i64>,
+
+    /// Number of times the extension has been restarted
+    pub restart_count: u64,
+
+    /// Number of times the extension has been started
+    pub start_count: u64,
+
+    /// Number of times the extension has been stopped
+    pub stop_count: u64,
+
+    /// Number of errors encountered
+    pub error_count: u64,
+
+    /// Last error message
+    pub last_error: Option<String>,
+}
+
+impl Default for ExtensionRuntimeState {
+    fn default() -> Self {
+        Self {
+            is_running: false,
+            is_isolated: false,
+            loaded_at: None,
+            restart_count: 0,
+            start_count: 0,
+            stop_count: 0,
+            error_count: 0,
+            last_error: None,
+        }
+    }
+}
+
+impl ExtensionRuntimeState {
+    /// Create a new runtime state
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create runtime state for an isolated extension
+    pub fn isolated() -> Self {
+        Self {
+            is_isolated: true,
+            ..Self::default()
+        }
+    }
+
+    /// Mark as running
+    pub fn mark_running(&mut self) {
+        self.is_running = true;
+        self.start_count += 1;
+        if self.loaded_at.is_none() {
+            self.loaded_at = Some(chrono::Utc::now().timestamp());
+        }
+    }
+
+    /// Mark as stopped
+    pub fn mark_stopped(&mut self) {
+        self.is_running = false;
+        self.stop_count += 1;
+    }
+
+    /// Record an error
+    pub fn record_error(&mut self, error: String) {
+        self.error_count += 1;
+        self.last_error = Some(error);
+    }
+
+    /// Increment restart count
+    pub fn increment_restart(&mut self) {
+        self.restart_count += 1;
     }
 }
 

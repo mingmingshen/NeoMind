@@ -10,6 +10,7 @@ use axum::{
     http::StatusCode,
     response::{sse::Event, Sse},
 };
+use chrono;
 use futures::stream::Stream;
 use serde::Deserialize;
 use serde_json::Value;
@@ -46,6 +47,11 @@ impl Default for BatchConfig {
         }
     }
 }
+
+/// Heartbeat configuration for WebSocket connections.
+/// Prevents connection drops due to idle timeouts.
+const HEARTBEAT_INTERVAL_SECS: u64 = 30;
+const HEARTBEAT_TIMEOUT_SECS: u64 = 60;
 
 /// Wrapper for either filtered or unfiltered event receiver.
 enum EventBusReceiverWrapper {
@@ -444,8 +450,59 @@ pub async fn event_websocket_handler(
         // Create a ticker for periodic flushing
         let mut flush_interval = tokio::time::interval(config.max_delay);
 
+        // Heartbeat mechanism to keep connection alive
+        let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(HEARTBEAT_INTERVAL_SECS));
+        let mut last_pong = tokio::time::Instant::now();
+        let heartbeat_timeout = Duration::from_secs(HEARTBEAT_TIMEOUT_SECS);
+
         loop {
             tokio::select! {
+                // Handle incoming messages (for pong responses)
+                msg_result = socket.recv() => {
+                    match msg_result {
+                        Some(Ok(Message::Text(text))) => {
+                            // Check for pong response
+                            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                                if value.get("type") == Some(&serde_json::json!("pong")) {
+                                    last_pong = tokio::time::Instant::now();
+                                    tracing::debug!("Received pong from events WebSocket client");
+                                }
+                            }
+                        }
+                        Some(Ok(Message::Close(_))) | Some(Err(_)) | None => {
+                            tracing::debug!("Events WebSocket client disconnected");
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Heartbeat - send periodic ping to detect dead connections
+                _ = heartbeat_interval.tick() => {
+                    // Check for heartbeat timeout
+                    if last_pong.elapsed() > heartbeat_timeout {
+                        tracing::warn!(
+                            "Events WebSocket heartbeat timeout - no pong received for {:?}",
+                            last_pong.elapsed()
+                        );
+                        let _ = socket.send(Message::Text(
+                            serde_json::json!({"type": "Error", "message": "Heartbeat timeout"}).to_string()
+                        )).await;
+                        break;
+                    }
+
+                    // Send ping
+                    let ping = serde_json::json!({
+                        "type": "ping",
+                        "timestamp": chrono::Utc::now().timestamp(),
+                    });
+                    if socket.send(Message::Text(ping.to_string())).await.is_err() {
+                        tracing::debug!("Failed to send ping, client disconnected");
+                        break;
+                    }
+                    tracing::debug!("Sent ping to events WebSocket client");
+                }
+
                 // Receive new events
                 recv_result = rx.recv() => {
                     match recv_result {

@@ -113,7 +113,7 @@ sudo systemctl start neomind
 curl -fsSL https://ollama.com/install.sh | sh
 
 # Pull a lightweight model
-ollama pull qwen3-vl:2b
+ollama pull qwen2.5:3b
 ```
 
 #### 2. Start Backend
@@ -124,7 +124,7 @@ git clone https://github.com/camthink-ai/NeoMind.git
 cd NeoMind
 
 # Build and run API server
-cargo run -p neomind
+cargo run -p neomind-api
 ```
 
 The server will start on `http://localhost:9375` by default.
@@ -411,7 +411,7 @@ cargo test
 cargo test -p neomind-agent
 cargo test -p neomind-llm
 cargo test -p neomind-core
-cargo test -p neomind
+cargo test -p neomind-api
 
 # Check compilation without building
 cargo check
@@ -423,10 +423,10 @@ cargo fmt
 cargo clippy
 
 # Run API server (default port: 9375)
-cargo run -p neomind
+cargo run -p neomind-api
 
 # Run with custom config
-cargo run -p neomind -- --config path/to/config.toml
+cargo run -p neomind-api -- --config path/to/config.toml
 ```
 
 ---

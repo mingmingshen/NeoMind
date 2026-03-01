@@ -41,14 +41,21 @@ impl MessageManager {
     }
 
     /// Create a new message manager with persistent storage.
+    ///
+    /// # Arguments
+    /// * `data_dir` - Directory path where the database file will be stored.
+    ///                The actual database file will be `{data_dir}/messages.redb`
     pub fn with_storage<P: AsRef<Path>>(data_dir: P) -> Result<Self> {
         let data_dir = data_dir.as_ref();
         std::fs::create_dir_all(data_dir)
             .map_err(|e| Error::Storage(format!("Failed to create data directory: {}", e)))?;
 
+        // Construct the database file path
+        let db_path = data_dir.join("messages.redb");
+
         let store = Arc::new(
-            neomind_storage::MessageStore::open(data_dir)
-                .map_err(|e| Error::Storage(format!("Failed to open message store: {}", e)))?,
+            neomind_storage::MessageStore::open(&db_path)
+                .map_err(|e| Error::Storage(format!("Failed to open message store at {:?}: {}", db_path, e)))?,
         );
 
         // Load existing messages into memory

@@ -43,8 +43,14 @@ use crate::extension::types::ExtensionError;
 
 /// Extension package format identifier
 pub const PACKAGE_FORMAT: &str = "neomind-extension-package";
-/// Current package format version
-pub const PACKAGE_FORMAT_VERSION: &str = "1.0";
+/// Current supported ABI version (determines package format compatibility)
+/// This single version number controls:
+/// - Package format compatibility
+/// - FFI interface compatibility
+/// - Extension loading compatibility
+pub const CURRENT_ABI_VERSION: u32 = 3;
+/// Minimum supported ABI version
+pub const MIN_ABI_VERSION: u32 = 3;
 
 /// Parsed extension package
 #[derive(Debug, Clone)]
@@ -64,8 +70,15 @@ pub struct ExtensionPackage {
 pub struct ExtensionPackageManifest {
     /// Package format identifier
     pub format: String,
-    /// Package format version
-    pub format_version: String,
+    /// Package format version (deprecated, use abi_version)
+    /// Still accepted for backward compatibility
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format_version: Option<String>,
+
+    /// ABI version - determines binary compatibility
+    /// This is the primary version check for extension loading
+    #[serde(default = "default_abi_version")]
+    pub abi_version: u32,
 
     /// Extension metadata
     pub id: String,
@@ -91,7 +104,9 @@ pub struct ExtensionPackageManifest {
     pub binaries: HashMap<String, String>,
 
     /// Frontend components
+    /// Supports both string (e.g., "frontend/") and struct format for backward compatibility
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "deserialize_frontend_opt", default)]
     pub frontend: Option<FrontendConfig>,
 
     /// Extension capabilities (metrics, commands)
@@ -108,6 +123,10 @@ pub struct ExtensionPackageManifest {
     pub extension_type: String,
 }
 
+fn default_abi_version() -> u32 {
+    CURRENT_ABI_VERSION
+}
+
 fn default_extension_type() -> String {
     "native".to_string()
 }
@@ -121,11 +140,54 @@ pub struct NeomindRequirements {
 }
 
 /// Frontend configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FrontendConfig {
     /// Dashboard components provided by this extension
     #[serde(default)]
     pub components: Vec<DashboardComponentDef>,
+}
+
+/// Intermediate type for deserializing frontend field that accepts both string and struct formats
+/// This provides backward compatibility with older extension packages
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FrontendField {
+    /// String format (e.g., "frontend/") - used in older extension packages
+    String(String),
+    /// Struct format with components
+    Struct(FrontendConfig),
+}
+
+impl FrontendField {
+    /// Convert to FrontendConfig, handling both formats
+    pub fn into_config(self) -> FrontendConfig {
+        match self {
+            FrontendField::String(_) => FrontendConfig {
+                components: Vec::new(),
+            },
+            FrontendField::Struct(config) => config,
+        }
+    }
+
+    /// Check if this is an empty string format (no actual components)
+    pub fn is_empty_string(&self) -> bool {
+        matches!(self, FrontendField::String(_))
+    }
+}
+
+impl Default for FrontendField {
+    fn default() -> Self {
+        FrontendField::Struct(FrontendConfig::default())
+    }
+}
+
+/// Helper function to deserialize optional frontend field
+fn deserialize_frontend_opt<'de, D>(deserializer: D) -> Result<Option<FrontendConfig>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt: Option<FrontendField> = Option::deserialize(deserializer)?;
+    Ok(opt.map(|f| f.into_config()))
 }
 
 /// Dashboard component definition
@@ -147,6 +209,9 @@ pub struct DashboardComponentDef {
     pub bundle_path: String,
     /// Exported component name
     pub export_name: String,
+    /// Global variable name for the bundle (used for script tag loading)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_name: Option<String>,
     /// Size constraints
     #[serde(default)]
     pub size_constraints: SizeConstraints,
@@ -376,11 +441,11 @@ impl ExtensionPackage {
             )));
         }
 
-        // Check format version compatibility
-        if manifest.format_version != PACKAGE_FORMAT_VERSION {
+        // Check ABI version compatibility (primary version check)
+        if manifest.abi_version < MIN_ABI_VERSION || manifest.abi_version > CURRENT_ABI_VERSION {
             return Err(PackageError::IncompatibleVersion {
-                required: PACKAGE_FORMAT_VERSION.to_string(),
-                got: manifest.format_version.clone(),
+                required: format!("{}-{}", MIN_ABI_VERSION, CURRENT_ABI_VERSION),
+                got: manifest.abi_version.to_string(),
             });
         }
 
@@ -864,6 +929,8 @@ impl ExtensionPackage {
 }
 
 /// Detect the current platform
+/// Returns platform string in underscore format (e.g., "darwin_aarch64")
+/// to match the format used in extension packages
 pub fn detect_platform() -> String {
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
@@ -892,6 +959,77 @@ mod tests {
     #[test]
     fn test_format_constants() {
         assert_eq!(PACKAGE_FORMAT, "neomind-extension-package");
-        assert_eq!(PACKAGE_FORMAT_VERSION, "1.0");
+        assert_eq!(CURRENT_ABI_VERSION, 3);
+        assert_eq!(MIN_ABI_VERSION, 3);
+    }
+
+    #[test]
+    fn test_frontend_string_format() {
+        // Test that frontend field accepts string format (backward compatibility)
+        let json = r#"{
+            "format": "neomind-extension-package",
+            "abi_version": 3,
+            "id": "test-extension",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "frontend": "frontend/"
+        }"#;
+
+        let manifest: ExtensionPackageManifest = serde_json::from_str(json)
+            .expect("Failed to parse manifest with string frontend");
+
+        assert_eq!(manifest.id, "test-extension");
+        assert!(manifest.frontend.is_some());
+        assert!(manifest.frontend.as_ref().unwrap().components.is_empty());
+    }
+
+    #[test]
+    fn test_frontend_struct_format() {
+        // Test that frontend field accepts struct format
+        let json = r#"{
+            "format": "neomind-extension-package",
+            "abi_version": 3,
+            "id": "test-extension",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "frontend": {
+                "components": [
+                    {
+                        "type": "card",
+                        "name": "Weather Card",
+                        "description": "A weather display card",
+                        "category": "widget",
+                        "bundle_path": "dist/bundle.js",
+                        "export_name": "WeatherCard"
+                    }
+                ]
+            }
+        }"#;
+
+        let manifest: ExtensionPackageManifest = serde_json::from_str(json)
+            .expect("Failed to parse manifest with struct frontend");
+
+        assert_eq!(manifest.id, "test-extension");
+        assert!(manifest.frontend.is_some());
+        assert_eq!(manifest.frontend.as_ref().unwrap().components.len(), 1);
+        assert_eq!(manifest.frontend.as_ref().unwrap().components[0].name, "Weather Card");
+    }
+
+    #[test]
+    fn test_frontend_null_format() {
+        // Test that frontend field accepts null/missing
+        let json = r#"{
+            "format": "neomind-extension-package",
+            "abi_version": 3,
+            "id": "test-extension",
+            "name": "Test Extension",
+            "version": "1.0.0"
+        }"#;
+
+        let manifest: ExtensionPackageManifest = serde_json::from_str(json)
+            .expect("Failed to parse manifest without frontend");
+
+        assert_eq!(manifest.id, "test-extension");
+        assert!(manifest.frontend.is_none());
     }
 }

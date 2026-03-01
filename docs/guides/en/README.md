@@ -17,11 +17,12 @@ docs/guides/en/
 ├── 08-memory.md              # Memory system module
 ├── 09-messages.md            # Message notification module
 ├── 10-storage.md             # Storage layer module
-├── 11-integrations.md        # Integration module
 ├── 12-commands.md            # Command queue module
 ├── 14-api.md                 # REST API module
 ├── 15-web.md                 # Frontend module
-└── 16-extension-dev.md       # Extension development guide
+├── 16-extension-dev.md       # Extension development guide
+├── extension-package.md      # Extension package (.nep) format
+└── extension-process-isolation.md  # Process isolation for extensions
 ```
 
 ## Module Dependencies
@@ -39,7 +40,6 @@ graph TB
     Memory[memory: Memory]
     Messages[messages: Messages]
     Commands[commands: Commands]
-    Integrations[integrations: Integrations]
     API[api: REST API]
     Web[web: Frontend]
 
@@ -47,7 +47,6 @@ graph TB
     Core --> LLM
     Core --> Devices
     Core --> Tools
-    Core --> Integrations
 
     Storage --> Agent
     Storage --> Devices
@@ -62,7 +61,6 @@ graph TB
     Devices --> Automation
     Devices --> Rules
     Devices --> Commands
-    Devices --> Integrations
 
     Automation --> Rules
 
@@ -92,7 +90,6 @@ graph TB
 | [Memory](08-memory.md) | 85% | Three-tier memory system |
 | [Messages](09-messages.md) | 70% | Message notifications |
 | [Storage](10-storage.md) | 95% | Persistent storage, unified time-series DB |
-| [Integrations](11-integrations.md) | 65% | External system integration |
 | [Commands](12-commands.md) | 70% | Device command queue |
 | [API](14-api.md) | 90% | REST/WebSocket API, extension metrics |
 | [Web](15-web.md) | 80% | React frontend, Zustand state |

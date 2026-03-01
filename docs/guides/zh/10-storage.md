@@ -80,7 +80,7 @@ pub fn create_backend(
 
 ## 时序存储
 
-**重要变更 (v0.5.x)**: 所有时序数据现在统一存储在 `data/timeseries.redb`：
+**重要变更 (v0.5.x)**: 所有时序数据现在统一存储在 `data/telemetry.redb`：
 
 | 数据类型 | device_part | metric_part | 说明 |
 |---------|-------------|-------------|------|
@@ -349,7 +349,7 @@ impl ExtensionMetricsStorage {
 }
 ```
 
-**存储格式**: 扩展指标使用DataSourceId格式存储在 `timeseries.redb`：
+**存储格式**: 扩展指标使用DataSourceId格式存储在 `telemetry.redb`：
 
 ```
 DataSourceId: "extension:weather:temperature"

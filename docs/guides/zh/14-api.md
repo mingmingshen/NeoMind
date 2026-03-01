@@ -86,7 +86,7 @@ crates/neomind-api/src/
 - `server/state/extension_state.rs` - 扩展状态管理
 
 ### 扩展指标存储
-扩展指标现在通过ExtensionMetricsStorage统一存储到`data/timeseries.redb`：
+扩展指标现在通过ExtensionMetricsStorage统一存储到`data/telemetry.redb`：
 
 ```rust
 pub struct ExtensionMetricsStorage {
@@ -269,10 +269,20 @@ GET    /api/agents/:id
 PUT    /api/agents/:id
 DELETE /api/agents/:id
 POST   /api/agents/:id/execute
+POST   /api/agents/:id/status
 GET    /api/agents/:id/executions
+GET    /api/agents/:id/executions/:exec_id
 GET    /api/agents/:id/conversation
 GET    /api/agents/:id/memory
+DELETE /api/agents/:id/memory
+GET    /api/agents/:id/stats
 POST   /api/agents/:id/control
+GET    /api/agents/:id/messages
+POST   /api/agents/:id/messages
+DELETE /api/agents/:id/messages
+DELETE /api/agents/:id/messages/:msg_id
+POST   /api/agents/validate-cron
+POST   /api/agents/validate-llm
 
 // 决策
 GET    /api/decisions
@@ -315,8 +325,10 @@ POST /api/llm-backends
 PUT  /api/llm-backends/:id
 DELETE /api/llm-backends/:id
 POST /api/llm-backends/:id/test
+POST /api/llm-backends/:id/activate
 POST /api/llm-backends/apply-settings
 GET  /api/llm-backends/:id/models
+POST /api/llm/generate
 
 // 设置
 POST /api/settings/llm
@@ -340,11 +352,30 @@ PUT  /api/mqtt/brokers/:id/subscriptions
 
 // 扩展
 POST /api/extensions/discover
+POST /api/extensions/register-all
 POST /api/extensions
+POST /api/extensions/upload/file
 DELETE /api/extensions/:id
+DELETE /api/extensions/:id/uninstall
 POST /api/extensions/:id/start
 POST /api/extensions/:id/stop
+POST /api/extensions/:id/reload
 POST /api/extensions/:id/command
+PUT  /api/extensions/:id/config
+GET  /api/extensions/:id/components
+GET  /api/extensions/:id/data-sources
+GET  /api/extensions/:id/metrics
+
+// 扩展市场
+GET  /api/extensions/market/list
+GET  /api/extensions/market/:id
+GET  /api/extensions/market/updates
+POST /api/extensions/market/install
+
+// 扩展流（WebSocket）
+GET  /api/extensions/:id/stream
+GET  /api/extensions/:id/stream/capability
+GET  /api/extensions/:id/stream/sessions
 
 // 仪表板
 GET  /api/dashboards
@@ -364,6 +395,21 @@ GET  /api/search/suggestions
 GET  /api/stats/devices
 GET  /api/stats/rules
 GET  /api/stats/automation
+
+// 批量操作
+POST   /api/bulk/alerts
+POST   /api/bulk/alerts/resolve
+POST   /api/bulk/alerts/acknowledge
+POST   /api/bulk/alerts/delete
+POST   /api/bulk/sessions/delete
+POST   /api/bulk/devices/delete
+POST   /api/bulk/devices/command
+POST   /api/bulk/device-types/delete
+
+// 配置
+GET    /api/config/export
+POST   /api/config/import
+POST   /api/config/validate
 ```
 
 ## 服务器状态
@@ -514,7 +560,7 @@ pub fn swagger_ui() -> Router {
 }
 ```
 
-访问 `http://localhost:3000/swagger-ui` 查看API文档。
+访问 `http://localhost:9375/api/docs` 查看API文档。
 
 ## 使用示例
 
@@ -535,7 +581,7 @@ SERVER_PORT=8080 cargo run -p neomind-api
 
 ```bash
 # 服务器
-SERVER_PORT=3000
+SERVER_PORT=9375
 SERVER_HOST=0.0.0.0
 
 # 数据库

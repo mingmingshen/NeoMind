@@ -61,14 +61,40 @@ impl Default for IsolatedManagerConfig {
 /// Information about a loaded isolated extension
 #[derive(Debug, Clone)]
 pub struct IsolatedExtensionInfo {
-    /// Extension metadata
-    pub metadata: ExtensionMetadata,
+    /// Extension descriptor (unified capabilities)
+    pub descriptor: crate::extension::system::ExtensionDescriptor,
     /// Path to extension binary
     pub path: PathBuf,
-    /// Whether the extension is currently running
-    pub is_running: bool,
-    /// Number of restarts since load
-    pub restart_count: u64,
+    /// Runtime state
+    pub runtime: crate::extension::system::ExtensionRuntimeState,
+}
+
+// Keep backward-compatible accessor fields
+impl IsolatedExtensionInfo {
+    /// Get extension metadata
+    pub fn metadata(&self) -> &ExtensionMetadata {
+        &self.descriptor.metadata
+    }
+
+    /// Get extension commands
+    pub fn commands(&self) -> &[crate::extension::system::ExtensionCommand] {
+        &self.descriptor.commands
+    }
+
+    /// Get extension metrics
+    pub fn metrics(&self) -> &[crate::extension::system::MetricDescriptor] {
+        &self.descriptor.metrics
+    }
+
+    /// Check if running
+    pub fn is_running(&self) -> bool {
+        self.runtime.is_running
+    }
+
+    /// Get restart count
+    pub fn restart_count(&self) -> u64 {
+        self.runtime.restart_count
+    }
 }
 
 /// Manager for process-isolated extensions
@@ -123,24 +149,28 @@ impl IsolatedExtensionManager {
 
         let loaded = self.loader.load_isolated(path).await?;
 
-        // Get metadata
-        let metadata = loaded.metadata().await.ok_or_else(|| {
-            IsolatedExtensionError::SpawnFailed("Failed to get extension metadata".to_string())
+        // Get the complete descriptor
+        let descriptor = loaded.descriptor().await.ok_or_else(|| {
+            IsolatedExtensionError::SpawnFailed("Failed to get extension descriptor".to_string())
         })?;
 
-        let id = metadata.id.clone();
+        let id = descriptor.id().to_string();
 
         // Store extension
         self.extensions.write().await.insert(id.clone(), loaded.clone());
+
+        // Create runtime state
+        let mut runtime = crate::extension::system::ExtensionRuntimeState::isolated();
+        runtime.is_running = loaded.is_alive();
+        runtime.loaded_at = Some(chrono::Utc::now().timestamp());
 
         // Store info
         self.info_cache.write().insert(
             id.clone(),
             IsolatedExtensionInfo {
-                metadata: metadata.clone(),
+                descriptor,
                 path: path.to_path_buf(),
-                is_running: loaded.is_alive(),
-                restart_count: 0,
+                runtime,
             },
         );
 
@@ -149,7 +179,9 @@ impl IsolatedExtensionManager {
             "Extension loaded in isolated mode"
         );
 
-        Ok(metadata)
+        // Return metadata from the info cache
+        let info = self.info_cache.read().get(&id).cloned();
+        Ok(info.map(|i| i.descriptor.metadata).unwrap())
     }
 
     /// Unload an extension

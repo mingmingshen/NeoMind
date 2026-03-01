@@ -38,6 +38,9 @@ use neomind_devices::EmbeddedBroker;
 /// Maximum request body size (10 MB)
 pub const MAX_REQUEST_BODY_SIZE: usize = 10 * 1024 * 1024;
 
+/// Maximum request body size for extension uploads (100 MB - base64 encoded files are ~33% larger)
+pub const MAX_EXTENSION_UPLOAD_SIZE: usize = 100 * 1024 * 1024;
+
 /// Server state shared across all handlers.
 ///
 /// Organized into logical sub-states for better maintainability.
@@ -216,7 +219,7 @@ impl ServerState {
         let command_manager = Some(Arc::new(CommandManager::new(command_queue, command_state)));
 
         // Create message manager with persistent storage
-        let message_manager = match MessageManager::with_storage("data/messages.redb") {
+        let message_manager = match MessageManager::with_storage("data") {
             Ok(manager) => {
                 tracing::info!("Message store initialized at data/messages.redb");
                 Arc::new(manager)

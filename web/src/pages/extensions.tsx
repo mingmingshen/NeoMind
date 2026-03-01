@@ -129,8 +129,8 @@ export function ExtensionsPage() {
     toast({
       title: t("extensions:extensionUploaded"),
     })
-    setSelectedExtension(extensions.find(e => e.id === extensionId) || null)
-    setDetailsDialogOpen(true)
+    // Close the upload dialog, no need to show details dialog
+    setUploadDialogOpen(false)
   }
 
   const handleDiscoverDialogChange = (open: boolean) => {
@@ -220,13 +220,11 @@ export function ExtensionsPage() {
       <MarketplaceDialog
         open={marketplaceDialogOpen}
         onOpenChange={setMarketplaceDialogOpen}
-        onInstallComplete={(extensionId) => {
+        onInstallComplete={() => {
           fetchExtensions()
-          const ext = extensions.find(e => e.id === extensionId)
-          if (ext) {
-            setSelectedExtension(ext)
-            setDetailsDialogOpen(true)
-          }
+          toast({
+            title: t("extensions:extensionInstalled", { defaultValue: "Extension installed successfully" }),
+          })
         }}
       />
 

@@ -53,7 +53,7 @@ crates/neomind-agent/src/
 ### 新增功能
 - **扩展指标支持**: executor.rs现在可以采集扩展(Extension)指标
 - **DataSourceId集成**: 使用类型安全的DataSourceId进行指标查询
-- **统一时序数据库**: 使用`data/timeseries.redb`统一存储设备和扩展指标
+- **统一时序数据库**: 使用`data/telemetry.redb`统一存储设备和扩展指标
 
 ## 核心组件
 
@@ -386,15 +386,16 @@ async fn collect_extension_metric_data_parallel(
 
 ### 统一时序数据库
 
-**重要变更**: AgentExecutor现在使用`data/timeseries.redb`而不是`data/timeseries_agents.redb`。
+**重要变更**: AgentExecutor现在使用`data/telemetry.redb`（统一时序数据库）。
 
 这使得Agent可以访问：
 - 设备遥测数据（通过DeviceService写入）
 - 扩展指标数据（通过ExtensionMetricsStorage写入）
+- 转换指标数据
 
 ```rust
 // crates/neomind-api/src/server/types.rs
-let time_series_store = match neomind_storage::TimeSeriesStore::open("data/timeseries.redb") {
+let time_series_store = match neomind_storage::TimeSeriesStore::open("data/telemetry.redb") {
     Ok(store) => Some(store),
     Err(e) => {
         tracing::warn!("Failed to open TimeSeriesStore: {}", e);

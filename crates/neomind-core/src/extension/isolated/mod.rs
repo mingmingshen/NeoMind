@@ -4,10 +4,12 @@
 //! additional safety guarantees. Extensions running in isolated mode
 //! cannot crash the main NeoMind process.
 
+mod in_flight;
 mod ipc;
 mod manager;
 mod process;
 
+pub use in_flight::{InFlightError, InFlightRequests, RequestId};
 pub use ipc::{ErrorKind, IpcFrame, IpcMessage, IpcResponse};
 pub use manager::{IsolatedExtensionInfo, IsolatedExtensionManager, IsolatedManagerConfig};
 pub use process::{IsolatedExtension, IsolatedExtensionConfig};

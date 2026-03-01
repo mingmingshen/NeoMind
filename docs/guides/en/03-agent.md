@@ -53,7 +53,7 @@ crates/neomind-agent/src/
 ### New Features
 - **Extension Metrics Support**: executor.rs now collects extension (Extension) metrics
 - **DataSourceId Integration**: Uses type-safe DataSourceId for metrics queries
-- **Unified Time-Series Database**: Uses `data/timeseries.redb` unified storage for device and extension metrics
+- **Unified Time-Series Database**: Uses `data/telemetry.redb` unified storage for device and extension metrics
 
 ## Core Components
 
@@ -388,15 +388,16 @@ async fn collect_extension_metric_data_parallel(
 
 ### Unified Time-Series Database
 
-**Important Change**: AgentExecutor now uses `data/timeseries.redb` instead of `data/timeseries_agents.redb`.
+**Important Change**: AgentExecutor now uses `data/telemetry.redb` (unified time-series database).
 
 This enables Agent to access:
 - Device telemetry data (written via DeviceService)
 - Extension metrics data (written via ExtensionMetricsStorage)
+- Transform metrics data
 
 ```rust
 // crates/neomind-api/src/server/types.rs
-let time_series_store = match neomind_storage::TimeSeriesStore::open("data/timeseries.redb") {
+let time_series_store = match neomind_storage::TimeSeriesStore::open("data/telemetry.redb") {
     Ok(store) => Some(store),
     Err(e) => {
         tracing::warn!("Failed to open TimeSeriesStore: {}", e);

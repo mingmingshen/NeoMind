@@ -28,6 +28,7 @@ NeoMind 扩展是可以动态加载到 NeoMind 中的模块，提供：
 | **简化 FFI** | 一行宏导出所有 FFI 函数 |
 | **ABI 版本 3** | 新的扩展接口，改进的安全性 |
 | **类型安全** | 完整的类型定义和辅助宏 |
+| **进程隔离** | 扩展在隔离进程中运行以确保安全（参见 [extension-process-isolation.md](./extension-process-isolation.md)） |
 
 ## 快速开始
 

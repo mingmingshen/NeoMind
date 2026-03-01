@@ -146,6 +146,13 @@ export class DynamicComponentRegistry {
       const isDev = import.meta.env.DEV
       let bundleUrl = def.bundle_url
 
+      console.log(`[DynamicRegistry] Loading component ${type}:`, {
+        isDev,
+        bundleUrl,
+        globalName: def.global_name,
+        exportName: def.export_name
+      })
+
       if (isDev && bundleUrl.startsWith('/api/')) {
         // Add cache-busting timestamp to avoid cached HTTP response
         const url = new URL(bundleUrl, window.location.origin)
@@ -154,7 +161,13 @@ export class DynamicComponentRegistry {
 
         // For IIFE bundles, use script tag injection instead of dynamic import
         // IIFE assigns to a global variable, which we can access after script loads
-        const globalName = this.getGlobalNameForType(type, def.extension_id)
+        // Use global_name from API if available, otherwise fall back to type-based mapping
+        const globalName = def.global_name || this.getGlobalNameForType(type, def.extension_id)
+
+        if (!globalName) {
+          console.error(`[DynamicRegistry] No global_name defined for component: ${type}`)
+          return null
+        }
 
         const Component = await this.loadViaScriptTag(bundleUrl, globalName, def.export_name)
 
@@ -213,34 +226,42 @@ export class DynamicComponentRegistry {
 
   /**
    * Get the global variable name for an extension's IIFE bundle
+   * This is a fallback for extensions that don't define global_name in their manifest
+   * @deprecated Extensions should define global_name in their manifest.json
    */
-  private getGlobalNameForType(type: string, extensionId?: string): string {
+  private getGlobalNameForType(type: string, extensionId?: string): string | undefined {
     // Map component types to their global variable names (from vite.config.ts name field)
+    // NOTE: This is a fallback for legacy extensions. New extensions should define global_name in manifest.json
     const globalNames: Record<string, string> = {
-      'weather-card': 'WeatherDashboardComponents',
-      'image-analyzer': 'ImageAnalyzerDashboardComponents',
-      'yolo-video-display': 'YoloVideoDashboardComponents',
+      'weather-card': 'WeatherForecastV2Components',
+      'image-card': 'ImageAnalyzerV2Components',
+      'yolo-card': 'YoloVideoV2Components',
     }
 
     // Direct type lookup first (most reliable)
     if (globalNames[type]) {
+      console.warn(`[DynamicRegistry] Using hardcoded global_name for ${type}. Please update manifest.json to include global_name field.`)
       return globalNames[type]
     }
 
     if (extensionId) {
       // Try to derive from extension ID
       if (extensionId.includes('weather') || extensionId.includes('forecast')) {
-        return 'WeatherDashboardComponents'
+        console.warn(`[DynamicRegistry] Using derived global_name for ${type}. Please update manifest.json to include global_name field.`)
+        return 'WeatherForecastV2Components'
       }
       if (extensionId.includes('image') || extensionId.includes('analyzer')) {
-        return 'ImageAnalyzerDashboardComponents'
+        console.warn(`[DynamicRegistry] Using derived global_name for ${type}. Please update manifest.json to include global_name field.`)
+        return 'ImageAnalyzerV2Components'
       }
       if (extensionId.includes('yolo') || extensionId.includes('video')) {
-        return 'YoloVideoDashboardComponents'
+        console.warn(`[DynamicRegistry] Using derived global_name for ${type}. Please update manifest.json to include global_name field.`)
+        return 'YoloVideoV2Components'
       }
     }
 
-    return 'ExtensionComponents'
+    // Return undefined instead of a generic name to force proper configuration
+    return undefined
   }
 
   /**
@@ -248,6 +269,8 @@ export class DynamicComponentRegistry {
    * Returns the component export from the global variable
    */
   private async loadViaScriptTag(bundleUrl: string, globalName: string, exportName?: string): Promise<unknown> {
+    console.log(`[DynamicRegistry] loadViaScriptTag:`, { bundleUrl, globalName, exportName })
+
     return new Promise((resolve, reject) => {
       // Check if the global variable already exists (bundle already loaded)
       const existingGlobal = (window as any)[globalName]
@@ -282,6 +305,8 @@ export class DynamicComponentRegistry {
         // Access the global variable
         const global = (window as any)[globalName]
 
+        console.log(`[DynamicRegistry] Script loaded, global:`, global ? Object.keys(global) : 'not found')
+
         // Clean up
         document.head.removeChild(script)
 
@@ -292,6 +317,7 @@ export class DynamicComponentRegistry {
           // First try: named export (IIFE with exports: 'named')
           if (exportName && global[exportName]) {
             Component = global[exportName]
+            console.log(`[DynamicRegistry] Found named export "${exportName}":`, typeof Component, Component)
           }
           // Second try: default export
           else if (global.default && typeof global.default === 'function') {
@@ -301,11 +327,14 @@ export class DynamicComponentRegistry {
           else if (typeof global === 'function') {
             Component = global
           }
-          // Fourth try: find any function export
+          // Fourth try: find any function or React component export
           else {
             for (const key of Object.keys(global)) {
-              if (typeof global[key] === 'function') {
-                Component = global[key]
+              const val = global[key]
+              if (typeof val === 'function' ||
+                  (typeof val === 'object' && val !== null && val.$$typeof)) {
+                Component = val
+                console.log(`[DynamicRegistry] Found component "${key}":`, typeof Component, Component)
                 break
               }
             }
@@ -316,14 +345,25 @@ export class DynamicComponentRegistry {
           // Check if it's a valid React component
           // - function: regular component
           // - object with $$typeof: forwardRef, memo, etc.
-          const isValidComponent = typeof Component === 'function' ||
-            (typeof Component === 'object' && Component !== null &&
-             ((Component as any).$$typeof || (Component as any).render))
+          const typeofComponent = typeof Component
+          const hasTypeof = (Component as any)?.$$typeof
+          const hasRender = typeof (Component as any)?.render === 'function'
+          const isValidComponent = typeofComponent === 'function' ||
+            (typeofComponent === 'object' && Component !== null &&
+             (hasTypeof || hasRender))
+
+          console.log(`[DynamicRegistry] Validating component:`, {
+            typeof: typeofComponent,
+            hasTypeof: !!hasTypeof,
+            hasRender,
+            isValid: isValidComponent
+          })
 
           if (isValidComponent) {
+            console.log(`[DynamicRegistry] Component ${globalName} loaded successfully`)
             resolve(Component)
           } else {
-            console.error(`[DynamicRegistry] Component is not a valid React component: ${globalName}`)
+            console.error(`[DynamicRegistry] Component is not a valid React component: ${globalName}`, Component)
             reject(new Error(`Component is not a valid React component: ${globalName}`))
           }
         } else {

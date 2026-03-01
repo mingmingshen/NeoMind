@@ -18,6 +18,9 @@ config.toml
 *.redb
 *.db
 
+# Crate-level data folders (should use project root data/)
+crates/*/data/
+
 # =============================================================================
 # Web Frontend
 # =============================================================================

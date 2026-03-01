@@ -151,6 +151,11 @@ impl UnifiedExtensionService {
         Ok(())
     }
 
+    /// Unregister an extension (alias for unload)
+    pub async fn unregister(&self, id: &str) -> Result<(), ExtensionError> {
+        self.unload(id).await
+    }
+
     /// Execute a command on an extension
     pub async fn execute_command(
         &self,
@@ -211,14 +216,12 @@ impl UnifiedExtensionService {
         // Check isolated first
         if let Some(info) = self.isolated_manager.get_info(id) {
             return Some(UnifiedExtensionInfo {
-                metadata: info.metadata,
+                metadata: info.descriptor.metadata,
                 is_isolated: true,
-                is_running: info.is_running,
+                is_running: info.runtime.is_running,
                 path: Some(info.path),
-                // For isolated extensions, metrics/commands would need IPC to fetch
-                // For now, use empty vectors (could be enhanced later)
-                metrics: Vec::new(),
-                commands: Vec::new(),
+                metrics: info.descriptor.metrics,
+                commands: info.descriptor.commands,
             });
         }
 
@@ -258,17 +261,46 @@ impl UnifiedExtensionService {
         // Add isolated extensions
         for info in self.isolated_manager.list().await {
             result.push(UnifiedExtensionInfo {
-                metadata: info.metadata,
+                metadata: info.descriptor.metadata,
                 is_isolated: true,
-                is_running: info.is_running,
+                is_running: info.runtime.is_running,
                 path: Some(info.path),
-                // For isolated extensions, metrics/commands would need IPC to fetch
-                metrics: Vec::new(),
-                commands: Vec::new(),
+                metrics: info.descriptor.metrics,
+                commands: info.descriptor.commands,
             });
         }
 
         result
+    }
+
+    /// Get a specific extension by ID
+    pub async fn get(&self, id: &str) -> Option<UnifiedExtensionInfo> {
+        // First check in-process extensions
+        if let Some(info) = self.registry.get_info(id).await {
+            let path = info.metadata.file_path.clone();
+            return Some(UnifiedExtensionInfo {
+                metadata: info.metadata,
+                is_isolated: false,
+                is_running: info.state == crate::extension::system::ExtensionState::Running,
+                path,
+                metrics: info.metrics,
+                commands: info.commands,
+            });
+        }
+
+        // Then check isolated extensions
+        if let Some(info) = self.isolated_manager.get_info(id) {
+            return Some(UnifiedExtensionInfo {
+                metadata: info.descriptor.metadata,
+                is_isolated: true,
+                is_running: info.runtime.is_running,
+                path: Some(info.path),
+                metrics: info.descriptor.metrics,
+                commands: info.descriptor.commands,
+            });
+        }
+
+        None
     }
 
     /// Get count of all extensions

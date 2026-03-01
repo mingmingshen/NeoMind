@@ -111,7 +111,7 @@ sudo systemctl start neomind
 curl -fsSL https://ollama.com/install.sh | sh
 
 # 拉取轻量级模型
-ollama pull qwen3-vl:2b
+ollama pull qwen2.5:3b
 ```
 
 #### 2. 启动后端
@@ -122,7 +122,7 @@ git clone https://github.com/camthink-ai/NeoMind.git
 cd NeoMind
 
 # 构建并运行 API 服务器
-cargo run -p neomind
+cargo run -p neomind-api
 ```
 
 服务器默认在 `http://localhost:9375` 上启动。

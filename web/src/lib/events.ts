@@ -394,6 +394,13 @@ export class EventsWebSocket {
     this.ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
+        // Handle ping from server - respond with pong to keep connection alive
+        if (data.type === 'ping') {
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'pong' }))
+          }
+          return
+        }
         // Handle Authenticated response
         if (data.type === 'Authenticated') {
           // Authentication successful - now we can notify connection

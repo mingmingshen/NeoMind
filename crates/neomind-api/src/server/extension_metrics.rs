@@ -16,34 +16,12 @@ use std::time::Duration;
 
 use tracing::{debug, info, warn};
 
-use neomind_core::{datasource::DataSourceId, event::NeoMindEvent, MetricValue as CoreMetricValue};
+use neomind_core::datasource::DataSourceId;
 
-use base64;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 // Use ExtensionMetricsStorage from extension_state instead of device TimeSeriesStorage
 use crate::server::state::ExtensionMetricsStorage;
-
-/// Convert neomind_devices::mdl::MetricValue to neomind_core::MetricValue
-fn convert_metric_value(value: neomind_devices::mdl::MetricValue) -> CoreMetricValue {
-    match value {
-        neomind_devices::mdl::MetricValue::Float(f) => CoreMetricValue::Float(f),
-        neomind_devices::mdl::MetricValue::Integer(i) => CoreMetricValue::Integer(i),
-        neomind_devices::mdl::MetricValue::Boolean(b) => CoreMetricValue::Boolean(b),
-        neomind_devices::mdl::MetricValue::String(s) => CoreMetricValue::String(s),
-        neomind_devices::mdl::MetricValue::Array(arr) => {
-            // Convert array to JSON
-            CoreMetricValue::Json(serde_json::json!(arr))
-        }
-        neomind_devices::mdl::MetricValue::Binary(bytes) => {
-            // Convert binary to base64 string
-            CoreMetricValue::String(base64::encode(bytes))
-        }
-        neomind_devices::mdl::MetricValue::Null => {
-            // Convert null to a string representation
-            CoreMetricValue::String("null".to_string())
-        }
-    }
-}
 
 /// Per-extension collection state
 struct ExtensionCollectionState {
@@ -55,12 +33,10 @@ struct ExtensionCollectionState {
 
 /// Extension metrics collector - periodically collects and stores extension metrics.
 pub struct ExtensionMetricsCollector {
-    /// Extension registry for accessing extensions
-    extension_registry: Arc<neomind_core::extension::registry::ExtensionRegistry>,
+    /// Unified extension service for accessing both isolated and in-process extensions
+    unified_service: Arc<neomind_core::extension::unified::UnifiedExtensionService>,
     /// Extension metrics storage (decoupled from device system)
     metrics_storage: Arc<ExtensionMetricsStorage>,
-    /// Event bus for publishing metric update events
-    event_bus: Option<Arc<neomind_core::EventBus>>,
     /// Default collection interval (60 seconds)
     default_interval: Duration,
     /// Per-extension collection state
@@ -70,14 +46,12 @@ pub struct ExtensionMetricsCollector {
 impl ExtensionMetricsCollector {
     /// Create a new collector.
     pub fn new(
-        extension_registry: Arc<neomind_core::extension::registry::ExtensionRegistry>,
+        unified_service: Arc<neomind_core::extension::unified::UnifiedExtensionService>,
         metrics_storage: Arc<ExtensionMetricsStorage>,
-        event_bus: Option<Arc<neomind_core::EventBus>>,
     ) -> Self {
         Self {
-            extension_registry,
+            unified_service,
             metrics_storage,
-            event_bus,
             default_interval: Duration::from_secs(60),
             extension_states: RwLock::new(HashMap::new()),
         }
@@ -91,7 +65,7 @@ impl ExtensionMetricsCollector {
 
     /// Get the collect_interval from extension config_parameters.
     /// Returns None if not configured (use default), Some(0) if disabled.
-    fn get_collect_interval(info: &neomind_core::extension::registry::ExtensionInfo) -> Option<u64> {
+    fn get_collect_interval(info: &neomind_core::extension::unified::UnifiedExtensionInfo) -> Option<u64> {
         if let Some(ref params) = info.metadata.config_parameters {
             for param in params {
                 if param.name == "collect_interval" {
@@ -159,7 +133,7 @@ impl ExtensionMetricsCollector {
     /// Collect metrics from all extensions and store them.
     async fn collect_and_store(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!(category = "extensions", "collect_and_store() - starting");
-        let extensions = self.extension_registry.list().await;
+        let extensions = self.unified_service.list().await;
         info!(
             category = "extensions",
             "Got {} extensions",
@@ -248,20 +222,7 @@ impl ExtensionMetricsCollector {
                 info.metrics.len()
             );
 
-            // Get the actual extension instance
-            let extension = match self.extension_registry.get(&extension_id).await {
-                Some(e) => e,
-                None => {
-                    warn!(
-                        category = "extensions",
-                        "Extension {} not found in registry", extension_id
-                    );
-                    continue;
-                }
-            };
-
-            // For WASM extensions, try calling get_all_metrics first to populate cache
-            // Check if extension has get_all_metrics command
+            // For extensions with get_all_metrics command, call it first to populate cache
             let has_get_all_metrics = info.commands.iter().any(|c| c.name == "get_all_metrics");
             if has_get_all_metrics {
                 debug!(
@@ -269,75 +230,13 @@ impl ExtensionMetricsCollector {
                     "Calling get_all_metrics for extension {}", extension_id
                 );
                 let _ = self
-                    .extension_registry
+                    .unified_service
                     .execute_command(&extension_id, "get_all_metrics", &serde_json::json!({}))
                     .await;
             }
 
-            // Call produce_metrics() to get current values
-            // Note: produce_metrics is a synchronous method; we use spawn_blocking
-            // with its own tokio runtime to isolate extension code and catch panics.
-            let ext_clone = Arc::clone(&extension);
-            let extension_id_for_metrics = extension_id.clone();
-            let safety_manager = Arc::clone(&self.extension_registry.safety_manager());
-
-            let metric_values = match tokio::task::spawn_blocking(move || {
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    // Create a new tokio runtime for this thread
-                    // This ensures extensions have access to a runtime even though
-                    // produce_metrics is synchronous
-                    match tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                    {
-                        Ok(rt) => {
-                            rt.block_on(async {
-                                let ext_guard = ext_clone.read().await;
-                                ext_guard.produce_metrics().unwrap_or_default()
-                            })
-                        }
-                        Err(e) => {
-                            warn!(
-                                category = "extensions",
-                                extension_id = %extension_id_for_metrics,
-                                error = %e,
-                                "Failed to create runtime for metrics collection"
-                            );
-                            Vec::new()
-                        }
-                    }
-                }))
-            }).await {
-                Ok(Ok(values)) => values,
-                Ok(Err(panic_payload)) => {
-                    let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
-                        s.to_string()
-                    } else if let Some(s) = panic_payload.downcast_ref::<String>() {
-                        s.clone()
-                    } else {
-                        "Unknown panic".to_string()
-                    };
-
-                    warn!(
-                        category = "extensions",
-                        extension_id = %extension_id,
-                        panic_msg = %msg,
-                        "Extension produce_metrics() call panicked, returning empty metrics"
-                    );
-                    // Record panic with safety manager so misbehaving extensions can be disabled
-                    safety_manager.record_panic(&extension_id).await;
-                    Vec::new()
-                }
-                Err(join_error) => {
-                    warn!(
-                        category = "extensions",
-                        extension_id = %extension_id,
-                        error = %join_error,
-                        "Extension metrics task failed"
-                    );
-                    Vec::new()
-                }
-            };
+            // Get metrics using unified service (handles both isolated and in-process)
+            let metric_values = self.unified_service.get_metrics(&extension_id).await;
 
             info!(
                 category = "extensions",
@@ -450,12 +349,11 @@ impl ExtensionMetricsCollector {
 
 /// Spawn the extension metrics collector as a background task.
 pub fn spawn_extension_metrics_collector(
-    extension_registry: Arc<neomind_core::extension::registry::ExtensionRegistry>,
+    unified_service: Arc<neomind_core::extension::unified::UnifiedExtensionService>,
     metrics_storage: Arc<ExtensionMetricsStorage>,
-    event_bus: Option<Arc<neomind_core::EventBus>>,
     interval_secs: u64,
 ) -> tokio::task::JoinHandle<()> {
-    let collector = ExtensionMetricsCollector::new(extension_registry, metrics_storage, event_bus)
+    let collector = ExtensionMetricsCollector::new(unified_service, metrics_storage)
         .with_interval(Duration::from_secs(interval_secs));
 
     tokio::spawn(async move {

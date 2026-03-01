@@ -12,6 +12,19 @@ use super::NativeExtensionLoader;
 use crate::extension::isolated::{IsolatedExtension, IsolatedExtensionConfig};
 use crate::extension::system::{ExtensionMetadata, ExtensionMetricValue};
 use crate::extension::types::{ExtensionError, Result};
+use serde::Deserialize;
+
+/// Manifest.json structure for loading metadata
+#[derive(Debug, Clone, Deserialize)]
+struct ExtensionManifest {
+    id: String,
+    name: String,
+    version: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    author: Option<String>,
+}
 
 /// Configuration for the isolated loader
 #[derive(Debug, Clone)]
@@ -74,10 +87,52 @@ impl IsolatedExtensionLoader {
         self.config.use_isolated_by_default
     }
 
+    /// Load metadata from manifest.json in the extension directory
+    fn load_metadata_from_manifest(path: &Path) -> Option<ExtensionMetadata> {
+        // Try to find manifest.json in the extension directory
+        let ext_dir = path.parent()?;
+        let manifest_path = ext_dir.join("manifest.json");
+
+        if !manifest_path.exists() {
+            return None;
+        }
+
+        let content = std::fs::read_to_string(&manifest_path).ok()?;
+        let manifest: ExtensionManifest = serde_json::from_str(&content).ok()?;
+
+        let version = semver::Version::parse(&manifest.version)
+            .unwrap_or_else(|_| semver::Version::new(0, 1, 0));
+
+        tracing::debug!(
+            manifest_path = %manifest_path.display(),
+            extension_id = %manifest.id,
+            "Loaded metadata from manifest.json"
+        );
+
+        Some(ExtensionMetadata {
+            id: manifest.id,
+            name: manifest.name,
+            version,
+            description: manifest.description,
+            author: manifest.author,
+            homepage: None,
+            license: None,
+            file_path: Some(path.to_path_buf()),
+            config_parameters: None,
+        })
+    }
+
     /// Load an extension in isolated mode
     pub async fn load_isolated(&self, path: &Path) -> Result<Arc<IsolatedExtension>> {
-        // First, extract metadata using native loader to get extension ID
-        let metadata = self.native_loader.load_metadata(path).await?;
+        // Try to load metadata from manifest.json first (more reliable)
+        // Fall back to FFI metadata if manifest not found
+        let metadata = if let Some(manifest_meta) = Self::load_metadata_from_manifest(path) {
+            tracing::debug!("Using manifest.json metadata for extension ID");
+            manifest_meta
+        } else {
+            tracing::debug!("manifest.json not found, using FFI metadata");
+            self.native_loader.load_metadata(path).await?
+        };
 
         tracing::info!(
             extension_id = %metadata.id,

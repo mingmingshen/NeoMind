@@ -707,7 +707,7 @@ export function ChatPage() {
 
       {/* Desktop Sidebar - always show when there are sessions or in chat mode */}
       {isDesktop && (sessions.length > 0 || !isWelcomeMode) && (
-        <div className={cn("h-full", sidebarCollapsed ? "w-12" : "w-64")}>
+        <div className="shrink-0 self-stretch">
           <SessionSidebar
             open={true}
             onClose={() => {}}

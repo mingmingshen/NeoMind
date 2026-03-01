@@ -55,10 +55,10 @@ pub enum IpcMessage {
 /// IPC response sent from extension process to host
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcResponse {
-    /// Extension is ready
+    /// Extension is ready with its full descriptor
     Ready {
-        /// Extension metadata
-        metadata: super::super::system::ExtensionMetadata,
+        /// Complete extension descriptor (metadata, commands, metrics)
+        descriptor: super::super::system::ExtensionDescriptor,
     },
 
     /// Command execution success

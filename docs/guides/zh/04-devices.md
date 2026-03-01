@@ -437,17 +437,23 @@ GET    /api/devices/:id/telemetry/summary     # 遥测摘要
 GET    /api/device-types                      # 列出设备类型
 POST   /api/device-types                      # 创建设备类型
 GET    /api/device-types/:id                  # 获取设备类型
-PUT    /api/device-types/:id                  # 更新设备类型
+PUT    /api/device-types                      # 验证设备类型
 DELETE /api/device-types/:id                  # 删除设备类型
-PUT    /api/device-types/:id/validate         # 验证设备类型
-POST   /api/device-types/generate-mdl         # 生成MDL
-POST   /api/device-types/from-sample          # 从示例生成
+POST   /api/device-types/generate-from-samples  # 从示例生成
 
-# 发现
+# MDL生成
+POST   /api/devices/generate-mdl              # 生成MDL
+
+# 设备发现与自动入板（草稿）
 POST   /api/devices/discover                   # 设备发现
-GET    /api/devices/pending                   # 待确认设备
-POST   /api/devices/pending/:id/confirm       # 确认设备
-DELETE /api/devices/pending/:id/dismiss       # 忽略设备
+GET    /api/devices/drafts                    # 列出草稿设备
+GET    /api/devices/drafts/:id                # 获取草稿设备
+PUT    /api/devices/drafts/:id                # 更新草稿
+POST   /api/devices/drafts/:id/approve        # 批准草稿
+POST   /api/devices/drafts/:id/reject         # 拒绝草稿
+POST   /api/devices/drafts/:id/analyze        # LLM分析
+POST   /api/devices/drafts/:id/enhance        # LLM增强
+GET    /api/devices/drafts/:id/suggest-types  # 建议类型
 ```
 
 ## 使用示例

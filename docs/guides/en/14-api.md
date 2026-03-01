@@ -86,7 +86,7 @@ crates/neomind-api/src/
 - `server/state/extension_state.rs` - Extension state management
 
 ### Extension Metrics Storage
-Extension metrics are now stored in `data/timeseries.redb` via ExtensionMetricsStorage:
+Extension metrics are now stored in `data/telemetry.redb` via ExtensionMetricsStorage:
 
 ```rust
 pub struct ExtensionMetricsStorage {
@@ -268,10 +268,20 @@ GET    /api/agents/:id
 PUT    /api/agents/:id
 DELETE /api/agents/:id
 POST   /api/agents/:id/execute
+POST   /api/agents/:id/status
 GET    /api/agents/:id/executions
+GET    /api/agents/:id/executions/:exec_id
 GET    /api/agents/:id/conversation
 GET    /api/agents/:id/memory
+DELETE /api/agents/:id/memory
+GET    /api/agents/:id/stats
 POST   /api/agents/:id/control
+GET    /api/agents/:id/messages
+POST   /api/agents/:id/messages
+DELETE /api/agents/:id/messages
+DELETE /api/agents/:id/messages/:msg_id
+POST   /api/agents/validate-cron
+POST   /api/agents/validate-llm
 
 // Decisions
 GET    /api/decisions
@@ -314,8 +324,10 @@ POST /api/llm-backends
 PUT  /api/llm-backends/:id
 DELETE /api/llm-backends/:id
 POST /api/llm-backends/:id/test
+POST /api/llm-backends/:id/activate
 POST /api/llm-backends/apply-settings
 GET  /api/llm-backends/:id/models
+POST /api/llm/generate
 
 // Settings
 POST /api/settings/llm
@@ -339,11 +351,30 @@ PUT    /api/mqtt/brokers/:id/subscriptions
 
 // Extensions
 POST /api/extensions/discover
+POST /api/extensions/register-all
 POST /api/extensions
+POST /api/extensions/upload/file
 DELETE /api/extensions/:id
+DELETE /api/extensions/:id/uninstall
 POST /api/extensions/:id/start
 POST /api/extensions/:id/stop
+POST /api/extensions/:id/reload
 POST /api/extensions/:id/command
+PUT  /api/extensions/:id/config
+GET  /api/extensions/:id/components
+GET  /api/extensions/:id/data-sources
+GET  /api/extensions/:id/metrics
+
+// Extension Marketplace
+GET  /api/extensions/market/list
+GET  /api/extensions/market/:id
+GET  /api/extensions/market/updates
+POST /api/extensions/market/install
+
+// Extension Streaming (WebSocket)
+GET  /api/extensions/:id/stream
+GET  /api/extensions/:id/stream/capability
+GET  /api/extensions/:id/stream/sessions
 
 // Dashboards
 GET    /api/dashboards
@@ -363,6 +394,21 @@ GET    /api/search/suggestions
 GET    /api/stats/devices
 GET    /api/stats/rules
 GET    /api/stats/automation
+
+// Bulk Operations
+POST   /api/bulk/alerts
+POST   /api/bulk/alerts/resolve
+POST   /api/bulk/alerts/acknowledge
+POST   /api/bulk/alerts/delete
+POST   /api/bulk/sessions/delete
+POST   /api/bulk/devices/delete
+POST   /api/bulk/devices/command
+POST   /api/bulk/device-types/delete
+
+// Config
+GET    /api/config/export
+POST   /api/config/import
+POST   /api/config/validate
 ```
 
 ## Server State
@@ -513,7 +559,7 @@ pub fn swagger_ui() -> Router {
 }
 ```
 
-Visit `http://localhost:3000/swagger-ui` to view API documentation.
+Visit `http://localhost:9375/api/docs` to view API documentation.
 
 ## Usage Examples
 
@@ -534,7 +580,7 @@ SERVER_PORT=8080 cargo run -p neomind-api
 
 ```bash
 # Server
-SERVER_PORT=3000
+SERVER_PORT=9375
 SERVER_HOST=0.0.0.0
 
 # Database

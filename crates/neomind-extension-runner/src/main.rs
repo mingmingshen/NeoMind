@@ -78,8 +78,8 @@ struct Runner {
     extension: Option<DynExtension>,
     /// WASM runtime (for WASM)
     wasm_runtime: Option<WasmRuntime>,
-    /// Extension metadata
-    metadata: neomind_core::extension::system::ExtensionMetadata,
+    /// Extension descriptor (unified capabilities)
+    descriptor: neomind_core::extension::system::ExtensionDescriptor,
     /// Extension type
     extension_type: ExtensionType,
     /// Stdin reader
@@ -325,29 +325,33 @@ impl Runner {
         );
 
         // Load the extension based on type
-        let (extension, wasm_runtime, metadata) = match extension_type {
+        let (extension, wasm_runtime, descriptor) = match extension_type {
             ExtensionType::Native => {
-                let (ext, meta) = Self::load_native(extension_path)?;
-                (Some(ext), None, meta)
+                let (ext, desc) = Self::load_native(extension_path)?;
+                (Some(ext), None, desc)
             }
             ExtensionType::Wasm => {
                 let (runtime, meta) = Self::load_wasm(extension_path)?;
-                (None, Some(runtime), meta)
+                // WASM extensions don't have declarative commands/metrics yet
+                let desc = neomind_core::extension::system::ExtensionDescriptor::new(meta);
+                (None, Some(runtime), desc)
             }
         };
 
         info!(
-            extension_id = %metadata.id,
-            name = %metadata.name,
-            version = %metadata.version,
+            extension_id = %descriptor.metadata.id,
+            name = %descriptor.metadata.name,
+            version = %descriptor.metadata.version,
             extension_type = ?extension_type,
+            commands_count = descriptor.commands.len(),
+            metrics_count = descriptor.metrics.len(),
             "Extension loaded successfully"
         );
 
         Ok(Self {
             extension,
             wasm_runtime,
-            metadata,
+            descriptor,
             extension_type,
             stdin: BufReader::new(std::io::stdin()),
             stdout: BufWriter::new(std::io::stdout()),
@@ -355,17 +359,18 @@ impl Runner {
         })
     }
 
-    /// Load a native extension
-    fn load_native(extension_path: &PathBuf) -> Result<(DynExtension, neomind_core::extension::system::ExtensionMetadata), String> {
+    /// Load a native extension and return its descriptor
+    fn load_native(extension_path: &PathBuf) -> Result<(DynExtension, neomind_core::extension::system::ExtensionDescriptor), String> {
         let loader = NativeExtensionLoader::new();
         let loaded = loader.load(extension_path)
             .map_err(|e| format!("Failed to load native extension: {}", e))?;
 
+        // Use the unified descriptor() method
         let ext_guard = loaded.extension.blocking_read();
-        let metadata = ext_guard.metadata().clone();
+        let descriptor = ext_guard.descriptor();
         drop(ext_guard);
 
-        Ok((loaded.extension, metadata))
+        Ok((loaded.extension, descriptor))
     }
 
     /// Load a WASM extension
@@ -458,7 +463,7 @@ impl Runner {
         info!("Starting IPC message loop");
 
         self.send_response(IpcResponse::Ready {
-            metadata: self.metadata.clone(),
+            descriptor: self.descriptor.clone(),
         });
 
         while self.running {
@@ -534,7 +539,7 @@ impl Runner {
         match message {
             IpcMessage::Init { config: _ } => {
                 self.send_response(IpcResponse::Ready {
-                    metadata: self.metadata.clone(),
+                    descriptor: self.descriptor.clone(),
                 });
             }
 
@@ -553,7 +558,7 @@ impl Runner {
             IpcMessage::GetMetadata { request_id } => {
                 self.send_response(IpcResponse::Metadata {
                     request_id,
-                    metadata: self.metadata.clone(),
+                    metadata: self.descriptor.metadata.clone(),
                 });
             }
 

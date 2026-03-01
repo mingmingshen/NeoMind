@@ -2,14 +2,29 @@
 //!
 //! This module provides the `IsolatedExtension` wrapper that manages
 //! extension processes with automatic restart and health monitoring.
+//!
+//! # Concurrency Model
+//!
+//! This implementation uses an "in-flight requests" pattern for high-performance
+//! concurrent IPC communication:
+//!
+//! 1. A background thread continuously reads responses from the extension process
+//! 2. Each request is assigned a unique ID and tracked in a HashMap
+//! 3. Responses are routed to the correct caller via oneshot channels
+//! 4. Multiple concurrent requests can be in-flight simultaneously
+//!
+//! This design is based on patterns from mature RPC frameworks like tarpc.
 
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
+use tracing::{debug, error, info, warn};
 
+use super::in_flight::InFlightRequests;
 use super::ipc::{IpcFrame, IpcMessage, IpcResponse};
 use super::{IsolatedExtensionError, IsolatedResult};
 use crate::extension::system::{ExtensionMetadata, ExtensionMetricValue};
@@ -52,22 +67,22 @@ pub struct IsolatedExtension {
     extension_path: std::path::PathBuf,
     /// Child process handle
     process: Mutex<Option<Child>>,
-    /// Stdin writer
+    /// Stdin writer (for sending messages)
     stdin: Mutex<Option<BufWriter<std::process::ChildStdin>>>,
-    /// Stdout reader
-    stdout: Mutex<Option<BufReader<std::process::ChildStdout>>>,
-    /// Request counter
-    request_id: AtomicU64,
-    /// Extension metadata (set after initialization)
-    metadata: Mutex<Option<ExtensionMetadata>>,
+    /// In-flight request tracker
+    in_flight: InFlightRequests,
+    /// Shutdown signal for the receiver thread
+    shutdown_tx: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    /// Extension descriptor (set after initialization)
+    descriptor: Mutex<Option<super::super::system::ExtensionDescriptor>>,
     /// Configuration
     config: IsolatedExtensionConfig,
     /// Restart counter
     restart_count: AtomicU64,
     /// Last restart time
     last_restart: Mutex<Option<Instant>>,
-    /// Running state
-    running: std::sync::atomic::AtomicBool,
+    /// Running state (shared with background receiver thread)
+    running: Arc<AtomicBool>,
 }
 
 impl IsolatedExtension {
@@ -82,14 +97,53 @@ impl IsolatedExtension {
             extension_path: extension_path.into(),
             process: Mutex::new(None),
             stdin: Mutex::new(None),
-            stdout: Mutex::new(None),
-            request_id: AtomicU64::new(0),
-            metadata: Mutex::new(None),
+            in_flight: InFlightRequests::new(Duration::from_secs(config.command_timeout_secs)),
+            shutdown_tx: Mutex::new(None),
+            descriptor: Mutex::new(None),
             config,
             restart_count: AtomicU64::new(0),
             last_restart: Mutex::new(None),
-            running: std::sync::atomic::AtomicBool::new(false),
+            running: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Find the extension runner binary
+    ///
+    /// Looks for `neomind-extension-runner` in:
+    /// 1. Same directory as current executable
+    /// 2. PATH environment variable
+    fn find_extension_runner() -> Result<std::path::PathBuf, String> {
+        let runner_name = if cfg!(windows) {
+            "neomind-extension-runner.exe"
+        } else {
+            "neomind-extension-runner"
+        };
+
+        // First, try same directory as current executable
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let runner_in_exe_dir = exe_dir.join(runner_name);
+                if runner_in_exe_dir.exists() {
+                    return Ok(runner_in_exe_dir);
+                }
+            }
+        }
+
+        // Second, try to find in PATH
+        if let Ok(path_var) = std::env::var("PATH") {
+            let separator = if cfg!(windows) { ";" } else { ":" };
+            for path in path_var.split(separator) {
+                let runner_in_path = std::path::Path::new(path).join(runner_name);
+                if runner_in_path.exists() {
+                    return Ok(runner_in_path);
+                }
+            }
+        }
+
+        Err(format!(
+            "{} not found in executable directory or PATH",
+            runner_name
+        ))
     }
 
     /// Start the extension process
@@ -100,9 +154,24 @@ impl IsolatedExtension {
             return Err(IsolatedExtensionError::AlreadyRunning);
         }
 
-        // Spawn the extension process
-        let mut child = Command::new(&self.extension_path)
-            .arg("--isolated-mode")
+        // Find the extension runner binary
+        let runner_path = Self::find_extension_runner().map_err(|e| {
+            IsolatedExtensionError::SpawnFailed(format!(
+                "Could not find neomind-extension-runner: {}. Please ensure it is built and in PATH or same directory as the main executable.",
+                e
+            ))
+        })?;
+
+        info!(
+            runner_path = %runner_path.display(),
+            extension_path = %self.extension_path.display(),
+            "Spawning extension runner process"
+        );
+
+        // Spawn the extension runner process
+        let mut child = Command::new(&runner_path)
+            .arg("--extension-path")
+            .arg(&self.extension_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -114,8 +183,15 @@ impl IsolatedExtension {
 
         *process_guard = Some(child);
         *self.stdin.lock().await = Some(stdin);
-        *self.stdout.lock().await = Some(stdout);
         self.running.store(true, Ordering::SeqCst);
+
+        // Start the background receiver thread
+        let (shutdown_tx, shutdown_rx) = std::sync::mpsc::channel();
+        *self.shutdown_tx.lock().await = Some(shutdown_tx);
+
+        // Get the current tokio runtime handle to pass to the receiver thread
+        let rt_handle = tokio::runtime::Handle::current();
+        self.spawn_receiver_thread(stdout, shutdown_rx, rt_handle);
 
         // Send initialization message
         self.send_message(&IpcMessage::Init {
@@ -124,13 +200,29 @@ impl IsolatedExtension {
         .await?;
 
         // Wait for ready response with timeout
+        // Use request_id = 0 for initialization
+        let rx = self.in_flight.register_with_id(0).await;
         let response = self
-            .receive_response_with_timeout(Duration::from_secs(self.config.startup_timeout_secs))
-            .await?;
+            .in_flight
+            .wait_with_timeout(
+                0,
+                rx,
+                Duration::from_secs(self.config.startup_timeout_secs),
+            )
+            .await
+            .map_err(|e| match e {
+                super::in_flight::InFlightError::Timeout(ms) => {
+                    IsolatedExtensionError::Timeout(ms)
+                }
+                super::in_flight::InFlightError::ChannelClosed => {
+                    IsolatedExtensionError::IpcError("Response channel closed".to_string())
+                }
+            })?;
 
         match response {
-            IpcResponse::Ready { metadata } => {
-                *self.metadata.lock().await = Some(metadata);
+            IpcResponse::Ready { descriptor } => {
+                *self.descriptor.lock().await = Some(descriptor);
+                info!(extension_id = %self.extension_id, "Extension started successfully");
                 Ok(())
             }
             IpcResponse::Error { error, .. } => {
@@ -146,6 +238,114 @@ impl IsolatedExtension {
         }
     }
 
+    /// Spawn the background receiver thread
+    ///
+    /// This thread continuously reads responses from the extension process
+    /// and routes them to the correct waiting caller via the in-flight tracker.
+    fn spawn_receiver_thread(
+        &self,
+        mut stdout: BufReader<std::process::ChildStdout>,
+        shutdown_rx: std::sync::mpsc::Receiver<()>,
+        rt_handle: tokio::runtime::Handle,
+    ) {
+        let extension_id = self.extension_id.clone();
+        let in_flight = self.in_flight.clone();
+        let running = self.running.clone();
+
+        std::thread::spawn(move || {
+            debug!(extension_id = %extension_id, "Receiver thread started");
+
+            loop {
+                // Check for shutdown signal (non-blocking)
+                match shutdown_rx.try_recv() {
+                    Ok(()) => {
+                        debug!(extension_id = %extension_id, "Receiver thread received shutdown");
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        debug!(extension_id = %extension_id, "Shutdown channel disconnected");
+                        break;
+                    }
+                }
+
+                // Read length prefix (4 bytes) - this is blocking but that's OK in a dedicated thread
+                let mut len_bytes = [0u8; 4];
+                match stdout.read_exact(&mut len_bytes) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        // Process likely terminated or stdout closed
+                        if running.load(Ordering::SeqCst) {
+                            warn!(extension_id = %extension_id, error = %e, "Failed to read from extension stdout");
+                        }
+                        running.store(false, Ordering::SeqCst);
+                        break;
+                    }
+                }
+
+                let len = u32::from_le_bytes(len_bytes) as usize;
+
+                // Sanity check
+                if len > 10 * 1024 * 1024 {
+                    error!(extension_id = %extension_id, len, "Response too large");
+                    running.store(false, Ordering::SeqCst);
+                    break;
+                }
+
+                // Read payload
+                let mut payload = vec![0u8; len];
+                if let Err(e) = stdout.read_exact(&mut payload) {
+                    error!(extension_id = %extension_id, error = %e, "Failed to read response payload");
+                    running.store(false, Ordering::SeqCst);
+                    break;
+                }
+
+                // Parse response
+                let response = match IpcResponse::from_bytes(&payload) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        warn!(extension_id = %extension_id, error = %e, "Failed to parse response");
+                        continue;
+                    }
+                };
+
+                // Route response to the correct waiting caller
+                if let Some(request_id) = response.request_id() {
+                    debug!(
+                        extension_id = %extension_id,
+                        request_id,
+                        "Routing response"
+                    );
+
+                    // Use the passed runtime handle to complete async operations
+                    rt_handle.block_on(async {
+                        in_flight.complete(request_id, response).await;
+                    });
+                } else {
+                    // Response without request_id (e.g., Ready during init)
+                    // Route to request_id 0
+                    debug!(
+                        extension_id = %extension_id,
+                        "Routing response without request_id to request_id=0"
+                    );
+                    rt_handle.block_on(async {
+                        in_flight.complete(0, response).await;
+                    });
+                }
+            }
+
+            // Cancel any pending requests on exit
+            rt_handle.block_on(async {
+                let count = in_flight.cancel_all().await;
+                if count > 0 {
+                    debug!(extension_id = %extension_id, count, "Cancelled pending requests");
+                }
+            });
+
+            debug!(extension_id = %extension_id, "Receiver thread exiting");
+        });
+    }
+
     /// Stop the extension process
     pub async fn stop(&self) -> IsolatedResult<()> {
         let mut process_guard = self.process.lock().await;
@@ -154,7 +354,12 @@ impl IsolatedExtension {
             return Err(IsolatedExtensionError::NotRunning);
         }
 
-        // Send shutdown message
+        // Send shutdown signal to receiver thread
+        if let Some(tx) = self.shutdown_tx.lock().await.take() {
+            let _ = tx.send(());
+        }
+
+        // Send shutdown message to extension
         let _ = self.send_message(&IpcMessage::Shutdown).await;
 
         // Wait for process to exit
@@ -163,9 +368,12 @@ impl IsolatedExtension {
         }
 
         *self.stdin.lock().await = None;
-        *self.stdout.lock().await = None;
         self.running.store(false, Ordering::SeqCst);
 
+        // Cancel any pending requests
+        self.in_flight.cancel_all().await;
+
+        info!(extension_id = %self.extension_id, "Extension stopped");
         Ok(())
     }
 
@@ -179,8 +387,17 @@ impl IsolatedExtension {
             return Err(IsolatedExtensionError::NotRunning);
         }
 
-        let request_id = self.request_id.fetch_add(1, Ordering::SeqCst);
+        // Register the request and get a receiver
+        let (request_id, rx) = self.in_flight.register().await;
 
+        debug!(
+            extension_id = %self.extension_id,
+            request_id,
+            command,
+            "Sending execute command"
+        );
+
+        // Send the request
         self.send_message(&IpcMessage::ExecuteCommand {
             command: command.to_string(),
             args: args.clone(),
@@ -188,27 +405,40 @@ impl IsolatedExtension {
         })
         .await?;
 
+        // Wait for the response with timeout
         let response = self
-            .receive_response_with_timeout(Duration::from_secs(self.config.command_timeout_secs))
-            .await?;
+            .in_flight
+            .wait_with_timeout(
+                request_id,
+                rx,
+                Duration::from_secs(self.config.command_timeout_secs),
+            )
+            .await
+            .map_err(|e| match e {
+                super::in_flight::InFlightError::Timeout(ms) => {
+                    IsolatedExtensionError::Timeout(ms)
+                }
+                super::in_flight::InFlightError::ChannelClosed => {
+                    IsolatedExtensionError::IpcError("Response channel closed".to_string())
+                }
+            })?;
 
         match response {
             IpcResponse::Success { data, .. } => Ok(data),
             IpcResponse::Error { error, kind, .. } => {
                 use super::ipc::ErrorKind;
                 match kind {
-                    ErrorKind::CommandNotFound => {
-                        Err(IsolatedExtensionError::IpcError(error))
-                    }
+                    ErrorKind::CommandNotFound => Err(IsolatedExtensionError::IpcError(error)),
                     ErrorKind::Timeout => Err(IsolatedExtensionError::Timeout(
                         self.config.command_timeout_secs * 1000,
                     )),
                     _ => Err(IsolatedExtensionError::IpcError(error)),
                 }
             }
-            _ => Err(IsolatedExtensionError::InvalidResponse(
-                "Expected Success or Error response".to_string(),
-            )),
+            _ => Err(IsolatedExtensionError::InvalidResponse(format!(
+                "Expected Success or Error response, got {:?}",
+                std::mem::discriminant(&response)
+            ))),
         }
     }
 
@@ -218,20 +448,27 @@ impl IsolatedExtension {
             return Err(IsolatedExtensionError::NotRunning);
         }
 
-        let request_id = self.request_id.fetch_add(1, Ordering::SeqCst);
+        let (request_id, rx) = self.in_flight.register().await;
 
         self.send_message(&IpcMessage::ProduceMetrics { request_id })
             .await?;
 
         let response = self
-            .receive_response_with_timeout(Duration::from_secs(5))
-            .await?;
+            .in_flight
+            .wait_with_timeout(request_id, rx, Duration::from_secs(5))
+            .await
+            .map_err(|e| match e {
+                super::in_flight::InFlightError::Timeout(ms) => {
+                    IsolatedExtensionError::Timeout(ms)
+                }
+                super::in_flight::InFlightError::ChannelClosed => {
+                    IsolatedExtensionError::IpcError("Response channel closed".to_string())
+                }
+            })?;
 
         match response {
             IpcResponse::Metrics { metrics, .. } => Ok(metrics),
-            IpcResponse::Error { error, .. } => {
-                Err(IsolatedExtensionError::IpcError(error))
-            }
+            IpcResponse::Error { error, .. } => Err(IsolatedExtensionError::IpcError(error)),
             _ => Err(IsolatedExtensionError::InvalidResponse(
                 "Expected Metrics response".to_string(),
             )),
@@ -254,16 +491,15 @@ impl IsolatedExtension {
             return Ok(false);
         }
 
-        let request_id = self.request_id.fetch_add(1, Ordering::SeqCst);
+        let (request_id, rx) = self.in_flight.register().await;
 
-        // Use a short timeout for health checks
-        match self.send_message(&IpcMessage::HealthCheck { request_id }).await {
-            Ok(()) => {}
-            Err(_) => return Ok(false),
+        if let Err(_) = self.send_message(&IpcMessage::HealthCheck { request_id }).await {
+            return Ok(false);
         }
 
         match self
-            .receive_response_with_timeout(Duration::from_secs(5))
+            .in_flight
+            .wait_with_timeout(request_id, rx, Duration::from_secs(5))
             .await
         {
             Ok(IpcResponse::Health { healthy, .. }) => Ok(healthy),
@@ -271,9 +507,38 @@ impl IsolatedExtension {
         }
     }
 
+    /// Get extension descriptor
+    pub async fn descriptor(&self) -> Option<super::super::system::ExtensionDescriptor> {
+        self.descriptor.lock().await.clone()
+    }
+
     /// Get extension metadata
     pub async fn metadata(&self) -> Option<ExtensionMetadata> {
-        self.metadata.lock().await.clone()
+        self.descriptor
+            .lock()
+            .await
+            .as_ref()
+            .map(|d| d.metadata.clone())
+    }
+
+    /// Get extension commands
+    pub async fn commands(&self) -> Vec<super::super::system::ExtensionCommand> {
+        self.descriptor
+            .lock()
+            .await
+            .as_ref()
+            .map(|d| d.commands.clone())
+            .unwrap_or_default()
+    }
+
+    /// Get extension metrics descriptors
+    pub async fn metrics(&self) -> Vec<super::super::system::MetricDescriptor> {
+        self.descriptor
+            .lock()
+            .await
+            .as_ref()
+            .map(|d| d.metrics.clone())
+            .unwrap_or_default()
     }
 
     // Internal helper methods
@@ -302,56 +567,12 @@ impl IsolatedExtension {
         Ok(())
     }
 
-    async fn receive_response_with_timeout(
-        &self,
-        timeout: Duration,
-    ) -> IsolatedResult<IpcResponse> {
-        let mut stdout_guard = self.stdout.lock().await;
-
-        let stdout = stdout_guard
-            .as_mut()
-            .ok_or(IsolatedExtensionError::NotInitialized)?;
-
-        // Read length prefix (4 bytes)
-        let mut len_bytes = [0u8; 4];
-        let start = Instant::now();
-
-        loop {
-            match stdout.read_exact(&mut len_bytes) {
-                Ok(()) => break,
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    if start.elapsed() > timeout {
-                        return Err(IsolatedExtensionError::Timeout(
-                            timeout.as_millis() as u64,
-                        ));
-                    }
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-                Err(e) => {
-                    return Err(IsolatedExtensionError::IpcError(format!(
-                        "Read error: {}",
-                        e
-                    )))
-                }
-            }
+    async fn kill_internal(&self, process_guard: &mut Option<Child>) {
+        // Send shutdown signal to receiver thread
+        if let Some(tx) = self.shutdown_tx.lock().await.take() {
+            let _ = tx.send(());
         }
 
-        let len = u32::from_le_bytes(len_bytes) as usize;
-
-        // Read payload
-        let mut payload = vec![0u8; len];
-        stdout
-            .read_exact(&mut payload)
-            .map_err(|e| IsolatedExtensionError::IpcError(e.to_string()))?;
-
-        let response = IpcResponse::from_bytes(&payload).map_err(|e| {
-            IsolatedExtensionError::InvalidResponse(format!("Deserialization error: {}", e))
-        })?;
-
-        Ok(response)
-    }
-
-    async fn kill_internal(&self, process_guard: &mut Option<Child>) {
         if let Some(mut child) = process_guard.take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -363,10 +584,13 @@ impl IsolatedExtension {
 impl Drop for IsolatedExtension {
     fn drop(&mut self) {
         // Attempt graceful shutdown
-        if let Some(mut child) = self.process.blocking_lock().take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+        // Use block_in_place to allow blocking inside async runtime
+        tokio::task::block_in_place(|| {
+            if let Some(mut child) = self.process.blocking_lock().take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        });
     }
 }
 

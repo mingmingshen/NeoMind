@@ -861,6 +861,7 @@ pub async fn create_agent(
 
     // Handle new resources format (preferred)
     if let Some(ref req_resources) = request.resources {
+        // New format provided - use it exclusively (ignore legacy format to avoid duplicates)
         for req_resource in req_resources {
             let resource_type = match req_resource.resource_type.as_str() {
                 "device" | "Device" => ResourceType::Device,
@@ -882,51 +883,51 @@ pub async fn create_agent(
                 config: req_resource.config.clone().unwrap_or_default(),
             });
         }
-    }
-
-    // Handle legacy format for backward compatibility
-    for device_id in &request.device_ids {
-        resources.push(AgentResource {
-            resource_type: ResourceType::Device,
-            resource_id: device_id.clone(),
-            name: device_id.clone(),
-            config: json!({}),
-        });
-    }
-
-    for metric in &request.metrics {
-        // Build config, merging data_collection settings if provided
-        let mut config_json = json!({
-            "device_id": metric.device_id,
-            "metric_name": metric.metric_name,
-        });
-
-        // Merge data_collection config if provided
-        if let Some(ref metric_config) = metric.config {
-            if let Some(data_collection) = metric_config.get("data_collection") {
-                config_json["data_collection"] = data_collection.clone();
-            }
+    } else {
+        // No new format - handle legacy format for backward compatibility
+        for device_id in &request.device_ids {
+            resources.push(AgentResource {
+                resource_type: ResourceType::Device,
+                resource_id: device_id.clone(),
+                name: device_id.clone(),
+                config: json!({}),
+            });
         }
 
-        resources.push(AgentResource {
-            resource_type: ResourceType::Metric,
-            resource_id: format!("{}:{}", metric.device_id, metric.metric_name),
-            name: metric.display_name.clone(),
-            config: config_json,
-        });
-    }
+        for metric in &request.metrics {
+            // Build config, merging data_collection settings if provided
+            let mut config_json = json!({
+                "device_id": metric.device_id,
+                "metric_name": metric.metric_name,
+            });
 
-    for command in &request.commands {
-        resources.push(AgentResource {
-            resource_type: ResourceType::Command,
-            resource_id: format!("{}:{}", command.device_id, command.command_name),
-            name: command.display_name.clone(),
-            config: json!({
-                "device_id": command.device_id,
-                "command_name": command.command_name,
-                "parameters": command.parameters,
-            }),
-        });
+            // Merge data_collection config if provided
+            if let Some(ref metric_config) = metric.config {
+                if let Some(data_collection) = metric_config.get("data_collection") {
+                    config_json["data_collection"] = data_collection.clone();
+                }
+            }
+
+            resources.push(AgentResource {
+                resource_type: ResourceType::Metric,
+                resource_id: format!("{}:{}", metric.device_id, metric.metric_name),
+                name: metric.display_name.clone(),
+                config: config_json,
+            });
+        }
+
+        for command in &request.commands {
+            resources.push(AgentResource {
+                resource_type: ResourceType::Command,
+                resource_id: format!("{}:{}", command.device_id, command.command_name),
+                name: command.display_name.clone(),
+                config: json!({
+                    "device_id": command.device_id,
+                    "command_name": command.command_name,
+                    "parameters": command.parameters,
+                }),
+            });
+        }
     }
 
     // Create the agent

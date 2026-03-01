@@ -6,7 +6,7 @@
  * Supports both static (built-in) and dynamic (extension-provided) components.
  */
 
-import { lazy, Suspense, memo, useMemo, useState, useEffect } from 'react'
+import { lazy, Suspense, memo, useMemo, useState, useEffect, useCallback } from 'react'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -170,9 +170,22 @@ const ComponentRenderer = memo(function ComponentRenderer({
   const [DynamicComponent, setDynamicComponent] = useState<React.ComponentType<any> | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<Error | null>(null)
+  const [attemptCount, setAttemptCount] = useState(0)
+  const [registrationPollCount, setRegistrationPollCount] = useState(0)
 
-  // Load dynamic component when type changes
-  useEffect(() => {
+  // Heuristic: check if this looks like an extension component (not in static registry)
+  const isUnknownType = !componentMap[componentType as GenericComponentType] &&
+                        !businessComponentMap[componentType]
+  const mightBeExtension = isUnknownType && !isDynamic
+
+  // Max auto-retry attempts
+  const MAX_LOAD_RETRIES = 5
+  const LOAD_RETRY_DELAY = 800
+  const MAX_REGISTRATION_POLLS = 20
+  const REGISTRATION_POLL_INTERVAL = 200
+
+  // Load dynamic component with auto-retry
+  const loadDynamicComponent = useCallback(async (attempt: number): Promise<void> => {
     if (!isDynamic) {
       setDynamicComponent(null)
       setLoadError(null)
@@ -182,52 +195,103 @@ const ComponentRenderer = memo(function ComponentRenderer({
     setLoading(true)
     setLoadError(null)
 
-    dynamicRegistry.loadComponent(componentType)
-      .then((module) => {
-        if (module) {
-          // Handle different export formats
-          // - function: regular component
-          // - object with $$typeof: forwardRef, memo, etc.
-          // - object with default: module default export
-          let Component: React.ComponentType<any> | null = null
+    try {
+      const module = await dynamicRegistry.loadComponent(componentType)
 
-          if (typeof module === 'function') {
+      if (module) {
+        let Component: React.ComponentType<any> | null = null
+
+        if (typeof module === 'function') {
+          Component = module as React.ComponentType
+        } else if (typeof module === 'object' && module !== null) {
+          if ((module as any).$$typeof || typeof (module as any).render === 'function') {
             Component = module as React.ComponentType
-          } else if (typeof module === 'object' && module !== null) {
-            // Check if it's a forwardRef/memo component
-            if ((module as any).$$typeof || typeof (module as any).render === 'function') {
-              Component = module as React.ComponentType
-            } else if ('default' in module) {
-              // Module default export
-              const defaultExport = (module as { default: unknown }).default
-              if (typeof defaultExport === 'function') {
+          } else if ('default' in module) {
+            const defaultExport = (module as { default: unknown }).default
+            if (typeof defaultExport === 'function') {
+              Component = defaultExport as React.ComponentType
+            } else if (typeof defaultExport === 'object' && defaultExport !== null) {
+              if ((defaultExport as any).$$typeof || typeof (defaultExport as any).render === 'function') {
                 Component = defaultExport as React.ComponentType
-              } else if (typeof defaultExport === 'object' && defaultExport !== null) {
-                // Default export might be forwardRef/memo
-                if ((defaultExport as any).$$typeof || typeof (defaultExport as any).render === 'function') {
-                  Component = defaultExport as React.ComponentType
-                }
               }
             }
           }
-
-          if (Component) {
-            setDynamicComponent(() => Component as React.ComponentType)
-          } else {
-            setLoadError(new Error(`Failed to load component: ${componentType} (invalid component type)`))
-          }
-        } else {
-          setLoadError(new Error(`Failed to load component: ${componentType}`))
         }
-      })
-      .catch((err) => {
-        console.error(`[ComponentRenderer] loadComponent error for ${componentType}:`, err)
-        setLoadError(err)
-      })
-      .finally(() => {
-        setLoading(false)
-      })
+
+        if (Component) {
+          setDynamicComponent(() => Component as React.ComponentType)
+          setLoadError(null)
+        } else {
+          throw new Error(`Invalid component type`)
+        }
+      } else {
+        throw new Error(`Module not found`)
+      }
+    } catch (err) {
+      console.error(`[ComponentRenderer] Load attempt ${attempt} failed for ${componentType}:`, err)
+
+      // Auto-retry if we haven't exceeded max attempts
+      if (attempt < MAX_LOAD_RETRIES) {
+        console.log(`[ComponentRenderer] Scheduling retry ${attempt + 1}/${MAX_LOAD_RETRIES} in ${LOAD_RETRY_DELAY}ms`)
+        setTimeout(() => {
+          setAttemptCount(attempt + 1)
+        }, LOAD_RETRY_DELAY)
+      } else {
+        setLoadError(err instanceof Error ? err : new Error(String(err)))
+      }
+    } finally {
+      setLoading(false)
+    }
   }, [componentType, isDynamic])
+
+  // Trigger load when isDynamic changes or retry is needed
+  useEffect(() => {
+    if (isDynamic) {
+      loadDynamicComponent(attemptCount)
+    }
+  }, [isDynamic, attemptCount, loadDynamicComponent])
+
+  // Reset attempt count when component type changes
+  useEffect(() => {
+    setAttemptCount(0)
+    setDynamicComponent(null)
+    setLoadError(null)
+    setRegistrationPollCount(0)
+  }, [componentType])
+
+  // Wait for extension components to be registered (polling)
+  useEffect(() => {
+    if (!mightBeExtension) return
+
+    // Check immediately
+    if (dynamicRegistry.isDynamic(componentType)) {
+      return
+    }
+
+    // Poll for component registration
+    const pollInterval = setInterval(() => {
+      setRegistrationPollCount(prev => {
+        const next = prev + 1
+        if (next >= MAX_REGISTRATION_POLLS) {
+          clearInterval(pollInterval)
+        }
+        return next
+      })
+    }, REGISTRATION_POLL_INTERVAL)
+
+    return () => clearInterval(pollInterval)
+  }, [mightBeExtension, componentType])
+
+  // Re-check isDynamic when poll count changes
+  const currentIsDynamic = dynamicRegistry.isDynamic(componentType)
+
+  // Trigger load when component becomes registered
+  useEffect(() => {
+    if (currentIsDynamic && !isDynamic && !DynamicComponent && !loading && !loadError) {
+      // Component just became registered, trigger load
+      setAttemptCount(0)
+    }
+  }, [currentIsDynamic, isDynamic, DynamicComponent, loading, loadError])
 
   // Get metadata (check both static and dynamic registries)
   let meta = getComponentMeta(componentType)
@@ -287,8 +351,13 @@ const ComponentRenderer = memo(function ComponentRenderer({
     return <ComponentSkeleton meta={meta} className={className} />
   }
 
-  // Show error state for dynamic component load failures
-  if (isDynamic && loadError) {
+  // Show loading state for components that might be extension components but not yet registered
+  if (mightBeExtension && registrationPollCount < MAX_REGISTRATION_POLLS) {
+    return <ComponentSkeleton meta={undefined} className={className} />
+  }
+
+  // Show error state for dynamic component load failures (only after all retries exhausted)
+  if (isDynamic && loadError && attemptCount >= MAX_LOAD_RETRIES) {
     return (
       <Card className={cn('border-destructive/50', className)}>
         <div className="flex items-center justify-center h-full min-h-[120px] p-4 text-center">
@@ -297,10 +366,24 @@ const ComponentRenderer = memo(function ComponentRenderer({
             <p className="text-sm text-muted-foreground mt-1">
               {loadError.message}
             </p>
+            <button
+              onClick={() => {
+                setLoadError(null)
+                setAttemptCount(0)
+              }}
+              className="mt-2 px-3 py-1 text-xs bg-destructive/10 rounded hover:bg-destructive/20 transition-colors"
+            >
+              Retry
+            </button>
           </div>
         </div>
       </Card>
     )
+  }
+
+  // Show loading while retrying
+  if (isDynamic && loadError && attemptCount < MAX_LOAD_RETRIES) {
+    return <ComponentSkeleton meta={meta} className={className} />
   }
 
   // Handle unknown component types (after hooks to follow React Hooks rules)

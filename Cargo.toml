@@ -12,9 +12,7 @@ members = [
     "crates/neomind-tools",
     "crates/neomind-agent",
     "crates/neomind-commands",
-    "crates/neomind-integrations",
     "crates/neomind-automation",
-    "crates/neomind-testing",
     "crates/neomind-extension-sdk",
     "crates/neomind-extension-runner",
 ]

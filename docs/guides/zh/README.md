@@ -17,11 +17,12 @@ docs/guides/zh/
 ├── 08-memory.md              # 内存系统模块
 ├── 09-messages.md            # 消息通知模块
 ├── 10-storage.md             # 存储层模块
-├── 11-integrations.md        # 集成模块
 ├── 12-commands.md            # 命令队列模块
 ├── 14-api.md                 # REST API模块
 ├── 15-web.md                 # 前端模块
-└── 16-extension-dev.md       # 扩展开发指南（新增）
+├── 16-extension-dev.md       # 扩展开发指南
+├── extension-package.md      # 扩展包 (.nep) 格式
+└── extension-process-isolation.md  # 扩展进程隔离
 ```
 
 ## 模块依赖关系
@@ -39,7 +40,6 @@ graph TB
     Memory[memory: 内存]
     Messages[messages: 消息]
     Commands[commands: 命令]
-    Integrations[integrations: 集成]
     API[api: REST API]
     Web[web: 前端]
 
@@ -47,7 +47,6 @@ graph TB
     Core --> LLM
     Core --> Devices
     Core --> Tools
-    Core --> Integrations
 
     Storage --> Agent
     Storage --> Devices
@@ -62,7 +61,6 @@ graph TB
     Devices --> Automation
     Devices --> Rules
     Devices --> Commands
-    Devices --> Integrations
 
     Automation --> Rules
 
@@ -92,7 +90,6 @@ graph TB
 | [Memory](./08-memory.md) | 85% | 三层内存系统 |
 | [Messages](./09-messages.md) | 70% | 消息通知 |
 | [Storage](./10-storage.md) | 95% | 持久化存储、统一时序数据库 |
-| [Integrations](./11-integrations.md) | 65% | 外部系统集成 |
 | [Commands](./12-commands.md) | 70% | 设备命令队列 |
 | [API](./14-api.md) | 90% | REST/WebSocket API、扩展指标 |
 | [Web](./15-web.md) | 80% | React前端、Zustand状态管理 |

@@ -143,6 +143,7 @@ interface FetchOptions extends RequestInit {
   skipGlobalError?: boolean
   skipErrorToast?: boolean  // Skip automatic error toast notification
   successMessage?: string   // Auto-show success toast with this message
+  signal?: AbortSignal      // For timeout/cancellation support
 }
 
 export async function fetchAPI<T>(
@@ -154,6 +155,7 @@ export async function fetchAPI<T>(
     skipGlobalError = false,
     skipErrorToast = false,
     successMessage,
+    signal,
     ...fetchOptions
   } = options
 
@@ -176,6 +178,7 @@ export async function fetchAPI<T>(
   const response = await fetch(`${API_BASE}${path}`, {
     ...fetchOptions,
     headers: finalHeaders,
+    signal,
   })
 
   // Parse error response to extract meaningful message
@@ -1191,32 +1194,69 @@ export const api = {
    * Upload and install an extension package (.nep file)
    * POST /api/extensions/upload/file
    *
-   * Uses standard multipart/form-data upload (works for both Tauri and Web)
+   * Uses JSON with base64-encoded file data (required by backend)
+   * @param file - The .nep file to upload
+   * @param signal - Optional AbortSignal for timeout/cancellation
    */
-  uploadExtensionFile: async (file: File) => {
-    // Check if running in Tauri
-    const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__
+  uploadExtensionFile: async (file: File, signal?: AbortSignal): Promise<{
+    extension_id: string
+    name: string
+    version: string
+    message: string
+  }> => {
+    // Read file and convert to base64 using a reliable method
+    const arrayBuffer = await file.arrayBuffer()
+    const bytes = new Uint8Array(arrayBuffer)
+    let binary = ''
+    // Process in chunks to avoid call stack overflow for large files
+    const chunkSize = 8192
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length))
+      binary += String.fromCharCode.apply(null, Array.from(chunk))
+    }
+    const base64Data = btoa(binary)
 
-    // Prepare form data
-    const formData = new FormData()
-    formData.append('file', file)
+    // For large file uploads in development, bypass Vite proxy and connect directly to backend
+    // This avoids EPIPE errors caused by the proxy's handling of large request bodies
+    const isTauri = !!(window as any).__TAURI__
+    const isDev = window.location.port === '5173'
+    const uploadApiBase = isTauri ? 'http://localhost:9375/api' : (isDev ? 'http://127.0.0.1:9375/api' : API_BASE)
 
-    // Determine API URL
-    const apiUrl = isTauri
-      ? 'http://localhost:9375/api/extensions/upload/file'
-      : '/api/extensions/upload/file'
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      body: formData,
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(errorText || 'Upload failed')
+    // Get auth token
+    const token = tokenManager.getToken()
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
     }
 
-    return await response.json()
+    const response = await fetch(`${uploadApiBase}/extensions/upload/file`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        data: base64Data,
+        filename: file.name,
+      }),
+      signal,
+    })
+
+    // Handle error responses
+    if (!response.ok) {
+      const text = await response.text()
+      let errorMessage = `Upload failed: ${response.status}`
+      try {
+        const json = JSON.parse(text)
+        if (json.message) {
+          errorMessage = json.message
+        }
+      } catch {
+        if (text) errorMessage = text
+      }
+      throw new Error(errorMessage)
+    }
+
+    return response.json()
   },
 
   /**

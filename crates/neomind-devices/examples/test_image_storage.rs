@@ -2,9 +2,20 @@
 use neomind_devices::mdl::MetricValue;
 use neomind_devices::telemetry::{DataPoint, TimeSeriesStorage};
 
+fn get_project_data_path(filename: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("data")
+        .join(filename)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let storage = TimeSeriesStorage::open("data/test_images.redb")?;
+    let db_path = get_project_data_path("test_images.redb");
+    let storage = TimeSeriesStorage::open(&db_path)?;
 
     let now = chrono::Utc::now().timestamp();
 

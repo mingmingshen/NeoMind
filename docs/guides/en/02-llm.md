@@ -16,7 +16,7 @@ The LLM module implements a unified LLM runtime interface, supporting multiple l
 | **Ollama** | `ollama` | ✅ Default | `qwen3-vl:2b` |
 | **OpenAI** | `openai` | ✅ | `gpt-4o-mini` |
 | **Anthropic** | `anthropic` | ✅ | `claude-3-5-sonnet-20241022` |
-| **Google** | `google` | ✅ | `gemini-2.0-flash` |
+| **Google** | `google` | ✅ | `gemini-1.5-flash` |
 | **xAI** | `xai` | ✅ | `grok-beta` |
 
 ## Module Structure

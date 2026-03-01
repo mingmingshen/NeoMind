@@ -28,6 +28,7 @@ NeoMind extensions are dynamically loadable modules that provide:
 | **Simplified FFI** | One-line macro exports all FFI functions |
 | **ABI Version 3** | New extension interface with improved security |
 | **Type-Safe** | Complete type definitions and helper macros |
+| **Process Isolation** | Extensions run in isolated processes for security (see [extension-process-isolation.md](./extension-process-isolation.md)) |
 
 ## Quick Start
 
