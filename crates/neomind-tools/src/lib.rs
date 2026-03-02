@@ -55,7 +55,6 @@ pub mod agent_tools;
 pub mod core_tools;
 pub mod error;
 pub mod extension_tools;
-// pub mod image_analyzer; // Disabled: requires usls/ort which may not have prebuilt binaries for all platforms
 pub mod real;
 pub mod registry;
 pub mod simplified;
@@ -173,15 +172,6 @@ pub use agent_tools::{
 pub use extension_tools::{
     ExtensionFilter, ExtensionTool, ExtensionToolExecutor, ExtensionToolGenerator,
 };
-
-// ============================================================================
-// Image Analysis Tools
-// ============================================================================
-
-// Disabled: requires usls/ort which may not have prebuilt binaries for all platforms
-// pub use image_analyzer::{
-//     AnalysisResult as ImageAnalysisResult, Detection, ImageAnalyzerTool, ImageSource, ModelConfig,
-// };
 
 // Note: ExtensionRegistry is now defined in neomind_core::extension
 // and is re-exported from neomind_core directly
