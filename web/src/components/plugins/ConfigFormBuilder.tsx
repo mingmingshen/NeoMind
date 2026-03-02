@@ -249,13 +249,13 @@ function isFieldVisible(
   // If there are visibility rules but this field isn't in any then_show,
   // check if it's in the required list or properties
   if (uiHints.visibility_rules.length > 0) {
-    const isInThenShow = uiHints.visibility_rules.some(r =>
+    const isInThenShow = uiHints.visibility_rules.some((r: { then_show: string[] }) =>
       r.then_show.includes(fieldName)
     )
     if (isInThenShow) return true
 
     // Fields not in visibility rules are always shown
-    return !uiHints.visibility_rules.some(r => r.then_show.includes(fieldName))
+    return !uiHints.visibility_rules.some((r: { then_show: string[] }) => r.then_show.includes(fieldName))
   }
 
   return true
@@ -326,8 +326,8 @@ export function ConfigFormBuilder({
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
       {fieldOrder
-        .filter(fieldName => schema.properties[fieldName] && visibleFields.has(fieldName))
-        .map((fieldName) => {
+        .filter((fieldName: string) => schema.properties[fieldName] && visibleFields.has(fieldName))
+        .map((fieldName: string) => {
           const prop = schema.properties[fieldName]
           if (!prop) return null
 

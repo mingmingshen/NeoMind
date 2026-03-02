@@ -259,7 +259,7 @@ export function UnifiedLLMBackendsTab({
   }
 
   // Handle test connection
-  const handleTest = async (id: string) => {
+  const handleTest = async (id: string): Promise<{ success: boolean; message?: string; error?: string; latency_ms?: number }> => {
     const result = await onTestBackend(id)
     const message = result.success
       ? `${t('plugins:llm.latency')}: ${result.latency_ms?.toFixed(0) || '0'}ms`
@@ -269,6 +269,7 @@ export function UnifiedLLMBackendsTab({
       ...prev,
       [id]: { success: result.success, message },
     }))
+    return result
   }
 
   if (loading) {

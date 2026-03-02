@@ -2702,6 +2702,8 @@ export interface DashboardComponentDto {
   data_binding: DataBindingConfig
   /** Extension ID */
   extension_id: string
+  /** Global variable name for IIFE bundles */
+  global_name?: string
 }
 
 /**
