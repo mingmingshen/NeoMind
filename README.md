@@ -18,7 +18,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 - **Interactive Chat**: Natural language interface for querying and controlling devices
 - **AI Agents**: Autonomous agents with tool calling capabilities for automation
 - **Tool Calling**: Execute real system actions through LLM function calling
-- **Multi-Backend Support**: Ollama, OpenAI, Anthropic, Google, xAI
+- **Multi-Backend Support**: Ollama, OpenAI, Anthropic, Google, xAI, Qwen, DeepSeek, GLM, MiniMax
 
 ### 🔌 Modular Device Integration
 - **MQTT Protocol**: Primary device integration with embedded broker
@@ -41,7 +41,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 - **Dynamic Loading**: Runtime extension loading/unloading
 - **Native & WASM**: Support for .so/.dylib/.dll and .wasm extensions
 - **Device-Standard**: Extensions use same type system as devices
-- **Sandbox**: Secure execution environment for extensions
+- **Process Isolation**: Secure execution with automatic recovery on crashes
 
 ### 🖥️ Desktop Application
 - **Cross-Platform**: macOS, Windows, Linux native apps
@@ -176,6 +176,12 @@ The installer will be in `web/src-tauri/target/release/bundle/`
 | Anthropic | `anthropic` | `https://api.anthropic.com/v1` |
 | Google | `google` | `https://generativelanguage.googleapis.com/v1beta` |
 | xAI | `xai` | `https://api.x.ai/v1` |
+| Qwen (阿里云) | `cloud` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| DeepSeek | `cloud` | `https://api.deepseek.com/v1` |
+| GLM (智谱) | `cloud` | `https://open.bigmodel.cn/api/paas/v4` |
+| MiniMax | `cloud` | `https://api.minimax.chat/v1` |
+
+> **Note**: Qwen, DeepSeek, GLM, and MiniMax use OpenAI-compatible APIs and are enabled via the `cloud` feature.
 
 ### Environment Variables
 
