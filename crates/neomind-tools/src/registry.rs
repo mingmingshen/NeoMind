@@ -531,20 +531,21 @@ impl ToolRegistryBuilder {
     // Image Analysis Tools
     // ============================================================================
 
-    /// Add the image analyzer tool with default configuration.
-    pub fn with_image_analyzer_tool(self) -> Self {
-        self.with_tool(Arc::new(super::image_analyzer::ImageAnalyzerTool::new()))
-    }
+    // Disabled: requires usls/ort which may not have prebuilt binaries for all platforms
+    // /// Add the image analyzer tool with default configuration.
+    // pub fn with_image_analyzer_tool(self) -> Self {
+    //     self.with_tool(Arc::new(super::image_analyzer::ImageAnalyzerTool::new()))
+    // }
 
-    /// Add the image analyzer tool with custom model configuration.
-    pub fn with_image_analyzer_tool_with_config(
-        self,
-        config: super::image_analyzer::ModelConfig,
-    ) -> Self {
-        self.with_tool(Arc::new(
-            super::image_analyzer::ImageAnalyzerTool::with_config(config),
-        ))
-    }
+    // /// Add the image analyzer tool with custom model configuration.
+    // pub fn with_image_analyzer_tool_with_config(
+    //     self,
+    //     config: super::image_analyzer::ModelConfig,
+    // ) -> Self {
+    //     self.with_tool(Arc::new(
+    //         super::image_analyzer::ImageAnalyzerTool::with_config(config),
+    //     ))
+    // }
 
     /// Build the registry.
     pub fn build(self) -> ToolRegistry {
