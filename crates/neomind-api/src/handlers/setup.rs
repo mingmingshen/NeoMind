@@ -160,7 +160,6 @@ pub async fn initialize_admin_handler(
             message: "Password must contain both letters and numbers".to_string(),
             request_id: None,
         });
-    });
     }
 
     // Create admin user

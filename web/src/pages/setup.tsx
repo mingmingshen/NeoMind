@@ -22,7 +22,7 @@ const languages = [
 ]
 
 // Mailchimp subscription function
-function mcSubscribe(email: string): Promise<{ result: string; msg: string }> {
+function mcSubscribe(email: string, username?: string): Promise<{ result: string; msg: string }> {
   const base = "https://camthink.us2.list-manage.com/subscribe/post-json"
 
   // Generate unique JSONP callback name
@@ -40,6 +40,11 @@ function mcSubscribe(email: string): Promise<{ result: string; msg: string }> {
     // optional: cache buster
     _: Date.now().toString(),
   })
+
+  // Add username if provided (Mailchimp FNAME merge field)
+  if (username) {
+    params.append("FNAME", username)
+  }
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -590,15 +595,15 @@ export function SetupPage() {
                   
                   {/* Newsletter Subscription Checkbox */}
                   {email && email.trim() && (
-                    <div className="flex items-start gap-2 mt-2">
+                    <div className="flex items-center gap-2 mt-2">
                       <input
                         type="checkbox"
                         id="subscribe"
                         checked={subscribeToNewsletter}
                         onChange={(e) => setSubscribeToNewsletter(e.target.checked)}
-                        className="mt-1 h-4 w-4 rounded border-border/50"
+                        className="h-4 w-4 rounded border-border/50 flex-shrink-0"
                       />
-                      <label htmlFor="subscribe" className="text-xs text-muted-foreground cursor-pointer">
+                      <label htmlFor="subscribe" className="text-xs text-muted-foreground cursor-pointer leading-tight">
                         {t('setup:subscribeNewsletter')}
                       </label>
                     </div>

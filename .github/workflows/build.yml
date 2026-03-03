@@ -153,15 +153,9 @@ jobs:
 
       - name: Build server binary
         run: cross build --release -p neomind-cli --target ${{ matrix.target }}
-        env:
-          OPENSSL_STATIC: "1"
-          OPENSSL_VENDORED: "1"
 
       - name: Build extension runner
         run: cross build --release -p neomind-extension-runner --target ${{ matrix.target }}
-        env:
-          OPENSSL_STATIC: "1"
-          OPENSSL_VENDORED: "1"
 
       - name: Create release archive
         run: |

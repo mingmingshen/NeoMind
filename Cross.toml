@@ -1,9 +1,0 @@
-# Cross-compilation configuration for cargo-cross
-# Pass environment variables from host to Docker container
-
-[build.env]
-passthrough = [
-    "OPENSSL_STATIC",
-    "OPENSSL_VENDORED",
-]
-

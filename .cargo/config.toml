@@ -57,9 +57,3 @@ codegen-units = 1
 [net]
 git-fetch-with-cli = true
 offline = false
-
-# Cross-compilation configuration for OpenSSL
-# Use vendored OpenSSL to avoid system dependency issues
-[env]
-OPENSSL_STATIC = "1"
-OPENSSL_VENDORED = "1"
