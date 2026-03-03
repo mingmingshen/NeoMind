@@ -49,6 +49,7 @@ jobs:
 
       - name: Clean cache on version tags
         if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
         run: |
           rm -rf ~/.cargo/registry/cache
           rm -rf web/src-tauri/target/release
