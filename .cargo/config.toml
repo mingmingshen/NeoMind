@@ -1,0 +1,65 @@
+# Cargo build acceleration configuration
+
+[build]
+# Use parallel compilation
+jobs = 8
+
+# Use pipelined compilation for faster builds
+# This allows crates to be compiled in parallel
+pipelining = true
+
+# Note: lld linker requires installation via `brew install llvm` and clang wrapper
+# For macOS, the default ld64 linker is recommended unless you have specific needs
+# [target.x86_64-apple-darwin]
+# rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+# [target.aarch64-apple-darwin]
+# rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+# Alternative: Use mold linker on Linux (much faster than default)
+# [target.x86_64-unknown-linux-gnu]
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[profile.dev]
+# Optimize debug info for faster compilation
+split-debuginfo = "unpacked"
+strip = false
+debug = "line-tables-only"
+
+# Optimize dependencies even in dev builds for faster compilation
+[profile.dev.package."*"]
+opt-level = 2
+
+# Optimize key dependencies for better dev performance
+[profile.dev.package.regex]
+opt-level = 3
+[profile.dev.package.serde]
+opt-level = 3
+[profile.dev.package.serde_json]
+opt-level = 3
+[profile.dev.package.chrono]
+opt-level = 3
+
+[profile.release]
+# Enable LTO for better optimization
+lto = "thin"
+# Keep debug symbols for profiling
+debug = "line-tables-only"
+# Optimize for speed
+codegen-units = 1
+
+[profile.release-lto]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
+# Network optimization for faster dependency downloads
+[net]
+git-fetch-with-cli = true
+offline = false
+
+# Cross-compilation configuration for OpenSSL
+# Use vendored OpenSSL to avoid system dependency issues
+[env]
+OPENSSL_STATIC = "1"
+OPENSSL_VENDORED = "1"

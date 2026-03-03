@@ -127,7 +127,15 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Cache cross-compilation tool
+        uses: actions/cache@v4
+        id: cache-cross
+        with:
+          path: ~/.cargo/bin/cross
+          key: cross-${{ runner.os }}-v1
+
       - name: Install cross-compilation tool
+        if: steps.cache-cross.outputs.cache-hit != 'true'
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Cache Rust dependencies
@@ -143,9 +151,15 @@ jobs:
 
       - name: Build server binary
         run: cross build --release -p neomind-cli --target ${{ matrix.target }}
+        env:
+          OPENSSL_STATIC: "1"
+          OPENSSL_VENDORED: "1"
 
       - name: Build extension runner
         run: cross build --release -p neomind-extension-runner --target ${{ matrix.target }}
+        env:
+          OPENSSL_STATIC: "1"
+          OPENSSL_VENDORED: "1"
 
       - name: Create release archive
         run: |
