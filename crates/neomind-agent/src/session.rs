@@ -22,8 +22,26 @@ pub use neomind_llm::instance_manager::{
 use neomind_storage::LlmBackendInstance;
 
 /// Convert an LlmBackendInstance to LlmBackend enum for agent configuration.
+/// Convert storage BackendCapabilities to core BackendCapabilities
+fn convert_capabilities(storage_caps: &neomind_storage::BackendCapabilities) -> neomind_core::BackendCapabilities {
+    neomind_core::BackendCapabilities {
+        streaming: storage_caps.supports_streaming,
+        multimodal: storage_caps.supports_multimodal,
+        function_calling: storage_caps.supports_tools,
+        thinking_display: storage_caps.supports_thinking,
+        max_context: Some(storage_caps.max_context),
+        multiple_models: false,
+        modalities: Vec::new(),
+        supports_images: storage_caps.supports_multimodal,
+        supports_audio: false,
+    }
+}
+
 fn instance_to_llm_backend(instance: &LlmBackendInstance) -> Result<LlmBackend> {
     use neomind_storage::LlmBackendType;
+    
+    // Convert capabilities from storage type to core type
+    let capabilities = Some(convert_capabilities(&instance.capabilities));
 
     Ok(match instance.backend_type {
         LlmBackendType::Ollama => LlmBackend::Ollama {
@@ -32,6 +50,7 @@ fn instance_to_llm_backend(instance: &LlmBackendInstance) -> Result<LlmBackend> 
                 .clone()
                 .unwrap_or_else(|| "http://localhost:11434".to_string()),
             model: instance.model.clone(),
+            capabilities,
         },
         LlmBackendType::OpenAi => LlmBackend::OpenAi {
             api_key: instance.api_key.clone().unwrap_or_default(),
@@ -40,62 +59,70 @@ fn instance_to_llm_backend(instance: &LlmBackendInstance) -> Result<LlmBackend> 
                 .clone()
                 .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
             model: instance.model.clone(),
+            capabilities,
         },
-        LlmBackendType::Anthropic => LlmBackend::OpenAi {
+        LlmBackendType::Anthropic => LlmBackend::Anthropic {
             api_key: instance.api_key.clone().unwrap_or_default(),
             endpoint: instance
                 .endpoint
                 .clone()
                 .unwrap_or_else(|| "https://api.anthropic.com/v1".to_string()),
             model: instance.model.clone(),
+            capabilities,
         },
-        LlmBackendType::Google => LlmBackend::OpenAi {
+        LlmBackendType::Google => LlmBackend::Google {
             api_key: instance.api_key.clone().unwrap_or_default(),
             endpoint: instance
                 .endpoint
                 .clone()
                 .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string()),
             model: instance.model.clone(),
+            capabilities,
         },
-        LlmBackendType::XAi => LlmBackend::OpenAi {
+        LlmBackendType::XAi => LlmBackend::XAi {
             api_key: instance.api_key.clone().unwrap_or_default(),
             endpoint: instance
                 .endpoint
                 .clone()
                 .unwrap_or_else(|| "https://api.x.ai/v1".to_string()),
             model: instance.model.clone(),
+            capabilities,
         },
-        LlmBackendType::Qwen => LlmBackend::OpenAi {
+        LlmBackendType::Qwen => LlmBackend::Qwen {
             api_key: instance.api_key.clone().unwrap_or_default(),
             endpoint: instance
                 .endpoint
                 .clone()
                 .unwrap_or_else(|| "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string()),
             model: instance.model.clone(),
+            capabilities,
         },
-        LlmBackendType::DeepSeek => LlmBackend::OpenAi {
+        LlmBackendType::DeepSeek => LlmBackend::DeepSeek {
             api_key: instance.api_key.clone().unwrap_or_default(),
             endpoint: instance
                 .endpoint
                 .clone()
                 .unwrap_or_else(|| "https://api.deepseek.com".to_string()),
             model: instance.model.clone(),
+            capabilities,
         },
-        LlmBackendType::GLM => LlmBackend::OpenAi {
+        LlmBackendType::GLM => LlmBackend::GLM {
             api_key: instance.api_key.clone().unwrap_or_default(),
             endpoint: instance
                 .endpoint
                 .clone()
                 .unwrap_or_else(|| "https://open.bigmodel.cn/api/paas/v4".to_string()),
             model: instance.model.clone(),
+            capabilities,
         },
-        LlmBackendType::MiniMax => LlmBackend::OpenAi {
+        LlmBackendType::MiniMax => LlmBackend::MiniMax {
             api_key: instance.api_key.clone().unwrap_or_default(),
             endpoint: instance
                 .endpoint
                 .clone()
                 .unwrap_or_else(|| "https://api.minimax.chat/v1".to_string()),
             model: instance.model.clone(),
+            capabilities,
         },
     })
 }
@@ -410,7 +437,16 @@ impl SessionManager {
         self
     }
 
+    /// Set the default LLM backend for NEW sessions only.
+    /// Does NOT modify existing sessions (they may have their own backend configuration).
+    pub async fn set_default_llm_backend(&self, backend: LlmBackend) {
+        *self.default_llm_backend.write().await = Some(backend);
+    }
+
     /// Set the default LLM backend for all new and existing sessions.
+    /// WARNING: This will override backend configuration for ALL existing sessions,
+    /// including AI Agents with their own llm_backend_id.
+    /// Use set_default_llm_backend() instead unless you specifically need this behavior.
     pub async fn set_llm_backend(&self, backend: LlmBackend) -> Result<()> {
         // Store as default for new sessions
         *self.default_llm_backend.write().await = Some(backend.clone());
@@ -430,7 +466,7 @@ impl SessionManager {
     }
 
     /// Configure LLM using the LlmBackendInstanceManager.
-    /// This fetches the active backend from the instance manager and configures it for all sessions.
+    /// This sets the default backend for NEW sessions only.
     pub async fn configure_llm_from_instance_manager(&self) -> Result<()> {
         // Get the instance manager
         let manager = get_instance_manager()
@@ -444,8 +480,9 @@ impl SessionManager {
         // Convert to LlmBackend enum based on backend type
         let backend = instance_to_llm_backend(&active_instance)?;
 
-        // Configure using the standard method
-        self.set_llm_backend(backend).await
+        // Only set as default for new sessions, don't modify existing sessions
+        self.set_default_llm_backend(backend).await;
+        Ok(())
     }
 
     /// Configure LLM using a specific backend ID from the instance manager.
@@ -1002,7 +1039,7 @@ impl SessionManager {
             let agent = self.get_session(session_id).await?;
             if !agent.llm_interface().supports_multimodal().await {
                 return Err(super::error::NeoMindError::Validation(
-                    "当前模型不支持图像输入。请选择支持视觉的模型（如 qwen3-vl）或移除图片后重试。"
+                    "Current model does not support image input. Please select a vision-capable model or remove images before retrying."
                         .to_string(),
                 ));
             }
@@ -1032,7 +1069,7 @@ impl SessionManager {
             let agent = self.get_session(session_id).await?;
             if !agent.llm_interface().supports_multimodal().await {
                 return Err(super::error::NeoMindError::Validation(
-                    "当前模型不支持图像输入。请选择支持视觉的模型（如 qwen3-vl）或移除图片后重试。"
+                    "Current model does not support image input. Please select a vision-capable model or remove images before retrying."
                         .to_string(),
                 ));
             }
@@ -1054,7 +1091,7 @@ impl SessionManager {
             let agent = self.get_session(session_id).await?;
             if !agent.llm_interface().supports_multimodal().await {
                 return Err(super::error::NeoMindError::Validation(
-                    "当前模型不支持图像输入。请选择支持视觉的模型（如 qwen3-vl）或移除图片后重试。"
+                    "Current model does not support image input. Please select a vision-capable model or remove images before retrying."
                         .to_string(),
                 ));
             }

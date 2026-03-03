@@ -1079,7 +1079,7 @@ impl LlmInterface {
                 llm.model_name().to_string()
             } else {
                 // Ultimate fallback
-                "qwen3-vl:2b".to_string()
+                "ministral-3:3b".to_string()
             }
         };
 
@@ -1226,7 +1226,7 @@ impl LlmInterface {
                 llm.model_name().to_string()
             } else {
                 // Ultimate fallback
-                "qwen3-vl:2b".to_string()
+                "ministral-3:3b".to_string()
             }
         };
 
@@ -1510,7 +1510,7 @@ impl LlmInterface {
                 llm.model_name().to_string()
             } else {
                 // Ultimate fallback
-                "qwen3-vl:2b".to_string()
+                "ministral-3:3b".to_string()
             }
         };
 
@@ -1700,7 +1700,7 @@ impl LlmInterface {
                 llm.model_name().to_string()
             } else {
                 // Ultimate fallback
-                "qwen3-vl:2b".to_string()
+                "ministral-3:3b".to_string()
             }
         };
 
@@ -1831,7 +1831,7 @@ pub struct ChatConfig {
 impl Default for ChatConfig {
     fn default() -> Self {
         Self {
-            model: "qwen3-vl:2b".to_string(),
+            model: "ministral-3:3b".to_string(),
             temperature: agent_env_vars::temperature(),
             top_p: agent_env_vars::top_p(),
             top_k: 20, // Lowered for faster responses

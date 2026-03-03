@@ -38,7 +38,7 @@ const llmProviders: LlmProviderInfo[] = [
     id: 'ollama',
     name: 'Ollama',
     description: 'Local LLM runner - runs on your own machine',
-    defaultModel: 'qwen3-vl:2b',
+    defaultModel: 'ministral-3:3b',
     defaultEndpoint: 'http://localhost:11434',
     needsApiKey: false,
   },
@@ -116,7 +116,7 @@ export function SetupPage() {
 
   // LLM config state
   const [selectedProvider, setSelectedProvider] = useState<LlmProvider>('ollama')
-  const [llmModel, setLlmModel] = useState("qwen3-vl:2b")
+  const [llmModel, setLlmModel] = useState("ministral-3:3b")
   const [llmEndpoint, setLlmEndpoint] = useState("http://localhost:11434")
   const [llmApiKey, setLlmApiKey] = useState("")
 

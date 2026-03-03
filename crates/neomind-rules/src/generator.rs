@@ -43,7 +43,7 @@ pub struct GeneratorConfig {
 impl Default for GeneratorConfig {
     fn default() -> Self {
         Self {
-            model: "qwen3-vl:2b".to_string(),
+            model: "ministral-3:3b".to_string(),
             max_tokens: Some(512),
             temperature: Some(0.3),
         }

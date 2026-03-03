@@ -46,7 +46,7 @@ impl AskUserTool {
         let mut result = format!("❓ {}", question);
         if let Some(opts) = options {
             if !opts.is_empty() {
-                result.push_str("\n\n可选答案:\n");
+                result.push_str("\n\nOptions:\n");
                 for (i, opt) in opts.iter().enumerate() {
                     result.push_str(&format!("  {}. {}\n", i + 1, opt));
                 }
@@ -69,31 +69,31 @@ impl Tool for AskUserTool {
     }
 
     fn description(&self) -> &str {
-        r#"向用户询问缺失的信息。当用户请求缺少必要信息时使用此工具。
+        r#"Ask the user for missing information. Use this tool when the user request lacks necessary information.
 
-## 使用场景
-- 用户说"打开灯" → 询问"要打开哪个位置的灯？"
-- 用户说"查看温度" → 询问"要查看哪个房间的温度？"
-- 用户说"创建规则" → 询问"触发条件是什么？"
-- 用户意图不明确时 → 询问澄清问题
+## Use Cases
+- User says "turn on the light" → Ask "Which room's light do you want to turn on?"
+- User says "check temperature" → Ask "Which room's temperature do you want to check?"
+- User says "create rule" → Ask "What is the trigger condition?"
+- When user intent is unclear → Ask clarifying questions
 
-## 参数说明
-- question: 要问用户的问题（必填）
-- options: 可选答案列表（可选，提供选项让用户选择）
-- context: 额外上下文信息（可选）
+## Parameters
+- question: The question to ask the user (required)
+- options: List of possible answers (optional, provides choices for user to select)
+- context: Additional context information (optional)
 
-## 注意事项
-- 问题要简洁明了
-- 如果有多个可能选项，建议提供 options 让用户选择
-- 不要问过于开放的问题，尽量提供明确的选项"#
+## Notes
+- Keep questions concise and clear
+- If there are multiple possible options, suggest providing options for user to choose
+- Don't ask overly open-ended questions, try to provide clear options"#
     }
 
     fn parameters(&self) -> Value {
         object_schema(
             serde_json::json!({
-                "question": string_property("要问用户的问题，例如：'要打开哪个位置的灯？'"),
-                "options": array_property("string", "可选答案列表，例如：['客厅灯', '卧室灯', '厨房灯']"),
-                "context": string_property("额外的上下文信息，帮助用户理解问题")
+                "question": string_property("The question to ask the user, e.g., 'Which room's light do you want to turn on?'"),
+                "options": array_property("string", "List of possible answers, e.g., ['Living room light', 'Bedroom light', 'Kitchen light']"),
+                "context": string_property("Additional context information to help user understand the question")
             }),
             vec!["question".to_string()],
         )
@@ -186,11 +186,11 @@ impl ConfirmActionTool {
 
     /// Format the confirmation message.
     fn format_confirmation(&self, action: &str, description: Option<&str>) -> String {
-        let mut result = format!("⚠️ 确认要执行以下操作吗？\n\n操作: {}", action);
+        let mut result = format!("⚠️ Confirm the following action?\n\nAction: {}", action);
         if let Some(desc) = description {
-            result.push_str(&format!("\n说明: {}", desc));
+            result.push_str(&format!("\nDescription: {}", desc));
         }
-        result.push_str("\n\n请回复 '确认' 继续，或取消操作。");
+        result.push_str("\n\nReply 'confirm' to proceed, or cancel.");
         result
     }
 
@@ -202,10 +202,10 @@ impl ConfirmActionTool {
             "clear",
             "reset",
             "format",
-            "关闭所有",
-            "全部关闭",
-            "删除所有",
-            "批量删除",
+            "close all",
+            "turn off all",
+            "delete all",
+            "batch delete",
         ];
         dangerous_actions
             .iter()
@@ -226,33 +226,33 @@ impl Tool for ConfirmActionTool {
     }
 
     fn description(&self) -> &str {
-        r#"在执行危险或重要操作前请求用户确认。
+        r#"Request user confirmation before executing dangerous or important operations.
 
-## 使用场景
-必须确认的操作：
-- 删除规则/设备
-- 关闭所有设备
-- 修改系统配置
-- 批量操作
-- 不可逆的操作
+## Use Cases
+Operations that require confirmation:
+- Delete rules/devices
+- Turn off all devices
+- Modify system configuration
+- Batch operations
+- Irreversible operations
 
-## 参数说明
-- action: 要执行的操作描述（必填）
-- description: 操作的详细说明（可选）
-- risk_level: 风险等级：low/medium/high（可选）
+## Parameters
+- action: Description of the action to execute (required)
+- description: Detailed explanation of the action (optional)
+- risk_level: Risk level: low/medium/high (optional)
 
-## 注意事项
-- 操作描述要清晰准确
-- 对于高风险操作，必须详细说明后果
-- 用户确认前不要执行任何实际操作"#
+## Notes
+- Action description should be clear and accurate
+- For high-risk operations, must explain consequences in detail
+- Do not execute any actual operations before user confirmation"#
     }
 
     fn parameters(&self) -> Value {
         object_schema(
             serde_json::json!({
-                "action": string_property("要执行的操作描述，例如：'删除所有自动化规则'"),
-                "description": string_property("操作的详细说明，例如：'这将删除系统中的所有规则，此操作不可恢复'"),
-                "risk_level": string_property("风险等级：low（低风险）、medium（中等）、high（高风险）")
+                "action": string_property("Description of the action to execute, e.g., 'Delete all automation rules'"),
+                "description": string_property("Detailed explanation of the action, e.g., 'This will delete all rules in the system, this action cannot be undone'"),
+                "risk_level": string_property("Risk level: low (low risk), medium (moderate), high (high risk)")
             }),
             vec!["action".to_string()],
         )
@@ -341,15 +341,15 @@ impl Tool for ClarifyIntentTool {
     }
 
     fn description(&self) -> &str {
-        "当用户意图不明确时，请求澄清。例如：用户说'温度'时，可能是想查看温度、控制温度或分析温度趋势。"
+        "Request clarification when user intent is unclear. For example: when user says 'temperature', they might want to check temperature, control temperature, or analyze temperature trends."
     }
 
     fn parameters(&self) -> Value {
         object_schema(
             serde_json::json!({
-                "ambiguous_input": string_property("用户输入的模糊内容"),
-                "possible_intents": array_property("string", "可能的意图列表"),
-                "question": string_property("向用户提出的澄清问题")
+                "ambiguous_input": string_property("The ambiguous content from user input"),
+                "possible_intents": array_property("string", "List of possible intents"),
+                "question": string_property("The clarifying question to ask the user")
             }),
             vec!["question".to_string()],
         )
@@ -371,7 +371,7 @@ impl Tool for ClarifyIntentTool {
 
         let formatted = if let Some(intents) = &possible_intents {
             let mut result = format!("🤔 {}", question);
-            result.push_str("\n\n可能的意图:\n");
+            result.push_str("\n\nPossible intents:\n");
             for (i, intent) in intents.iter().enumerate() {
                 result.push_str(&format!("  {}. {}\n", i + 1, intent));
             }

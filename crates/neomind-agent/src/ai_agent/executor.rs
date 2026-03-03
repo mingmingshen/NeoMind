@@ -718,9 +718,9 @@ impl ChainState {
             context.push('\n');
         }
 
-        context.push_str("请基于以上之前的执行结果，判断是否需要进一步操作。");
-        context.push_str("如果之前的操作已经完成目标，或者没有更多有意义的操作，请说明并结束。");
-        context.push_str("如果需要继续，请明确说明下一步要做什么。\n");
+        context.push_str("Based on the above execution results, determine if further operations are needed. ");
+        context.push_str("If previous operations have completed the goal, or there are no more meaningful operations, please explain and end. ");
+        context.push_str("If you need to continue, please clearly state what to do next.\n");
 
         context
     }
@@ -1080,12 +1080,23 @@ impl AgentExecutor {
                                 .ok()
                                 .and_then(|s| s.parse().ok())
                                 .unwrap_or(120);
+                            
+                            // Create runtime with accurate capabilities from storage
                             OllamaRuntime::new(
                                 OllamaConfig::new(&model)
                                     .with_endpoint(&endpoint)
                                     .with_timeout_secs(timeout),
                             )
-                            .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                            .map(|runtime| {
+                                // Override capabilities with accurate detection from storage
+                                let runtime = runtime.with_capabilities_override(
+                                    backend.capabilities.supports_multimodal,
+                                    backend.capabilities.supports_thinking,
+                                    backend.capabilities.supports_tools,
+                                    backend.capabilities.max_context,
+                                );
+                                Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
+                            })
                         }
                         LlmBackendType::OpenAi => {
                             let api_key = backend.api_key.clone().unwrap_or_default();
@@ -5095,8 +5106,13 @@ Respond in JSON format:
                         ))
                     }
                     Err(parse_error) => {
+                        // Convert error to string safely to avoid UTF-8 boundary panics
+                        let error_str = parse_error.to_string();
+                        // Truncate error message safely using char boundaries
+                        let error_preview: String = error_str.chars().take(200).collect();
+                        
                         tracing::warn!(
-                            error = %parse_error,
+                            error = %error_preview,
                             response_preview = %json_str.chars().take(500).collect::<String>(),
                             "Failed to parse LLM JSON response, attempting recovery"
                         );
@@ -6265,13 +6281,13 @@ Respond in JSON format:
         agent: &AiAgent,
         data: &[DataCollected],
     ) -> AgentResult<String> {
-        let mut report = format!("# {} - 报告\n\n", agent.name);
+        let mut report = format!("# {} - Report\n\n", agent.name);
         report.push_str(&format!(
-            "生成时间: {}\n\n",
+            "Generated: {}\n\n",
             chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
         ));
 
-        report.push_str("## 数据摘要\n\n");
+        report.push_str("## Data Summary\n\n");
         for data_item in data {
             report.push_str(&format!(
                 "- **{}**: {}\n",
@@ -6279,13 +6295,13 @@ Respond in JSON format:
             ));
         }
 
-        report.push_str("\n## 分析结果\n\n");
+        report.push_str("\n## Analysis Results\n\n");
         if let Some(ref intent) = agent.parsed_intent {
-            report.push_str(&format!("意图类型: {:?}\n", intent.intent_type));
-            report.push_str(&format!("目标指标: {:?}\n", intent.target_metrics));
+            report.push_str(&format!("Intent Type: {:?}\n", intent.intent_type));
+            report.push_str(&format!("Target Metrics: {:?}\n", intent.target_metrics));
         }
 
-        report.push_str("\n## 结论\n\n");
+        report.push_str("\n## Conclusion\n\n");
         report.push_str(&agent.user_prompt);
 
         Ok(report)

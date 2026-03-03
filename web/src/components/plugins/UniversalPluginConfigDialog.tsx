@@ -493,6 +493,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     const icons = []
     if (model.supports_multimodal) icons.push(<Eye key="vision" className="h-3 w-3 text-blue-500" />)
     if (model.supports_thinking) icons.push(<Brain key="thinking" className="h-3 w-3 text-purple-500" />)
+    if (model.supports_tools) icons.push(<Wrench key="tools" className="h-3 w-3 text-orange-500" />)
     if (icons.length === 0) return null
     return <span className="flex items-center gap-0.5">{icons}</span>
   }

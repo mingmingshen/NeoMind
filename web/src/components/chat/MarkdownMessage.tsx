@@ -1,15 +1,13 @@
-import React, { useRef, useState, useEffect } from 'react'
+import React from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Components } from 'react-markdown'
-import { ChevronDown } from 'lucide-react'
 import { cn } from "@/lib/utils"
 
 interface MarkdownMessageProps {
   content: string
   className?: string
   variant?: 'user' | 'assistant'
-  isStreaming?: boolean
 }
 
 /**
@@ -27,21 +25,6 @@ function dedupeRepeatedContent(content: string): string {
 }
 
 /**
- * Fade gradient indicator for scrollable content
- */
-function ScrollFadeIndicator({
-  show
-}: {
-  show: boolean
-}) {
-  if (!show) return null
-
-  return (
-    <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-inherit to-transparent pointer-events-none opacity-50" />
-  )
-}
-
-/**
  * Markdown message renderer with support for:
  * - GitHub Flavored Markdown (GFM) via remark-gfm
  * - Code blocks with syntax highlighting
@@ -49,37 +32,8 @@ function ScrollFadeIndicator({
  * - Styled for chat interface
  * - Auto-scrolls during streaming, fully expands after
  */
-export function MarkdownMessage({ content, className, variant = 'assistant', isStreaming = false }: MarkdownMessageProps) {
+export function MarkdownMessage({ content, className, variant = 'assistant' }: MarkdownMessageProps) {
   const displayContent = dedupeRepeatedContent(content)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [isOverflowing, setIsOverflowing] = useState(false)
-
-  // Detect if content overflows
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-
-    const checkOverflow = () => {
-      setIsOverflowing(container.scrollHeight > container.clientHeight)
-    }
-
-    checkOverflow()
-
-    // Re-check on resize
-    const resizeObserver = new ResizeObserver(checkOverflow)
-    resizeObserver.observe(container)
-
-    return () => {
-      resizeObserver.disconnect()
-    }
-  }, [displayContent])
-
-  // Auto-scroll to bottom during streaming
-  useEffect(() => {
-    if (isStreaming && containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight
-    }
-  }, [displayContent, isStreaming])
 
   const components: Components = {
     // Custom code block rendering
@@ -121,10 +75,7 @@ export function MarkdownMessage({ content, className, variant = 'assistant', isS
   return (
     <div className={cn("relative", className)}>
       <div
-        ref={containerRef}
         className={cn(
-          // Custom scrollbar styling
-          "scrollbar-thin scrollbar-thumb-muted-foreground/20 hover:scrollbar-thumb-muted-foreground/40 scrollbar-track-transparent",
           // Base prose classes
           "prose prose-sm max-w-none",
           // Text wrapping
@@ -146,9 +97,8 @@ export function MarkdownMessage({ content, className, variant = 'assistant', isS
           "prose-table:my-2 prose-table:text-xs",
           "prose-th:px-2 prose-th:py-1 prose-th:border prose-th:border-border prose-th:bg-muted/50",
           "prose-td:px-2 prose-td:py-1 prose-td:border prose-td:border-border",
-          "prose-hr:my-2 prose-hr:border-border",
-          // Max height for long content with smooth scroll
-          "max-h-[600px] overflow-y-auto"
+          "prose-hr:my-2 prose-hr:border-border"
+          // Removed max height limit - messages now fully expand
         )}
         style={{ color: 'inherit' }}
         data-variant={variant}
@@ -157,11 +107,6 @@ export function MarkdownMessage({ content, className, variant = 'assistant', isS
           {displayContent}
         </ReactMarkdown>
       </div>
-
-      {/* Subtle fade indicator when content is scrollable */}
-      {isOverflowing && !isStreaming && (
-        <ScrollFadeIndicator show={true} />
-      )}
     </div>
   )
 }

@@ -180,10 +180,8 @@ async fn main() -> Result<()> {
 async fn init_llm_backend(session_manager: &SessionManager) -> Result<()> {
     // Try config.toml, then llm_config.json, then environment variables
     let backend = load_llm_backend_from_env()?;
-    session_manager
-        .set_llm_backend(backend)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to set LLM backend: {}", e))?;
+    // Only set as default for new sessions
+    session_manager.set_default_llm_backend(backend).await;
     Ok(())
 }
 
@@ -195,7 +193,7 @@ fn load_llm_backend_from_env() -> Result<LlmBackend> {
         let model = std::env::var(env_vars::LLM_MODEL)
             .unwrap_or_else(|_| models::OLLAMA_DEFAULT.to_string());
         eprintln!("Using Ollama: endpoint={}, model={}", endpoint, model);
-        return Ok(LlmBackend::Ollama { endpoint, model });
+        return Ok(LlmBackend::Ollama { endpoint, model, capabilities: None });
     }
 
     // Check for OpenAI
@@ -210,6 +208,7 @@ fn load_llm_backend_from_env() -> Result<LlmBackend> {
             api_key,
             endpoint,
             model,
+            capabilities: None,
         });
     }
 

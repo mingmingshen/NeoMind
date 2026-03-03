@@ -52,7 +52,7 @@ pub mod endpoints {
 
 /// 默认模型常量
 pub mod models {
-    pub const OLLAMA_DEFAULT: &str = "qwen3-vl:2b";
+    pub const OLLAMA_DEFAULT: &str = "ministral-3:3b";
     pub const OPENAI_DEFAULT: &str = "gpt-4o-mini";
 }
 

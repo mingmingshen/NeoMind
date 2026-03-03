@@ -529,51 +529,51 @@ fn build_phase2_prompt_with_tool_results(
 
     // 检查是否有错误结果
     let has_errors = tool_call_results.iter().any(|(_, result)| {
-        result.contains("失败") || result.contains("错误") || result.contains("格式错误")
+        result.contains("failed") || result.contains("error") || result.contains("失败") || result.contains("错误")
     });
 
     let mut block = if tool_count > 1 {
         format!(
-            "\n\n[已执行 {} 个工具，请整合所有结果回答用户问题]\n",
+            "\n\n[Executed {} tools, please consolidate all results to answer the user's question]\n",
             tool_count
         )
     } else {
-        String::from("\n\n[工具执行结果 - 请务必分析结果并给出完整回复]\n")
+        String::from("\n\n[Tool Execution Results - You MUST analyze and provide a complete response]\n")
     };
 
-    // 添加必须回复的指令
-    block.push_str("重要：你必须分析工具结果并给出用户友好的完整回复，不要只说\"执行完成\"。\n\n");
+    // Add mandatory response instruction
+    block.push_str("IMPORTANT: You must analyze the tool results and provide a user-friendly complete response. Don't just say \"execution completed\".\n\n");
 
-    // 如果有错误，添加特殊指令
+    // If there are errors, add special instructions
     if has_errors {
-        block.push_str("注意：工具执行失败。\n\n");
-        block.push_str("处理策略：\n");
+        block.push_str("Note: Tool execution failed.\n\n");
+        block.push_str("Handling Strategy:\n");
         block.push_str(
-            "1. 先检查用户的原始请求是否已经包含了所有必要信息（设备、指标、条件、动作）\n",
+            "1. First check if the user's original request already contains all necessary information (device, metric, condition, action)\n",
         );
-        block.push_str("2. 如果用户已提供足够信息，说明是DSL格式问题，你应该直接告诉用户\"我明白了，让我重新生成\"然后告诉用户规则已创建成功\n");
-        block.push_str("3. 只有当用户确实缺少关键信息时才追问，而且要一次问清楚\n");
-        block.push_str("4. 不要把技术错误消息展示给用户\n");
-        block.push_str("5. 用友好的方式回复，不要机械重复问题列表\n\n");
+        block.push_str("2. If the user has provided enough information, it's a DSL format issue. You should tell the user \"I understand, let me regenerate\" and then inform them the rule was created successfully\n");
+        block.push_str("3. Only ask follow-up questions when the user is actually missing key information, and ask everything at once\n");
+        block.push_str("4. Don't show technical error messages to the user\n");
+        block.push_str("5. Respond in a friendly manner, don't mechanically repeat the question list\n\n");
     }
 
     for (name, result) in tool_call_results {
         let r = if result.len() > PHASE2_TOOL_RESULT_MAX_LEN {
             format!(
-                "{}... (结果已截断，共{}字)",
+                "{}... (result truncated, total {} chars)",
                 &result[..PHASE2_TOOL_RESULT_MAX_LEN],
                 result.len()
             )
         } else {
             result.clone()
         };
-        block.push_str(&format!("【{}】\n{}\n\n", name, r));
+        block.push_str(&format!("[{}]\n{}\n\n", name, r));
     }
 
     // Add explicit instruction for multi-tool scenarios
     if tool_count > 1 {
-        block.push_str("重要：请根据用户原始问题，从上述工具结果中提取最相关的信息进行回答。");
-        block.push_str("如果用户询问特定设备数据，优先展示该设备的详细数据，而不是设备列表。");
+        block.push_str("IMPORTANT: Please extract the most relevant information from the above tool results based on the user's original question. ");
+        block.push_str("If the user asks for specific device data, prioritize showing that device's detailed data rather than a device list.");
     }
 
     question + &block
@@ -666,16 +666,16 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                         let online = summary.get("online").and_then(|o| o.as_u64()).unwrap_or(0);
                         let offline = summary.get("offline").and_then(|o| o.as_u64()).unwrap_or(0);
 
-                        response.push_str(&format!("📊 设备概览 (共 {} 台)\n\n", total));
-                        response.push_str(&format!("- 在线: {} | 离线: {}\n\n", online, offline));
+                        response.push_str(&format!("📊 Device Overview ({} total)\n\n", total));
+                        response.push_str(&format!("- Online: {} | Offline: {}\n\n", online, offline));
 
                         // Show device types
                         if let Some(by_type) = summary.get("by_type").and_then(|b| b.as_object()) {
-                            response.push_str("**按类型统计**:\n");
+                            response.push_str("**By Type**:\n");
                             for (device_type, count) in by_type.iter() {
                                 if let Some(count) = count.as_u64() {
                                     response
-                                        .push_str(&format!("- {}: {} 台\n", device_type, count));
+                                        .push_str(&format!("- {}: {} units\n", device_type, count));
                                 }
                             }
                             response.push_str("\n");
@@ -684,21 +684,21 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
 
                     // List devices (handle both direct array and truncated nested structure)
                     if let Some(devices) = extract_array(&json_value, "devices") {
-                        response.push_str("**设备列表**:\n\n");
+                        response.push_str("**Device List**:\n\n");
                         for device in devices {
-                            let id = device.get("id").and_then(|i| i.as_str()).unwrap_or("未知");
+                            let id = device.get("id").and_then(|i| i.as_str()).unwrap_or("unknown");
                             let name = device
                                 .get("name")
                                 .and_then(|n| n.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
                             let device_type = device
                                 .get("device_type")
                                 .and_then(|t| t.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
                             let status = device
                                 .get("status")
                                 .and_then(|s| s.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
 
                             response.push_str(&format!(
                                 "- **{}** ({}) - {} - {}\n",
@@ -711,164 +711,164 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                     // Format device list as a table (legacy format)
                     // Handle both direct array and truncated nested structure
                     if let Some(devices) = extract_array(&json_value, "devices") {
-                        response.push_str(&format!("## 设备列表 (共 {} 个)\n\n", devices.len()));
-                        response.push_str("| 设备名称 | 状态 | 类型 |\n");
-                        response.push_str("|---------|------|------|\n");
+                        response.push_str(&format!("## Device List ({} total)\n\n", devices.len()));
+                        response.push_str("| Device Name | Status | Type |\n");
+                        response.push_str("|-------------|--------|------|\n");
                         for device in devices {
                             let name = device
                                 .get("name")
                                 .and_then(|n| n.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
                             let status = device
                                 .get("status")
                                 .and_then(|s| s.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
                             let device_type = device
                                 .get("type")
                                 .and_then(|t| t.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
                             response.push_str(&format!(
                                 "| {} | {} | {} |\n",
                                 name, status, device_type
                             ));
                         }
                     } else {
-                        response.push_str("未找到任何设备。\n");
+                        response.push_str("No devices found.\n");
                     }
                 }
                 "list_rules" => {
                     // Format rule list (handle both direct array and truncated nested structure)
                     if let Some(rules) = extract_array(&json_value, "rules") {
-                        response.push_str(&format!("## 自动化规则 (共 {} 个)\n\n", rules.len()));
+                        response.push_str(&format!("## Automation Rules ({} total)\n\n", rules.len()));
                         for rule in rules {
-                            let name = rule.get("name").and_then(|n| n.as_str()).unwrap_or("未知");
+                            let name = rule.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
                             let enabled = rule
                                 .get("enabled")
                                 .and_then(|e| e.as_bool())
                                 .unwrap_or(false);
                             let status = if enabled {
-                                "✓ 已启用"
+                                "✓ Enabled"
                             } else {
-                                "✗ 已禁用"
+                                "✗ Disabled"
                             };
                             response.push_str(&format!("- **{}** {}\n", name, status));
                         }
                     } else if let Some(count) = json_value.get("count").and_then(|c| c.as_u64()) {
-                        response.push_str(&format!("## 自动化规则 (共 {} 个)\n", count));
+                        response.push_str(&format!("## Automation Rules ({} total)\n", count));
                     } else {
-                        response.push_str("未找到任何自动化规则。\n");
+                        response.push_str("No automation rules found.\n");
                     }
                 }
                 "list_scenarios" => {
                     // Handle both direct array and truncated nested structure
                     if let Some(scenarios) = extract_array(&json_value, "scenarios") {
-                        response.push_str(&format!("## 场景列表 (共 {} 个)\n\n", scenarios.len()));
+                        response.push_str(&format!("## Scenario List ({} total)\n\n", scenarios.len()));
                         for scenario in scenarios {
                             let name = scenario
                                 .get("name")
                                 .and_then(|n| n.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
                             response.push_str(&format!("- {}\n", name));
                         }
                     } else {
-                        response.push_str("未找到任何场景。\n");
+                        response.push_str("No scenarios found.\n");
                     }
                 }
                 "list_workflows" => {
                     // Handle both direct array and truncated nested structure
                     if let Some(workflows) = extract_array(&json_value, "workflows") {
                         response
-                            .push_str(&format!("## 工作流列表 (共 {} 个)\n\n", workflows.len()));
+                            .push_str(&format!("## Workflow List ({} total)\n\n", workflows.len()));
                         for workflow in workflows {
                             let name = workflow
                                 .get("name")
                                 .and_then(|n| n.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
                             let status = workflow
                                 .get("status")
                                 .and_then(|s| s.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
                             response.push_str(&format!("- **{}** ({})\n", name, status));
                         }
                     } else {
-                        response.push_str("未找到任何工作流。\n");
+                        response.push_str("No workflows found.\n");
                     }
                 }
                 "query_rule_history" => {
                     // Handle both direct array and truncated nested structure
                     if let Some(history) = extract_array(&json_value, "history") {
                         response
-                            .push_str(&format!("## 规则执行历史 (共 {} 条)\n\n", history.len()));
+                            .push_str(&format!("## Rule Execution History ({} entries)\n\n", history.len()));
                         for (i, entry) in history.iter().enumerate().take(10) {
                             // Limit to 10 entries
                             let name = entry
                                 .get("rule_name")
                                 .and_then(|n| n.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
                             let success = entry
                                 .get("success")
                                 .and_then(|s| s.as_bool())
                                 .unwrap_or(false);
-                            let status = if success { "✓ 成功" } else { "✗ 失败" };
+                            let status = if success { "✓ Success" } else { "✗ Failed" };
                             response.push_str(&format!("- **{}** {}\n", name, status));
                             if i == 9 {
                                 response.push_str(&format!(
-                                    "\n... (还有 {} 条记录)\n",
+                                    "\n... ({} more entries)\n",
                                     history.len().saturating_sub(10)
                                 ));
                                 break;
                             }
                         }
                     } else {
-                        response.push_str("未找到执行历史记录。\n");
+                        response.push_str("No execution history found.\n");
                     }
                 }
                 "query_workflow_status" => {
                     // Handle both direct array and truncated nested structure
                     if let Some(executions) = extract_array(&json_value, "executions") {
                         response.push_str(&format!(
-                            "## 工作流执行状态 (共 {} 条)\n\n",
+                            "## Workflow Execution Status ({} entries)\n\n",
                             executions.len()
                         ));
                         for (i, exec) in executions.iter().enumerate().take(10) {
                             let wf_id = exec
                                 .get("workflow_id")
                                 .and_then(|w| w.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
                             let status = exec
                                 .get("status")
                                 .and_then(|s| s.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
                             response.push_str(&format!("- **{}** - {}\n", wf_id, status));
                             if i == 9 {
                                 response.push_str(&format!(
-                                    "\n... (还有 {} 条记录)\n",
+                                    "\n... ({} more entries)\n",
                                     executions.len().saturating_sub(10)
                                 ));
                                 break;
                             }
                         }
                     } else {
-                        response.push_str("未找到执行记录。\n");
+                        response.push_str("No execution records found.\n");
                     }
                 }
                 "get_device_metrics" => {
                     // Handle both direct array and truncated nested structure
                     if let Some(metrics) = extract_array(&json_value, "metrics") {
-                        response.push_str("## 设备指标\n\n");
+                        response.push_str("## Device Metrics\n\n");
                         for metric in metrics {
                             let name = metric
                                 .get("name")
                                 .and_then(|n| n.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
                             let value = metric
                                 .get("value")
                                 .and_then(|v| v.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
                             response.push_str(&format!("- **{}**: {}\n", name, value));
                         }
                     } else {
-                        response.push_str("未找到设备指标。\n");
+                        response.push_str("No device metrics found.\n");
                     }
                 }
                 "get_device_data" => {
@@ -877,12 +877,12 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                         .get("device_name")
                         .and_then(|n| n.as_str())
                         .or_else(|| json_value.get("device_id").and_then(|d| d.as_str()))
-                        .unwrap_or("未知设备");
+                        .unwrap_or("Unknown Device");
 
                     let device_type = json_value
                         .get("device_type")
                         .and_then(|t| t.as_str())
-                        .unwrap_or("未知");
+                        .unwrap_or("unknown");
 
                     response.push_str(&format!("## {} ({})\n\n", device_name, device_type));
 
@@ -926,10 +926,10 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                     if let Some(dt) = DateTime::from_timestamp(ts, 0) {
                                         let time_ago = (Utc::now() - dt).num_seconds();
                                         if time_ago < 3600 {
-                                            response.push_str(&format!("  _{}秒前_\n", time_ago));
+                                            response.push_str(&format!("  _{} seconds ago_\n", time_ago));
                                         } else if time_ago < 86400 {
                                             response.push_str(&format!(
-                                                "  _{}分钟前_\n",
+                                                "  _{} minutes ago_\n",
                                                 time_ago / 60
                                             ));
                                         }
@@ -938,22 +938,22 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                             }
                         }
                     } else {
-                        response.push_str("暂无数据。\n");
+                        response.push_str("No data available.\n");
                     }
                 }
                 "query_data" => {
                     // Format query result
                     if let Some(data) = json_value.get("data") {
                         response.push_str(&format!(
-                            "## 查询结果\n\n```\n{}\n```\n",
+                            "## Query Result\n\n```\n{}\n```\n",
                             serde_json::to_string_pretty(data).unwrap_or_default()
                         ));
                     } else {
-                        response.push_str("查询完成。\n");
+                        response.push_str("Query completed.\n");
                     }
                 }
                 "control_device" | "send_command" => {
-                    response.push_str("✓ 命令执行成功。\n");
+                    response.push_str("✓ Command executed successfully.\n");
                 }
                 "list_agents" => {
                     // Format agent list with statistics
@@ -969,14 +969,14 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                     };
 
                     if let Some(agents) = agents_array {
-                        response.push_str(&format!("## AI Agent列表 (共 {} 个)\n\n", agents.len()));
+                        response.push_str(&format!("## AI Agent List ({} total)\n\n", agents.len()));
                         for agent in agents {
-                            let name = agent.get("name").and_then(|n| n.as_str()).unwrap_or("未知");
+                            let name = agent.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
                             let id = agent.get("id").and_then(|i| i.as_str()).unwrap_or("");
                             let status = agent
                                 .get("status")
                                 .and_then(|s| s.as_str())
-                                .unwrap_or("未知");
+                                .unwrap_or("unknown");
 
                             // Get execution stats - try multiple paths
                             let exec_count_str = agent
@@ -1001,7 +1001,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                             let last_exec = agent
                                 .get("last_execution_at")
                                 .and_then(|l| l.as_str())
-                                .unwrap_or("未执行");
+                                .unwrap_or("Not executed");
 
                             let status_icon = match status {
                                 "active" | "Active" => "✓",
@@ -1019,10 +1019,10 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                             // Add execution info
                             if exec_count_str != "0" {
                                 response.push_str(&format!(
-                                    "  执行: {} 次, 最后: {}\n",
+                                    "  Executions: {} times, Last: {}\n",
                                     exec_count_str,
-                                    if last_exec == "未执行" || last_exec.contains("null") {
-                                        "未执行"
+                                    if last_exec == "Not executed" || last_exec.contains("null") {
+                                        "N/A"
                                     } else {
                                         last_exec
                                     }
@@ -1032,14 +1032,14 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                             // Add description if available
                             if let Some(desc) = agent.get("description").and_then(|d| d.as_str()) {
                                 if !desc.is_empty() && desc != "null" {
-                                    response.push_str(&format!("  描述: {}\n", desc));
+                                    response.push_str(&format!("  Description: {}\n", desc));
                                 }
                             }
                         }
                     } else if let Some(count) = json_value.get("count").and_then(|c| c.as_u64()) {
-                        response.push_str(&format!("## AI Agent列表 (共 {} 个)\n", count));
+                        response.push_str(&format!("## AI Agent List ({} total)\n", count));
                     } else {
-                        response.push_str("未找到任何AI Agent。\n");
+                        response.push_str("No AI Agents found.\n");
                     }
                 }
                 "get_agent" => {
@@ -1047,18 +1047,18 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                     let name = json_value
                         .get("name")
                         .and_then(|n| n.as_str())
-                        .unwrap_or("未知");
+                        .unwrap_or("unknown");
                     let status = json_value
                         .get("status")
                         .and_then(|s| s.as_str())
-                        .unwrap_or("未知");
+                        .unwrap_or("unknown");
                     let agent_type = json_value
                         .get("type")
                         .and_then(|t| t.as_str())
-                        .unwrap_or("未知");
+                        .unwrap_or("unknown");
 
                     response.push_str(&format!("## Agent: {} ({})\n\n", name, agent_type));
-                    response.push_str(&format!("**状态**: {}\n", status));
+                    response.push_str(&format!("**Status**: {}\n", status));
 
                     // Execution stats
                     if let Some(stats) = json_value.get("stats") {
@@ -1073,7 +1073,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                 .and_then(|f| f.as_u64())
                                 .unwrap_or(0);
                             response.push_str(&format!(
-                                "**执行统计**: 总计{}次, 成功{}次, 失败{}次\n",
+                                "**Execution Stats**: Total {} times, Success {} times, Failed {} times\n",
                                 total, success, failed
                             ));
                         }
@@ -1083,70 +1083,70 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                     if let Some(last) = json_value.get("last_execution_at").and_then(|l| l.as_str())
                     {
                         if !last.is_empty() && last != "null" {
-                            response.push_str(&format!("**最后执行**: {}\n", last));
+                            response.push_str(&format!("**Last Execution**: {}\n", last));
                         }
                     }
 
                     // Schedule
                     if let Some(schedule) = json_value.get("schedule_type").and_then(|s| s.as_str())
                     {
-                        response.push_str(&format!("**调度类型**: {}\n", schedule));
+                        response.push_str(&format!("**Schedule Type**: {}\n", schedule));
                     }
                 }
                 "create_rule" => {
                     if let Some(rule_id) = json_value.get("rule_id").and_then(|r| r.as_str()) {
-                        response.push_str(&format!("✓ 规则创建成功 (ID: {})\n", rule_id));
+                        response.push_str(&format!("✓ Rule created successfully (ID: {})\n", rule_id));
                     } else {
-                        response.push_str("✓ 规则创建成功。\n");
+                        response.push_str("✓ Rule created successfully.\n");
                     }
                 }
                 "trigger_workflow" => {
                     if let Some(execution_id) =
                         json_value.get("execution_id").and_then(|e| e.as_str())
                     {
-                        response.push_str(&format!("✓ 工作流已触发 (执行ID: {})\n", execution_id));
+                        response.push_str(&format!("✓ Workflow triggered (Execution ID: {})\n", execution_id));
                     } else {
-                        response.push_str("✓ 工作流已触发。\n");
+                        response.push_str("✓ Workflow triggered.\n");
                     }
                 }
                 "create_agent" => {
                     if let Some(agent_id) = json_value.get("agent_id").and_then(|a| a.as_str()) {
-                        response.push_str(&format!("✓ Agent创建成功 (ID: {})\n", agent_id));
+                        response.push_str(&format!("✓ Agent created successfully (ID: {})\n", agent_id));
                     } else if let Some(id) = json_value.get("id").and_then(|i| i.as_str()) {
-                        response.push_str(&format!("✓ Agent创建成功 (ID: {})\n", id));
+                        response.push_str(&format!("✓ Agent created successfully (ID: {})\n", id));
                     } else {
-                        response.push_str("✓ Agent创建成功。\n");
+                        response.push_str("✓ Agent created successfully.\n");
                     }
                 }
                 "execute_agent" => {
                     if let Some(execution_id) =
                         json_value.get("execution_id").and_then(|e| e.as_str())
                     {
-                        response.push_str(&format!("✓ Agent执行已触发 (ID: {})\n", execution_id));
+                        response.push_str(&format!("✓ Agent execution triggered (ID: {})\n", execution_id));
                     } else if let Some(result) = json_value.get("result").and_then(|r| r.as_str()) {
-                        response.push_str(&format!("✓ Agent执行完成: {}\n", result));
+                        response.push_str(&format!("✓ Agent execution completed: {}\n", result));
                     } else {
-                        response.push_str("✓ Agent执行完成。\n");
+                        response.push_str("✓ Agent execution completed.\n");
                     }
                 }
                 "control_agent" => {
                     if let Some(new_status) = json_value.get("status").and_then(|s| s.as_str()) {
-                        response.push_str(&format!("✓ Agent状态已更新: {}\n", new_status));
+                        response.push_str(&format!("✓ Agent status updated: {}\n", new_status));
                     } else {
-                        response.push_str("✓ Agent控制命令已执行。\n");
+                        response.push_str("✓ Agent control command executed.\n");
                     }
                 }
                 "delete_rule" => {
-                    response.push_str("✓ 规则已删除。\n");
+                    response.push_str("✓ Rule deleted.\n");
                 }
                 _ => {
                     // Generic formatting for other tools
-                    response.push_str(&format!("✓ {} 执行完成。\n", tool_name));
+                    response.push_str(&format!("✓ {} executed successfully.\n", tool_name));
                 }
             }
         } else {
             // Result is not valid JSON, use as-is
-            response.push_str(&format!("✓ {} 执行完成。\n", tool_name));
+            response.push_str(&format!("✓ {} executed successfully.\n", tool_name));
         }
     }
 
@@ -1216,9 +1216,9 @@ fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
                     .collect();
 
                 let summary = if tool_names.len() == 1 {
-                    format!("[之前调用了工具: {}]", tool_names[0])
+                    format!("[Previously called tool: {}]", tool_names[0])
                 } else {
-                    format!("[之前调用了工具: {}]", tool_names.join(", "))
+                    format!("[Previously called tools: {}]", tool_names.join(", "))
                 };
 
                 result.push(AgentMessage {
@@ -1866,7 +1866,7 @@ pub async fn process_stream_events_with_safeguards(
                     Ok(s) => s,
                     Err(e) => {
                         tracing::error!("Round {} LLM call failed: {}", tool_iteration_count + 1, e);
-                        yield AgentEvent::error(format!("工具调用失败: {}", e));
+                        yield AgentEvent::error(format!("Tool call failed: {}", e));
                         break 'multi_round_loop;
                     }
                 };
@@ -1893,19 +1893,19 @@ pub async fn process_stream_events_with_safeguards(
                         tracing::info!("Timeout with tool calls detected, proceeding to execution");
                         break;
                     } else {
-                        yield AgentEvent::error(format!("请求超时（已用时{:.1}秒），正在完成处理...", elapsed.as_secs_f64()));
+                        yield AgentEvent::error(format!("Request timeout ({:.1}s elapsed), completing processing...", elapsed.as_secs_f64()));
                         break;
                     }
                 } else if elapsed > warning_threshold && !timeout_warned {
                     tracing::warn!("Stream approaching timeout ({:.1}s elapsed, max: {:.1}s)", elapsed.as_secs_f64(), timeout_threshold.as_secs_f64());
-                    yield AgentEvent::warning(format!("响应时间较长（已用时{:.1}秒），请耐心等待...", elapsed.as_secs_f64()));
+                    yield AgentEvent::warning(format!("Response is taking longer ({:.1}s elapsed), please wait...", elapsed.as_secs_f64()));
                     timeout_warned = true;
                 }
 
                 // Special warning for extended thinking with no content
                 if has_thinking && !has_content && elapsed > Duration::from_secs(60) && !long_thinking_warned {
                     tracing::warn!("Extended thinking detected ({:.1}s) with no content yet", elapsed.as_secs_f64());
-                    yield AgentEvent::warning("模型正在进行深度思考，可能需要更长时间...".to_string());
+                    yield AgentEvent::warning("The model is performing deep thinking, this may take longer...".to_string());
                     long_thinking_warned = true;
                 }
 
@@ -1914,7 +1914,7 @@ pub async fn process_stream_events_with_safeguards(
                 let is_interrupted = safeguards.interrupt_signal.as_ref().map(|rx| *rx.borrow()).unwrap_or(false);
                 if is_interrupted {
                     tracing::info!("Stream interrupted by user");
-                    yield AgentEvent::content("\n\n[已中断]".to_string());
+                    yield AgentEvent::content("\n\n[Interrupted]".to_string());
                     yield AgentEvent::end();
                     return;
                 }
@@ -1936,10 +1936,10 @@ pub async fn process_stream_events_with_safeguards(
                     };
                     let elapsed_ms = elapsed.as_millis() as u64;
                     yield AgentEvent::progress(
-                        format!("正在{}...", match stage_name {
-                            "thinking" => "思考",
-                            "executing" => "执行工具",
-                            _ => "生成回复",
+                        format!("{}...", match stage_name {
+                            "thinking" => "Thinking",
+                            "executing" => "Executing tools",
+                            _ => "Generating response",
                         }),
                         stage_name,
                         elapsed_ms
@@ -1962,7 +1962,7 @@ pub async fn process_stream_events_with_safeguards(
 
                         if detect_repetition(&recent_chunks, &text, safeguards.max_repetition_count) {
                             tracing::warn!("Repetition detected, stopping stream");
-                            yield AgentEvent::error("检测到重复内容，正在完成处理...".to_string());
+                            yield AgentEvent::error("Repetitive content detected, completing processing...".to_string());
                             break;
                         }
 
@@ -2187,6 +2187,24 @@ pub async fn process_stream_events_with_safeguards(
                     Err(e) => {
                         tracing::error!("Stream error: {}", e);
                         yield AgentEvent::error(format!("Stream error: {}", e));
+                        // Save partial response on error to maintain conversation context
+                        // This prevents the next message from having incomplete context
+                        if !buffer.is_empty() || !content_before_tools.is_empty() || !thinking_content.is_empty() {
+                            let partial_content = if content_before_tools.is_empty() {
+                                buffer.clone()
+                            } else {
+                                content_before_tools.clone()
+                            };
+                            let partial_msg = if !thinking_content.is_empty() {
+                                let cleaned_thinking = cleanup_thinking_content(&thinking_content);
+                                AgentMessage::assistant_with_thinking(&partial_content, &cleaned_thinking)
+                            } else {
+                                AgentMessage::assistant(&partial_content)
+                            };
+                            internal_state.write().await.push_message(partial_msg);
+                            tracing::info!("Saved partial response on error: {} chars content, {} chars thinking", 
+                                partial_content.len(), thinking_content.len());
+                        }
                         break;
                     }
                 }
@@ -2277,7 +2295,7 @@ pub async fn process_stream_events_with_safeguards(
                             tool_call_results.push((name.clone(), result_str));
                         }
                         Err(e) => {
-                            let error_msg = format!("工具执行失败: {}", e);
+                            let error_msg = format!("Tool execution failed: {}", e);
                             let error_value = serde_json::json!({"error": error_msg});
 
                             for tc in &tool_calls {
@@ -2737,7 +2755,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
 
             if elapsed > safeguards.max_stream_duration {
                 tracing::warn!("Stream timeout ({:?} elapsed)", elapsed);
-                yield AgentEvent::error(format!("请求超时（已用时{:.1}秒）", elapsed.as_secs_f64()));
+                yield AgentEvent::error(format!("Request timeout ({:.1}s elapsed)", elapsed.as_secs_f64()));
                 break;
             }
 
@@ -2806,6 +2824,17 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                 Err(e) => {
                     tracing::error!("Stream error: {}", e);
                     yield AgentEvent::error(format!("Stream error: {}", e));
+                    // Save partial response on error to maintain conversation context
+                    if !buffer.is_empty() || !content_before_tools.is_empty() {
+                        let partial_content = if content_before_tools.is_empty() {
+                            buffer.clone()
+                        } else {
+                            content_before_tools.clone()
+                        };
+                        let partial_msg = AgentMessage::assistant(&partial_content);
+                        internal_state.write().await.push_message(partial_msg);
+                        tracing::info!("Saved partial multimodal response on error: {} chars", partial_content.len());
+                    }
                     break;
                 }
             }
@@ -2872,7 +2901,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                         tool_call_results.push((name.clone(), result_str));
                     }
                     Err(e) => {
-                        let error_msg = format!("工具执行失败: {}", e);
+                        let error_msg = format!("Tool execution failed: {}", e);
                         let error_value = serde_json::json!({"error": error_msg});
 
                         for tc in &tool_calls {
@@ -3288,7 +3317,7 @@ pub fn events_to_string_stream(
                     yield content;
                 }
                 AgentEvent::Error { message } => {
-                    yield format!("[错误: {}]", message);
+                    yield format!("[Error: {}]", message);
                 }
                 AgentEvent::End => break,
                 _ => {

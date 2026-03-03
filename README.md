@@ -9,8 +9,29 @@
 NeoMind is a Rust-based edge AI platform that enables autonomous device management and automated decision-making through Large Language Models (LLMs).
 
 [![Build Status](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml/badge.svg)](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache-2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Version: 0.5.9](https://img.shields.io/badge/v-0.5.9-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
+[![Rust](https://img.shields.io/badge/Rust-1.85+-orange.svg)](https://www.rust-lang.org)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](https://github.com/camthink-ai/NeoMind/releases)
+
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="70%" align="center">
+        <img src="docs/img/dashboard_light.png" alt="Desktop App" style="border-radius: 3px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" />
+        <br/>
+        <sub>💻 Desktop Application</sub>
+      </td>
+      <td width="30%" align="center">
+        <img src="docs/img/mobile_web.png" alt="Mobile Web" style="border-radius: 3px; box-shadow: 0 4px 12px rgba(49, 28, 28, 0.15);" />
+        <br/>
+        <sub>📱 Mobile Web</sub>
+      </td>
+    </tr>
+  </table>
+</div>
+
 
 ## Features
 
@@ -48,8 +69,52 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 - **Modern UI**: React 18 + TypeScript + Tailwind CSS
 - **System Tray**: Background operation with quick access
 - **Auto-Update**: Built-in update notifications
+  
 
----
+## 📸 More Screenshots
+
+<details>
+<summary>Click to view more interface screenshots</summary>
+
+<br/>
+
+**Login**
+![Login](docs/img/login.png)
+
+**Chat**
+![Chat Interface](docs/img/chat.png)
+
+**AI Agent**
+![AI Agent](docs/img/ai_agent.png)
+![AI Agent](docs/img/create_ai_agent.png)
+![AI Agent](docs/img/ai_agent_details.png)
+
+**Dashboard**
+![Dashboard Light](docs/img/dashboard_light.png)
+![Dashboard Dark](docs/img/dashboard_dark.png)
+
+**Device Management**
+![Devices](docs/img/device.png)
+![Device Info](docs/img/device_info.png)
+![Device Types](docs/img/device_type.png)
+![Pending Devices](docs/img/pending_devices.png)
+
+**Automation**
+![Rules](docs/img/rules.png)
+![Rules](docs/img/create_rules.png)
+![Transforms](docs/img/transformsdata.png)
+![Transforms](docs/img/create_transformsdata.png)
+
+**Messages**
+![Messages](docs/img/messages.png)
+
+**Extensions**
+![Extensions](docs/img/extensions.png)
+
+**System**
+![Settings](docs/img/settings.png)
+
+</details>
 
 ## Quick Start
 

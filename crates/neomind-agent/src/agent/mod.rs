@@ -133,9 +133,9 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
 
                 // Create a compacted summary message
                 let summary = if tool_names.len() == 1 {
-                    format!("[之前调用了工具: {}]", tool_names[0])
+                    format!("[Previously called tool: {}]", tool_names[0])
                 } else {
-                    format!("[之前调用了工具: {}]", tool_names.join(", "))
+                    format!("[Previously called tools: {}]", tool_names.join(", "))
                 };
 
                 result.push(AgentMessage {
@@ -225,7 +225,7 @@ pub fn compact_conversation(
         if msg.role == "user" {
             // Truncate very long user messages
             let truncated_content = if msg.content.len() > 200 {
-                format!("{}... (消息过长，已截断)", &msg.content[..200])
+                format!("{}... (message truncated)", &msg.content[..200])
             } else {
                 msg.content.clone()
             };
@@ -247,15 +247,15 @@ pub fn compact_conversation(
     // Create a single summary for old conversation
     if !topic_batches.is_empty() {
         let old_summary = if topic_batches.len() <= 3 {
-            format!("[之前的对话: {}]", topic_batches.join("; "))
+            format!("[Previous conversation: {}]", topic_batches.join("; "))
         } else {
             format!(
-                "[之前的对话: 包含{}轮交流，主题涉及{}]",
+                "[Previous conversation: {} rounds, topics include {}]",
                 topic_batches.len(),
                 if topic_batches.len() > 5 {
-                    "多个话题"
+                    "multiple topics"
                 } else {
-                    "相关内容"
+                    "related content"
                 }
             )
         };
@@ -295,19 +295,19 @@ fn summarize_assistant_message(msg: &AgentMessage) -> String {
     }
 
     // Check for common patterns and extract key info
-    if content.contains("成功") || content.contains("已完成") {
+    if content.contains("成功") || content.contains("已完成") || content.contains("success") || content.contains("completed") {
         if let Some(tool_name) = &msg.tool_call_name {
-            return format!("执行了{}", tool_name);
+            return format!("Executed {}", tool_name);
         }
-        return "操作已完成".to_string();
+        return "Operation completed".to_string();
     }
 
-    if content.contains("失败") || content.contains("错误") {
-        return format!("操作失败: {}", extract_first_phrase(content, 30));
+    if content.contains("失败") || content.contains("错误") || content.contains("failed") || content.contains("error") {
+        return format!("Operation failed: {}", extract_first_phrase(content, 30));
     }
 
-    if content.contains("查询到") || content.contains("数据显示") {
-        return format!("查询了数据: {}", extract_first_phrase(content, 30));
+    if content.contains("查询到") || content.contains("数据显示") || content.contains("found") || content.contains("data shows") {
+        return format!("Queried data: {}", extract_first_phrase(content, 30));
     }
 
     // Generic: extract first meaningful phrase
@@ -799,7 +799,7 @@ impl Agent {
         );
 
         let (llm, model_name) = match backend {
-            LlmBackend::Ollama { endpoint, model } => {
+            LlmBackend::Ollama { endpoint, model, capabilities } => {
                 tracing::info!(
                     endpoint = %endpoint, model = %model, timeout = ollama_timeout,
                     "Creating OllamaRuntime"
@@ -807,14 +807,26 @@ impl Agent {
                 let config = OllamaConfig::new(&model)
                     .with_endpoint(&endpoint)
                     .with_timeout_secs(ollama_timeout);
-                let runtime =
+                let mut runtime =
                     OllamaRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                
+                // Set capabilities override if provided
+                if let Some(caps) = capabilities {
+                    runtime = runtime.with_capabilities_override(
+                        caps.multimodal,
+                        caps.thinking_display,
+                        caps.function_calling,
+                        caps.max_context.unwrap_or(8192),
+                    );
+                }
+                
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::Qwen {
                 api_key,
                 endpoint,
                 model,
+                capabilities: _,
             } => {
                 tracing::info!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -837,6 +849,7 @@ impl Agent {
                 api_key,
                 endpoint,
                 model,
+                capabilities: _,
             } => {
                 tracing::info!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -859,6 +872,7 @@ impl Agent {
                 api_key,
                 endpoint,
                 model,
+                capabilities: _,
             } => {
                 tracing::info!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -881,6 +895,7 @@ impl Agent {
                 api_key,
                 endpoint,
                 model,
+                capabilities: _,
             } => {
                 tracing::info!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -903,6 +918,7 @@ impl Agent {
                 api_key,
                 endpoint,
                 model,
+                capabilities: _,
             } => {
                 tracing::info!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -924,6 +940,7 @@ impl Agent {
                 api_key,
                 endpoint,
                 model,
+                capabilities: _,
             } => {
                 tracing::info!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -945,6 +962,7 @@ impl Agent {
                 api_key,
                 endpoint,
                 model,
+                capabilities: _,
             } => {
                 tracing::info!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -966,6 +984,7 @@ impl Agent {
                 api_key,
                 endpoint,
                 model,
+                capabilities: _,
             } => {
                 tracing::info!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
@@ -1096,7 +1115,7 @@ impl Agent {
     ) -> String {
         let mut prompt = String::from(self.config.system_prompt.trim());
 
-        prompt.push_str("\n\n## 可用工具\n\n");
+        prompt.push_str("\n\n## Available Tools\n\n");
 
         // Group tools by category for better organization
         let mut device_tools = Vec::new();
@@ -1126,10 +1145,10 @@ impl Agent {
 
         // Add tool sections with examples
         if !device_tools.is_empty() {
-            prompt.push_str("### 设备管理\n");
+            prompt.push_str("### Device Management\n");
             for tool in device_tools {
                 prompt.push_str(&format!(
-                    "**{}**: {} (别名: {})\n",
+                    "**{}**: {} (aliases: {})\n",
                     tool.name,
                     tool.description,
                     tool.aliases.join(", ")
@@ -1137,10 +1156,10 @@ impl Agent {
 
                 // Add use_when conditions
                 if !tool.use_when.is_empty() {
-                    prompt.push_str("  *调用条件*: ");
+                    prompt.push_str("  *When to use*: ");
                     for (i, condition) in tool.use_when.iter().enumerate() {
                         if i > 0 {
-                            prompt.push_str(" 或 ");
+                            prompt.push_str(" OR ");
                         }
                         prompt.push_str(condition);
                     }
@@ -1149,12 +1168,12 @@ impl Agent {
 
                 // Add examples (especially important for chains)
                 if !tool.examples.is_empty() {
-                    prompt.push_str("  *示例*:\n");
+                    prompt.push_str("  *Examples*:\n");
                     for example in &tool.examples {
-                        prompt.push_str(&format!("    - 用户: \"{}\"\n", example.user_query));
-                        prompt.push_str(&format!("      调用: {}\n", example.tool_call));
+                        prompt.push_str(&format!("    - User: \"{}\"\n", example.user_query));
+                        prompt.push_str(&format!("      Call: {}\n", example.tool_call));
                         if !example.explanation.is_empty() {
-                            prompt.push_str(&format!("      说明: {}\n", example.explanation));
+                            prompt.push_str(&format!("      Note: {}\n", example.explanation));
                         }
                     }
                 }
@@ -1163,20 +1182,20 @@ impl Agent {
         }
 
         if !data_tools.is_empty() {
-            prompt.push_str("### 数据查询\n");
+            prompt.push_str("### Data Query\n");
             for tool in data_tools {
                 prompt.push_str(&format!(
-                    "**{}**: {} (别名: {})\n",
+                    "**{}**: {} (aliases: {})\n",
                     tool.name,
                     tool.description,
                     tool.aliases.join(", ")
                 ));
 
                 if !tool.use_when.is_empty() {
-                    prompt.push_str("  *调用条件*: ");
+                    prompt.push_str("  *When to use*: ");
                     for (i, condition) in tool.use_when.iter().enumerate() {
                         if i > 0 {
-                            prompt.push_str(" 或 ");
+                            prompt.push_str(" OR ");
                         }
                         prompt.push_str(condition);
                     }
@@ -1184,12 +1203,12 @@ impl Agent {
                 }
 
                 if !tool.examples.is_empty() {
-                    prompt.push_str("  *示例*:\n");
+                    prompt.push_str("  *Examples*:\n");
                     for example in &tool.examples {
-                        prompt.push_str(&format!("    - 用户: \"{}\"\n", example.user_query));
-                        prompt.push_str(&format!("      调用: {}\n", example.tool_call));
+                        prompt.push_str(&format!("    - User: \"{}\"\n", example.user_query));
+                        prompt.push_str(&format!("      Call: {}\n", example.tool_call));
                         if !example.explanation.is_empty() {
-                            prompt.push_str(&format!("      说明: {}\n", example.explanation));
+                            prompt.push_str(&format!("      Note: {}\n", example.explanation));
                         }
                     }
                 }
@@ -1198,20 +1217,20 @@ impl Agent {
         }
 
         if !rule_tools.is_empty() {
-            prompt.push_str("### 规则管理\n");
+            prompt.push_str("### Rule Management\n");
             for tool in rule_tools {
                 prompt.push_str(&format!(
-                    "**{}**: {} (别名: {})\n",
+                    "**{}**: {} (aliases: {})\n",
                     tool.name,
                     tool.description,
                     tool.aliases.join(", ")
                 ));
 
                 if !tool.examples.is_empty() {
-                    prompt.push_str("  *示例*:\n");
+                    prompt.push_str("  *Examples*:\n");
                     for example in &tool.examples {
                         prompt.push_str(&format!(
-                            "    - 用户: \"{}\" → {}\n",
+                            "    - User: \"{}\" -> {}\n",
                             example.user_query, example.tool_call
                         ));
                     }
@@ -1224,17 +1243,17 @@ impl Agent {
             prompt.push_str("### AI Agent\n");
             for tool in agent_tools {
                 prompt.push_str(&format!(
-                    "**{}**: {} (别名: {})\n",
+                    "**{}**: {} (aliases: {})\n",
                     tool.name,
                     tool.description,
                     tool.aliases.join(", ")
                 ));
 
                 if !tool.examples.is_empty() {
-                    prompt.push_str("  *示例*:\n");
+                    prompt.push_str("  *Examples*:\n");
                     for example in &tool.examples {
                         prompt.push_str(&format!(
-                            "    - 用户: \"{}\" → {}\n",
+                            "    - User: \"{}\" -> {}\n",
                             example.user_query, example.tool_call
                         ));
                     }
@@ -1244,10 +1263,10 @@ impl Agent {
         }
 
         if !system_tools.is_empty() {
-            prompt.push_str("### 系统工具\n");
+            prompt.push_str("### System Tools\n");
             for tool in system_tools {
                 prompt.push_str(&format!(
-                    "**{}**: {} (别名: {})\n",
+                    "**{}**: {} (aliases: {})\n",
                     tool.name,
                     tool.description,
                     tool.aliases.join(", ")
@@ -1257,26 +1276,26 @@ impl Agent {
         }
 
         // Add usage guidance with chain instructions
-        prompt.push_str("## 调用顺序规则\n\n");
+        prompt.push_str("## Tool Calling Rules\n\n");
 
-        prompt.push_str("### 设备数据查询链路\n");
-        prompt.push_str("**快速路径**（推荐）：\n");
-        prompt.push_str("- **get_device_data(device_id='设备名称')** → 工具会自动解析名称为ID，返回所有当前指标\n");
-        prompt.push_str("- **query_data(device_id='设备名称', metric='实际指标名')** → 查询历史趋势（必须先用get_device_data确认指标名）\n\n");
+        prompt.push_str("### Device Data Query Chain\n");
+        prompt.push_str("**Quick Path** (Recommended):\n");
+        prompt.push_str("- **get_device_data(device_id='device_name')** -> Tool auto-resolves name to ID, returns all current metrics\n");
+        prompt.push_str("- **query_data(device_id='device_name', metric='actual_metric_name')** -> Query historical trends (must confirm metric name with get_device_data first)\n\n");
 
-        prompt.push_str("**完整路径**（当用户问\"有哪些设备\"时）：\n");
-        prompt.push_str("- **device_discover** → 显示所有设备列表\n");
-        prompt.push_str("- **get_device_data(device_id)** → 获取设备详细数据\n\n");
+        prompt.push_str("**Full Path** (When user asks \"what devices are there\"):\n");
+        prompt.push_str("- **device_discover** -> Show all device list\n");
+        prompt.push_str("- **get_device_data(device_id)** -> Get device detailed data\n\n");
 
-        prompt.push_str("⚠️ 关键要点：\n");
-        prompt.push_str("- ✅ get_device_data 和 query_data 都支持直接使用设备名称（如 'ne101'、'ne101 test'）\n");
+        prompt.push_str("Key Points:\n");
+        prompt.push_str("- get_device_data and query_data both support using device names directly (e.g., 'ne101', 'ne101 test')\n");
         prompt
-            .push_str("- ❌ 不要跳过 get_device_data 直接调用 query_data（需要先确认指标名称）\n");
-        prompt.push_str("- ❌ query_data 的 metric 参数必须是实际的指标名（如 values.battery），不能是 'battery' 或 '温度'\n\n");
+            .push_str("- Do NOT skip get_device_data and call query_data directly (need to confirm metric name first)\n");
+        prompt.push_str("- query_data's metric parameter must be the actual metric name (e.g., values.battery), NOT 'battery' or 'temperature'\n\n");
 
-        prompt.push_str("## 使用指南\n");
-        prompt.push_str("- 多个工具调用可以并行执行，提高响应速度\n");
-        prompt.push_str("- 设备别名和工具别名都可以使用，系统会自动识别\n");
+        prompt.push_str("## Usage Guide\n");
+        prompt.push_str("- Multiple tool calls can be executed in parallel for faster response\n");
+        prompt.push_str("- Device aliases and tool aliases are supported, system will auto-recognize\n");
 
         prompt
     }
@@ -1641,7 +1660,7 @@ impl Agent {
 
                 // Add suggestions if available
                 if !first_followup.suggestions.is_empty() {
-                    content.push_str("\n\n建议选项：");
+                    content.push_str("\n\nSuggested options:");
                     for (i, suggestion) in first_followup.suggestions.iter().enumerate() {
                         content.push_str(&format!("\n{}. {}", i + 1, suggestion));
                     }
@@ -1650,7 +1669,7 @@ impl Agent {
                 content
             } else {
                 // Should not reach here, but fallback
-                "我明白您的请求，但需要更多信息。".to_string()
+                "I understand your request, but need more information.".to_string()
             };
 
             // Save user message and our response to history
@@ -2091,7 +2110,7 @@ impl Agent {
             let ctx = self.conversation_context.read().await;
             let summary = ctx.get_context_summary();
             if !summary.is_empty() {
-                Some(format!("当前对话上下文：\n{}", summary))
+                Some(format!("Current conversation context:\n{}", summary))
             } else {
                 None
             }
@@ -2928,7 +2947,7 @@ END"#
                         );
 
                         // Don't retry on logical errors (like invalid input)
-                        return Ok(format!("工具 {} 执行失败: {}", real_tool_name, error_msg));
+                        return Ok(format!("Tool {} execution failed: {}", real_tool_name, error_msg));
                     }
 
                     tracing::debug!(
@@ -3026,7 +3045,7 @@ END"#
         self.internal_state.write().await.push_message(tool_msg);
 
         // Get LLM response based on tool result
-        let response_content = format!("工具执行完成。结果: {}", result);
+        let response_content = format!("Tool execution completed. Result: {}", result);
 
         let response = AgentMessage::assistant(response_content);
         self.internal_state

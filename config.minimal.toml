@@ -6,7 +6,7 @@
 #
 # Setup steps:
 #   1. Install Ollama: curl -fsSL https://ollama.com/install.sh | sh
-#   2. Pull model: ollama pull qwen3-vl:2b
+#   2. Pull model: ollama pull ministral-3:3b
 #   3. Copy this file: cp config.minimal.toml config.toml
 #   4. Start server: cargo run -p neomind-api
 #   5. Open: http://localhost:9375
@@ -16,7 +16,7 @@
 
 [llm]
 backend = "ollama"
-model = "qwen3-vl:2b"
+model = "ministral-3:3b"
 
 [mqtt]
 mode = "embedded"

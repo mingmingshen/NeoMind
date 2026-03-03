@@ -42,7 +42,7 @@ impl BackendFactory for OllamaFactory {
         let model = config
             .get("model")
             .and_then(|v| v.as_str())
-            .unwrap_or("qwen3-vl:2b")
+            .unwrap_or("ministral-3:3b")
             .to_string();
 
         let endpoint = config.get("endpoint").and_then(|v| v.as_str());
@@ -68,7 +68,7 @@ impl BackendFactory for OllamaFactory {
     fn default_config(&self) -> Value {
         serde_json::json!({
             "backend": "ollama",
-            "model": "qwen3-vl:2b",
+            "model": "ministral-3:3b",
             "endpoint": "http://localhost:11434"
         })
     }

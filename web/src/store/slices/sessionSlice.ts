@@ -170,6 +170,7 @@ export const createSessionSlice: StateCreator<
   sessionsPage: 1,
   sessionsHasMore: true,
   sessionsLoading: false,
+  isLoadingSession: false,
 
   // Actions
   setSessionId: (id: string) => {
@@ -255,19 +256,26 @@ export const createSessionSlice: StateCreator<
       return
     }
 
+    // Set loading state with minimum display time for better UX
+    set({ isLoadingSession: true })
+    const minLoadingTime = new Promise(resolve => setTimeout(resolve, 300))
+
     // IMPORTANT: Update WebSocket FIRST before any API calls
     // This ensures any subsequent messages go to the correct session
     const { ws } = await import('@/lib/websocket')
     ws.setSessionId(sessionId)
 
     try {
-      // Fetch the session history
-      const historyResult = await api.getSessionHistory(sessionId)
+      // Fetch the session history and wait for minimum loading time
+      const [historyResult] = await Promise.all([
+        api.getSessionHistory(sessionId),
+        minLoadingTime
+      ])
 
       // Validate the response before processing
       if (!historyResult) {
         console.warn(`Session ${sessionId} returned empty result from API`)
-        set({ sessionId, messages: [] })
+        set({ sessionId, messages: [], isLoadingSession: false })
         return
       }
 
@@ -280,6 +288,7 @@ export const createSessionSlice: StateCreator<
       set({
         sessionId,
         messages: mergedMessages,
+        isLoadingSession: false,
       })
     } catch (error: any) {
       logError(error, { operation: 'Switch session' })
@@ -305,19 +314,23 @@ export const createSessionSlice: StateCreator<
               messages: sessions.some(s => s.sessionId === sessionId)
                 ? state.messages
                 : [],
+              isLoadingSession: false,
             }))
           } else {
             // No sessions on server - keep local state and notify user
             logError(new Error('No sessions found on server'), { operation: 'Switch session - database check' })
+            set({ isLoadingSession: false })
           }
         } catch (loadError) {
           logError(loadError, { operation: 'Reload sessions after switch' })
+          set({ isLoadingSession: false })
         }
         return
       }
 
       // For other errors, just keep current state
       logError(error, { operation: 'Switch session - general error' })
+      set({ isLoadingSession: false })
     }
   },
 

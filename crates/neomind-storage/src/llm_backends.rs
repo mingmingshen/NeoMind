@@ -167,7 +167,7 @@ impl LlmBackendInstance {
         let (endpoint, model, capabilities) = match &backend_type {
             LlmBackendType::Ollama => (
                 Some("http://localhost:11434".to_string()),
-                "qwen3-vl:2b".to_string(),
+                "ministral-3:3b".to_string(),
                 BackendCapabilities {
                     supports_streaming: true,
                     supports_multimodal: true,

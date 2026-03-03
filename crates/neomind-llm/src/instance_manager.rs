@@ -350,7 +350,7 @@ impl LlmBackendInstanceManager {
                 id: "ollama".to_string(),
                 name: "Ollama".to_string(),
                 description: "Ollama LLM".to_string(),
-                default_model: "qwen3-vl:2b".to_string(),
+                default_model: "ministral-3:3b".to_string(),
                 default_endpoint: Some("http://localhost:11434".to_string()),
                 requires_api_key: false,
                 supports_streaming: true,
@@ -506,7 +506,7 @@ impl LlmBackendInstanceManager {
                     "title": "模型名称",
                     "description": "要使用的模型",
                     "default": match backend_type {
-                        "ollama" => "qwen3-vl:2b",
+                        "ollama" => "ministral-3:3b",
                         "openai" => "gpt-4o-mini",
                         "anthropic" => "claude-3-5-sonnet-20241022",
                         "google" => "gemini-1.5-flash",
@@ -551,7 +551,7 @@ impl LlmBackendInstanceManager {
                 },
                 "placeholders": {
                     "model": match backend_type {
-                        "ollama" => "qwen3-vl:2b",
+                        "ollama" => "ministral-3:3b",
                         "openai" => "gpt-4o-mini",
                         "anthropic" => "claude-3-5-sonnet-20241022",
                         "google" => "gemini-1.5-flash",

@@ -88,6 +88,7 @@ impl ConfigSource {
                 Some(LlmBackend::Ollama {
                     endpoint,
                     model: settings.model,
+                    capabilities: None,
                 })
             }
             LlmBackendType::OpenAi => {
@@ -100,7 +101,7 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                })
+                capabilities: None, })
             }
             LlmBackendType::Anthropic => {
                 let endpoint = settings
@@ -112,7 +113,7 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                })
+                capabilities: None, })
             }
             LlmBackendType::Google => {
                 let endpoint = settings
@@ -124,7 +125,7 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                })
+                capabilities: None, })
             }
             LlmBackendType::XAi => {
                 let endpoint = settings
@@ -136,7 +137,7 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                })
+                capabilities: None, })
             }
             LlmBackendType::Qwen => {
                 let endpoint = settings
@@ -148,7 +149,7 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                })
+                capabilities: None, })
             }
             LlmBackendType::DeepSeek => {
                 let endpoint = settings
@@ -160,7 +161,7 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                })
+                capabilities: None, })
             }
             LlmBackendType::GLM => {
                 let endpoint = settings
@@ -172,7 +173,7 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                })
+                capabilities: None, })
             }
             LlmBackendType::MiniMax => {
                 let endpoint = settings
@@ -184,7 +185,7 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                })
+                capabilities: None, })
             }
         }
     }
@@ -205,6 +206,7 @@ impl ConfigSource {
                     model: llm_config
                         .model
                         .unwrap_or_else(|| models::OLLAMA_DEFAULT.to_string()),
+                    capabilities: None,
                 })
             }
             "openai" => {
@@ -217,6 +219,7 @@ impl ConfigSource {
                     model: llm_config
                         .model
                         .unwrap_or_else(|| models::OPENAI_DEFAULT.to_string()),
+                    capabilities: None,
                 })
             }
             _ => {
@@ -234,7 +237,7 @@ impl ConfigSource {
             let model = std::env::var(env_vars::LLM_MODEL)
                 .unwrap_or_else(|_| models::OLLAMA_DEFAULT.to_string());
             info!(category = "ai", backend = "ollama", endpoint = %endpoint, model = %model, "Env config: Ollama");
-            return Some(LlmBackend::Ollama { endpoint, model });
+            return Some(LlmBackend::Ollama { endpoint, model, capabilities: None });
         }
 
         // Check for OpenAI
@@ -249,6 +252,7 @@ impl ConfigSource {
                 api_key,
                 endpoint,
                 model,
+                capabilities: None,
             });
         }
 
@@ -562,7 +566,7 @@ mod tests {
         let toml_content = r#"
 [llm]
 backend = "ollama"
-model = "qwen3-vl:2b"
+model = "ministral-3:3b"
 endpoint = "http://localhost:11434"
 "#;
         let result = ConfigSource::Toml(toml_content.to_string()).parse();
@@ -574,7 +578,7 @@ endpoint = "http://localhost:11434"
         let request = LlmSettingsRequest {
             backend: "ollama".to_string(),
             endpoint: Some("http://localhost:11434".to_string()),
-            model: "qwen3-vl:2b".to_string(),
+            model: "ministral-3:3b".to_string(),
             api_key: None,
         };
 

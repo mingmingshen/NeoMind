@@ -151,6 +151,7 @@
       "unknown": "未知"
     }
   },
+  "loading": "加载中...",
   "errors": {
     "sendMessage": "发送消息失败",
     "connectionLost": "连接已断开",

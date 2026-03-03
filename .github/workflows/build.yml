@@ -30,6 +30,9 @@ jobs:
           - platform: 'linux-x86_64'
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+          - platform: 'linux-aarch64'
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
 
     runs-on: ${{ matrix.os }}
 
@@ -43,6 +46,12 @@ jobs:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: 'web/package-lock.json'
+
+      - name: Clean cache on version tags
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          rm -rf ~/.cargo/registry/cache
+          rm -rf web/src-tauri/target/release
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4
@@ -83,6 +92,19 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> $GITHUB_ENV
+          sudo dpkg --add-architecture arm64
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev:arm64 \
+            libssl-dev:arm64 \
+            libayatana-appindicator3-dev:arm64
+
       - name: Build and bundle app
         working-directory: ./web
         run: npm run tauri build -- --target ${{ matrix.target }}
@@ -98,9 +120,16 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-  # Server binary build (Linux amd64 only)
+  # Server binary build (Linux x64 and ARM64)
   build-server:
     name: Server Binary
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: amd64
+          - target: aarch64-unknown-linux-gnu
+            arch: arm64
     runs-on: ubuntu-latest
 
     steps:
@@ -109,6 +138,15 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4
@@ -117,31 +155,31 @@ jobs:
             ~/.cargo/registry/
             ~/.cargo/git/
             target/
-          key: server-${{ hashFiles('**/Cargo.lock') }}
+          key: server-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            server-
+            server-${{ matrix.target }}-
 
       - name: Build server binary
-        run: cargo build --release -p neomind-cli
+        run: cargo build --release -p neomind-cli --target ${{ matrix.target }}
 
       - name: Build extension runner
-        run: cargo build --release -p neomind-extension-runner
+        run: cargo build --release -p neomind-extension-runner --target ${{ matrix.target }}
 
       - name: Strip binaries
         run: |
-          strip target/release/neomind
-          strip target/release/neomind-extension-runner
+          ${{ matrix.target == 'aarch64-unknown-linux-gnu' && 'aarch64-linux-gnu-strip' || 'strip' }} target/${{ matrix.target }}/release/neomind
+          ${{ matrix.target == 'aarch64-unknown-linux-gnu' && 'aarch64-linux-gnu-strip' || 'strip' }} target/${{ matrix.target }}/release/neomind-extension-runner
 
       - name: Create release archive
         run: |
-          cd target/release
-          tar czf ../../neomind-server-linux-amd64.tar.gz neomind neomind-extension-runner
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../neomind-server-linux-${{ matrix.arch }}.tar.gz neomind neomind-extension-runner
 
       - name: Upload server artifact
         uses: actions/upload-artifact@v4
         with:
-          name: neomind-server-linux-amd64
-          path: neomind-server-linux-amd64.tar.gz
+          name: neomind-server-linux-${{ matrix.arch }}
+          path: neomind-server-linux-${{ matrix.arch }}.tar.gz
           retention-days: 30
 
   release:
@@ -170,7 +208,8 @@ jobs:
             artifacts/**/*.exe
             artifacts/**/*.AppImage
             artifacts/**/*.deb
-            artifacts/neomind-server-*.tar.gz
+            artifacts/neomind-server-linux-amd64/*.tar.gz
+            artifacts/neomind-server-linux-arm64/*.tar.gz
           draft: false
           prerelease: false
           generate_release_notes: true

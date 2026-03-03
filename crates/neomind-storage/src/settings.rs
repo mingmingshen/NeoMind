@@ -146,7 +146,7 @@ impl Default for LlmSettings {
         Self {
             backend: LlmBackendType::Ollama,
             endpoint: Some("http://localhost:11434".to_string()),
-            model: "qwen3-vl:2b".to_string(),
+            model: "ministral-3:3b".to_string(),
             api_key: None,
             temperature: default_temperature(),
             top_p: default_top_p(),

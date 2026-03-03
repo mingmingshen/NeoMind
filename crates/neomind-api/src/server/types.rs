@@ -711,21 +711,16 @@ impl ServerState {
 
     /// Initialize LLM backend using the unified config loader.
     /// Falls back to LlmBackendInstanceManager if no config file is found.
+    /// Only sets the default backend for NEW sessions.
     pub async fn init_llm(&self) {
         // First try to load from config file
         if let Some(backend) = crate::config::load_llm_config() {
-            match self.agents.session_manager.set_llm_backend(backend).await {
-                Ok(_) => {
-                    tracing::info!(
-                        category = "ai",
-                        "Configured LLM backend successfully from config file"
-                    );
-                    return;
-                }
-                Err(e) => {
-                    tracing::error!(category = "ai", error = %e, "Failed to configure LLM backend from config file")
-                }
-            }
+            self.agents.session_manager.set_default_llm_backend(backend).await;
+            tracing::info!(
+                category = "ai",
+                "Configured default LLM backend successfully from config file"
+            );
+            return;
         }
 
         // Fallback: try to load from LlmBackendInstanceManager (database-stored backends)
@@ -1428,7 +1423,7 @@ impl ServerState {
             use neomind_llm::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
 
             match backend {
-                LlmBackend::Ollama { endpoint, model } => {
+                LlmBackend::Ollama { endpoint, model , capabilities: _} => {
                     let timeout = std::env::var("OLLAMA_TIMEOUT_SECS")
                         .ok()
                         .and_then(|s| s.parse().ok())
@@ -1449,6 +1444,7 @@ impl ServerState {
                     api_key,
                     endpoint,
                     model,
+                    capabilities: _,
                 } => {
                     // Use CloudRuntime for OpenAI-compatible APIs
                     let timeout = std::env::var("OPENAI_TIMEOUT_SECS")
@@ -1474,36 +1470,43 @@ impl ServerState {
                             api_key,
                             endpoint,
                             model,
+                            capabilities: _,
                         }
                         | LlmBackend::Google {
                             api_key,
                             endpoint,
                             model,
+                            capabilities: _,
                         }
                         | LlmBackend::XAi {
                             api_key,
                             endpoint,
                             model,
+                            capabilities: _,
                         }
                         | LlmBackend::Qwen {
                             api_key,
                             endpoint,
                             model,
+                            capabilities: _,
                         }
                         | LlmBackend::DeepSeek {
                             api_key,
                             endpoint,
                             model,
+                            capabilities: _,
                         }
                         | LlmBackend::GLM {
                             api_key,
                             endpoint,
                             model,
+                            capabilities: _,
                         }
                         | LlmBackend::MiniMax {
                             api_key,
                             endpoint,
                             model,
+                            capabilities: _,
                         } => (api_key.clone(), endpoint.clone(), model.clone()),
                         // This is unreachable since we've excluded Ollama and OpenAi above
                         _ => unreachable!("Unexpected LLM backend type"),

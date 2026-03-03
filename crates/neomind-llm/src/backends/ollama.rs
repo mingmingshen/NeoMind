@@ -100,6 +100,9 @@ pub struct OllamaRuntime {
     model: String,
     metrics: Arc<RwLock<BackendMetrics>>,
     stream_config: StreamConfig,
+    /// Optional override for capabilities (from storage/API detection)
+    /// If None, capabilities are detected from model name
+    capabilities_override: Option<ModelCapability>,
 }
 
 impl OllamaRuntime {
@@ -140,7 +143,27 @@ impl OllamaRuntime {
             model,
             metrics: Arc::new(RwLock::new(BackendMetrics::default())),
             stream_config,
+            capabilities_override: None,
         })
+    }
+
+    /// Set capabilities override from storage/API detection.
+    /// This allows using accurate capabilities detected from Ollama's /api/show
+    /// instead of name-based heuristics.
+    pub fn with_capabilities_override(
+        mut self,
+        supports_multimodal: bool,
+        supports_thinking: bool,
+        supports_tools: bool,
+        max_context: usize,
+    ) -> Self {
+        self.capabilities_override = Some(ModelCapability {
+            supports_tools,
+            supports_thinking,
+            supports_multimodal,
+            max_context,
+        });
+        self
     }
 
     /// Warm up the model by sending a minimal request.
@@ -1386,7 +1409,12 @@ impl LlmRuntime for OllamaRuntime {
     }
 
     fn capabilities(&self) -> BackendCapabilities {
-        let caps = detect_model_capabilities(&self.model);
+        // Use override if available (from storage/API detection), otherwise detect from name
+        let caps = self.capabilities_override
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| detect_model_capabilities(&self.model));
+        
         let mut builder = BackendCapabilities::builder()
             .streaming()
             .max_context(caps.max_context);
@@ -1495,6 +1523,7 @@ struct OllamaOptions {
 }
 
 /// Model capability information
+#[derive(Debug, Clone)]
 struct ModelCapability {
     supports_tools: bool,
     supports_thinking: bool,
@@ -1543,15 +1572,27 @@ fn detect_model_capabilities(model_name: &str) -> ModelCapability {
         && !name_lower.contains("nano");
 
     // Models that support multimodal (vision)
-    // Common Ollama vision models: qwen3-vl, llava, bakllava, moondream, minigpt, clip, etc.
+    // Common Ollama vision models: qwen-vl, qwen2-vl, qwen3-vl, llava, bakllava, moondream, etc.
+    // IMPORTANT: This is name-based heuristic detection. For accurate detection,
+    // use Ollama's /api/show endpoint which returns the "vision" capability.
     let supports_multimodal = name_lower.contains("vl")
         || name_lower.contains("vision")
-        || name_lower.contains("mm")
+        || name_lower.contains("-mm")
+        || name_lower.contains(":mm")
         || name_lower.contains("llava")
+        || name_lower.contains("bakllava")
         || name_lower.contains("moondream")
         || name_lower.contains("minigpt")
         || name_lower.contains("clip")
-        || name_lower.contains("multimodal");
+        || name_lower.contains("minicpm-v")
+        || name_lower.contains("cogvlm")
+        || name_lower.contains("internvl")
+        || name_lower.contains("yi-vl")
+        || name_lower.contains("deepseek-vl")
+        || name_lower.contains("multimodal")
+        // Check for common vision model patterns with version numbers
+        || name_lower.contains("qwen") && (name_lower.contains("-vl") || name_lower.contains(":vl"))
+        || name_lower.contains("llama") && name_lower.contains("vision");
 
     // Detect maximum context window based on model family
     let max_context = detect_model_context(model_name);

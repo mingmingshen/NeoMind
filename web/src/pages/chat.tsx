@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { useParams, useNavigate } from "react-router-dom"
 import { generateId } from "@/lib/id"
-import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, RotateCcw } from "lucide-react"
+import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, Wrench, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -235,7 +235,8 @@ export function ChatPage() {
     createSession,
     switchSession,
     loadSessions,
-    user
+    user,
+    isLoadingSession
   } = useStore()
 
   // Local state
@@ -875,6 +876,17 @@ export function ChatPage() {
           >
             <WelcomeArea className="min-h-full" onQuickAction={handleQuickAction} />
           </div>
+        ) : isLoadingSession ? (
+          /* Loading State - shown when switching sessions */
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3">
+              <div 
+                className="h-8 w-8 rounded-full border-[3px] border-muted-foreground border-t-transparent animate-spin"
+                style={{ animationDuration: '1.2s', animationTimingFunction: 'linear' }}
+              />
+              <p className="text-sm text-muted-foreground">{t('chat:loading')}</p>
+            </div>
+          </div>
         ) : hasMessages ? (
           /* Chat Messages - shown on /chat/:sessionId with messages */
           <div
@@ -1061,6 +1073,11 @@ export function ChatPage() {
                             {backend.capabilities?.supports_multimodal && (
                               <span className="text-[10px] px-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 flex items-center" title={t('chat:model.supportsVision')}>
                                 <Eye className="h-3 w-3" />
+                              </span>
+                            )}
+                            {backend.capabilities?.supports_tools && (
+                              <span className="text-[10px] px-1 rounded bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300 flex items-center" title={t('chat:model.supportsTools')}>
+                                <Wrench className="h-3 w-3" />
                               </span>
                             )}
                             {backend.capabilities?.supports_thinking && (

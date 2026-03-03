@@ -696,54 +696,66 @@ impl AgentInternalState {
 #[derive(Debug, Clone)]
 pub enum LlmBackend {
     /// Ollama (local)
-    Ollama { endpoint: String, model: String },
+    Ollama {
+        endpoint: String,
+        model: String,
+        capabilities: Option<neomind_core::BackendCapabilities>,
+    },
     /// OpenAI-compatible API
     OpenAi {
         api_key: String,
         endpoint: String,
         model: String,
+        capabilities: Option<neomind_core::BackendCapabilities>,
     },
     /// Anthropic API
     Anthropic {
         api_key: String,
         endpoint: String,
         model: String,
+        capabilities: Option<neomind_core::BackendCapabilities>,
     },
     /// Google AI API
     Google {
         api_key: String,
         endpoint: String,
         model: String,
+        capabilities: Option<neomind_core::BackendCapabilities>,
     },
     /// xAI (Grok) API
     XAi {
         api_key: String,
         endpoint: String,
         model: String,
+        capabilities: Option<neomind_core::BackendCapabilities>,
     },
     /// Qwen (Alibaba DashScope)
     Qwen {
         api_key: String,
         endpoint: String,
         model: String,
+        capabilities: Option<neomind_core::BackendCapabilities>,
     },
     /// DeepSeek API
     DeepSeek {
         api_key: String,
         endpoint: String,
         model: String,
+        capabilities: Option<neomind_core::BackendCapabilities>,
     },
     /// Zhipu GLM API
     GLM {
         api_key: String,
         endpoint: String,
         model: String,
+        capabilities: Option<neomind_core::BackendCapabilities>,
     },
     /// MiniMax API
     MiniMax {
         api_key: String,
         endpoint: String,
         model: String,
+        capabilities: Option<neomind_core::BackendCapabilities>,
     },
 }
 

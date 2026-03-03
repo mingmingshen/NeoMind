@@ -36,7 +36,7 @@ pub async fn llm_generate_handler(
 
     // Convert LlmBackend to a Box<dyn LlmRuntime>
     let (llm_runtime, model_name): (Box<dyn LlmRuntime>, String) = match backend_config {
-        LlmBackend::Ollama { endpoint, model } => {
+        LlmBackend::Ollama { endpoint, model , capabilities: _} => {
             use neomind_llm::{OllamaConfig, OllamaRuntime};
             let config = OllamaConfig::new(&model).with_endpoint(&endpoint);
             let runtime = OllamaRuntime::new(config).map_err(|e| {
@@ -48,6 +48,7 @@ pub async fn llm_generate_handler(
             api_key,
             endpoint,
             model,
+            capabilities: _,
         } => {
             use neomind_llm::{CloudConfig, CloudRuntime};
             let config = if endpoint.is_empty() || endpoint.contains("api.openai.com") {
@@ -69,36 +70,43 @@ pub async fn llm_generate_handler(
                     api_key,
                     endpoint,
                     model,
+                    capabilities: _,
                 }
                 | LlmBackend::Google {
                     api_key,
                     endpoint,
                     model,
+                    capabilities: _,
                 }
                 | LlmBackend::XAi {
                     api_key,
                     endpoint,
                     model,
+                    capabilities: _,
                 }
                 | LlmBackend::Qwen {
                     api_key,
                     endpoint,
                     model,
+                    capabilities: _,
                 }
                 | LlmBackend::DeepSeek {
                     api_key,
                     endpoint,
                     model,
+                    capabilities: _,
                 }
                 | LlmBackend::GLM {
                     api_key,
                     endpoint,
                     model,
+                    capabilities: _,
                 }
                 | LlmBackend::MiniMax {
                     api_key,
                     endpoint,
                     model,
+                    capabilities: _,
                 } => (api_key.clone(), endpoint.clone(), model.clone()),
                 _ => return Err(ErrorResponse::bad_request("Unsupported LLM backend")),
             };

@@ -478,6 +478,24 @@ pub async fn activate_backend_handler(
 
     // Also update the SessionManager's LLM backend for existing sessions
     use neomind_agent::LlmBackend;
+    /// Convert storage BackendCapabilities to core BackendCapabilities
+    fn convert_capabilities(storage_caps: &neomind_storage::BackendCapabilities) -> neomind_core::BackendCapabilities {
+        neomind_core::BackendCapabilities {
+            streaming: storage_caps.supports_streaming,
+            multimodal: storage_caps.supports_multimodal,
+            function_calling: storage_caps.supports_tools,
+            thinking_display: storage_caps.supports_thinking,
+            max_context: Some(storage_caps.max_context),
+            multiple_models: false,
+            modalities: Vec::new(),
+            supports_images: storage_caps.supports_multimodal,
+            supports_audio: false,
+        }
+    }
+    
+    // Convert capabilities from storage type to core type
+    let capabilities = Some(convert_capabilities(&instance.capabilities));
+    
     let backend = match instance.backend_type {
         LlmBackendType::Ollama => {
             let endpoint = instance
@@ -485,7 +503,7 @@ pub async fn activate_backend_handler(
                 .clone()
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
             let model = instance.model.clone();
-            LlmBackend::Ollama { endpoint, model }
+            LlmBackend::Ollama { endpoint, model, capabilities }
         }
         LlmBackendType::OpenAi => {
             let api_key = instance.api_key.clone().unwrap_or_default();
@@ -498,6 +516,7 @@ pub async fn activate_backend_handler(
                 api_key,
                 endpoint,
                 model,
+                capabilities,
             }
         }
         LlmBackendType::Anthropic => {
@@ -507,10 +526,11 @@ pub async fn activate_backend_handler(
                 .clone()
                 .unwrap_or_else(|| "https://api.anthropic.com/v1".to_string());
             let model = instance.model.clone();
-            LlmBackend::OpenAi {
+            LlmBackend::Anthropic {
                 api_key,
                 endpoint,
                 model,
+                capabilities,
             }
         }
         LlmBackendType::Google => {
@@ -520,10 +540,11 @@ pub async fn activate_backend_handler(
                 .clone()
                 .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1".to_string());
             let model = instance.model.clone();
-            LlmBackend::OpenAi {
+            LlmBackend::Google {
                 api_key,
                 endpoint,
                 model,
+                capabilities,
             }
         }
         LlmBackendType::XAi => {
@@ -533,10 +554,11 @@ pub async fn activate_backend_handler(
                 .clone()
                 .unwrap_or_else(|| "https://api.x.ai/v1".to_string());
             let model = instance.model.clone();
-            LlmBackend::OpenAi {
+            LlmBackend::XAi {
                 api_key,
                 endpoint,
                 model,
+                capabilities,
             }
         }
         LlmBackendType::Qwen => {
@@ -546,10 +568,11 @@ pub async fn activate_backend_handler(
                 .clone()
                 .unwrap_or_else(|| "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string());
             let model = instance.model.clone();
-            LlmBackend::OpenAi {
+            LlmBackend::Qwen {
                 api_key,
                 endpoint,
                 model,
+                capabilities,
             }
         }
         LlmBackendType::DeepSeek => {
@@ -559,10 +582,11 @@ pub async fn activate_backend_handler(
                 .clone()
                 .unwrap_or_else(|| "https://api.deepseek.com".to_string());
             let model = instance.model.clone();
-            LlmBackend::OpenAi {
+            LlmBackend::DeepSeek {
                 api_key,
                 endpoint,
                 model,
+                capabilities,
             }
         }
         LlmBackendType::GLM => {
@@ -572,10 +596,11 @@ pub async fn activate_backend_handler(
                 .clone()
                 .unwrap_or_else(|| "https://open.bigmodel.cn/api/paas/v4".to_string());
             let model = instance.model.clone();
-            LlmBackend::OpenAi {
+            LlmBackend::GLM {
                 api_key,
                 endpoint,
                 model,
+                capabilities,
             }
         }
         LlmBackendType::MiniMax => {
@@ -585,10 +610,11 @@ pub async fn activate_backend_handler(
                 .clone()
                 .unwrap_or_else(|| "https://api.minimax.chat/v1".to_string());
             let model = instance.model.clone();
-            LlmBackend::OpenAi {
+            LlmBackend::MiniMax {
                 api_key,
                 endpoint,
                 model,
+                capabilities,
             }
         }
     };

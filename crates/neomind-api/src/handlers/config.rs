@@ -382,6 +382,7 @@ async fn import_llm_settings(
             LlmBackend::Ollama {
                 endpoint,
                 model: settings.model.clone(),
+                capabilities: None,
             }
         }
         "openai" => {
@@ -393,17 +394,18 @@ async fn import_llm_settings(
                 api_key: String::new(), // API key needs to be set separately for security
                 endpoint,
                 model: settings.model.clone(),
+                capabilities: None,
             }
         }
         _ => return Err(format!("Unsupported backend: {}", settings.backend)),
     };
 
+    // Only set as default for new sessions
     state
         .agents
         .session_manager
-        .set_llm_backend(backend)
-        .await
-        .map_err(|e| e.to_string())?;
+        .set_default_llm_backend(backend)
+        .await;
 
     Ok(())
 }
@@ -440,7 +442,7 @@ mod tests {
             llm_settings: Some(LlmSettingsExport {
                 backend: "ollama".to_string(),
                 endpoint: Some("http://localhost:11434".to_string()),
-                model: "qwen3-vl:2b".to_string(),
+                model: "ministral-3:3b".to_string(),
                 temperature: 0.7,
                 top_p: 0.9,
                 max_tokens: 2048,
@@ -464,7 +466,7 @@ mod tests {
                 "exported_at": 1234567890,
                 "llm_settings": {
                     "backend": "ollama",
-                    "model": "qwen3-vl:2b",
+                    "model": "ministral-3:3b",
                     "temperature": 0.7,
                     "top_p": 0.9,
                     "max_tokens": 2048

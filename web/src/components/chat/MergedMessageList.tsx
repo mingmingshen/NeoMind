@@ -197,7 +197,7 @@ export function MergedMessageList({
 
                       {streamingContent && (
                         <div className="relative inline">
-                          <MarkdownMessage content={streamingContent} isStreaming={true} />
+                          <MarkdownMessage content={streamingContent} />
                           {/* Blinking cursor at end of streaming content */}
                           <span className="inline-block w-0.5 h-4 ml-0.5 bg-current align-middle animate-pulse" />
                         </div>

@@ -151,6 +151,7 @@
       "unknown": "Unknown"
     }
   },
+  "loading": "Loading...",
   "errors": {
     "sendMessage": "Failed to send message",
     "connectionLost": "Connection lost",

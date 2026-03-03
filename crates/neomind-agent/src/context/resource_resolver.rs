@@ -502,17 +502,17 @@ impl ResourceResolver {
     pub fn format_for_prompt(&self, resolved: &ResolvedIntent) -> String {
         let mut text = String::new();
 
-        text.push_str(&format!("**意图**: {:?}\n", resolved.intent));
+        text.push_str(&format!("**Intent**: {:?}\n", resolved.intent));
         text.push_str(&format!(
-            "**置信度**: {:.0}%\n",
+            "**Confidence**: {:.0}%\n",
             resolved.confidence * 100.0
         ));
 
         if !resolved.resources.is_empty() {
-            text.push_str("\n**匹配的资源**:\n");
+            text.push_str("\n**Matched Resources**:\n");
             for resource in &resolved.resources {
                 text.push_str(&format!(
-                    "- {} ({}, 相关度: {:.0}%, 能力: {:?})\n",
+                    "- {} ({}, relevance: {:.0}%, capabilities: {:?})\n",
                     resource.name,
                     format!("{:?}", resource.match_type),
                     resource.relevance * 100.0,
@@ -522,14 +522,14 @@ impl ResourceResolver {
         }
 
         if !resolved.actions.is_empty() {
-            text.push_str("\n**建议操作**:\n");
+            text.push_str("\n**Suggested Actions**:\n");
             for action in &resolved.actions {
                 text.push_str(&format!("- {}\n", action.description));
             }
         }
 
         if let Some(clarification) = &resolved.clarification {
-            text.push_str(&format!("\n**需要澄清**: {}\n", clarification));
+            text.push_str(&format!("\n**Needs Clarification**: {}\n", clarification));
         }
 
         text

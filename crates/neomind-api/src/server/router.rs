@@ -878,6 +878,11 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/llm-backends/:id/activate",
             post(llm_backends::activate_backend_handler),
         )
+        // TODO: Implement refresh_capabilities_handler
+        // .route(
+        //     "/api/llm-backends/:id/refresh-capabilities",
+        //     post(llm_backends::refresh_capabilities_handler),
+        // )
         .route(
             "/api/llm-backends/:id/test",
             post(llm_backends::test_backend_handler),

@@ -42,6 +42,8 @@ export interface SessionState {
   sessionsPage: number
   sessionsHasMore: boolean
   sessionsLoading: boolean
+  // Loading state for switching sessions
+  isLoadingSession: boolean
 }
 
 // ============================================================================
