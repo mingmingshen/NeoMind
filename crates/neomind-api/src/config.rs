@@ -301,6 +301,24 @@ struct TomlConfig {
     mqtt: Option<TomlMqttConfig>,
     #[serde(default)]
     memory: Option<TomlMemoryConfig>,
+    #[serde(default)]
+    server: Option<TomlServerConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TomlServerConfig {
+    #[serde(default = "default_server_host")]
+    host: String,
+    #[serde(default = "default_server_port")]
+    port: u16,
+}
+
+fn default_server_host() -> String {
+    "0.0.0.0".to_string()
+}
+
+fn default_server_port() -> u16 {
+    9375
 }
 
 #[derive(Debug, Deserialize)]
@@ -555,6 +573,44 @@ pub fn get_memory_config() -> TieredMemoryConfig {
         "Using default memory configuration: hybrid_search=true, simple embedding"
     );
     TieredMemoryConfig::default()
+}
+
+/// Load server configuration (config.toml > env > default).
+///
+/// Priority: config.toml > environment variables > default (0.0.0.0:9375)
+pub fn get_server_config() -> (String, u16) {
+    // 1. Try config.toml
+    if let Ok(content) = std::fs::read_to_string("config.toml") {
+        if let Ok(config) = toml::from_str::<TomlConfig>(&content) {
+            if let Some(server) = config.server {
+                info!(
+                    category = "config",
+                    host = %server.host,
+                    port = server.port,
+                    "Loading server config from config.toml"
+                );
+                return (server.host, server.port);
+            }
+        }
+    }
+
+    // 2. Try environment variables
+    let host = std::env::var("NEOMIND_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port = std::env::var("NEOMIND_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(9375);
+
+    if std::env::var("NEOMIND_HOST").is_ok() || std::env::var("NEOMIND_PORT").is_ok() {
+        info!(
+            category = "config",
+            host = %host,
+            port = port,
+            "Loading server config from environment"
+        );
+    }
+
+    (host, port)
 }
 
 #[cfg(test)]

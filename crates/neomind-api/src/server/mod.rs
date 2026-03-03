@@ -151,9 +151,11 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
 /// This function is designed to be called from Tauri or other embedded contexts.
 /// It starts the server in the background and returns immediately.
 ///
-/// Uses port 9375 to avoid conflicts with common applications.
+/// Uses port 9375 by default to avoid conflicts with common applications.
 /// Binds to 0.0.0.0 to allow LAN access.
+/// Port can be configured via config.toml [server] section or NEOMIND_PORT env var.
 pub async fn start_server() -> anyhow::Result<()> {
-    let bind: SocketAddr = "0.0.0.0:9375".parse()?;
+    let (host, port) = crate::config::get_server_config();
+    let bind: SocketAddr = format!("{}:{}", host, port).parse()?;
     run(bind).await
 }

@@ -160,7 +160,7 @@ fn extract_json_from_mixed_text(text: &str) -> Option<String> {
     let mut open_braces = 0;
     let mut in_string = false;
     let mut escape_next = false;
-    let mut end_idx = 0;
+    let mut end_char_idx = 0;
 
     for (i, ch) in potential_json.chars().enumerate() {
         match ch {
@@ -170,7 +170,7 @@ fn extract_json_from_mixed_text(text: &str) -> Option<String> {
             '}' if !in_string => {
                 open_braces -= 1;
                 if open_braces == 0 {
-                    end_idx = i + 1;
+                    end_char_idx = i + 1;
                     break;
                 }
             }
@@ -181,11 +181,12 @@ fn extract_json_from_mixed_text(text: &str) -> Option<String> {
         }
     }
 
-    if end_idx > 0 {
-        let json_str = &potential_json[..end_idx];
+    if end_char_idx > 0 {
+        // Use character index to safely extract substring (UTF-8 safe)
+        let json_str: String = potential_json.chars().take(end_char_idx).collect();
         // Validate it's actually JSON
-        if serde_json::from_str::<serde_json::Value>(json_str).is_ok() {
-            return Some(json_str.to_string());
+        if serde_json::from_str::<serde_json::Value>(&json_str).is_ok() {
+            return Some(json_str);
         }
     }
 

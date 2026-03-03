@@ -1,6 +1,7 @@
 // WebSocket Manager for Chat
 import type { ServerMessage, ClientChatMessage, ChatImage } from '@/types'
 import { tokenManager } from './auth'
+import { storage } from './utils/storage'
 
 type MessageHandler = (message: ServerMessage) => void
 type ConnectionHandler = (connected: boolean, isReconnect?: boolean) => void
@@ -12,6 +13,18 @@ export interface ConnectionState {
   retryCount?: number
   nextRetryIn?: number  // seconds
   errorMessage?: string
+}
+
+// Persistence configuration
+const STORAGE_KEY = 'neomind_ws_pending_messages'
+const MAX_STORED_MESSAGES = 100  // Persistent storage limit
+const MAX_MESSAGE_AGE_MS = 24 * 60 * 60 * 1000  // 24 hours
+
+// Stored message with metadata
+interface StoredMessage {
+  message: ClientChatMessage
+  timestamp: number
+  retries: number
 }
 
 export class ChatWebSocket {
@@ -34,6 +47,29 @@ export class ChatWebSocket {
   private readonly MAX_PENDING_MESSAGES = 50  // P0: Limit pending messages to prevent memory leak
   private lastToken: string | null = null
   private currentState: ConnectionState = { status: 'disconnected' }
+
+  constructor() {
+    this.loadPendingMessages()
+  }
+
+  private loadPendingMessages() {
+    const stored = storage.get<StoredMessage[]>(STORAGE_KEY, []) || []
+    const now = Date.now()
+
+    // Filter expired messages (24 hours)
+    const valid = stored.filter(m =>
+      now - m.timestamp < MAX_MESSAGE_AGE_MS
+    )
+
+    // Restore to memory queue (up to MAX_PENDING_MESSAGES)
+    this.pendingMessages = valid
+      .slice(0, this.MAX_PENDING_MESSAGES)
+      .map(m => m.message)
+
+    if (valid.length > 0) {
+      console.log(`[WebSocket] Restored ${valid.length} pending messages from storage`)
+    }
+  }
 
   connect(initialSessionId?: string) {
     // Clear any existing timers
@@ -123,6 +159,11 @@ export class ChatWebSocket {
         const msg = this.pendingMessages.shift()!
         this.sendRequest(msg)
       }
+
+      // If all messages sent successfully, clear storage
+      if (this.pendingMessages.length === 0) {
+        storage.remove(STORAGE_KEY)
+      }
     }
 
     this.ws.onclose = (event) => {
@@ -132,10 +173,15 @@ export class ChatWebSocket {
       if (event.code !== 1000 && event.code !== 4001) {
         this.scheduleReconnect()
       } else {
-        // P0: Clear pending messages on permanent disconnect (auth error or normal close)
-        if (this.pendingMessages.length > 0) {
-          console.warn(`[WebSocket] Clearing ${this.pendingMessages.length} pending messages on close (code: ${event.code})`)
+        // Clear pending messages only on auth error (4001)
+        if (event.code === 4001 && this.pendingMessages.length > 0) {
+          console.warn(`[WebSocket] Auth error, clearing ${this.pendingMessages.length} pending messages`)
           this.pendingMessages = []
+          storage.remove(STORAGE_KEY)
+        } else if (event.code === 1000) {
+          // Normal close - persist messages for next session
+          console.log(`[WebSocket] Normal close, ${this.pendingMessages.length} messages persisted`)
+          this.persistPendingMessages()
         }
         this.setState({ status: 'disconnected' })
       }
@@ -177,6 +223,7 @@ export class ChatWebSocket {
   sendRequest(request: ClientChatMessage) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(request))
+      this.removeFromStorage(request)  // Remove from storage on successful send
     } else {
       // Queue message for when connected
       // P0: Prevent unbounded growth - evict oldest if limit reached
@@ -186,6 +233,7 @@ export class ChatWebSocket {
         console.warn('[WebSocket] Pending messages limit reached, dropping oldest message')
       }
       this.pendingMessages.push(request)
+      this.persistPendingMessages()  // Immediately persist to storage
     }
   }
 
@@ -221,10 +269,10 @@ export class ChatWebSocket {
     }
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      // P0: Clear pending messages when we give up reconnecting
+      // Persist messages when we give up reconnecting (don't clear)
       if (this.pendingMessages.length > 0) {
-        console.warn(`[WebSocket] Clearing ${this.pendingMessages.length} pending messages after failed reconnect`)
-        this.pendingMessages = []
+        console.warn(`[WebSocket] Max reconnect attempts reached. ${this.pendingMessages.length} messages persisted for next session`)
+        this.persistPendingMessages()
       }
       this.setState({
         status: 'error',
@@ -340,10 +388,10 @@ export class ChatWebSocket {
       this.ws = null
     }
 
-    // P0: Clear pending messages on manual disconnect to prevent memory leak
+    // Persist pending messages on manual disconnect (don't clear)
     if (this.pendingMessages.length > 0) {
-      console.warn(`[WebSocket] Clearing ${this.pendingMessages.length} pending messages on disconnect`)
-      this.pendingMessages = []
+      console.log(`[WebSocket] Disconnected. ${this.pendingMessages.length} messages persisted for next session`)
+      this.persistPendingMessages()
     }
 
     this.setState({ status: 'disconnected' })
@@ -384,6 +432,37 @@ export class ChatWebSocket {
   private resetReconnectState() {
     this.reconnectAttempts = 0
     this.isManualDisconnect = false
+  }
+
+  /**
+   * Persist pending messages to localStorage
+   */
+  private persistPendingMessages() {
+    const now = Date.now()
+    const toStore: StoredMessage[] = this.pendingMessages.map(msg => ({
+      message: msg,
+      timestamp: now,
+      retries: 0
+    }))
+
+    // Limit storage to MAX_STORED_MESSAGES
+    const limited = toStore.slice(-MAX_STORED_MESSAGES)
+    storage.set(STORAGE_KEY, limited)
+  }
+
+  /**
+   * Remove a specific message from storage after successful send
+   */
+  private removeFromStorage(request: ClientChatMessage) {
+    const stored = storage.get<StoredMessage[]>(STORAGE_KEY, []) || []
+    const filtered = stored.filter(m =>
+      m.message.sessionId !== request.sessionId ||
+      m.message.message !== request.message
+    )
+
+    if (filtered.length < stored.length) {
+      storage.set(STORAGE_KEY, filtered)
+    }
   }
 
   isConnected() {

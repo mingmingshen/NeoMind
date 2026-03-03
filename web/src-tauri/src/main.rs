@@ -21,7 +21,6 @@ struct ServerState {
 impl ServerState {
     /// Wait for the server to be ready with HTTP health check.
     /// Uses exponential backoff and checks the actual health endpoint.
-    #[allow(dead_code)]
     fn wait_for_server_ready(&self, timeout_secs: u64) -> bool {
         let max_attempts = timeout_secs * 10; // Check every 100ms
         let client = reqwest::blocking::Client::builder()
@@ -337,17 +336,24 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // Check server readiness asynchronously - don't block window display
     // Window is already visible (visible: true in config), frontend will connect when ready
     let app_handle = app.handle().clone();
+    let state_for_health = app.state::<ServerState>().inner().clone();
+
     std::thread::spawn(move || {
-        // Give server time to start, then notify frontend
-        std::thread::sleep(Duration::from_secs(2));
+        // Use HTTP health check (30 second timeout)
+        let server_ready = state_for_health.wait_for_server_ready(30);
+
         let _ = app_handle.emit_to(
             "main",
             "backend-ready",
             serde_json::json!({
-                "status": "ready",
+                "status": if server_ready { "ready" } else { "timeout" },
                 "port": 9375
             }),
         );
+
+        if !server_ready {
+            eprintln!("Warning: Backend health check timed out after 30 seconds");
+        }
     });
 
     Ok(())
