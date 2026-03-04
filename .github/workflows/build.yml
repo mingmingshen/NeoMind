@@ -85,9 +85,20 @@ jobs:
         working-directory: ./web
         shell: bash
         run: |
-          npm run build
+          npm run build 2>&1 | tee build.log
           ls -la dist/
           test -f dist/index.html || (echo "Frontend build failed: dist/index.html not found" && exit 1)
+
+      - name: Check for circular dependencies
+        working-directory: ./web
+        shell: bash
+        run: |
+          if grep -qi "circular" build.log; then
+            echo "::error::Circular dependencies detected in build output!"
+            grep -i "circular" build.log
+            exit 1
+          fi
+          echo "✅ No circular dependencies detected"
 
       - name: Install system dependencies (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')

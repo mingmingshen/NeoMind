@@ -133,7 +133,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    chunkSizeWarningLimit: 500,
+    chunkSizeWarningLimit: 800,
     // Performance: Use esbuild for faster minification
     minify: 'esbuild',
     target: 'es2020',
@@ -141,37 +141,10 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        // Optimized chunking strategy for better caching and smaller initial load
+        // Simplified chunking strategy to avoid circular dependencies
+        // The key is to group all interdependent packages together
         manualChunks: (id) => {
-          // 1. Separate large visualization libraries
-          if (id.includes('node_modules/recharts') || id.includes('recharts')) {
-            return 'vendor-recharts'
-          }
-          
-          // 2. Separate UI component libraries
-          if (id.includes('node_modules/@radix-ui')) {
-            return 'vendor-radix'
-          }
-          if (id.includes('node_modules/lucide-react')) {
-            return 'vendor-icons'
-          }
-          
-          // 3. State management
-          if (id.includes('node_modules/zustand')) {
-            return 'vendor-state'
-          }
-          
-          // 4. React core (shared across all pages)
-          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
-            return 'vendor-react'
-          }
-          
-          // 5. React Router
-          if (id.includes('node_modules/react-router')) {
-            return 'vendor-router'
-          }
-          
-          // 6. Page-level code splitting
+          // Page-level code splitting - these are safe to split
           if (id.includes('/pages/dashboard-components/VisualDashboard')) {
             return 'page-dashboard'
           }
@@ -196,20 +169,21 @@ export default defineConfig({
           if (id.includes('/pages/login') || id.includes('/pages/setup')) {
             return 'page-auth'
           }
-          
-          // 7. Heavy components
-          if (id.includes('node_modules/@codemirror')) {
-            return 'vendor-editor'
+
+          // Large but independent libraries - safe to split
+          if (id.includes('node_modules/recharts') || id.includes('recharts')) {
+            return 'vendor-recharts'
           }
-          if (id.includes('node_modules/react-markdown')) {
-            return 'vendor-markdown'
+          if (id.includes('node_modules/lucide-react')) {
+            return 'vendor-icons'
           }
-          
-          // 8. All other node_modules
+
+          // All other node_modules go into a single vendor bundle
+          // This avoids circular dependency issues between vendor chunks
           if (id.includes('node_modules')) {
-            return 'vendor-core'
+            return 'vendor'
           }
-          
+
           return undefined
         },
       },

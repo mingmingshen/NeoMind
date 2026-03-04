@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:check": "tsc && vite build 2>&1 | grep -i 'circular' && echo 'ERROR: Circular dependencies detected!' && exit 1 || echo 'Build OK - no circular dependencies'",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "vitest",
@@ -22,7 +23,8 @@
     "tauri:build:debug": "tauri build --debug",
     "tauri:build:dmg": "tauri build --bundles dmg",
     "tauri:clean": "cd src-tauri && cargo clean && rm -rf target",
-    "tauri:rebuild": "npm run tauri:clean && npm run tauri:build"
+    "tauri:rebuild": "npm run tauri:clean && npm run tauri:build",
+    "desktop:test": "npm run build && npm run preview & sleep 3 && curl -s http://localhost:4173 | grep -q 'root' && echo 'Frontend OK' || echo 'Frontend FAILED'"
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.4",
