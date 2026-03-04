@@ -7,6 +7,10 @@ edition.workspace = true
 name = "neomind"
 path = "src/main.rs"
 
+[features]
+default = []
+static = ["neomind-api/static"]
+
 [dependencies]
 neomind-core = { path = "../neomind-core" }
 neomind-agent = { path = "../neomind-agent" }

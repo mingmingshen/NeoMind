@@ -212,7 +212,7 @@ jobs:
 
       - name: Build server binary with embedded frontend (Linux)
         if: matrix.os == 'linux'
-        run: cross build --release -p neomind-cli --target ${{ matrix.target }} --features neomind-api/static
+        run: cross build --release -p neomind-cli --target ${{ matrix.target }} --features static
 
       - name: Build extension runner (Linux)
         if: matrix.os == 'linux'
@@ -220,7 +220,7 @@ jobs:
 
       - name: Build server binary with embedded frontend (macOS)
         if: matrix.os == 'darwin'
-        run: cargo build --release -p neomind-cli --target ${{ matrix.target }} --features neomind-api/static
+        run: cargo build --release -p neomind-cli --target ${{ matrix.target }} --features static
 
       - name: Build extension runner (macOS)
         if: matrix.os == 'darwin'
