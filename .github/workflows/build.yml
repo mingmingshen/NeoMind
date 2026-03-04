@@ -185,6 +185,10 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Install additional macOS targets
+        if: matrix.os == 'darwin'
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+
       - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
