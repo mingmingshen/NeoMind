@@ -832,15 +832,11 @@ impl Agent {
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for Qwen"
                 );
-                let config = if endpoint.is_empty() {
-                    CloudConfig::qwen(&api_key)
-                        .with_model(&model)
-                        .with_timeout_secs(cloud_timeout)
-                } else {
-                    CloudConfig::custom(&api_key, &endpoint)
-                        .with_model(&model)
-                        .with_timeout_secs(cloud_timeout)
-                };
+                // Always use Qwen provider to ensure correct vision model detection
+                let config = CloudConfig::qwen(&api_key)
+                    .with_model(&model)
+                    .with_timeout_secs(cloud_timeout)
+                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
                     CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
@@ -855,15 +851,11 @@ impl Agent {
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for DeepSeek"
                 );
-                let config = if endpoint.is_empty() {
-                    CloudConfig::deepseek(&api_key)
-                        .with_model(&model)
-                        .with_timeout_secs(cloud_timeout)
-                } else {
-                    CloudConfig::custom(&api_key, &endpoint)
-                        .with_model(&model)
-                        .with_timeout_secs(cloud_timeout)
-                };
+                // Always use DeepSeek provider to ensure correct vision model detection
+                let config = CloudConfig::deepseek(&api_key)
+                    .with_model(&model)
+                    .with_timeout_secs(cloud_timeout)
+                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
                     CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
@@ -878,15 +870,11 @@ impl Agent {
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for GLM"
                 );
-                let config = if endpoint.is_empty() {
-                    CloudConfig::glm(&api_key)
-                        .with_model(&model)
-                        .with_timeout_secs(cloud_timeout)
-                } else {
-                    CloudConfig::custom(&api_key, &endpoint)
-                        .with_model(&model)
-                        .with_timeout_secs(cloud_timeout)
-                };
+                // Always use GLM provider to ensure correct vision model detection
+                let config = CloudConfig::glm(&api_key)
+                    .with_model(&model)
+                    .with_timeout_secs(cloud_timeout)
+                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
                     CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
@@ -901,15 +889,11 @@ impl Agent {
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for MiniMax"
                 );
-                let config = if endpoint.is_empty() {
-                    CloudConfig::minimax(&api_key)
-                        .with_model(&model)
-                        .with_timeout_secs(cloud_timeout)
-                } else {
-                    CloudConfig::custom(&api_key, &endpoint)
-                        .with_model(&model)
-                        .with_timeout_secs(cloud_timeout)
-                };
+                // Always use MiniMax provider to ensure correct vision model detection
+                let config = CloudConfig::minimax(&api_key)
+                    .with_model(&model)
+                    .with_timeout_secs(cloud_timeout)
+                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
                     CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
@@ -924,14 +908,11 @@ impl Agent {
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for Anthropic"
                 );
-                let config = CloudConfig::anthropic(&api_key).with_timeout_secs(cloud_timeout);
-                let config = if endpoint.is_empty() {
-                    config.with_model(&model)
-                } else {
-                    CloudConfig::custom(&api_key, &endpoint)
-                        .with_model(&model)
-                        .with_timeout_secs(cloud_timeout)
-                };
+                // Always use Anthropic provider to ensure correct vision model detection
+                let config = CloudConfig::anthropic(&api_key)
+                    .with_model(&model)
+                    .with_timeout_secs(cloud_timeout)
+                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
                     CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
@@ -946,14 +927,11 @@ impl Agent {
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for Google"
                 );
-                let config = CloudConfig::google(&api_key).with_timeout_secs(cloud_timeout);
-                let config = if endpoint.is_empty() {
-                    config.with_model(&model)
-                } else {
-                    CloudConfig::custom(&api_key, &endpoint)
-                        .with_model(&model)
-                        .with_timeout_secs(cloud_timeout)
-                };
+                // Always use Google provider to ensure correct vision model detection
+                let config = CloudConfig::google(&api_key)
+                    .with_model(&model)
+                    .with_timeout_secs(cloud_timeout)
+                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
                     CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
@@ -968,14 +946,11 @@ impl Agent {
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for xAI"
                 );
-                let config = CloudConfig::grok(&api_key).with_timeout_secs(cloud_timeout);
-                let config = if endpoint.is_empty() {
-                    config.with_model(&model)
-                } else {
-                    CloudConfig::custom(&api_key, &endpoint)
-                        .with_model(&model)
-                        .with_timeout_secs(cloud_timeout)
-                };
+                // Always use Grok provider to ensure correct vision model detection
+                let config = CloudConfig::grok(&api_key)
+                    .with_model(&model)
+                    .with_timeout_secs(cloud_timeout)
+                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
                     CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
@@ -990,15 +965,11 @@ impl Agent {
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for OpenAI"
                 );
-                let config = CloudConfig::openai(&api_key).with_timeout_secs(cloud_timeout);
-                let config = if endpoint.is_empty() {
-                    config.with_model(&model)
-                } else {
-                    // Custom endpoint
-                    CloudConfig::custom(&api_key, &endpoint)
-                        .with_model(&model)
-                        .with_timeout_secs(cloud_timeout)
-                };
+                // Always use OpenAI provider to ensure correct vision model detection
+                let config = CloudConfig::openai(&api_key)
+                    .with_model(&model)
+                    .with_timeout_secs(cloud_timeout)
+                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
                     CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)

@@ -251,6 +251,13 @@ impl CloudConfig {
         self
     }
 
+    /// Set the base URL (optional, for custom endpoints).
+    /// This allows overriding the default API endpoint while keeping the provider type.
+    pub fn with_base_url_opt(mut self, base_url: Option<String>) -> Self {
+        self.base_url = base_url;
+        self
+    }
+
     /// Get the effective base URL.
     fn get_base_url(&self) -> String {
         if let Some(base) = &self.base_url {
@@ -345,12 +352,14 @@ impl CloudRuntime {
                                             },
                                         }
                                     } else {
-                                        // OpenAI/Google format
+                                        // OpenAI/Google format: {"type": "image_url", "image_url": {"url": "...", "detail": "auto"}}
                                         ApiContentPart::ImageUrl {
-                                            url: url.clone(),
-                                            detail: image_detail_to_string(
-                                                detail.as_ref().unwrap_or(&ImageDetail::Auto),
-                                            ),
+                                            image_url: ImageUrlContent {
+                                                url: url.clone(),
+                                                detail: Some(image_detail_to_string(
+                                                    detail.as_ref().unwrap_or(&ImageDetail::Auto),
+                                                )),
+                                            },
                                         }
                                     }
                                 }
@@ -371,8 +380,10 @@ impl CloudRuntime {
                                     } else {
                                         // OpenAI/Google format: data URL
                                         ApiContentPart::ImageUrl {
-                                            url: format!("data:{};base64,{}", mime_type, data),
-                                            detail: "auto".to_string(),
+                                            image_url: ImageUrlContent {
+                                                url: format!("data:{};base64,{}", mime_type, data),
+                                                detail: Some("auto".to_string()),
+                                            },
                                         }
                                     }
                                 }
@@ -939,13 +950,24 @@ enum ApiContentPart {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "image_url")]
-    ImageUrl { url: String, detail: String },
+    ImageUrl {
+        #[serde(rename = "image_url")]
+        image_url: ImageUrlContent,
+    },
     /// Anthropic-style image format: {"type": "image", "source": {"type": "base64", "media_type": "...", "data": "..."}}
     #[serde(rename = "image")]
     AnthropicImage {
         #[serde(rename = "source")]
         source: AnthropicImageSource,
     },
+}
+
+/// Image URL content for OpenAI format
+#[derive(Debug, Serialize)]
+struct ImageUrlContent {
+    url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
 }
 
 /// Anthropic image source format
@@ -1135,13 +1157,34 @@ fn is_vision_model(provider: &CloudProvider, model_name: &str) -> bool {
         }
         CloudProvider::Custom => {
             // For custom providers, assume vision support if model name suggests it
+            // Include patterns from all major providers since custom endpoints may proxy any model
             name_lower.contains("vision")
                 || name_lower.contains("vl")
                 || name_lower.contains("multimodal")
+                // OpenAI patterns
                 || name_lower.contains("gpt-4o")
                 || name_lower.contains("gpt-4-turbo")
-                || name_lower.contains("gemini")
+                // Anthropic patterns
                 || name_lower.contains("claude-3")
+                || name_lower.contains("claude-4")
+                // Google patterns
+                || name_lower.contains("gemini")
+                // Qwen patterns (qwen3.5, qwen3, qwen-max, qwen-plus, qwen-turbo all support vision)
+                || name_lower.contains("qwen3.5")
+                || name_lower.contains("qwen-3.5")
+                || name_lower.contains("qwen3-")
+                || name_lower.contains("qwen-3-")
+                || name_lower.contains("qwen-max")
+                || name_lower.contains("qwen-plus")
+                || name_lower.contains("qwen-turbo")
+                // DeepSeek patterns
+                || name_lower.contains("deepseek-vl")
+                // GLM patterns
+                || name_lower.contains("glm-4v")
+                // MiniMax patterns
+                || name_lower.contains("minimax-vl")
+                // Grok patterns
+                || name_lower.contains("grok-vision")
         }
     }
 }

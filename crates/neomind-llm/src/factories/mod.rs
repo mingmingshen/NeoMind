@@ -357,7 +357,7 @@ mod tests {
         let factory = OllamaFactory::new();
         let config = factory.default_config();
         assert_eq!(config["backend"], "ollama");
-        assert_eq!(config["model"], "qwen3-vl:2b");
+        assert_eq!(config["model"], "ministral-3:3b");
     }
 
     #[cfg(feature = "cloud")]
