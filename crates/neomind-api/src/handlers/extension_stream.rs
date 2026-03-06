@@ -49,11 +49,10 @@ use axum::{
     extract::ws::{Message as WsMessage, WebSocket},
     response::IntoResponse,
 };
-use futures::sink::SinkExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc, broadcast};
+use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 use base64::prelude::*;
 
@@ -61,8 +60,7 @@ use crate::handlers::common::{HandlerResult, ok};
 use crate::models::error::ErrorResponse;
 use crate::server::ServerState;
 use neomind_core::extension::{
-    DataChunk, StreamCapability, StreamDataType, StreamDirection, StreamError,
-    StreamResult, StreamMode, StreamSession, SessionStats, PushOutputMessage,
+    DataChunk, StreamCapability, StreamDataType, StreamDirection, StreamError, StreamMode, StreamSession, SessionStats, PushOutputMessage,
 };
 
 // ============================================================================
@@ -419,7 +417,7 @@ async fn handle_stream_socket(
 
     // Get extension and safety manager
     let registry = &state.extensions.registry;
-    let unified_service = &state.extensions.unified_service;
+    let _unified_service = &state.extensions.unified_service;
     let safety_manager = registry.safety_manager();
 
     // Try to get extension from registry first, then from isolated manager

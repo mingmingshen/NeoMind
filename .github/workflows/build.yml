@@ -60,11 +60,12 @@ jobs:
           path: |
             ~/.cargo/registry/
             ~/.cargo/git/
+            target/
             web/src-tauri/target/
           # Include version tag in cache key to prevent using old cached builds
-          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('web/src-tauri/Cargo.lock') }}-${{ github.ref_name }}
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.ref_name }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('web/src-tauri/Cargo.lock') }}-
+            ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-
             ${{ runner.os }}-cargo-${{ matrix.target }}-
             ${{ runner.os }}-cargo-
 
@@ -114,6 +115,24 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             xdg-utils
+
+      - name: Build extension runner binary
+        shell: bash
+        run: |
+          # Build the extension runner for the target platform
+          cargo build --release -p neomind-extension-runner --target ${{ matrix.target }}
+          
+          # Determine the binary name based on platform
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            BINARY_NAME="neomind-extension-runner-${{ matrix.target }}.exe"
+            cp target/${{ matrix.target }}/release/neomind-extension-runner.exe web/src-tauri/binaries/$BINARY_NAME
+          else
+            BINARY_NAME="neomind-extension-runner-${{ matrix.target }}"
+            cp target/${{ matrix.target }}/release/neomind-extension-runner web/src-tauri/binaries/$BINARY_NAME
+          fi
+          
+          echo "Built extension runner: $BINARY_NAME"
+          ls -la web/src-tauri/binaries/
 
       - name: Build and bundle app
         working-directory: ./web

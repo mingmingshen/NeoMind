@@ -3,7 +3,6 @@
 //! Provides semantic indexing and search for MDL definitions and DSL rules.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};

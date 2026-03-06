@@ -560,7 +560,7 @@ impl ConversationContext {
         }
 
         // "温度多少" -> 补充位置
-        if (lower == "温度" || lower == "温度多少") {
+        if lower == "温度" || lower == "温度多少" {
             if let Some(location) = &self.current_location {
                 return Some(format!("{}的温度", location));
             }

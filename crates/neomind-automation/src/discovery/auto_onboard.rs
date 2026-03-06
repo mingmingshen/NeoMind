@@ -382,7 +382,7 @@ impl AutoOnboardManager {
         let draft_id = draft.id.clone();
         let device_id_owned = device_id.to_string();
         let source_owned = source.to_string();
-        let samples = draft.json_samples();
+        let _samples = draft.json_samples();
 
         drafts.insert(device_id.to_string(), draft.clone());
         drop(drafts);

@@ -18,7 +18,6 @@ use dashmap::DashMap;
 use rand::random;
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 
 use crate::Error;
 
@@ -635,7 +634,7 @@ impl PersistentVectorStore {
         }
         write_txn.commit()?;
 
-        self.index.delete(id);
+        let _ = self.index.delete(id);
         Ok(true)
     }
 

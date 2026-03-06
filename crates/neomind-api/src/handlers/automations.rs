@@ -795,10 +795,6 @@ pub async fn convert_automation_handler(
                 "Rule to Transform conversion is not supported. Transforms are for data processing, not reactive automation.",
             ));
         }
-        // Future: Add support for actual conversion here
-        _ => {
-            return Err(ErrorResponse::bad_request("Conversion not supported"));
-        }
     }
 }
 
@@ -1286,9 +1282,9 @@ pub async fn test_transform_code_handler(
     State(state): State<ServerState>,
     Json(req): Json<TestTransformCodeRequest>,
 ) -> HandlerResult<Value> {
-    use neomind_automation::TransformEngine;
+    
 
-    let Some(transform_engine) = &state.automation.transform_engine else {
+    let Some(_transform_engine) = &state.automation.transform_engine else {
         return Err(ErrorResponse::service_unavailable(
             "Transform engine not available",
         ));
@@ -1351,8 +1347,8 @@ pub async fn test_transform_code_handler(
 /// In production, the actual extension would be called.
 async fn preprocess_extensions_invoke(
     code: &str,
-    input_data: &Value,
-    state: &ServerState,
+    _input_data: &Value,
+    _state: &ServerState,
 ) -> Result<String, ErrorResponse> {
     // Check if code contains extensions.invoke
     if !code.contains("extensions.invoke") {

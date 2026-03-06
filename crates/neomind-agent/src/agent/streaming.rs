@@ -289,7 +289,34 @@ fn detect_json_tool_calls(buffer: &str) -> Option<(usize, String, String)> {
     }
 
     // Verify it's valid JSON
-    if serde_json::from_str::<serde_json::Value>(&json_str).is_err() {
+    let json_value = serde_json::from_str::<serde_json::Value>(&json_str).ok()?;
+
+    // Validate that at least one element has a valid string "name" field
+    // This prevents false positives from malformed JSON like [{"name":"[...]"}]
+    if let Some(arr) = json_value.as_array() {
+        let has_valid_tool_call = arr.iter().any(|item| {
+            if let Some(obj) = item.as_object() {
+                // Check if "name", "tool", or "function" field exists and is a valid string
+                let name_value = obj.get("name")
+                    .or_else(|| obj.get("tool"))
+                    .or_else(|| obj.get("function"));
+                
+                if let Some(name) = name_value {
+                    if let Some(name_str) = name.as_str() {
+                        // Ensure the name is a simple string (not a JSON string containing nested JSON)
+                        // A valid tool name should not start with '[' or '{'
+                        let trimmed = name_str.trim();
+                        return !trimmed.starts_with('[') && !trimmed.starts_with('{');
+                    }
+                }
+            }
+            false
+        });
+        
+        if !has_valid_tool_call {
+            return None;
+        }
+    } else {
         return None;
     }
 
@@ -3648,6 +3675,48 @@ mod tests {
         println!("✓ Cache key generation test passed");
     }
 
+    /// Test that malformed tool call JSON is not detected as tool calls
+    /// This prevents false positives from JSON like [{"name":"[...]"}]
+    #[test]
+    fn test_malformed_tool_call_detection() {
+        // Case 1: name field contains nested JSON array (should NOT be detected as tool call)
+        let malformed1 = r#"[{"name":"[{"name":"device_discover","arguments":{}}]"}]"#;
+        assert!(
+            detect_json_tool_calls(malformed1).is_none(),
+            "Should not detect malformed tool call with nested JSON array in name field"
+        );
+
+        // Case 2: name field contains nested JSON object (should NOT be detected as tool call)
+        let malformed2 = r#"[{"name":"{"tool":"test"}"}]"#;
+        assert!(
+            detect_json_tool_calls(malformed2).is_none(),
+            "Should not detect malformed tool call with nested JSON object in name field"
+        );
+
+        // Case 3: valid tool call (SHOULD be detected)
+        let valid = r#"[{"name":"device_discover","arguments":{}}]"#;
+        let result = detect_json_tool_calls(valid);
+        assert!(result.is_some(), "Should detect valid tool call");
+        let (_, json, _) = result.unwrap();
+        assert_eq!(json, valid);
+
+        // Case 4: valid tool call with different name field (SHOULD be detected)
+        let valid2 = r#"[{"tool":"list_devices","params":{}}]"#;
+        assert!(
+            detect_json_tool_calls(valid2).is_some(),
+            "Should detect valid tool call with 'tool' field"
+        );
+
+        // Case 5: valid tool call with function field (SHOULD be detected)
+        let valid3 = r#"[{"function":"get_status","arguments":{}}]"#;
+        assert!(
+            detect_json_tool_calls(valid3).is_some(),
+            "Should detect valid tool call with 'function' field"
+        );
+
+        println!("✓ Malformed tool call detection test passed");
+    }
+
     /// Run all streaming tests and print summary
     #[test]
     fn run_all_streaming_tests() {
@@ -3665,6 +3734,7 @@ mod tests {
         println!("  9. Tool parser");
         println!(" 10. Token estimation");
         println!(" 11. Cache key generation");
+        println!(" 12. Malformed tool call detection");
         println!("\n=== Test Suite Complete ===\n");
     }
 }

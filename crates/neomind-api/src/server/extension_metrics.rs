@@ -18,7 +18,6 @@ use tracing::{debug, info, warn};
 
 use neomind_core::datasource::DataSourceId;
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 // Use ExtensionMetricsStorage from extension_state instead of device TimeSeriesStorage
 use crate::server::state::ExtensionMetricsStorage;
@@ -290,7 +289,7 @@ impl ExtensionMetricsCollector {
                 };
 
                 // Clone value for event publishing before moving into DataPoint
-                let value_for_event = value.clone();
+                let _value_for_event = value.clone();
                 let data_point = neomind_devices::telemetry::DataPoint::new(timestamp, value);
 
                 // Use DataSourceId device_part() and metric_part() for storage API

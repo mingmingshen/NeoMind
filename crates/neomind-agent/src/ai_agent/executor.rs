@@ -3758,7 +3758,7 @@ Respond in JSON format:
 
                     // Build response combining current value and historical info
                     match (current_metric, historical_result) {
-                        (Some(metric_value), Ok(Ok(storage_result))) => {
+                        (Some(metric_value), Ok(Ok(_storage_result))) => {
                             // Has both current value and historical data
                             let json_value = match &metric_value.value {
                                 neomind_core::extension::system::ParamMetricValue::Float(v) => {
@@ -4806,7 +4806,7 @@ Respond in JSON format:
         };
 
         // Get current time context for temporal understanding
-        let time_context = get_time_context();
+        let _time_context = get_time_context();
 
         // Build available commands description for LLM
         let available_commands = Self::build_available_commands_description(agent);
@@ -5517,9 +5517,9 @@ Respond in JSON format:
                         if let Some(threshold) = extract_threshold(&condition_lower) {
                             return num > threshold;
                         }
-                    } else if (condition_lower.contains("小于")
+                    } else if condition_lower.contains("小于")
                         || condition_lower.contains("<")
-                        || condition_lower.contains("低于"))
+                        || condition_lower.contains("低于")
                     {
                         if let Some(threshold) = extract_threshold(&condition_lower) {
                             return num < threshold;

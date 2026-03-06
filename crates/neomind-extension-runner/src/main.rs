@@ -213,7 +213,7 @@ impl WasmRuntime {
     fn parse_descriptor_json(json: &serde_json::Value) -> Result<neomind_core::extension::system::ExtensionDescriptor, String> {
         use neomind_core::extension::system::{
             ExtensionMetadata, ExtensionCommand, MetricDescriptor, 
-            MetricDataType, ParameterDefinition, ParamMetricValue
+            MetricDataType, ParameterDefinition
         };
 
         let metadata_json = json.get("metadata")

@@ -14,7 +14,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tracing::{info, info_span, Instrument};
+use tracing::info;
 
 use neomind_agent::AgentEvent;
 use neomind_storage::{PendingStreamState, StreamStage};

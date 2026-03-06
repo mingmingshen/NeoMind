@@ -23,7 +23,6 @@ use axum::{
     response::{IntoResponse, Json, Response},
 };
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::crypto::CryptoService;

@@ -9,7 +9,6 @@
 //! - **Batch Optimization**: Group writes by device for efficiency
 //! - **Performance Monitoring**: Track operation latency and throughput
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;

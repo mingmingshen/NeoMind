@@ -9,19 +9,14 @@
 //! - extension_type field removed from metadata
 
 use axum::{
-    body::Body,
-    extract::{Extension, Multipart, Path, Query, State},
-    http::HeaderMap,
+    extract::{Path, Query, State},
     Json,
-    response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use http_body_util::{BodyExt, Limited};
 use serde_json::json;
 
 use crate::handlers::common::{ok, HandlerResult};
@@ -29,7 +24,6 @@ use crate::handlers::devices::models::TimeRangeQuery;
 use crate::models::error::ErrorResponse;
 use crate::server::ServerState;
 use neomind_core::datasource::DataSourceId;
-use neomind_core::extension::registry::ExtensionRegistry;
 use neomind_core::extension::{MetricDataType, ParameterDefinition};
 use neomind_storage::{ExtensionRecord, ExtensionStore};
 
@@ -3112,7 +3106,7 @@ pub async fn upload_extension_package_handler(
     State(state): State<ServerState>,
     Json(req): Json<UploadPackageRequest>,
 ) -> HandlerResult<serde_json::Value> {
-    use neomind_core::extension::package::{ExtensionPackage, detect_platform};
+    use neomind_core::extension::package::ExtensionPackage;
 
     let file_path = PathBuf::from(&req.file_path);
 
@@ -3276,7 +3270,7 @@ pub async fn uninstall_extension_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    use neomind_core::extension::package::ExtensionPackage;
+    
 
     let unified = &state.extensions.unified_service;
 
@@ -3448,7 +3442,7 @@ pub async fn upload_extension_file_handler(
     let install_result = tokio::task::spawn_blocking(move || {
         use neomind_core::extension::package::ExtensionPackage;
         // First validate the package
-        let package = ExtensionPackage::from_bytes(body_bytes_for_install.clone())?;
+        let _package = ExtensionPackage::from_bytes(body_bytes_for_install.clone())?;
         // Then install using the sync method
         ExtensionPackage::install_sync(&body_bytes_for_install, &target_dir_clone)
     }).await
