@@ -29,6 +29,9 @@ import type { Device, DeviceType, CommandDefinition, TelemetryDataResponse, Devi
 import { isBase64Image } from "./utils"
 import { cn } from "@/lib/utils"
 
+// Pagination constants
+const PAGE_SIZE = 50
+
 interface DeviceDetailProps {
   device: Device | null
   deviceType: DeviceType | null
@@ -38,7 +41,7 @@ interface DeviceDetailProps {
   selectedMetric: string | null
   onBack: () => void
   onRefresh: () => void
-  onMetricClick: (metricName: string) => Promise<void>
+  onMetricClick: (metricName: string, offset?: number, limit?: number) => Promise<void>
   onMetricBack: () => void
   onSendCommand: (commandName: string, params: string) => void
 }
@@ -149,6 +152,9 @@ export function DeviceDetail({
   const [previewImageSrc, setPreviewImageSrc] = useState<string | null>(null)
   const [selectedCommandDef, setSelectedCommandDef] = useState<CommandDefinition | null>(null)
   const [dialogParams, setDialogParams] = useState<Record<string, unknown>>({})
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1)
 
   // Use commands from unified response or fallback to deviceType
   const commands = deviceCurrentState?.commands || deviceType?.commands || []
@@ -196,9 +202,11 @@ export function DeviceDetail({
   }
 
   const handleMetricCardClick = async (key: string) => {
+    // Reset pagination when opening a new metric
+    setCurrentPage(1)
     // Fetch the latest data first, then open the dialog
     // This ensures the dialog shows fresh data, not stale cached data
-    await onMetricClick(key)
+    await onMetricClick(key, 0, PAGE_SIZE)
     setMetricHistoryOpen(true)
   }
 
@@ -226,11 +234,25 @@ export function DeviceDetail({
 
   if (!device) return null
 
-  // Don't reverse - keep newest first for table display
-  // Charts will handle their own ordering
+  // Get current metric data from API response (already paginated)
   const currentMetricData = selectedMetric && telemetryData?.data[selectedMetric]
-    ? telemetryData.data[selectedMetric].slice(0, 100)
+    ? telemetryData.data[selectedMetric]
     : []
+    
+  // Pagination info from API response
+  const pagination = telemetryData?.pagination
+  const totalCount = pagination?.total ?? currentMetricData.length
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE)
+  const hasNextPage = currentPage < totalPages
+  const hasPrevPage = currentPage > 1
+  
+  // Handle page change
+  const handlePageChange = async (newPage: number) => {
+    if (!selectedMetric) return
+    const offset = (newPage - 1) * PAGE_SIZE
+    setCurrentPage(newPage)
+    await onMetricClick(selectedMetric, offset, PAGE_SIZE)
+  }
 
   return (
     <>
@@ -535,6 +557,43 @@ export function DeviceDetail({
                 <div className="text-center py-8 text-muted-foreground">{t('devices:detailPage.noHistoryData')}</div>
               )}
           </DialogContentBody>
+          {/* Pagination Footer */}
+          {totalCount > 0 && (
+            <div className="flex items-center justify-between px-6 py-3 border-t border-border/50">
+              <div className="text-sm text-muted-foreground">
+                {t('devices:detailPage.paginationInfo', { 
+                  start: (currentPage - 1) * PAGE_SIZE + 1, 
+                  end: Math.min(currentPage * PAGE_SIZE, totalCount), 
+                  total: totalCount 
+                })}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={!hasPrevPage || telemetryLoading}
+                  className="rounded-lg"
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  {t('common:previous')}
+                </Button>
+                <span className="text-sm text-muted-foreground px-2">
+                  {currentPage} / {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={!hasNextPage || telemetryLoading}
+                  className="rounded-lg"
+                >
+                  {t('common:next')}
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

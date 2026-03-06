@@ -29,6 +29,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
   const [testingTransformId, setTestingTransformId] = useState<string | null>(null)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [devices, setDevices] = useState<Array<{ id: string; name: string; device_type?: string }>>([])
+  const [deviceTypes, setDeviceTypes] = useState<Array<{ device_type: string; name?: string }>>([])
 
   const fetchTransforms = async () => {
     setLoading(true)
@@ -55,9 +56,22 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
     }
   }
 
+  const fetchDeviceTypes = async () => {
+    try {
+      const result = await api.getDeviceTypes()
+      setDeviceTypes((result.device_types || []).map((dt: any) => ({
+        device_type: dt.device_type,
+        name: dt.name,
+      })))
+    } catch {
+      // ignore
+    }
+  }
+
   useEffect(() => {
     fetchTransforms()
     fetchDevices()
+    fetchDeviceTypes()
   }, [])
 
   const handleToggleTransform = async (transform: TransformAutomation) => {
@@ -579,6 +593,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
         onOpenChange={setBuilderOpen}
         transform={editingTransform}
         devices={devices}
+        deviceTypes={deviceTypes}
         onSave={handleSaveTransform}
       />
 

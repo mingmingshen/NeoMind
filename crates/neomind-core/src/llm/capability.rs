@@ -144,18 +144,91 @@ impl CapabilityDetector {
     }
 
     /// Detect vision/multimodal capability.
-    fn detect_vision(&self, model: &str) -> bool {
-        model.contains("vision")
-            || model.contains("vl")
-            || model.contains("-4o") // GPT-4o
-            || model.contains("claude-3")
-            || model.contains("gemini")
-            || model.contains("qwen-vl")
+    pub fn detect_vision(&self, model: &str) -> bool {
+        // 通用视觉关键词
+        if model.contains("vision") || model.contains("-vl") || model.contains("_vl") {
+            return true;
+        }
+
+        // OpenAI
+        // GPT-4o 系列 (包括 gpt-4o, gpt-4o-mini)
+        // GPT-4-turbo (支持 Vision)
+        // GPT-4.5 (支持全模态)
+        // 注意: GPT-4 (不带 turbo/vision)、GPT-3.5、o1、o3 不支持视觉
+        if model.contains("-4o")
+            || (model.contains("gpt-4-turbo") && !model.contains("gpt-4-turbo-preview"))
+            || model.contains("gpt-4.5")
+        {
+            return true;
+        }
+
+        // Anthropic - 所有 Claude 3+ 支持
+        // claude-3-opus, claude-3-sonnet, claude-3-haiku
+        // claude-3.5-sonnet, claude-3.5-haiku
+        // claude-opus-4, claude-sonnet-4, claude-haiku-4
+        if model.contains("claude-3")
+            || model.contains("claude-opus-4")
+            || model.contains("claude-sonnet-4")
+            || model.contains("claude-haiku-4")
+        {
+            return true;
+        }
+
+        // Google - 所有 Gemini 原生支持多模态
+        if model.contains("gemini") {
+            return true;
+        }
+
+        // Qwen (阿里通义千问)
+        // qwen-vl 系列: qwen-vl-max, qwen-vl-plus, qwen3-vl-plus, qwen3-vl-flash
+        // qwen2.5-vl, qwen2-vl 系列
+        // qvq 系列 (视觉推理): qvq-max, qvq-plus
+        // qwen-omni 系列 (全模态): qwen-omni-turbo, qwen-omni-max, qwen3-omni-flash
+        // qwen3.5-plus (支持文本、图像、视频)
+        // 注意: qwen-turbo, qwen-long, qwen-coder 不支持视觉
+        if model.contains("qwen-vl")
+            || model.contains("qwen2.5-vl")
+            || model.contains("qwen2-vl")
+            || model.contains("qwen3-vl")
             || model.contains("qwen-omni")
-            || model.contains("deepseek-v3") // DeepSeek v3 has vision
-            || model.contains("glm-4v")
-            || model.contains("minimax-vl")
-            || model.contains("m2-her")
+            || model.contains("qwen3-omni")
+            || model.contains("qvq")
+            || model.contains("qwen3.5-plus")
+        {
+            return true;
+        }
+
+        // DeepSeek
+        // deepseek-vl 系列: deepseek-vl-7b-chat, deepseek-vl-1.3b-chat
+        // 注意: deepseek-chat, deepseek-r1, deepseek-coder 不支持视觉
+        if model.contains("deepseek-vl") {
+            return true;
+        }
+
+        // GLM (智谱)
+        // glm-4v 系列: glm-4v, glm-4v-plus, glm-4v-flash
+        // glm-5 (支持视觉)
+        // 注意: glm-4-plus, glm-4-flash, glm-z1 不支持视觉
+        if model.contains("glm-4v") || model.contains("glm-5") {
+            return true;
+        }
+
+        // MiniMax
+        // minimax-vl-01 (视觉语言模型)
+        // m2-her (支持视觉)
+        // 注意: m2-1, m2-2, minimax-text, abab 不支持视觉
+        if model.contains("minimax-vl") || model.contains("m2-her") {
+            return true;
+        }
+
+        // Grok (xAI)
+        // grok-2-vision, grok-2-vision-latest, grok-vision-beta
+        // 注意: grok-beta, grok-3, grok-4 不支持视觉
+        if model.contains("grok") && model.contains("vision") {
+            return true;
+        }
+
+        false
     }
 
     /// Detect audio capability.
@@ -334,6 +407,13 @@ pub fn get_max_context(model: &str) -> usize {
         .unwrap_or(8192)
 }
 
+/// Detect vision/multimodal capability from model name.
+/// This is a standalone function that can be used without creating a CapabilityDetector.
+pub fn detect_vision_capability(model: &str) -> bool {
+    let detector = CapabilityDetector::new();
+    detector.detect_vision(model)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,11 +456,31 @@ mod tests {
     fn test_detect_vision() {
         let detector = CapabilityDetector::new();
 
+        // 支持视觉的模型
         assert!(detector.detect_vision("gpt-4o"));
+        assert!(detector.detect_vision("gpt-4o-mini"));
+        assert!(detector.detect_vision("gpt-4-turbo"));
         assert!(detector.detect_vision("qwen-vl-max"));
+        assert!(detector.detect_vision("qwen2.5-vl-7b-instruct"));
+        assert!(detector.detect_vision("qwen3-vl-plus"));
         assert!(detector.detect_vision("claude-3-5-sonnet"));
+        assert!(detector.detect_vision("claude-opus-4"));
+        assert!(detector.detect_vision("gemini-2.0-flash"));
         assert!(detector.detect_vision("minimax-vl-01"));
-        assert!(!detector.detect_vision("gpt-4-turbo"));
+        assert!(detector.detect_vision("glm-4v-plus"));
+        assert!(detector.detect_vision("grok-2-vision"));
+
+        // 不支持视觉的模型
+        assert!(!detector.detect_vision("gpt-3.5-turbo"));
+        assert!(!detector.detect_vision("gpt-4")); // 不带 turbo/vision 的基础版
+        assert!(!detector.detect_vision("o1-preview"));
+        assert!(!detector.detect_vision("o3-mini"));
+        assert!(!detector.detect_vision("qwen-turbo"));
+        assert!(!detector.detect_vision("qwen-coder-plus"));
+        assert!(!detector.detect_vision("deepseek-chat"));
+        assert!(!detector.detect_vision("deepseek-r1"));
+        assert!(!detector.detect_vision("glm-4-plus"));
+        assert!(!detector.detect_vision("grok-3"));
     }
 
     #[test]
@@ -402,8 +502,13 @@ mod tests {
         assert!(model_supports("gpt-4o", "function_calling"));
         assert!(model_supports("gpt-4o", "json"));
 
-        assert!(!model_supports("gpt-4-turbo", "vision"));
-        assert!(!model_supports("gpt-3.5-turbo", "video"));
+        // gpt-4-turbo 支持视觉
+        assert!(model_supports("gpt-4-turbo", "vision"));
+
+        // 不支持视觉的模型
+        assert!(!model_supports("gpt-3.5-turbo", "vision"));
+        assert!(!model_supports("o1-preview", "vision"));
+        assert!(!model_supports("qwen-turbo", "vision"));
     }
 
     #[test]

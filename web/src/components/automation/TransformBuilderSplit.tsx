@@ -72,6 +72,7 @@ interface TransformBuilderProps {
   onOpenChange: (open: boolean) => void
   transform?: TransformAutomation | null
   devices: Array<{ id: string; name: string; device_type?: string }>
+  deviceTypes?: Array<{ device_type: string; name?: string }>
   onSave: (data: Partial<TransformAutomation>) => void
 }
 
@@ -1007,6 +1008,7 @@ export function TransformBuilder({
   onOpenChange,
   transform,
   devices,
+  deviceTypes: deviceTypesProp,
   onSave,
 }: TransformBuilderProps) {
   const { t } = useTranslation(['automation', 'common'])
@@ -1043,10 +1045,13 @@ export function TransformBuilder({
   // Validation state
   const [formErrors, setFormErrors] = useState<FormErrors>({})
 
-  // Get all device types
+  // Get all device types (use prop if provided, otherwise extract from devices)
   const deviceTypes = useMemo(() => {
+    if (deviceTypesProp && deviceTypesProp.length > 0) {
+      return deviceTypesProp.map(dt => dt.device_type)
+    }
     return Array.from(new Set(devices.map((d) => d.device_type).filter((dt): dt is string => Boolean(dt))))
-  }, [devices])
+  }, [deviceTypesProp, devices])
 
   // Build scope options
   const scopeOptions: Array<{ value: string; label: string }> = useMemo(() => {

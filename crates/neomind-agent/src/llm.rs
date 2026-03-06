@@ -383,9 +383,19 @@ impl LlmInterface {
         // To make this fully dynamic, we'd need to wrap it in Arc<RwLock<>>
     }
 
-    /// Get the current LLM runtime, using instance manager if enabled.
+    /// Get the current LLM runtime.
+    /// Priority: Direct runtime (set via configure_llm) > Instance manager active runtime
+    /// This ensures that when a specific backend is configured via backendId, it takes precedence.
     async fn get_runtime(&self) -> AgentResult<Arc<dyn LlmRuntime>> {
-        // Try instance manager first if enabled
+        // First, check if a direct runtime is set (via configure_llm)
+        // This takes precedence over instance manager to support backendId selection
+        let llm_guard = self.llm.read().await;
+        if let Some(runtime) = llm_guard.as_ref() {
+            return Ok(Arc::clone(runtime));
+        }
+        drop(llm_guard);
+
+        // Fall back to instance manager if no direct runtime is set
         if self.uses_instance_manager() {
             if let Some(manager) = &self.instance_manager {
                 return manager
@@ -395,12 +405,7 @@ impl LlmInterface {
             }
         }
 
-        // Fall back to direct runtime
-        let llm_guard = self.llm.read().await;
-        llm_guard
-            .as_ref()
-            .map(Arc::clone)
-            .ok_or(NeoMindError::Llm("LLM backend not ready".to_string()))
+        Err(NeoMindError::Llm("LLM backend not ready".to_string()))
     }
 
     /// Get effective generation parameters.
@@ -487,28 +492,36 @@ impl LlmInterface {
     ///
     /// Returns a conservative default (4096) if the LLM is not ready.
     pub async fn max_context_length(&self) -> usize {
-        // Try instance manager first if enabled
+        // First, try to query the runtime directly (most accurate)
+        if let Ok(runtime) = self.get_runtime().await {
+            return runtime.max_context_length();
+        }
+
+        // Fall back to instance manager if runtime is not available
         if self.uses_instance_manager() {
             if let Some(manager) = &self.instance_manager {
                 if let Some(instance) = manager.get_active_instance() {
-                    // Instance has capabilities with max_context
                     return instance.capabilities.max_context;
                 }
             }
         }
 
-        // Fall back to querying the runtime directly
-        match self.get_runtime().await {
-            Ok(runtime) => runtime.max_context_length(),
-            Err(_) => 4_096, // Conservative default if LLM not ready
-        }
+        4_096 // Conservative default if LLM not ready
     }
 
     /// Check if the current LLM backend supports multimodal (vision) input.
     ///
     /// Returns true if the active backend supports image input, false otherwise.
+    ///
+    /// Priority: Runtime capabilities > Storage layer capabilities
+    /// This ensures correct detection when user selects a specific backend via backendId.
     pub async fn supports_multimodal(&self) -> bool {
-        // Try instance manager first if enabled
+        // First, try to query the runtime directly (most accurate - uses model name detection)
+        if let Ok(runtime) = self.get_runtime().await {
+            return runtime.capabilities().multimodal;
+        }
+
+        // Fall back to instance manager if runtime is not available
         if self.uses_instance_manager() {
             if let Some(manager) = &self.instance_manager {
                 if let Some(instance) = manager.get_active_instance() {
@@ -518,11 +531,7 @@ impl LlmInterface {
             }
         }
 
-        // Fall back to querying the runtime directly
-        match self.get_runtime().await {
-            Ok(runtime) => runtime.capabilities().multimodal,
-            Err(_) => false,
-        }
+        false
     }
 
     /// Warm up the model by sending a minimal request.

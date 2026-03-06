@@ -454,6 +454,7 @@ impl LlmRuntime for CloudRuntime {
             frequency_penalty: input.params.frequency_penalty,
             presence_penalty: input.params.presence_penalty,
             stream: false,
+            tools: input.tools.map(|tools| tools.into_iter().map(OpenAiTool::from).collect()),
         };
 
         // Create rate limit key based on provider and API key hash
@@ -501,12 +502,42 @@ impl LlmRuntime for CloudRuntime {
             .next()
             .ok_or_else(|| LlmError::Generation("No choices in response".to_string()))?;
 
+        // Build response text, including tool calls if present
+        let mut response_text = choice.message.content.unwrap_or_default();
+
+        // Handle native tool calls from OpenAI - preserve JSON format to keep tool ID
+        if let Some(ref tool_calls) = choice.message.tool_calls {
+            if !tool_calls.is_empty() {
+                tracing::debug!(
+                    "OpenAI: received {} native tool calls",
+                    tool_calls.len()
+                );
+                // Build JSON array to preserve tool IDs (OpenAI-compatible format)
+                let tool_calls_json: Vec<serde_json::Value> = tool_calls
+                    .iter()
+                    .map(|tc| {
+                        // Parse arguments from JSON string to Value
+                        let args: serde_json::Value = serde_json::from_str(&tc.function.arguments)
+                            .unwrap_or_else(|_| serde_json::json!({}));
+                        serde_json::json!({
+                            "id": tc.id,
+                            "name": tc.function.name,
+                            "arguments": args
+                        })
+                    })
+                    .collect();
+                let json_str = serde_json::to_string(&tool_calls_json).unwrap_or_default();
+                response_text.push_str(&json_str);
+            }
+        }
+
         let result = Ok(LlmOutput {
-            text: choice.message.content,
+            text: response_text,
             finish_reason: match choice.finish_reason.as_str() {
                 "stop" => FinishReason::Stop,
                 "length" => FinishReason::Length,
                 "content_filter" => FinishReason::ContentFilter,
+                "tool_calls" => FinishReason::Stop, // Tool calls are a valid stop reason
                 _ => FinishReason::Error,
             },
             usage: chat_response.usage.map(|u| TokenUsage {
@@ -573,6 +604,7 @@ impl LlmRuntime for CloudRuntime {
             frequency_penalty: input.params.frequency_penalty,
             presence_penalty: input.params.presence_penalty,
             stream: true,
+            tools: input.tools.map(|tools| tools.into_iter().map(OpenAiTool::from).collect()),
         };
 
         tokio::spawn(async move {
@@ -615,34 +647,115 @@ impl LlmRuntime for CloudRuntime {
 
                     let mut stream = response.bytes_stream();
                     let mut buffer = Vec::new();
+                    // Accumulate tool calls across chunks
+                    let mut accumulated_tool_calls: std::collections::HashMap<u32, AccumulatedToolCall> = std::collections::HashMap::new();
 
                     while let Some(chunk_result) = stream.next().await {
                         match chunk_result {
                             Ok(chunk) => {
                                 buffer.extend_from_slice(&chunk);
-                                let data = String::from_utf8_lossy(&buffer);
 
-                                for line in data.lines() {
-                                    let line = line.trim();
-                                    if line.is_empty() {
-                                        continue;
-                                    }
-                                    if line == "data: [DONE]" {
-                                        let _ = tx.send(Ok((String::new(), false))).await;
-                                        continue;
-                                    }
-                                    if let Some(json) = line.strip_prefix("data: ") {
-                                        if let Ok(evt) =
-                                            serde_json::from_str::<StreamChunkEvent>(json)
-                                        {
-                                            if let Some(choice) = evt.choices.first() {
-                                                let delta = &choice.delta.content;
-                                                if !delta.is_empty() {
-                                                    let _ =
-                                                        tx.send(Ok((delta.clone(), false))).await;
+                                // Process complete lines from buffer
+                                let mut search_start = 0;
+                                loop {
+                                    // Find newline in remaining buffer
+                                    if let Some(nl_pos) = buffer[search_start..].iter().position(|&b| b == b'\n') {
+                                        let line_end = search_start + nl_pos;
+                                        let line_bytes = &buffer[..line_end];
+                                        let line = String::from_utf8_lossy(line_bytes).trim().to_string();
+
+                                        // Remove processed line from buffer
+                                        buffer = buffer[line_end + 1..].to_vec();
+                                        search_start = 0;
+
+                                        if line.is_empty() {
+                                            continue;
+                                        }
+                                        if line == "data: [DONE]" {
+                                            // Flush any accumulated tool calls
+                                            if !accumulated_tool_calls.is_empty() {
+                                                let tool_calls_json: Vec<serde_json::Value> = accumulated_tool_calls
+                                                    .values()
+                                                    .map(|tc| {
+                                                        let args: serde_json::Value = serde_json::from_str(&tc.arguments)
+                                                            .unwrap_or_else(|_| serde_json::json!({}));
+                                                        serde_json::json!({
+                                                            "id": tc.id,
+                                                            "name": tc.name,
+                                                            "arguments": args
+                                                        })
+                                                    })
+                                                    .collect();
+                                                let json_str = serde_json::to_string(&tool_calls_json).unwrap_or_default();
+                                                let _ = tx.send(Ok((json_str, false))).await;
+                                            }
+                                            let _ = tx.send(Ok((String::new(), false))).await;
+                                            continue;
+                                        }
+                                        if let Some(json) = line.strip_prefix("data: ") {
+                                            if let Ok(evt) =
+                                                serde_json::from_str::<StreamChunkEvent>(json)
+                                            {
+                                                if let Some(choice) = evt.choices.first() {
+                                                    // Handle content
+                                                    if let Some(ref content) = choice.delta.content {
+                                                        if !content.is_empty() {
+                                                            let _ = tx.send(Ok((content.clone(), false))).await;
+                                                        }
+                                                    }
+
+                                                    // Handle tool calls (incremental)
+                                                    if let Some(ref tool_calls) = choice.delta.tool_calls {
+                                                        for tc in tool_calls {
+                                                            let entry = accumulated_tool_calls.entry(tc.index).or_insert(AccumulatedToolCall {
+                                                                id: None,
+                                                                name: None,
+                                                                arguments: String::new(),
+                                                            });
+
+                                                            // Update ID if present
+                                                            if let Some(ref id) = tc.id {
+                                                                entry.id = Some(id.clone());
+                                                            }
+
+                                                            // Update function details
+                                                            if let Some(ref func) = tc.function {
+                                                                if let Some(ref name) = func.name {
+                                                                    entry.name = Some(name.clone());
+                                                                }
+                                                                if let Some(ref args) = func.arguments {
+                                                                    entry.arguments.push_str(args);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // Check for finish reason - flush tool calls
+                                                    if choice.finish_reason.as_deref() == Some("tool_calls") {
+                                                        if !accumulated_tool_calls.is_empty() {
+                                                            let tool_calls_json: Vec<serde_json::Value> = accumulated_tool_calls
+                                                                .values()
+                                                                .map(|tc| {
+                                                                    let args: serde_json::Value = serde_json::from_str(&tc.arguments)
+                                                                        .unwrap_or_else(|_| serde_json::json!({}));
+                                                                    serde_json::json!({
+                                                                        "id": tc.id,
+                                                                        "name": tc.name,
+                                                                        "arguments": args
+                                                                    })
+                                                                })
+                                                                .collect();
+                                                            let json_str = serde_json::to_string(&tool_calls_json).unwrap_or_default();
+                                                            let _ = tx.send(Ok((json_str, false))).await;
+                                                            accumulated_tool_calls.clear();
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
+                                    } else {
+                                        // No more complete lines, break the loop
+                                        break;
                                     }
                                 }
                             }
@@ -676,16 +789,9 @@ impl LlmRuntime for CloudRuntime {
     }
 
     fn supports_multimodal(&self) -> bool {
-        matches!(
-            self.config.provider,
-            CloudProvider::OpenAI
-                | CloudProvider::Anthropic
-                | CloudProvider::Google
-                | CloudProvider::Qwen
-                | CloudProvider::DeepSeek
-                | CloudProvider::GLM
-                | CloudProvider::MiniMax
-        )
+        // Check if the specific model supports vision based on model name
+        let model = self.model.to_lowercase();
+        is_vision_model(&self.config.provider, &model)
     }
 
     fn capabilities(&self) -> BackendCapabilities {
@@ -780,6 +886,38 @@ struct ChatCompletionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     presence_penalty: Option<f32>,
     stream: bool,
+    /// Tools for function calling (OpenAI-compatible format)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<OpenAiTool>>,
+}
+
+/// Tool definition in OpenAI format
+#[derive(Debug, Serialize)]
+struct OpenAiTool {
+    #[serde(rename = "type")]
+    tool_type: String, // Always "function"
+    function: OpenAiFunction,
+}
+
+/// Function definition for tool calling
+#[derive(Debug, Serialize)]
+struct OpenAiFunction {
+    name: String,
+    description: String,
+    parameters: serde_json::Value,
+}
+
+impl From<neomind_core::llm::backend::ToolDefinition> for OpenAiTool {
+    fn from(tool: neomind_core::llm::backend::ToolDefinition) -> Self {
+        Self {
+            tool_type: "function".to_string(),
+            function: OpenAiFunction {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -835,7 +973,34 @@ struct Choice {
 
 #[derive(Debug, Deserialize)]
 struct ApiMessageResponse {
-    content: String,
+    /// Content can be null when model makes tool calls
+    #[serde(default)]
+    content: Option<String>,
+    /// Tool calls made by the model (for function calling)
+    #[serde(default)]
+    tool_calls: Option<Vec<OpenAiToolCallResponse>>,
+}
+
+/// Tool call in OpenAI response format
+#[derive(Debug, Clone, Deserialize)]
+struct OpenAiToolCallResponse {
+    /// Tool call ID
+    id: Option<String>,
+    /// Tool type (always "function")
+    #[allow(dead_code)]
+    #[serde(rename = "type")]
+    call_type: Option<String>,
+    /// Function call details
+    function: OpenAiFunctionCall,
+}
+
+/// Function call details in response
+#[derive(Debug, Clone, Deserialize)]
+struct OpenAiFunctionCall {
+    /// Function name
+    name: String,
+    /// Function arguments as JSON string
+    arguments: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -843,6 +1008,14 @@ struct Usage {
     prompt_tokens: u32,
     completion_tokens: u32,
     total_tokens: u32,
+}
+
+/// Accumulated tool call from streaming chunks
+#[derive(Debug, Clone)]
+struct AccumulatedToolCall {
+    id: Option<String>,
+    name: Option<String>,
+    arguments: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -853,15 +1026,125 @@ struct StreamChunkEvent {
 #[derive(Debug, Deserialize)]
 struct StreamChoice {
     delta: StreamDelta,
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct StreamDelta {
+    /// Content can be null when model makes tool calls
     #[serde(default)]
-    content: String,
+    content: Option<String>,
+    /// Tool calls in streaming format (incremental updates)
+    #[serde(default)]
+    tool_calls: Option<Vec<StreamToolCall>>,
+}
+
+/// Tool call in streaming response (incremental)
+#[derive(Debug, Clone, Deserialize)]
+struct StreamToolCall {
+    /// Index of this tool call in the array
+    index: u32,
+    /// Tool call ID (only in first chunk)
+    id: Option<String>,
+    /// Tool type (only in first chunk)
+    #[allow(dead_code)]
+    #[serde(rename = "type")]
+    call_type: Option<String>,
+    /// Function call details (incremental)
+    function: Option<StreamFunctionCall>,
+}
+
+/// Function call in streaming response (incremental)
+#[derive(Debug, Clone, Deserialize)]
+struct StreamFunctionCall {
+    /// Function name (only in first chunk)
+    name: Option<String>,
+    /// Function arguments (incremental, JSON string fragments)
+    arguments: Option<String>,
 }
 
 use tokio_stream;
+
+/// Check if a model supports vision (image input) based on provider and model name.
+/// This uses name-based heuristic detection for common vision-capable models.
+fn is_vision_model(provider: &CloudProvider, model_name: &str) -> bool {
+    let name_lower = model_name.to_lowercase();
+
+    match provider {
+        CloudProvider::OpenAI => {
+            // OpenAI vision-capable models:
+            // - gpt-4o, gpt-4o-mini (all GPT-4o models support vision)
+            // - gpt-4-turbo, gpt-4-1106-vision-preview, gpt-4-vision-preview
+            // - gpt-4.*vision
+            // - o1 models (o1, o1-mini, o1-preview) - some support vision
+            // NOT: gpt-4 (base), gpt-4-32k, gpt-3.5-turbo, gpt-3.5
+            name_lower.contains("gpt-4o")
+                || name_lower.contains("gpt-4-turbo")
+                || name_lower.contains("gpt-4-vision")
+                || name_lower.contains("gpt-4.1") // gpt-4.1 models
+                || (name_lower.starts_with("gpt-4") && name_lower.contains("vision"))
+                || (name_lower.starts_with("o1") && !name_lower.contains("o1-preview")) // o1 and o1-mini support vision
+        }
+        CloudProvider::Anthropic => {
+            // All Claude 3 and later models support vision
+            // claude-3-opus, claude-3-sonnet, claude-3-haiku, claude-3.5-sonnet, etc.
+            name_lower.contains("claude-3") || name_lower.contains("claude-4")
+        }
+        CloudProvider::Google => {
+            // All Gemini models support vision
+            // gemini-1.5-flash, gemini-1.5-pro, gemini-pro-vision, etc.
+            name_lower.contains("gemini")
+        }
+        CloudProvider::Qwen => {
+            // Qwen vision models:
+            // - qwen-vl, qwen2-vl, qwen3-vl, qwen-max-vl (explicit VL models)
+            // - qwen3.5-* series (all support vision: qwen3.5-turbo, qwen3.5-plus, qwen3.5-max)
+            // - qwen3-* series (all support vision: qwen3-turbo, qwen3-plus, qwen3-max)
+            // - qwen-max, qwen-plus, qwen-turbo (newer versions support vision)
+            // Note: Model names can be formatted as "qwen3.5-plus" or "qwen-3.5-plus"
+            name_lower.contains("vl")
+                || name_lower.contains("vision")
+                || name_lower.contains("qwen3.5")
+                || name_lower.contains("qwen-3.5")
+                || name_lower.contains("qwen3-")
+                || name_lower.contains("qwen-3-")
+                || name_lower.contains("qwen3_")
+                || name_lower.contains("qwen-max")
+                || name_lower.contains("qwen-plus")
+                || name_lower.contains("qwen-turbo")
+        }
+        CloudProvider::DeepSeek => {
+            // DeepSeek vision models
+            name_lower.contains("vl") || name_lower.contains("vision")
+        }
+        CloudProvider::GLM => {
+            // GLM vision models: glm-4v, glm-4v-plus, etc.
+            name_lower.contains("4v") || name_lower.contains("vision") || name_lower.contains("vl")
+        }
+        CloudProvider::MiniMax => {
+            // MiniMax vision models (check documentation for specific models)
+            name_lower.contains("vl")
+                || name_lower.contains("vision")
+                || name_lower.contains("multimodal")
+        }
+        CloudProvider::Grok => {
+            // Grok vision support (check xAI documentation)
+            // Currently grok-2-vision supports vision
+            name_lower.contains("vision")
+        }
+        CloudProvider::Custom => {
+            // For custom providers, assume vision support if model name suggests it
+            name_lower.contains("vision")
+                || name_lower.contains("vl")
+                || name_lower.contains("multimodal")
+                || name_lower.contains("gpt-4o")
+                || name_lower.contains("gpt-4-turbo")
+                || name_lower.contains("gemini")
+                || name_lower.contains("claude-3")
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -895,5 +1178,80 @@ mod tests {
             "https://generativelanguage.googleapis.com/v1beta"
         );
         assert_eq!(CloudProvider::Grok.base_url(), "https://api.x.ai/v1");
+    }
+
+    #[test]
+    fn test_is_vision_model_openai() {
+        // OpenAI vision models
+        assert!(is_vision_model(&CloudProvider::OpenAI, "gpt-4o"));
+        assert!(is_vision_model(&CloudProvider::OpenAI, "gpt-4o-mini"));
+        assert!(is_vision_model(&CloudProvider::OpenAI, "gpt-4-turbo"));
+        assert!(is_vision_model(&CloudProvider::OpenAI, "gpt-4-vision-preview"));
+        assert!(is_vision_model(&CloudProvider::OpenAI, "gpt-4-1106-vision-preview"));
+        assert!(is_vision_model(&CloudProvider::OpenAI, "o1"));
+        assert!(is_vision_model(&CloudProvider::OpenAI, "o1-mini"));
+
+        // OpenAI non-vision models
+        assert!(!is_vision_model(&CloudProvider::OpenAI, "gpt-4"));
+        assert!(!is_vision_model(&CloudProvider::OpenAI, "gpt-4-32k"));
+        assert!(!is_vision_model(&CloudProvider::OpenAI, "gpt-3.5-turbo"));
+        assert!(!is_vision_model(&CloudProvider::OpenAI, "gpt-3.5"));
+    }
+
+    #[test]
+    fn test_is_vision_model_anthropic() {
+        // Anthropic vision models (all Claude 3+)
+        assert!(is_vision_model(&CloudProvider::Anthropic, "claude-3-opus"));
+        assert!(is_vision_model(&CloudProvider::Anthropic, "claude-3-sonnet"));
+        assert!(is_vision_model(&CloudProvider::Anthropic, "claude-3-haiku"));
+        assert!(is_vision_model(&CloudProvider::Anthropic, "claude-3-5-sonnet"));
+        assert!(is_vision_model(&CloudProvider::Anthropic, "claude-3.5-sonnet"));
+
+        // Anthropic non-vision models
+        assert!(!is_vision_model(&CloudProvider::Anthropic, "claude-2"));
+        assert!(!is_vision_model(&CloudProvider::Anthropic, "claude-instant"));
+    }
+
+    #[test]
+    fn test_is_vision_model_google() {
+        // Google vision models (all Gemini)
+        assert!(is_vision_model(&CloudProvider::Google, "gemini-1.5-flash"));
+        assert!(is_vision_model(&CloudProvider::Google, "gemini-1.5-pro"));
+        assert!(is_vision_model(&CloudProvider::Google, "gemini-pro-vision"));
+        assert!(is_vision_model(&CloudProvider::Google, "gemini-2.0-flash"));
+
+        // Non-gemini models
+        assert!(!is_vision_model(&CloudProvider::Google, "palm-2"));
+    }
+
+    #[test]
+    fn test_is_vision_model_qwen() {
+        // Qwen explicit VL models
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen-vl"));
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen2-vl"));
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen3-vl"));
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen-max-vl"));
+
+        // Qwen3.5 series (all support vision)
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen3.5-turbo"));
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen3.5-plus"));
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen3.5-max"));
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen-3.5-plus"));
+
+        // Qwen3 series (all support vision)
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen3-turbo"));
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen3-plus"));
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen3-max"));
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen-3-plus"));
+
+        // Qwen max/plus/turbo (newer versions support vision)
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen-max"));
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen-plus"));
+        assert!(is_vision_model(&CloudProvider::Qwen, "qwen-turbo"));
+
+        // Non-vision models (older qwen versions without vision support)
+        assert!(!is_vision_model(&CloudProvider::Qwen, "qwen-7b"));
+        assert!(!is_vision_model(&CloudProvider::Qwen, "qwen-14b"));
+        assert!(!is_vision_model(&CloudProvider::Qwen, "qwen-72b"));
     }
 }

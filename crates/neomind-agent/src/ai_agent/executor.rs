@@ -149,6 +149,43 @@ fn get_time_context() -> String {
     )
 }
 
+/// Convert a JSON Value to a String, handling both string and object types.
+/// - If the value is a string, return it directly.
+/// - If the value is an object, serialize it to a formatted JSON string.
+/// - For other types, return empty string.
+fn json_value_to_string(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Object(obj) => {
+            // Serialize object to a readable format
+            match serde_json::to_string_pretty(obj) {
+                Ok(s) => s,
+                Err(_) => value.to_string(),
+            }
+        }
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Array(arr) => {
+            // For arrays, serialize to JSON string
+            match serde_json::to_string(arr) {
+                Ok(s) => s,
+                Err(_) => value.to_string(),
+            }
+        }
+    }
+}
+
+/// Extract a string field from a JSON object, supporting both string and nested object types.
+/// This handles cases where LLM returns:
+/// - "situation_analysis": "text description"
+/// - "situation_analysis": {"description": "...", "details": {...}}
+fn extract_string_field(obj: &serde_json::Map<String, serde_json::Value>, key: &str) -> String {
+    obj.get(key)
+        .map(json_value_to_string)
+        .unwrap_or_default()
+}
+
 /// Extract JSON from mixed text (when model outputs text before JSON).
 /// Returns the extracted JSON string if found, None otherwise.
 fn extract_json_from_mixed_text(text: &str) -> Option<String> {
@@ -4993,16 +5030,27 @@ Respond in JSON format:
                 };
 
                 // Parse the LLM response
+                // Note: situation_analysis and conclusion can be either String or Object
+                // depending on LLM output format, so we use Value and convert later
                 #[derive(serde::Deserialize)]
                 struct LlmResponse {
                     #[serde(default)]
-                    situation_analysis: String,
+                    situation_analysis: serde_json::Value,
                     #[serde(default)]
                     reasoning_steps: Vec<ReasoningFromLlm>,
                     #[serde(default)]
                     decisions: Vec<DecisionFromLlm>,
                     #[serde(default)]
-                    conclusion: String,
+                    conclusion: serde_json::Value,
+                }
+
+                impl LlmResponse {
+                    fn situation_analysis_string(&self) -> String {
+                        json_value_to_string(&self.situation_analysis)
+                    }
+                    fn conclusion_string(&self) -> String {
+                        json_value_to_string(&self.conclusion)
+                    }
                 }
 
                 #[derive(serde::Deserialize)]
@@ -5040,6 +5088,8 @@ Respond in JSON format:
 
                 match serde_json::from_str::<LlmResponse>(json_str) {
                     Ok(response) => {
+                        let situation_analysis = response.situation_analysis_string();
+                        let conclusion = response.conclusion_string();
                         let reasoning_steps: Vec<neomind_storage::ReasoningStep> = response
                             .reasoning_steps
                             .into_iter()
@@ -5049,7 +5099,7 @@ Respond in JSON format:
                                 description: step.description,
                                 step_type: "llm_analysis".to_string(),
                                 input: Some(text_data_summary.join("\n")),
-                                output: response.situation_analysis.clone(),
+                                output: situation_analysis.clone(),
                                 confidence: step.confidence,
                             })
                             .collect();
@@ -5062,7 +5112,7 @@ Respond in JSON format:
                                 description: d.description,
                                 action: d.action,
                                 rationale: d.rationale,
-                                expected_outcome: response.conclusion.clone(),
+                                expected_outcome: conclusion.clone(),
                             })
                             .collect();
 
@@ -5100,10 +5150,10 @@ Respond in JSON format:
                         }
 
                         Ok((
-                            response.situation_analysis,
+                            situation_analysis,
                             reasoning_steps,
                             decisions,
-                            response.conclusion,
+                            conclusion,
                         ))
                     }
                     Err(parse_error) => {
@@ -5127,6 +5177,8 @@ Respond in JSON format:
                             );
                             match serde_json::from_str::<LlmResponse>(&extracted_json) {
                                 Ok(response) => {
+                                    let situation_analysis = response.situation_analysis_string();
+                                    let conclusion = response.conclusion_string();
                                     let reasoning_steps: Vec<neomind_storage::ReasoningStep> =
                                         response
                                             .reasoning_steps
@@ -5140,7 +5192,7 @@ Respond in JSON format:
                                                 description: step.description,
                                                 step_type: "llm_analysis".to_string(),
                                                 input: Some(text_data_summary.join("\n")),
-                                                output: response.situation_analysis.clone(),
+                                                output: situation_analysis.clone(),
                                                 confidence: step.confidence,
                                             })
                                             .collect();
@@ -5161,10 +5213,10 @@ Respond in JSON format:
                                         .collect();
 
                                     return Ok((
-                                        response.situation_analysis,
+                                        situation_analysis,
                                         reasoning_steps,
                                         decisions,
-                                        response.conclusion,
+                                        conclusion,
                                     ));
                                 }
                                 Err(_) => {
@@ -5185,6 +5237,8 @@ Respond in JSON format:
                             }
                             match serde_json::from_str::<LlmResponse>(&recovered_json) {
                                 Ok(response) => {
+                                    let situation_analysis = response.situation_analysis_string();
+                                    let conclusion = response.conclusion_string();
                                     let reasoning_steps: Vec<neomind_storage::ReasoningStep> =
                                         response
                                             .reasoning_steps
@@ -5198,7 +5252,7 @@ Respond in JSON format:
                                                 description: step.description,
                                                 step_type: "llm_analysis".to_string(),
                                                 input: Some(text_data_summary.join("\n")),
-                                                output: response.situation_analysis.clone(),
+                                                output: situation_analysis.clone(),
                                                 confidence: step.confidence,
                                             })
                                             .collect();
@@ -5219,16 +5273,16 @@ Respond in JSON format:
                                         .collect();
 
                                     return Ok((
-                                        response.situation_analysis,
+                                        situation_analysis,
                                         reasoning_steps,
                                         decisions,
                                         if was_truncated {
                                             format!(
                                                 "{} (Response was truncated, some content may be incomplete)",
-                                                response.conclusion
+                                                conclusion
                                             )
                                         } else {
-                                            response.conclusion
+                                            conclusion
                                         },
                                     ));
                                 }
@@ -5241,16 +5295,9 @@ Respond in JSON format:
                         // Lenient extraction: parse as Value and extract fields (handles different LLM JSON shapes)
                         if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
                             if let Some(obj) = value.as_object() {
-                                let situation_analysis: String = obj
-                                    .get("situation_analysis")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let conclusion: String = obj
-                                    .get("conclusion")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
+                                // Use extract_string_field to handle both string and nested object types
+                                let situation_analysis = extract_string_field(obj, "situation_analysis");
+                                let conclusion = extract_string_field(obj, "conclusion");
                                 let mut reasoning_steps = Vec::new();
                                 if let Some(arr) =
                                     obj.get("reasoning_steps").and_then(|v| v.as_array())

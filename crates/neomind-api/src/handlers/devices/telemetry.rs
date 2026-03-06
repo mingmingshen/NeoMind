@@ -28,7 +28,8 @@ fn get_transform_namespaces() -> &'static [&'static str; 5] {
 /// - metric: optional metric name (if not specified, returns all metrics)
 /// - start: optional start timestamp (default: 24 hours ago)
 /// - end: optional end timestamp (default: now)
-/// - limit: optional limit on number of data points (default: 1000)
+/// - limit: optional limit on number of data points (default: 100, max: 1000)
+/// - offset: optional offset for pagination (default: 0)
 /// - aggregate: optional aggregation type (avg, min, max, sum, last)
 pub async fn get_device_telemetry_handler(
     State(state): State<ServerState>,
@@ -48,7 +49,12 @@ pub async fn get_device_telemetry_handler(
     let limit = params
         .get("limit")
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(1000);
+        .unwrap_or(100)
+        .min(1000); // Cap at 1000
+    let offset = params
+        .get("offset")
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(0);
     let aggregate = params.get("aggregate").cloned();
 
     // Query device with template once to avoid duplicate database calls
@@ -113,8 +119,8 @@ pub async fn get_device_telemetry_handler(
         }
     };
 
-    let target_metrics: Vec<String> = if let Some(m) = metric {
-        vec![m]
+    let target_metrics: Vec<String> = if let Some(ref m) = metric {
+        vec![m.clone()]
     } else {
         available_metrics.clone()
     };
@@ -134,7 +140,10 @@ pub async fn get_device_telemetry_handler(
     //
     // Performance optimization: Use concurrent queries instead of sequential loop.
     // This reduces the total query time from O(n * query_time) to O(max_query_time).
-    let telemetry_data: HashMap<String, serde_json::Value> = if aggregate.is_some() {
+    //
+    // For pagination: we query all data, sort by timestamp (newest first), then apply offset/limit.
+    // This ensures consistent pagination even when data is inserted during pagination.
+    let (telemetry_data, total_counts): (HashMap<String, serde_json::Value>, HashMap<String, usize>) = if aggregate.is_some() {
         // Aggregate queries - run concurrently
         let aggregate_futures: Vec<_> = target_metrics
             .iter()
@@ -159,15 +168,17 @@ pub async fn get_device_telemetry_handler(
                         }
                         Err(_) => vec![],
                     };
-                    (metric_name, json!(points))
+                    (metric_name, json!(points), 1)
                 }
             })
             .collect();
 
         let results = futures::future::join_all(aggregate_futures).await;
-        results.into_iter().collect()
+        let data: HashMap<String, serde_json::Value> = results.iter().map(|(k, v, _)| (k.clone(), v.clone())).collect();
+        let counts: HashMap<String, usize> = results.into_iter().map(|(k, _, c)| (k, c)).collect();
+        (data, counts)
     } else {
-        // Raw queries - run concurrently
+        // Raw queries - run concurrently with pagination support
         let query_futures: Vec<_> = target_metrics
             .iter()
             .map(|metric_name| {
@@ -175,14 +186,23 @@ pub async fn get_device_telemetry_handler(
                 let device_service = state.devices.service.clone();
                 let device_id = device_id.clone();
                 let metric_name = metric_name.clone();
+                let offset = offset;
+                let limit = limit;
                 async move {
-                    let points = match device_service
+                    let (points, total) = match device_service
                         .query_telemetry(&device_id, &metric_name, Some(start), Some(end))
                         .await
                     {
-                        Ok(points) => {
-                            let mut result = points
+                        Ok(all_points) => {
+                            // Sort by timestamp descending (newest first)
+                            let mut sorted_points: Vec<_> = all_points.into_iter().collect();
+                            sorted_points.sort_by(|a, b| b.0.cmp(&a.0));
+                            
+                            let total = sorted_points.len();
+                            // Apply pagination: skip offset, take limit
+                            let paginated: Vec<_> = sorted_points
                                 .into_iter()
+                                .skip(offset)
                                 .take(limit)
                                 .map(|(timestamp, value)| {
                                     json!({
@@ -190,16 +210,22 @@ pub async fn get_device_telemetry_handler(
                                         "value": metric_value_to_json(&value),
                                     })
                                 })
-                                .collect::<Vec<_>>();
-                            result.sort_by(|a, b| b["timestamp"].as_i64().cmp(&a["timestamp"].as_i64()));
-                            result
+                                .collect();
+                            (paginated, total)
                         }
                         Err(_) => {
                             // Fallback to direct telemetry query
                             match telemetry.query(&device_id, &metric_name, start, end).await {
-                                Ok(points) => {
-                                    let mut result = points
+                                Ok(all_points) => {
+                                    // Sort by timestamp descending (newest first)
+                                    let mut sorted_points = all_points;
+                                    sorted_points.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+                                    
+                                    let total = sorted_points.len();
+                                    // Apply pagination: skip offset, take limit
+                                    let paginated: Vec<_> = sorted_points
                                         .into_iter()
+                                        .skip(offset)
                                         .take(limit)
                                         .map(|p| {
                                             json!({
@@ -207,23 +233,31 @@ pub async fn get_device_telemetry_handler(
                                                 "value": metric_value_to_json(&p.value),
                                             })
                                         })
-                                        .collect::<Vec<_>>();
-                                    result.sort_by(|a, b| {
-                                        b["timestamp"].as_i64().cmp(&a["timestamp"].as_i64())
-                                    });
-                                    result
+                                        .collect();
+                                    (paginated, total)
                                 }
-                                Err(_) => vec![],
+                                Err(_) => (vec![], 0),
                             }
                         }
                     };
-                    (metric_name, json!(points))
+                    (metric_name, json!(points), total)
                 }
             })
             .collect();
 
         let results = futures::future::join_all(query_futures).await;
-        results.into_iter().collect()
+        let data: HashMap<String, serde_json::Value> = results.iter().map(|(k, v, _)| (k.clone(), v.clone())).collect();
+        let counts: HashMap<String, usize> = results.into_iter().map(|(k, _, c)| (k, c)).collect();
+        (data, counts)
+    };
+
+    // Calculate total count for the queried metric (or first metric if all)
+    let total_count = if let Some(m) = &metric {
+        total_counts.get(m).copied().unwrap_or(0)
+    } else if !target_metrics.is_empty() {
+        total_counts.get(&target_metrics[0]).copied().unwrap_or(0)
+    } else {
+        0
     };
 
     ok(json!({
@@ -233,6 +267,11 @@ pub async fn get_device_telemetry_handler(
         "start": start,
         "end": end,
         "aggregated": aggregate.is_some(),
+        "pagination": {
+            "offset": offset,
+            "limit": limit,
+            "total": total_count,
+        }
     }))
 }
 

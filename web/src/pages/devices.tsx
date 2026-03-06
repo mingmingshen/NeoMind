@@ -428,14 +428,14 @@ export function DevicesPage() {
     }
   }
 
-  const handleMetricClick = async (metricName: string) => {
+  const handleMetricClick = async (metricName: string, offset?: number, limit?: number) => {
     if (!deviceDetailView) return
     setSelectedMetric(metricName)
     // Use current timestamp as end to ensure we get the latest data
     const end = Math.floor(Date.now() / 1000)
     const start = end - 86400 // 24 hours ago
-    // Fetch with the full 24-hour range and up to 1000 points
-    await fetchTelemetryData(deviceDetailView, metricName, start, end, 1000)
+    // Fetch with pagination support
+    await fetchTelemetryData(deviceDetailView, metricName, start, end, limit ?? 50, offset ?? 0)
   }
 
   const handleSendCommand = async (commandName: string, paramsJson: string) => {

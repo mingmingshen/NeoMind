@@ -592,6 +592,11 @@ export interface TelemetryDataResponse {
   start: number
   end: number
   aggregated: boolean
+  pagination?: {
+    offset: number
+    limit: number
+    total: number
+  }
 }
 
 export interface TelemetryPoint {

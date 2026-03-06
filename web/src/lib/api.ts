@@ -830,13 +830,14 @@ export const api = {
     }),
 
   // Device Telemetry
-  getDeviceTelemetry: (deviceId: string, metric?: string, start?: number, end?: number, limit?: number) =>
+  getDeviceTelemetry: (deviceId: string, metric?: string, start?: number, end?: number, limit?: number, offset?: number) =>
     fetchAPI<TelemetryDataResponse>(
       `/devices/${deviceId}/telemetry?${new URLSearchParams({
         ...(metric && { metric }),
         ...(start && { start: start.toString() }),
         ...(end && { end: end.toString() }),
         ...(limit && { limit: limit.toString() }),
+        ...(offset !== undefined && offset > 0 && { offset: offset.toString() }),
       })}`
     ),
   getDeviceTelemetrySummary: (deviceId: string, hours?: number) =>

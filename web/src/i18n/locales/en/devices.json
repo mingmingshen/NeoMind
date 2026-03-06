@@ -982,6 +982,7 @@
     "preview": "Preview",
     "imagePreview": "Image preview dialog",
     "metricHistory": "Metric history data",
+    "paginationInfo": "Showing {{start}}-{{end}} of {{total}} records",
     "parameters": "Parameters:",
     "result": "Result:",
     "error": "Error:",

@@ -696,24 +696,24 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                         response.push_str(&format!("📊 Device Overview ({} total)\n\n", total));
                         response.push_str(&format!("- Online: {} | Offline: {}\n\n", online, offline));
 
-                        // Show device types
-                        if let Some(by_type) = summary.get("by_type").and_then(|b| b.as_object()) {
+                            // Show device types
+                            if let Some(by_type) = summary.get("by_type").and_then(|b| b.as_object()) {
                             response.push_str("**By Type**:\n");
-                            for (device_type, count) in by_type.iter() {
-                                if let Some(count) = count.as_u64() {
+                                    for (device_type, count) in by_type.iter() {
+                                        if let Some(count) = count.as_u64() {
                                     response
                                         .push_str(&format!("- {}: {} units\n", device_type, count));
+                                        }
+                                    }
+                                    response.push_str("\n");
                                 }
                             }
-                            response.push_str("\n");
-                        }
-                    }
 
-                    // List devices (handle both direct array and truncated nested structure)
-                    if let Some(devices) = extract_array(&json_value, "devices") {
+                            // List devices (handle both direct array and truncated nested structure)
+                            if let Some(devices) = extract_array(&json_value, "devices") {
                         response.push_str("**Device List**:\n\n");
                         for device in devices {
-                            let id = device.get("id").and_then(|i| i.as_str()).unwrap_or("unknown");
+                                        let id = device.get("id").and_then(|i| i.as_str()).unwrap_or("unknown");
                             let name = device
                                 .get("name")
                                 .and_then(|n| n.as_str())
@@ -727,7 +727,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                 .and_then(|s| s.as_str())
                                 .unwrap_or("unknown");
 
-                            response.push_str(&format!(
+                                        response.push_str(&format!(
                                 "- **{}** ({}) - {} - {}\n",
                                 name, id, device_type, status
                             ));
@@ -996,77 +996,88 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                     };
 
                     if let Some(agents) = agents_array {
-                        response.push_str(&format!("## AI Agent List ({} total)\n\n", agents.len()));
-                        for agent in agents {
-                            let name = agent.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
-                            let id = agent.get("id").and_then(|i| i.as_str()).unwrap_or("");
-                            let status = agent
-                                .get("status")
-                                .and_then(|s| s.as_str())
-                                .unwrap_or("unknown");
+                        if agents.is_empty() {
+                            response.push_str("🤖 **AI Agent List**\n\n");
+                            response.push_str("🔍 No AI Agents configured in the system.");
+                        } else {
+                            response.push_str(&format!("🤖 **AI Agent List** ({} total)\n\n", agents.len()));
+                            for agent in agents {
+                                let name = agent.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+                                let id = agent.get("id").and_then(|i| i.as_str()).unwrap_or("");
+                                let status = agent
+                                    .get("status")
+                                    .and_then(|s| s.as_str())
+                                    .unwrap_or("unknown");
 
-                            // Get execution stats - try multiple paths
-                            let exec_count_str = agent
-                                .get("execution_count")
-                                .and_then(|e| e.as_u64())
-                                .or_else(|| {
-                                    agent
-                                        .get("stats")
-                                        .and_then(|s| s.get("total_executions"))
-                                        .and_then(|e| e.as_u64())
-                                })
-                                .map(|c| c.to_string())
-                                .or_else(|| {
-                                    agent
-                                        .get("stats")
-                                        .and_then(|s| s.get("total_executions"))
-                                        .and_then(|e| e.as_str())
-                                        .map(String::from)
-                                })
-                                .unwrap_or_else(|| "0".to_string());
+                                // Get execution stats - try multiple paths
+                                let exec_count_str = agent
+                                    .get("execution_count")
+                                    .and_then(|e| e.as_u64())
+                                    .or_else(|| {
+                                        agent
+                                            .get("stats")
+                                            .and_then(|s| s.get("total_executions"))
+                                            .and_then(|e| e.as_u64())
+                                    })
+                                    .map(|c| c.to_string())
+                                    .or_else(|| {
+                                        agent
+                                            .get("stats")
+                                            .and_then(|s| s.get("total_executions"))
+                                            .and_then(|e| e.as_str())
+                                            .map(String::from)
+                                    })
+                                    .unwrap_or_else(|| "0".to_string());
 
-                            let last_exec = agent
-                                .get("last_execution_at")
-                                .and_then(|l| l.as_str())
-                                .unwrap_or("Not executed");
+                                let last_exec = agent
+                                    .get("last_execution_at")
+                                    .and_then(|l| l.as_str())
+                                    .unwrap_or("Not executed");
 
-                            let status_icon = match status {
-                                "active" | "Active" => "✓",
-                                _ => "✗",
-                            };
+                                let status_icon = match status {
+                                    "active" | "Active" => "🟢",
+                                    _ => "🔴",
+                                };
 
-                            response
-                                .push_str(&format!("- **{}** {} {}\n", name, status_icon, status));
+                                response
+                                    .push_str(&format!("- {} **{}** ({})\n", status_icon, name, status));
 
-                            // Add ID for reference
-                            if !id.is_empty() && id.len() < 30 {
-                                response.push_str(&format!("  ID: `{}`\n", id));
-                            }
+                                // Add ID for reference
+                                if !id.is_empty() && id.len() < 30 {
+                                    response.push_str(&format!("  ID: `{}`\n", id));
+                                }
 
-                            // Add execution info
-                            if exec_count_str != "0" {
-                                response.push_str(&format!(
-                                    "  Executions: {} times, Last: {}\n",
-                                    exec_count_str,
-                                    if last_exec == "Not executed" || last_exec.contains("null") {
-                                        "N/A"
-                                    } else {
-                                        last_exec
+                                // Add execution info
+                                if exec_count_str != "0" {
+                                    response.push_str(&format!(
+                                        "  Executions: {}, Last: {}\n",
+                                        exec_count_str,
+                                        if last_exec == "Not executed" || last_exec.contains("null") {
+                                            "N/A"
+                                        } else {
+                                            last_exec
+                                        }
+                                    ));
+                                }
+
+                                // Add description if available
+                                if let Some(desc) = agent.get("description").and_then(|d| d.as_str()) {
+                                    if !desc.is_empty() && desc != "null" {
+                                        response.push_str(&format!("  Description: {}\n", desc));
                                     }
-                                ));
-                            }
-
-                            // Add description if available
-                            if let Some(desc) = agent.get("description").and_then(|d| d.as_str()) {
-                                if !desc.is_empty() && desc != "null" {
-                                    response.push_str(&format!("  Description: {}\n", desc));
                                 }
                             }
                         }
                     } else if let Some(count) = json_value.get("count").and_then(|c| c.as_u64()) {
-                        response.push_str(&format!("## AI Agent List ({} total)\n", count));
+                        if count == 0 {
+                            response.push_str("🤖 **AI Agent List**\n\n");
+                            response.push_str("🔍 No AI Agents configured in the system.");
+                        } else {
+                            response.push_str(&format!("🤖 **AI Agent List** ({} total)\n", count));
+                        }
                     } else {
-                        response.push_str("No AI Agents found.\n");
+                        response.push_str("🤖 **AI Agent List**\n\n");
+                        response.push_str("🔍 No AI Agents configured in the system.");
                     }
                 }
                 "get_agent" => {
@@ -1759,8 +1770,6 @@ pub async fn process_stream_events_with_safeguards(
         let mut last_progress_time = Instant::now();
         #[allow(unused_assignments)]
         #[allow(unused_variables)]
-        let mut current_stage = "thinking";
-
         // === TIMEOUT WARNING FLAGS ===
         let mut timeout_warned = false;
         let mut long_thinking_warned = false;
@@ -1972,7 +1981,6 @@ pub async fn process_stream_events_with_safeguards(
                         elapsed_ms
                     );
                     last_progress_time = Instant::now();
-                    current_stage = stage_name;
                 }
 
                 match result {

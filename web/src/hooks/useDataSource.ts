@@ -1324,7 +1324,7 @@ export function useDataSource<T = unknown>(
                                      (metricId && (metricId.toLowerCase().includes('image') ||
                                                     metricId.toLowerCase().includes('img') ||
                                                     metricId.includes('values.image')))
-            const maxLimit = isImageDataSource ? 200 : (ds.limit ?? 50)
+            const maxLimit = ds.limit ?? (isImageDataSource ? 200 : 50)
 
             // For image data sources, check for duplicate (timestamp + value) before merging
             if (isImageDataSource && isDuplicatePoint(currentArray, now, latestValue, getTs)) {
@@ -1575,7 +1575,7 @@ export function useDataSource<T = unknown>(
                                    (metricId && (metricId.toLowerCase().includes('image') ||
                                                    metricId.toLowerCase().includes('img') ||
                                                    metricId.includes('values.image')))
-            const maxLimit = isImageDataSource ? 200 : (ds.limit ?? 50)
+            const maxLimit = ds.limit ?? (isImageDataSource ? 200 : 50)
 
             // Get current array for this source (handle multi-source case)
             const isPreserveMultiple = optionsRef.current.preserveMultiple
@@ -1831,7 +1831,7 @@ export function useDataSource<T = unknown>(
                                            (metricId && (metricId.toLowerCase().includes('image') ||
                                                           metricId.toLowerCase().includes('img') ||
                                                           metricId.includes('values.image')))
-                  const maxLimit = isImageDataSource ? 200 : (ds.limit ?? 50)
+                  const maxLimit = ds.limit ?? (isImageDataSource ? 200 : 50)
 
                   const getTs = (p: unknown): number => {
                     if (p === null || p === undefined) return 0
@@ -2001,8 +2001,8 @@ export function useDataSource<T = unknown>(
                                  (ds.metricId && (ds.metricId.toLowerCase().includes('image') ||
                                                    ds.metricId.toLowerCase().includes('img') ||
                                                    ds.metricId.includes('values.image')))
-        const actualTimeRange = ds.timeRange && ds.timeRange > 1 ? ds.timeRange : (isImageDataSource ? 48 : 1)
-        const actualLimit = isImageDataSource ? 200 : (ds.limit ?? 50)
+        const actualTimeRange = ds.timeRange ?? (isImageDataSource ? 48 : 1)
+        const actualLimit = ds.limit ?? (isImageDataSource ? 200 : 50)
         const actualAggregate = ds.aggregate ?? ds.aggregateExt ?? 'raw'
 
         return createStableKey({
@@ -2077,8 +2077,8 @@ export function useDataSource<T = unknown>(
 
             // Use the data source's timeRange if set, otherwise use appropriate defaults
             // Image data sources may have larger timeRanges configured by the component
-            const actualTimeRange = ds.timeRange && ds.timeRange > 1 ? ds.timeRange : (isImageDataSource ? 48 : 1)
-            const actualLimit = isImageDataSource ? 200 : (ds.limit ?? 50)
+            const actualTimeRange = ds.timeRange ?? (isImageDataSource ? 48 : 1)
+            const actualLimit = ds.limit ?? (isImageDataSource ? 200 : 50)
             const actualAggregate = ds.aggregate ?? ds.aggregateExt ?? 'raw'
 
             const response = await fetchHistoricalTelemetry(
@@ -2279,7 +2279,7 @@ export function useDataSource<T = unknown>(
                                                      ds.metricId.toLowerCase().includes('img') ||
                                                      ds.metricId.includes('values.image')))
 
-          const maxLimit = isImageDataSource ? 200 : (ds.limit ?? 50)
+          const maxLimit = ds.limit ?? (isImageDataSource ? 200 : 50)
           const getTs = (p: unknown): number => {
             if (p === null || p === undefined) return 0
             const o = p as Record<string, unknown>

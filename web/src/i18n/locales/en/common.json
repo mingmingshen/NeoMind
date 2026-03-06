@@ -167,6 +167,8 @@
   "sent": "Sent",
   "warning": "Warning",
   "error": "Error",
+  "previous": "Previous",
+  "next": "Next",
   "optional": "Optional",
   "required": "Required",
   "close": "Close",

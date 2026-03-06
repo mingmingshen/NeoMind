@@ -719,6 +719,7 @@ export function AutomationPage() {
         onOpenChange={setShowTransformDialog}
         transform={editingTransform}
         devices={devices}
+        deviceTypes={deviceTypes}
         onSave={handleSaveTransform}
       />
 

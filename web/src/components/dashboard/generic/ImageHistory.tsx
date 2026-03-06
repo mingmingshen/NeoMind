@@ -325,25 +325,19 @@ function formatTimestamp(timestamp: string | number | undefined): string {
 function normalizeDataSourceForImages(
   ds: DataSource | undefined,
   limit: number = 200,
-  timeRange: number = 1
+  timeRange: number = 48
 ): DataSource | undefined {
   if (!ds) return undefined
 
-  // Use 48 hours as the default time range for images (override if explicitly set larger)
-  const imageTimeRange = timeRange > 1 ? timeRange : 48
-
   // If it's already telemetry, return as-is with raw transform and custom limits
+  // Priority: ds.limit/ds.timeRange (from config) > component props > defaults
   if (ds.type === 'telemetry') {
-    const originalLimit = ds.limit
-    const newLimit = Math.max(ds.limit ?? 0, limit)
-    const originalTimeRange = ds.timeRange
-    const newTimeRange = ds.timeRange && ds.timeRange > 48 ? ds.timeRange : imageTimeRange
+    const newLimit = ds.limit ?? limit
+    const newTimeRange = ds.timeRange ?? timeRange
 
     const result = {
       ...ds,
-      // Use the larger of: config limit or component default limit
       limit: newLimit,
-      // Use image-specific time range (48 hours) unless data source has larger value
       timeRange: newTimeRange,
       params: {
         ...ds.params,
@@ -361,7 +355,7 @@ function normalizeDataSourceForImages(
       type: 'telemetry',
       deviceId: ds.deviceId,
       metricId: ds.metricId ?? ds.property ?? 'image',
-      timeRange: imageTimeRange,
+      timeRange: timeRange,
       limit: limit,
       aggregate: 'raw',
       params: {
@@ -383,7 +377,7 @@ export function ImageHistory({
   rounded = true,
   showTitle = true,
   limit = 200,
-  timeRange = 1,
+  timeRange = 48,
   className,
 }: ImageHistoryProps) {
   // Get size configuration

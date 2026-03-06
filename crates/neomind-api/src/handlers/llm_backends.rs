@@ -19,6 +19,7 @@ use crate::models::ErrorResponse;
 use neomind_llm::instance_manager::{
     get_instance_manager, BackendTypeDefinition, LlmBackendInstanceManager,
 };
+use neomind_core::llm::detect_vision_capability;
 use neomind_storage::{BackendCapabilities, LlmBackendInstance, LlmBackendStore, LlmBackendType};
 
 /// Query parameters for listing LLM backends
@@ -1214,36 +1215,18 @@ fn adjust_capabilities_for_model(model_name: &str, capabilities: &mut BackendCap
     let name_lower = model_name.to_lowercase();
 
     // === Multimodal (vision) detection ===
-    // Models with "vl", "vision", or "-mm" suffix support vision
-    let explicit_vision = name_lower.contains("-vl")
-        || name_lower.contains(":vl")
-        || name_lower.ends_with("vl")
-        || name_lower.contains("vision")
-        || name_lower.contains("-mm")
-        || name_lower.contains(":mm");
+    // Use the same logic as neomind-core capability detection
+    capabilities.supports_multimodal = detect_vision_capability(&name_lower);
 
-    // Vision models typically don't support extended thinking (they're optimized for speed)
-    if explicit_vision {
-        capabilities.supports_multimodal = true;
-        capabilities.supports_thinking = false;
-    } else {
-        // For non-vision models, check if they might support vision
-        // Most models don't, so default to false unless explicitly marked
-        // Exception: some newer models might have vision but no explicit marker
-        // For now, be conservative and assume no vision unless marked
-        capabilities.supports_multimodal = false;
-
-        // === Thinking detection ===
-        // Models that support extended thinking (deepseek-r1, qwen thinking models)
-        capabilities.supports_thinking = name_lower.starts_with("qwen3")
-            && !name_lower.contains("-vl")
-            && !name_lower.contains(":vl")
-            || name_lower.starts_with("qwen2.5")
-                && !name_lower.contains("-vl")
-                && !name_lower.contains(":vl")
-            || name_lower.contains("deepseek-r1")
-            || name_lower.contains("thinking");
-    }
+    // === Thinking detection ===
+    // Models that support extended thinking (deepseek-r1, qwen thinking models)
+    capabilities.supports_thinking = (name_lower.starts_with("qwen3")
+        || name_lower.starts_with("qwen2.5")
+        || name_lower.contains("deepseek-r1")
+        || name_lower.contains("thinking")
+        || name_lower.contains("o1")
+        || name_lower.contains("o3"))
+        && !capabilities.supports_multimodal; // Vision models typically don't support thinking
 
     // === Tool support ===
     // Very small models (< 1B params) typically don't support tool calling
@@ -1251,6 +1234,7 @@ fn adjust_capabilities_for_model(model_name: &str, capabilities: &mut BackendCap
         capabilities.supports_tools = false;
     }
 
-    // === Context size adjustment ===
+    // Detect max context from model name
     capabilities.max_context = detect_model_context(model_name);
 }
+

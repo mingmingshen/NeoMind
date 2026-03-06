@@ -55,6 +55,7 @@ export function DeviceTransformsDialog({
   const [editingTransform, setEditingTransform] = useState<TransformAutomation | null>(null)
   const [testingTransformId, setTestingTransformId] = useState<string | null>(null)
   const [devices, setDevices] = useState<Array<{ id: string; name: string; device_type?: string }>>([])
+  const [deviceTypes, setDeviceTypes] = useState<Array<{ device_type: string; name?: string }>>([])
 
   const fetchDevices = async () => {
     try {
@@ -69,8 +70,21 @@ export function DeviceTransformsDialog({
     }
   }
 
+  const fetchDeviceTypes = async () => {
+    try {
+      const result = await api.getDeviceTypes()
+      setDeviceTypes((result.device_types || []).map((dt: any) => ({
+        device_type: dt.device_type,
+        name: dt.name,
+      })))
+    } catch {
+      // ignore
+    }
+  }
+
   useEffect(() => {
     fetchDevices()
+    fetchDeviceTypes()
   }, [])
 
   const fetchTransforms = async () => {
@@ -386,6 +400,7 @@ export function DeviceTransformsDialog({
         onOpenChange={setBuilderOpen}
         transform={editingTransform}
         devices={devices}
+        deviceTypes={deviceTypes}
         onSave={handleSaveTransform}
       />
 
