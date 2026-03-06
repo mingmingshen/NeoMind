@@ -21,10 +21,6 @@ jobs:
           - platform: 'macos-aarch64'
             os: macos-latest
             target: aarch64-apple-darwin
-          - platform: 'macos-x86_64'
-            os: macos-13
-            target: x86_64-apple-darwin
-          - platform: 'windows-x86_64'
             os: windows-latest
             target: x86_64-pc-windows-msvc
           - platform: 'linux-x86_64'
@@ -76,7 +72,7 @@ jobs:
 
       - name: Install additional macOS target
         if: matrix.os == 'macos-latest'
-        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+        run: rustup target add aarch64-apple-darwin
 
       - name: Install frontend dependencies
         working-directory: ./web
@@ -151,7 +147,7 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-  # Server binary build with embedded frontend (Linux x64 and ARM64, macOS x64 and ARM64)
+  # Server binary build with embedded frontend (Linux x64 and ARM64, macOS ARM64 only)
   build-server:
     name: Server Binary (${{ matrix.os }}-${{ matrix.arch }})
     strategy:
@@ -165,11 +161,6 @@ jobs:
             target: aarch64-unknown-linux-gnu
             arch: arm64
             runner: ubuntu-latest
-          - os: darwin
-            target: x86_64-apple-darwin
-            arch: amd64
-            runner: macos-latest
-          - os: darwin
             target: aarch64-apple-darwin
             arch: arm64
             runner: macos-latest
@@ -208,7 +199,7 @@ jobs:
 
       - name: Install additional macOS targets
         if: matrix.os == 'darwin'
-        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+        run: rustup target add aarch64-apple-darwin
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4
@@ -291,7 +282,6 @@ jobs:
             artifacts/**/*.deb
             artifacts/neomind-server-linux-amd64/*.tar.gz
             artifacts/neomind-server-linux-arm64/*.tar.gz
-            artifacts/neomind-server-darwin-amd64/*.tar.gz
             artifacts/neomind-server-darwin-arm64/*.tar.gz
           draft: false
           prerelease: false
