@@ -429,7 +429,7 @@ pub fn install_extension_panic_hook() {
         return;
     }
 
-    let original_hook = panic::take_hook();
+    let _original_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info: &panic::PanicHookInfo| {
         // Check if panic originated from extension code
         let location = panic_info.location();
@@ -481,7 +481,7 @@ pub fn install_extension_panic_hook() {
         // Call original hook for default behavior (but don't abort)
         // The original hook might abort, so we skip it in production
         #[cfg(debug_assertions)]
-        original_hook(panic_info);
+        _original_hook(panic_info);
     }));
 
     INSTALLED.store(true, Ordering::Relaxed);

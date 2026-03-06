@@ -77,8 +77,10 @@ pub struct IsolatedExtension {
     descriptor: Mutex<Option<super::super::system::ExtensionDescriptor>>,
     /// Configuration
     config: IsolatedExtensionConfig,
+    #[allow(dead_code)]
     /// Restart counter
     restart_count: AtomicU64,
+    #[allow(dead_code)]
     /// Last restart time
     last_restart: Mutex<Option<Instant>>,
     /// Running state (shared with background receiver thread)
