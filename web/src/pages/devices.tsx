@@ -29,6 +29,7 @@ import {
   DeviceDetail,
   DiscoveryDialog,
   AddDeviceDialog,
+  EditDeviceDialog,
   DeviceTypeList,
   AddDeviceTypeDialog,
   ViewDeviceTypeDialog,
@@ -53,6 +54,7 @@ export function DevicesPage() {
   const fetchDeviceDetails = useStore((state) => state.fetchDeviceDetails)
   const fetchDeviceTypeDetails = useStore((state) => state.fetchDeviceTypeDetails)
   const addDevice = useStore((state) => state.addDevice)
+  const updateDevice = useStore((state) => state.updateDevice)
   const deleteDevice = useStore((state) => state.deleteDevice)
   const deviceTypes = useStore((state) => state.deviceTypes)
   const deviceTypesLoading = useStore((state) => state.deviceTypesLoading)
@@ -433,7 +435,9 @@ export function DevicesPage() {
     setSelectedMetric(metricName)
     // Use current timestamp as end to ensure we get the latest data
     const end = Math.floor(Date.now() / 1000)
-    const start = end - 86400 // 24 hours ago
+    // Use a large time range (365 days) for paginated history queries
+    // This ensures users can browse all historical data through pagination
+    const start = end - 365 * 24 * 60 * 60 // 365 days ago
     // Fetch with pagination support
     await fetchTelemetryData(deviceDetailView, metricName, start, end, limit ?? 50, offset ?? 0)
   }
@@ -484,6 +488,41 @@ export function DevicesPage() {
   }
 
   const [addingDevice, setAddingDevice] = useState(false)
+
+  // Device edit dialog states
+  const [editDeviceOpen, setEditDeviceOpen] = useState(false)
+  const [editingDevice, setEditingDevice] = useState<Device | null>(null)
+  const [updatingDevice, setUpdatingDevice] = useState(false)
+
+  // Device edit handlers
+  const handleEditDevice = async (device: Device) => {
+    // Fetch full device details to get connection_config
+    const details = await fetchDeviceDetails(device.id)
+    if (details) {
+      setEditingDevice(details)
+      setEditDeviceOpen(true)
+    } else {
+      toast({
+        title: t('devices:loadFailed'),
+        description: t('devices:failedToLoadDetails'),
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleEditDeviceSubmit = async (id: string, data: Partial<{ name: string; adapter_type: string; connection_config: Record<string, unknown> }>) => {
+    setUpdatingDevice(true)
+    try {
+      const success = await updateDevice(id, data)
+      if (success) {
+        setEditDeviceOpen(false)
+        setEditingDevice(null)
+      }
+      return success
+    } finally {
+      setUpdatingDevice(false)
+    }
+  }
 
   // Device Type dialog states
   const [addDeviceTypeOpen, setAddDeviceTypeOpen] = useState(false)
@@ -780,6 +819,7 @@ export function DevicesPage() {
               devicesPerPage={devicesPerPage}
               onRefresh={fetchDevices}
               onViewDetails={handleOpenDeviceDetails}
+              onEdit={handleEditDevice}
               onDelete={handleDeleteDevice}
               onPageChange={setDevicePage}
               onAddDevice={() => setAddDeviceDialogOpen(true)}
@@ -849,6 +889,16 @@ export function DevicesPage() {
           </PageTabsContent>
         </PageTabs>
       )}
+
+      {/* Device Edit Dialog */}
+      <EditDeviceDialog
+        open={editDeviceOpen}
+        onOpenChange={setEditDeviceOpen}
+        device={editingDevice}
+        deviceTypes={deviceTypes}
+        onEdit={handleEditDeviceSubmit}
+        editing={updatingDevice}
+      />
 
       {/* Device Type Dialogs */}
       <ViewDeviceTypeDialog

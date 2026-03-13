@@ -3,8 +3,8 @@
 //! Tests command persistence, cache eviction, retry logic, and cleanup.
 
 use neomind_commands::{
-    command::{CommandPriority, CommandRequest, CommandSource, CommandStatus},
-    state::CommandStateStore,
+    command::{CommandPriority, CommandRequest, CommandResult, CommandSource, CommandStatus},
+    state::{CommandStateStore, StateError},
 };
 
 /// Helper to create a test command.

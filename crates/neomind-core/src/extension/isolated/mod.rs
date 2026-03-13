@@ -6,11 +6,13 @@
 
 mod in_flight;
 mod ipc;
+mod ipc_batch_types;
 mod manager;
 mod process;
 
 pub use in_flight::{InFlightError, InFlightRequests, RequestId};
 pub use ipc::{ErrorKind, IpcFrame, IpcMessage, IpcResponse, StreamDataChunk, StreamClientInfo};
+pub use ipc_batch_types::{BatchCommand, BatchResult, BatchResultsVec};
 pub use manager::{IsolatedExtensionInfo, IsolatedExtensionManager, IsolatedManagerConfig};
 pub use process::{IsolatedExtension, IsolatedExtensionConfig};
 
@@ -52,6 +54,10 @@ pub enum IsolatedExtensionError {
     #[error("Extension not running")]
     NotRunning,
 
+    /// Too many concurrent requests
+    #[error("Too many concurrent requests: limit is {0}")]
+    TooManyRequests(usize),
+
     /// Extension load error
     #[error("Extension load error: {0}")]
     LoadError(String),
@@ -67,6 +73,10 @@ pub enum IsolatedExtensionError {
     /// Extension error
     #[error("Extension error: {0}")]
     ExtensionError(String),
+
+    /// Command execution failed
+    #[error("Command execution failed: {0}")]
+    ExecutionFailed(String),
 }
 
 impl From<crate::extension::system::ExtensionError> for IsolatedExtensionError {

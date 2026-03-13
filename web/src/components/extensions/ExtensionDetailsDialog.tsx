@@ -279,6 +279,7 @@ export function ExtensionDetailsDialog({
             <Tabs defaultValue="info" className="w-full h-full flex flex-col overflow-hidden" onValueChange={(v) => {
               if (v === "info") loadDetails()
               if (v === "config") loadConfig()
+              if (v === "stats") loadDetails()
             }}>
             <TabsList className="w-full inline-flex grid grid-cols-5 sm:grid-cols-5">
               <TabsTrigger value="info" className="gap-1 sm:gap-2">

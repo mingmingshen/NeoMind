@@ -9,7 +9,7 @@
 
 ```bash
 # Rust Backend (project root)
-cargo build && cargo test && cargo run -p neomind-api  # port: 9375
+cargo build && cargo test && cargo run -p neomind-cli -- serve  # port: 9375
 
 # Tauri Desktop (web/)
 cd web && npm install && npm run tauri:dev

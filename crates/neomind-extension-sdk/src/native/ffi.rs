@@ -21,7 +21,33 @@ pub unsafe fn c_str_to_string(ptr: *const c_char) -> Option<String> {
 ///
 /// # Safety
 ///
+/// The returned pointer is valid only as long as the returned CString is alive.
+/// This function returns the CString along with the pointer to ensure proper lifetime management.
+///
+/// # Example
+/// ```ignore
+/// let (cstr, ptr) = string_to_c_str_owned("hello");
+/// // ptr is valid while cstr is in scope
+/// unsafe { /* use ptr */ }
+/// // cstr dropped here, ptr becomes invalid
+/// ```
+pub fn string_to_c_str_owned(s: &str) -> Option<(CString, *const c_char)> {
+    CString::new(s).ok().map(|cstr| {
+        let ptr = cstr.as_ptr();
+        (cstr, ptr)
+    })
+}
+
+/// Convert a Rust string to a C string pointer
+///
+/// # Safety
+///
+/// **DEPRECATED**: This function is unsafe because the returned pointer becomes invalid
+/// immediately after the call. Use `string_to_c_str_owned` instead, which properly
+/// manages the CString lifetime.
+///
 /// The returned pointer must not be used after the original CString is dropped.
+#[deprecated(note = "Use string_to_c_str_owned instead to properly manage CString lifetime")]
 pub fn string_to_c_str(s: &str) -> *const c_char {
     match CString::new(s) {
         Ok(cstr) => cstr.as_ptr(),
@@ -82,10 +108,96 @@ mod tests {
     #[test]
     fn test_c_str_conversion() {
         let rust_str = "hello";
-        let c_ptr = string_to_c_str(rust_str);
+        // Use the owned version that properly manages CString lifetime
+        let (cstr, c_ptr) = string_to_c_str_owned(rust_str).expect("Failed to create CString");
         unsafe {
             let converted = c_str_to_string(c_ptr);
             assert_eq!(converted, Some(rust_str.to_string()));
         }
+        // cstr is dropped here, keeping it alive during the unsafe block
+        let _ = cstr;
+    }
+
+    #[test]
+    fn test_c_str_to_string_null() {
+        // Test null pointer handling
+        let result = unsafe { c_str_to_string(std::ptr::null()) };
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_c_str_to_string_empty() {
+        let (cstr, c_ptr) = string_to_c_str_owned("").expect("Failed to create empty CString");
+        unsafe {
+            let converted = c_str_to_string(c_ptr);
+            assert_eq!(converted, Some("".to_string()));
+        }
+        let _ = cstr;
+    }
+
+    #[test]
+    fn test_string_to_c_str_owned_special_chars() {
+        // Test with special characters that should work
+        let test_str = "hello world!";
+        let (cstr, c_ptr) = string_to_c_str_owned(test_str).expect("Failed to create CString");
+        unsafe {
+            let converted = c_str_to_string(c_ptr);
+            assert_eq!(converted, Some(test_str.to_string()));
+        }
+        let _ = cstr;
+    }
+
+    #[test]
+    fn test_string_to_c_str_owned_null_byte() {
+        // CString::new fails on strings containing null bytes
+        let test_str = "hello\0world";
+        let result = string_to_c_str_owned(test_str);
+        assert!(result.is_none(), "Should fail on string with null byte");
+    }
+
+    #[test]
+    fn test_safe_ffi_call_success() {
+        let result: Result<i32, String> = safe_ffi_call("test_fn", || Ok(42));
+        assert_eq!(result, Ok(42));
+    }
+
+    #[test]
+    fn test_safe_ffi_call_error() {
+        let result: Result<i32, String> = safe_ffi_call("test_fn", || {
+            Err("test error".to_string())
+        });
+        assert_eq!(result, Err("test error".to_string()));
+    }
+
+    #[test]
+    fn test_safe_ffi_call_panic_string() {
+        let result: Result<i32, String> = safe_ffi_call("test_fn", || {
+            panic!("test panic message");
+        });
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("test panic message"));
+        assert!(err.contains("test_fn"));
+    }
+
+    #[test]
+    fn test_safe_ffi_call_panic_str() {
+        let result: Result<i32, String> = safe_ffi_call("test_fn", || {
+            panic!("static str panic");
+        });
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("static str panic"));
+    }
+
+    #[test]
+    fn test_safe_ffi_call_panic_unknown() {
+        // Test with a panic that downcasts to neither &str nor String
+        let result: Result<i32, String> = safe_ffi_call("test_fn", || {
+            std::panic::panic_any(42i32)
+        });
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("Unknown panic"));
     }
 }

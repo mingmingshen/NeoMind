@@ -20,9 +20,7 @@ docs/guides/zh/
 ├── 12-commands.md            # 命令队列模块
 ├── 14-api.md                 # REST API模块
 ├── 15-web.md                 # 前端模块
-├── 16-extension-dev.md       # 扩展开发指南
-├── extension-package.md      # 扩展包 (.nep) 格式
-└── extension-process-isolation.md  # 扩展进程隔离
+└── extension-system.md       # 扩展体系完整指南（推荐）
 ```
 
 ## 模块依赖关系
@@ -93,7 +91,7 @@ graph TB
 | [Commands](./12-commands.md) | 70% | 设备命令队列 |
 | [API](./14-api.md) | 90% | REST/WebSocket API、扩展指标 |
 | [Web](./15-web.md) | 80% | React前端、Zustand状态管理 |
-| [Extension Dev](./16-extension-dev.md) | 新增 | 扩展开发教程 |
+| [Extension System](./extension-system.md) | **推荐** | 扩展体系完整指南（架构、开发、能力系统、进程隔离、流式扩展、包格式） |
 
 ## 技术栈
 

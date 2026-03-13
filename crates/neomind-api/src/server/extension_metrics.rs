@@ -117,7 +117,7 @@ impl ExtensionMetricsCollector {
 
         loop {
             tokio::time::sleep(self.default_interval).await;
-            info!(category = "extensions", "Collecting metrics");
+            debug!(category = "extensions", "Collecting metrics");
 
             if let Err(e) = self.collect_and_store().await {
                 warn!(
@@ -131,9 +131,9 @@ impl ExtensionMetricsCollector {
 
     /// Collect metrics from all extensions and store them.
     async fn collect_and_store(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        info!(category = "extensions", "collect_and_store() - starting");
+        debug!(category = "extensions", "collect_and_store() - starting");
         let extensions = self.unified_service.list().await;
-        info!(
+        debug!(
             category = "extensions",
             "Got {} extensions",
             extensions.len()
@@ -153,7 +153,7 @@ impl ExtensionMetricsCollector {
 
             // Skip extensions with no metrics
             if info.metrics.is_empty() {
-                info!(
+                debug!(
                     category = "extensions",
                     "Extension {} has no metrics, skipping", extension_id
                 );
@@ -214,7 +214,7 @@ impl ExtensionMetricsCollector {
                 continue;
             }
 
-            info!(
+            debug!(
                 category = "extensions",
                 "Extension {} has {} metrics",
                 extension_id,
@@ -237,7 +237,7 @@ impl ExtensionMetricsCollector {
             // Get metrics using unified service (handles both isolated and in-process)
             let metric_values = self.unified_service.get_metrics(&extension_id).await;
 
-            info!(
+            debug!(
                 category = "extensions",
                 "Got {} metric values",
                 metric_values.len()
@@ -254,7 +254,7 @@ impl ExtensionMetricsCollector {
 
             // Store each metric value
             for metric_value in metric_values {
-                info!(
+                debug!(
                     category = "extensions",
                     "Storing metric {}", metric_value.name
                 );

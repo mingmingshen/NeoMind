@@ -29,6 +29,7 @@ export interface DeviceSlice extends DeviceState, TelemetryState {
   fetchDevices: () => Promise<void>
   fetchDeviceTypes: () => Promise<void>
   addDevice: (request: AddDeviceRequest) => Promise<boolean>
+  updateDevice: (id: string, request: Partial<AddDeviceRequest>) => Promise<boolean>
   deleteDevice: (id: string) => Promise<boolean>
   sendCommand: (deviceId: string, command: string, params?: Record<string, unknown>) => Promise<boolean>
 
@@ -151,6 +152,24 @@ export const createDeviceSlice: StateCreator<
         // Will be handled by auth slice
       }
       logError(error, { operation: 'Add device' })
+      return false
+    }
+  },
+
+  updateDevice: async (id: string, request: Partial<AddDeviceRequest>) => {
+    try {
+      const result = await api.updateDevice(id, request)
+      // Backend returns { device_id, updated: true } after unwrap
+      if (result.updated) {
+        await get().fetchDevices()
+        return true
+      }
+      return false
+    } catch (error) {
+      if ((error as Error).message === 'UNAUTHORIZED') {
+        // Will be handled by auth slice
+      }
+      logError(error, { operation: 'Update device' })
       return false
     }
   },

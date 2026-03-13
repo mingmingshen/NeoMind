@@ -3,6 +3,8 @@
  *
  * Loads component definitions from extensions and registers them
  * in the dynamic registry for use in dashboards.
+ *
+ * Optimized: Uses incremental sync to avoid clearing already-loaded components.
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react'
@@ -27,15 +29,10 @@ export async function syncExtensionComponents(): Promise<number> {
     const result = await response.json()
     const components: DashboardComponentDto[] = result.data || result || []
 
-    // Clear all registered components and module caches before re-registering
-    dynamicRegistry.clear()
+    // Use incremental sync - only update changes
+    dynamicRegistry.syncComponents(components)
 
-    // Register components in dynamic registry
-    for (const comp of components) {
-      dynamicRegistry.register(comp.extension_id, comp.extension_id, comp)
-    }
-
-    console.log(`[syncExtensionComponents] Loaded ${components.length} components`)
+    console.log(`[syncExtensionComponents] Synced ${components.length} components`)
     return components.length
   } catch (e) {
     console.error('Failed to sync extension components:', e)
@@ -98,7 +95,7 @@ export function useExtensionComponents(options?: {
   const syncingRef = useRef(false)
 
   /**
-   * Sync components from API
+   * Sync components from API (incremental - preserves loaded modules)
    */
   const sync = useCallback(async () => {
     // Prevent concurrent syncs
@@ -121,9 +118,8 @@ export function useExtensionComponents(options?: {
       // Handle wrapped API response format { success: true, data: [...] }
       const components: DashboardComponentDto[] = result.data || result || []
 
-      // Clear all registered components and module caches before re-registering
-      // This ensures unregistered extensions' components are removed
-      dynamicRegistry.clear()
+      // Use incremental sync - only update changes, preserve loaded modules
+      const changes = dynamicRegistry.syncComponents(components)
 
       // Register components in dynamic registry
       const newComponents: Record<string, DashboardComponentDto> = {}
@@ -135,15 +131,14 @@ export function useExtensionComponents(options?: {
           extensionId: comp.extension_id,
           extensionName: comp.extension_id,
         }
-
-        // Register in dynamic registry
-        dynamicRegistry.register(comp.extension_id, comp.extension_id, comp)
       }
 
       setState({ components: newComponents, extensions: newExtensions })
       setInitialized(true)
 
-      console.log(`[useExtensionComponents] Loaded ${components.length} components from ${Object.keys(newExtensions).length} extensions`)
+      if (changes.added > 0 || changes.removed > 0) {
+        console.log(`[useExtensionComponents] Incremental sync: +${changes.added} -${changes.removed}, total ${components.length}`)
+      }
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e)
       setError(errorMessage)
@@ -159,7 +154,7 @@ export function useExtensionComponents(options?: {
     if (autoSync) {
       sync()
     }
-  }, [autoSync, sync])
+}, [autoSync])
 
   // Interval sync
   useEffect(() => {
@@ -170,7 +165,7 @@ export function useExtensionComponents(options?: {
     }, syncInterval)
 
     return () => clearInterval(interval)
-  }, [syncInterval, sync])
+}, [syncInterval])
 
   return {
     loading,

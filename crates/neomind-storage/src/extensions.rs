@@ -60,11 +60,27 @@ pub struct ExtensionRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<serde_json::Value>,
 
+    /// Last error message if the extension failed to load or execute
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+
+    /// Last error timestamp
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error_at: Option<i64>,
+
+    /// Extension health status: "ok", "warning", "error", "unknown"
+    #[serde(default = "default_health_status")]
+    pub health_status: String,
+
     /// Last updated timestamp
     pub updated_at: i64,
 
     /// Registered at timestamp
     pub registered_at: i64,
+}
+
+fn default_health_status() -> String {
+    "unknown".to_string()
 }
 
 impl ExtensionRecord {
@@ -89,6 +105,9 @@ impl ExtensionRecord {
             enabled: true,
             uninstalled: false,
             config: None,
+            last_error: None,
+            last_error_at: None,
+            health_status: "unknown".to_string(),
             updated_at: now,
             registered_at: now,
         }
@@ -285,6 +304,77 @@ impl ExtensionStore {
             .into_iter()
             .filter(|r| r.auto_start && r.enabled && !r.uninstalled)
             .collect())
+    }
+
+    /// Update extension error status
+    pub fn update_error_status(&self, id: &str, error: &str) -> Result<(), Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(EXTENSIONS_TABLE)?;
+
+        if table.get(id)?.is_none() {
+            drop(read_txn);
+            // Extension not found, create a new record with error status
+            let mut record = ExtensionRecord::new(
+                id.to_string(),
+                id.to_string(),
+                String::new(),
+                "unknown".to_string(),
+                "unknown".to_string(),
+            );
+            record.last_error = Some(error.to_string());
+            record.last_error_at = Some(Utc::now().timestamp());
+            record.health_status = "error".to_string();
+            return self.save(&record);
+        }
+        drop(read_txn);
+
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(EXTENSIONS_TABLE)?;
+            let mut record: ExtensionRecord = serde_json::from_slice(
+                table.get(id)?.unwrap().value()
+            ).map_err(|e| Error::Serialization(e.to_string()))?;
+            record.last_error = Some(error.to_string());
+            record.last_error_at = Some(Utc::now().timestamp());
+            record.health_status = "error".to_string();
+            record.touch();
+            let value = serde_json::to_vec(&record)
+                .map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(id, value.as_slice())?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    /// Update extension health status
+    pub fn update_health_status(&self, id: &str, status: &str) -> Result<(), Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(EXTENSIONS_TABLE)?;
+
+        if table.get(id)?.is_none() {
+            return Ok(()); // Extension not found, do nothing
+        }
+        drop(read_txn);
+
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(EXTENSIONS_TABLE)?;
+            let mut record: ExtensionRecord = serde_json::from_slice(
+                table.get(id)?.unwrap().value()
+            ).map_err(|e| Error::Serialization(e.to_string()))?;
+            record.health_status = status.to_string();
+            if status == "ok" {
+                // Clear error if status is ok
+                record.last_error = None;
+                record.last_error_at = None;
+            }
+            record.touch();
+            let value = serde_json::to_vec(&record)
+                .map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(id, value.as_slice())?;
+        }
+        write_txn.commit()?;
+        Ok(())
     }
 
     /// Mark an extension as uninstalled (prevents auto-discovery from re-registering)

@@ -19,6 +19,7 @@ use super::dependencies::DependencyManager;
 use super::device_integration::DeviceActionExecutor;
 use super::dsl::{ParsedRule, RuleAction, RuleCondition, RuleError};
 use super::extension_integration::{try_parse_extension_action, ExtensionActionExecutor};
+use super::store::RuleStore;
 
 /// Optional message manager for creating messages from rule actions.
 /// Wrapped in Option to allow RuleEngine to function without it.
@@ -376,6 +377,8 @@ pub struct RuleEngine {
     scheduler_interval: Arc<StdRwLock<Duration>>,
     /// Whether the scheduler is running.
     scheduler_running: Arc<StdRwLock<bool>>,
+    /// Optional rule store for persistent storage.
+    rule_store: Arc<StdRwLock<Option<Arc<RuleStore>>>>,
 }
 
 impl RuleEngine {
@@ -393,7 +396,14 @@ impl RuleEngine {
             scheduler_handle: Arc::new(StdRwLock::new(None)),
             scheduler_interval: Arc::new(StdRwLock::new(Duration::from_secs(5))),
             scheduler_running: Arc::new(StdRwLock::new(false)),
+            rule_store: Arc::new(StdRwLock::new(None)),
         }
+    }
+
+    /// Set the rule store for persistent storage.
+    pub fn set_rule_store(&self, store: Arc<RuleStore>) {
+        let mut rule_store = self.rule_store.write().unwrap();
+        *rule_store = Some(store);
     }
 
     /// Set the message manager for creating messages from rule actions.
@@ -463,6 +473,7 @@ impl RuleEngine {
         let max_history_size = self.max_history_size;
         let _message_manager = self.message_manager.clone();
         let scheduler_running = self.scheduler_running.clone();
+        let rule_store = self.rule_store.clone();
 
         // Spawn the scheduler task
         let handle = tokio::spawn(async move {
@@ -504,11 +515,27 @@ impl RuleEngine {
                 // Execute triggered rules
                 for (id, rule) in rules_to_execute {
                     // Update rule state
-                    {
+                    let rule_to_save = {
                         let mut rules_guard = rules.write().await;
                         if let Some(r) = rules_guard.get_mut(&id) {
                             r.state.trigger_count += 1;
                             r.state.last_triggered = Some(Utc::now());
+                            Some(r.clone())
+                        } else {
+                            None
+                        }
+                    };
+
+                    // Persist rule state if store is available
+                    if let Some(ref rule) = rule_to_save {
+                        if let Ok(store_guard) = rule_store.read() {
+                            if let Some(ref store) = *store_guard {
+                                if let Err(e) = store.save(rule) {
+                                    tracing::warn!(rule_id = %id, error = %e, "Failed to save rule state after trigger");
+                                } else {
+                                    tracing::debug!(rule_id = %id, trigger_count = rule.state.trigger_count, "Saved rule state after trigger");
+                                }
+                            }
                         }
                     }
 
@@ -810,11 +837,27 @@ impl RuleEngine {
         }
 
         // Update rule state
-        {
+        let rule_to_save = {
             let mut rules = self.rules.write().await;
             if let Some(rule) = rules.get_mut(id) {
                 rule.state.trigger_count += 1;
                 rule.state.last_triggered = Some(Utc::now());
+                Some(rule.clone())
+            } else {
+                None
+            }
+        };
+
+        // Persist rule state if store is available
+        if let Some(ref rule) = rule_to_save {
+            if let Ok(store_guard) = self.rule_store.read() {
+                if let Some(ref store) = *store_guard {
+                    if let Err(e) = store.save(rule) {
+                        tracing::warn!(rule_id = %id, error = %e, "Failed to save rule state after manual trigger");
+                    } else {
+                        tracing::debug!(rule_id = %id, trigger_count = rule.state.trigger_count, "Saved rule state after manual trigger");
+                    }
+                }
             }
         }
 

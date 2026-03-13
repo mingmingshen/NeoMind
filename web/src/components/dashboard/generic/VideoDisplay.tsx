@@ -70,43 +70,34 @@ interface VideoPlayerProps {
   onError: (error: boolean, message?: string) => void
 }
 
-// HLS optimized configuration
+// HLS configuration - optimized to prevent bufferAppendError
 const createHlsConfig = () => ({
   enableWorker: true,
-  enableSoftwareAES: true,
-  // Buffer configuration
+  lowLatencyMode: true,
+  backBufferLength: 90,
+  
+  // Buffer configuration to prevent append errors
   maxBufferLength: 30,
   maxMaxBufferLength: 600,
   maxBufferSize: 60 * 1000 * 1000,
-  backBufferLength: 90,
   maxBufferHole: 0.5,
-  // Stall detection and recovery
-  detectStallWithCurrentTimeMs: 1250,
-  highBufferWatchdogPeriod: 3,
-  nudgeOffset: 0.1,
-  nudgeMaxRetry: 5,
-  nudgeOnVideoHole: true,
-  skipBufferHolePadding: 0.1,
-  // Live stream configuration
-  liveDurationInfinity: true,
-  liveBackBufferLength: 0,
-  liveSyncDurationCount: 3,
-  liveMaxLatencyDurationCount: 10,
-  liveSyncOnStallIncrease: 1,
-  maxLiveSyncPlaybackRate: 1.5,
-  // Low-Latency HLS
-  lowLatencyMode: true,
-  // ABR configuration
-  abrEwmaDefaultEstimate: 500000,
-  maxStarvationDelay: 4,
-  maxLoadingDelay: 4,
-  // Fragment loading policy with retry
+  
+  // Force key frame on discontinuity - helps with buffer errors
+  forceKeyFrameOnDiscontinuity: true,
+  
+  // Handle video integrity errors - skip corrupted data
+  handleMpegTsVideoIntegrityErrors: 'skip',
+  
+  // Append error retry
+  appendErrorMaxRetry: 5,
+  
+  // Increase retry counts for better reliability
   fragLoadPolicy: {
     default: {
       maxTimeToFirstByteMs: 10000,
       maxLoadTimeMs: 120000,
       timeoutRetry: {
-        maxNumRetry: 4,
+        maxNumRetry: 6,
         retryDelayMs: 0,
         maxRetryDelayMs: 0,
       },
@@ -114,37 +105,25 @@ const createHlsConfig = () => ({
         maxNumRetry: 6,
         retryDelayMs: 1000,
         maxRetryDelayMs: 8000,
-        backoff: 'linear' as const,
       },
     },
   },
-  // Manifest loading policy
   manifestLoadPolicy: {
     default: {
       maxTimeToFirstByteMs: 10000,
       maxLoadTimeMs: 20000,
       timeoutRetry: {
-        maxNumRetry: 3,
+        maxNumRetry: 4,
         retryDelayMs: 0,
         maxRetryDelayMs: 0,
       },
       errorRetry: {
-        maxNumRetry: 3,
+        maxNumRetry: 4,
         retryDelayMs: 1000,
-        maxRetryDelayMs: 5000,
-        backoff: 'linear' as const,
+        maxRetryDelayMs: 8000,
       },
     },
   },
-  // Force key frame on discontinuity
-  forceKeyFrameOnDiscontinuity: true,
-  // Append error retry
-  appendErrorMaxRetry: 5,
-  // macOS VTDecompressionOutputCallback error handling
-  // Skip corrupted video data to prevent decoder errors
-  handleMpegTsVideoIntegrityErrors: 'skip' as const,
-  // Stretch short video tracks to match audio
-  stretchShortVideoTrack: true,
 })
 
 function VideoPlayer({
@@ -160,558 +139,258 @@ function VideoPlayer({
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<Hls | null>(null)
+  const isDestroyingRef = useRef(false)
+  const recoveryAttemptsRef = useRef(0)
+  const playPromiseRef = useRef<Promise<void> | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [isMuted, setIsMuted] = useState(muted)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [isSeeking, setIsSeeking] = useState(false)
 
-  // Error recovery state
-  const retryCountRef = useRef(0)
-  const decodeErrorCountRef = useRef(0)
-  const lastDecodeErrorTimeRef = useRef(0)
-  const isRecoveringRef = useRef(false)
-  const maxRetries = 6
-  const maxDecodeErrors = 5
-  const decodeErrorCooldown = 3000 // 3 seconds cooldown
-
-  // Native HLS recovery state (for macOS/Safari)
-  const nativeHlsRetryRef = useRef(0)
-  const nativeHlsRecoveringRef = useRef(false)
-
-  // Stall detection and heartbeat
-  const stallDetectionRef = useRef<{
-    lastTime: number
-    lastCurrentTime: number
-    stallCount: number
-    heartbeatInterval: ReturnType<typeof setInterval> | null
-  }>({
-    lastTime: 0,
-    lastCurrentTime: 0,
-    stallCount: 0,
-    heartbeatInterval: null,
-  })
-
   // Sync isMuted when muted prop changes
   useEffect(() => {
     setIsMuted(muted)
   }, [muted])
+
+  // Cleanup function that properly handles pending play promises
+  const cleanupHls = useCallback(async () => {
+    const hls = hlsRef.current
+    const video = videoRef.current
+
+    if (!hls) return
+
+    // Mark as destroying to prevent new operations
+    isDestroyingRef.current = true
+
+    // Wait for any pending play promise to settle
+    if (playPromiseRef.current) {
+      try {
+        await playPromiseRef.current
+      } catch {
+        // Ignore errors from interrupted play
+      }
+      playPromiseRef.current = null
+    }
+
+    // Pause video before detaching to prevent AbortError
+    if (video && !video.paused) {
+      video.pause()
+    }
+
+    // Small delay to ensure pause is processed
+    await new Promise(resolve => setTimeout(resolve, 50))
+
+    // Now safe to destroy
+    try {
+      hls.destroy()
+    } catch {
+      // Ignore destroy errors
+    }
+    hlsRef.current = null
+    isDestroyingRef.current = false
+  }, [])
 
   // Initialize HLS if needed
   useEffect(() => {
     const video = videoRef.current
     if (!video || !src) return
 
-    // Cleanup previous HLS instance
-    if (hlsRef.current) {
-      hlsRef.current.destroy()
-      hlsRef.current = null
-    }
+    // Flag to track if this effect is still active
+    let isCancelled = false
 
-    // Reset retry count when source changes
-    retryCountRef.current = 0
-    decodeErrorCountRef.current = 0
-    lastDecodeErrorTimeRef.current = 0
-    isRecoveringRef.current = false
-    nativeHlsRetryRef.current = 0
-    nativeHlsRecoveringRef.current = false
+    const initHls = async () => {
+      // Cleanup previous instance first
+      await cleanupHls()
 
-    if (type === 'hls') {
-      // Detect Safari browser - Safari has native HLS support
-      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
-      const isMacOS = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
-      const hasNativeHLS = video.canPlayType('application/vnd.apple.mpegurl')
+      if (isCancelled) return
 
-      // Native HLS recovery function for macOS/Safari
-      const recoverNativeHLS = (errorType: number) => {
-        if (nativeHlsRecoveringRef.current) {
-          console.log('Native HLS already recovering, skipping...')
-          return
-        }
+      if (type === 'hls') {
+        // Always use hls.js for better compatibility
+        if (Hls.isSupported()) {
+          console.log('[HLS] Using hls.js for playback')
+          const hls = new Hls(createHlsConfig())
+          hlsRef.current = hls
+          recoveryAttemptsRef.current = 0
 
-        nativeHlsRecoveringRef.current = true
-        nativeHlsRetryRef.current++
+          hls.loadSource(src)
+          hls.attachMedia(video)
 
-        const maxNativeRetries = 5
-        const currentPos = video.currentTime
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            if (isCancelled || isDestroyingRef.current) return
+            console.log('[HLS] Manifest parsed, ready to play')
+            onLoadingChange(false)
+            if (autoplay && video && !video.paused) {
+              playPromiseRef.current = video.play().catch((e) => {
+                console.warn('[HLS] Autoplay prevented:', e)
+              })
+            }
+          })
 
-        console.log(`Native HLS recovery attempt ${nativeHlsRetryRef.current}/${maxNativeRetries}`)
+          hls.on(Hls.Events.ERROR, (_event, data) => {
+            if (!data.fatal || isCancelled || isDestroyingRef.current) {
+              return
+            }
 
-        if (nativeHlsRetryRef.current > maxNativeRetries) {
-          console.error('Native HLS max retries exceeded, falling back to hls.js')
-          // Fall back to hls.js
-          if (Hls.isSupported()) {
+            console.log('[HLS] Fatal error:', data.type, data.details)
+
+            // For bufferAppendError - need special handling
+            if (data.details === 'bufferAppendError') {
+              recoveryAttemptsRef.current++
+              console.log(`[HLS] Buffer append error, attempt ${recoveryAttemptsRef.current}/3`)
+
+              if (recoveryAttemptsRef.current <= 3) {
+                console.log('[HLS] Skipping buffer append error, continuing playback...')
+                return
+              }
+
+              // Max attempts reached, rebuild HLS instance
+              console.log('[HLS] Max recovery attempts, rebuilding HLS instance...')
+              rebuildHls()
+              return
+            }
+
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                console.log('[HLS] Network error, trying to recover...')
+                hls.startLoad()
+                break
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                console.log('[HLS] Media error, trying to recover...')
+                hls.recoverMediaError()
+                break
+              default:
+                console.log('[HLS] Unrecoverable error, destroying instance')
+                onError(true, `HLS Error: ${data.details}`)
+                break
+            }
+          })
+
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          // Fallback to native HLS only if hls.js is not supported
+          console.log('[HLS] Using native HLS (fallback)')
+          video.src = src
+
+          const handleLoadedMetadata = () => {
+            if (isCancelled) return
+            onLoadingChange(false)
+            if (autoplay) {
+              playPromiseRef.current = video.play().catch(() => {})
+            }
+          }
+
+          video.addEventListener('loadedmetadata', handleLoadedMetadata)
+
+          return () => {
+            video.removeEventListener('loadedmetadata', handleLoadedMetadata)
             video.src = ''
             video.load()
-            const hls = new Hls(createHlsConfig())
-            hlsRef.current = hls
-            hls.loadSource(src)
-            hls.attachMedia(video)
-            hls.on(Hls.Events.MANIFEST_PARSED, () => {
-              video.currentTime = currentPos
-              video.play().catch(() => {})
-            })
-            hls.on(Hls.Events.ERROR, (_event, data) => {
-              if (data.fatal) {
-                console.error('hls.js fallback error:', data.details)
-                onError(true, `HLS Error: ${data.details}`)
-              }
-            })
-          } else {
-            onError(true, 'HLS playback failed and hls.js is not available')
+          }
+        } else {
+          onError(true, 'HLS is not supported in this browser')
+        }
+      } else {
+        // Regular video file
+        video.src = src
+      }
+    }
+
+    // Rebuild HLS instance after error
+    const rebuildHls = async () => {
+      if (isCancelled || isDestroyingRef.current) return
+
+      const video = videoRef.current
+      if (!video || !Hls.isSupported()) return
+
+      await cleanupHls()
+      if (isCancelled) return
+
+      // Don't reset recoveryAttemptsRef to prevent infinite rebuild loops
+      // The counter will be reset only when src changes (via useEffect dependency)
+      console.log('[HLS] Rebuilding HLS instance (recovery attempts preserved)')
+
+      const newHls = new Hls(createHlsConfig())
+      hlsRef.current = newHls
+
+      newHls.loadSource(src)
+      newHls.attachMedia(video)
+
+      newHls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (isCancelled || isDestroyingRef.current) return
+        playPromiseRef.current = video.play().catch(() => {})
+      })
+
+      // Also handle errors on the new instance
+      newHls.on(Hls.Events.ERROR, (_event, data) => {
+        if (!data.fatal || isCancelled || isDestroyingRef.current) {
+          return
+        }
+
+        console.log('[HLS] Fatal error on rebuilt instance:', data.type, data.details)
+
+        if (data.details === 'bufferAppendError') {
+          recoveryAttemptsRef.current++
+          console.log(`[HLS] Buffer append error on rebuilt instance, attempt ${recoveryAttemptsRef.current}`)
+
+          if (recoveryAttemptsRef.current > 6) {
+            // Total max attempts (3 initial + 3 after rebuild)
+            console.log('[HLS] Max total recovery attempts reached, giving up')
+            onError(true, `HLS Error: ${data.details} (max recovery attempts reached)`)
           }
           return
         }
 
-        // Recovery strategy based on error type
-        if (errorType === 3) { // MEDIA_ERR_DECODE
-          // For decode errors, try to skip ahead
-          const skipAmount = nativeHlsRetryRef.current * 2 // Progressive skip
-          const newPos = currentPos + skipAmount
-
-          console.log(`Native HLS decode error, seeking from ${currentPos.toFixed(2)} to ${newPos.toFixed(2)}`)
-
-          // Clear and reload
-          video.src = ''
-          video.load()
-
-          setTimeout(() => {
-            video.src = src
-            video.currentTime = newPos
-            video.play().catch(() => {})
-            setTimeout(() => {
-              nativeHlsRecoveringRef.current = false
-            }, 2000)
-          }, 500)
-        } else {
-          // For other errors, simple reload
-          video.load()
-          video.play().catch(() => {})
-          setTimeout(() => {
-            nativeHlsRecoveringRef.current = false
-          }, 2000)
+        switch (data.type) {
+          case Hls.ErrorTypes.NETWORK_ERROR:
+            newHls.startLoad()
+            break
+          case Hls.ErrorTypes.MEDIA_ERROR:
+            newHls.recoverMediaError()
+            break
+          default:
+            onError(true, `HLS Error: ${data.details}`)
+            break
         }
-      }
-
-      // Use native HLS for Safari/macOS
-      if (hasNativeHLS || isSafari || isMacOS) {
-        console.log('Using native HLS support (Safari/macOS)')
-        video.src = src
-
-        video.addEventListener('loadedmetadata', () => {
-          onLoadingChange(false)
-          nativeHlsRetryRef.current = 0 // Reset on successful load
-          if (autoplay) {
-            video.play().catch(() => {})
-          }
-        })
-
-        // Add error handling for native HLS
-        video.addEventListener('error', () => {
-          const error = video.error
-          if (error) {
-            console.error('Native HLS error:', error.code, error.message)
-            if (error.code === 3) { // MEDIA_ERR_DECODE
-              recoverNativeHLS(3)
-            } else if (error.code === 2) { // MEDIA_ERR_NETWORK
-              console.log('Native HLS network error, retrying...')
-              video.load()
-              video.play().catch(() => {})
-            }
-          }
-        })
-
-        // Add stalled handling for native HLS
-        video.addEventListener('stalled', () => {
-          console.log('Native HLS stalled, checking playback...')
-          if (!video.paused && video.readyState < 3) {
-            video.currentTime = video.currentTime + 0.1
-          }
-        })
-      }
-      // Use hls.js for other browsers (Chrome, Firefox, etc.)
-      else if (Hls.isSupported()) {
-        console.log('Using hls.js for HLS playback')
-        const hls = new Hls(createHlsConfig())
-        hlsRef.current = hls
-
-        hls.loadSource(src)
-        hls.attachMedia(video)
-
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          onLoadingChange(false)
-          retryCountRef.current = 0 // Reset retry count on successful manifest
-          stallDetectionRef.current.stallCount = 0
-          if (autoplay) {
-            video.play().catch(() => {})
-          }
-        })
-
-        // Track fragment changes for live stream health monitoring
-        hls.on(Hls.Events.FRAG_CHANGED, (_event, data) => {
-          // Reset stall count when fragment changes successfully
-          stallDetectionRef.current.stallCount = 0
-          // Update last activity time
-          stallDetectionRef.current.lastTime = Date.now()
-        })
-
-        // Handle fragment load emergency aborted
-        hls.on(Hls.Events.FRAG_LOAD_EMERGENCY_ABORTED, () => {
-          console.warn('HLS fragment load emergency aborted, retrying...')
-          hls.startLoad()
-        })
-
-        // Handle all HLS errors
-        hls.on(Hls.Events.ERROR, (_event, data) => {
-          console.warn('HLS error:', data.type, data.details, data.fatal ? '(fatal)' : '(non-fatal)')
-
-          // Handle buffer stalled specifically (non-fatal)
-          if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
-            console.warn('HLS buffer stalled, attempting recovery...')
-            // Try to nudge playback forward
-            if (video && !video.paused && video.currentTime > 0) {
-              const nudgeAmount = 0.1
-              video.currentTime = video.currentTime + nudgeAmount
-            }
-            return
-          }
-
-          // Handle buffer append error (non-fatal but needs attention)
-          if (data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR) {
-            console.warn('HLS buffer append error, attempting recovery...')
-            // Try to seek forward to skip the problematic segment
-            if (video && !video.paused) {
-              const currentPos = video.currentTime
-              video.currentTime = currentPos + 1
-            }
-            return
-          }
-
-          // Handle non-fatal errors
-          if (!data.fatal) {
-            // Log specific non-fatal errors
-            if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR) {
-              console.warn('HLS fragment load error:', data.frag?.url)
-            } else if (data.details === Hls.ErrorDetails.KEY_LOAD_ERROR) {
-              console.warn('HLS key load error')
-            } else if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR) {
-              console.error('HLS manifest load error')
-            }
-            return
-          }
-
-          // Handle fatal errors
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              console.error('HLS network error:', data.details)
-              // Check if we can retry
-              if (retryCountRef.current < maxRetries) {
-                retryCountRef.current++
-                console.log(`HLS retry attempt ${retryCountRef.current}/${maxRetries}`)
-                // Wait a bit before retrying
-                setTimeout(() => {
-                  if (hlsRef.current) {
-                    hlsRef.current.startLoad()
-                  }
-                }, 1000 * retryCountRef.current) // Exponential backoff
-              } else {
-                console.error('HLS max retries exceeded')
-                onError(true, `Network Error: ${data.details}`)
-              }
-              break
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              console.error('HLS media error:', data.details)
-              // Try to recover media error
-              const recovered = hls.recoverMediaError()
-              console.log('HLS recoverMediaError result:', recovered)
-              
-              // If recovery didn't work, try to rebuild HLS instance
-              setTimeout(() => {
-                if (videoRef.current && videoRef.current.error) {
-                  console.log('Media error still present, rebuilding HLS instance...')
-                  const currentPos = videoRef.current.currentTime
-                  hls.destroy()
-                  const newHls = new Hls(createHlsConfig())
-                  hlsRef.current = newHls
-                  newHls.loadSource(src)
-                  newHls.attachMedia(videoRef.current)
-                  videoRef.current.currentTime = currentPos + 2
-                  videoRef.current.play().catch(() => {})
-                }
-              }, 2000)
-              break
-            default:
-              console.error('HLS fatal error:', data.details)
-              onError(true, `HLS Error: ${data.details}`)
-              break
-          }
-        })
-      } else {
-        onError(true, 'HLS is not supported in this browser')
-      }
-    } else {
-      // Regular video file
-      video.src = src
+      })
     }
+
+    initHls()
 
     return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy()
-        hlsRef.current = null
-      }
+      isCancelled = true
+      cleanupHls()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src, type]) // Only recreate HLS when src or type changes, not onLoadingChange/onError
+  }, [src, type, cleanupHls])
 
-  // Video event handlers
+  // Video event handlers - simplified
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
 
     const handleLoadStart = () => onLoadingChange(true)
-    const handleCanPlay = () => {
-      onLoadingChange(false)
-      // Reset decode error count on successful playback
-      decodeErrorCountRef.current = 0
-      isRecoveringRef.current = false
-    }
-    const handleError = () => {
-      const error = video.error
-      if (!error) {
-        onError(true, 'Unknown video error')
-        return
-      }
-
-      // Error code 3 = MEDIA_ERR_DECODE (decoding error)
-      // This often happens on macOS with VTDecompressionOutputCallback errors
-      if (error.code === 3) {
-        const now = Date.now()
-        
-        // Check if we're in cooldown period
-        if (now - lastDecodeErrorTimeRef.current < decodeErrorCooldown) {
-          console.warn('Decode error in cooldown period, skipping recovery')
-          return
-        }
-        
-        // Check if already recovering
-        if (isRecoveringRef.current) {
-          console.warn('Already recovering from decode error, skipping')
-          return
-        }
-        
-        console.error('Video decode error:', error.message)
-        lastDecodeErrorTimeRef.current = now
-        decodeErrorCountRef.current++
-        
-        console.log(`Decode error count: ${decodeErrorCountRef.current}/${maxDecodeErrors}`)
-
-        if (decodeErrorCountRef.current <= maxDecodeErrors) {
-          isRecoveringRef.current = true
-          
-          // For macOS VTDecompressionOutputCallback errors, skip more aggressively
-          const skipAmount = decodeErrorCountRef.current <= 2 ? 2 : 5
-          const currentPos = video.currentTime
-          const newPos = currentPos + skipAmount
-          
-          console.log(`Attempting recovery by seeking from ${currentPos.toFixed(2)} to ${newPos.toFixed(2)}`)
-          
-          // Define recovery function
-          const performRecovery = () => {
-            // For HLS, use startLoad to reload from new position
-            if (type === 'hls' && hlsRef.current) {
-              hlsRef.current.startLoad(newPos)
-            }
-            video.currentTime = newPos
-            
-            // Wait for seek to complete, then play
-            const handleSeeked = () => {
-              video.removeEventListener('seeked', handleSeeked)
-              console.log('Seek completed, resuming playback')
-              video.play().catch(() => {})
-              setTimeout(() => {
-                isRecoveringRef.current = false
-              }, 1000)
-            }
-            
-            video.addEventListener('seeked', handleSeeked)
-            
-            // Fallback timeout in case seeked event doesn't fire
-            setTimeout(() => {
-              video.removeEventListener('seeked', handleSeeked)
-              if (isRecoveringRef.current) {
-                console.log('Seek timeout, forcing playback')
-                video.play().catch(() => {})
-                isRecoveringRef.current = false
-              }
-            }, 3000)
-          }
-          
-          performRecovery()
-          return
-        }
-        
-        // If we've exceeded simple retries, try full recovery with decoder reset
-        if (decodeErrorCountRef.current === maxDecodeErrors + 1) {
-          console.log('Attempting full decoder reset and HLS instance recovery')
-          isRecoveringRef.current = true
-          
-          // Store current position before reset
-          const currentPos = video.currentTime
-          
-          // Step 1: Clear video source to reset decoder
-          video.src = ''
-          video.load()
-          
-          // Step 2: Destroy and recreate HLS instance
-          if (hlsRef.current) {
-            hlsRef.current.destroy()
-            hlsRef.current = null
-          }
-          
-          // Step 3: Wait and reinitialize
-          setTimeout(() => {
-            if (videoRef.current && type === 'hls') {
-              const newHls = new Hls(createHlsConfig())
-              hlsRef.current = newHls
-              newHls.loadSource(src)
-              newHls.attachMedia(videoRef.current)
-              
-              // Jump to a position slightly ahead
-              videoRef.current.currentTime = currentPos + 5
-              videoRef.current.play().catch(() => {})
-              
-              setTimeout(() => {
-                isRecoveringRef.current = false
-              }, 3000)
-            }
-          }, 1500)
-          return
-        }
-        
-        // All recovery attempts failed
-        console.error('All decode error recovery attempts failed')
-        onError(true, `Decode Error: Video format may not be supported on this device`)
-        return
-      }
-
-      // Other error types
-      const message = error ? `Error ${error.code}: ${error.message}` : 'Unknown video error'
-      onError(true, message)
-    }
-    const handlePlay = () => {
-      setIsPlaying(true)
-      // Start heartbeat on play
-      if (!stallDetectionRef.current.heartbeatInterval) {
-        stallDetectionRef.current.heartbeatInterval = setInterval(() => {
-          const v = videoRef.current
-          if (!v || v.paused) return
-
-          const now = Date.now()
-          const currentTime = v.currentTime
-          const lastTime = stallDetectionRef.current.lastTime
-          const lastCurrentTime = stallDetectionRef.current.lastCurrentTime
-
-          // Check if playback is stuck (time not advancing but should be playing)
-          if (lastTime > 0 && now - lastTime > 3000 && Math.abs(currentTime - lastCurrentTime) < 0.1) {
-            stallDetectionRef.current.stallCount++
-            console.warn(`Playback stall detected (${stallDetectionRef.current.stallCount}), attempting recovery...`)
-
-            if (stallDetectionRef.current.stallCount <= 5) {
-              // Try nudge forward
-              v.currentTime = currentTime + 0.5
-              v.play().catch(() => {})
-            } else if (stallDetectionRef.current.stallCount <= 10) {
-              // Try reload from current position
-              if (hlsRef.current) {
-                hlsRef.current.startLoad(currentTime)
-              }
-            } else {
-              // Full recovery
-              console.error('Persistent stall, attempting full recovery')
-              if (hlsRef.current) {
-                hlsRef.current.destroy()
-                hlsRef.current = null
-              }
-              const newHls = new Hls(createHlsConfig())
-              hlsRef.current = newHls
-              newHls.loadSource(src)
-              newHls.attachMedia(v)
-              v.play().catch(() => {})
-              stallDetectionRef.current.stallCount = 0
-            }
-          }
-
-          stallDetectionRef.current.lastTime = now
-          stallDetectionRef.current.lastCurrentTime = currentTime
-        }, 3000)
-      }
-    }
-    const handlePause = () => {
-      setIsPlaying(false)
-      // Stop heartbeat on pause
-      if (stallDetectionRef.current.heartbeatInterval) {
-        clearInterval(stallDetectionRef.current.heartbeatInterval)
-        stallDetectionRef.current.heartbeatInterval = null
-      }
-    }
+    const handleCanPlay = () => onLoadingChange(false)
+    const handlePlay = () => setIsPlaying(true)
+    const handlePause = () => setIsPlaying(false)
     const handleTimeUpdate = () => {
       if (!isSeeking) {
         setCurrentTime(video.currentTime)
       }
     }
     const handleLoadedMetadata = () => setDuration(video.duration)
-
-    // Handle waiting event (buffering)
-    const handleWaiting = () => {
-      console.log('Video waiting for buffer...')
-      // If waiting too long, try to recover
-      setTimeout(() => {
-        const v = videoRef.current
-        if (v && v.paused && !v.ended && v.readyState < 3) {
-          console.warn('Long wait detected, attempting recovery')
-          if (hlsRef.current) {
-            hlsRef.current.startLoad()
-          }
-        }
-      }, 5000)
-    }
-
-    // Handle stalled event
-    const handleStalled = () => {
-      console.warn('Video stalled, checking playback state...')
-      // Try to resume if should be playing
-      if (!video.paused && video.readyState < 3) {
-        // Wait a bit to see if it recovers naturally
-        setTimeout(() => {
-          if (videoRef.current && !videoRef.current.paused && videoRef.current.readyState < 3) {
-            console.warn('Still stalled after wait, attempting recovery')
-            if (hlsRef.current) {
-              hlsRef.current.startLoad()
-            }
-            videoRef.current.play().catch(() => {})
-          }
-        }, 2000)
-      }
-    }
-
-    // Handle ended event (for live streams, this shouldn't happen)
+    const handleWaiting = () => console.log('[Video] Waiting for buffer...')
+    const handleStalled = () => console.log('[Video] Stalled')
     const handleEnded = () => {
-      console.log('Video ended')
       // For live streams, try to reconnect
-      if (type === 'hls' && hlsRef.current) {
-        console.log('Live stream ended, attempting to reconnect...')
-        setTimeout(() => {
-          if (hlsRef.current) {
-            hlsRef.current.startLoad(-1)
-          }
-          video.play().catch(() => {})
-        }, 2000)
+      if (type === 'hls' && hlsRef.current && !isDestroyingRef.current) {
+        console.log('[Video] Stream ended, reconnecting...')
+        hlsRef.current.startLoad(-1)
+        playPromiseRef.current = video.play().catch(() => {})
       }
     }
 
     video.addEventListener('loadstart', handleLoadStart)
     video.addEventListener('canplay', handleCanPlay)
-    video.addEventListener('error', handleError)
     video.addEventListener('play', handlePlay)
     video.addEventListener('pause', handlePause)
     video.addEventListener('timeupdate', handleTimeUpdate)
@@ -723,7 +402,6 @@ function VideoPlayer({
     return () => {
       video.removeEventListener('loadstart', handleLoadStart)
       video.removeEventListener('canplay', handleCanPlay)
-      video.removeEventListener('error', handleError)
       video.removeEventListener('play', handlePlay)
       video.removeEventListener('pause', handlePause)
       video.removeEventListener('timeupdate', handleTimeUpdate)
@@ -731,20 +409,13 @@ function VideoPlayer({
       video.removeEventListener('waiting', handleWaiting)
       video.removeEventListener('stalled', handleStalled)
       video.removeEventListener('ended', handleEnded)
-      // Cleanup heartbeat interval
-      if (stallDetectionRef.current.heartbeatInterval) {
-        clearInterval(stallDetectionRef.current.heartbeatInterval)
-        stallDetectionRef.current.heartbeatInterval = null
-      }
     }
-  }, [onLoadingChange, onError, isSeeking, src, type])
+  }, [onLoadingChange, isSeeking, type])
 
   // Autoplay for non-HLS
   useEffect(() => {
-    if (type !== 'hls' && autoplay && videoRef.current) {
-      videoRef.current.play().catch(() => {
-        // Autoplay was prevented, user interaction required
-      })
+    if (type !== 'hls' && autoplay && videoRef.current && !isDestroyingRef.current) {
+      playPromiseRef.current = videoRef.current.play().catch(() => {})
     }
   }, [autoplay, type])
 
@@ -754,36 +425,17 @@ function VideoPlayer({
       const video = videoRef.current
       const hls = hlsRef.current
 
-      if (document.visibilityState === 'visible') {
-        console.log('Tab became visible, checking playback state...')
-
-        if (video && video.paused && !video.ended) {
-          // Video was paused while tab was hidden, try to resume
-          console.log('Resuming playback after tab visibility change')
-
-          // For HLS live streams, jump to live edge
-          if (type === 'hls' && hls && hls.liveSyncPosition !== undefined && hls.liveSyncPosition !== null) {
-            console.log('Jumping to live sync position:', hls.liveSyncPosition)
-            video.currentTime = hls.liveSyncPosition
-          }
-
-          video.play().catch((e) => {
-            console.warn('Could not auto-resume playback:', e)
-          })
+      if (document.visibilityState === 'visible' && video && video.paused && !video.ended && !isDestroyingRef.current) {
+        // For HLS live streams, jump to live edge
+        if (type === 'hls' && hls?.liveSyncPosition) {
+          video.currentTime = hls.liveSyncPosition
         }
-
-        // Reset stall detection
-        stallDetectionRef.current.stallCount = 0
-        stallDetectionRef.current.lastTime = 0
-        stallDetectionRef.current.lastCurrentTime = 0
+        playPromiseRef.current = video.play().catch(() => {})
       }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [type])
 
   // HLS live stream keep-alive - periodically check and recover
@@ -794,7 +446,7 @@ function VideoPlayer({
       const video = videoRef.current
       const hls = hlsRef.current
 
-      if (!video || !hls) return
+      if (!video || !hls || isDestroyingRef.current) return
 
       // Check if we're supposed to be playing but aren't
       if (!video.paused && video.readyState < 3) {
@@ -814,11 +466,11 @@ function VideoPlayer({
   }, [type])
 
   const togglePlay = useCallback(() => {
-    if (!videoRef.current) return
+    if (!videoRef.current || isDestroyingRef.current) return
     if (isPlaying) {
       videoRef.current.pause()
     } else {
-      videoRef.current.play()
+      playPromiseRef.current = videoRef.current.play().catch(() => {})
     }
   }, [isPlaying])
 

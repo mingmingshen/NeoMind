@@ -25,7 +25,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         agents, auth as auth_handlers, auth_users, automations, basic, bulk, commands, config,
         dashboards, devices, events, extensions, extension_stream, llm_backends, memory,
         message_channels, messages, mqtt, rules, search, sessions, settings, setup, stats,
-        suggestions, test_data, tools,
+        suggestions, test_data, tools, capabilities,
     };
 
     // Public routes (no authentication required)
@@ -114,6 +114,15 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route(
             "/api/extensions/capabilities",
             get(extensions::list_extension_capabilities_handler),
+        )
+        // Capability API
+        .route(
+            "/api/capabilities",
+            get(capabilities::list_capabilities_handler),
+        )
+        .route(
+            "/api/capabilities/:name",
+            get(capabilities::get_capability_handler),
         )
         // Extension-specific routes ( :id must come after specific paths)
         .route(
@@ -325,6 +334,15 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route(
             "/api/devices/:id/telemetry/summary",
             get(devices::get_device_telemetry_summary_handler),
+        )
+        // Virtual Metrics and Capability API
+        .route(
+            "/api/devices/:id/virtual-metrics",
+            post(capabilities::write_virtual_metric_handler),
+        )
+        .route(
+            "/api/devices/:id/aggregate",
+            get(capabilities::aggregate_metrics_handler),
         )
         .route(
             "/api/devices/:id/commands",

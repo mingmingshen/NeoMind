@@ -208,6 +208,9 @@ pub struct CommandDefinition {
     pub name: String,
     #[serde(default)]
     pub display_name: String,
+    /// Description (mapped to llm_hints for compatibility)
+    #[serde(default)]
+    pub description: String,
     #[serde(default)]
     pub payload_template: String,
     #[serde(default)]
@@ -227,6 +230,7 @@ impl Default for CommandDefinition {
         Self {
             name: String::new(),
             display_name: String::new(),
+            description: String::new(),
             payload_template: String::new(),
             parameters: Vec::new(),
             fixed_values: HashMap::new(),
@@ -252,7 +256,7 @@ pub type ExtensionCommand = CommandDefinition;
 /// Extensions declare metrics (data streams) and commands (operations) separately,
 /// following the same pattern as devices.
 #[async_trait::async_trait]
-pub trait Extension: Send + Sync {
+pub trait Extension: Send + Sync + 'static {
     /// Get extension metadata
     fn metadata(&self) -> &ExtensionMetadata;
 
@@ -260,13 +264,17 @@ pub trait Extension: Send + Sync {
     ///
     /// Metrics are data streams that the extension produces continuously.
     /// Each metric = one data source that can be queried/stored.
-    fn metrics(&self) -> &[MetricDescriptor];
+    /// 
+    /// Returns a Vec to avoid FFI pointer issues with static slices.
+    fn metrics(&self) -> Vec<MetricDescriptor>;
 
     /// Declare commands supported by this extension
     ///
     /// Commands are operations that can be invoked.
     /// Commands do NOT auto-store data (unlike V1).
-    fn commands(&self) -> &[ExtensionCommand];
+    /// 
+    /// Returns a Vec to avoid FFI pointer issues with static slices.
+    fn commands(&self) -> Vec<ExtensionCommand>;
 
     /// Execute a command
     ///
@@ -299,8 +307,8 @@ pub trait Extension: Send + Sync {
     fn descriptor(&self) -> ExtensionDescriptor {
         ExtensionDescriptor::with_capabilities(
             self.metadata().clone(),
-            self.commands().to_vec(),
-            self.metrics().to_vec(),
+            self.commands(),
+            self.metrics(),
         )
     }
 
@@ -309,9 +317,58 @@ pub trait Extension: Send + Sync {
         Ok(true)
     }
 
+    /// Optional: Get extension statistics
+    ///
+    /// Returns runtime statistics for the extension including:
+    /// - start_count: Number of times the extension has been started
+    /// - stop_count: Number of times the extension has been stopped
+    /// - error_count: Number of errors encountered
+    /// - last_error: Last error message (if any)
+    ///
+    /// Default implementation returns zeros.
+    fn get_stats(&self) -> ExtensionStats {
+        ExtensionStats::default()
+    }
+
     /// Optional: Runtime configuration
     async fn configure(&mut self, _config: &serde_json::Value) -> Result<()> {
         Ok(())
+    }
+
+    // =========================================================================
+    // Event Handling Support
+    // =========================================================================
+
+    /// Handle an event from the EventBus
+    ///
+    /// Called by the system when an event is published that matches the extension's
+    /// event subscriptions. Extensions can override this method to handle events.
+    ///
+    /// Default implementation does nothing.
+    ///
+    /// # Parameters
+    /// - `event_type`: The type of event (e.g., "DeviceMetric", "DeviceOnline")
+    /// - `payload`: The event payload as JSON
+    ///
+    /// # Returns
+    /// - `Ok(())` if the event was handled successfully
+    /// - `Err(ExtensionError)` if there was an error handling the event
+    fn handle_event(&self, _event_type: &str, _payload: &serde_json::Value) -> Result<()> {
+        Ok(())
+    }
+
+    /// Get event types this extension wants to subscribe to
+    ///
+    /// Extensions can override this method to declare which event types they want
+    /// to receive. The system will automatically subscribe to these event types
+    /// and call `handle_event` when matching events are published.
+    ///
+    /// Default implementation returns an empty list (no subscriptions).
+    ///
+    /// # Returns
+    /// - A slice of event type names (e.g., &["DeviceMetric", "DeviceOnline"])
+    fn event_subscriptions(&self) -> &[&str] {
+        &[]
     }
 
     // =========================================================================
@@ -406,6 +463,12 @@ pub trait Extension: Send + Sync {
     async fn stop_push(&self, _session_id: &str) -> Result<()> {
         Ok(())
     }
+
+    /// Support for downcasting to concrete type
+    ///
+    /// This method is used for testing and introspection.
+    /// It allows downcasting a `dyn Extension` to a concrete type.
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// Message sent from extension to host for Push mode streaming

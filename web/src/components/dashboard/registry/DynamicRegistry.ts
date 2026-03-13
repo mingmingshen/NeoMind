@@ -416,6 +416,71 @@ export class DynamicComponentRegistry {
   }
 
   /**
+   * Incremental sync: Compare and update only changes
+   * Preserves already-loaded modules for unchanged components
+   *
+   * @returns Object with counts of added and removed components
+   */
+  syncComponents(newComponents: DashboardComponentDto[]): { added: number; removed: number; unchanged: number } {
+    const newTypes = new Set(newComponents.map(c => c.type))
+    const currentTypes = new Set(Object.keys(this.state.components))
+
+    let added = 0
+    let removed = 0
+    let unchanged = 0
+
+    // Find and remove components that no longer exist
+    for (const type of currentTypes) {
+      if (!newTypes.has(type)) {
+        // Remove from components map
+        delete this.state.components[type]
+        // Remove from loaded modules cache
+        delete this.state.loadedModules[type]
+        delete this.state.loadingPromises[type]
+        removed++
+      }
+    }
+
+    // Add or update components
+    for (const comp of newComponents) {
+      const exists = currentTypes.has(comp.type)
+
+      // Register component definition
+      this.state.components[comp.type] = comp
+
+      // Update extension index
+      if (!this.state.extensions[comp.extension_id]) {
+        this.state.extensions[comp.extension_id] = {
+          extensionId: comp.extension_id,
+          extensionName: comp.extension_id,
+          componentTypes: [],
+        }
+      }
+      const extInfo = this.state.extensions[comp.extension_id]
+      if (!extInfo.componentTypes.includes(comp.type)) {
+        extInfo.componentTypes.push(comp.type)
+      }
+
+      if (!exists) {
+        added++
+      } else {
+        unchanged++
+      }
+    }
+
+    // Clean up extension index for removed extensions
+    for (const [extId, extInfo] of Object.entries(this.state.extensions)) {
+      // Check if any of its components still exist
+      const hasComponents = extInfo.componentTypes.some(type => newTypes.has(type))
+      if (!hasComponents) {
+        delete this.state.extensions[extId]
+      }
+    }
+
+    return { added, removed, unchanged }
+  }
+
+  /**
    * Clear module cache for a specific component type
    * Use this to force reload of a component after updates
    */

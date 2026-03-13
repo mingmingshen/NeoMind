@@ -1094,7 +1094,7 @@ mod tests {
     fn test_llm_settings_default() {
         let settings = LlmSettings::default();
         assert_eq!(settings.backend_name(), "ollama");
-        assert_eq!(settings.model, "qwen3-vl:2b");
+        assert_eq!(settings.model, "ministral-3:3b");
         assert_eq!(settings.temperature, 0.7);
     }
 

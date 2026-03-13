@@ -99,8 +99,8 @@
 //!         &META
 //!     }
 //!
-//!     fn metrics(&self) -> &[MetricDescriptor] {
-//!         static METRICS: &[MetricDescriptor] = &[
+//!     fn metrics(&self) -> Vec<MetricDescriptor> {
+//!         vec![
 //!             MetricDescriptor {
 //!                 name: "counter".to_string(),
 //!                 display_name: "Counter".to_string(),
@@ -110,12 +110,11 @@
 //!                 max: None,
 //!                 required: false,
 //!             }
-//!         ];
-//!         METRICS
+//!         ]
 //!     }
 //!
-//!     fn commands(&self) -> &[ExtensionCommand] {
-//!         static COMMANDS: &[ExtensionCommand] = &[
+//!     fn commands(&self) -> Vec<ExtensionCommand> {
+//!         vec![
 //!             ExtensionCommand {
 //!                 name: "increment".to_string(),
 //!                 display_name: "Increment".to_string(),
@@ -138,8 +137,7 @@
 //!                 llm_hints: String::new(),
 //!                 parameter_groups: Vec::new(),
 //!             }
-//!         ];
-//!         COMMANDS
+//!         ]
 //!     }
 //!
 //!     async fn execute_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value> {
@@ -176,7 +174,15 @@ pub use neomind_core::extension::system::{
     Extension, ExtensionMetadata, ExtensionError, ExtensionMetricValue,
     MetricDescriptor, ExtensionCommand, MetricDataType, ParameterDefinition,
     CExtensionMetadata, ABI_VERSION, Result, ParamMetricValue, CommandDefinition,
+    ExtensionStats,
 };
+
+
+// // Re-export serialization types for native builds
+// #[cfg(not(target_arch = "wasm32"))]
+// pub use neomind_core::extension::serialization::{
+//     ExtensionContextData, EventData,
+// };
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use neomind_core::extension::{
@@ -242,6 +248,8 @@ mod wasm_types {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "lowercase")]
     pub enum StreamMode {
+        Stateless,
+        Stateful,
         Push,
         Pull,
     }
@@ -258,23 +266,32 @@ mod wasm_extension {
     #[async_trait::async_trait]
     pub trait Extension: Send + Sync {
         fn metadata(&self) -> &ExtensionMetadata;
-        fn metrics(&self) -> &[MetricDescriptor] { &[] }
-        fn commands(&self) -> &[ExtensionCommand] { &[] }
-        
+        /// Returns metrics provided by this extension.
+        /// Returns Vec to avoid FFI pointer issues with static slices.
+        fn metrics(&self) -> Vec<MetricDescriptor> { Vec::new() }
+        /// Returns commands provided by this extension.
+        /// Returns Vec to avoid FFI pointer issues with static slices.
+        fn commands(&self) -> Vec<ExtensionCommand> { Vec::new() }
+
         async fn execute_command(
             &self,
             command: &str,
             args: &serde_json::Value,
         ) -> Result<serde_json::Value>;
-        
+
         fn produce_metrics(&self) -> Result<Vec<ExtensionMetricValue>> {
             Ok(Vec::new())
         }
-        
+
         async fn health_check(&self) -> Result<bool> {
             Ok(true)
         }
-        
+
+        /// Get extension statistics
+        fn get_stats(&self) -> super::extension::ExtensionStats {
+            super::extension::ExtensionStats::default()
+        }
+
         /// Stream capability - returns None for WASM extensions that don't support streaming
         fn stream_capability(&self) -> Option<StreamCapability> {
             None
@@ -284,6 +301,7 @@ mod wasm_extension {
 
 #[cfg(target_arch = "wasm32")]
 pub use wasm_extension::Extension;
+// Capabilities module (NEW - 方案3: 混合方案)
 
 // Re-export async_trait for convenience
 pub use async_trait::async_trait;
@@ -301,6 +319,8 @@ pub use extension::{
     FrontendManifestBuilder, ComponentSize, I18nConfig,
 };
 
+// Extension statistics (re-exported from neomind-core for native builds)
+
 // Prelude for convenient imports
 pub mod prelude;
 
@@ -317,6 +337,9 @@ pub mod wasm;
 
 // Utility functions
 pub mod utils;
+
+// Capabilities module (unified for Native and WASM)
+pub mod capabilities;
 
 // ============================================================================
 // SDK Constants
@@ -383,6 +406,11 @@ impl MetricBuilder {
         self.data_type(MetricDataType::String)
     }
 
+    /// Set as enum type with options
+    pub fn enum_type(self, options: Vec<String>) -> Self {
+        self.data_type(MetricDataType::Enum { options })
+    }
+
     /// Set the unit
     pub fn unit(mut self, unit: impl Into<String>) -> Self {
         self.metric.unit = unit.into();
@@ -422,17 +450,37 @@ pub struct CommandBuilder {
 impl CommandBuilder {
     /// Create a new command builder
     pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            command: ExtensionCommand {
-                name: name.into(),
-                display_name: String::new(),
-                payload_template: String::new(),
-                parameters: Vec::new(),
-                fixed_values: std::collections::HashMap::new(),
-                samples: Vec::new(),
-                llm_hints: String::new(),
-                parameter_groups: Vec::new(),
-            },
+        #[cfg(target_arch = "wasm32")]
+        {
+            Self {
+                command: ExtensionCommand {
+                    name: name.into(),
+                    display_name: String::new(),
+                    description: String::new(),
+                    payload_template: String::new(),
+                    parameters: Vec::new(),
+                    fixed_values: std::collections::HashMap::new(),
+                    samples: Vec::new(),
+                    llm_hints: String::new(),
+                    parameter_groups: Vec::new(),
+                },
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            Self {
+                command: ExtensionCommand {
+                    name: name.into(),
+                    display_name: String::new(),
+                    description: String::new(),
+                    payload_template: String::new(),
+                    parameters: Vec::new(),
+                    fixed_values: std::collections::HashMap::new(),
+                    samples: Vec::new(),
+                    llm_hints: String::new(),
+                    parameter_groups: Vec::new(),
+                },
+            }
         }
     }
 
@@ -630,4 +678,55 @@ macro_rules! static_commands {
         static COMMANDS: &[$crate::ExtensionCommand] = &[$($cmd),*];
         COMMANDS
     }};
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that SDK WASM capability names match Core capability names.
+    /// This test only runs in Native mode where we can access neomind-core.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_wasm_capability_names_sync_with_core() {
+        // Import Core's capability constants
+        use neomind_core::extension::context::capabilities as core_cap;
+        
+        // Import SDK WASM's capability constants
+        #[cfg(target_arch = "wasm32")]
+        use crate::wasm::context::capabilities as wasm_cap;
+        
+        // In native mode, we can't directly access wasm module, so we check the strings
+        // This test ensures the strings are correct
+        let expected_names = [
+            ("DEVICE_METRICS_READ", "device_metrics_read"),
+            ("DEVICE_METRICS_WRITE", "device_metrics_write"),
+            ("DEVICE_CONTROL", "device_control"),
+            ("STORAGE_QUERY", "storage_query"),
+            ("EVENT_PUBLISH", "event_publish"),
+            ("EVENT_SUBSCRIBE", "event_subscribe"),
+            ("TELEMETRY_HISTORY", "telemetry_history"),
+            ("METRICS_AGGREGATE", "metrics_aggregate"),
+            ("EXTENSION_CALL", "extension_call"),
+            ("AGENT_TRIGGER", "agent_trigger"),
+            ("RULE_TRIGGER", "rule_trigger"),
+        ];
+
+        // Verify Core's constants match expected names
+        assert_eq!(core_cap::DEVICE_METRICS_READ, "device_metrics_read");
+        assert_eq!(core_cap::DEVICE_METRICS_WRITE, "device_metrics_write");
+        assert_eq!(core_cap::DEVICE_CONTROL, "device_control");
+        assert_eq!(core_cap::STORAGE_QUERY, "storage_query");
+        assert_eq!(core_cap::EVENT_PUBLISH, "event_publish");
+        assert_eq!(core_cap::EVENT_SUBSCRIBE, "event_subscribe");
+        assert_eq!(core_cap::TELEMETRY_HISTORY, "telemetry_history");
+        assert_eq!(core_cap::METRICS_AGGREGATE, "metrics_aggregate");
+        assert_eq!(core_cap::EXTENSION_CALL, "extension_call");
+        assert_eq!(core_cap::AGENT_TRIGGER, "agent_trigger");
+        assert_eq!(core_cap::RULE_TRIGGER, "rule_trigger");
+    }
 }

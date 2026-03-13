@@ -151,13 +151,13 @@ async fn test_cache_operations() {
     // Populate cache
     store.query_latest("device1", "temp").await.unwrap();
 
-    let cache_size_before = store.cache_size().await;
+    let cache_size_before = store.cache_size();
     assert!(cache_size_before > 0);
 
     // Clear cache
-    store.clear_cache().await;
+    store.clear_cache();
 
-    assert_eq!(store.cache_size().await, 0);
+    assert_eq!(store.cache_size(), 0);
 }
 
 #[tokio::test]

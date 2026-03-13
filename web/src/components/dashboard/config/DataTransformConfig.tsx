@@ -164,7 +164,7 @@ export function DataTransformConfig({
   }, [firstSource, chartType])
 
   const currentTimeWindow = useMemo(() => {
-    return firstSource?.timeWindow?.type ?? 'last_1hour'
+    return firstSource?.timeWindow?.type ?? 'last_24hours'
   }, [firstSource])
 
   const currentLimit = useMemo(() => {

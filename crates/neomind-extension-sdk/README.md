@@ -11,6 +11,51 @@
 - **ABI 版本 3** - 新的扩展接口，改进的安全性
 - **类型安全** - 完整的类型定义和辅助宏
 - **异步支持** - 基于 Tokio 的异步运行时
+- **能力系统** - 11 种内置能力，支持自定义扩展
+
+## 能力系统
+
+扩展可以通过能力系统访问 NeoMind 平台功能：
+
+### 内置能力
+
+| 能力 | 名称 | 描述 |
+|------|------|------|
+| DeviceMetricsRead | `device_metrics_read` | 读取设备指标 |
+| DeviceMetricsWrite | `device_metrics_write` | 写入虚拟指标 |
+| DeviceControl | `device_control` | 发送设备命令 |
+| StorageQuery | `storage_query` | 存储查询 |
+| EventPublish | `event_publish` | 发布事件 |
+| EventSubscribe | `event_subscribe` | 订阅事件 |
+| TelemetryHistory | `telemetry_history` | 遥测历史查询 |
+| MetricsAggregate | `metrics_aggregate` | 指标聚合计算 |
+| ExtensionCall | `extension_call` | 扩展间调用 |
+| AgentTrigger | `agent_trigger` | 触发代理执行 |
+| RuleTrigger | `rule_trigger` | 触发规则执行 |
+
+### 使用能力 API
+
+```rust
+use neomind_extension_sdk::capabilities::{device, event, agent, rule};
+
+// 读取设备指标
+let metrics = device::get_metrics(&context, "device-1").await?;
+
+// 写入虚拟指标
+device::write_virtual_metric(&context, "device-1", "calculated_value", &json!(42.5)).await?;
+
+// 发送设备命令
+device::send_command(&context, "device-1", "set_level", &json!({"level": 80})).await?;
+
+// 发布事件
+event::publish(&context, event).await?;
+
+// 触发代理
+agent::trigger(&context, "analyzer-agent", &json!({"query": "analyze"})).await?;
+
+// 触发规则
+rule::trigger(&context, "alert-rule", &json!({"value": 85})).await?;
+```
 
 ## 快速开始
 
@@ -250,6 +295,79 @@ lto = "thin"
 | weather-forecast-v2 | Native | 天气预报 API |
 | image-analyzer-v2 | Native | YOLOv8 图像分析 |
 | yolo-video-v2 | Native | 实时视频处理 |
+
+## WASM 扩展开发
+
+SDK 支持编译为 WebAssembly，提供与 Native 扩展相同的 API。
+
+### 编译目标
+
+```bash
+# 添加 WASM 目标
+rustup target add wasm32-unknown-unknown
+
+# 编译 WASM 扩展
+cargo build --target wasm32-unknown-unknown --release
+```
+
+### WASM 特性
+
+```toml
+# Cargo.toml
+[dependencies]
+neomind-extension-sdk = { path = "../NeoMind/crates/neomind-extension-sdk" }
+
+[lib]
+crate-type = ["cdylib"]
+```
+
+### WASM 能力 API
+
+WASM 扩展使用与 Native 相同的能力 API：
+
+```rust
+// Native: 异步 API
+#[cfg(not(target_arch = "wasm32"))]
+let metrics = device::get_metrics(&context, "device-1").await?;
+
+// WASM: 同步 API（自动选择）
+#[cfg(target_arch = "wasm32")]
+let metrics = device::get_metrics(&context, "device-1")?;
+```
+
+### Host 函数接口
+
+WASM 扩展通过 Host 函数与 NeoMind 平台交互：
+
+| Host 函数 | 说明 |
+|-----------|------|
+| `host_invoke_capability` | 通用能力调用 |
+| `host_event_subscribe` | 事件订阅 |
+| `host_event_poll` | 事件轮询 |
+| `host_event_unsubscribe` | 取消订阅 |
+| `host_log` | 日志输出 |
+| `host_timestamp_ms` | 获取时间戳 |
+| `host_free` | 释放内存 |
+
+### WASM 限制
+
+- 同步 API（非异步）
+- 通过 Host 函数访问平台能力
+- 事件使用轮询模式
+- 内存由 Host 管理
+
+## 内置能力提供者
+
+NeoMind 提供以下内置能力提供者：
+
+| Provider | 提供能力 |
+|----------|---------|
+| `DeviceCapabilityProvider` | DeviceMetricsRead, DeviceMetricsWrite, DeviceControl |
+| `EventCapabilityProvider` | EventPublish, EventSubscribe |
+| `TelemetryCapabilityProvider` | TelemetryHistory, MetricsAggregate |
+| `AgentCapabilityProvider` | AgentTrigger |
+| `RuleCapabilityProvider` | RuleTrigger |
+| `ExtensionCallCapabilityProvider` | ExtensionCall |
 
 ## 许可证
 

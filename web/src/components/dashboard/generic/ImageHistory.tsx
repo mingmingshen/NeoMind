@@ -330,23 +330,19 @@ function normalizeDataSourceForImages(
   if (!ds) return undefined
 
   // If it's already telemetry, return as-is with raw transform and custom limits
-  // Priority: ds.limit/ds.timeRange (from config) > component props > defaults
+  // Priority: component props (timeRange/limit) > ds config
+  // This ensures user's component configuration takes precedence
   if (ds.type === 'telemetry') {
-    const newLimit = ds.limit ?? limit
-    const newTimeRange = ds.timeRange ?? timeRange
-
-    const result = {
+    return {
       ...ds,
-      limit: newLimit,
-      timeRange: newTimeRange,
+      limit: limit,           // Use component props limit
+      timeRange: timeRange,   // Use component props timeRange
       params: {
         ...ds.params,
         includeRawPoints: true,
       },
       transform: 'raw',
     }
-
-    return result
   }
 
   // If it's a device type, convert to telemetry for historical data

@@ -1,8 +1,8 @@
 # LLM Module
 
 **Package**: `neomind-llm`
-**Version**: 0.5.9
-**Completion**: 90%
+**Version**: 0.5.10
+**Completion**: 95%
 **Purpose**: Provides multi-backend LLM support
 
 ## Overview
@@ -18,6 +18,12 @@ The LLM module implements a unified LLM runtime interface, supporting multiple l
 | **Anthropic** | `anthropic` | ✅ | `claude-3-5-sonnet-20241022` |
 | **Google** | `google` | ✅ | `gemini-1.5-flash` |
 | **xAI** | `xai` | ✅ | `grok-beta` |
+| **Qwen (Alibaba)** | `cloud` | ✅ | `qwen-max-latest` |
+| **DeepSeek** | `cloud` | ✅ | `deepseek-v3` |
+| **GLM (Zhipu)** | `cloud` | ✅ | `glm-4-plus` |
+| **MiniMax** | `cloud` | ✅ | `m2-1-19b` |
+
+> **Note**: Qwen, DeepSeek, GLM, and MiniMax use OpenAI-compatible APIs and are enabled via the `cloud` feature.
 
 ## Module Structure
 
@@ -107,11 +113,66 @@ pub enum CloudProvider {
         api_key: String,
         model: String,
     },
-    Xai {
+    Grok {
         api_key: String,
         model: String,
     },
+    Qwen {
+        api_key: String,
+        model: String,
+    },
+    DeepSeek {
+        api_key: String,
+        model: String,
+    },
+    GLM {
+        api_key: String,
+        model: String,
+    },
+    MiniMax {
+        api_key: String,
+        model: String,
+    },
+    Custom {
+        api_key: String,
+        base_url: String,
+        model: String,
+    },
 }
+```
+
+### Chinese LLM Providers
+
+NeoMind natively supports major Chinese LLM providers:
+
+| Provider | Endpoint | Default Model | Vision Support |
+|----------|----------|---------------|----------------|
+| **Qwen (Alibaba)** | `dashscope.aliyuncs.com` | `qwen-max-latest` | ✅ qwen-vl, qwen2.5-vl |
+| **DeepSeek** | `api.deepseek.com` | `deepseek-v3` | ✅ deepseek-vl |
+| **GLM (Zhipu)** | `open.bigmodel.cn` | `glm-4-plus` | ✅ glm-4v |
+| **MiniMax** | `api.minimax.chat` | `m2-1-19b` | ✅ minimax-vl |
+
+### Creating Chinese LLM Backends
+
+```rust
+use neomind_llm::{CloudConfig, CloudRuntime};
+
+// Qwen (Alibaba)
+let qwen_config = CloudConfig::qwen("your-dashscope-api-key");
+let qwen_runtime = CloudRuntime::new(qwen_config)?;
+
+// DeepSeek
+let deepseek_config = CloudConfig::deepseek("your-deepseek-api-key");
+let deepseek_runtime = CloudRuntime::new(deepseek_config)?;
+
+// GLM (Zhipu)
+let glm_config = CloudConfig::glm("your-zhipu-api-key");
+let glm_runtime = CloudRuntime::new(glm_config)?;
+
+// MiniMax
+let minimax_config = CloudConfig::minimax("your-minimax-api-key");
+let minimax_runtime = CloudRuntime::new(minimax_config)?;
+```
 ```
 
 ### API Format
@@ -284,8 +345,28 @@ pub struct BackendCapabilities {
 | OpenAI     | ✅        | ✅               | ✅     | ❌       |
 | Anthropic  | ✅        | ✅               | ✅     | ✅       |
 | Google     | ✅        | ✅               | ✅     | ✅       |
-| xAI        | ✅        | ✅               | ❌     | ❌       |
+| xAI        | ✅        | ✅               | ✅     | ❌       |
+| Qwen       | ✅        | ✅               | ✅     | ✅       |
+| DeepSeek   | ✅        | ✅               | ✅     | ✅       |
+| GLM        | ✅        | ✅               | ✅     | ✅       |
+| MiniMax    | ✅        | ✅               | ✅     | ✅       |
 ```
+
+### Vision Model Detection
+
+NeoMind automatically detects vision capabilities based on model name patterns:
+
+| Provider | Vision Model Patterns |
+|----------|----------------------|
+| OpenAI | `gpt-4o`, `gpt-4-vision`, `gpt-4-turbo` |
+| Anthropic | `claude-3`, `claude-4` |
+| Google | `gemini` |
+| Qwen | `qwen-vl`, `qwen2.5-vl`, `qwen3-vl`, `qwen-max`, `qwen-plus` |
+| DeepSeek | `deepseek-vl` |
+| GLM | `glm-4v` |
+| MiniMax | `minimax-vl` |
+| xAI | `grok-vision` |
+| Generic | Contains `vision`, `-vl`, `_vl` keywords |
 
 ## Rate Limiting
 

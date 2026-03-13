@@ -74,7 +74,7 @@ impl SdkExtensionMetadata {
 // ============================================================================
 
 /// Metric data types
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SdkMetricDataType {
     Float,
@@ -82,6 +82,10 @@ pub enum SdkMetricDataType {
     Boolean,
     String,
     Binary,
+    /// Enum type with a list of allowed options
+    Enum {
+        options: Vec<String>,
+    },
 }
 
 impl Default for SdkMetricDataType {
@@ -799,5 +803,116 @@ impl<'a> ArgParser<'a> {
     /// Parse the entire args as a specific type
     pub fn parse<T: for<'de> Deserialize<'de>>(&self) -> SdkResult<T> {
         serde_json::from_value(self.args.clone()).map_err(Into::into)
+    }
+}
+
+// ============================================================================
+// Extension Statistics (for WASM target)
+// ============================================================================
+
+/// Extension statistics for WASM target
+/// This is a simplified version that doesn't require chrono
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ExtensionStats {
+    /// Number of metrics produced
+    pub metrics_produced: u64,
+    /// Number of commands executed
+    pub commands_executed: u64,
+    /// Total execution time in milliseconds
+    pub total_execution_time_ms: u64,
+    /// Last execution timestamp (Unix timestamp in milliseconds)
+    pub last_execution_time_ms: Option<i64>,
+    /// Number of times the extension has been started
+    pub start_count: u64,
+    /// Number of times the extension has been stopped
+    pub stop_count: u64,
+    /// Number of errors
+    pub error_count: u64,
+    /// Last error message
+    pub last_error: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_metric_data_type_serialization() {
+        // Test basic types
+        let types = vec![
+            (SdkMetricDataType::Float, r#""float""#),
+            (SdkMetricDataType::Integer, r#""integer""#),
+            (SdkMetricDataType::Boolean, r#""boolean""#),
+            (SdkMetricDataType::String, r#""string""#),
+            (SdkMetricDataType::Binary, r#""binary""#),
+        ];
+
+        for (dtype, expected) in types {
+            let json = serde_json::to_string(&dtype).unwrap();
+            assert_eq!(json, expected, "Serialization mismatch for {:?}", dtype);
+            
+            let deserialized: SdkMetricDataType = serde_json::from_str(expected).unwrap();
+            assert_eq!(dtype, deserialized, "Deserialization mismatch for {:?}", dtype);
+        }
+
+        // Test Enum type
+        let enum_type = SdkMetricDataType::Enum {
+            options: vec!["option1".to_string(), "option2".to_string()],
+        };
+        let json = serde_json::to_string(&enum_type).unwrap();
+        assert!(json.contains("enum"), "Enum type should serialize with 'enum' key");
+        assert!(json.contains("options"), "Enum type should contain 'options'");
+    }
+
+    #[test]
+    fn test_metric_definition_serialization() {
+        let metric = SdkMetricDefinition {
+            name: "test_metric".to_string(),
+            display_name: "Test Metric".to_string(),
+            data_type: SdkMetricDataType::Float,
+            unit: "°C".to_string(),
+            min: Some(0.0),
+            max: Some(100.0),
+            required: true,
+        };
+
+        let json = serde_json::to_string(&metric).unwrap();
+        assert!(json.contains("test_metric"));
+        assert!(json.contains("float"));
+        
+        let deserialized: SdkMetricDefinition = serde_json::from_str(&json).unwrap();
+        assert_eq!(metric.name, deserialized.name);
+        assert_eq!(metric.unit, deserialized.unit);
+    }
+
+    #[test]
+    fn test_extension_metadata_serialization() {
+        let meta = SdkExtensionMetadata {
+            id: "test-ext".to_string(),
+            name: "Test Extension".to_string(),
+            version: "1.0.0".to_string(),
+            description: Some("A test extension".to_string()),
+            author: Some("Test Author".to_string()),
+            sdk_version: Some("0.5.10".to_string()),
+            extension_type: "native".to_string(),
+        };
+
+        let json = serde_json::to_string(&meta).unwrap();
+        assert!(json.contains("test-ext"));
+        assert!(json.contains("1.0.0"));
+        
+        let deserialized: SdkExtensionMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(meta.id, deserialized.id);
+        assert_eq!(meta.version, deserialized.version);
+    }
+
+    #[test]
+    fn test_extension_error_serialization() {
+        let error = SdkExtensionError::InvalidArguments("test error".to_string());
+        let json = serde_json::to_string(&error).unwrap();
+        assert!(json.contains("InvalidArguments"));
+        
+        // Test error display
+        assert!(error.to_string().contains("test error"));
     }
 }

@@ -419,6 +419,7 @@ mod tests {
         let command = ExtensionCommand {
             name: "test".to_string(),
             display_name: "Test".to_string(),
+            description: String::new(),
             payload_template: String::new(),
             parameters: vec![],
             fixed_values: std::collections::HashMap::new(),
@@ -455,16 +456,12 @@ mod tests {
                 })
             }
 
-            fn metrics(&self) -> &[MetricDefinition] {
-                use std::sync::OnceLock;
-                static METRICS: OnceLock<Vec<MetricDefinition>> = OnceLock::new();
-                METRICS.get_or_init(|| vec![])
+            fn metrics(&self) -> Vec<MetricDefinition> {
+                vec![]
             }
 
-            fn commands(&self) -> &[ExtensionCommand] {
-                use std::sync::OnceLock;
-                static COMMANDS: OnceLock<Vec<ExtensionCommand>> = OnceLock::new();
-                COMMANDS.get_or_init(|| vec![])
+            fn commands(&self) -> Vec<ExtensionCommand> {
+                vec![]
             }
 
             async fn execute_command(
@@ -473,6 +470,10 @@ mod tests {
                 _args: &serde_json::Value,
             ) -> Result<serde_json::Value> {
                 Ok(serde_json::json!({"result": "ok"}))
+            }
+
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
             }
         }
 

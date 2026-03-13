@@ -17,6 +17,7 @@ use parking_lot::RwLock;
 
 use crate::event::NeoMindEvent;
 use crate::eventbus::EventBus;
+use crate::extension::event_dispatcher::EventDispatcher;
 use crate::extension::loader::NativeExtensionLoader;
 use crate::extension::safety::ExtensionSafetyManager;
 use crate::extension::system::{
@@ -62,6 +63,9 @@ pub struct ExtensionRegistry {
     safety_manager: Arc<ExtensionSafetyManager>,
     /// Event bus for publishing lifecycle events (optional)
     event_bus: Option<Arc<EventBus>>,
+    /// Event dispatcher for pushing events to extensions (optional)
+    /// Using Option<Arc<>> for interior mutability
+    event_dispatcher: parking_lot::RwLock<Option<Arc<EventDispatcher>>>,
 }
 
 impl ExtensionRegistry {
@@ -75,12 +79,18 @@ impl ExtensionRegistry {
             loaded_libraries: RwLock::new(HashMap::new()),
             safety_manager: Arc::new(ExtensionSafetyManager::new()),
             event_bus: None,
+            event_dispatcher: parking_lot::RwLock::new(None),
         }
     }
 
     /// Set the event bus for publishing lifecycle events.
     pub fn set_event_bus(&mut self, event_bus: Arc<EventBus>) {
         self.event_bus = Some(event_bus);
+    }
+
+    /// Set the event dispatcher for pushing events to extensions.
+    pub fn set_event_dispatcher(&self, event_dispatcher: Arc<EventDispatcher>) {
+        *self.event_dispatcher.write() = Some(event_dispatcher);
     }
 
     /// Add an extension directory to scan.
@@ -143,6 +153,20 @@ impl ExtensionRegistry {
                     commands,
                 },
             );
+
+        // Register with event dispatcher for event subscriptions
+        // This allows in-process extensions to receive events via handle_event()
+        if let Some(ref dispatcher) = *self.event_dispatcher.read() {
+            // Note: This is a synchronous context, so we use block_in_place
+            // to allow async operation
+            let extension_clone = extension.clone();
+            let id_clone = id.clone();
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async {
+                    dispatcher.register_in_process_extension(id_clone, extension_clone).await;
+                });
+            });
+        }
 
         // Publish ExtensionLifecycle { state: "registered" } event
         // Use sync version to avoid issues with non-Tokio contexts
@@ -235,6 +259,27 @@ impl ExtensionRegistry {
             }
         } else {
             Vec::new()
+        }
+    }
+
+    /// Get extension statistics.
+    /// This calls the extension's `get_stats()` method and returns the statistics.
+    pub async fn get_stats(&self, id: &str) -> std::result::Result<super::system::ExtensionStats, ExtensionError> {
+        if let Some(ext) = self.get(id).await {
+            let ext = ext.read().await;
+            // Call get_stats with panic handling
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ext.get_stats())) {
+                Ok(stats) => Ok(stats),
+                Err(_) => {
+                    tracing::error!(
+                        extension_id = %id,
+                        "[ExtensionRegistry] Extension panicked while getting stats"
+                    );
+                    Err(ExtensionError::ExecutionFailed("Extension panicked while getting stats".to_string()))
+                }
+            }
+        } else {
+            Err(ExtensionError::NotFound(format!("Extension {} not found", id)))
         }
     }
 

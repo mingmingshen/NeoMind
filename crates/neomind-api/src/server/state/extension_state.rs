@@ -141,6 +141,14 @@ pub struct ExtensionState {
 }
 
 impl ExtensionState {
+    /// Get the event dispatcher for extension event distribution.
+    ///
+    /// This returns the EventDispatcher from the IsolatedExtensionManager,
+    /// which is used to push events to subscribed extensions.
+    pub fn get_event_dispatcher(&self) -> Option<Arc<neomind_core::extension::EventDispatcher>> {
+        Some(self.unified_service.get_event_dispatcher())
+    }
+
     /// Create a new extension state with process isolation enabled by default.
     pub fn new(
         registry: Arc<ExtensionRegistry>,
@@ -304,6 +312,16 @@ impl ExtensionState {
                         error = %e,
                         "Failed to load extension from storage"
                     );
+                    // Record the error in the extension store
+                    if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+                        if let Err(update_e) = store.update_error_status(&record.id, &e.to_string()) {
+                            tracing::warn!(
+                                extension_id = %record.id,
+                                error = %update_e,
+                                "Failed to update extension error status"
+                            );
+                        }
+                    }
                 }
             }
         }

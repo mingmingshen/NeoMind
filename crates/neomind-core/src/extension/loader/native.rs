@@ -420,8 +420,19 @@ impl NativeExtensionLoader {
     }
 
     /// Find binary file in .nep package folder structure.
-    /// Looks for: binaries/{platform}/extension.{ext}
+    /// Looks for:
+    /// 1. binaries/{platform}/extension.{ext} (standard .nep format)
+    /// 2. extension.{ext} in folder root (installed format)
     async fn find_nep_binary(&self, folder: &Path) -> Option<PathBuf> {
+        // First, check for extension binary in folder root (installed format)
+        for ext in &["dylib", "so", "dll"] {
+            let binary = folder.join(format!("extension.{}", ext));
+            if binary.exists() {
+                return Some(binary);
+            }
+        }
+
+        // Then check binaries/ subdirectory (standard .nep format)
         let binaries_dir = folder.join("binaries");
         if !binaries_dir.exists() {
             return None;

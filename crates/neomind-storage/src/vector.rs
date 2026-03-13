@@ -674,7 +674,7 @@ mod tests {
         store.insert(doc2).await.unwrap();
         store.insert(doc3).await.unwrap();
 
-        assert_eq!(store.count().await, 3);
+        assert_eq!(store.count(), 3);
 
         // Search
         let query = vec![1.0, 0.0, 0.0];
@@ -724,13 +724,13 @@ mod tests {
             .insert(VectorDocument::new("doc1", vec![1.0]))
             .await
             .unwrap();
-        assert_eq!(store.count().await, 1);
+        assert_eq!(store.count(), 1);
 
-        let deleted = store.delete("doc1").await.unwrap();
+        let deleted = store.delete("doc1").unwrap();
         assert!(deleted);
-        assert_eq!(store.count().await, 0);
+        assert_eq!(store.count(), 0);
 
-        let deleted = store.delete("doc1").await.unwrap();
+        let deleted = store.delete("doc1").unwrap();
         assert!(!deleted);
     }
 
@@ -784,7 +784,7 @@ mod tests {
 
         store.insert(doc).await.unwrap();
 
-        let retrieved = store.get("doc1").await.unwrap();
+        let retrieved = store.get("doc1").unwrap();
         assert_eq!(retrieved.metadata["label"], "test");
         assert_eq!(retrieved.metadata["value"], 42);
     }
@@ -804,23 +804,23 @@ mod tests {
         store.insert(doc2).await.unwrap();
 
         // Get by category
-        let sensors = store.get_by_category("sensors").await;
+        let sensors = store.get_by_category("sensors");
         assert_eq!(sensors.len(), 1);
         assert_eq!(sensors[0].id, "doc1");
 
         // Get by tag
-        let temp_sensors = store.get_by_tag("temperature").await;
+        let temp_sensors = store.get_by_tag("temperature");
         assert_eq!(temp_sensors.len(), 1);
         assert_eq!(temp_sensors[0].id, "doc1");
 
         // List categories
-        let categories = store.categories().await;
+        let categories = store.categories();
         assert_eq!(categories.len(), 2);
         assert!(categories.contains("sensors"));
         assert!(categories.contains("actuators"));
 
         // List tags
-        let tags = store.tags().await;
+        let tags = store.tags();
         assert_eq!(tags.len(), 2);
         assert!(tags.contains("temperature"));
         assert!(tags.contains("switch"));
@@ -909,7 +909,7 @@ mod tests {
 
         // Reload index and verify
         store.load_index().await.unwrap();
-        assert_eq!(store.count().await.unwrap(), 2);
+        assert_eq!(store.count().unwrap(), 2);
 
         // Get document
         let retrieved = store.get("doc1").await.unwrap();

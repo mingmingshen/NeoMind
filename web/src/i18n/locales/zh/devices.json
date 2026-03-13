@@ -168,6 +168,11 @@
     "error": "添加失败",
     "retryMessage": "添加设备失败，请稍后重试"
   },
+  "edit": {
+    "title": "编辑设备",
+    "success": "设备已更新",
+    "error": "更新设备失败"
+  },
   "discoveryDialog": {
     "title": "设备发现",
     "hostPlaceholder": "输入主机地址 (例如: localhost, 192.168.1.1)",

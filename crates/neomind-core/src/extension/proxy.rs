@@ -118,10 +118,12 @@ impl IsolatedExtensionProxy {
             IsolatedExtensionError::NotInitialized => ExtensionError::ExecutionFailed("Extension not initialized".to_string()),
             IsolatedExtensionError::AlreadyRunning => ExtensionError::ExecutionFailed("Extension already running".to_string()),
             IsolatedExtensionError::NotRunning => ExtensionError::ExecutionFailed("Extension not running".to_string()),
+            IsolatedExtensionError::TooManyRequests(limit) => ExtensionError::ExecutionFailed(format!("Too many concurrent requests (limit: {})", limit)),
             IsolatedExtensionError::LoadError(msg) => ExtensionError::LoadFailed(msg),
             IsolatedExtensionError::UnexpectedResponse => ExtensionError::ExecutionFailed("Unexpected response type".to_string()),
             IsolatedExtensionError::ChannelClosed => ExtensionError::ExecutionFailed("Response channel closed".to_string()),
             IsolatedExtensionError::ExtensionError(msg) => ExtensionError::ExecutionFailed(msg),
+            IsolatedExtensionError::ExecutionFailed(msg) => ExtensionError::ExecutionFailed(msg),
         }
     }
 }
@@ -132,12 +134,12 @@ impl Extension for IsolatedExtensionProxy {
         &self.cached_metadata
     }
 
-    fn commands(&self) -> &[ExtensionCommand] {
-        &self.cached_commands
+    fn commands(&self) -> Vec<ExtensionCommand> {
+        self.cached_commands.clone()
     }
 
-    fn metrics(&self) -> &[MetricDescriptor] {
-        &self.cached_metrics
+    fn metrics(&self) -> Vec<MetricDescriptor> {
+        self.cached_metrics.clone()
     }
 
     async fn execute_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value> {
@@ -193,6 +195,31 @@ impl Extension for IsolatedExtensionProxy {
             .close_session(session_id)
             .await
             .map_err(Self::convert_error)
+    }
+
+    async fn process_chunk(&self, chunk: DataChunk) -> Result<StreamResult> {
+        self.isolated
+            .process_chunk(chunk)
+            .await
+            .map_err(Self::convert_error)
+    }
+
+    async fn start_push(&self, session_id: &str) -> Result<()> {
+        self.isolated
+            .start_push(session_id)
+            .await
+            .map_err(Self::convert_error)
+    }
+
+    async fn stop_push(&self, session_id: &str) -> Result<()> {
+        self.isolated
+            .stop_push(session_id)
+            .await
+            .map_err(Self::convert_error)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

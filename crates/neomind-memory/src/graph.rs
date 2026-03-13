@@ -13,7 +13,7 @@
 //!
 //! ## Example
 //!
-//! ```rust,no_run
+//! ```rust
 //! use neomind_memory::graph::{
 //!     MemoryGraph, Entity, EntityType, RelationType,
 //! };
@@ -22,16 +22,16 @@
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let graph = MemoryGraph::new();
 //!
-//! // Add entities
+//! // Add entities (synchronous)
 //! let user_id = graph.add_entity(Entity::new("user1", "Alice")
-//!     .with_type(EntityType::Person)).await;
+//!     .with_type(EntityType::Device));
 //! let device_id = graph.add_entity(Entity::new("device1", "Temperature Sensor")
-//!     .with_type(EntityType::Device)).await;
+//!     .with_type(EntityType::Device));
 //!
-//! // Link entities with a relationship
+//! // Link entities with a relationship (async)
 //! graph.add_relationship(&user_id, &device_id, RelationType::Owns).await?;
 //!
-//! // Find related entities
+//! // Find related entities (async)
 //! let related = graph.find_related(&user_id, RelationType::Owns, 1).await;
 //! # Ok(())
 //! # }
@@ -789,62 +789,56 @@ mod tests {
         assert_eq!(entity.description, Some("A test device".to_string()));
     }
 
-    #[tokio::test]
-    async fn test_memory_graph_creation() {
+    #[test]
+    fn test_memory_graph_creation() {
         let graph = MemoryGraph::new();
-        assert_eq!(graph.entity_count().await, 0);
-        assert_eq!(graph.relationship_count().await, 0);
+        assert_eq!(graph.entity_count(), 0);
+        assert_eq!(graph.relationship_count(), 0);
     }
 
-    #[tokio::test]
-    async fn test_add_and_get_entity() {
+    #[test]
+    fn test_add_and_get_entity() {
         let graph = MemoryGraph::new();
         let entity = Entity::new("device1", "Sensor").with_type(EntityType::Device);
 
-        graph.add_entity(entity).await;
-        assert!(graph.has_entity("device1").await);
+        graph.add_entity(entity);
+        assert!(graph.has_entity("device1"));
 
-        let retrieved = graph.get_entity("device1").await;
+        let retrieved = graph.get_entity("device1");
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().name, "Sensor");
     }
 
-    #[tokio::test]
-    async fn test_remove_entity() {
+    #[test]
+    fn test_remove_entity() {
         let graph = MemoryGraph::new();
-        graph
-            .create_entity("test", "Test", EntityType::Device)
-            .await;
-        assert!(graph.has_entity("test").await);
+        graph.create_entity("test", "Test", EntityType::Device);
+        assert!(graph.has_entity("test"));
 
-        graph.remove_entity("test").await;
-        assert!(!graph.has_entity("test").await);
+        graph.remove_entity("test");
+        assert!(!graph.has_entity("test"));
     }
 
     #[tokio::test]
     async fn test_add_relationship() {
         let graph = MemoryGraph::new();
-        graph
-            .create_entity("user1", "Alice", EntityType::Person)
-            .await;
-        graph
-            .create_entity("device1", "Sensor", EntityType::Device)
-            .await;
+        graph.create_entity("user1", "Alice", EntityType::Person);
+        graph.create_entity("device1", "Sensor", EntityType::Device);
 
         let rel_id = graph
             .add_relationship("user1", "device1", RelationType::Owns)
             .await;
 
         assert!(rel_id.is_ok());
-        assert_eq!(graph.relationship_count().await, 1);
+        assert_eq!(graph.relationship_count(), 1);
     }
 
     #[tokio::test]
     async fn test_find_neighbors() {
         let graph = MemoryGraph::new();
-        graph.create_entity("a", "A", EntityType::Person).await;
-        graph.create_entity("b", "B", EntityType::Device).await;
-        graph.create_entity("c", "C", EntityType::Device).await;
+        graph.create_entity("a", "A", EntityType::Person);
+        graph.create_entity("b", "B", EntityType::Device);
+        graph.create_entity("c", "C", EntityType::Device);
 
         graph
             .add_relationship("a", "b", RelationType::Owns)
@@ -855,25 +849,17 @@ mod tests {
             .await
             .unwrap();
 
-        let neighbors = graph.find_neighbors("a").await;
+        let neighbors = graph.find_neighbors("a");
         assert_eq!(neighbors.len(), 2);
     }
 
     #[tokio::test]
     async fn test_find_related() {
         let graph = MemoryGraph::new();
-        graph
-            .create_entity("user", "User", EntityType::Person)
-            .await;
-        graph
-            .create_entity("device1", "Device 1", EntityType::Device)
-            .await;
-        graph
-            .create_entity("device2", "Device 2", EntityType::Device)
-            .await;
-        graph
-            .create_entity("sub1", "Sub 1", EntityType::Device)
-            .await;
+        graph.create_entity("user", "User", EntityType::Person);
+        graph.create_entity("device1", "Device 1", EntityType::Device);
+        graph.create_entity("device2", "Device 2", EntityType::Device);
+        graph.create_entity("sub1", "Sub 1", EntityType::Device);
 
         graph
             .add_relationship("user", "device1", RelationType::Owns)
@@ -892,9 +878,9 @@ mod tests {
     #[tokio::test]
     async fn test_centrality() {
         let graph = MemoryGraph::new();
-        graph.create_entity("hub", "Hub", EntityType::Person).await;
-        graph.create_entity("a", "A", EntityType::Device).await;
-        graph.create_entity("b", "B", EntityType::Device).await;
+        graph.create_entity("hub", "Hub", EntityType::Person);
+        graph.create_entity("a", "A", EntityType::Device);
+        graph.create_entity("b", "B", EntityType::Device);
 
         graph
             .add_relationship("hub", "a", RelationType::Controls)
@@ -905,7 +891,7 @@ mod tests {
             .await
             .unwrap();
 
-        let metrics = graph.centrality("hub").await;
+        let metrics = graph.centrality("hub");
         assert!(metrics.is_some());
         let m = metrics.unwrap();
         assert_eq!(m.out_degree, 2);
@@ -913,52 +899,43 @@ mod tests {
         assert_eq!(m.degree, 2);
     }
 
-    #[tokio::test]
-    async fn test_get_entities_by_type() {
+    #[test]
+    fn test_get_entities_by_type() {
         let graph = MemoryGraph::new();
-        graph
-            .create_entity("d1", "Device 1", EntityType::Device)
-            .await;
-        graph
-            .create_entity("d2", "Device 2", EntityType::Device)
-            .await;
-        graph
-            .create_entity("u1", "User 1", EntityType::Person)
-            .await;
+        graph.create_entity("d1", "Device 1", EntityType::Device);
+        graph.create_entity("d2", "Device 2", EntityType::Device);
+        graph.create_entity("u1", "User 1", EntityType::Person);
 
-        let devices = graph.get_entities_by_type(EntityType::Device).await;
+        let devices = graph.get_entities_by_type(EntityType::Device);
         assert_eq!(devices.len(), 2);
 
-        let users = graph.get_entities_by_type(EntityType::Person).await;
+        let users = graph.get_entities_by_type(EntityType::Person);
         assert_eq!(users.len(), 1);
     }
 
-    #[tokio::test]
-    async fn test_associate_memory() {
+    #[test]
+    fn test_associate_memory() {
         let graph = MemoryGraph::new();
-        graph
-            .create_entity("entity1", "Entity", EntityType::Device)
-            .await;
+        graph.create_entity("entity1", "Entity", EntityType::Device);
 
         graph
             .associate_memory("entity1", "memory123")
-            .await
             .unwrap();
 
-        let entities = graph.get_entities_for_memory("memory123").await;
+        let entities = graph.get_entities_for_memory("memory123");
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].id, "entity1");
     }
 
-    #[tokio::test]
-    async fn test_entity_type_from_str() {
+    #[test]
+    fn test_entity_type_from_str() {
         assert_eq!(EntityType::from_string("person"), Some(EntityType::Person));
         assert_eq!(EntityType::from_string("device"), Some(EntityType::Device));
         assert_eq!(EntityType::from_string("unknown"), None);
     }
 
-    #[tokio::test]
-    async fn test_relation_type_from_str() {
+    #[test]
+    fn test_relation_type_from_str() {
         assert_eq!(RelationType::from_string("owns"), Some(RelationType::Owns));
         assert_eq!(
             RelationType::from_string("controls"),
@@ -970,19 +947,19 @@ mod tests {
     #[tokio::test]
     async fn test_clear_graph() {
         let graph = MemoryGraph::new();
-        graph.create_entity("e1", "E1", EntityType::Device).await;
-        graph.create_entity("e2", "E2", EntityType::Device).await;
+        graph.create_entity("e1", "E1", EntityType::Device);
+        graph.create_entity("e2", "E2", EntityType::Device);
         graph
             .add_relationship("e1", "e2", RelationType::Controls)
             .await
             .unwrap();
 
-        assert_eq!(graph.entity_count().await, 2);
-        assert_eq!(graph.relationship_count().await, 1);
+        assert_eq!(graph.entity_count(), 2);
+        assert_eq!(graph.relationship_count(), 1);
 
-        graph.clear().await;
+        graph.clear();
 
-        assert_eq!(graph.entity_count().await, 0);
-        assert_eq!(graph.relationship_count().await, 0);
+        assert_eq!(graph.entity_count(), 0);
+        assert_eq!(graph.relationship_count(), 0);
     }
 }

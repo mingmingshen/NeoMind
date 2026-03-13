@@ -20,9 +20,7 @@ docs/guides/en/
 ├── 12-commands.md            # Command queue module
 ├── 14-api.md                 # REST API module
 ├── 15-web.md                 # Frontend module
-├── 16-extension-dev.md       # Extension development guide
-├── extension-package.md      # Extension package (.nep) format
-└── extension-process-isolation.md  # Process isolation for extensions
+└── extension-system.md       # Extension System Complete Guide (recommended)
 ```
 
 ## Module Dependencies
@@ -93,7 +91,7 @@ graph TB
 | [Commands](12-commands.md) | 70% | Device command queue |
 | [API](14-api.md) | 90% | REST/WebSocket API, extension metrics |
 | [Web](15-web.md) | 80% | React frontend, Zustand state |
-| [Extension Dev](16-extension-dev.md) | New | Extension development tutorial |
+| [Extension System](extension-system.md) | **Recommended** | Complete extension system guide (architecture, development, capabilities, isolation, streaming, package format) |
 
 ## Tech Stack
 

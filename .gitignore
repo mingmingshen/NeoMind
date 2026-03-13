@@ -96,6 +96,7 @@ logs/
 *.tmp
 *.temp
 *.bak
+*.bak2
 *.backup
 :memory:
 -L

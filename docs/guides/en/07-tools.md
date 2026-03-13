@@ -222,6 +222,55 @@ pub struct ListAgentsTool {
 }
 ```
 
+### Interaction Tools
+
+NeoMind provides interaction tools for user communication during agent execution:
+
+#### AskUserTool
+
+Prompt the user for input during execution:
+
+```rust
+/// Ask user for input
+pub struct AskUserTool;
+
+// Input: { "question": "Which device to control?", "options": ["device_1", "device_2"] }
+// Output: { "type": "ask_user", "awaiting_user_response": true }
+```
+
+#### ConfirmActionTool
+
+Request confirmation for dangerous operations:
+
+```rust
+/// Confirm action before execution
+pub struct ConfirmActionTool;
+
+// Input: { "action": "delete all devices", "risk_level": "high" }
+// Output: { "type": "confirm_action", "awaiting_confirmation": true }
+```
+
+**Dangerous Action Detection**: The system automatically detects dangerous operations in both English and Chinese:
+
+| English Keywords | Chinese Keywords |
+|-----------------|------------------|
+| delete, remove, clear | 删除, 移除, 清空 |
+| reset, format | 重置, 格式化 |
+| close all, turn off all | 关闭所有 |
+| delete all, batch delete | 删除所有, 批量删除 |
+
+**Example**:
+```rust
+// These will trigger confirmation:
+tool.requires_confirmation("delete all rules");      // English
+tool.requires_confirmation("关闭所有设备");           // Chinese
+tool.requires_confirmation("删除所有自动化规则");    // Chinese
+
+// These will NOT trigger confirmation:
+tool.requires_confirmation("show temperature");
+tool.requires_confirmation("获取温度");
+```
+
 ### System Tools
 
 ```rust

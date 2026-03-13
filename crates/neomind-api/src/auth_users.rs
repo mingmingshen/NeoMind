@@ -204,13 +204,6 @@ impl AuthUserState {
                 category = "auth",
                 "No users found. Setup wizard will be shown to create admin account."
             );
-        } else {
-            info!(
-                category = "auth",
-                count = users.len(),
-                "Loaded {} user(s) from database",
-                users.len()
-            );
         }
 
         Self {

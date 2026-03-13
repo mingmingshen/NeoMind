@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next"
 import { Badge } from "@/components/ui/badge"
 import { ResponsiveTable, StatusBadge } from "@/components/shared"
-import { Eye, MoreVertical, Trash2, Cpu, Database, Waves } from "lucide-react"
+import { Eye, MoreVertical, Trash2, Cpu, Database, Waves, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
 import type { Device } from "@/types"
@@ -17,6 +17,7 @@ interface DeviceListProps {
   devicesPerPage: number
   onRefresh: () => void
   onViewDetails: (device: Device) => void
+  onEdit: (device: Device) => void
   onDelete: (id: string) => void
   onPageChange: (page: number) => void
   onAddDevice: () => void
@@ -34,6 +35,7 @@ export function DeviceList({
   devicesPerPage,
   onRefresh,
   onViewDetails,
+  onEdit,
   onDelete,
   onPageChange,
   onAddDevice: _onAddDevice,
@@ -184,6 +186,14 @@ export function DeviceList({
             onClick: (rowData) => {
               const device = rowData as unknown as Device
               onViewDetails(device)
+            },
+          },
+          {
+            label: t('common:edit'),
+            icon: <Pencil className="h-4 w-4" />,
+            onClick: (rowData) => {
+              const device = rowData as unknown as Device
+              onEdit(device)
             },
           },
           {

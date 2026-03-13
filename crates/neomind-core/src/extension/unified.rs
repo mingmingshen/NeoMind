@@ -86,11 +86,31 @@ impl UnifiedExtensionService {
     ) -> Self {
         let isolated_manager = Arc::new(IsolatedExtensionManager::new(config.isolated_config.clone()));
 
+        // Set the event dispatcher from isolated manager to registry
+        // This allows in-process extensions to receive events
+        let event_dispatcher = isolated_manager.event_dispatcher();
+        
+        // Set event dispatcher on the registry so in-process extensions can receive events
+        // We need to modify the registry in place
+        {
+            // Use the internal mutability pattern - registry should have interior mutability
+            // for the event_dispatcher field
+            registry.set_event_dispatcher(event_dispatcher.clone());
+        }
+
         Self {
             registry,
             isolated_manager,
             config,
         }
+    }
+
+    /// Get the event dispatcher for extension event distribution.
+    ///
+    /// This returns the EventDispatcher from the IsolatedExtensionManager,
+    /// which is used to push events to subscribed extensions.
+    pub fn get_event_dispatcher(&self) -> Arc<crate::extension::EventDispatcher> {
+        self.isolated_manager.event_dispatcher()
     }
 
     /// Create with default configuration
@@ -107,7 +127,7 @@ impl UnifiedExtensionService {
         let use_isolated = self.should_use_isolated(path).await?;
 
         if use_isolated {
-            tracing::info!(
+            tracing::debug!(
                 path = %path.display(),
                 "Loading extension in ISOLATED mode"
             );
@@ -132,7 +152,7 @@ impl UnifiedExtensionService {
 
             Ok(metadata)
         } else {
-            tracing::info!(
+            tracing::debug!(
                 path = %path.display(),
                 "Loading extension in IN-PROCESS mode"
             );
@@ -271,6 +291,20 @@ impl UnifiedExtensionService {
                 .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))
         } else {
             self.registry.health_check(id).await
+        }
+    }
+
+    /// Get extension statistics
+    pub async fn get_stats(&self, id: &str) -> Result<crate::extension::system::ExtensionStats, ExtensionError> {
+        // Check if it's an isolated extension
+        if self.isolated_manager.contains(id).await {
+            self.isolated_manager
+                .get_stats(id)
+                .await
+                .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))
+        } else {
+            // For in-process extensions, get stats from registry
+            self.registry.get_stats(id).await
         }
     }
 

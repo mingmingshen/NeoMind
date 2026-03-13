@@ -141,11 +141,37 @@ function UnknownComponent({ type, className }: UnknownComponentProps) {
 // Main Renderer
 // ============================================================================
 
+/**
+ * Device metric type for extension components
+ */
+export interface DeviceMetric {
+  id: string
+  name: string
+  type?: string
+  data_type?: string
+  value?: unknown
+  timestamp?: number
+}
+
+/**
+ * Device type for extension components
+ */
+export interface DeviceForExtension {
+  id: string
+  name: string
+  type?: string
+  metrics?: DeviceMetric[]
+}
+
 export interface RenderComponentProps {
   component: DashboardComponent
   className?: string
   style?: React.CSSProperties
   onError?: (error: Error) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onDataSourceChange?: (dataSource: any) => void
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onConfigChange?: (config: any) => void
 }
 
 /**
@@ -162,6 +188,8 @@ const ComponentRenderer = memo(function ComponentRenderer({
   className,
   style,
   onError,
+  onDataSourceChange,
+  onConfigChange,
 }: RenderComponentProps) {
   const componentType = component.type
   const isDynamic = dynamicRegistry.isDynamic(componentType)
@@ -336,6 +364,9 @@ const ComponentRenderer = memo(function ComponentRenderer({
         className
       ),
       style,
+      // Pass callbacks for components to persist their configuration
+      onDataSourceChange,
+      onConfigChange,
     }
 
     // Special handling for agent-monitor-widget: extract agentId from dataSource
@@ -344,7 +375,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
     }
 
     return builtProps
-  }, [componentId, componentType, componentTitle, componentConfig, componentDataSource, componentDisplay, className, style])
+  }, [componentId, componentType, componentTitle, componentConfig, componentDataSource, componentDisplay, className, style, onDataSourceChange, onConfigChange])
 
   // Show loading state for dynamic components
   if (isDynamic && loading) {

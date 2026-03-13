@@ -234,7 +234,26 @@ async function fetchHistoricalTelemetry(
     // Fetch telemetry using the exact metricId from device type definition
     // No fallback logic needed since metricId is already the correct key from device type
     const response = await api.getDeviceTelemetry(deviceId, metricId, startSec, endSec, fetchLimit)
-    const metricData = response?.data && typeof response.data === 'object' ? (response.data as Record<string, unknown[]>)[metricId] : undefined
+
+    // Try to find the metric data - first try exact match, then try case-insensitive
+    let metricData: unknown[] | undefined = undefined
+    if (response?.data && typeof response.data === 'object') {
+      const dataObj = response.data as Record<string, unknown>
+      // Try exact match first
+      if (Array.isArray(dataObj[metricId])) {
+        metricData = dataObj[metricId] as unknown[]
+      } else {
+        // Try case-insensitive match
+        const lowerMetricId = metricId.toLowerCase()
+        for (const key of Object.keys(dataObj)) {
+          if (key.toLowerCase() === lowerMetricId && Array.isArray(dataObj[key])) {
+            metricData = dataObj[key] as unknown[]
+            console.log('[ImageHistory Debug] Found metric data with case-insensitive match:', key, '->', metricId)
+            break
+          }
+        }
+      }
+    }
 
     // TelemetryDataResponse has structure: { data: Record<string, TelemetryPoint[]> }
     if (response?.data && typeof response.data === 'object' && Array.isArray(metricData) && metricData.length > 0) {

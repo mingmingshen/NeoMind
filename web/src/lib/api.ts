@@ -368,6 +368,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(req),
     }),
+  updateDevice: (id: string, req: Partial<AddDeviceRequest>) =>
+    fetchAPI<{ device_id: string; updated: boolean }>(`/devices/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(req),
+    }),
   deleteDevice: (id: string) =>
     fetchAPI<{ device_id: string; deleted: boolean }>(`/devices/${id}`, {
       method: 'DELETE',

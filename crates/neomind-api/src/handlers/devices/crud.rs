@@ -154,16 +154,18 @@ pub async fn list_devices_handler(
         let status = convert_status(status);
 
         // Use cached last_seen instead of querying again
-        // Handle the case where last_seen is 0 (never seen) - use registration time placeholder
+        // Handle the case where last_seen is 0 (never seen) - return None
         let last_seen = if last_seen_ts == 0 {
-            // Device has never been seen - show as "never" in UI
-            chrono::DateTime::from_timestamp(0, 0).unwrap_or_else(chrono::Utc::now)
+            // Device has never been seen - return None to show as "-" in UI
+            None
         } else {
             chrono::DateTime::from_timestamp(last_seen_ts, 0)
-                .unwrap_or_else(chrono::Utc::now)
+                .map(|dt| dt.to_rfc3339())
         };
 
-        let instance = config_to_device_instance(&config, status, last_seen);
+        let last_seen_dt = chrono::DateTime::from_timestamp(last_seen_ts, 0)
+            .unwrap_or_else(|| chrono::Utc::now());
+        let instance = config_to_device_instance(&config, status, last_seen_dt);
 
         // Get template info for metric/command counts
         let template = state
@@ -184,7 +186,7 @@ pub async fn list_devices_handler(
             device_type: config.device_type.clone(),
             adapter_type: config.adapter_type.clone(),
             status: format_status_to_str(&instance.status).to_string(),
-            last_seen: instance.last_seen.to_rfc3339(),
+            last_seen,
             online,
             plugin_id,
             plugin_name,
@@ -249,9 +251,17 @@ pub async fn get_device_handler(
     };
     let status = convert_status(status);
 
-    let last_seen = chrono::DateTime::from_timestamp(device_status.last_seen, 0)
-        .unwrap_or_else(chrono::Utc::now);
-    let instance = config_to_device_instance(&config, status, last_seen);
+    // Handle the case where last_seen is 0 (never seen) - return null
+    let last_seen = if device_status.last_seen == 0 {
+        None
+    } else {
+        chrono::DateTime::from_timestamp(device_status.last_seen, 0)
+            .map(|dt| dt.to_rfc3339())
+            
+    };
+    let last_seen_dt = chrono::DateTime::from_timestamp(device_status.last_seen, 0)
+        .unwrap_or_else(|| chrono::Utc::now());
+    let instance = config_to_device_instance(&config, status, last_seen_dt);
 
     // Get plugin info for display
     let (plugin_id, plugin_name) = get_plugin_info(&config.adapter_id);
@@ -264,7 +274,7 @@ pub async fn get_device_handler(
         "adapter_type": config.adapter_type,
         "connection_config": config.connection_config,
         "status": format_status_to_str(&instance.status),
-        "last_seen": instance.last_seen.to_rfc3339(),
+        "last_seen": last_seen,
         "online": online,
         "metric_count": metric_count,
         "command_count": command_count,
@@ -304,9 +314,17 @@ pub async fn get_device_current_handler(
     };
     let status = convert_status(status);
 
-    let last_seen = chrono::DateTime::from_timestamp(device_status.last_seen, 0)
-        .unwrap_or_else(chrono::Utc::now);
-    let instance = config_to_device_instance(&config, status, last_seen);
+    // Handle the case where last_seen is 0 (never seen) - return null
+    let last_seen = if device_status.last_seen == 0 {
+        None
+    } else {
+        chrono::DateTime::from_timestamp(device_status.last_seen, 0)
+            .map(|dt| dt.to_rfc3339())
+            
+    };
+    let last_seen_dt = chrono::DateTime::from_timestamp(device_status.last_seen, 0)
+        .unwrap_or_else(|| chrono::Utc::now());
+    let instance = config_to_device_instance(&config, status, last_seen_dt);
 
     // Get plugin info
     let (plugin_id, plugin_name) = get_plugin_info(&config.adapter_id);
@@ -459,7 +477,7 @@ pub async fn get_device_current_handler(
             "device_type": config.device_type,
             "adapter_type": config.adapter_type,
             "status": format_status_to_str(&instance.status),
-            "last_seen": instance.last_seen.to_rfc3339(),
+            "last_seen": last_seen,
             "online": online,
             "plugin_id": plugin_id,
             "plugin_name": plugin_name,
@@ -487,7 +505,7 @@ pub async fn get_devices_current_batch_handler(
     let mut devices = std::collections::HashMap::new();
 
     for device_id in req.device_ids {
-        // Get current metrics from device_service (in-memory cache)
+        // Get current metrics from device_service
         let current_values = state
             .devices
             .service

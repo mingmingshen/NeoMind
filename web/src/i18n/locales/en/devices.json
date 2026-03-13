@@ -168,6 +168,11 @@
     "error": "Failed to add",
     "retryMessage": "Failed to add device, please try again later"
   },
+  "edit": {
+    "title": "Edit Device",
+    "success": "Device updated",
+    "error": "Failed to update device"
+  },
   "discoveryDialog": {
     "title": "Device Discovery",
     "hostPlaceholder": "Enter host address (e.g. localhost, 192.168.1.1)",

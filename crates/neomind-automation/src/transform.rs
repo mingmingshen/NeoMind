@@ -534,7 +534,7 @@ impl JsTransformExecutor {
                 if let Some(f) = n.as_f64() {
                     metrics.push(TransformedMetric {
                         device_id: device_id.to_string(),
-                        metric: format!("{}.value", output_prefix),
+                        metric: output_prefix.to_string(),
                         value: f,
                         timestamp,
                         quality: Some(1.0),
@@ -548,7 +548,7 @@ impl JsTransformExecutor {
                     .unwrap_or_else(|_| s.chars().map(|c| c as u32 as f64).sum::<f64>() % 10000.0);
                 metrics.push(TransformedMetric {
                     device_id: device_id.to_string(),
-                    metric: format!("{}.value", output_prefix),
+                    metric: output_prefix.to_string(),
                     value,
                     timestamp,
                     quality: Some(1.0),
@@ -558,7 +558,7 @@ impl JsTransformExecutor {
             Value::Bool(b) => {
                 metrics.push(TransformedMetric {
                     device_id: device_id.to_string(),
-                    metric: format!("{}.value", output_prefix),
+                    metric: output_prefix.to_string(),
                     value: if *b { 1.0 } else { 0.0 },
                     timestamp,
                     quality: Some(1.0),
@@ -568,7 +568,7 @@ impl JsTransformExecutor {
             _ => {
                 metrics.push(TransformedMetric {
                     device_id: device_id.to_string(),
-                    metric: format!("{}.value", output_prefix),
+                    metric: output_prefix.to_string(),
                     value: 0.0,
                     timestamp,
                     quality: Some(0.0),
@@ -579,7 +579,7 @@ impl JsTransformExecutor {
         if metrics.is_empty() {
             metrics.push(TransformedMetric {
                 device_id: device_id.to_string(),
-                metric: format!("{}.value", output_prefix),
+                metric: output_prefix.to_string(),
                 value: 0.0,
                 timestamp,
                 quality: Some(0.0),

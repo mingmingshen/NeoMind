@@ -20,6 +20,7 @@ mod tests {
             loaded_at: Some(1234567890),
             commands: vec![],
             metrics: vec![],
+            config_parameters: None,
         }
     }
 
@@ -48,6 +49,7 @@ mod tests {
             loaded_at: None,
             commands: vec![],
             metrics: vec![],
+            config_parameters: None,
         };
 
         let serialized = serde_json::to_value(&dto).unwrap();
@@ -199,6 +201,7 @@ mod tests {
                 loaded_at: None,
                 commands: vec![],
                 metrics: vec![],
+                config_parameters: None,
             };
             assert_eq!(dto.state, state);
         }
@@ -238,6 +241,7 @@ mod tests {
                 max: Some(120.0),
                 required: true,
             }],
+            config_parameters: None,
         };
 
         assert_eq!(dto.commands.len(), 1);
@@ -280,6 +284,7 @@ mod tests {
                 max: Some(100.0),
                 required: false,
             }],
+            config_parameters: None,
         };
 
         let serialized = serde_json::to_value(&original).unwrap();
@@ -338,6 +343,7 @@ mod tests {
                 loaded_at: None,
                 commands: vec![],
                 metrics: vec![],
+                config_parameters: None,
             };
             assert_eq!(dto.version, version);
         }

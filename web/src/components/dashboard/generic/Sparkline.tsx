@@ -303,7 +303,7 @@ export function Sparkline({
     if (sources.length > 0 && sources[0].timeWindow?.type) {
       return sources[0].timeWindow.type
     }
-    return timeWindow ?? 'last_1hour'
+    return timeWindow ?? 'last_24hours'
   }, [dataSource, timeWindow])
 
   // Normalize data sources to telemetry type with transform settings

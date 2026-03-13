@@ -1288,8 +1288,16 @@ impl DeviceService {
         }
     }
 
-    /// Get current metric values for a device (latest from cache)
+    /// Get current metric values for a device (latest from storage)
     /// For devices with no defined metrics (simple mode), returns all available metrics from storage
+    ///
+    /// This method returns the TRUE LATEST value for each metric, regardless of time.
+    /// It uses the `latest()` method which queries the most recent data point directly.
+    /// There is no time range limitation - this is intentional because "current value"
+    /// should always be the most recent value available.
+    ///
+    /// # Arguments
+    /// * `device_id` - The device ID to query
     pub async fn get_current_metrics(
         &self,
         device_id: &str,
@@ -1298,52 +1306,59 @@ impl DeviceService {
         let (_, template) = self.get_device_with_template(device_id).await?;
 
         let mut result = HashMap::new();
-        let now = chrono::Utc::now().timestamp();
+
+        // Get telemetry storage reference
+        let storage_guard = self.telemetry_storage.read().await;
+        let storage = match storage_guard.as_ref() {
+            Some(s) => s,
+            None => {
+                tracing::warn!("Telemetry storage not configured for device {}", device_id);
+                return Ok(result);
+            }
+        };
 
         // If template has defined metrics, query those specifically
         if !template.metrics.is_empty() {
             for metric in &template.metrics {
-                // Query latest value (last 1 hour)
-                match self
-                    .query_telemetry(device_id, &metric.name, Some(now - 3600), Some(now))
-                    .await
-                {
-                    Ok(points) => {
-                        if let Some((_, value)) = points.last() {
-                            result.insert(metric.name.clone(), value.clone());
-                        }
+                // Use latest() to get the true latest value (no time range limitation)
+                match storage.latest(device_id, &metric.name).await {
+                    Ok(Some(point)) => {
+                        result.insert(metric.name.clone(), point.value);
                     }
-                    Err(_) => {
-                        // Metric not available yet
+                    Ok(None) => {
+                        // No data available yet for this metric
+                    }
+                    Err(e) => {
+                        tracing::debug!(
+                            "Failed to get latest value for {}/{}: {}",
+                            device_id,
+                            metric.name,
+                            e
+                        );
                     }
                 }
             }
         } else {
             // Simple mode: no metrics defined - return all available metrics from storage
-            // Query all metrics for this device from the last hour
-            // Use telemetry_storage to list all metrics for this device
-            if let Some(storage) = self.telemetry_storage.read().await.as_ref() {
-                if let Ok(all_metrics) = storage.list_metrics(device_id).await {
-                    for metric_name in all_metrics {
-                        if !metric_name.is_empty() {
-                            // Query latest value for this metric
-                            match self
-                                .query_telemetry(
+            // List all metrics for this device and get the latest value for each
+            if let Ok(all_metrics) = storage.list_metrics(device_id).await {
+                for metric_name in all_metrics {
+                    if !metric_name.is_empty() {
+                        // Use latest() to get the true latest value (no time range limitation)
+                        match storage.latest(device_id, &metric_name).await {
+                            Ok(Some(point)) => {
+                                result.insert(metric_name.clone(), point.value);
+                            }
+                            Ok(None) => {
+                                // No data available yet for this metric
+                            }
+                            Err(e) => {
+                                tracing::debug!(
+                                    "Failed to get latest value for {}/{}: {}",
                                     device_id,
-                                    &metric_name,
-                                    Some(now - 3600),
-                                    Some(now),
-                                )
-                                .await
-                            {
-                                Ok(points) => {
-                                    if let Some((_, value)) = points.last() {
-                                        result.insert(metric_name.clone(), value.clone());
-                                    }
-                                }
-                                Err(_) => {
-                                    // Metric not available yet, skip
-                                }
+                                    metric_name,
+                                    e
+                                );
                             }
                         }
                     }

@@ -128,8 +128,7 @@ export function ExtensionsPage() {
     toast({
       title: t("extensions:extensionUploaded"),
     })
-    // Close the upload dialog, no need to show details dialog
-    setUploadDialogOpen(false)
+    // Dialog will be closed by ExtensionUploadDialog after showing success message
   }
 
   return (

@@ -186,6 +186,36 @@ fn extract_string_field(obj: &serde_json::Map<String, serde_json::Value>, key: &
         .unwrap_or_default()
 }
 
+/// Sanitize JSON string by removing or escaping illegal control characters.
+/// LLM may output raw control characters (like \n, \r, \t) that are not properly
+/// escaped, which breaks JSON parsing.
+fn sanitize_json_string(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            // Handle escaped characters - pass them through
+            '\\' => {
+                result.push(ch);
+                if let Some(next) = chars.next() {
+                    result.push(next);
+                }
+            }
+            // Replace illegal control characters (0x00-0x1F) except for
+            // tab (0x09), newline (0x0A), and carriage return (0x0D)
+            '\u{0000}'..='\u{0008}' | '\u{000B}' | '\u{000C}' | '\u{000E}'..='\u{001F}' => {
+                // Replace with space to preserve string structure
+                result.push(' ');
+            }
+            // Pass through all other characters including valid whitespace
+            _ => result.push(ch),
+        }
+    }
+
+    result
+}
+
 /// Extract JSON from mixed text (when model outputs text before JSON).
 /// Returns the extracted JSON string if found, None otherwise.
 fn extract_json_from_mixed_text(text: &str) -> Option<String> {
@@ -1369,7 +1399,7 @@ Respond in JSON format:
             },
             model: None,
             stream: false,
-            tools: Some(Vec::new()),
+            tools: None,
         };
 
         // Add timeout for LLM generation (5 minutes max)
@@ -4987,7 +5017,7 @@ Respond in JSON format:
             },
             model: None,
             stream: false,
-            tools: Some(Vec::new()),
+            tools: None,
         };
 
         // Add timeout for LLM generation (5 minutes max)
@@ -5029,6 +5059,10 @@ Respond in JSON format:
                     json_str
                 };
 
+                // Sanitize control characters that may break JSON parsing
+                let sanitized_json = sanitize_json_string(json_str);
+                let json_str = sanitized_json.as_str();
+
                 // Parse the LLM response
                 // Note: situation_analysis and conclusion can be either String or Object
                 // depending on LLM output format, so we use Value and convert later
@@ -5058,7 +5092,7 @@ Respond in JSON format:
                     #[serde(alias = "step_number", default)]
                     step: serde_json::Value,
                     #[serde(alias = "output", default)]
-                    description: String,
+                    description: Option<String>,
                     #[serde(default)]
                     confidence: f32,
                 }
@@ -5075,13 +5109,13 @@ Respond in JSON format:
                 #[derive(serde::Deserialize)]
                 struct DecisionFromLlm {
                     #[serde(default)]
-                    decision_type: String,
+                    decision_type: Option<String>,
                     #[serde(default)]
-                    description: String,
+                    description: Option<String>,
                     #[serde(default)]
-                    action: String,
+                    action: Option<String>,
                     #[serde(default)]
-                    rationale: String,
+                    rationale: Option<String>,
                     #[serde(default)]
                     confidence: f32,
                 }
@@ -5096,7 +5130,7 @@ Respond in JSON format:
                             .enumerate()
                             .map(|(_i, step)| neomind_storage::ReasoningStep {
                                 step_number: extract_step_number(&step.step, (_i + 1) as u32),
-                                description: step.description,
+                                description: step.description.unwrap_or_default(),
                                 step_type: "llm_analysis".to_string(),
                                 input: Some(text_data_summary.join("\n")),
                                 output: situation_analysis.clone(),
@@ -5108,10 +5142,10 @@ Respond in JSON format:
                             .decisions
                             .into_iter()
                             .map(|d| neomind_storage::Decision {
-                                decision_type: d.decision_type,
-                                description: d.description,
-                                action: d.action,
-                                rationale: d.rationale,
+                                decision_type: d.decision_type.unwrap_or_default(),
+                                description: d.description.unwrap_or_default(),
+                                action: d.action.unwrap_or_default(),
+                                rationale: d.rationale.unwrap_or_default(),
                                 expected_outcome: conclusion.clone(),
                             })
                             .collect();
@@ -5189,7 +5223,7 @@ Respond in JSON format:
                                                     &step.step,
                                                     (_i + 1) as u32,
                                                 ),
-                                                description: step.description,
+                                                description: step.description.unwrap_or_default(),
                                                 step_type: "llm_analysis".to_string(),
                                                 input: Some(text_data_summary.join("\n")),
                                                 output: situation_analysis.clone(),
@@ -5201,10 +5235,10 @@ Respond in JSON format:
                                         .decisions
                                         .into_iter()
                                         .map(|decision| neomind_storage::Decision {
-                                            decision_type: decision.decision_type,
-                                            description: decision.description,
-                                            action: decision.action,
-                                            rationale: decision.rationale,
+                                            decision_type: decision.decision_type.unwrap_or_default(),
+                                            description: decision.description.unwrap_or_default(),
+                                            action: decision.action.unwrap_or_default(),
+                                            rationale: decision.rationale.unwrap_or_default(),
                                             expected_outcome: format!(
                                                 "Confidence: {:.0}%",
                                                 decision.confidence * 100.0
@@ -5249,7 +5283,7 @@ Respond in JSON format:
                                                     &step.step,
                                                     (_i + 1) as u32,
                                                 ),
-                                                description: step.description,
+                                                description: step.description.unwrap_or_default(),
                                                 step_type: "llm_analysis".to_string(),
                                                 input: Some(text_data_summary.join("\n")),
                                                 output: situation_analysis.clone(),
@@ -5261,10 +5295,10 @@ Respond in JSON format:
                                         .decisions
                                         .into_iter()
                                         .map(|decision| neomind_storage::Decision {
-                                            decision_type: decision.decision_type,
-                                            description: decision.description,
-                                            action: decision.action,
-                                            rationale: decision.rationale,
+                                            decision_type: decision.decision_type.unwrap_or_default(),
+                                            description: decision.description.unwrap_or_default(),
+                                            action: decision.action.unwrap_or_default(),
+                                            rationale: decision.rationale.unwrap_or_default(),
                                             expected_outcome: format!(
                                                 "Confidence: {:.0}%",
                                                 decision.confidence * 100.0

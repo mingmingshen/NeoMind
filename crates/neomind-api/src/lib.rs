@@ -6,6 +6,7 @@ pub mod audit;
 pub mod auth;
 pub mod auth_users;
 pub mod cache;
+pub mod capability_providers;
 pub mod config;
 pub mod crypto;
 pub mod event_services;

@@ -268,8 +268,8 @@ pub fn cache_key(path: &str, query: Option<&str>) -> String {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_cache_put_get() {
+    #[test]
+    fn test_cache_put_get() {
         let cache = ResponseCache::with_default_ttl();
 
         let response = CachedResponse {
@@ -277,15 +277,13 @@ mod tests {
             content_type: "application/json".to_string(),
         };
 
-        cache
-            .put(
-                "test_key".to_string(),
-                response.clone(),
-                Some(Duration::from_secs(10)),
-            )
-            .await;
+        cache.put(
+            "test_key".to_string(),
+            response.clone(),
+            Some(Duration::from_secs(10)),
+        );
 
-        let retrieved = cache.get("test_key").await;
+        let retrieved = cache.get("test_key");
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().body, "{\"test\": true}");
     }
@@ -300,27 +298,25 @@ mod tests {
         };
 
         // Put with very short TTL (1 second)
-        cache
-            .put(
-                "test_key".to_string(),
-                response,
-                Some(Duration::from_secs(1)),
-            )
-            .await;
+        cache.put(
+            "test_key".to_string(),
+            response,
+            Some(Duration::from_secs(1)),
+        );
 
         // Verify it exists initially
-        let retrieved = cache.get("test_key").await;
+        let retrieved = cache.get("test_key");
         assert!(retrieved.is_some());
 
         // Wait for expiration (plus a buffer)
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        let retrieved = cache.get("test_key").await;
+        let retrieved = cache.get("test_key");
         assert!(retrieved.is_none());
     }
 
-    #[tokio::test]
-    async fn test_cache_invalidate() {
+    #[test]
+    fn test_cache_invalidate() {
         let cache = ResponseCache::with_default_ttl();
 
         let response = CachedResponse {
@@ -328,16 +324,14 @@ mod tests {
             content_type: "application/json".to_string(),
         };
 
-        cache
-            .put(
-                "test_key".to_string(),
-                response,
-                Some(Duration::from_secs(10)),
-            )
-            .await;
-        cache.invalidate("test_key").await;
+        cache.put(
+            "test_key".to_string(),
+            response,
+            Some(Duration::from_secs(10)),
+        );
+        cache.invalidate("test_key");
 
-        let retrieved = cache.get("test_key").await;
+        let retrieved = cache.get("test_key");
         assert!(retrieved.is_none());
     }
 

@@ -1873,7 +1873,7 @@ mod tests {
     #[test]
     fn test_chat_config_default() {
         let config = ChatConfig::default();
-        assert_eq!(config.model, "qwen3-vl:2b");
+        assert_eq!(config.model, "ministral-3:3b");
         assert_eq!(config.temperature, 0.4);
         assert_eq!(config.top_p, 0.7);
         assert_eq!(config.max_tokens, 4096);

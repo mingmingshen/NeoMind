@@ -52,25 +52,48 @@ macro_rules! neomind_export_with_constructor {
                 $crate::SDK_ABI_VERSION
             }
 
+            /// Static storage for metadata strings to avoid dangling pointers.
+            /// These are leaked intentionally to ensure they remain valid for the
+            /// lifetime of the extension library.
+            static METADATA_STORAGE: std::sync::OnceLock<(
+                std::ffi::CString,
+                std::ffi::CString,
+                std::ffi::CString,
+                std::ffi::CString,
+                std::ffi::CString,
+                usize,  // metric_count
+                usize,  // command_count
+            )> = std::sync::OnceLock::new();
+
             #[no_mangle]
             pub extern "C" fn neomind_extension_metadata() -> $crate::CExtensionMetadata {
                 use std::ffi::CStr;
 
-                // Create a temporary instance to get metadata
-                let ext = <$extension_type>::$constructor();
-                let meta = <$extension_type as $crate::Extension>::metadata(&ext);
+                // Initialize static storage once - this creates only ONE extension instance
+                // for the entire lifetime of the library to get metadata
+                let (id, name, version, description, author, metric_count, command_count) = METADATA_STORAGE.get_or_init(|| {
+                    // Create a temporary instance to get metadata
+                    // This is the ONLY place where we create an instance for metadata
+                    let ext = <$extension_type>::$constructor();
+                    let meta = <$extension_type as $crate::Extension>::metadata(&ext);
+                    let metrics = <$extension_type as $crate::Extension>::metrics(&ext);
+                    let commands = <$extension_type as $crate::Extension>::commands(&ext);
 
-                // Convert to C-compatible format
-                let id = std::ffi::CString::new(&meta.id[..]).unwrap_or_else(|_| std::ffi::CString::new("unknown").unwrap());
-                let name = std::ffi::CString::new(&meta.name[..]).unwrap_or_else(|_| std::ffi::CString::new("Unknown").unwrap());
-                let version_str = meta.version.to_string();
-                let version = std::ffi::CString::new(&version_str[..]).unwrap_or_else(|_| std::ffi::CString::new("0.0.0").unwrap());
-                let description = meta.description.as_ref()
-                    .map(|d| std::ffi::CString::new(&d[..]).unwrap_or_else(|_| std::ffi::CString::new("").unwrap()))
-                    .unwrap_or_else(|| std::ffi::CString::new("").unwrap());
-                let author = meta.author.as_ref()
-                    .map(|a| std::ffi::CString::new(&a[..]).unwrap_or_else(|_| std::ffi::CString::new("").unwrap()))
-                    .unwrap_or_else(|| std::ffi::CString::new("").unwrap());
+                    // Convert to C-compatible format and leak the strings
+                    let id = std::ffi::CString::new(&meta.id[..]).unwrap_or_else(|_| std::ffi::CString::new("unknown").unwrap());
+                    let name = std::ffi::CString::new(&meta.name[..]).unwrap_or_else(|_| std::ffi::CString::new("Unknown").unwrap());
+                    let version_str = meta.version.to_string();
+                    let version = std::ffi::CString::new(&version_str[..]).unwrap_or_else(|_| std::ffi::CString::new("0.0.0").unwrap());
+                    let description = meta.description.as_ref()
+                        .map(|d| std::ffi::CString::new(&d[..]).unwrap_or_else(|_| std::ffi::CString::new("").unwrap()))
+                        .unwrap_or_else(|| std::ffi::CString::new("").unwrap());
+                    let author = meta.author.as_ref()
+                        .map(|a| std::ffi::CString::new(&a[..]).unwrap_or_else(|_| std::ffi::CString::new("").unwrap()))
+                        .unwrap_or_else(|| std::ffi::CString::new("").unwrap());
+
+                    // ext is dropped here, releasing any resources
+                    (id, name, version, description, author, metrics.len(), commands.len())
+                });
 
                 $crate::CExtensionMetadata {
                     abi_version: $crate::SDK_ABI_VERSION,
@@ -79,8 +102,8 @@ macro_rules! neomind_export_with_constructor {
                     version: version.as_ptr(),
                     description: description.as_ptr(),
                     author: author.as_ptr(),
-                    metric_count: 0,
-                    command_count: 0,
+                    metric_count: *metric_count,
+                    command_count: *command_count,
                 }
             }
 

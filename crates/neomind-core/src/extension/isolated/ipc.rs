@@ -42,6 +42,18 @@ pub enum IpcMessage {
         request_id: u64,
     },
 
+    /// Get event subscriptions
+    GetEventSubscriptions {
+        /// Request ID for tracking
+        request_id: u64,
+    },
+
+    /// Get extension statistics (start_count, stop_count, error_count, etc.)
+    GetStats {
+        /// Request ID for tracking
+        request_id: u64,
+    },
+
     /// Graceful shutdown
     Shutdown,
 
@@ -87,6 +99,109 @@ pub enum IpcMessage {
     GetStreamCapability {
         /// Request ID for tracking
         request_id: u64,
+    },
+
+    // =========================================================================
+    // Stateless Mode Support
+    // =========================================================================
+
+    /// Process a single data chunk (stateless mode)
+    ///
+    /// Used for one-shot processing where each request is independent.
+    /// Examples: image analysis, single inference, data transformation.
+    ProcessChunk {
+        /// Request ID for tracking response
+        request_id: u64,
+        /// Chunk data
+        chunk: StreamDataChunk,
+    },
+
+    // =========================================================================
+    // Push Mode Support
+    // =========================================================================
+
+    /// Start pushing data for a session (Push mode)
+    ///
+    /// Called after InitStreamSession for Push mode extensions.
+    /// The extension should start its data production loop and push
+    /// outputs via PushOutput messages.
+    StartPush {
+        /// Request ID for tracking
+        request_id: u64,
+        /// Session ID
+        session_id: String,
+    },
+
+    /// Stop pushing data for a session (Push mode)
+    ///
+    /// Called when the client disconnects or session is closed.
+    StopPush {
+        /// Request ID for tracking
+        request_id: u64,
+        /// Session ID
+        session_id: String,
+    },
+
+    /// Execute multiple commands in a batch
+    ExecuteBatch {
+        /// Commands to execute
+        commands: Vec<super::ipc_batch_types::BatchCommand>,
+        /// Request ID for tracking
+        request_id: u64,
+    },
+
+    // =========================================================================
+    // Capability Invocation (for WASM extensions)
+    // =========================================================================
+
+    /// Invoke a capability from WASM extension
+    ///
+    /// This message is sent from the extension-runner to the main process
+    /// when a WASM extension calls a capability via host_invoke_capability.
+    InvokeCapability {
+        /// Request ID for tracking
+        request_id: u64,
+        /// Capability name (e.g., "device_metrics_read")
+        capability: String,
+        /// Parameters for the capability
+        params: serde_json::Value,
+    },
+
+    /// Subscribe to events from WASM extension
+    SubscribeEvents {
+        /// Request ID for tracking
+        request_id: u64,
+        /// Event types to subscribe to
+        event_types: Vec<String>,
+        /// Optional filter
+        filter: Option<serde_json::Value>,
+    },
+
+    /// Unsubscribe from events
+    UnsubscribeEvents {
+        /// Request ID for tracking
+        request_id: u64,
+        /// Subscription ID
+        subscription_id: String,
+    },
+
+    /// Poll for events
+    PollEvents {
+        /// Request ID for tracking
+        request_id: u64,
+        /// Subscription ID
+        subscription_id: String,
+    },
+
+    /// Event push from host to extension
+    /// This is sent by host without a prior request from extension
+    EventPush {
+        /// Event type
+        event_type: String,
+        /// Event payload
+        payload: serde_json::Value,
+        /// Event timestamp
+        timestamp: i64,
     },
 }
 
@@ -159,6 +274,28 @@ pub enum IpcResponse {
         metadata: super::super::system::ExtensionMetadata,
     },
 
+    /// Event subscriptions response
+    EventSubscriptions {
+        /// Request ID
+        request_id: u64,
+        /// Event types the extension subscribes to
+        event_types: Vec<String>,
+    },
+
+    /// Statistics response
+    Stats {
+        /// Request ID
+        request_id: u64,
+        /// Number of times the extension has been started
+        start_count: u64,
+        /// Number of times the extension has been stopped
+        stop_count: u64,
+        /// Number of errors encountered
+        error_count: u64,
+        /// Last error message
+        last_error: Option<String>,
+    },
+
     /// Pong response
     Pong {
         /// Original timestamp
@@ -216,6 +353,54 @@ pub enum IpcResponse {
     },
 
     // =========================================================================
+    // Stateless Mode Response
+    // =========================================================================
+
+    /// Stateless chunk processing result
+    ChunkResult {
+        /// Request ID
+        request_id: u64,
+        /// Input sequence
+        input_sequence: u64,
+        /// Output sequence
+        output_sequence: u64,
+        /// Result data
+        data: Vec<u8>,
+        /// Data type MIME
+        data_type: String,
+        /// Processing time in ms
+        processing_ms: f32,
+        /// Optional metadata
+        metadata: Option<serde_json::Value>,
+    },
+
+    // =========================================================================
+    // Push Mode Response
+    // =========================================================================
+
+    /// Push mode started
+    PushStarted {
+        /// Request ID
+        request_id: u64,
+        /// Session ID
+        session_id: String,
+        /// Success status
+        success: bool,
+        /// Error message if failed
+        error: Option<String>,
+    },
+
+    /// Push mode stopped
+    PushStopped {
+        /// Request ID
+        request_id: u64,
+        /// Session ID
+        session_id: String,
+        /// Success status
+        success: bool,
+    },
+
+    // =========================================================================
     // Push Mode - Extension-initiated messages
     // =========================================================================
 
@@ -245,6 +430,104 @@ pub enum IpcResponse {
         /// Error message
         message: String,
     },
+
+    /// Batch execution results
+    BatchResults {
+        /// Request ID
+        request_id: u64,
+        /// Individual command results
+        results: Vec<super::ipc_batch_types::BatchResult>,
+        /// Total execution time in milliseconds
+        total_elapsed_ms: f64,
+    },
+
+    // =========================================================================
+    // Capability Invocation Responses (for WASM extensions)
+    // =========================================================================
+
+    /// Capability invocation result
+    CapabilityResult {
+        /// Request ID
+        request_id: u64,
+        /// Result data
+        result: serde_json::Value,
+        /// Error message if failed
+        error: Option<String>,
+    },
+
+    /// Event subscription result
+    EventSubscriptionResult {
+        /// Request ID
+        request_id: u64,
+        /// Subscription ID if successful
+        subscription_id: Option<String>,
+        /// Error message if failed
+        error: Option<String>,
+    },
+
+    /// Event poll result
+    EventPollResult {
+        /// Request ID
+        request_id: u64,
+        /// Events received
+        events: Vec<serde_json::Value>,
+    },
+
+    // =========================================================================
+    // Capability Request from Extension (bidirectional)
+    // =========================================================================
+
+    /// Capability request from extension to host
+    /// This allows isolated extensions to call host capabilities
+    CapabilityRequest {
+        /// Request ID for tracking
+        request_id: u64,
+        /// Capability name (e.g., "device_metrics_read")
+        capability: String,
+        /// Parameters for the capability
+        params: serde_json::Value,
+    },
+}
+
+/// Push output data (extracted from PushOutput response)
+/// Used for forwarding push data to WebSocket clients
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PushOutputData {
+    /// Session ID
+    pub session_id: String,
+    /// Output sequence
+    pub sequence: u64,
+    /// Data
+    pub data: Vec<u8>,
+    /// Data type MIME
+    pub data_type: String,
+    /// Timestamp
+    pub timestamp: i64,
+    /// Optional metadata
+    pub metadata: Option<serde_json::Value>,
+}
+
+impl From<IpcResponse> for Option<PushOutputData> {
+    fn from(response: IpcResponse) -> Self {
+        match response {
+            IpcResponse::PushOutput {
+                session_id,
+                sequence,
+                data,
+                data_type,
+                timestamp,
+                metadata,
+            } => Some(PushOutputData {
+                session_id,
+                sequence,
+                data,
+                data_type,
+                timestamp,
+                metadata,
+            }),
+            _ => None,
+        }
+    }
 }
 
 /// Error kind classification
@@ -268,6 +551,35 @@ pub enum ErrorKind {
     Internal,
     /// Security error
     Security,
+}
+
+impl From<super::super::ExtensionError> for ErrorKind {
+    fn from(error: super::super::ExtensionError) -> Self {
+        use super::super::ExtensionError;
+        match error {
+            ExtensionError::CommandNotFound(_) => ErrorKind::CommandNotFound,
+            ExtensionError::InvalidArguments(_) => ErrorKind::InvalidArguments,
+            ExtensionError::ExecutionFailed(_) => ErrorKind::ExecutionFailed,
+            ExtensionError::Timeout(_) => ErrorKind::Timeout,
+            ExtensionError::NotFound(_) => ErrorKind::NotFound,
+            ExtensionError::InvalidFormat(_) => ErrorKind::InvalidFormat,
+            ExtensionError::MetricNotFound(_) => ErrorKind::NotFound,
+            ExtensionError::LoadFailed(_) => ErrorKind::Internal,
+            ExtensionError::SecurityError(_) => ErrorKind::Security,
+            ExtensionError::SymbolNotFound(_) => ErrorKind::Internal,
+            ExtensionError::IncompatibleVersion { .. } => ErrorKind::Internal,
+            ExtensionError::NullPointer => ErrorKind::Internal,
+            ExtensionError::AlreadyRegistered(_) => ErrorKind::Internal,
+            ExtensionError::NotSupported(_) => ErrorKind::Internal,
+            ExtensionError::InvalidStreamData(_) => ErrorKind::InvalidFormat,
+            ExtensionError::SessionNotFound(_) => ErrorKind::NotFound,
+            ExtensionError::SessionAlreadyExists(_) => ErrorKind::Internal,
+            ExtensionError::InferenceFailed(_) => ErrorKind::ExecutionFailed,
+            ExtensionError::Io(_) => ErrorKind::Internal,
+            ExtensionError::Json(_) => ErrorKind::InvalidFormat,
+            ExtensionError::Other(_) => ErrorKind::Internal,
+        }
+    }
 }
 
 impl IpcMessage {
@@ -308,6 +620,11 @@ impl IpcResponse {
         matches!(self, Self::StreamError { .. })
     }
 
+    /// Check if this is a capability request from extension
+    pub fn is_capability_request(&self) -> bool {
+        matches!(self, Self::CapabilityRequest { .. })
+    }
+
     /// Get request ID if applicable
     pub fn request_id(&self) -> Option<u64> {
         match self {
@@ -317,15 +634,48 @@ impl IpcResponse {
             Self::Metrics { request_id, .. } => Some(*request_id),
             Self::Health { request_id, .. } => Some(*request_id),
             Self::Metadata { request_id, .. } => Some(*request_id),
+            Self::EventSubscriptions { request_id, .. } => Some(*request_id),
             Self::Pong { .. } => None,
             Self::StreamSessionInit { .. } => None,
             Self::StreamSessionClosed { .. } => None,
             Self::StreamChunkResult { request_id, .. } => Some(*request_id),
             Self::StreamCapability { request_id, .. } => Some(*request_id),
+            Self::ChunkResult { request_id, .. } => Some(*request_id),
+            Self::PushStarted { request_id, .. } => Some(*request_id),
+            Self::PushStopped { request_id, .. } => Some(*request_id),
             Self::PushOutput { .. } => None,
             Self::StreamError { .. } => None,
+            Self::BatchResults { request_id, .. } => Some(*request_id),
+            Self::Stats { request_id, .. } => Some(*request_id),
+            Self::CapabilityResult { request_id, .. } => Some(*request_id),
+            Self::EventSubscriptionResult { request_id, .. } => Some(*request_id),
+            Self::EventPollResult { request_id, .. } => Some(*request_id),
+            Self::CapabilityRequest { request_id, .. } => Some(*request_id),
         }
     }
+}
+
+/// Capability request from extension to host
+/// This is sent by the extension when it needs to invoke a host capability
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityRequest {
+    /// Request ID for tracking
+    pub request_id: u64,
+    /// Capability name (e.g., "device_metrics_read")
+    pub capability: String,
+    /// Parameters for the capability
+    pub params: serde_json::Value,
+}
+
+/// Capability response from host to extension
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityResponse {
+    /// Request ID
+    pub request_id: u64,
+    /// Result data
+    pub result: serde_json::Value,
+    /// Error message if failed
+    pub error: Option<String>,
 }
 
 /// Frame format for IPC communication

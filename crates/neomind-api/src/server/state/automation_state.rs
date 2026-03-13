@@ -50,6 +50,11 @@ impl AutomationState {
         transform_engine: Option<Arc<TransformEngine>>,
         rule_history_store: Option<Arc<RuleHistoryStore>>,
     ) -> Self {
+        // Set rule store in rule engine for persistent trigger count
+        if let Some(ref store) = rule_store {
+            rule_engine.set_rule_store(store.clone());
+        }
+
         Self {
             rule_engine,
             rule_store,

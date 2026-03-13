@@ -88,6 +88,13 @@ pub struct ServerState {
     /// Cached rule engine event service instance (prevents duplicate instances).
     rule_engine_event_service:
         Arc<tokio::sync::Mutex<Option<crate::event_services::RuleEngineEventService>>>,
+
+    /// Flag to track if extension event subscription has been initialized (prevents duplicate subscribers).
+    extension_event_subscription_initialized: Arc<std::sync::atomic::AtomicBool>,
+
+    /// Cached extension event subscription service instance (prevents duplicate instances).
+    extension_event_subscription_service:
+        Arc<tokio::sync::Mutex<Option<neomind_core::extension::ExtensionEventSubscriptionService>>>,
 }
 
 // Backward compatibility: Provide direct field access as before
@@ -290,10 +297,17 @@ impl ServerState {
 
         // ========== Build EXTENSION STATE ==========
         // Create extension registry with default directories
-        let default_ext_dirs = vec![
-            std::path::PathBuf::from("extensions"), // Local extensions dir
-            std::path::PathBuf::from("data/extensions"), // Data directory extensions
-        ];
+        // Use NEOMIND_DATA_DIR if set, otherwise use relative path
+        // NOTE: Only use data/extensions for consistent behavior
+        // Extensions should be installed via frontend upload (.nep packages)
+        // Development builds should also output to data/extensions/
+        let extensions_dir = if let Ok(data_dir) = std::env::var("NEOMIND_DATA_DIR") {
+            std::path::PathBuf::from(data_dir).join("extensions")
+        } else {
+            std::path::PathBuf::from("data/extensions")
+        };
+
+        let default_ext_dirs = vec![extensions_dir];
 
         let mut registry_builder = ExtensionRegistry::new();
         for ext_dir in &default_ext_dirs {
@@ -486,10 +500,7 @@ impl ServerState {
         let auto_onboard_manager = Arc::new(tokio::sync::RwLock::new(None));
 
         let dashboard_store = match DashboardStore::open("data/dashboards.redb") {
-            Ok(store) => {
-                tracing::info!("Dashboard store initialized at data/dashboards.redb");
-                store
-            }
+            Ok(store) => store,
             Err(e) => {
                 tracing::warn!(category = "storage", error = %e, "Failed to open dashboard store, using in-memory");
                 DashboardStore::memory().unwrap_or_else(|e| {
@@ -514,6 +525,8 @@ impl ServerState {
             agent_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rule_engine_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rule_engine_event_service: Arc::new(tokio::sync::Mutex::new(None)),
+            extension_event_subscription_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            extension_event_subscription_service: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 
@@ -671,6 +684,8 @@ impl ServerState {
             agent_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rule_engine_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rule_engine_event_service: Arc::new(tokio::sync::Mutex::new(None)),
+            extension_event_subscription_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            extension_event_subscription_service: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 
@@ -959,6 +974,78 @@ impl ServerState {
             "Tool registry initialized with {} tools",
             tool_registry.len()
         );
+    }
+
+    /// Initialize extension event subscription.
+    ///
+    /// Starts a background task that subscribes to EventBus events
+    /// and forwards them to extensions that have subscribed via EventCapabilityProvider.
+    ///
+    /// This uses the EventBus as the single source of truth for all events,
+    /// eliminating the need for a separate event dispatcher.
+    pub async fn init_extension_event_subscription(&self) {
+        // Prevent duplicate initialization
+        if self
+            .extension_event_subscription_initialized
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_err()
+        {
+            tracing::debug!("Extension event subscription already initialized, skipping");
+            return;
+        }
+
+        tracing::info!("Initializing extension event subscription...");
+
+        let event_bus = match &self.core.event_bus {
+            Some(bus) => bus,
+            None => {
+                tracing::warn!("Extension event subscription not started: event_bus not available");
+                return;
+            }
+        };
+
+        // Get the event dispatcher from the extension state
+        let event_dispatcher = match self.extensions.get_event_dispatcher() {
+            Some(dispatcher) => dispatcher,
+            None => {
+                tracing::warn!("Extension event subscription not started: event_dispatcher not available");
+                return;
+            }
+        };
+
+        use neomind_core::extension::ExtensionEventSubscriptionService;
+
+        // Get or create the service instance (cached in ServerState)
+        {
+            let mut cached_service = self.extension_event_subscription_service.lock().await;
+            if cached_service.is_none() {
+                let service = ExtensionEventSubscriptionService::new(
+                    (*event_bus).clone(),
+                    event_dispatcher,
+                );
+                *cached_service = Some(service);
+            }
+        }
+
+        // Start the service
+        let running = {
+            let cached_service = self.extension_event_subscription_service.lock().await;
+            cached_service.as_ref().unwrap().start()
+        };
+
+        if running.load(std::sync::atomic::Ordering::Relaxed) {
+            tracing::info!(
+                category = "extensions",
+                "Extension event subscription started - events will be forwarded to subscribed extensions"
+            );
+        } else {
+            tracing::warn!("Extension event subscription failed to start");
+        }
     }
 
     /// Initialize rule engine event service.
@@ -1687,6 +1774,31 @@ impl ServerState {
                 }
             }
         });
+    }
+
+    /// Create CapabilityServices for extension capability providers.
+    ///
+    /// This creates a service container that can be used by extension
+    /// capability providers to access real functionality.
+    pub fn create_capability_services(&self) -> neomind_core::extension::CapabilityServices {
+        use neomind_core::extension::{CapabilityServices, keys};
+
+        CapabilityServices::new()
+            .with_service(keys::DEVICE_SERVICE, self.devices.service.clone())
+            .with_service(keys::TELEMETRY_STORAGE, self.devices.telemetry.clone())
+            .with_service(keys::RULE_ENGINE, self.automation.rule_engine.clone())
+            .with_service(keys::EXTENSION_REGISTRY, self.extensions.registry.clone())
+            .with_service(keys::EVENT_BUS, self.core.event_bus.clone().unwrap_or_else(|| Arc::new(neomind_core::EventBus::new())))
+    }
+
+    /// Initialize extension capability providers with real services.
+    ///
+    /// This should be called after all services are initialized.
+    pub async fn init_capability_providers(&self) {
+        let _services = self.create_capability_services();
+        // Note: Capability providers are registered via ExtensionContext
+        // when extensions are loaded
+        tracing::info!("Capability services initialized for extension providers");
     }
 }
 

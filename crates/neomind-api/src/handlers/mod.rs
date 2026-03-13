@@ -13,6 +13,7 @@ pub mod dashboards;
 pub mod devices;
 pub mod events;
 pub mod extensions;
+pub mod capabilities;
 pub mod extension_stream;
 pub mod llm_backends;
 pub mod memory;

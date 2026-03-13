@@ -134,7 +134,7 @@ impl IsolatedExtensionLoader {
             self.native_loader.load_metadata(path).await?
         };
 
-        tracing::info!(
+        tracing::debug!(
             extension_id = %metadata.id,
             path = %path.display(),
             "Loading extension in isolated mode"

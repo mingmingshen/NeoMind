@@ -2115,10 +2115,12 @@ function CommandEditorCompact({
                             <span className="text-muted-foreground text-xs">{t('devices:commandEditor.yesNo')}</span>
                           ) : (
                             <Input
-                              value={(param.allowed_values || []).join(',')}
+                              value={(param.allowed_values || []).map((v: unknown) =>
+                                typeof v === 'string' ? v : (v as { String: string }).String
+                              ).join(',')}
                               onChange={(e) => {
                                 const values = e.target.value.split(',').map(v => v.trim()).filter(v => v)
-                                updateParameter(pIdx, { allowed_values: values.length > 0 ? values : undefined })
+                                updateParameter(pIdx, { allowed_values: values.length > 0 ? values.map(v => ({ String: v })) : undefined })
                               }}
                               placeholder={t('devices:commandEditor.allowedValuesPlaceholder')}
                               className="h-6 text-xs"

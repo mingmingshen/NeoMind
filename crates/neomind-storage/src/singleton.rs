@@ -38,6 +38,7 @@ fn db_cache() -> &'static RwLock<HashMap<String, Arc<Database>>> {
 ///
 /// ```rust,no_run
 /// use neomind_storage::singleton::get_or_open_db;
+/// use std::sync::Arc;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // First call opens the database

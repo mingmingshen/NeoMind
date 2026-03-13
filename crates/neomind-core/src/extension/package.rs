@@ -536,7 +536,12 @@ impl ExtensionPackage {
 
             binary_file
         } else {
-            return Err(PackageError::UnsupportedPlatform(detect_platform()));
+            let available_platforms: Vec<String> = self.manifest.binaries.keys().cloned().collect();
+            return Err(PackageError::UnsupportedPlatform(format!(
+                "{}. Available platforms: {}",
+                detect_platform(),
+                available_platforms.join(", ")
+            )));
         };
 
         // Extract frontend directory if exists
@@ -592,7 +597,14 @@ impl ExtensionPackage {
         let binary_rel_path = manifest.binaries.get(&platform)
             .or_else(|| manifest.binaries.get("wasm"))
             .cloned()
-            .ok_or_else(|| PackageError::UnsupportedPlatform(platform.clone()))?;
+            .ok_or_else(|| {
+                let available_platforms: Vec<String> = manifest.binaries.keys().cloned().collect();
+                PackageError::UnsupportedPlatform(format!(
+                    "{}. Available platforms: {}",
+                    platform,
+                    available_platforms.join(", ")
+                ))
+            })?;
 
         // Extract binary
         let binary_file = ext_dir.join(
@@ -940,20 +952,86 @@ impl ExtensionPackage {
     }
 }
 
+/// Platform format types used in the extension system
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformFormat {
+    /// Hyphen format: "windows-x86_64", "darwin-aarch64"
+    /// Used in marketplace metadata `builds` keys
+    Hyphen,
+    /// Underscore format: "windows_amd64", "darwin_aarch64"
+    /// Used in .nep package `binaries` keys and filenames
+    Underscore,
+}
+
 /// Detect the current platform
 /// Returns platform string in underscore format (e.g., "darwin_aarch64")
 /// to match the format used in extension packages
 pub fn detect_platform() -> String {
+    detect_platform_with_format(PlatformFormat::Underscore)
+}
+
+/// Detect the current platform with specified format
+pub fn detect_platform_with_format(format: PlatformFormat) -> String {
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
 
-    match (os, arch) {
-        ("macos", "aarch64") => "darwin_aarch64".to_string(),
-        ("macos", "x86_64") => "darwin_x86_64".to_string(),
-        ("linux", "x86_64") => "linux_amd64".to_string(),
-        ("linux", "aarch64") => "linux_arm64".to_string(),
-        ("windows", "x86_64") => "windows_amd64".to_string(),
-        _ => format!("{}_{}", os, arch),
+    match (os, arch, format) {
+        // macOS
+        ("macos", "aarch64", PlatformFormat::Hyphen) => "darwin-aarch64".to_string(),
+        ("macos", "aarch64", PlatformFormat::Underscore) => "darwin_aarch64".to_string(),
+        ("macos", "x86_64", PlatformFormat::Hyphen) => "darwin-x86_64".to_string(),
+        ("macos", "x86_64", PlatformFormat::Underscore) => "darwin_x86_64".to_string(),
+        // Linux
+        ("linux", "x86_64", PlatformFormat::Hyphen) => "linux-x86_64".to_string(),
+        ("linux", "x86_64", PlatformFormat::Underscore) => "linux_amd64".to_string(),
+        ("linux", "aarch64", PlatformFormat::Hyphen) => "linux-aarch64".to_string(),
+        ("linux", "aarch64", PlatformFormat::Underscore) => "linux_arm64".to_string(),
+        // Windows
+        ("windows", "x86_64", PlatformFormat::Hyphen) => "windows-x86_64".to_string(),
+        ("windows", "x86_64", PlatformFormat::Underscore) => "windows_amd64".to_string(),
+        ("windows", "aarch64", PlatformFormat::Hyphen) => "windows-aarch64".to_string(),
+        ("windows", "aarch64", PlatformFormat::Underscore) => "windows_arm64".to_string(),
+        // Fallback
+        _ => match format {
+            PlatformFormat::Hyphen => format!("{}-{}", os, arch),
+            PlatformFormat::Underscore => format!("{}_{}", os, arch),
+        },
+    }
+}
+
+/// Convert platform format between hyphen and underscore
+pub fn convert_platform_format(platform: &str, target_format: PlatformFormat) -> String {
+    // Detect source format
+    let (os, arch) = if platform.contains('-') {
+        // Hyphen format: "windows-x86_64"
+        let parts: Vec<&str> = platform.splitn(2, '-').collect();
+        if parts.len() == 2 {
+            (parts[0], parts[1])
+        } else {
+            return platform.to_string();
+        }
+    } else if platform.contains('_') {
+        // Underscore format: "windows_amd64"
+        let parts: Vec<&str> = platform.splitn(2, '_').collect();
+        if parts.len() == 2 {
+            (parts[0], parts[1])
+        } else {
+            return platform.to_string();
+        }
+    } else {
+        return platform.to_string();
+    };
+
+    // Map arch names: x86_64 <-> amd64, aarch64 <-> arm64
+    let normalized_arch = match arch {
+        "x86_64" | "amd64" => ("x86_64", "amd64"),
+        "aarch64" | "arm64" => ("aarch64", "arm64"),
+        _ => (arch, arch),
+    };
+
+    match target_format {
+        PlatformFormat::Hyphen => format!("{}-{}", os, normalized_arch.0),
+        PlatformFormat::Underscore => format!("{}_{}", os, normalized_arch.1),
     }
 }
 

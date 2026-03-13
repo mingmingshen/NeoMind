@@ -212,12 +212,14 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_data_dir = get_app_data_dir(app.handle());
     fs::create_dir_all(&app_data_dir)?;
 
-    // Change to data directory for relative paths
+    // Change to app data directory for relative paths (e.g., data/devices.redb)
+    let _ = env::set_current_dir(&app_data_dir);
+
+    // Set NEOMIND_DATA_DIR environment variable for consistent path handling
+    // This ensures extensions are installed to the correct directory
     let data_dir = app_data_dir.join("data");
     fs::create_dir_all(&data_dir)?;
-
-    // Try to change to data directory, but don't fail if we can't
-    let _ = env::set_current_dir(&data_dir);
+    env::set_var("NEOMIND_DATA_DIR", &data_dir);
 
     // Create tray menu (don't fail if tray creation fails)
     if let Ok(tray) = create_tray_menu(app) {

@@ -445,6 +445,16 @@ impl NeoMindEvent {
         }
     }
 
+    /// Get the event type name as a string.
+    /// For Custom events, returns the actual custom event_type.
+    /// For other events, returns the enum variant name.
+    pub fn type_name_owned(&self) -> String {
+        match self {
+            Self::Custom { event_type, .. } => event_type.clone(),
+            _ => self.type_name().to_string(),
+        }
+    }
+
     /// Get the timestamp of this event.
     pub fn timestamp(&self) -> i64 {
         match self {

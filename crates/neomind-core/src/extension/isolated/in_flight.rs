@@ -91,7 +91,7 @@ impl InFlightRequests {
     pub async fn register(&self) -> (RequestId, oneshot::Receiver<IpcResponse>) {
         let mut state = self.state.lock().await;
         let request_id = state.next_id.fetch_add(1, Ordering::Relaxed);
-        let (tx, rx) = oneshot::channel();
+        let (tx, rx): (oneshot::Sender<IpcResponse>, oneshot::Receiver<IpcResponse>) = oneshot::channel();
 
         state.pending.insert(request_id, tx);
 
@@ -103,7 +103,7 @@ impl InFlightRequests {
         &self,
         request_id: RequestId,
     ) -> oneshot::Receiver<IpcResponse> {
-        let (tx, rx) = oneshot::channel();
+        let (tx, rx): (oneshot::Sender<IpcResponse>, oneshot::Receiver<IpcResponse>) = oneshot::channel();
 
         let mut state = self.state.lock().await;
         state.pending.insert(request_id, tx);
@@ -121,7 +121,7 @@ impl InFlightRequests {
         if let Some(tx) = state.pending.remove(&request_id) {
             // Send the response to the waiting caller
             // Ignore send errors (caller may have timed out and dropped the receiver)
-            let _ = tx.send(response);
+            let _: Result<_, _> = tx.send(response);
             true
         } else {
             tracing::debug!(

@@ -22,7 +22,7 @@ pub async fn read_metric_handler(
     State(state): State<ServerState>,
     Path((device_id, metric)): Path<(String, String)>,
 ) -> HandlerResult<serde_json::Value> {
-    // Get current metrics for the device
+    // Get current metrics for the device (using default 48-hour window)
     let current_values = state
         .devices
         .service

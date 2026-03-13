@@ -732,7 +732,7 @@ mod tests {
         assert_eq!(instance.id, "test-ollama");
         assert_eq!(instance.name, "Test Ollama");
         assert_eq!(instance.backend_name(), "ollama");
-        assert_eq!(instance.model, "qwen3-vl:2b");
+        assert_eq!(instance.model, "ministral-3:3b");
         assert!(instance.endpoint.is_some());
         assert!(instance.capabilities.supports_streaming);
     }

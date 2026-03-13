@@ -138,6 +138,7 @@ fn test_extension_command() {
     let cmd = ExtensionCommand {
         name: "detect_objects".to_string(),
         display_name: "Detect Objects".to_string(),
+        description: "Detect objects in an image".to_string(),
         payload_template: "{ \"image_path\": {{image_path}} }".to_string(),
         parameters: vec![ParameterDefinition {
             name: "image_path".to_string(),
@@ -166,6 +167,7 @@ fn test_extension_command_serialization() {
     let cmd = ExtensionCommand {
         name: "get_weather".to_string(),
         display_name: "Get Weather".to_string(),
+        description: "Get current weather".to_string(),
         payload_template: "{}".to_string(),
         parameters: vec![],
         fixed_values: HashMap::new(),

@@ -32,6 +32,7 @@ use super::process::{IsolatedExtension, IsolatedExtensionConfig};
 use super::{IsolatedExtensionError, IsolatedResult};
 use crate::extension::loader::{IsolatedExtensionLoader, IsolatedLoaderConfig};
 use crate::extension::system::{ExtensionMetadata, ExtensionMetricValue};
+use crate::extension::event_dispatcher::EventDispatcher;
 
 /// Configuration for the isolated extension manager
 #[derive(Debug, Clone)]
@@ -110,6 +111,10 @@ pub struct IsolatedExtensionManager {
     config: IsolatedManagerConfig,
     /// Loader for isolated extensions
     loader: IsolatedExtensionLoader,
+    /// Event dispatcher for pushing events to extensions
+    event_dispatcher: Arc<EventDispatcher>,
+    /// Capability provider for handling capability requests from extensions
+    capability_provider: AsyncRwLock<Option<Arc<dyn super::super::context::ExtensionCapabilityProvider>>>,
 }
 
 impl IsolatedExtensionManager {
@@ -122,17 +127,38 @@ impl IsolatedExtensionManager {
             force_in_process: config.force_in_process.clone(),
         };
 
+        // Create event dispatcher (simplified version)
+        let event_dispatcher = Arc::new(EventDispatcher::new());
+
         Self {
             extensions: AsyncRwLock::new(HashMap::new()),
             info_cache: RwLock::new(HashMap::new()),
             config,
             loader: IsolatedExtensionLoader::new(loader_config),
+            event_dispatcher,
+            capability_provider: AsyncRwLock::new(None),
         }
     }
 
     /// Create with default configuration
     pub fn with_defaults() -> Self {
         Self::new(IsolatedManagerConfig::default())
+    }
+
+    /// Set the capability provider for handling capability requests from extensions
+    pub async fn set_capability_provider(&self, provider: Arc<dyn super::super::context::ExtensionCapabilityProvider>) {
+        *self.capability_provider.write().await = Some(provider.clone());
+        
+        // Update all existing extensions
+        let extensions = self.extensions.read().await;
+        for (_, ext) in extensions.iter() {
+            ext.set_capability_provider(provider.clone());
+        }
+    }
+
+    /// Get the event dispatcher
+    pub fn event_dispatcher(&self) -> Arc<EventDispatcher> {
+        self.event_dispatcher.clone()
     }
 
     /// Check if an extension should use isolated mode
@@ -142,7 +168,7 @@ impl IsolatedExtensionManager {
 
     /// Load an extension in isolated mode
     pub async fn load(&self, path: &Path) -> IsolatedResult<ExtensionMetadata> {
-        tracing::info!(
+        tracing::debug!(
             path = %path.display(),
             "Loading extension in isolated mode"
         );
@@ -156,8 +182,50 @@ impl IsolatedExtensionManager {
 
         let id = descriptor.id().to_string();
 
+        // Get event subscriptions from extension
+        tracing::debug!(
+            extension_id = %id,
+            "Getting event subscriptions from extension"
+        );
+        let event_types = match loaded.get_event_subscriptions().await {
+            Ok(types) => {
+                tracing::debug!(
+                    extension_id = %id,
+                    event_types = ?types,
+                    "Got event subscriptions from extension"
+                );
+                types
+            }
+            Err(e) => {
+                tracing::warn!(
+                    extension_id = %id,
+                    error = %e,
+                    "Failed to get event subscriptions from extension"
+                );
+                vec![]
+            }
+        };
+
+        // Get event push channel from extension
+        let event_push_channel = loaded.get_event_push_channel().await;
+
+        // Register extension with event dispatcher
+        if let Some(channel) = event_push_channel {
+            self.event_dispatcher.register_isolated_extension(id.clone(), event_types, channel);
+        } else {
+            tracing::warn!(
+                extension_id = %id,
+                "No event push channel available for extension"
+            );
+        }
+
         // Store extension
         self.extensions.write().await.insert(id.clone(), loaded.clone());
+
+        // Set capability provider if configured
+        if let Some(provider) = self.capability_provider.read().await.as_ref() {
+            loaded.set_capability_provider(provider.clone());
+        }
 
         // Create runtime state
         let mut runtime = crate::extension::system::ExtensionRuntimeState::isolated();
@@ -174,7 +242,7 @@ impl IsolatedExtensionManager {
             },
         );
 
-        tracing::info!(
+        tracing::debug!(
             extension_id = %id,
             "Extension loaded in isolated mode"
         );
@@ -190,10 +258,17 @@ impl IsolatedExtensionManager {
 
         if let Some(isolated) = extensions.remove(id) {
             // Stop the extension process
-            isolated.stop().await?;
+            // Ignore NotRunning error - extension may have failed to start (e.g., missing .dylib)
+            if let Err(e) = isolated.stop().await {
+                tracing::warn!(
+                    extension_id = %id,
+                    error = %e,
+                    "Error stopping extension during unload (continuing cleanup)"
+                );
+            }
             self.info_cache.write().remove(id);
 
-            tracing::info!(
+            tracing::debug!(
                 extension_id = %id,
                 "Extension unloaded"
             );
@@ -238,6 +313,17 @@ impl IsolatedExtensionManager {
         })?;
 
         isolated.health_check().await
+    }
+
+    /// Get statistics from an isolated extension
+    pub async fn get_stats(&self, id: &str) -> IsolatedResult<crate::extension::system::ExtensionStats> {
+        let extensions = self.extensions.read().await;
+
+        let isolated = extensions.get(id).ok_or_else(|| {
+            IsolatedExtensionError::IpcError(format!("Extension {} not found", id))
+        })?;
+
+        isolated.get_stats().await
     }
 
     /// Check if an extension is registered
@@ -288,7 +374,7 @@ impl IsolatedExtensionManager {
         extensions.clear();
         self.info_cache.write().clear();
 
-        tracing::info!("All isolated extensions stopped");
+        tracing::debug!("All isolated extensions stopped");
     }
 
     /// Get the loader configuration
@@ -301,16 +387,39 @@ impl Drop for IsolatedExtensionManager {
     fn drop(&mut self) {
         // Attempt to stop all extensions on drop
         // Note: This is a best-effort cleanup
-        if let Ok(mut extensions) = self.extensions.try_write() {
-            for (id, isolated) in extensions.iter() {
-                // Use kill_process for synchronous cleanup
-                if isolated.is_alive() {
-                    tracing::warn!(
-                        extension_id = %id,
-                        "Extension still running during drop, killing"
-                    );
-                }
+        if let Ok(extensions) = self.extensions.try_read() {
+            // Collect the extensions to stop
+            let to_stop: Vec<(String, std::sync::Arc<IsolatedExtension>)> = extensions
+                .iter()
+                .filter(|(_, isolated)| isolated.is_alive())
+                .map(|(id, isolated)| (id.clone(), isolated.clone()))
+                .collect();
+
+            drop(extensions); // Release read lock
+
+            for (id, isolated) in to_stop {
+                tracing::warn!(
+                    extension_id = %id,
+                    "Extension still running during drop, stopping"
+                );
+                // Use block_in_place to allow async inside drop
+                tokio::task::block_in_place(|| {
+                    // Create a new runtime for the stop operation
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .ok();
+                    if let Some(rt) = rt {
+                        rt.block_on(async {
+                            let _ = isolated.stop().await;
+                        });
+                    }
+                });
             }
+        }
+
+        // Clear the extensions map
+        if let Ok(mut extensions) = self.extensions.try_write() {
             extensions.clear();
         }
     }

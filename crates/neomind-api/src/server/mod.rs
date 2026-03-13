@@ -77,6 +77,11 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     // This loads all extensions marked with auto_start=true
     state.init_extensions().await;
 
+    // Initialize extension event subscription
+    // This must be after init_extensions() so extensions can subscribe to events
+    state.init_extension_event_subscription().await;
+    startup.service("Extension event subscription", ServiceStatus::Started);
+
     // Initialize AI Agent manager
     let _ = state.start_agent_manager().await;
     startup.service("AI Agent manager", ServiceStatus::Started);

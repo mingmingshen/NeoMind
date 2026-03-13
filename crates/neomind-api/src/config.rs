@@ -640,7 +640,7 @@ endpoint = "http://localhost:11434"
 
         let settings = request.to_llm_settings();
         assert_eq!(settings.backend_name(), "ollama");
-        assert_eq!(settings.model, "qwen3-vl:2b");
+        assert_eq!(settings.model, "ministral-3:3b");
     }
 
     #[test]

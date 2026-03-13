@@ -368,8 +368,8 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(kb.count().await, 1);
-        assert_eq!(kb.count_by_type(KnowledgeType::MdlDevice).await, 1);
+        assert_eq!(kb.count(), 1);
+        assert_eq!(kb.count_by_type(KnowledgeType::MdlDevice), 1);
     }
 
     #[tokio::test]
@@ -385,8 +385,8 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(kb.count().await, 1);
-        assert_eq!(kb.count_by_type(KnowledgeType::DslRule).await, 1);
+        assert_eq!(kb.count(), 1);
+        assert_eq!(kb.count_by_type(KnowledgeType::DslRule), 1);
     }
 
     #[tokio::test]
@@ -468,11 +468,11 @@ mod tests {
         kb.index_mdl("dht22", "DHT22", "Sensor", &[], &[])
             .await
             .unwrap();
-        assert_eq!(kb.count().await, 1);
+        assert_eq!(kb.count(), 1);
 
         let deleted = kb.delete("mdl:dht22").await.unwrap();
         assert!(deleted);
-        assert_eq!(kb.count().await, 0);
+        assert_eq!(kb.count(), 0);
 
         let deleted = kb.delete("mdl:dht22").await.unwrap();
         assert!(!deleted);
@@ -486,11 +486,11 @@ mod tests {
             .await
             .unwrap();
 
-        let entry = kb.get("mdl:dht22").await;
+        let entry = kb.get("mdl:dht22");
         assert!(entry.is_some());
         assert_eq!(entry.unwrap().title, "DHT22");
 
-        let entry = kb.get("nonexistent").await;
+        let entry = kb.get("nonexistent");
         assert!(entry.is_none());
     }
 

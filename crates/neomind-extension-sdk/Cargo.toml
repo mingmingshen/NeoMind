@@ -1,9 +1,9 @@
 [package]
 name = "neomind-extension-sdk"
-version = "2.0.0"
-edition = "2021"
-authors = ["NeoMind Team"]
-license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
 description = "Unified SDK for developing NeoMind extensions (ABI Version 3)"
 
 [lib]
@@ -24,6 +24,7 @@ neomind-core = { path = "../neomind-core" }
 chrono = { version = "0.4", features = ["serde"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 tracing = "0.1"
+num_cpus = { version = "1", optional = true }
 
 # WASM-only dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]

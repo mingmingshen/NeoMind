@@ -46,6 +46,15 @@ pub struct ExtensionDto {
     pub file_path: Option<String>,
     /// Loaded at timestamp
     pub loaded_at: Option<i64>,
+    /// Health status: "ok", "warning", "error", "unknown"
+    #[serde(default = "default_health_status")]
+    pub health_status: String,
+    /// Last error message if any
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+    /// Last error timestamp if any
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error_at: Option<i64>,
     /// Commands provided by this extension
     #[serde(default)]
     pub commands: Vec<CommandDescriptorDto>,
@@ -55,6 +64,10 @@ pub struct ExtensionDto {
     /// Configuration parameters for this extension
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_parameters: Option<Vec<ConfigParamDto>>,
+}
+
+fn default_health_status() -> String {
+    "unknown".to_string()
 }
 
 /// Configuration parameter DTO
@@ -193,109 +206,62 @@ pub struct ExecuteCommandRequest {
 }
 
 /// GET /api/extensions
-/// List all registered extensions.
+/// List all registered extensions (including failed to load).
 pub async fn list_extensions_handler(
     State(state): State<ServerState>,
     Query(query): Query<ListExtensionsQuery>,
 ) -> HandlerResult<Vec<ExtensionDto>> {
-    // Use unified service to get both in-process and isolated extensions
-    let all_extensions = state.extensions.unified_service.list().await;
+    // Use unified service to get successfully loaded extensions
+    let loaded_extensions = state.extensions.unified_service.list().await;
+    
+    // Also get all extension records from storage (including failed ones)
+    let stored_records = if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+        store.load_all().unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
-    let mut extensions: Vec<ExtensionDto> = all_extensions
-        .into_iter()
-        .map(|info| {
-            // Convert commands to DTOs (V2 format)
-            let commands: Vec<CommandDescriptorDto> = info
-                .commands
-                .iter()
-                .map(|cmd| CommandDescriptorDto {
-                    id: cmd.name.clone(),
-                    display_name: cmd.display_name.clone(),
-                    description: cmd.llm_hints.clone(),
-                    input_schema: build_parameters_schema(&cmd.parameters),
-                    output_fields: vec![], // V2: Commands don't declare output fields
-                    config: CommandConfigDto {
-                        requires_auth: false,
-                        timeout_ms: 30000,
-                        is_stream: false,
-                        expected_duration_ms: None,
-                    },
-                })
-                .collect();
+    // Build a set of loaded extension IDs for quick lookup
+    let loaded_ids: std::collections::HashSet<String> = 
+        loaded_extensions.iter().map(|e| e.metadata.id.clone()).collect();
 
-            // Convert metrics to DTOs (V2)
-            let metrics: Vec<MetricDescriptorDto> = info
-                .metrics
-                .iter()
-                .map(|m| MetricDescriptorDto {
-                    name: m.name.clone(),
-                    display_name: m.display_name.clone(),
-                    data_type: format!("{:?}", m.data_type),
-                    unit: m.unit.clone(),
-                    description: None, // V2: MetricDefinition doesn't have description
-                    min: m.min,
-                    max: m.max,
-                    required: m.required,
-                })
-                .collect();
+    let mut extensions: Vec<ExtensionDto> = Vec::new();
 
-            // Convert config parameters to DTOs
-            let config_parameters = info.metadata.config_parameters.as_ref().map(|params| {
-                params
-                    .iter()
-                    .map(|p| {
-                        use neomind_core::extension::system::ParamMetricValue;
-                        ConfigParamDto {
-                            name: p.name.clone(),
-                            display_name: p.display_name.clone(),
-                            description: p.description.clone(),
-                            param_type: format!("{:?}", p.param_type).to_lowercase(),
-                            required: p.required,
-                            default: p.default_value.as_ref().map(|v| match v {
-                                ParamMetricValue::Float(f) => serde_json::json!(f),
-                                ParamMetricValue::Integer(i) => serde_json::json!(i),
-                                ParamMetricValue::Boolean(b) => serde_json::json!(b),
-                                ParamMetricValue::String(s) => serde_json::json!(s),
-                                ParamMetricValue::Binary(_) => serde_json::json!(null),
-                                ParamMetricValue::Null => serde_json::json!(null),
-                            }),
-                            min: p.min,
-                            max: p.max,
-                            options: match &p.param_type {
-                                MetricDataType::Enum { options } => options.clone(),
-                                _ => Vec::new(),
-                            },
-                        }
-                    })
-                    .collect()
-            });
+    // First, add all successfully loaded extensions
+    for info in loaded_extensions {
+        extensions.push(extension_info_to_dto(&info));
+    }
 
-            // Determine state based on is_running and is_isolated
-            let state_str = if info.is_running {
-                if info.is_isolated {
-                    "Running (Isolated)"
-                } else {
-                    "Running"
-                }
-            } else {
-                "Stopped"
-            };
+    // Then, add extensions from storage that failed to load
+    for record in stored_records {
+        // Skip if already in loaded extensions
+        if loaded_ids.contains(&record.id) {
+            continue;
+        }
+        
+        // Skip uninstalled extensions
+        if record.uninstalled {
+            continue;
+        }
 
-            ExtensionDto {
-                id: info.metadata.id.clone(),
-                name: info.metadata.name.clone(),
-                version: info.metadata.version.to_string(),
-                description: info.metadata.description.clone(),
-                author: info.metadata.author.clone(),
-                state: state_str.to_string(),
-                file_path: info.path.as_ref().map(|p| p.display().to_string()),
-                loaded_at: None, // Not available in UnifiedExtensionInfo
-                commands,
-                metrics,
-                config_parameters,
-            }
-        })
-        .collect();
+        // Create DTO for failed extension
+        extensions.push(ExtensionDto {
+            id: record.id,
+            name: record.name,
+            version: record.version,
+            description: record.description,
+            author: record.author,
+            state: "Failed".to_string(),
+            file_path: Some(record.file_path),
+            loaded_at: None,
+            health_status: record.health_status,
+            last_error: record.last_error,
+            last_error_at: record.last_error_at,
+            commands: Vec::new(),
+            metrics: Vec::new(),
+            config_parameters: None,
+        });
+    }
 
     // Filter by state
     if let Some(state_filter) = &query.state {
@@ -303,6 +269,116 @@ pub async fn list_extensions_handler(
     }
 
     ok(extensions)
+}
+
+/// Helper function to convert ExtensionInfo to ExtensionDto
+fn extension_info_to_dto(info: &neomind_core::extension::unified::UnifiedExtensionInfo) -> ExtensionDto {
+    use neomind_core::extension::system::ParamMetricValue;
+    
+    // Convert commands to DTOs (V2 format)
+    let commands: Vec<CommandDescriptorDto> = info
+        .commands
+        .iter()
+        .map(|cmd| CommandDescriptorDto {
+            id: cmd.name.clone(),
+            display_name: cmd.display_name.clone(),
+            description: cmd.llm_hints.clone(),
+            input_schema: build_parameters_schema(&cmd.parameters),
+            output_fields: vec![], // V2: Commands don't declare output fields
+            config: CommandConfigDto {
+                requires_auth: false,
+                timeout_ms: 30000,
+                is_stream: false,
+                expected_duration_ms: None,
+            },
+        })
+        .collect();
+
+    // Convert metrics to DTOs (V2)
+    let metrics: Vec<MetricDescriptorDto> = info
+        .metrics
+        .iter()
+        .map(|m| MetricDescriptorDto {
+            name: m.name.clone(),
+            display_name: m.display_name.clone(),
+            data_type: format!("{:?}", m.data_type),
+            unit: m.unit.clone(),
+            description: None, // V2: MetricDefinition doesn't have description
+            min: m.min,
+            max: m.max,
+            required: m.required,
+        })
+        .collect();
+
+    // Convert config parameters to DTOs
+    let config_parameters = info.metadata.config_parameters.as_ref().map(|params| {
+        params
+            .iter()
+            .map(|p| {
+                ConfigParamDto {
+                    name: p.name.clone(),
+                    display_name: p.display_name.clone(),
+                    description: p.description.clone(),
+                    param_type: format!("{:?}", p.param_type).to_lowercase(),
+                    required: p.required,
+                    default: p.default_value.as_ref().map(|v| match v {
+                        ParamMetricValue::Float(f) => serde_json::json!(f),
+                        ParamMetricValue::Integer(i) => serde_json::json!(i),
+                        ParamMetricValue::Boolean(b) => serde_json::json!(b),
+                        ParamMetricValue::String(s) => serde_json::json!(s),
+                        ParamMetricValue::Binary(_) => serde_json::json!(null),
+                        ParamMetricValue::Null => serde_json::json!(null),
+                    }),
+                    min: p.min,
+                    max: p.max,
+                    options: match &p.param_type {
+                        MetricDataType::Enum { options } => options.clone(),
+                        _ => Vec::new(),
+                    },
+                }
+            })
+            .collect()
+    });
+
+    // Determine state based on is_running and is_isolated
+    let state_str = if info.is_running {
+        if info.is_isolated {
+            "Running (Isolated)"
+        } else {
+            "Running"
+        }
+    } else {
+        "Stopped"
+    };
+
+    // Try to get health status from storage
+    let (health_status, last_error, last_error_at) =
+        if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+            if let Ok(Some(record)) = store.load(&info.metadata.id) {
+                (record.health_status, record.last_error, record.last_error_at)
+            } else {
+                ("unknown".to_string(), None, None)
+            }
+        } else {
+            ("unknown".to_string(), None, None)
+        };
+
+    ExtensionDto {
+        id: info.metadata.id.clone(),
+        name: info.metadata.name.clone(),
+        version: info.metadata.version.to_string(),
+        description: info.metadata.description.clone(),
+        author: info.metadata.author.clone(),
+        state: state_str.to_string(),
+        file_path: info.path.as_ref().map(|p| p.display().to_string()),
+        loaded_at: None, // Not available in UnifiedExtensionInfo
+        health_status,
+        last_error,
+        last_error_at,
+        commands,
+        metrics,
+        config_parameters,
+    }
 }
 
 /// GET /api/extensions/:id
@@ -392,6 +468,18 @@ pub async fn get_extension_handler(
         "Stopped"
     };
 
+    // Try to get health status from storage
+    let (health_status, last_error, last_error_at) = 
+        if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+            if let Ok(Some(record)) = store.load(&id) {
+                (record.health_status, record.last_error, record.last_error_at)
+            } else {
+                ("unknown".to_string(), None, None)
+            }
+        } else {
+            ("unknown".to_string(), None, None)
+        };
+
     ok(ExtensionDto {
         id: info.metadata.id.clone(),
         name: info.metadata.name.clone(),
@@ -401,6 +489,9 @@ pub async fn get_extension_handler(
         state: state_str.to_string(),
         file_path: info.path.as_ref().map(|p| p.display().to_string()),
         loaded_at: None,
+        health_status,
+        last_error,
+        last_error_at,
         commands,
         metrics,
         config_parameters,
@@ -419,25 +510,31 @@ pub async fn get_extension_stats_handler(
         return Err(ErrorResponse::not_found(format!("Extension {}", id)));
     }
 
-    // Try to get stats from registry (for in-process extensions)
-    if let Some(info) = state.extensions.registry.get_info(&id).await {
-        return ok(ExtensionStatsDto {
-            start_count: info.stats.start_count,
-            stop_count: info.stats.stop_count,
-            error_count: info.stats.error_count,
-            last_error: info.stats.last_error,
-        });
+    // Get stats from unified service (supports both in-process and isolated extensions)
+    match state.extensions.unified_service.get_stats(&id).await {
+        Ok(stats) => {
+            ok(ExtensionStatsDto {
+                start_count: stats.start_count,
+                stop_count: stats.stop_count,
+                error_count: stats.error_count,
+                last_error: stats.last_error,
+            })
+        }
+        Err(e) => {
+            tracing::warn!(
+                extension_id = %id,
+                error = %e,
+                "Failed to get extension stats"
+            );
+            // Return default stats on error
+            ok(ExtensionStatsDto {
+                start_count: 0,
+                stop_count: 0,
+                error_count: 0,
+                last_error: Some(format!("Failed to get stats: {}", e)),
+            })
+        }
     }
-
-    // For isolated extensions, we don't have detailed stats yet
-    // Return default stats
-    // TODO: Add stats support for isolated extensions via IPC
-    ok(ExtensionStatsDto {
-        start_count: 0,
-        stop_count: 0,
-        error_count: 0,
-        last_error: None,
-    })
 }
 
 /// GET /api/extensions/types
@@ -543,16 +640,29 @@ pub async fn unregister_extension_handler(
 ) -> HandlerResult<serde_json::Value> {
     let unified = &state.extensions.unified_service;
 
-    // Check if extension exists
-    if !unified.contains(&id).await {
+    // Check if extension exists in memory or storage
+    let in_memory = unified.contains(&id).await;
+    let in_storage = if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
+        store.load(&id).ok().flatten().is_some()
+    } else {
+        false
+    };
+
+    // Extension must exist somewhere to unregister
+    if !in_memory && !in_storage {
         return Err(ErrorResponse::not_found(format!("Extension {}", id)));
     }
 
-    // Unregister from memory (handles both in-process and isolated)
-    unified
-        .unregister(&id)
-        .await
-        .map_err(|e| ErrorResponse::internal(format!("Failed to unregister: {}", e)))?;
+    // Unregister from memory if present (handles both in-process and isolated)
+    if in_memory {
+        if let Err(e) = unified.unregister(&id).await {
+            tracing::warn!(
+                extension_id = %id,
+                error = %e,
+                "Failed to unregister extension from memory (continuing with storage cleanup)"
+            );
+        }
+    }
 
     // Mark as uninstalled in storage (instead of deleting) to prevent auto-discovery
     // from re-registering it on server restart
@@ -1618,6 +1728,8 @@ pub async fn get_marketplace_extension_handler(
 }
 
 /// Detect current platform for extension download
+/// Returns platform string in hyphen format (e.g., "darwin-aarch64")
+/// This matches the format used in marketplace metadata `builds` keys
 fn detect_platform() -> &'static str {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
@@ -1634,16 +1746,28 @@ fn detect_platform() -> &'static str {
         "linux-x86_64"
     }
 
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    {
+        "linux-aarch64"
+    }
+
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     {
         "windows-x86_64"
+    }
+
+    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    {
+        "windows-aarch64"
     }
 
     #[cfg(not(any(
         all(target_os = "macos", target_arch = "aarch64"),
         all(target_os = "macos", target_arch = "x86_64"),
         all(target_os = "linux", target_arch = "x86_64"),
-        all(target_os = "windows", target_arch = "x86_64")
+        all(target_os = "linux", target_arch = "aarch64"),
+        all(target_os = "windows", target_arch = "x86_64"),
+        all(target_os = "windows", target_arch = "aarch64")
     )))]
     {
         "unknown"
@@ -1844,8 +1968,19 @@ pub async fn install_marketplace_extension_handler(
     // Detect platform
     let platform = detect_platform();
 
+    // Build platform-specific .nep package URL from builds metadata
+    // The package_url field in metadata is hardcoded to darwin_aarch64, so we ignore it
+    // and use the correct URL from builds for the current platform
+    let package_url = if platform != "unknown" {
+        // Get the URL directly from builds for this platform
+        // builds keys use hyphen format (windows-x86_64), same as detect_platform()
+        metadata.builds.get(platform).map(|b| b.url.clone())
+    } else {
+        metadata.package_url.clone()
+    };
+
     // Check if .nep package is available (preferred method)
-    if let Some(ref package_url) = metadata.package_url {
+    if let Some(ref package_url) = package_url {
         tracing::info!("Downloading .nep package for extension {} from {}", req.id, package_url);
 
         // Download the .nep package
@@ -2871,7 +3006,14 @@ fn load_extension_components(
     extension_id: &str,
     file_path: Option<&std::path::PathBuf>,
 ) -> Option<Vec<DashboardComponentDto>> {
-    let file_path = file_path?;
+    // If no file_path provided, try to find extension in data directory
+    let file_path = if let Some(fp) = file_path {
+        fp.clone()
+    } else {
+        // Try to find extension in data/extensions directory
+        let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
+        std::path::PathBuf::from(data_dir).join("extensions").join(extension_id)
+    };
 
     tracing::debug!(
         extension_id = %extension_id,
@@ -2882,16 +3024,21 @@ fn load_extension_components(
     // Get the extension directory
     // For legacy format: file_path = extensions/xxx.wasm -> ext_dir = extensions/
     // For .nep format: file_path = extensions/xxx/binaries/wasm/extension.wasm -> ext_dir should be extensions/xxx/
-    let ext_dir = file_path.parent()?;
+    // Determine the extension directory
+    // If file_path is a directory, use it directly
+    // If file_path is a file, use its parent directory
+    let ext_dir = if file_path.is_dir() {
+        file_path.clone()
+    } else {
+        file_path.parent()?.to_path_buf()
+    };
 
     tracing::debug!(ext_dir = %ext_dir.display(), "Extension directory");
 
-    // Try to find the extension root directory
-    // For .nep format, we need to go up from binaries/{platform}/ to the extension root
+    // Determine the extension root directory
+    // Check if we're in a .nep format (contains "binaries" directory)
     let extension_root = {
         let components: Vec<_> = ext_dir.components().collect();
-
-        // Check if this is a .nep format by looking for "binaries" in the path
         let binaries_idx = components.iter().position(|c| {
             if let std::path::Component::Normal(os_str) = c {
                 os_str.to_str().map(|s| s == "binaries").unwrap_or(false)
@@ -2936,11 +3083,23 @@ fn load_extension_components(
         "Trying manifest paths"
     );
 
+    // Try each manifest path
     let mut manifest_content = None;
     for manifest_path in &manifest_paths {
-        if let Ok(content) = std::fs::read_to_string(manifest_path) {
-            manifest_content = Some(content);
-            break;
+        if manifest_path.exists() {
+            match std::fs::read_to_string(manifest_path) {
+                Ok(content) => {
+                    manifest_content = Some(content);
+                    break;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        manifest_path = %manifest_path.display(),
+                        error = %e,
+                        "Failed to read manifest.json"
+                    );
+                }
+            }
         }
     }
 

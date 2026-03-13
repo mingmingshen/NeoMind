@@ -11,6 +11,7 @@ tiktoken = ["dep:tiktoken-rs"]
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 uuid = { workspace = true }
@@ -34,11 +35,14 @@ semver = { version = "1", features = ["serde"] }
 libloading = "0.8"
 zip = "2.1"
 sha2 = "0.10"
+scopeguard = "1.2"
 
 [dev-dependencies]
 neomind-automation = { path = "../neomind-automation" }
 neomind-agent = { path = "../neomind-agent" }
 neomind-tools = { path = "../neomind-tools" }
+neomind-devices = { path = "../neomind-devices" }
+neomind-rules = { path = "../neomind-rules" }
 
 [lints.clippy]
 # Temporarily suppress clippy warnings for neomind-core
@@ -53,3 +57,5 @@ clone_on_copy = "allow"
 derivable_impls = "allow"
 collapsible_if = "allow"
 map_clone = "allow"
+
+

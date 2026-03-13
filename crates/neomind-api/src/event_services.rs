@@ -144,8 +144,8 @@ impl TransformEventService {
                             continue;
                         }
 
-                        // Log incoming device metric for debugging
-                        tracing::info!(
+                        // Log incoming device metric for debugging (debug level to reduce noise)
+                        tracing::debug!(
                             device_id = %device_id,
                             metric = %metric,
                             timestamp = timestamp,

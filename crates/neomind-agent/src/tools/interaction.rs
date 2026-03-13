@@ -197,6 +197,7 @@ impl ConfirmActionTool {
     /// Check if an action requires confirmation.
     pub fn requires_confirmation(&self, action_name: &str) -> bool {
         let dangerous_actions = [
+            // English keywords
             "delete",
             "remove",
             "clear",
@@ -206,6 +207,15 @@ impl ConfirmActionTool {
             "turn off all",
             "delete all",
             "batch delete",
+            // Chinese keywords
+            "删除",
+            "移除",
+            "清空",
+            "重置",
+            "格式化",
+            "关闭所有",
+            "删除所有",
+            "批量删除",
         ];
         dangerous_actions
             .iter()

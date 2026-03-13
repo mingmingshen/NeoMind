@@ -506,7 +506,13 @@ function getChartHeight(component: DashboardComponent): number | 'auto' {
   return calculatedHeight
 }
 
-function renderDashboardComponent(component: DashboardComponent, devices: Device[], editMode?: boolean) {
+function renderDashboardComponent(
+  component: DashboardComponent,
+  devices: Device[],
+  editMode?: boolean,
+  onDataSourceChange?: (dataSource: Record<string, any>) => void,
+  onConfigChange?: (config: Record<string, any>) => void
+) {
   const config = (component as any).config || {}
   // dataSource is a separate property on GenericComponent, not part of config
   const dataSource = (component as any).dataSource
@@ -894,7 +900,14 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
       // Check if this is an extension component
       if (dynamicRegistry.isDynamic(component.type)) {
         console.log(`[VisualDashboard] Rendering extension component: ${component.type}`)
-        return <ComponentRenderer component={component} className="w-full h-full" />
+        return (
+          <ComponentRenderer
+            component={component}
+            className="w-full h-full"
+            onDataSourceChange={onDataSourceChange}
+            onConfigChange={onConfigChange}
+          />
+        )
       }
       return (
         <div className="p-4 text-center text-muted-foreground h-full flex flex-col items-center justify-center">
@@ -1713,6 +1726,15 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       // Get dataSource from component (it should be a separate property, not in config)
       const componentDataSource = (component as any).dataSource
 
+      // Create callbacks for this component to persist configuration changes
+      const handleDataSourceChange = (newDataSource: any) => {
+        updateComponent(component.id, { dataSource: newDataSource as DataSource })
+      }
+
+      const handleConfigChange = (newConfig: Record<string, any>) => {
+        updateComponent(component.id, { config: newConfig })
+      }
+
       return {
         id: component.id,
         position: component.position,
@@ -1733,7 +1755,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             selectedComponentId={mobileSelectedId}
             isMobile={isMobile}
           >
-            {renderDashboardComponent(component, devices, editMode)}
+            {renderDashboardComponent(component, devices, editMode, handleDataSourceChange, handleConfigChange)}
           </ComponentWrapper>
         ),
       }
@@ -4991,7 +5013,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         )}
 
         {/* Dashboard Grid */}
-        <div className="flex-1 overflow-auto p-4 relative">
+        <div className={cn(
+          "flex-1 overflow-auto p-4 relative",
+          editMode && "pb-32"
+        )}>
           {/* Fullscreen exit button - floating */}
           {isFullscreen && (
             <Button

@@ -6,60 +6,10 @@
 //!
 //! # Architecture (V2 - Unified with Process Isolation)
 //!
-//! ```text
-//! ┌─────────────────────────────────────────────────────┐
-//! │              UnifiedExtensionService                 │
-//! │  - Unified API for all extension operations         │
-//! │  - All extensions use process isolation by default  │
-//! └─────────────────────────────────────────────────────┘
-//!                         │
-//!                         ▼
-//! ┌─────────────────────────────────────────────────────┐
-//! │              Extension Runner Process                │
-//! │  - Native extensions (.so/.dylib/.dll) via FFI      │
-//! │  - WASM extensions (.wasm) via wasmtime             │
-//! │  - Complete isolation from main process             │
-//! └─────────────────────────────────────────────────────┘
-//! ```
-//!
-//! # Process Isolation
-//!
 //! All extensions run in isolated mode by default:
 //! - Extension crashes don't affect main NeoMind process
 //! - Memory and resource limits are enforced
 //! - Clean separation of concerns
-//!
-//! # V2 Extension API
-//!
-//! Extensions implement the `Extension` trait from `system.rs`:
-//! - `metadata()` - Returns extension metadata
-//! - `metrics()` - Declares available metrics (data streams)
-//! - `commands()` - Declares available commands (operations)
-//! - `execute_command()` - Executes a command (async)
-//! - `produce_metrics()` - Returns current metric values (sync)
-//! - `health_check()` - Health check (async, optional)
-//!
-//! # FFI Exports
-//!
-//! Extensions must export these symbols for dynamic loading:
-//! - `neomind_extension_abi_version()` -> u32 (should return 3)
-//! - `neomind_extension_metadata()` -> CExtensionMetadata
-//! - `neomind_extension_create()` -> *mut RwLock<Box<dyn Extension>>
-//! - `neomind_extension_destroy(*mut RwLock<Box<dyn Extension>>)
-//!
-//! # Usage
-//!
-//! ```rust,ignore
-//! use neomind_core::extension::{UnifiedExtensionService, Extension};
-//!
-//! let service = UnifiedExtensionService::with_defaults(registry);
-//!
-//! // Load extension (runs in isolated process)
-//! let metadata = service.load(&path).await?;
-//!
-//! // Execute command
-//! let result = service.execute_command(&id, &command, &args).await?;
-//! ```
 
 pub mod executor;
 pub mod isolated;
@@ -72,6 +22,11 @@ pub mod stream;
 pub mod system;
 pub mod types;
 pub mod unified;
+pub mod event_subscription;
+pub mod context;
+pub mod capability_services;
+pub mod event_dispatcher;
+pub mod extension_event_subscription;
 
 pub use executor::{CommandExecutor, CommandResult, UnifiedStorage};
 pub use isolated::{
@@ -92,7 +47,16 @@ pub use system::{
     PushOutputMessage, ToolDescriptor, ValidationRule,
 };
 pub use types::{DynExtension, ExtensionError, Result};
+pub use event_subscription::{EventSubscription, EventFilter};
 pub use unified::{UnifiedExtensionConfig, UnifiedExtensionInfo, UnifiedExtensionService};
+pub use context::{
+    ExtensionContext, ExtensionContextConfig, ExtensionCapability,
+    ExtensionCapabilityProvider, CapabilityManifest, CapabilityError,
+    AvailableCapabilities,
+};
+pub use capability_services::{CapabilityServices, keys};
+pub use event_dispatcher::EventDispatcher;
+pub use extension_event_subscription::ExtensionEventSubscriptionService;
 
 /// Check if a file is a native extension.
 pub fn is_native_extension(path: &std::path::Path) -> bool {

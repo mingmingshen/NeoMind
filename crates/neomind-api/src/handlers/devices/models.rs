@@ -12,7 +12,7 @@ pub struct DeviceDto {
     pub device_type: String,
     pub adapter_type: String,
     pub status: String,
-    pub last_seen: String,
+    pub last_seen: Option<String>,
     pub online: bool,
     /// Plugin ID that manages this device (if applicable)
     #[serde(skip_serializing_if = "Option::is_none")]
