@@ -791,8 +791,7 @@ impl ExtensionPackage {
             .map_err(|e| PackageError::InvalidManifest(format!("Failed to serialize sidecar JSON: {}", e)))?;
 
         std::fs::write(json_path, content)
-            .map_err(|e| PackageError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            .map_err(|e| PackageError::Io(std::io::Error::other(
                 format!("Failed to write sidecar JSON: {}", e)
             )))?;
 
@@ -932,8 +931,7 @@ impl ExtensionPackage {
             .map_err(|e| PackageError::InvalidManifest(format!("Failed to serialize sidecar JSON: {}", e)))?;
 
         tokio::fs::write(json_path, content).await
-            .map_err(|e| PackageError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            .map_err(|e| PackageError::Io(std::io::Error::other(
                 format!("Failed to write sidecar JSON: {}", e)
             )))?;
 

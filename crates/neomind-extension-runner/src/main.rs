@@ -1267,12 +1267,22 @@ impl Runner {
             .build()
             .map_err(|e| format!("Failed to create runner runtime: {}", e))?;
 
-        // Create IPC client for WASM capability forwarding
-        let (ipc_client, ipc_request_rx, ipc_response_tx) = if extension_type == ExtensionType::Wasm {
+        // Create IPC client for capability forwarding (both Native and WASM)
+        let (ipc_client, ipc_request_rx, ipc_response_tx) = {
             let (client, request_rx, response_tx) = SyncIpcClient::new();
-            (Some(Arc::new(client)), Some(request_rx), Some(response_tx))
-        } else {
-            (None, None, None)
+            let client_arc = Arc::new(client);
+            
+            // For Native extensions, set the global capability invoker
+            if extension_type == ExtensionType::Native {
+                let client_for_invoker = client_arc.clone();
+                let invoker = Box::new(move |capability: &str, params: &serde_json::Value| -> serde_json::Value {
+                    client_for_invoker.invoke(capability, params)
+                });
+                neomind_extension_sdk::capabilities::set_global_capability_invoker(invoker);
+                info!("Global capability invoker set for Native extension");
+            }
+            
+            (Some(client_arc), Some(request_rx), Some(response_tx))
         };
 
         Ok(Self {

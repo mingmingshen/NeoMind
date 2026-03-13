@@ -94,7 +94,7 @@ impl Extension for LifecycleTrackingExtension {
                     required: false,
                 },
             ]
-        })
+        }).clone()
     }
 
     fn commands(&self) -> Vec<ExtensionCommand> {
@@ -124,7 +124,11 @@ impl Extension for LifecycleTrackingExtension {
                     parameter_groups: vec![],
                 },
             ]
-        })
+        }).clone()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
     async fn execute_command(

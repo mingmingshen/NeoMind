@@ -24,7 +24,7 @@
 use std::sync::Arc;
 
 use serde_json::Value;
-use tracing::{debug, info, trace};
+use tracing::{info, trace};
 
 use crate::event::NeoMindEvent;
 use crate::eventbus::EventBus;

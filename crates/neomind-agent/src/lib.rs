@@ -75,7 +75,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_integration() {
-        let manager = SessionManager::new().unwrap();
+        // Create a temporary directory for the test
+        let temp_dir = std::env::temp_dir();
+        let test_path = temp_dir.join(format!("neomind_test_{}", uuid::Uuid::new_v4()));
+        
+        let manager = SessionManager::with_path(test_path).unwrap();
 
         // Create a session
         let session_id = manager.create_session().await.unwrap();

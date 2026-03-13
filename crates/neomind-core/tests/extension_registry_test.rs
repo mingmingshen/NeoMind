@@ -113,7 +113,11 @@ impl Extension for MockExtension {
                     parameter_groups: vec![],
                 },
             ]
-        })
+        }).clone()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
     async fn execute_command(

@@ -62,6 +62,10 @@ impl Extension for MockEventExtension {
         vec![]
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn event_subscriptions(&self) -> &[&str] {
         &self.event_subscriptions
     }

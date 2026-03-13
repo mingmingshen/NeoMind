@@ -11,7 +11,7 @@
 
 use serde_json::Value;
 use parking_lot::RwLock;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info};
 
 use super::system::DynExtension;
 

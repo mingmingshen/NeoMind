@@ -1755,7 +1755,7 @@ impl IsolatedExtension {
                             signal = status.signal(),
                             "Extension process exited unexpectedly"
                         );
-                        self.kill_internal(&mut *process_guard).await;
+                        self.kill_internal(&mut process_guard).await;
                         return Err(IsolatedExtensionError::Crashed(
                             format!("Process exited with status: {:?}", status)
                         ));
@@ -1852,7 +1852,7 @@ impl IsolatedExtension {
                     );
 
                     let mut process_guard = self.process.lock().await;
-                    self.kill_internal(&mut *process_guard).await;
+                    self.kill_internal(&mut process_guard).await;
                     drop(process_guard);
 
                     // Attempt restart
@@ -1904,7 +1904,7 @@ impl IsolatedExtension {
         use std::process::Command;
 
         let output = Command::new("ps")
-            .args(&["-o", "rss=", "-p", &pid.to_string()])
+            .args(["-o", "rss=", "-p", &pid.to_string()])
             .output()?;
 
         if output.status.success() {

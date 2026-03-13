@@ -39,7 +39,7 @@ fn test_metric_data_type_serialize() {
         options: vec!["opt1".to_string(), "opt2".to_string()],
     };
     let json = serde_json::to_string(&dt).unwrap();
-    assert_eq!(json, "{\"enum\":[\"opt1\",\"opt2\"]}");
+    assert_eq!(json, "{\"enum\":{\"options\":[\"opt1\",\"opt2\"]}}");
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn test_metric_data_type_deserialize() {
     let dt: MetricDataType = serde_json::from_str(json).unwrap();
     assert_eq!(dt, MetricDataType::Integer);
 
-    let json = "{\"enum\":[\"a\",\"b\"]}";
+    let json = "{\"enum\":{\"options\":[\"a\",\"b\"]}}";
     let dt: MetricDataType = serde_json::from_str(json).unwrap();
     match dt {
         MetricDataType::Enum { options } => {

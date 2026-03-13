@@ -88,7 +88,7 @@ impl Extension for WeatherExtension {
                     required: false,
                 },
             ]
-        })
+        }).clone()
     }
 
     fn commands(&self) -> Vec<ExtensionCommand> {
@@ -153,7 +153,11 @@ impl Extension for WeatherExtension {
                     parameter_groups: vec![],
                 },
             ]
-        })
+        }).clone()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
     fn event_subscriptions(&self) -> &[&str] {
@@ -349,7 +353,11 @@ impl Extension for SensorExtension {
                     parameter_groups: vec![],
                 },
             ]
-        })
+        }).clone()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
     async fn execute_command(

@@ -18,6 +18,9 @@ mod tests {
             state: "loaded".to_string(),
             file_path: Some("/path/to/ext.so".to_string()),
             loaded_at: Some(1234567890),
+            health_status: "ok".to_string(),
+            last_error: None,
+            last_error_at: None,
             commands: vec![],
             metrics: vec![],
             config_parameters: None,
@@ -47,6 +50,9 @@ mod tests {
             state: "loaded".to_string(),
             file_path: None,
             loaded_at: None,
+            health_status: "ok".to_string(),
+            last_error: None,
+            last_error_at: None,
             commands: vec![],
             metrics: vec![],
             config_parameters: None,
@@ -199,8 +205,11 @@ mod tests {
                 state: state.to_string(),
                 file_path: None,
                 loaded_at: None,
+            health_status: "ok".to_string(),
                 commands: vec![],
+            last_error: None,
                 metrics: vec![],
+            last_error_at: None,
                 config_parameters: None,
             };
             assert_eq!(dto.state, state);
@@ -218,6 +227,9 @@ mod tests {
             state: "running".to_string(),
             file_path: Some("/path/to/sensor-ext.wasm".to_string()),
             loaded_at: Some(1234567890),
+            health_status: "ok".to_string(),
+            last_error: None,
+            last_error_at: None,
             commands: vec![CommandDescriptorDto {
                 id: "calibrate".to_string(),
                 display_name: "Calibrate".to_string(),
@@ -261,6 +273,9 @@ mod tests {
             state: "loaded".to_string(),
             file_path: Some("/test/path.so".to_string()),
             loaded_at: Some(1234567890),
+            health_status: "ok".to_string(),
+            last_error: None,
+            last_error_at: None,
             commands: vec![CommandDescriptorDto {
                 id: "cmd1".to_string(),
                 display_name: "Command 1".to_string(),
@@ -341,8 +356,11 @@ mod tests {
                 state: "loaded".to_string(),
                 file_path: None,
                 loaded_at: None,
+            health_status: "ok".to_string(),
                 commands: vec![],
+            last_error: None,
                 metrics: vec![],
+            last_error_at: None,
                 config_parameters: None,
             };
             assert_eq!(dto.version, version);

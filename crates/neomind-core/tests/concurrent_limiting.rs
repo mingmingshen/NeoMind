@@ -146,32 +146,25 @@ async fn test_sequential_batch_operations() {
 #[tokio::test]
 async fn test_concurrent_batch_operations() {
     use neomind_core::extension::isolated::BatchCommand;
+    use tokio::sync::Semaphore;
 
     let batch_count = 5;
     let commands_per_batch = 3;
     let limit = 2;
 
-    // Track active batches
-    let active_batches = Arc::new(RwLock::new(0));
+    // Use a semaphore to properly limit concurrency
+    let semaphore = Arc::new(Semaphore::new(limit));
     let success_count = Arc::new(RwLock::new(0));
 
     let mut handles = vec![];
 
     for _ in 0..batch_count {
-        let active_batches_clone = active_batches.clone();
+        let semaphore_clone = semaphore.clone();
         let success_count_clone = success_count.clone();
 
         let handle = tokio::spawn(async move {
-            // Check concurrent limit
-            {
-                let active = *active_batches_clone.read().await;
-                if active >= limit {
-                    return false;
-                }
-            }
-
-            // Increment active count
-            *active_batches_clone.write().await += 1;
+            // Acquire semaphore permit
+            let _permit = semaphore_clone.acquire().await.unwrap();
 
             // Create batch commands
             let batch = (0..commands_per_batch)
@@ -187,9 +180,6 @@ async fn test_concurrent_batch_operations() {
             // Mark success
             *success_count_clone.write().await += 1;
 
-            // Decrement active count
-            *active_batches_clone.write().await -= 1;
-
             true
         });
 
@@ -204,7 +194,6 @@ async fn test_concurrent_batch_operations() {
     let success = *success_count.read().await;
     println!("Successful batches: {} out of {} (limit: {})", success, batch_count, limit);
 
-    // At most `limit` batches should succeed concurrently
-    // But all batches should complete eventually
+    // All batches should complete eventually (semaphore queues requests)
     assert_eq!(success, batch_count);
 }

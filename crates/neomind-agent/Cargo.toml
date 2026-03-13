@@ -40,10 +40,6 @@ cron = "0.12"
 # Optional system info dependency
 sysinfo = { version = "0.33", optional = true }
 
-[[bench]]
-name = "agent_bench"
-harness = false
-
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

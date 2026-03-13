@@ -285,7 +285,7 @@ impl Extension for NoEventsExtension {
     }
 
     fn event_subscriptions(&self) -> &[&str] {
-        vec![]
+        &[]
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

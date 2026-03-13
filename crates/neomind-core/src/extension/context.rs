@@ -368,7 +368,7 @@ impl ExtensionContext {
 
         // Get event bus
         let event_bus = self.event_bus.as_ref()
-            .ok_or_else(|| CapabilityError::NotAvailable(ExtensionCapability::EventPublish))?;
+            .ok_or(CapabilityError::NotAvailable(ExtensionCapability::EventPublish))?;
 
         // Publish event (sync version)
         event_bus.publish_sync(event);
@@ -393,7 +393,7 @@ impl ExtensionContext {
 
         // Get event bus
         let event_bus = self.event_bus.as_ref()
-            .ok_or_else(|| CapabilityError::NotAvailable(ExtensionCapability::EventSubscribe))?;
+            .ok_or(CapabilityError::NotAvailable(ExtensionCapability::EventSubscribe))?;
 
         // Create filter closure
         let event_types_clone = event_types.clone();

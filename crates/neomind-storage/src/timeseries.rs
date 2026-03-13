@@ -776,7 +776,7 @@ impl TimeSeriesStore {
 
         // Check if table exists first
         let read_txn = self.db.begin_read()?;
-        let table_exists = matches!(read_txn.open_table(TIMESERIES_TABLE), Ok(_));
+        let table_exists = read_txn.open_table(TIMESERIES_TABLE).is_ok();
         drop(read_txn);
 
         if !table_exists {
