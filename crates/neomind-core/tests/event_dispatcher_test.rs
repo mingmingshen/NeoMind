@@ -54,12 +54,12 @@ impl Extension for MockEventExtension {
         })
     }
 
-    fn metrics(&self) -> &[MetricDescriptor] {
-        &[]
+    fn metrics(&self) -> Vec<MetricDescriptor> {
+        vec![]
     }
 
-    fn commands(&self) -> &[ExtensionCommand] {
-        &[]
+    fn commands(&self) -> Vec<ExtensionCommand> {
+        vec![]
     }
 
     fn event_subscriptions(&self) -> &[&str] {

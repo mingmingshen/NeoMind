@@ -74,50 +74,48 @@ impl Extension for ConfigurableExtension {
         })
     }
 
-    fn metrics(&self) -> &[MetricDescriptor] {
-        &[]
+    fn metrics(&self) -> Vec<MetricDescriptor> {
+        vec![]
     }
 
-    fn commands(&self) -> &[ExtensionCommand] {
-        static COMMANDS: std::sync::OnceLock<Vec<ExtensionCommand>> = std::sync::OnceLock::new();
-        COMMANDS.get_or_init(|| {
-            vec![
-                ExtensionCommand {
-                    name: "execute".to_string(),
-                    display_name: "Execute".to_string(),
-                    description: "Execute a command".to_string(),
-                    payload_template: "{}".to_string(),
-                    parameters: vec![
-                        ParameterDefinition {
-                            name: "value".to_string(),
-                            display_name: "Value".to_string(),
-                            description: "Input value".to_string(),
-                            param_type: MetricDataType::Integer,
-                            required: false,
-                            default_value: Some(ParamMetricValue::Integer(0)),
-                            min: None,
-                            max: None,
-                            options: vec![],
-                        }
-                    ],
-                    fixed_values: Default::default(),
-                    samples: vec![],
-                    llm_hints: String::new(),
-                    parameter_groups: vec![],
-                },
-                ExtensionCommand {
-                    name: "slow_command".to_string(),
-                    display_name: "Slow Command".to_string(),
-                    description: "A slow command for testing timeouts".to_string(),
-                    payload_template: "{}".to_string(),
-                    parameters: vec![],
-                    fixed_values: Default::default(),
-                    samples: vec![],
-                    llm_hints: String::new(),
-                    parameter_groups: vec![],
-                },
-                ExtensionCommand {
-                    name: "validate".to_string(),
+    fn commands(&self) -> Vec<ExtensionCommand> {
+        vec![
+            ExtensionCommand {
+                name: "execute".to_string(),
+                display_name: "Execute".to_string(),
+                description: "Execute a command".to_string(),
+                payload_template: "{}".to_string(),
+                parameters: vec![
+                    ParameterDefinition {
+                        name: "value".to_string(),
+                        display_name: "Value".to_string(),
+                        description: "Input value".to_string(),
+                        param_type: MetricDataType::Integer,
+                        required: false,
+                        default_value: Some(ParamMetricValue::Integer(0)),
+                        min: None,
+                        max: None,
+                        options: vec![],
+                    }
+                ],
+                fixed_values: Default::default(),
+                samples: vec![],
+                llm_hints: String::new(),
+                parameter_groups: vec![],
+            },
+            ExtensionCommand {
+                name: "slow_command".to_string(),
+                display_name: "Slow Command".to_string(),
+                description: "A slow command for testing timeouts".to_string(),
+                payload_template: "{}".to_string(),
+                parameters: vec![],
+                fixed_values: Default::default(),
+                samples: vec![],
+                llm_hints: String::new(),
+                parameter_groups: vec![],
+            },
+            ExtensionCommand {
+                name: "validate".to_string(),
                     display_name: "Validate".to_string(),
                     description: "Validate input parameters".to_string(),
                     payload_template: "{}".to_string(),
@@ -140,7 +138,10 @@ impl Extension for ConfigurableExtension {
                     parameter_groups: vec![],
                 },
             ]
-        })
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
     async fn execute_command(

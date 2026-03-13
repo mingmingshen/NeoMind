@@ -71,7 +71,7 @@ impl Extension for LifecycleTrackingExtension {
         })
     }
 
-    fn metrics(&self) -> &[MetricDescriptor] {
+    fn metrics(&self) -> Vec<MetricDescriptor> {
         static METRICS: std::sync::OnceLock<Vec<MetricDescriptor>> = std::sync::OnceLock::new();
         METRICS.get_or_init(|| {
             vec![
@@ -97,7 +97,7 @@ impl Extension for LifecycleTrackingExtension {
         })
     }
 
-    fn commands(&self) -> &[ExtensionCommand] {
+    fn commands(&self) -> Vec<ExtensionCommand> {
         static COMMANDS: std::sync::OnceLock<Vec<ExtensionCommand>> = std::sync::OnceLock::new();
         COMMANDS.get_or_init(|| {
             vec![

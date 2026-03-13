@@ -34,9 +34,9 @@ fn test_sdk_metric_data_type_variants() {
 #[test]
 fn test_sdk_metric_value_conversions() {
     // Float conversion
-    let float_val: SdkMetricValue = 3.14.into();
+    let float_val: SdkMetricValue = 1.234.into();
     match float_val {
-        SdkMetricValue::Float(v) => assert!((v - 3.14).abs() < 0.001),
+        SdkMetricValue::Float(v) => assert!((v - 1.234).abs() < 0.001),
         _ => panic!("Expected Float"),
     }
 
@@ -409,13 +409,13 @@ fn test_arg_parser_string() {
 
 #[test]
 fn test_arg_parser_numbers() {
-    let args = json!({"int": 42, "float": 3.14});
+    let args = json!({"int": 42, "float": 1.234});
     let parser = ArgParser::new(&args);
 
     assert_eq!(parser.get_i64("int").unwrap(), 42);
-    assert_eq!(parser.get_f64("float").unwrap(), 3.14);
+    assert_eq!(parser.get_f64("float").unwrap(), 1.234);
     assert_eq!(parser.get_optional_i64("int"), Some(42));
-    assert_eq!(parser.get_optional_f64("float"), Some(3.14));
+    assert_eq!(parser.get_optional_f64("float"), Some(1.234));
 }
 
 #[test]

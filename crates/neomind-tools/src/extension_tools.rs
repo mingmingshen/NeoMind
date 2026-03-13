@@ -439,6 +439,7 @@ mod tests {
     use neomind_core::extension::*;
     use std::sync::Arc;
     use tokio::sync::RwLock;
+    use std::any::Any;
 
     // Mock extension for testing
     struct MockExtension {
@@ -452,12 +453,16 @@ mod tests {
             &self.metadata
         }
 
-        fn metrics(&self) -> &[MetricDescriptor] {
-            &[]
+        fn metrics(&self) -> Vec<MetricDescriptor> {
+            vec![]
         }
 
-        fn commands(&self) -> &[ExtensionCommand] {
-            &self.commands
+        fn commands(&self) -> Vec<ExtensionCommand> {
+            self.commands.clone()
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
         }
 
         async fn execute_command(&self, command: &str, args: &Value) -> Result<Value> {
@@ -487,6 +492,7 @@ mod tests {
         let commands = vec![ExtensionCommand {
             name: "test_command".to_string(),
             display_name: "Test Command".to_string(),
+            description: "A test command".to_string(),
             payload_template: String::new(),
             parameters: vec![ParameterDefinition {
                 name: "input".to_string(),

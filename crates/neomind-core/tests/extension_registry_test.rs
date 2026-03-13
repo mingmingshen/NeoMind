@@ -70,11 +70,11 @@ impl Extension for MockExtension {
         })
     }
 
-    fn metrics(&self) -> &[MetricDescriptor] {
-        &[]
+    fn metrics(&self) -> Vec<MetricDescriptor> {
+        vec![]
     }
 
-    fn commands(&self) -> &[ExtensionCommand] {
+    fn commands(&self) -> Vec<ExtensionCommand> {
         static COMMANDS: std::sync::OnceLock<Vec<ExtensionCommand>> = std::sync::OnceLock::new();
         COMMANDS.get_or_init(|| {
             vec![

@@ -66,12 +66,12 @@ impl Extension for DeviceEventExtension {
         })
     }
 
-    fn metrics(&self) -> &[neomind_core::extension::system::MetricDescriptor] {
-        &[]
+    fn metrics(&self) -> Vec<neomind_core::extension::system::MetricDescriptor> {
+        vec![]
     }
 
-    fn commands(&self) -> &[neomind_core::extension::system::ExtensionCommand] {
-        &[]
+    fn commands(&self) -> Vec<neomind_core::extension::system::ExtensionCommand> {
+        vec![]
     }
 
     async fn execute_command(
@@ -143,12 +143,12 @@ impl Extension for AllEventsExtension {
         })
     }
 
-    fn metrics(&self) -> &[neomind_core::extension::system::MetricDescriptor] {
-        &[]
+    fn metrics(&self) -> Vec<neomind_core::extension::system::MetricDescriptor> {
+        vec![]
     }
 
-    fn commands(&self) -> &[neomind_core::extension::system::ExtensionCommand] {
-        &[]
+    fn commands(&self) -> Vec<neomind_core::extension::system::ExtensionCommand> {
+        vec![]
     }
 
     async fn execute_command(
@@ -213,12 +213,12 @@ impl Extension for PrefixMatchExtension {
         })
     }
 
-    fn metrics(&self) -> &[neomind_core::extension::system::MetricDescriptor] {
-        &[]
+    fn metrics(&self) -> Vec<neomind_core::extension::system::MetricDescriptor> {
+        vec![]
     }
 
-    fn commands(&self) -> &[neomind_core::extension::system::ExtensionCommand] {
-        &[]
+    fn commands(&self) -> Vec<neomind_core::extension::system::ExtensionCommand> {
+        vec![]
     }
 
     async fn execute_command(
@@ -264,12 +264,12 @@ impl Extension for NoEventsExtension {
         })
     }
 
-    fn metrics(&self) -> &[neomind_core::extension::system::MetricDescriptor] {
-        &[]
+    fn metrics(&self) -> Vec<neomind_core::extension::system::MetricDescriptor> {
+        vec![]
     }
 
-    fn commands(&self) -> &[neomind_core::extension::system::ExtensionCommand] {
-        &[]
+    fn commands(&self) -> Vec<neomind_core::extension::system::ExtensionCommand> {
+        vec![]
     }
 
     async fn execute_command(
@@ -285,7 +285,7 @@ impl Extension for NoEventsExtension {
     }
 
     fn event_subscriptions(&self) -> &[&str] {
-        &[]
+        vec![]
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -871,12 +871,12 @@ async fn test_extension_event_subscription_error_handling() {
             })
         }
 
-        fn metrics(&self) -> &[neomind_core::extension::system::MetricDescriptor] {
-            &[]
+        fn metrics(&self) -> Vec<neomind_core::extension::system::MetricDescriptor> {
+            vec![]
         }
 
-        fn commands(&self) -> &[neomind_core::extension::system::ExtensionCommand] {
-            &[]
+        fn commands(&self) -> Vec<neomind_core::extension::system::ExtensionCommand> {
+            vec![]
         }
 
         async fn execute_command(
@@ -964,12 +964,12 @@ async fn test_extension_event_subscription_custom_event() {
             })
         }
 
-        fn metrics(&self) -> &[neomind_core::extension::system::MetricDescriptor] {
-            &[]
+        fn metrics(&self) -> Vec<neomind_core::extension::system::MetricDescriptor> {
+            vec![]
         }
 
-        fn commands(&self) -> &[neomind_core::extension::system::ExtensionCommand] {
-            &[]
+        fn commands(&self) -> Vec<neomind_core::extension::system::ExtensionCommand> {
+            vec![]
         }
 
         async fn execute_command(

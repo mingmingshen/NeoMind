@@ -58,12 +58,16 @@ impl Extension for EventRecordingExtension {
         })
     }
 
-    fn metrics(&self) -> &[MetricDescriptor] {
-        &[]
+    fn metrics(&self) -> Vec<MetricDescriptor> {
+        vec![]
     }
 
-    fn commands(&self) -> &[ExtensionCommand] {
-        &[]
+    fn commands(&self) -> Vec<ExtensionCommand> {
+        vec![]
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
     fn event_subscriptions(&self) -> &[&str] {

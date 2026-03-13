@@ -385,12 +385,16 @@ impl Extension for MockProxyExtension {
         &self.metadata
     }
 
-    fn commands(&self) -> &[ExtensionCommand] {
-        &self.commands
+    fn commands(&self) -> Vec<ExtensionCommand> {
+        self.commands.clone()
     }
 
-    fn metrics(&self) -> &[MetricDescriptor] {
-        &self.metrics
+    fn metrics(&self) -> Vec<MetricDescriptor> {
+        self.metrics.clone()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
     async fn execute_command(
