@@ -261,6 +261,9 @@ impl ExtensionState {
         tracing::info!("Found {} auto-start extension(s) in storage", records.len());
 
         let mut loaded_count = 0;
+        let mut total = records.len();
+        let mut current = 0;
+
 
         for record in records {
             let file_path = Path::new(&record.file_path);
@@ -274,6 +277,12 @@ impl ExtensionState {
                 );
                 continue;
             }
+            
+            current += 1;
+            tracing::info!(
+                "Loading extension {}/{}: {}",
+                current, total, record.id
+            );
 
             // Use unified service for loading with process isolation
             let load_result = self.unified_service.load(file_path).await;
@@ -332,6 +341,12 @@ impl ExtensionState {
                     }
                 }
             }
+        }
+        
+        // Small delay between extensions to reduce memory pressure
+        // This prevents OOM when loading multiple heavy extensions
+        if current < total {
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         }
 
         tracing::info!("Loaded {} extension(s) from storage", loaded_count);

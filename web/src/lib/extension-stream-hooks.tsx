@@ -12,6 +12,7 @@ import type {
   ExtensionStreamConnectionState,
   ExtensionSessionStats,
   StreamCapability,
+  StreamDataType,
 } from '@/types'
 
 /**
@@ -401,14 +402,14 @@ export function useSensorStream(extensionId: string) {
  * @example
  * ```tsx
  * function CapabilityDisplay() {
- *   const { capability, supportedModes, hasMode } = useStreamCapability('video-processor')
+ *   const { capability, mode, supportedDataTypes, hasDataType } = useStreamCapability('video-processor')
  *
  *   return (
  *     <div>
  *       <h3>Capability</h3>
- *       <p>Mode: {capability?.mode}</p>
- *       <p>Data Types: {capability?.data_types.join(', ')}</p>
- *       {hasMode('stateful') && <p>✅ Supports stateful mode</p>}
+ *       <p>Mode: {mode}</p>
+ *       <p>Data Types: {supportedDataTypes.join(', ')}</p>
+ *       {hasDataType('image') && <p>✅ Supports image data type</p>}
  *     </div>
  *   )
  * }
@@ -416,42 +417,34 @@ export function useSensorStream(extensionId: string) {
  */
 export function useStreamCapability(extensionId: string): {
   capability: StreamCapability | null
-  supportedModes: string[]
-  supportedDataTypes: string[]
-  hasMode: (mode: string) => boolean
-  hasDataType: (dataType: string) => boolean
+  mode: string | null
+  supportedDataTypes: StreamDataType[]
+  hasDataType: (dataType: StreamDataType) => boolean
 } {
   const { capability } = useExtensionStream(extensionId)
 
-  const supportedModes = React.useMemo(
-    () => capability?.supported_modes || [],
+  const mode = React.useMemo(
+    () => capability?.mode || null,
     [capability]
   )
 
   const supportedDataTypes = React.useMemo(
-    () => capability?.data_types || [],
+    () => capability?.supported_data_types || [],
     [capability]
   )
 
-  const hasMode = React.useCallback(
-    (mode: string) => supportedModes.includes(mode),
-    [supportedModes]
-  )
-
   const hasDataType = React.useCallback(
-    (dataType: string) => supportedDataTypes.includes(dataType),
+    (dataType: StreamDataType) => supportedDataTypes.includes(dataType),
     [supportedDataTypes]
   )
 
   return {
     capability,
-    supportedModes,
+    mode,
     supportedDataTypes,
-    hasMode,
     hasDataType,
   }
 }
-
 /**
  * Higher-order component that provides extension stream context
  *
