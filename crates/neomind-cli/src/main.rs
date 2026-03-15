@@ -63,49 +63,66 @@ enum Command {
         #[arg(long, default_value = "http://localhost:11434")]
         endpoint: String,
     },
-    /// Plugin management commands.
-    Plugin {
+    /// Check system health and status.
+    Health,
+    /// View system logs.
+    Logs {
+        /// Number of lines to show (default: 50).
+        #[arg(long, default_value_t = 50)]
+        tail: usize,
+        /// Follow log output (like tail -f).
+        #[arg(long)]
+        follow: bool,
+        /// Filter by log level (ERROR, WARN, INFO, DEBUG).
+        #[arg(long)]
+        level: Option<String>,
+        /// Show logs from the last duration (e.g., "1h", "30m").
+        #[arg(long)]
+        since: Option<String>,
+    },
+    /// Extension management commands.
+    Extension {
         #[command(subcommand)]
-        plugin_cmd: PluginCommand,
+        extension_cmd: ExtensionCommand,
     },
 }
 
-/// Plugin subcommands.
+/// Extension subcommands.
 #[derive(Subcommand, Debug)]
-enum PluginCommand {
-    /// Validate a plugin file (WASM or native).
+enum ExtensionCommand {
+    /// Validate an extension file (WASM or native).
     Validate {
-        /// Path to the plugin file.
+        /// Path to the extension file.
         #[arg(required = true)]
         path: std::path::PathBuf,
         /// Show detailed output.
         #[arg(short, long)]
         verbose: bool,
     },
-    /// Create a new plugin scaffold.
+    /// Create a new extension scaffold.
     Create {
-        /// Plugin ID (lowercase, hyphens only).
+        /// Extension ID (lowercase, hyphens only).
         #[arg(required = true)]
         name: String,
-        /// Plugin type.
+        /// Extension type.
         #[arg(short, long, default_value = "tool")]
-        plugin_type: String,
+        extension_type: String,
         /// Output directory.
         #[arg(short, long)]
         output: Option<std::path::PathBuf>,
     },
-    /// List discovered plugins.
+    /// List discovered extensions.
     List {
-        /// Plugin directory to scan.
+        /// Extension directory to scan.
         #[arg(short, long)]
         dir: Option<std::path::PathBuf>,
-        /// Plugin type filter.
+        /// Extension type filter.
         #[arg(short, long)]
         ty: Option<String>,
     },
-    /// Show plugin metadata.
+    /// Show extension metadata.
     Info {
-        /// Path to the plugin file.
+        /// Path to the extension file.
         #[arg(required = true)]
         path: std::path::PathBuf,
     },
@@ -172,7 +189,9 @@ async fn main() -> Result<()> {
         } => run_prompt(&prompt).await,
         Command::Chat { session } => run_chat(session).await,
         Command::ListModels { endpoint } => list_models(endpoint).await,
-        Command::Plugin { plugin_cmd } => run_plugin_cmd(plugin_cmd).await,
+        Command::Health => run_health().await,
+        Command::Logs { tail, follow, level, since } => run_logs(tail, follow, level, since).await,
+        Command::Extension { extension_cmd } => run_extension_cmd(extension_cmd).await,
     }
 }
 
@@ -465,12 +484,12 @@ async fn run_server(host: String, port: u16) -> Result<()> {
     neomind_api::run(addr).await
 }
 
-/// Run plugin management commands.
-async fn run_plugin_cmd(cmd: PluginCommand) -> Result<()> {
+/// Run extension management commands.
+async fn run_extension_cmd(cmd: ExtensionCommand) -> Result<()> {
     use neomind_core::extension::loader::native::NativeExtensionLoader;
 
     match cmd {
-        PluginCommand::Validate { path, verbose } => {
+        ExtensionCommand::Validate { path, verbose } => {
             // Detect extension type by file extension
             let is_native = path
                 .extension()
@@ -576,29 +595,29 @@ async fn run_plugin_cmd(cmd: PluginCommand) -> Result<()> {
             } // Close else block
         } // Close Validate match arm
 
-        PluginCommand::Create {
+        ExtensionCommand::Create {
             name,
-            plugin_type,
+            extension_type,
             output,
         } => {
-            create_plugin_scaffold(&name, &plugin_type, output)?;
+            create_extension_scaffold(&name, &extension_type, output)?;
             Ok(())
         }
 
-        PluginCommand::List { dir, ty } => {
-            list_plugins(dir, ty).await?;
+        ExtensionCommand::List { dir, ty } => {
+            list_extensions(dir, ty).await?;
             Ok(())
         }
 
-        PluginCommand::Info { path } => {
-            show_plugin_info(&path).await?;
+        ExtensionCommand::Info { path } => {
+            show_extension_info(&path).await?;
             Ok(())
         }
     }
 }
 
-/// Create a new plugin scaffold.
-fn create_plugin_scaffold(name: &str, plugin_type: &str, _output: Option<PathBuf>) -> Result<()> {
+/// Create a new extension scaffold.
+fn create_extension_scaffold(name: &str, extension_type: &str, _output: Option<PathBuf>) -> Result<()> {
     let valid_types = [
         "tool",
         "llm_backend",
@@ -610,42 +629,42 @@ fn create_plugin_scaffold(name: &str, plugin_type: &str, _output: Option<PathBuf
         "workflow_engine",
     ];
 
-    if !valid_types.contains(&plugin_type) {
+    if !valid_types.contains(&extension_type) {
         anyhow::bail!(
-            "Invalid plugin type '{}'. Valid types: {}",
-            plugin_type,
+            "Invalid extension type '{}'. Valid types: {}",
+            extension_type,
             valid_types.join(", ")
         );
     }
 
-    println!("Creating plugin: {} (type: {})", name, plugin_type);
+    println!("Creating extension: {} (type: {})", name, extension_type);
     println!();
     println!("Please use the shell script for full scaffold generation:");
-    println!("  ./plugins/create-plugin.sh {} {}", name, plugin_type);
+    println!("  ./extensions/create-extension.sh {} {}", name, extension_type);
     println!();
-    println!("Or manually create the plugin structure:");
-    println!("  mkdir -p plugins/{}", name);
-    println!("  cd plugins/{}", name);
+    println!("Or manually create the extension structure:");
+    println!("  mkdir -p extensions/{}", name);
+    println!("  cd extensions/{}", name);
     println!("  cargo init --lib");
-    println!("  # Add edge-ai-core dependency and implement Plugin trait");
+    println!("  # Add edge-ai-core dependency and implement Extension trait");
 
     Ok(())
 }
 
-/// List discovered plugins.
-async fn list_plugins(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
+/// List discovered extensions.
+async fn list_extensions(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
     use std::fs;
 
     let search_dirs = if let Some(d) = dir {
         vec![d]
     } else {
         vec![
-            PathBuf::from("./plugins"),
-            PathBuf::from("/var/lib/neomind/plugins"),
+            PathBuf::from("./extensions"),
+            PathBuf::from("/var/lib/neomind/extensions"),
         ]
     };
 
-    println!("Discovered Plugins");
+    println!("Discovered Extensions");
     println!("==================\n");
 
     let mut found_count = 0;
@@ -660,9 +679,9 @@ async fn list_plugins(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
 
-            // Check for WASM plugins
+            // Check for WASM extensions
             if path.extension().is_some_and(|e| e == "wasm") {
-                let plugin_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
+                let extension_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
 
                 if let Some(ref filter_type) = ty {
                     let json_path = path.with_extension("json");
@@ -679,7 +698,7 @@ async fn list_plugins(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
                     }
                 }
 
-                println!("  WASM: {}", plugin_name);
+                println!("  WASM: {}", extension_name);
                 println!("        Path: {}", path.display());
                 let json_path = path.with_extension("json");
                 if json_path.exists() {
@@ -689,13 +708,13 @@ async fn list_plugins(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
                 found_count += 1;
             }
 
-            // Check for native plugins (.so, .dylib, .dll)
+            // Check for native extensions (.so, .dylib, .dll)
             if let Some(ext) = path.extension() {
                 match ext.to_str() {
                     Some("so") | Some("dylib") | Some("dll") => {
-                        let plugin_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
+                        let extension_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
 
-                        println!("  Native: {}", plugin_name);
+                        println!("  Native: {}", extension_name);
                         println!("          Path: {}", path.display());
                         println!();
                         found_count += 1;
@@ -707,21 +726,21 @@ async fn list_plugins(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
     }
 
     if found_count == 0 {
-        println!("  No plugins found.");
+        println!("  No extensions found.");
         println!();
         println!("  Searched in:");
         for d in &search_dirs {
             println!("    - {}", d.display());
         }
     } else {
-        println!("Total: {} plugin(s)", found_count);
+        println!("Total: {} extension(s)", found_count);
     }
 
     Ok(())
 }
 
 /// Show extension metadata.
-async fn show_plugin_info(path: &PathBuf) -> Result<()> {
+async fn show_extension_info(path: &PathBuf) -> Result<()> {
     if !path.exists() {
         anyhow::bail!("Extension file not found: {}", path.display());
     }
@@ -782,8 +801,181 @@ async fn show_plugin_info(path: &PathBuf) -> Result<()> {
         println!();
         println!("Note: Detailed metadata extraction for native extensions");
         println!("      requires loading the extension library.");
-        println!("      Use: neomind plugin validate {}", path.display());
+        println!("      Use: neomind extension validate {}", path.display());
     }
 
+    Ok(())
+}
+
+
+/// Run health check command.
+async fn run_health() -> Result<()> {
+    
+    println!("NeoMind System Health Check");
+    println!("==========================\n");
+    
+    // Check if server is running
+    println!("🔍 Checking server status...");
+    let check_url = "http://localhost:9375/api/health";
+    match reqwest::get(check_url).await {
+        Ok(resp) if resp.status().is_success() => {
+            println!("  ✅ Server is running");
+            
+            // Get detailed health status
+            if let Ok(health_json) = resp.json::<serde_json::Value>().await {
+                if let Some(status) = health_json.get("status").and_then(|v| v.as_str()) {
+                    println!("  Status: {}", status);
+                }
+            }
+        }
+        Ok(resp) => {
+            println!("  ⚠️  Server returned status: {}", resp.status());
+        }
+        Err(e) => {
+            println!("  ❌ Server is not responding: {}", e);
+            println!("  Hint: Start the server with 'neomind serve'");
+        }
+    }
+    
+    println!();
+    
+    // Check database files
+    println!("🔍 Checking databases...");
+    let data_dir = std::path::PathBuf::from("./data");
+    if data_dir.exists() {
+        let db_files = ["telemetry.redb", "sessions.redb", "devices.redb", "extensions.redb"];
+        for db in &db_files {
+            let db_path = data_dir.join(db);
+            if db_path.exists() {
+                let metadata = std::fs::metadata(&db_path)?;
+                let size_kb = metadata.len() / 1024;
+                println!("  ✅ {} ({} KB)", db, size_kb);
+            } else {
+                println!("  ⚠️  {} not found (will be created on first use)", db);
+            }
+        }
+    } else {
+        println!("  ℹ️  Data directory not found (will be created on first use)");
+    }
+    
+    println!();
+    
+    // Check LLM backend
+    println!("🔍 Checking LLM backend...");
+    if std::env::var("OLLAMA_ENDPOINT").is_ok() || std::env::var("OPENAI_API_KEY").is_ok() {
+        if std::env::var("OLLAMA_ENDPOINT").is_ok() {
+            let endpoint = std::env::var("OLLAMA_ENDPOINT").unwrap_or_default();
+            println!("  ✅ Ollama configured: {}", endpoint);
+        }
+        if std::env::var("OPENAI_API_KEY").is_ok() {
+            println!("  ✅ OpenAI configured");
+        }
+    } else {
+        println!("  ⚠️  No LLM backend configured");
+        println!("  Hint: Set OLLAMA_ENDPOINT or OPENAI_API_KEY environment variable");
+    }
+    
+    println!();
+    
+    // Check extensions directory
+    println!("🔍 Checking extensions...");
+    let extensions_dir = std::path::PathBuf::from("./extensions");
+    if extensions_dir.exists() {
+        let entries = std::fs::read_dir(&extensions_dir)?;
+        let count = entries.filter_map(|e| e.ok()).count();
+        println!("  ✅ Extensions directory found ({} items)", count);
+    } else {
+        println!("  ℹ️  Extensions directory not found");
+    }
+    
+    println!();
+    println!("Health check complete.");
+    
+    Ok(())
+}
+
+/// Run logs command.
+async fn run_logs(tail: usize, follow: bool, level: Option<String>, _since: Option<String>) -> Result<()> {
+    use std::io::{BufRead, BufReader};
+    use std::fs::File;
+    use std::path::Path;
+    
+    // Find log file
+    let log_paths = [
+        "./neomind.log",
+        "./data/neomind.log",
+        "/var/log/neomind.log",
+    ];
+    
+    let log_path = log_paths.iter()
+        .find(|p| Path::new(p).exists())
+        .ok_or_else(|| anyhow::anyhow!("Log file not found. Searched in: {:?}", log_paths))?;
+    
+    if follow {
+        // Follow mode (like tail -f)
+        println!("Following log file: {} (Ctrl+C to stop)\n", log_path);
+        
+        let file = File::open(log_path)?;
+        let metadata = file.metadata()?;
+        let mut reader = BufReader::new(file);
+        
+        // Seek to end first
+        let _file_size = metadata.len();
+        use std::io::Seek;
+        reader.seek(std::io::SeekFrom::End(0))?;
+        
+        // Read new lines
+        let mut line = String::new();
+        loop {
+            match reader.read_line(&mut line) {
+                Ok(0) => {
+                    // EOF reached, wait for more data
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    continue;
+                }
+                Ok(_) => {
+                    let should_print = if let Some(ref lvl) = level {
+                        line.contains(lvl) || line.to_uppercase().contains(lvl.as_str())
+                    } else {
+                        true
+                    };
+                    
+                    if should_print {
+                        print!("{}", line);
+                    }
+                    line.clear();
+                }
+                Err(e) => {
+                    eprintln!("Error reading log: {}", e);
+                    break;
+                }
+            }
+        }
+    } else {
+        // Tail mode - show last N lines
+        let file = File::open(log_path)?;
+        let reader = BufReader::new(file);
+        
+        let lines: Vec<String> = reader.lines()
+            .filter_map(|l| l.ok())
+            .filter(|l| {
+                if let Some(ref lvl) = level {
+                    l.contains(lvl) || l.to_uppercase().contains(lvl.as_str())
+                } else {
+                    true
+                }
+            })
+            .collect();
+        
+        let start = if lines.len() > tail { lines.len() - tail } else { 0 };
+        
+        println!("Log file: {} (showing last {} lines)\n", log_path, 
+                 lines.len() - start);
+        
+        for line in lines.iter().skip(start) {
+            println!("{}", line);
+        }
+    }
+    
     Ok(())
 }
