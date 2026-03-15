@@ -2,6 +2,7 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::io::Read;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -90,14 +91,38 @@ enum Command {
 /// Extension subcommands.
 #[derive(Subcommand, Debug)]
 enum ExtensionCommand {
-    /// Validate an extension file (WASM or native).
+   /// Validate a .nep extension package.
     Validate {
-        /// Path to the extension file.
+        /// Path to the .nep file.
         #[arg(required = true)]
         path: std::path::PathBuf,
         /// Show detailed output.
         #[arg(short, long)]
         verbose: bool,
+    },
+    /// List installed extensions.
+    List {
+        /// Show detailed information.
+        #[arg(short, long)]
+        verbose: bool,
+    },
+    /// Show extension information.
+    Info {
+        /// Extension ID or .nep file path.
+        #[arg(required = true)]
+        id_or_path: String,
+    },
+    /// Install a .nep extension package.
+    Install {
+        /// Path to the .nep file or URL.
+        #[arg(required = true)]
+        package: String,
+    },
+    /// Uninstall an extension.
+    Uninstall {
+        /// Extension ID.
+        #[arg(required = true)]
+        id: String,
     },
     /// Create a new extension scaffold.
     Create {
@@ -110,21 +135,6 @@ enum ExtensionCommand {
         /// Output directory.
         #[arg(short, long)]
         output: Option<std::path::PathBuf>,
-    },
-    /// List discovered extensions.
-    List {
-        /// Extension directory to scan.
-        #[arg(short, long)]
-        dir: Option<std::path::PathBuf>,
-        /// Extension type filter.
-        #[arg(short, long)]
-        ty: Option<String>,
-    },
-    /// Show extension metadata.
-    Info {
-        /// Path to the extension file.
-        #[arg(required = true)]
-        path: std::path::PathBuf,
     },
 }
 
@@ -484,332 +494,9 @@ async fn run_server(host: String, port: u16) -> Result<()> {
     neomind_api::run(addr).await
 }
 
-/// Run extension management commands.
-async fn run_extension_cmd(cmd: ExtensionCommand) -> Result<()> {
-    use neomind_core::extension::loader::native::NativeExtensionLoader;
-
-    match cmd {
-        ExtensionCommand::Validate { path, verbose } => {
-            // Detect extension type by file extension
-            let is_native = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|e| matches!(e, "so" | "dylib" | "dll"));
-
-            if is_native {
-                // Use NativeExtensionLoader for .so/.dylib/.dll files
-                let loader = NativeExtensionLoader::new();
-
-                match loader.load(&path) {
-                    Ok(loaded) => {
-                        let ext_guard = loaded.extension.read().await;
-                        let metadata = ext_guard.metadata();
-
-                        println!("Extension Validation: PASSED");
-                        println!();
-                        println!("ID:              {}", metadata.id);
-                        println!("Name:            {}", metadata.name);
-                        println!("Version:         {}", metadata.version);
-
-                        if verbose {
-                            println!("\n--- Verbose Details ---\n");
-                            println!("Extension path: {}", path.display());
-                            println!("Current directory: {}", std::env::current_dir()?.display());
-                            if let Some(file_path) = &metadata.file_path {
-                                println!("File path:       {}", file_path.display());
-                            }
-                        }
-
-                        std::process::exit(0);
-                    }
-                    Err(e) => {
-                        println!("Extension Validation: FAILED");
-                        println!();
-                        println!("Error: {}", e);
-                        println!();
-                        println!("Make sure:");
-                        println!("  1. The extension file exists");
-                        println!("  2. The file has .so/.dylib/.dll extension");
-                        println!("  3. The extension is built for V2 ABI");
-
-                        std::process::exit(1);
-                    }
-                }
-            } else {
-                // WASM extensions are validated via extension-runner
-                // For CLI validation, just check the sidecar JSON metadata
-                let json_path = path.with_extension("json");
-
-                if json_path.exists() {
-                    match std::fs::read_to_string(&json_path) {
-                        Ok(content) => {
-                            match serde_json::from_str::<serde_json::Value>(&content) {
-                                Ok(json) => {
-                                    println!("Extension Validation: PASSED (metadata only)");
-                                    println!();
-                                    println!("ID:              {}", json["id"].as_str().unwrap_or("unknown"));
-                                    println!("Name:            {}", json["name"].as_str().unwrap_or("unknown"));
-                                    println!("Version:         {}", json["version"].as_str().unwrap_or("unknown"));
-
-                                    if verbose {
-                                        println!("\n--- Verbose Details ---\n");
-                                        println!("Extension path: {}", path.display());
-                                        println!("Metadata path:  {}", json_path.display());
-                                        println!("Current directory: {}", std::env::current_dir()?.display());
-                                    }
-
-                                    std::process::exit(0);
-                                }
-                                Err(e) => {
-                                    println!("Extension Validation: FAILED");
-                                    println!();
-                                    println!("Error parsing metadata JSON: {}", e);
-                                    std::process::exit(1);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            println!("Extension Validation: FAILED");
-                            println!();
-                            println!("Error reading metadata file: {}", e);
-                            std::process::exit(1);
-                        }
-                    }
-                } else {
-                    println!("Extension Validation: PARTIAL");
-                    println!();
-                    println!("WASM file found: {}", path.display());
-                    println!("No sidecar .json metadata file found.");
-                    println!();
-                    println!("Note: WASM extensions are validated at runtime via extension-runner.");
-                    println!("Create a sidecar .json file with metadata for CLI validation.");
-
-                    if verbose {
-                        println!("\n--- Verbose Details ---\n");
-                        println!("Extension path: {}", path.display());
-                        println!("Expected metadata: {}", json_path.display());
-                    }
-
-                    std::process::exit(0);
-                }
-            } // Close else block
-        } // Close Validate match arm
-
-        ExtensionCommand::Create {
-            name,
-            extension_type,
-            output,
-        } => {
-            create_extension_scaffold(&name, &extension_type, output)?;
-            Ok(())
-        }
-
-        ExtensionCommand::List { dir, ty } => {
-            list_extensions(dir, ty).await?;
-            Ok(())
-        }
-
-        ExtensionCommand::Info { path } => {
-            show_extension_info(&path).await?;
-            Ok(())
-        }
-    }
-}
-
-/// Create a new extension scaffold.
-fn create_extension_scaffold(name: &str, extension_type: &str, _output: Option<PathBuf>) -> Result<()> {
-    let valid_types = [
-        "tool",
-        "llm_backend",
-        "storage_backend",
-        "device_adapter",
-        "integration",
-        "alert_channel",
-        "rule_engine",
-        "workflow_engine",
-    ];
-
-    if !valid_types.contains(&extension_type) {
-        anyhow::bail!(
-            "Invalid extension type '{}'. Valid types: {}",
-            extension_type,
-            valid_types.join(", ")
-        );
-    }
-
-    println!("Creating extension: {} (type: {})", name, extension_type);
-    println!();
-    println!("Please use the shell script for full scaffold generation:");
-    println!("  ./extensions/create-extension.sh {} {}", name, extension_type);
-    println!();
-    println!("Or manually create the extension structure:");
-    println!("  mkdir -p extensions/{}", name);
-    println!("  cd extensions/{}", name);
-    println!("  cargo init --lib");
-    println!("  # Add edge-ai-core dependency and implement Extension trait");
-
-    Ok(())
-}
-
-/// List discovered extensions.
-async fn list_extensions(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
-    use std::fs;
-
-    let search_dirs = if let Some(d) = dir {
-        vec![d]
-    } else {
-        vec![
-            PathBuf::from("./extensions"),
-            PathBuf::from("/var/lib/neomind/extensions"),
-        ]
-    };
-
-    println!("Discovered Extensions");
-    println!("==================\n");
-
-    let mut found_count = 0;
-
-    for search_dir in &search_dirs {
-        if !search_dir.exists() {
-            continue;
-        }
-
-        let entries = fs::read_dir(search_dir)?;
-
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-
-            // Check for WASM extensions
-            if path.extension().is_some_and(|e| e == "wasm") {
-                let extension_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
-
-                if let Some(ref filter_type) = ty {
-                    let json_path = path.with_extension("json");
-                    if let Ok(content) = fs::read_to_string(&json_path) {
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                            if json
-                                .get("type")
-                                .and_then(|v| v.as_str())
-                                .is_none_or(|t| t != filter_type)
-                            {
-                                continue;
-                            }
-                        }
-                    }
-                }
-
-                println!("  WASM: {}", extension_name);
-                println!("        Path: {}", path.display());
-                let json_path = path.with_extension("json");
-                if json_path.exists() {
-                    println!("        Metadata: {}", json_path.display());
-                }
-                println!();
-                found_count += 1;
-            }
-
-            // Check for native extensions (.so, .dylib, .dll)
-            if let Some(ext) = path.extension() {
-                match ext.to_str() {
-                    Some("so") | Some("dylib") | Some("dll") => {
-                        let extension_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
-
-                        println!("  Native: {}", extension_name);
-                        println!("          Path: {}", path.display());
-                        println!();
-                        found_count += 1;
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    if found_count == 0 {
-        println!("  No extensions found.");
-        println!();
-        println!("  Searched in:");
-        for d in &search_dirs {
-            println!("    - {}", d.display());
-        }
-    } else {
-        println!("Total: {} extension(s)", found_count);
-    }
-
-    Ok(())
-}
-
-/// Show extension metadata.
-async fn show_extension_info(path: &PathBuf) -> Result<()> {
-    if !path.exists() {
-        anyhow::bail!("Extension file not found: {}", path.display());
-    }
-
-    let is_wasm = path.extension().is_some_and(|e| e == "wasm");
-
-    if is_wasm {
-        // Read metadata from sidecar JSON file
-        let json_path = path.with_extension("json");
-
-        if json_path.exists() {
-            match std::fs::read_to_string(&json_path) {
-                Ok(content) => {
-                    match serde_json::from_str::<serde_json::Value>(&content) {
-                        Ok(json) => {
-                            println!("Extension Information");
-                            println!("======================\n");
-                            println!("ID:              {}", json["id"].as_str().unwrap_or("unknown"));
-                            println!("Name:            {}", json["name"].as_str().unwrap_or("unknown"));
-                            println!("Version:         {}", json["version"].as_str().unwrap_or("unknown"));
-
-                            if let Some(desc) = json["description"].as_str() {
-                                println!("Description:     {}", desc);
-                            }
-                            if let Some(author) = json["author"].as_str() {
-                                println!("Author:          {}", author);
-                            }
-                            if let Some(homepage) = json["homepage"].as_str() {
-                                println!("Homepage:        {}", homepage);
-                            }
-                            if let Some(license) = json["license"].as_str() {
-                                println!("License:         {}", license);
-                            }
-
-                            println!("\nModule:          {}", path.display());
-                        }
-                        Err(e) => {
-                            eprintln!("Error parsing metadata JSON: {}", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Error reading metadata file: {}", e);
-                }
-            }
-        } else {
-            println!("WASM Extension");
-            println!("===============\n");
-            println!("Path: {}", path.display());
-            println!();
-            println!("Note: No sidecar .json metadata file found.");
-            println!("      WASM extensions are loaded at runtime via extension-runner.");
-        }
-    } else {
-        println!("Native Extension");
-        println!("==================\n");
-        println!("Path: {}", path.display());
-        println!();
-        println!("Note: Detailed metadata extraction for native extensions");
-        println!("      requires loading the extension library.");
-        println!("      Use: neomind extension validate {}", path.display());
-    }
-
-    Ok(())
-}
-
-
 /// Run health check command.
 async fn run_health() -> Result<()> {
+    use std::process::Command;
     
     println!("NeoMind System Health Check");
     println!("==========================\n");
@@ -916,11 +603,10 @@ async fn run_logs(tail: usize, follow: bool, level: Option<String>, _since: Opti
         println!("Following log file: {} (Ctrl+C to stop)\n", log_path);
         
         let file = File::open(log_path)?;
-        let metadata = file.metadata()?;
+        let _metadata = file.metadata()?;
         let mut reader = BufReader::new(file);
         
         // Seek to end first
-        let _file_size = metadata.len();
         use std::io::Seek;
         reader.seek(std::io::SeekFrom::End(0))?;
         
@@ -979,3 +665,409 @@ async fn run_logs(tail: usize, follow: bool, level: Option<String>, _since: Opti
     
     Ok(())
 }
+
+/// Run extension management commands.
+async fn run_extension_cmd(cmd: ExtensionCommand) -> Result<()> {
+    match cmd {
+        ExtensionCommand::Validate { path, verbose } => {
+            validate_nep_package(&path, verbose).await
+        }
+        
+        ExtensionCommand::List { verbose } => {
+            list_extensions(verbose).await
+        }
+        
+        ExtensionCommand::Info { id_or_path } => {
+            show_extension_info(&id_or_path).await
+        }
+        
+        ExtensionCommand::Install { package } => {
+            install_extension(&package).await
+        }
+        
+        ExtensionCommand::Uninstall { id } => {
+            uninstall_extension(&id).await
+        }
+        
+        ExtensionCommand::Create {
+            name,
+            extension_type,
+            output,
+        } => {
+            create_extension_scaffold(&name, &extension_type, output)?;
+            Ok(())
+        }
+    }
+}
+
+/// Validate a .nep extension package.
+async fn validate_nep_package(path: &std::path::PathBuf, verbose: bool) -> Result<()> {
+    use std::fs::File;
+    use zip::ZipArchive;
+    
+    if !path.exists() {
+        anyhow::bail!("Extension package not found: {}", path.display());
+    }
+    
+    if !path.extension().is_some_and(|e| e == "nep") {
+        anyhow::bail!("Invalid extension package. Expected .nep file, got: {}", 
+                      path.extension().unwrap_or_default().display());
+    }
+    
+    println!("Validating .nep package: {}", path.display());
+    println!();
+    
+    // Open the ZIP archive
+    let file = File::open(path)?;
+    let mut archive = ZipArchive::new(file)?;
+    
+    // Check for manifest.json - collect names first to avoid borrow issues
+    let manifest_names: Vec<String> = archive.file_names()
+        .filter(|n| n.ends_with("manifest.json"))
+        .map(|s| s.to_string())
+        .collect();
+    
+    if manifest_names.is_empty() {
+        println!("❌ Validation FAILED");
+        println!("   Missing manifest.json in package");
+        std::process::exit(1);
+    }
+    
+    // Read and parse manifest
+    let manifest_path = &manifest_names[0];
+    let mut manifest_file = archive.by_name(manifest_path)?;
+    let mut manifest_content = String::new();
+    manifest_file.read_to_string(&mut manifest_content)?;
+    
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse manifest.json: {}", e))?;
+    
+    // Validate required fields
+    let required_fields = ["id", "name", "version", "format_version"];
+    let mut missing = Vec::new();
+    
+    for field in &required_fields {
+        if manifest.get(field).is_none() {
+            missing.push(*field);
+        }
+    }
+    
+    if !missing.is_empty() {
+        println!("❌ Validation FAILED");
+        println!("   Missing required fields: {}", missing.join(", "));
+        std::process::exit(1);
+    }
+    
+    // Display package info
+    println!("✅ Validation PASSED");
+    println!();
+    println!("ID:              {}", manifest["id"].as_str().unwrap_or("unknown"));
+    println!("Name:            {}", manifest["name"].as_str().unwrap_or("unknown"));
+    println!("Version:         {}", manifest["version"].as_str().unwrap_or("unknown"));
+    println!("Format Version:  {}", manifest["format_version"].as_str().unwrap_or("unknown"));
+    
+    if let Some(abi) = manifest.get("abi_version").and_then(|v| v.as_u64()) {
+        println!("ABI Version:     {}", abi);
+    }
+    
+    if let Some(desc) = manifest.get("description").and_then(|v| v.as_str()) {
+        println!("Description:     {}", desc);
+    }
+    
+    // List binaries
+    if let Some(binaries) = manifest.get("binaries").and_then(|v| v.as_object()) {
+        println!();
+        println!("Binaries:");
+        for (platform, path) in binaries {
+            println!("  {}: {}", platform, path.as_str().unwrap_or("unknown"));
+        }
+    }
+    
+    if verbose {
+        // manifest_file is no longer used, drop it to release archive borrow
+        drop(manifest_file);
+        
+        println!();
+        println!("--- Verbose Details ---");
+        println!("Package size:    {} bytes", path.metadata()?.len());
+        println!("Package path:    {}", path.display());
+        println!("Files in package: {}", archive.len());
+        
+        println!();
+        println!("Package contents:");
+        for i in 0..archive.len() {
+            let file = archive.by_index(i)?;
+            println!("  {}", file.name());
+        }
+    }
+    
+    Ok(())
+}
+
+/// List installed extensions.
+async fn list_extensions(verbose: bool) -> Result<()> {
+    use std::fs;
+    
+    let search_dirs = [
+        std::path::PathBuf::from("./data/extensions"),
+        std::path::PathBuf::from("./extensions"),
+    ];
+    
+    println!("Installed Extensions");
+    println!("====================\\n");
+    
+    let mut found_count = 0;
+    
+    for search_dir in &search_dirs {
+        if !search_dir.exists() {
+            continue;
+        }
+        
+        let entries = fs::read_dir(search_dir)?;
+        
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            
+            // Check for .nep files
+            if path.extension().is_some_and(|e| e == "nep") {
+                let name = path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("?");
+                
+                println!("📦 {}", name);
+                println!("   Path: {}", path.display());
+                
+                if verbose {
+                    // Try to read manifest
+                    if let Ok(manifest) = read_nep_manifest(&path) {
+                        if let Some(version) = manifest.get("version").and_then(|v| v.as_str()) {
+                            println!("   Version: {}", version);
+                        }
+                        if let Some(desc) = manifest.get("description").and_then(|v| v.as_str()) {
+                            println!("   Description: {}", desc);
+                        }
+                    }
+                    println!("   Size: {} bytes", path.metadata()?.len());
+                }
+                
+                println!();
+                found_count += 1;
+            }
+        }
+    }
+    
+    if found_count == 0 {
+        println!("No extensions found.");
+        println!();
+        println!("Searched in:");
+        for dir in &search_dirs {
+            println!("  - {}", dir.display());
+        }
+        println!();
+        println!("Install extensions using:");
+        println!("  neomind extension install <package.nep>");
+    } else {
+        println!("Total: {} extension(s)", found_count);
+    }
+    
+    Ok(())
+}
+
+/// Show extension information.
+async fn show_extension_info(id_or_path: &str) -> Result<()> {
+    let path = std::path::PathBuf::from(id_or_path);
+    
+    if path.exists() {
+        // It's a file path, validate it
+        validate_nep_package(&path, true).await?;
+    } else {
+        // It's an extension ID, search for it
+        use std::fs;
+        
+        let search_dirs = [
+            std::path::PathBuf::from("./data/extensions"),
+            std::path::PathBuf::from("./extensions"),
+        ];
+        
+        let mut found = None;
+        'search: for search_dir in &search_dirs {
+            if let Ok(entries) = fs::read_dir(search_dir) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let entry_path = entry.path();
+                    if entry_path.extension().is_some_and(|e| e == "nep") {
+                        if let Some(stem) = entry_path.file_stem() {
+                            if stem.to_str().unwrap_or("").contains(id_or_path) {
+                                found = Some(entry_path);
+                                break 'search;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if let Some(found_path) = found {
+            validate_nep_package(&found_path, true).await?;
+        } else {
+            anyhow::bail!("Extension not found: {}", id_or_path);
+        }
+    }
+    
+    Ok(())
+}
+
+/// Install an extension from .nep package.
+async fn install_extension(package: &str) -> Result<()> {
+    let source_path = std::path::PathBuf::from(package);
+    
+    if !source_path.exists() {
+        anyhow::bail!("Package file not found: {}", package);
+    }
+    
+    println!("Installing extension from: {}", package);
+    
+    // Validate first
+    validate_nep_package(&source_path, false).await?;
+    
+    // Create target directory
+    let target_dir = std::path::PathBuf::from("./data/extensions");
+    std::fs::create_dir_all(&target_dir)?;
+    
+    let target_path = target_dir.join(source_path.file_name().unwrap());
+    
+    // Copy package
+    std::fs::copy(&source_path, &target_path)?;
+    
+    println!();
+    println!("✅ Extension installed successfully!");
+    println!("   Location: {}", target_path.display());
+    println!();
+    println!("Note: The extension will be loaded on next server restart.");
+    println!("      Or use the Web UI to load it dynamically.");
+    
+    Ok(())
+}
+
+/// Uninstall an extension.
+async fn uninstall_extension(id: &str) -> Result<()> {
+    use std::fs;
+    
+    let search_dirs = [
+        std::path::PathBuf::from("./data/extensions"),
+        std::path::PathBuf::from("./extensions"),
+    ];
+    
+    let mut found = Vec::new();
+    
+    for search_dir in &search_dirs {
+        if let Ok(entries) = fs::read_dir(search_dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.extension().is_some_and(|e| e == "nep") {
+                    if let Some(stem) = path.file_stem() {
+                        if stem.to_str().unwrap_or("").contains(id) {
+                            found.push(path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if found.is_empty() {
+        anyhow::bail!("Extension not found: {}", id);
+    }
+    
+    if found.len() > 1 {
+        println!("Found multiple extensions matching '{}':", id);
+        for (i, path) in found.iter().enumerate() {
+            println!("  {}. {}", i + 1, path.display());
+        }
+        anyhow::bail!("Please be more specific");
+    }
+    
+    let path = &found[0];
+    
+    println!("Uninstalling extension: {}", path.display());
+    println!("This will delete the extension package.");
+    print!("Confirm? [y/N] ");
+    use std::io::Write;
+    std::io::stdout().flush()?;
+    
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    
+    if !input.trim().to_lowercase().starts_with('y') {
+        println!("Cancelled.");
+        return Ok(());
+    }
+    
+    fs::remove_file(path)?;
+    
+    println!("✅ Extension uninstalled successfully!");
+    
+    Ok(())
+}
+
+/// Read manifest from .nep package.
+fn read_nep_manifest(path: &std::path::PathBuf) -> Result<serde_json::Value> {
+    use std::fs::File;
+    use zip::ZipArchive;
+    
+    let file = File::open(path)?;
+    let mut archive = ZipArchive::new(file)?;
+    
+    // Collect file names first to avoid borrowing issues
+    let manifest_names: Vec<String> = archive.file_names()
+        .filter(|n| n.ends_with("manifest.json"))
+        .map(|s| s.to_string())
+        .collect();
+    
+    for name in manifest_names {
+        let mut manifest_file = archive.by_name(&name)?;
+        let mut content = String::new();
+        let mut reader = std::io::BufReader::new(manifest_file);
+        reader.read_to_string(&mut content)?;
+        let manifest: serde_json::Value = serde_json::from_str(&content)?;
+        return Ok(manifest);
+    }
+    
+    anyhow::bail!("No manifest.json found in package")
+}
+
+
+/// Create a new extension scaffold.
+fn create_extension_scaffold(name: &str, extension_type: &str, _output: Option<std::path::PathBuf>) -> Result<()> {
+    let valid_types = [
+        "tool",
+        "llm_backend",
+        "storage_backend",
+        "device_adapter",
+        "integration",
+        "alert_channel",
+        "rule_engine",
+        "workflow_engine",
+    ];
+
+    if !valid_types.contains(&extension_type) {
+        anyhow::bail!(
+            "Invalid extension type '{}'. Valid types: {}",
+            extension_type,
+            valid_types.join(", ")
+        );
+    }
+
+    println!("Creating extension: {} (type: {})", name, extension_type);
+    println!();
+    println!("Please use the extension SDK for full scaffold generation:");
+    println!("  See: https://github.com/camthink-ai/NeoMind-Extensions");
+    println!();
+    println!("Or manually create the extension structure:");
+    println!("  mkdir -p extensions/{}", name);
+    println!("  cd extensions/{}", name);
+    println!("  cargo init --lib");
+    println!("  # Add neomind-extension-sdk dependency and implement Extension trait");
+
+    Ok(())
+}
+
