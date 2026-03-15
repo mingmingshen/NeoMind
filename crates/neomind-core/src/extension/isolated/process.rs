@@ -754,11 +754,10 @@ impl IsolatedExtension {
                                 }
                             };
 
-                            // Invoke capability using block_in_place for async
-                            let result = tokio::task::block_in_place(|| {
-                                rt_handle.block_on(async {
-                                    provider.invoke_capability(cap, &params).await
-                                })
+                            // Invoke capability using the runtime handle
+                            // This thread is not in a Tokio runtime, so block_on is safe here
+                            let result = rt_handle.block_on(async {
+                                provider.invoke_capability(cap, &params).await
                             });
 
                             // Send response back to extension as IpcMessage
@@ -873,9 +872,13 @@ impl IsolatedExtension {
         // Cancel any pending requests
         self.in_flight.cancel_all().await;
 
+        // ✅ FIX: Close all active stream sessions to prevent state inconsistency
+        let _ = self.close_all_stream_sessions().await;
+
         debug!(extension_id = %self.extension_id, "Extension stopped");
         Ok(())
     }
+
 
     /// Execute a command
     pub async fn execute_command(
@@ -2081,13 +2084,15 @@ impl IsolatedExtension {
 impl Drop for IsolatedExtension {
     fn drop(&mut self) {
         // Attempt graceful shutdown
-        // Use block_in_place to allow blocking inside async runtime
-        tokio::task::block_in_place(|| {
-            if let Some(mut child) = self.process.blocking_lock().take() {
-                let _ = child.kill();
-                let _ = child.wait();
+        // ✅ FIX: Don't wait for child process to avoid indefinite blocking
+        // The OS will clean up the zombie process
+        if let Ok(mut child) = self.process.try_lock() {
+            if let Some(mut proc) = child.take() {
+                let _ = proc.kill();
+                // Don't wait - let the OS clean up the zombie process
+                // This prevents blocking if the process is stuck in uninterruptible sleep
             }
-        });
+        }
     }
 }
 

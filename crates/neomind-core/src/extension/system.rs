@@ -391,7 +391,7 @@ pub trait Extension: Send + Sync + 'static {
     /// # Returns
     /// - `Ok(())` if the event was handled successfully
     /// - `Err(ExtensionError)` if there was an error handling the event
-    fn handle_event_with_context(
+    async fn handle_event_with_context(
         &self,
         event_type: &str,
         payload: &serde_json::Value,
@@ -881,7 +881,7 @@ pub type Result<T> = std::result::Result<T, ExtensionError>;
 
 /// Capability context for invoking host capabilities
 ///
-/// This struct is passed to `handle_event_with_context` and provides
+/// This struct is passed to the async `handle_event_with_context` and provides
 /// a unified API for extensions to invoke host capabilities like
 /// writing virtual metrics, regardless of whether the extension is
 /// running in-process or in isolated mode.
@@ -951,7 +951,7 @@ impl CapabilityContext {
     /// # Returns
     /// - `Ok(())` if successful
     /// - `Err(ExtensionError)` if failed
-    pub fn write_virtual_metric(
+    pub async fn write_virtual_metric(
         &self,
         device_id: &str,
         metric: &str,
@@ -979,7 +979,7 @@ impl CapabilityContext {
     /// Write a typed virtual metric to a device
     ///
     /// Convenience method that serializes the value to JSON before writing.
-    pub fn write_virtual_metric_typed<T: serde::Serialize>(
+    pub async fn write_virtual_metric_typed<T: serde::Serialize>(
         &self,
         device_id: &str,
         metric: &str,
@@ -987,7 +987,7 @@ impl CapabilityContext {
     ) -> Result<()> {
         let value_json = serde_json::to_value(value)
             .map_err(|e| ExtensionError::InvalidFormat(e.to_string()))?;
-        self.write_virtual_metric(device_id, metric, &value_json)
+        self.write_virtual_metric(device_id, metric, &value_json).await
     }
 
     /// Get metrics from a device

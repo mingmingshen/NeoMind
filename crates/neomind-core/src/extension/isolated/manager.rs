@@ -268,6 +268,9 @@ impl IsolatedExtensionManager {
             }
             self.info_cache.write().remove(id);
 
+            // ✅ FIX: Unregister from event dispatcher to prevent sending events to unloaded extension
+            self.event_dispatcher.unregister_extension(id);
+
             tracing::debug!(
                 extension_id = %id,
                 "Extension unloaded"

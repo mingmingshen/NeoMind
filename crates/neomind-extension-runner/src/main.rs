@@ -1398,7 +1398,7 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
 
 impl Runner {
     /// Load extension and create runner
-    fn load(extension_path: &PathBuf) -> Result<Self, String> {
+    async fn load(extension_path: &PathBuf) -> Result<Self, String> {
         eprintln!("[Extension Runner] Runner::load called");
         let extension_type = ExtensionType::from_path(extension_path);
         debug!(
@@ -1411,12 +1411,12 @@ impl Runner {
         let (extension, wasm_runtime, descriptor) = match extension_type {
             ExtensionType::Native => {
                 eprintln!("[Extension Runner] Calling load_native");
-                let (ext, desc) = Self::load_native(extension_path)?;
+                let (ext, desc) = Self::load_native(extension_path).await?;
                 eprintln!("[Extension Runner] load_native returned successfully");
                 (Some(ext), None, desc)
             }
             ExtensionType::Wasm => {
-                let (runtime, descriptor) = Self::load_wasm(extension_path)?;
+                let (runtime, descriptor) = Self::load_wasm(extension_path).await?;
                 (None, Some(runtime), descriptor)
             }
         };
@@ -1445,7 +1445,7 @@ impl Runner {
             (Some(client_arc), Some(request_rx), Some(response_tx))
         };
 
-        // Create CapabilityContext for Native extensions
+        // Create Async CapabilityContext for Native extensions
         let capability_context = if extension_type == ExtensionType::Native {
             if let Some(ref client_arc) = ipc_client {
                 let client_for_invoker = client_arc.clone();
@@ -1475,7 +1475,7 @@ impl Runner {
     }
 
     /// Load a native extension and return its descriptor
-    fn load_native(extension_path: &PathBuf) -> Result<(DynExtension, neomind_core::extension::system::ExtensionDescriptor), String> {
+    async fn load_native(extension_path: &PathBuf) -> Result<(DynExtension, neomind_core::extension::system::ExtensionDescriptor), String> {
         eprintln!("[Extension Runner] load_native called");
         let loader = NativeExtensionLoader::new();
         let loaded = loader.load(extension_path)
@@ -1484,7 +1484,7 @@ impl Runner {
         eprintln!("[Extension Runner] Extension loaded, getting read lock...");
 
         // Use the unified descriptor() method
-        let ext_guard = loaded.extension.blocking_read();
+        let ext_guard = loaded.extension.read().await;
         
         eprintln!("[Extension Runner] Getting metadata...");
         
@@ -1548,7 +1548,7 @@ impl Runner {
     }
 
     /// Load a WASM extension with full descriptor support
-    fn load_wasm(extension_path: &PathBuf) -> Result<(WasmRuntime, neomind_core::extension::system::ExtensionDescriptor), String> {
+    async fn load_wasm(extension_path: &PathBuf) -> Result<(WasmRuntime, neomind_core::extension::system::ExtensionDescriptor), String> {
         // First, create the runtime
         let module_name = extension_path
             .file_stem()
@@ -1658,7 +1658,7 @@ impl Runner {
     }
 
     /// Run the main loop
-    fn run(&mut self) {
+    async fn run(&mut self) {
         debug!("Starting IPC message loop");
 
         // Note: We no longer send Ready here - we wait for Init message first
@@ -1671,7 +1671,12 @@ impl Runner {
         eprintln!("[Runner] Stdin reader thread started");
 
         // Start IPC capability forwarder thread for WASM extensions
-        let ipc_forwarder_handle = self.start_ipc_forwarder();
+        // Native extensions don't need this since they don't make capability requests during initialization
+        let ipc_forwarder_handle = if self.extension_type == ExtensionType::Wasm {
+            self.start_ipc_forwarder()
+        } else {
+            None
+        };
 
         while self.running {
             debug!("Waiting for IPC message...");
@@ -1680,11 +1685,11 @@ impl Runner {
             match pop_event() {
                 Some(message) => {
                     debug!("Received IPC message from queue: {:?}", std::mem::discriminant(&message));
-                    self.handle_message(message);
+                    self.handle_message(message).await;
                 }
                 None => {
-                    // No message, sleep briefly to avoid busy loop
-                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    // No message, sleep asynchronously to avoid blocking thread
+                    tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
                 }
             }
         }
@@ -2024,7 +2029,7 @@ impl Runner {
         }
     }
 
-    fn handle_message(&mut self, message: IpcMessage) {
+    async fn handle_message(&mut self, message: IpcMessage) {
         match message {
             IpcMessage::Init { config } => {
                 debug!("Received Init message from host with config");
@@ -2035,11 +2040,9 @@ impl Runner {
                         let ext_clone = ext.clone();
                         let config_clone = config.clone();
                         
-                        // Call configure in the async runtime
-                        let configure_result = self.runtime.block_on(async move {
-                            let mut ext_guard = ext_clone.write().await;
-                            ext_guard.configure(&config_clone).await
-                        });
+                        // Call configure asynchronously (no block_on needed)
+                        let mut ext_guard = ext_clone.write().await;
+                        let configure_result = ext_guard.configure(&config_clone).await;
                         
                         match configure_result {
                             Ok(_) => {
@@ -2086,11 +2089,11 @@ impl Runner {
             }
 
             IpcMessage::ExecuteCommand { command, args, request_id } => {
-                self.handle_execute_command(command, args, request_id);
+                self.handle_execute_command(command, args, request_id).await;
             }
 
             IpcMessage::ProduceMetrics { request_id } => {
-                self.handle_produce_metrics(request_id);
+                self.handle_produce_metrics(request_id).await;
             }
 
             IpcMessage::HealthCheck { request_id } => {
@@ -2107,7 +2110,7 @@ impl Runner {
             IpcMessage::GetEventSubscriptions { request_id } => {
                 // Get event subscriptions from the extension
                 let event_types = if let Some(extension) = &self.extension {
-                    let ext_guard = extension.blocking_read();
+                    let ext_guard = extension.read().await;
                     ext_guard.event_subscriptions().iter().map(|s| s.to_string()).collect()
                 } else {
                     vec![]
@@ -2134,7 +2137,7 @@ impl Runner {
 
             // Streaming support
             IpcMessage::GetStreamCapability { request_id } => {
-                self.handle_get_stream_capability(request_id);
+                self.handle_get_stream_capability(request_id).await;
             }
 
             IpcMessage::InitStreamSession { session_id, extension_id: _, config, client_info: _ } => {
@@ -2165,7 +2168,7 @@ impl Runner {
 
             // Batch command support
             IpcMessage::ExecuteBatch { commands, request_id } => {
-                self.handle_execute_batch(commands, request_id);
+                self.handle_execute_batch(commands, request_id).await;
             }
 
             // Capability invocation support (for WASM extensions)
@@ -2207,17 +2210,17 @@ impl Runner {
                     "Received event push from host"
                 );
 
-                // For native extensions, directly call handle_event_with_context method
+                // For native extensions, call async handle_event_with_context method
                 if let Some(extension) = &self.extension {
                     info!(
                         event_type = %event_type,
                         "Calling handle_event on extension"
                     );
-                    let ext_guard = extension.blocking_read();
+                    let ext_guard = extension.read().await;
 
                     // Use handle_event_with_context if capability context is available
                     if let Some(ref ctx) = self.capability_context {
-                        match ext_guard.handle_event_with_context(&event_type, &payload, ctx) {
+                        match ext_guard.handle_event_with_context(&event_type, &payload, ctx).await {
                             Ok(_) => {
                                 info!(
                                     event_type = %event_type,
@@ -2285,12 +2288,12 @@ impl Runner {
         }
     }
 
-    fn handle_execute_command(&mut self, command: String, args: serde_json::Value, request_id: u64) {
+    async fn handle_execute_command(&mut self, command: String, args: serde_json::Value, request_id: u64) {
         debug!(command = %command, request_id, "Executing command");
 
         let result = match self.extension_type {
             ExtensionType::Native => {
-                self.execute_native_command(&command, &args)
+                self.execute_native_command(&command, &args).await
             }
             ExtensionType::Wasm => {
                 self.execute_wasm_command(&command, &args)
@@ -2314,7 +2317,7 @@ impl Runner {
         }
     }
 
-    fn handle_execute_batch(&mut self, commands: Vec<BatchCommand>, request_id: u64) {
+    async fn handle_execute_batch(&mut self, commands: Vec<BatchCommand>, request_id: u64) {
         debug!(request_id, command_count = commands.len(), "Executing batch command");
 
         let start = std::time::Instant::now();
@@ -2325,7 +2328,7 @@ impl Runner {
             
             let result = match self.extension_type {
                 ExtensionType::Native => {
-                    self.execute_native_command(&cmd.command, &cmd.args)
+                    self.execute_native_command(&cmd.command, &cmd.args).await
                 }
                 ExtensionType::Wasm => {
                     self.execute_wasm_command(&cmd.command, &cmd.args)
@@ -2348,16 +2351,14 @@ impl Runner {
         });
     }
 
-    fn execute_native_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn execute_native_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
 
         let ext_clone = Arc::clone(ext);
 
-        self.runtime.block_on(async {
-            let ext_guard = ext_clone.read().await;
-            ext_guard.execute_command(command, args).await
-                .map_err(|e| e.to_string())
-        })
+        let ext_guard = ext_clone.read().await;
+        ext_guard.execute_command(command, args).await
+            .map_err(|e| e.to_string())
     }
 
     fn execute_wasm_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
@@ -2392,12 +2393,12 @@ impl Runner {
         })
     }
 
-    fn handle_produce_metrics(&mut self, request_id: u64) {
+    async fn handle_produce_metrics(&mut self, request_id: u64) {
         debug!(request_id, "Producing metrics");
 
         let result = match self.extension_type {
             ExtensionType::Native => {
-                self.produce_native_metrics()
+                self.produce_native_metrics().await
             }
             ExtensionType::Wasm => {
                 self.produce_wasm_metrics()
@@ -2421,16 +2422,13 @@ impl Runner {
         }
     }
 
-    fn produce_native_metrics(&self) -> Result<Vec<neomind_core::extension::system::ExtensionMetricValue>, String> {
+    async fn produce_native_metrics(&self) -> Result<Vec<neomind_core::extension::system::ExtensionMetricValue>, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
 
         let ext_clone = Arc::clone(ext);
-
-        self.runtime.block_on(async {
-            let ext_guard = ext_clone.read().await;
-            ext_guard.produce_metrics()
-                .map_err(|e| e.to_string())
-        })
+        let ext_guard = ext_clone.read().await;
+        ext_guard.produce_metrics()
+            .map_err(|e| e.to_string())
     }
 
     fn produce_wasm_metrics(&self) -> Result<Vec<neomind_core::extension::system::ExtensionMetricValue>, String> {
@@ -2565,12 +2563,12 @@ impl Runner {
     // Streaming Support
     // =========================================================================
 
-    fn handle_get_stream_capability(&mut self, request_id: u64) {
+    async fn handle_get_stream_capability(&mut self, request_id: u64) {
         debug!(request_id, "Getting stream capability");
 
         let capability = match self.extension_type {
             ExtensionType::Native => {
-                self.get_native_stream_capability()
+                self.get_native_stream_capability().await
             }
             ExtensionType::Wasm => {
                 Ok(None)  // WASM doesn't support streaming yet
@@ -2594,15 +2592,12 @@ impl Runner {
         }
     }
 
-    fn get_native_stream_capability(&self) -> Result<Option<neomind_core::extension::StreamCapability>, String> {
+    async fn get_native_stream_capability(&self) -> Result<Option<neomind_core::extension::StreamCapability>, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
 
-        let ext_clone = Arc::clone(ext);
-
-        self.runtime.block_on(async {
-            let ext_guard = ext_clone.read().await;
-            Ok(ext_guard.stream_capability())
-        })
+        // Use read().await to avoid blocking in async context
+        let ext_guard = ext.read().await;
+        Ok(ext_guard.stream_capability())
     }
 
     fn handle_init_stream_session(&mut self, session_id: String, config: serde_json::Value) {
@@ -2946,7 +2941,8 @@ impl Runner {
     }
 }
 
-fn main() {
+#[tokio::main(flavor = "multi_thread", worker_threads = 2)]
+async fn main() {
     let args = Args::parse();
 
     let log_level = if args.verbose {
@@ -2974,7 +2970,7 @@ fn main() {
     }
 
     eprintln!("[Extension Runner] calling Runner::load");
-    let mut runner = match Runner::load(&args.extension_path) {
+    let mut runner = match Runner::load(&args.extension_path).await {
         Ok(r) => {
             eprintln!("[Extension Runner] Runner::load returned successfully");
             r
@@ -2986,7 +2982,7 @@ fn main() {
     };
 
     eprintln!("[Extension Runner] calling runner.run()");
-    runner.run();
+    runner.run().await;
 
     debug!("Extension runner exiting normally");
 }

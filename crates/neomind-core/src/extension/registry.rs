@@ -219,6 +219,11 @@ impl ExtensionRegistry {
         // Unregister from safety manager
         self.safety_manager.unregister_extension(id).await;
 
+        // ✅ FIX: Unregister from event dispatcher to prevent sending events to unloaded extension
+        if let Some(ref dispatcher) = *self.event_dispatcher.read() {
+            dispatcher.unregister_extension(id);
+        }
+
         tracing::info!("Extension unregistered: {}", id);
         Ok(())
     }

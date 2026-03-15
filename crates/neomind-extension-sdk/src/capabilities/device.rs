@@ -205,6 +205,36 @@ where
     write_virtual_metric(context, device_id, metric, &value_json)
 }
 
+/// Write a virtual metric (synchronous version for use in sync contexts)
+#[cfg(not(target_arch = "wasm32"))]
+pub fn write_virtual_metric_sync(
+    context: &Context,
+    device_id: &str,
+    metric: &str,
+    value: &Value,
+) -> Result<Value, CapabilityError> {
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(async {
+            write_virtual_metric(context, device_id, metric, value).await
+        })
+    })
+}
+
+/// Write a typed virtual metric (synchronous version for use in sync contexts)
+#[cfg(not(target_arch = "wasm32"))]
+pub fn write_virtual_metric_typed_sync<T>(
+    context: &Context,
+    device_id: &str,
+    metric: &str,
+    value: T,
+) -> Result<Value, CapabilityError>
+where
+    T: Serialize,
+{
+    let value_json = serde_json::to_value(value).map_err(|e| e.to_string())?;
+    write_virtual_metric_sync(context, device_id, metric, &value_json)
+}
+
 /// Write multiple virtual metrics
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn write_virtual_metrics(
