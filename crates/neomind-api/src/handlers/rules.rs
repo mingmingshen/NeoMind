@@ -949,7 +949,7 @@ pub async fn get_resources_handler(
                 .map(|c| CommandInfo {
                     name: c.name,
                     description: if c.display_name.is_empty() {
-                        c.llm_hints.clone()
+                        c.description.clone()
                     } else {
                         c.display_name
                     },

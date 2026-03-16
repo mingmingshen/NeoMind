@@ -140,7 +140,7 @@ async fn test_service_template_operations() {
                 validation: vec![],
             }],
             samples: vec![],
-            llm_hints: String::new(),
+            description: String::new(),
             fixed_values: std::collections::HashMap::new(),
             parameter_groups: vec![],
         });
@@ -239,7 +239,7 @@ async fn test_service_command_validation() {
                 validation: vec![],
             }],
             samples: vec![],
-            llm_hints: String::new(),
+            description: String::new(),
             fixed_values: std::collections::HashMap::new(),
             parameter_groups: vec![],
         },

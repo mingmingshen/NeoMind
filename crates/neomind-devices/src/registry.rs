@@ -497,7 +497,7 @@ impl DeviceRegistry {
                             })
                             .collect(),
                         samples: c.samples,
-                        llm_hints: c.llm_hints,
+                        description: c.description,
                         parameter_groups: c
                             .parameter_groups
                             .into_iter()
@@ -628,7 +628,7 @@ impl DeviceRegistry {
                             })
                             .collect(),
                         samples: c.samples.clone(),
-                        llm_hints: c.llm_hints.clone(),
+                        description: c.description.clone(),
                         parameter_groups: c
                             .parameter_groups
                             .iter()
@@ -755,7 +755,7 @@ impl DeviceRegistry {
                         })
                         .collect(),
                     samples: c.samples.clone(),
-                    llm_hints: c.llm_hints.clone(),
+                    description: c.description.clone(),
                     parameter_groups: c
                         .parameter_groups
                         .iter()
@@ -1304,6 +1304,7 @@ mod tests {
                 {
                     "name": "capture",
                     "display_name": "Capture",
+                    "description": "Capture an image",
                     "payload_template": "{\"cmd\": \"capture\"}",
                     "parameters": [
                         {"name": "request_id", "display_name": "Request ID", "data_type": "String", "required": true},

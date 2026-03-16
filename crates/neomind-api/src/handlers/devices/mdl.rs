@@ -417,7 +417,7 @@ fn commands_from_json_value(value: serde_json::Value) -> Vec<CommandDefinition> 
                 payload_template,
                 parameters,
                 samples: vec![],
-                llm_hints: String::new(),
+                description: String::new(),
                 fixed_values: std::collections::HashMap::new(),
                 parameter_groups: vec![],
             });
@@ -450,7 +450,7 @@ fn commands_from_json_value(value: serde_json::Value) -> Vec<CommandDefinition> 
                     validation: vec![],
                 }],
                 samples: vec![],
-                llm_hints: String::new(),
+                description: String::new(),
                 fixed_values: std::collections::HashMap::new(),
                 parameter_groups: vec![],
             });

@@ -19,6 +19,7 @@
     "clean:all": "rm -rf dist node_modules src-tauri/target",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
+    "dev:full": "bash src-tauri/scripts/dev-with-extension-runner.sh",
     "build:extension-runner": "bash src-tauri/scripts/build-extension-runner.sh release",
     "build:extension-runner:debug": "bash src-tauri/scripts/build-extension-runner.sh debug",
     "tauri:build": "npm run build:extension-runner && tauri build",

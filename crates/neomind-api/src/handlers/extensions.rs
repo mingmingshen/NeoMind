@@ -282,7 +282,7 @@ fn extension_info_to_dto(info: &neomind_core::extension::unified::UnifiedExtensi
         .map(|cmd| CommandDescriptorDto {
             id: cmd.name.clone(),
             display_name: cmd.display_name.clone(),
-            description: cmd.llm_hints.clone(),
+            description: cmd.description.clone(),
             input_schema: build_parameters_schema(&cmd.parameters),
             output_fields: vec![], // V2: Commands don't declare output fields
             config: CommandConfigDto {
@@ -398,7 +398,7 @@ pub async fn get_extension_handler(
         .map(|cmd| CommandDescriptorDto {
             id: cmd.name.clone(),
             display_name: cmd.display_name.clone(),
-            description: cmd.llm_hints.clone(),
+            description: cmd.description.clone(),
             input_schema: build_parameters_schema(&cmd.parameters),
             output_fields: vec![], // V2: Commands don't declare output fields
             config: CommandConfigDto {
@@ -1068,7 +1068,7 @@ pub async fn list_extension_commands_handler(
         .map(|cmd| CommandDescriptorDto {
             id: cmd.name.clone(),
             display_name: cmd.display_name.clone(),
-            description: cmd.llm_hints.clone(),
+            description: cmd.description.clone(),
             input_schema: build_parameters_schema(&cmd.parameters),
             output_fields: vec![], // V2: Commands don't declare output fields
             config: CommandConfigDto {
@@ -1261,13 +1261,13 @@ pub async fn list_extension_capabilities_handler(
             // Command info for transforms
             commands.push(ExtensionCommandDto {
                 name: cmd.name.clone(),
-                description: cmd.llm_hints.clone(),
+                description: cmd.description.clone(),
             });
 
             // Command info for agents (as tools)
             tools.push(ExtensionToolDto {
                 name: cmd.name.clone(),
-                description: cmd.llm_hints.clone(),
+                description: cmd.description.clone(),
                 parameters: Some(build_parameters_schema(&cmd.parameters)),
             });
         }

@@ -1002,7 +1002,7 @@ impl AgentExecutor {
 
                     result.push(serde_json::json!({
                         "name": format!("{}_{}", metadata_id, cmd.name),
-                        "description": cmd.llm_hints,
+                        "description": cmd.description,
                         "parameters": parameters,
                         "extension_id": metadata_id,
                         "command": cmd.name,

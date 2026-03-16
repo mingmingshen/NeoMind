@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use neomind_devices::{builtin_types, mdl_format::DeviceTypeDefinition};
+use neomind_devices::mdl_format::DeviceTypeDefinition;
 use neomind_tools::{
     error::Result as ToolResult,
     tool::{object_schema, string_property},
@@ -26,7 +26,7 @@ impl ListDeviceTypesTool {
     /// Create a new ListDeviceTypes tool.
     pub fn new() -> Self {
         Self {
-            device_types: Arc::new(builtin_types::builtin_device_types()),
+            device_types: Arc::new(Vec::new()),
         }
     }
 
@@ -110,7 +110,7 @@ impl GetDeviceTypeTool {
     /// Create a new GetDeviceType tool.
     pub fn new() -> Self {
         Self {
-            device_types: Arc::new(builtin_types::builtin_device_types()),
+            device_types: Arc::new(Vec::new()),
         }
     }
 
@@ -183,7 +183,7 @@ impl ExplainDeviceTypeTool {
     /// Create a new ExplainDeviceType tool.
     pub fn new() -> Self {
         Self {
-            device_types: Arc::new(builtin_types::builtin_device_types()),
+            device_types: Arc::new(Vec::new()),
         }
     }
 
@@ -504,43 +504,78 @@ pub struct DeviceExplanation {
 mod tests {
     use super::*;
 
+    /// Helper function to create test device type
+    fn create_test_device_type() -> DeviceTypeDefinition {
+        serde_json::from_value(serde_json::json!({
+            "device_type": "test_sensor",
+            "name": "Test Sensor",
+            "description": "A test sensor",
+            "categories": ["sensor", "test"],
+            "mode": "full",
+            "metrics": [
+                {
+                    "name": "temperature",
+                    "display_name": "Temperature",
+                    "data_type": "float",
+                    "unit": "°C"
+                }
+            ],
+            "commands": [
+                {
+                    "name": "read",
+                    "display_name": "Read",
+                    "description": "Read sensor value",
+                    "parameters": []
+                }
+            ]
+        }))
+        .unwrap()
+    }
+
     #[test]
     fn test_list_device_types() {
-        let tool = ListDeviceTypesTool::new();
+        let device_types = vec![create_test_device_type()];
+        let tool = ListDeviceTypesTool::with_device_types(device_types);
         let result = tool.get_all_summaries();
-        assert!(!result.is_empty());
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].device_type, "test_sensor");
     }
 
     #[test]
     fn test_filter_by_category() {
-        let tool = ListDeviceTypesTool::new();
+        let device_types = vec![create_test_device_type()];
+        let tool = ListDeviceTypesTool::with_device_types(device_types);
         let sensor_types = tool.filter_by_category("sensor");
-        assert!(!sensor_types.is_empty());
+        assert_eq!(sensor_types.len(), 1);
+        assert_eq!(sensor_types[0].device_type, "test_sensor");
     }
 
     #[test]
     fn test_get_device_type() {
-        let tool = GetDeviceTypeTool::new();
-        let dht22 = tool.find_device_type("dht22_sensor");
-        assert!(dht22.is_some());
-        assert_eq!(dht22.unwrap().device_type, "dht22_sensor");
+        let device_types = vec![create_test_device_type()];
+        let tool = GetDeviceTypeTool::with_device_types(device_types);
+        let test_sensor = tool.find_device_type("test_sensor");
+        assert!(test_sensor.is_some());
+        assert_eq!(test_sensor.unwrap().device_type, "test_sensor");
     }
 
     #[test]
     fn test_explain_device_type_zh() {
-        let tool = ExplainDeviceTypeTool::new();
-        let def = tool.find_device_type("dht22_sensor").unwrap();
+        let device_types = vec![create_test_device_type()];
+        let tool = ExplainDeviceTypeTool::with_device_types(device_types);
+        let def = tool.find_device_type("test_sensor").unwrap();
         let explanation = tool.explain(def, "zh");
-        assert_eq!(explanation.device_type, "dht22_sensor");
+        assert_eq!(explanation.device_type, "test_sensor");
         assert!(explanation.metrics_description.contains("指标"));
     }
 
     #[test]
     fn test_explain_device_type_en() {
-        let tool = ExplainDeviceTypeTool::new();
-        let def = tool.find_device_type("dht22_sensor").unwrap();
+        let device_types = vec![create_test_device_type()];
+        let tool = ExplainDeviceTypeTool::with_device_types(device_types);
+        let def = tool.find_device_type("test_sensor").unwrap();
         let explanation = tool.explain(def, "en");
-        assert_eq!(explanation.device_type, "dht22_sensor");
+        assert_eq!(explanation.device_type, "test_sensor");
         assert!(explanation.metrics_description.contains("metrics"));
     }
 }

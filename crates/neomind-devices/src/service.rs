@@ -1695,7 +1695,7 @@ mod tests {
                 validation: vec![],
             }],
             samples: vec![],
-            llm_hints: String::new(),
+            description: String::new(),
             fixed_values: std::collections::HashMap::new(),
             parameter_groups: vec![],
         };
@@ -1732,7 +1732,7 @@ mod tests {
             payload_template: r#"{"action": "set_temperature", "value": ${{value}}}"#.to_string(),
             parameters: vec![],
             samples: vec![],
-            llm_hints: String::new(),
+            description: String::new(),
             fixed_values: std::collections::HashMap::new(),
             parameter_groups: vec![],
         };

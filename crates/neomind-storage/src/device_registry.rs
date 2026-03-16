@@ -95,6 +95,8 @@ pub struct CommandDefinition {
     #[serde(default)]
     pub display_name: String,
     #[serde(default)]
+    pub description: String,
+    #[serde(default)]
     pub payload_template: String,
     #[serde(default)]
     pub parameters: Vec<ParameterDefinition>,
@@ -104,9 +106,6 @@ pub struct CommandDefinition {
     /// Sample command payloads (for Simple mode / LLM reference)
     #[serde(default)]
     pub samples: Vec<serde_json::Value>,
-    /// LLM hints for command usage
-    #[serde(default)]
-    pub llm_hints: String,
     /// Parameter groups for organizing related parameters
     #[serde(default)]
     pub parameter_groups: Vec<ParameterGroup>,

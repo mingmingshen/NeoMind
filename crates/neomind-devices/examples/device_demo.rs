@@ -90,21 +90,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_command(CommandDefinition {
             name: "turn_on".to_string(),
             display_name: "开启".to_string(),
+            description: "打开继电器".to_string(),
             payload_template: r#"{"state": "ON"}"#.to_string(),
             parameters: vec![],
             fixed_values: Default::default(),
             samples: vec![],
-            llm_hints: "打开继电器".to_string(),
             parameter_groups: vec![],
         })
         .with_command(CommandDefinition {
             name: "turn_off".to_string(),
             display_name: "关闭".to_string(),
+            description: "关闭继电器".to_string(),
             payload_template: r#"{"state": "OFF"}"#.to_string(),
             parameters: vec![],
             fixed_values: Default::default(),
             samples: vec![],
-            llm_hints: "关闭继电器".to_string(),
             parameter_groups: vec![],
         });
 

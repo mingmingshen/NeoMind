@@ -168,7 +168,7 @@ async fn test_e2e_device_registration_and_command() {
             }],
             fixed_values: Default::default(),
             samples: vec![],
-            llm_hints: String::new(),
+            description: String::new(),
             parameter_groups: vec![],
         });
 

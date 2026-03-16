@@ -22,7 +22,6 @@
 //! Devices are configured using `DeviceConfig` and accessed through `DeviceService`.
 //! Protocol adapters are registered as plugins for unified management.
 
-pub mod builtin_types;
 pub mod discovery;
 pub mod mdl;
 pub mod mdl_format;
@@ -48,7 +47,7 @@ pub use protocol::{
 };
 
 // Re-export protocol mapping functions
-pub use builtin_types::{builtin_device_types, builtin_mqtt_mappings};
+// builtin_types removed - old implementation
 
 // Device adapters implementing the adapter interface
 pub mod adapters;

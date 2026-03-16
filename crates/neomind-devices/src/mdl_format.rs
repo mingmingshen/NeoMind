@@ -24,11 +24,11 @@
 //!       {
 //!         "name": "capture",
 //!         "display_name": "Capture",
+//!         "description": "拍照命令，params.enable_ai 控制是否开启AI识别",
 //!         "payload_template": "{\"cmd\": \"capture\", \"request_id\": \"${uuid}\", \"params\": ${params}}",
 //!         "samples": [
 //!           {"cmd": "capture", "params": {"enable_ai": true}}
-//!         ],
-//!         "llm_hints": "拍照命令，params.enable_ai 控制是否开启AI识别"
+//!         ]
 //!       }
 //!     ]
 //!   }
@@ -279,6 +279,7 @@ pub struct CommandDefinition {
     /// Display name
     #[serde(default)]
     pub display_name: String,
+    pub description: String,
 
     /// Payload template (supports ${param} variables)
     /// This is protocol-specific; use protocol mappings for multi-protocol support.
@@ -298,10 +299,6 @@ pub struct CommandDefinition {
     /// Sample command payloads for LLM reference (simple mode)
     #[serde(default)]
     pub samples: Vec<serde_json::Value>,
-
-    /// LLM hints - natural language description for LLM
-    #[serde(default)]
-    pub llm_hints: String,
 
     /// Parameter groups - organizes parameters into collapsible sections
     #[serde(default)]
@@ -1460,6 +1457,7 @@ mod tests {
                     {
                         "name": "set_state",
                         "display_name": "设置状态",
+                        "description": "设置开关状态",
                         "payload_template": "{\"state\": \"${{state}}\"}",
                         "parameters": [
                             {

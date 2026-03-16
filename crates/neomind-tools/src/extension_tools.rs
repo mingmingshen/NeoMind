@@ -105,7 +105,7 @@ impl ExtensionTool {
 
         ToolDefinition {
             name,
-            description: self.command.llm_hints.clone(),
+            description: self.command.description.clone(),
             parameters,
             example: None,
             category: self.infer_category(),
@@ -209,7 +209,7 @@ impl Tool for ExtensionTool {
     }
 
     fn description(&self) -> &str {
-        self.command.llm_hints.as_str()
+        self.command.description.as_str()
     }
 
     fn parameters(&self) -> Value {
