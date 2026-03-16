@@ -1342,6 +1342,18 @@ impl IsolatedExtension {
     pub fn extension_id(&self) -> String {
         self.extension_id.clone()
     }
+    /// Mark the extension as being stopped (prevents death monitor from mistakenly restarting it)
+    ///
+    /// This should be called before stop() during unload to prevent the death monitoring
+    /// from treating this as a crash and triggering an automatic restart.
+    pub fn mark_stopping(&self) {
+        tracing::debug!(
+            extension_id = %self.extension_id,
+            "Marking extension as stopping (to prevent death monitor restart)"
+        );
+        self.running.store(false, Ordering::SeqCst);
+    }
+
 
     /// Check extension health via IPC
     pub async fn health_check(&self) -> IsolatedResult<bool> {

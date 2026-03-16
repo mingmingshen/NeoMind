@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useState, useRef } from "react"
 import { Routes, Route, Navigate, useLocation } from "react-router-dom"
 import { useStore } from "@/store"
 import { TopNav } from "@/components/layout/TopNav"
@@ -189,6 +189,13 @@ function PageLoading() {
 }
 
 function App() {
+  const extensionComponents = useExtensionComponents({ autoSync: false, syncInterval: 60000 })
+  const extensionSyncRef = useRef(extensionComponents.sync)
+  
+  // 更新 ref 当 sync 函数变化时
+  useEffect(() => {
+    extensionSyncRef.current = extensionComponents.sync
+  }, [extensionComponents.sync])
   const { isAuthenticated, checkAuthStatus, setWsConnected } = useStore()
   const location = useLocation()
   const [backendReady, setBackendReady] = useState(false)
@@ -283,8 +290,14 @@ function App() {
     if (isAuthenticated && currentPath !== '/setup') {
       import('@/lib/websocket').then(({ ws }) => {
         // Set up connection handler
-        const cleanup = ws.onConnection((connected) => {
+        const cleanup = ws.onConnection((connected, isReconnect) => {
           setWsConnected(connected)
+          // ✨ FIX: Auto-sync extension components when WebSocket reconnects
+          // This ensures extension UI components are available after backend restart
+          if (connected && isReconnect) {
+            console.log('[App] WebSocket reconnected, syncing extension components...')
+            extensionSyncRef.current?.()
+          }
         })
         // Check current state
         setWsConnected(ws.isConnected())
@@ -322,9 +335,21 @@ function App() {
     }
   }, [isAuthenticated, currentPath])
 
+  // Auto-sync extension dashboard components periodically
+  // This ensures extension-provided components stay up to date
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (isAuthenticated && currentPath !== '/setup') {
+        extensionSyncRef.current?.()
+      }
+    }, 60000) // Sync every 60 seconds
+
+    return () => clearInterval(interval)
+  }, [isAuthenticated, currentPath])
+
+
   // Auto-sync extension dashboard components when authenticated
   // This ensures extension-provided components are available in the dashboard
-  useExtensionComponents({ autoSync: true, syncInterval: 60000 })
 
   // Show loading screen in Tauri until backend is ready
   if (isTauri && !backendReady) {

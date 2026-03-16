@@ -380,6 +380,10 @@ impl IsolatedExtensionManager {
         let mut extensions = self.extensions.write().await;
 
         if let Some(isolated) = extensions.remove(id) {
+            // ✅ FIX: Mark as stopping BEFORE calling stop()
+            // This prevents death monitor from mistakenly treating this as a crash
+            isolated.mark_stopping();
+            
             // Stop the extension process
             // Ignore NotRunning error - extension may have failed to start (e.g., missing .dylib)
             if let Err(e) = isolated.stop().await {
