@@ -2771,10 +2771,22 @@ let handle = self.runtime.handle().clone();
         let ext_clone = Arc::clone(ext);
         let session_id_owned = session_id.to_string();
 
-        self.runtime.block_on(async {
-            let ext_guard = ext_clone.read().await;
-            ext_guard.close_session(&session_id_owned).await
-                .map_err(|e| e.to_string())
+        // ✨ CRITICAL FIX: Use tokio::task::spawn_blocking instead of runtime.block_on
+        //
+        // Extension Runner's main() is async, so we're already in a Tokio runtime context.
+        // Using runtime.block_on() would try to block a thread that's already driving
+        // async tasks, causing "Cannot start a runtime from within a runtime" panic.
+        //
+        // spawn_blocking moves the closure to a dedicated blocking thread pool,
+        // which is safe and won't conflict with the async runtime.
+        let handle = self.runtime.handle();
+        
+        tokio::task::block_in_place(|| {
+            handle.block_on(async move {
+                let ext_guard = ext_clone.read().await;
+                ext_guard.close_session(&session_id_owned).await
+                    .map_err(|e| e.to_string())
+            })
         })
     }
 
