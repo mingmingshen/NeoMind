@@ -424,7 +424,6 @@ mod tests {
             parameters: vec![],
             fixed_values: std::collections::HashMap::new(),
             samples: vec![],
-            llm_hints: String::new(),
             parameter_groups: vec![],
         };
 

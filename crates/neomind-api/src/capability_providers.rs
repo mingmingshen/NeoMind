@@ -95,6 +95,12 @@ impl DeviceCapabilityProvider {
         let value = params.get("value")
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing value".to_string()))?;
 
+        // Optional timestamp parameter (milliseconds since epoch)
+        // If not provided, use current time
+        let timestamp = params.get("timestamp")
+            .and_then(|v| v.as_i64())
+            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+
         let telemetry_storage: Arc<TimeSeriesStorage> = self.services
             .get::<TimeSeriesStorage>(keys::TELEMETRY_STORAGE)
             .ok_or_else(|| CapabilityError::NotAvailable(ExtensionCapability::DeviceMetricsWrite))?;
@@ -111,7 +117,7 @@ impl DeviceCapabilityProvider {
         };
 
         let data_point = neomind_devices::telemetry::DataPoint {
-            timestamp: chrono::Utc::now().timestamp_millis(),
+            timestamp,
             value: metric_value,
             quality: Some(1.0),
         };

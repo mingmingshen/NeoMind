@@ -220,8 +220,6 @@ pub struct CommandDefinition {
     #[serde(default)]
     pub samples: Vec<serde_json::Value>,
     #[serde(default)]
-    pub llm_hints: String,
-    #[serde(default)]
     pub parameter_groups: Vec<ParameterGroup>,
 }
 
@@ -235,7 +233,6 @@ impl Default for CommandDefinition {
             parameters: Vec::new(),
             fixed_values: HashMap::new(),
             samples: Vec::new(),
-            llm_hints: String::new(),
             parameter_groups: Vec::new(),
         }
     }

@@ -1,7 +1,7 @@
 # LLM Module
 
 **Package**: `neomind-llm`
-**Version**: 0.5.10
+**Version**: 0.5.11
 **Completion**: 95%
 **Purpose**: Provides multi-backend LLM support
 

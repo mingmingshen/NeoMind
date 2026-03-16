@@ -768,7 +768,7 @@ impl ExtensionPackage {
                     }).unwrap_or_default(),
                     "fixed_values": {},
                     "samples": [],
-                    "llm_hints": ""
+                    "description": ""
                 })
             }).collect::<Vec<_>>()
         }).unwrap_or_default();
@@ -908,7 +908,7 @@ impl ExtensionPackage {
                     }).unwrap_or_default(),
                     "fixed_values": {},
                     "samples": [],
-                    "llm_hints": ""
+                    "description": ""
                 })
             }).collect::<Vec<_>>()
         }).unwrap_or_default();

@@ -17,7 +17,7 @@ data/
 config.toml
 *.redb
 *.db
-
+*.bak*
 # Crate-level data folders (should use project root data/)
 crates/*/data/
 

@@ -28,6 +28,7 @@ fn get_transform_namespaces() -> &'static [&'static str; 5] {
 /// - metric: optional metric name (if not specified, returns all metrics)
 /// - start: optional start timestamp (default: 24 hours ago)
 /// - end: optional end timestamp (default: now)
+
 /// - limit: optional limit on number of data points (default: 100, max: 1000)
 /// - offset: optional offset for pagination (default: 0)
 /// - aggregate: optional aggregation type (avg, min, max, sum, last)
@@ -37,16 +38,16 @@ pub async fn get_device_telemetry_handler(
     Query(params): Query<HashMap<String, String>>,
 ) -> HandlerResult<serde_json::Value> {
     // Parse query parameters
-    // Note: All timestamps in the system are milliseconds since epoch
+    // Note: All timestamps in the storage layer are seconds since epoch
     let metric = params.get("metric").cloned();
     let start = params
         .get("start")
         .and_then(|s| s.parse::<i64>().ok())
-        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis() - 86400 * 1000); // 24 hours ago in ms
+        .unwrap_or_else(|| chrono::Utc::now().timestamp() - 86400); // 24 hours ago in seconds
     let end = params
         .get("end")
         .and_then(|s| s.parse::<i64>().ok())
-        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        .unwrap_or_else(|| chrono::Utc::now().timestamp()); // now in seconds
     let limit = params
         .get("limit")
         .and_then(|s| s.parse::<usize>().ok())
@@ -286,13 +287,13 @@ pub async fn get_device_telemetry_summary_handler(
     Path(device_id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> HandlerResult<serde_json::Value> {
-    // Default to last 24 hours (timestamps in milliseconds)
-    let end = chrono::Utc::now().timestamp_millis();
+    // Default to last 24 hours (timestamps in seconds)
+    let end = chrono::Utc::now().timestamp();
     let start = params
         .get("hours")
         .and_then(|s| s.parse::<i64>().ok())
-        .map(|h| end - h * 3600 * 1000)
-        .unwrap_or_else(|| end - 86400 * 1000);
+        .map(|h| end - h * 3600)
+        .unwrap_or_else(|| end - 86400);
 
     // Get device template to find available metrics
     // Also include virtual metrics from transforms
@@ -495,7 +496,7 @@ pub async fn get_device_telemetry_summary_handler(
                             "data_type": data_type,
                             "is_virtual": is_virtual,
                             "current": metric_value_to_json(val),
-                            "current_timestamp": chrono::Utc::now().timestamp_millis(),
+                            "current_timestamp": chrono::Utc::now().timestamp(),
                             "avg": null,
                             "min": null,
                             "max": null,
@@ -673,12 +674,12 @@ pub async fn analyze_metric_timestamps_handler(
         }
     };
 
-    // Get current time for comparison (timestamps in milliseconds)
-    let now = chrono::Utc::now().timestamp_millis();
+    // Get current time for comparison (timestamps in seconds)
+    let now = chrono::Utc::now().timestamp();
 
     // Query all data for this metric (wide time range)
-    let start = now - 86400 * 2 * 1000; // 2 days in ms
-    let end = now + 60 * 1000; // 1 minute in future in ms
+    let start = now - 86400 * 2; // 2 days in seconds
+    let end = now + 60; // 1 minute in future in seconds
 
     let points = state
         .devices

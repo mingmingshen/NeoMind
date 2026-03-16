@@ -154,7 +154,7 @@ pub async fn write_virtual_metric_handler(
         .await
         .ok_or_else(|| ErrorResponse::not_found(&format!("Device {} not found", device_id)))?;
 
-    let timestamp = chrono::Utc::now().timestamp_millis();
+    let timestamp = chrono::Utc::now().timestamp();
 
     tracing::info!(
         "Writing virtual metric for device {}: metric={}, value={}, is_virtual={}",
@@ -231,8 +231,8 @@ pub async fn aggregate_metrics_handler(
     let now = chrono::Utc::now();
 
     // Parse time range
-    let start = _query.start.unwrap_or(now.timestamp_millis() - (86400 * 1000)); // Default 24 hours ago
-    let end = _query.end.unwrap_or(now.timestamp_millis());
+    let start = _query.start.unwrap_or(now.timestamp() - 86400); // Default 24 hours ago in seconds
+    let end = _query.end.unwrap_or(now.timestamp()); // Now in seconds
 
     // Aggregate metrics using time series storage
     match time_series_storage.aggregate(
@@ -260,7 +260,7 @@ pub async fn aggregate_metrics_handler(
                 "last": result.last,
                 "start": start,
                 "end": end,
-                "timestamp": now.timestamp_millis(),
+                "timestamp": now.timestamp(),
             }))
         }
         Err(e) => {

@@ -134,7 +134,6 @@
 //!                 ],
 //!                 fixed_values: Default::default(),
 //!                 samples: Vec::new(),
-//!                 llm_hints: String::new(),
 //!                 parameter_groups: Vec::new(),
 //!             }
 //!         ]
@@ -466,7 +465,6 @@ impl CommandBuilder {
                     parameters: Vec::new(),
                     fixed_values: std::collections::HashMap::new(),
                     samples: Vec::new(),
-                    llm_hints: String::new(),
                     parameter_groups: Vec::new(),
                 },
             }
@@ -482,7 +480,6 @@ impl CommandBuilder {
                     parameters: Vec::new(),
                     fixed_values: std::collections::HashMap::new(),
                     samples: Vec::new(),
-                    llm_hints: String::new(),
                     parameter_groups: Vec::new(),
                 },
             }
@@ -496,10 +493,6 @@ impl CommandBuilder {
     }
 
     /// Set LLM hints for the command
-    pub fn llm_hints(mut self, hints: impl Into<String>) -> Self {
-        self.command.llm_hints = hints.into();
-        self
-    }
 
     /// Add a parameter
     pub fn param(mut self, param: ParameterDefinition) -> Self {

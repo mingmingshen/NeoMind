@@ -27,6 +27,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use tokio::sync::RwLock as AsyncRwLock;
+use tokio::sync::broadcast;
 
 use super::process::{IsolatedExtension, IsolatedExtensionConfig};
 use super::{IsolatedExtensionError, IsolatedResult};
@@ -115,6 +116,8 @@ pub struct IsolatedExtensionManager {
     event_dispatcher: Arc<EventDispatcher>,
     /// Capability provider for handling capability requests from extensions
     capability_provider: AsyncRwLock<Option<Arc<dyn super::super::context::ExtensionCapabilityProvider>>>,
+    /// Death notification channel for monitoring extension crashes
+    death_channel: (broadcast::Sender<()>, AsyncRwLock<broadcast::Receiver<()>>),
 }
 
 impl IsolatedExtensionManager {
@@ -130,6 +133,10 @@ impl IsolatedExtensionManager {
         // Create event dispatcher (simplified version)
         let event_dispatcher = Arc::new(EventDispatcher::new());
 
+        // Create death notification channel
+        let (death_tx, death_rx) = broadcast::channel(16);
+        let death_channel = (death_tx, AsyncRwLock::new(death_rx));
+
         Self {
             extensions: AsyncRwLock::new(HashMap::new()),
             info_cache: RwLock::new(HashMap::new()),
@@ -137,6 +144,7 @@ impl IsolatedExtensionManager {
             loader: IsolatedExtensionLoader::new(loader_config),
             event_dispatcher,
             capability_provider: AsyncRwLock::new(None),
+            death_channel,
         }
     }
 
@@ -144,6 +152,70 @@ impl IsolatedExtensionManager {
     pub fn with_defaults() -> Self {
         Self::new(IsolatedManagerConfig::default())
     }
+
+    /// Start the background task that monitors extension crashes and auto-restarts them
+    ///
+    /// This should be called once when the manager is created, in an async context.
+    pub fn start_death_monitoring(self: Arc<Self>) {
+        tokio::spawn(async move {
+            let mut rx = self.death_channel.1.read().await.resubscribe();
+            
+            tracing::info!("Extension death monitoring task started");
+            
+            loop {
+                match rx.recv().await {
+                    Ok(_) => {
+                        // An extension died - check all extensions and restart dead ones
+                        tracing::warn!("Received extension death notification, checking for dead extensions...");
+                        
+                        let extensions = self.extensions.read().await;
+                        let dead_extensions: Vec<String> = extensions
+                            .iter()
+                            .filter(|(_, ext)| !ext.is_alive())
+                            .map(|(id, _)| id.clone())
+                            .collect();
+                        drop(extensions);
+                        
+                        for ext_id in dead_extensions {
+                            tracing::warn!(extension_id = %ext_id, "Extension died, attempting auto-restart...");
+                            
+                            // Get the extension path from info cache
+                            let path = {
+                                let info = self.info_cache.read();
+                                info.get(&ext_id).map(|info| info.path.clone())
+                            };
+                            
+                            if let Some(path) = path {
+                                // Remove the dead extension first
+                                {
+                                    let mut extensions = self.extensions.write().await;
+                                    extensions.remove(&ext_id);
+                                }
+                                
+                                // Reload the extension
+                                match self.load(&path).await {
+                                    Ok(_) => {
+                                        tracing::info!(extension_id = %ext_id, "Successfully restarted extension after crash");
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(extension_id = %ext_id, error = %e, "Failed to restart extension after crash");
+                                    }
+                                }
+                            } else {
+                                tracing::error!(extension_id = %ext_id, "Cannot restart extension - path not found in cache");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "Death monitoring channel error, restarting task");
+                        // Resubscribe and continue
+                        rx = self.death_channel.1.read().await.resubscribe();
+                    }
+                }
+            }
+        });
+    }
+
 
     /// Set the capability provider for handling capability requests from extensions
     pub async fn set_capability_provider(&self, provider: Arc<dyn super::super::context::ExtensionCapabilityProvider>) {
@@ -225,6 +297,9 @@ impl IsolatedExtensionManager {
         // Set capability provider if configured
         if let Some(provider) = self.capability_provider.read().await.as_ref() {
             loaded.set_capability_provider(provider.clone());
+
+        // Set up death notification for auto-restart
+        loaded.set_death_notification(self.death_channel.0.clone()).await;
         }
 
         // Create runtime state

@@ -89,7 +89,7 @@ macro_rules! create_c_metadata {
         let version = CStr::from_bytes_with_nul(concat!($version, "\0").as_bytes()).unwrap();
 
         $crate::CExtensionMetadata {
-            abi_version: $crate::NEW_ABI_VERSION,
+            abi_version: $crate::SDK_ABI_VERSION,
             id: id.as_ptr(),
             name: name.as_ptr(),
             version: version.as_ptr(),

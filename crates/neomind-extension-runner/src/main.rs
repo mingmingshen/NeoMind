@@ -479,7 +479,7 @@ impl WasmRuntime {
                         .and_then(|v| v.as_str())
                         .unwrap_or(&name)
                         .to_string();
-                    let llm_hints = c.get("description")
+                    let description = c.get("description")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
@@ -536,12 +536,11 @@ impl WasmRuntime {
                     Some(ExtensionCommand {
                         name,
                         display_name,
+                        description,
                         payload_template: String::new(),
-                        description: String::new(),
                         parameters,
                         fixed_values: HashMap::new(),
                         samples,
-                        llm_hints,
                         parameter_groups: Vec::new(),
                     })
                 }).collect()
@@ -2141,7 +2140,7 @@ impl Runner {
             }
 
             IpcMessage::InitStreamSession { session_id, extension_id: _, config, client_info: _ } => {
-                self.handle_init_stream_session(session_id, config);
+                self.handle_init_stream_session(session_id, config).await;
             }
 
             IpcMessage::ProcessStreamChunk { request_id, session_id, chunk } => {
@@ -2600,12 +2599,12 @@ impl Runner {
         Ok(ext_guard.stream_capability())
     }
 
-    fn handle_init_stream_session(&mut self, session_id: String, config: serde_json::Value) {
+    async fn handle_init_stream_session(&mut self, session_id: String, config: serde_json::Value) {
         debug!(session_id = %session_id, "Initializing stream session");
 
         let result = match self.extension_type {
             ExtensionType::Native => {
-                self.init_native_stream_session(&session_id, config)
+                self.init_native_stream_session(&session_id, config).await
             }
             ExtensionType::Wasm => {
                 Err("WASM streaming not supported".to_string())
@@ -2629,33 +2628,26 @@ impl Runner {
             }
         }
     }
-
-    fn init_native_stream_session(&self, session_id: &str, config: serde_json::Value) -> Result<(), String> {
+    async fn init_native_stream_session(&self, session_id: &str, config: serde_json::Value) -> Result<(), String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
 
-        let ext_clone = Arc::clone(ext);
-        let session_id_owned = session_id.to_string();
+        let ext_guard = ext.read().await;
+        
+        // Create StreamSession
+        let session = neomind_core::extension::StreamSession::new(
+            session_id.to_string(),
+            "extension".to_string(),  // Extension ID from metadata
+            config,
+            neomind_core::extension::ClientInfo {
+                client_id: "runner".to_string(),
+                ip_addr: None,
+                user_agent: None,
+            },
+        );
 
-        self.runtime.block_on(async {
-            let ext_guard = ext_clone.read().await;
-            
-            // Create StreamSession
-            let session = neomind_core::extension::StreamSession::new(
-                session_id_owned,
-                "extension".to_string(),  // Extension ID from metadata
-                config,
-                neomind_core::extension::ClientInfo {
-                    client_id: "runner".to_string(),
-                    ip_addr: None,
-                    user_agent: None,
-                },
-            );
-
-            ext_guard.init_session(&session).await
-                .map_err(|e| e.to_string())
-        })
+        ext_guard.init_session(&session).await
+            .map_err(|e| e.to_string())
     }
-
     fn handle_process_stream_chunk(&mut self, request_id: u64, session_id: String, chunk: neomind_core::extension::isolated::StreamDataChunk) {
         debug!(session_id = %session_id, sequence = chunk.sequence, request_id, "Processing stream chunk");
 
@@ -2699,23 +2691,30 @@ impl Runner {
 
         let ext_clone = Arc::clone(ext);
         let session_id_owned = session_id.to_string();
+let handle = self.runtime.handle().clone();
 
-        self.runtime.block_on(async {
-            let ext_guard = ext_clone.read().await;
+        // Use spawn_blocking to avoid runtime conflicts
+        // This moves the async operation to a separate thread pool
+        let result = std::thread::spawn(move || {
+            handle.block_on(async {
+                let ext_guard = ext_clone.read().await;
 
-            // Convert StreamDataChunk to DataChunk
-            let data_chunk = neomind_core::extension::DataChunk {
-                sequence: chunk.sequence,
-                data_type: neomind_core::extension::StreamDataType::Binary,  // Will be overridden by actual data
-                data: chunk.data,
-                timestamp: chunk.timestamp,
-                metadata: None,
-                is_last: chunk.is_last,
-            };
+                // Convert StreamDataChunk to DataChunk
+                let data_chunk = neomind_core::extension::DataChunk {
+                    sequence: chunk.sequence,
+                    data_type: neomind_core::extension::StreamDataType::Binary,  // Will be overridden by actual data
+                    data: chunk.data,
+                    timestamp: chunk.timestamp,
+                    metadata: None,
+                    is_last: chunk.is_last,
+                };
 
-            ext_guard.process_session_chunk(&session_id_owned, data_chunk).await
-                .map_err(|e| e.to_string())
-        })
+                ext_guard.process_session_chunk(&session_id_owned, data_chunk).await
+                    .map_err(|e| e.to_string())
+            })
+        }).join();
+
+        result.map_err(|e| format!("Thread join failed: {:?}", e))?
     }
 
     fn handle_close_stream_session(&mut self, session_id: String) {

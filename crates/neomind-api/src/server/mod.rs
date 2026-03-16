@@ -77,6 +77,10 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     // This loads all extensions marked with auto_start=true
     state.init_extensions().await;
 
+    // Start extension death monitoring for auto-restart
+    state.extensions.unified_service.clone().start_death_monitoring();
+    startup.service("Extension death monitoring", ServiceStatus::Started);
+
     // Initialize extension event subscription
     // This must be after init_extensions() so extensions can subscribe to events
     state.init_extension_event_subscription().await;

@@ -339,9 +339,6 @@ pub struct SdkCommandDefinition {
     /// Sample payloads
     #[serde(default)]
     pub samples: Vec<serde_json::Value>,
-    /// LLM hints
-    #[serde(default)]
-    pub llm_hints: String,
     /// Parameter groups
     #[serde(default)]
     pub parameter_groups: Vec<SdkParameterGroup>,
@@ -373,7 +370,6 @@ impl Default for SdkCommandDefinition {
             parameters: Vec::new(),
             fixed_values: std::collections::HashMap::new(),
             samples: Vec::new(),
-            llm_hints: String::new(),
             parameter_groups: Vec::new(),
         }
     }
@@ -390,7 +386,6 @@ impl SdkCommandDefinition {
             parameters: Vec::new(),
             fixed_values: std::collections::HashMap::new(),
             samples: Vec::new(),
-            llm_hints: String::new(),
             parameter_groups: Vec::new(),
         }
     }
@@ -893,7 +888,7 @@ mod tests {
             version: "1.0.0".to_string(),
             description: Some("A test extension".to_string()),
             author: Some("Test Author".to_string()),
-            sdk_version: Some("0.5.10".to_string()),
+            sdk_version: Some("0.5.11".to_string()),
             extension_type: "native".to_string(),
         };
 

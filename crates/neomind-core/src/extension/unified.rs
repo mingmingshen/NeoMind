@@ -118,6 +118,13 @@ impl UnifiedExtensionService {
         Self::new(registry, UnifiedExtensionConfig::default())
     }
 
+    /// Start the background task that monitors extension crashes and auto-restarts them
+    ///
+    /// This spawns an async task that listens for death notifications from isolated
+    /// extensions and automatically restarts them when they crash.
+    pub fn start_death_monitoring(self: Arc<Self>) {
+        self.isolated_manager.clone().start_death_monitoring();
+    }
     /// Load an extension from a path
     ///
     /// Automatically determines whether to use isolated mode based on configuration

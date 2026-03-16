@@ -250,7 +250,7 @@ macro_rules! neomind_export_with_constructor {
                     serde_json::json!({
                         "name": c.name,
                         "display_name": c.display_name,
-                        "description": c.llm_hints,
+                        "description": c.description,
                         "parameters": params_json,
                         "samples": c.samples
                     })

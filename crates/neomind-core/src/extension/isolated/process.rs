@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
+use tokio::sync::broadcast;
 use tracing::{debug, error, warn};
 
 use super::in_flight::InFlightRequests;
@@ -320,6 +321,8 @@ pub struct IsolatedExtension {
     active_sessions: Arc<tokio::sync::RwLock<std::collections::HashSet<String>>>,
     /// ✨ FIX: Session invalidation callback - called when extension restarts
     session_invalidation_tx: Mutex<Option<tokio::sync::mpsc::UnboundedSender<String>>>,
+    /// Extension death notification channel
+    death_tx: Arc<Mutex<Option<broadcast::Sender<()>>>>,
     /// Capability provider for handling InvokeCapability requests from extension
     capability_provider: Arc<std::sync::RwLock<Option<Arc<dyn super::super::context::ExtensionCapabilityProvider>>>>,
 }
@@ -354,6 +357,7 @@ impl IsolatedExtension {
             ipc_buffer_pool,
             active_sessions: Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new())),
             session_invalidation_tx: Mutex::new(None),
+            death_tx: Arc::new(Mutex::new(None)),
             capability_provider: Arc::new(std::sync::RwLock::new(None)),
         }
     }
@@ -495,11 +499,21 @@ impl IsolatedExtension {
                 .unwrap_or_else(|_| self.extension_path.clone())
         };
 
+        // ✅ FIX: Also convert extension_dir to absolute path
+        // This ensures NEOMIND_EXTENSION_DIR environment variable is always absolute
+        // Convert relative path to absolute using current working directory
+        let extension_dir_absolute = if extension_dir.is_absolute() {
+            extension_dir.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(&extension_dir))
+                .unwrap_or_else(|_| extension_dir.to_path_buf())
+        };
         let mut child = Command::new(&runner_path)
             .arg("--extension-path")
             .arg(&extension_path_absolute)
-            .env("NEOMIND_EXTENSION_DIR", extension_dir)
-            .current_dir(extension_dir)  // Set working directory to extension root
+            .env("NEOMIND_EXTENSION_DIR", &extension_dir_absolute)
+            .current_dir(extension_dir_absolute)  // Set working directory to extension root
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -660,6 +674,8 @@ impl IsolatedExtension {
         let capability_provider = self.capability_provider.clone();
         // Stdin for sending responses
         let stdin = self.stdin.clone();
+        // Death notification channel
+        let death_tx = self.death_tx.clone();
 
         std::thread::spawn(move || {
             debug!(extension_id = %extension_id, "Receiver thread started");
@@ -688,6 +704,12 @@ impl IsolatedExtension {
                             warn!(extension_id = %extension_id, error = %e, "Failed to read from extension stdout");
                         }
                         running.store(false, Ordering::SeqCst);
+                        // Send death notification to manager
+                        if let Ok(tx_guard) = death_tx.try_lock() {
+                            if let Some(sender) = tx_guard.as_ref() {
+                                let _ = sender.send(());
+                            }
+                        }
                         break;
                     }
                 }
@@ -698,6 +720,12 @@ impl IsolatedExtension {
                 if len > IPC_MAX_BUFFER_SIZE {
                     error!(extension_id = %extension_id, len, "Response too large");
                     running.store(false, Ordering::SeqCst);
+                    // Send death notification to manager
+                    if let Ok(tx_guard) = death_tx.try_lock() {
+                        if let Some(sender) = tx_guard.as_ref() {
+                            let _ = sender.send(());
+                        }
+                    }
                     break;
                 }
 
@@ -861,9 +889,36 @@ impl IsolatedExtension {
         // Send shutdown message to extension
         let _ = self.send_message(&IpcMessage::Shutdown).await;
 
-        // Wait for process to exit
+        // ✅ FIX: Wait for process to exit with timeout
+        // If graceful shutdown fails, force kill after 5 seconds
         if let Some(mut child) = process_guard.take() {
-            let _ = child.wait();
+            // ✅ FIX: Wait with polling to prevent hanging on stuck processes
+            let start = std::time::Instant::now();
+            let timeout = std::time::Duration::from_secs(5);
+            
+            loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        debug!(extension_id = %self.extension_id, ?status, "Extension process exited");
+                        break;
+                    }
+                    Ok(None) => {
+                        if start.elapsed() >= timeout {
+                            warn!(extension_id = %self.extension_id, "Process did not exit, force killing");
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+                    Err(e) => {
+                        warn!(extension_id = %self.extension_id, error = %e, "Error waiting for process");
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        break;
+                    }
+                }
+            }
         }
 
         *self.stdin.lock().await = None;
@@ -1461,6 +1516,14 @@ impl IsolatedExtension {
         tx: tokio::sync::mpsc::UnboundedSender<String>,
     ) {
         *self.session_invalidation_tx.lock().await = Some(tx);
+    }
+
+    /// Set the death notification callback
+    ///
+    /// This is called when the extension process dies unexpectedly.
+    /// The provided sender is used to notify the manager to restart the extension.
+    pub async fn set_death_notification(&self, tx: broadcast::Sender<()>) {
+        *self.death_tx.lock().await = Some(tx);
     }
 
     // =========================================================================
@@ -2083,14 +2146,35 @@ impl IsolatedExtension {
 
 impl Drop for IsolatedExtension {
     fn drop(&mut self) {
-        // Attempt graceful shutdown
-        // ✅ FIX: Don't wait for child process to avoid indefinite blocking
-        // The OS will clean up the zombie process
+        // ✅ FIX: Clean up child process to prevent zombies
         if let Ok(mut child) = self.process.try_lock() {
             if let Some(mut proc) = child.take() {
+                // Try to kill the process
                 let _ = proc.kill();
-                // Don't wait - let the OS clean up the zombie process
-                // This prevents blocking if the process is stuck in uninterruptible sleep
+                
+                // Try to wait for the process to exit (non-blocking)
+                // This prevents zombie processes from accumulating
+                match proc.try_wait() {
+                    Ok(Some(_status)) => {
+                        // Process exited successfully
+                    }
+                    Ok(None) => {
+                        // Process still running, will become a zombie
+                        // We can't do much in Drop without blocking
+                        tracing::warn!(
+                            extension_id = %self.extension_id,
+                            "Extension process still running at drop time, may become zombie"
+                        );
+                    }
+                    Err(e) => {
+                        // Process already reaped or error
+                        tracing::debug!(
+                            extension_id = %self.extension_id,
+                            error = %e,
+                            "Process wait error during drop"
+                        );
+                    }
+                }
             }
         }
     }
