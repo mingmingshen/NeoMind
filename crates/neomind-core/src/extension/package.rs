@@ -342,6 +342,10 @@ pub struct InstallResult {
     pub components: Vec<DashboardComponentDef>,
     /// Package checksum
     pub checksum: String,
+    /// Resources directory (if any) - contains models, configs, etc.
+    pub resources_dir: Option<PathBuf>,
+    /// Models directory (if any) - contains AI model files
+    pub models_dir: Option<PathBuf>,
 }
 
 /// Extension package error
@@ -553,6 +557,22 @@ impl ExtensionPackage {
             None
         };
 
+        // ✨ Extract models directory if exists (AI model files)
+        let models_path = ext_dir.join("models");
+        let models_dir = if self.extract_directory(&mut archive, "models/", &models_path).await.is_ok() {
+            Some(models_path)
+        } else {
+            None
+        };
+
+        // ✨ Extract resources directory if exists (configs, assets, etc.)
+        let resources_path = ext_dir.join("resources");
+        let resources_dir = if self.extract_directory(&mut archive, "resources/", &resources_path).await.is_ok() {
+            Some(resources_path)
+        } else {
+            None
+        };
+
         // Get component definitions
         let components = self.manifest.frontend.as_ref()
             .map(|f| f.components.clone())
@@ -566,6 +586,8 @@ impl ExtensionPackage {
             frontend_dir,
             components,
             checksum: self.checksum.clone(),
+            resources_dir,
+            models_dir,
         })
     }
 
@@ -646,6 +668,20 @@ impl ExtensionPackage {
         // Calculate checksum
         let checksum = Self::calculate_checksum(data);
 
+        // ✨ Determine which resource directories were extracted
+        let models_dir = if models_path.exists() {
+            Some(models_path)
+        } else {
+            None
+        };
+
+        let resources_dir = if assets_path.exists() || config_path.exists() {
+            // Return assets as resources if either exists
+            Some(assets_path)
+        } else {
+            None
+        };
+
         Ok(InstallResult {
             extension_id: ext_id.clone(),
             version: version.clone(),
@@ -654,6 +690,8 @@ impl ExtensionPackage {
             frontend_dir,
             components,
             checksum,
+            models_dir,
+            resources_dir,
         })
     }
 
