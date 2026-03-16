@@ -41,9 +41,15 @@ use neomind_core::extension::system::DynExtension;
 // Import capability name constants from Core for consistency
 use neomind_core::extension::context::capabilities as cap;
 
+// Resource limits module
+mod resource_limits;
+use resource_limits::{setup_resource_limits, ResourceLimitsConfig};
+
 // ============================================================================
 // Message routing for capability invocation
 // ============================================================================
+
+// Resource limits module
 // A background thread reads all stdin messages and routes them to:
 // 1. Pending capability requests (via PENDING_REQUESTS)
 // 2. Main event queue (via EVENT_QUEUE)
@@ -246,6 +252,18 @@ struct Args {
     /// Enable verbose logging
     #[arg(long, short = 'v')]
     verbose: bool,
+
+    /// Memory limit in MB (0 = no limit)
+    #[arg(long = "memory-limit", default_value = "512")]
+    memory_limit_mb: u64,
+
+    /// Hard memory limit in MB (0 = 2x soft limit)
+    #[arg(long = "memory-limit-hard", default_value = "0")]
+    memory_limit_hard_mb: u64,
+
+    /// Process nice level (priority, -20 to 19, use 10 for background)
+    #[arg(long = "nice", default_value = "10")]
+    nice_level: i32,
 }
 
 /// Extension runner state
@@ -2962,6 +2980,29 @@ async fn main() {
     eprintln!("[Extension Runner] main function called");
     let _ = std::io::stderr().flush();
     debug!(extension_path = %args.extension_path.display(), "Extension path");
+
+    // Set up resource limits BEFORE loading extension
+    let memory_limit = if args.memory_limit_mb > 0 {
+        Some(args.memory_limit_mb)
+    } else {
+        None
+    };
+    let hard_memory_limit = if args.memory_limit_hard_mb > 0 {
+        Some(args.memory_limit_hard_mb)
+    } else {
+        None
+    };
+
+    let limits_config = ResourceLimitsConfig {
+        memory_limit_mb: memory_limit,
+        memory_limit_hard_mb: hard_memory_limit,
+        cpu_affinity: None,
+        nice_level: Some(args.nice_level),
+    };
+
+    if let Err(e) = setup_resource_limits(&limits_config) {
+        error!("Failed to set resource limits: {}. Continuing anyway.", e);
+    }
 
     if !args.extension_path.exists() {
         error!(path = %args.extension_path.display(), "Extension file not found");
