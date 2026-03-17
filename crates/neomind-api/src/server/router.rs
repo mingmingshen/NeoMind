@@ -127,7 +127,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         // Extension-specific routes ( :id must come after specific paths)
         .route(
             "/api/extensions/:id",
-            get(extensions::get_extension_handler),
+            get(extensions::get_extension_handler)
+            .delete(extensions::unregister_extension_handler),
         )
         .route(
             "/api/extensions/:id/health",
@@ -849,10 +850,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         //     "/api/extensions/upload/multipart",
         //     post(extensions::upload_extension_multipart_handler),
         // )
-        .route(
-            "/api/extensions/:id",
-            delete(extensions::unregister_extension_handler),
-        )
         .route(
             "/api/extensions/:id/uninstall",
             delete(extensions::uninstall_extension_handler),
