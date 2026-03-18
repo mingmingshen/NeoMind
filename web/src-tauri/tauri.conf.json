@@ -112,7 +112,7 @@
       "open": true
     },
     "updater": {
-      "active": true,
+      "active": false,
       "endpoints": [
         "https://github.com/camthink-ai/NeoMind/releases/latest/download/latest-update.json"
       ],
