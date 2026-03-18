@@ -13,6 +13,8 @@ export interface PageLayoutProps {
   actions?: ReactNode
   /** Optional footer content (e.g., pagination bar fixed at bottom) */
   footer?: ReactNode
+  /** Optional fixed header content (e.g., tabs) - rendered between title and scrollable content */
+  headerContent?: ReactNode
   maxWidth?: 'md' | 'lg' | 'xl' | '2xl' | 'full'
   className?: string
   /** Whether to render a subtle bottom border under the header */
@@ -54,6 +56,7 @@ export function PageLayout({
   subtitle,
   actions,
   footer,
+  headerContent,
   maxWidth = 'full',
   className,
   borderedHeader = false,
@@ -79,6 +82,12 @@ export function PageLayout({
           </div>
         </div>
       )}
+      {/* Fixed header content (e.g., tabs) - outside scroll container */}
+      {headerContent && (
+        <div className="shrink-0 bg-background">
+          {headerContent}
+        </div>
+      )}
       {/* Content area - uses flex-col to push sticky elements to bottom when content is short */}
       <div className={cn('flex-1 flex flex-col min-h-0', className)}>
         {/* Scrollable content - adjust padding based on footer visibility */}
@@ -89,7 +98,7 @@ export function PageLayout({
           )}
           data-page-scroll-container
         >
-          <div className={cn('mx-auto w-full space-y-6', maxWidthClass[maxWidth])}>
+          <div className={cn('mx-auto w-full', maxWidthClass[maxWidth])}>
             {children}
           </div>
         </div>
