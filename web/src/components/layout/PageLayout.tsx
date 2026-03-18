@@ -69,7 +69,7 @@ export function PageLayout({
     <div className="flex flex-col h-full">
       {title && (
         <div className="shrink-0 bg-background">
-          <div className={cn('w-full px-4 py-4 sm:px-6 sm:py-5 md:px-8 md:py-6', maxWidthClass[maxWidth], className)}>
+          <div className={cn('w-full px-4 pt-4 pb-2 sm:px-6 sm:pt-5 sm:pb-3 md:px-8 md:pt-6 md:pb-3', maxWidthClass[maxWidth], className)}>
             <PageHeader
               title={title}
               description={subtitle}
