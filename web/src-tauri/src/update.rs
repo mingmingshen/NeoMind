@@ -51,7 +51,14 @@ pub struct UpdateProgress {
 /// This command checks the configured update endpoint for a new version
 /// and returns information about any available update.
 #[tauri::command]
+#[allow(unused_variables)]
 pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, String> {
+    // In development mode, skip update checks to avoid network errors
+    #[cfg(debug_assertions)]
+    {
+        return Ok(UpdateInfo::none());
+    }
+
     let response = app
         .updater()
         .map_err(|e| format!("Updater not initialized: {}", e))?
@@ -138,6 +145,27 @@ pub async fn get_app_version(app: AppHandle) -> Result<String, String> {
 #[tauri::command]
 pub async fn relaunch_app(app: AppHandle) {
     app.restart();
+}
+
+/// Show a system notification for available updates
+///
+/// This command displays a system tray notification when an update is available.
+#[tauri::command]
+pub async fn show_update_notification(
+    app: AppHandle,
+    title: String,
+    body: String,
+) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+
+    app.notification()
+        .builder()
+        .title(&title)
+        .body(&body)
+        .show()
+        .map_err(|e| format!("Failed to show notification: {}", e))?;
+
+    Ok(())
 }
 
 #[cfg(test)]

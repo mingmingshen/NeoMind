@@ -23,6 +23,7 @@ import { api } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useUpdateCheck } from "@/hooks/useUpdateCheck"
 import { useAppStore } from "@/store"
+import { useToast } from "@/hooks/use-toast"
 
 interface GpuInfo {
   name: string
@@ -46,7 +47,8 @@ interface SystemInfo {
 
 export function AboutTab() {
   const { t } = useTranslation(["common", "settings"])
-  const { handleError } = useErrorHandler()
+  const { handleError, showSuccess } = useErrorHandler()
+  const { toast } = useToast()
   const { updateInfo, setUpdateStatus, setError } = useAppStore()
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -55,12 +57,24 @@ export function AboutTab() {
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
 
   // Use useCallback to prevent infinite loop - this function reference stays stable
-  const handleUpdateAvailable = useCallback(() => {
+  const handleUpdateAvailable = useCallback((info: { version?: string }) => {
     setUpdateDialogOpen(true)
-  }, [])
+    toast({
+      title: t('settings:newVersionAvailable'),
+      description: info.version
+        ? t('settings:updateAvailableWithVersion', { version: info.version })
+        : t('settings:updateAvailableDesc'),
+    })
+  }, [toast, t])
+
+  const handleUpToDate = useCallback(() => {
+    showSuccess(t('settings:alreadyUpToDate'))
+  }, [showSuccess, t])
 
   const { checkUpdate, getAppVersion } = useUpdateCheck({
+    autoCheck: false, // Only check manually when user clicks button
     onUpdateAvailable: handleUpdateAvailable,
+    onUpToDate: handleUpToDate,
   })
 
   const loadSystemInfo = async (showRefreshing = false) => {
@@ -86,6 +100,7 @@ export function AboutTab() {
         // You could show a toast here
       }
     } catch (error) {
+      console.error('[AboutTab] checkUpdate error:', error)
       handleError(error, { operation: 'Check for updates' })
     } finally {
       setCheckingUpdate(false)
