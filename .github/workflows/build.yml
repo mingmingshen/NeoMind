@@ -169,9 +169,23 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: neomind-desktop-${{ matrix.platform }}
-          path: web/src-tauri/target/${{ matrix.target }}/release/bundle/
+          path: |
+            web/src-tauri/target/${{ matrix.target }}/release/bundle/
+            web/src-tauri/target/${{ matrix.target }}/release/bundle/updater/*.tar.gz
+            web/src-tauri/target/${{ matrix.target }}/release/bundle/updater/*.sig
           retention-days: 30
           if-no-files-found: warn
+
+      - name: Upload updater artifacts separately
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: neomind-updater-${{ matrix.platform }}
+          path: |
+            web/src-tauri/target/${{ matrix.target }}/release/bundle/updater/*.tar.gz
+            web/src-tauri/target/${{ matrix.target }}/release/bundle/updater/*.sig
+          retention-days: 90
+          if-no-files-found: ignore
 
   # Server binary build with embedded frontend (Linux x64 and ARM64, macOS ARM64 only)
   build-server:
@@ -308,6 +322,8 @@ jobs:
             artifacts/**/*.exe
             artifacts/**/*.AppImage
             artifacts/**/*.deb
+            artifacts/**/updater/*.tar.gz
+            artifacts/**/updater/*.sig
             artifacts/neomind-server-linux-amd64/*.tar.gz
             artifacts/neomind-server-linux-arm64/*.tar.gz
             artifacts/neomind-server-darwin-arm64/*.tar.gz

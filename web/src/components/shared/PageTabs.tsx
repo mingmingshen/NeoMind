@@ -1,4 +1,5 @@
 import { ReactNode } from 'react'
+import { useIsMobile } from '@/hooks/useMobile'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -51,12 +52,16 @@ export function PageTabs({
   children,
   mobileBottomNav = true,
 }: PageTabsProps) {
+  const isMobile = useIsMobile()
   // Mobile bottom navigation variant
   if (mobileBottomNav) {
     return (
       <Tabs value={activeTab} onValueChange={onTabChange} className={className}>
         {/* Desktop: Top tabs bar */}
-        <div className="hidden md:flex mb-4 shrink-0 flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className={cn(
+  "hidden md:flex mb-4 shrink-0 flex-col gap-3 md:flex-row md:items-center md:justify-between",
+  !isMobile && "sticky top-0 z-10 bg-background py-2 -my-2"
+)}>
           <TabsList
             className={cn(
               'inline-flex w-auto flex-wrap overflow-visible rounded-md bg-muted p-0.5',
@@ -178,7 +183,10 @@ export function PageTabs({
   return (
     <Tabs value={activeTab} onValueChange={onTabChange} className={className}>
       {/* Tabs + Actions Bar - mobile: segmented control, desktop: inline tabs */}
-      <div className="mb-2 flex shrink-0 flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className={cn(
+  "mb-2 flex shrink-0 flex-col gap-3 md:flex-row md:items-center md:justify-between",
+  !isMobile && "sticky top-0 z-10 bg-background py-2 -my-2"
+)}>
         <TabsList
           className={cn(
             /* mobile: full-width segmented control, horizontal scroll */
