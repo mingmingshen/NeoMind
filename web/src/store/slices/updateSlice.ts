@@ -29,6 +29,7 @@ export interface UpdateState {
   downloadProgress: UpdateProgress | null
   lastCheckTime: number | null
   error: string | null
+  updateDialogOpen: boolean
 
   // Actions
   setUpdateStatus: (status: UpdateStatus) => void
@@ -36,6 +37,7 @@ export interface UpdateState {
   setDownloadProgress: (progress: UpdateProgress | null) => void
   setError: (error: string | null) => void
   setLastCheckTime: (time: number) => void
+  setUpdateDialogOpen: (open: boolean) => void
   resetUpdate: () => void
 }
 
@@ -51,6 +53,7 @@ export const createUpdateSlice: StateCreator<
   downloadProgress: null,
   lastCheckTime: null,
   error: null,
+  updateDialogOpen: false,
 
   // Actions
   setUpdateStatus: (status) =>
@@ -68,6 +71,9 @@ export const createUpdateSlice: StateCreator<
   setLastCheckTime: (time) =>
     set({ lastCheckTime: time }),
 
+  setUpdateDialogOpen: (open) =>
+    set({ updateDialogOpen: open }),
+
   resetUpdate: () =>
     set({
       updateStatus: 'idle',
@@ -84,5 +90,6 @@ export interface UpdateSlice extends UpdateState {
   setDownloadProgress: (progress: UpdateProgress | null) => void
   setError: (error: string | null) => void
   setLastCheckTime: (time: number) => void
+  setUpdateDialogOpen: (open: boolean) => void
   resetUpdate: () => void
 }

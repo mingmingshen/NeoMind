@@ -100,5 +100,7 @@
   "downloading": "Downloading",
   "installing": "Installing",
   "updating": "Updating Application",
-  "update": "Update"
+  "update": "Update",
+  "updateAvailableWithVersion": "Version {version} of NeoMind is available. Would you like to update now?",
+  "alreadyUpToDate": "You are already running the latest version of NeoMind."
 }

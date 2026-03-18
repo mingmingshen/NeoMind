@@ -100,5 +100,7 @@
   "downloading": "下载中",
   "installing": "安装中",
   "updating": "正在更新应用程序",
-  "update": "更新"
+  "update": "更新",
+  "updateAvailableWithVersion": "NeoMind {version} 版本已就绪，是否立即更新？",
+  "alreadyUpToDate": "您当前使用的已是最新版本的 NeoMind。"
 }

@@ -31,6 +31,7 @@ edge-core = { path = "../../crates/neomind-core", package = "neomind-core" }
 edge-llm = { path = "../../crates/neomind-llm", package = "neomind-llm" }
 edge-agent = { path = "../../crates/neomind-agent", package = "neomind-agent" }
 edge-devices = { path = "../../crates/neomind-devices", package = "neomind-devices", features = ["embedded-broker"] }
+tauri-plugin-notification = "2"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

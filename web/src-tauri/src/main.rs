@@ -190,6 +190,8 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        // Notification plugin - system tray notifications
+        .plugin(tauri_plugin_notification::init())
         // Updater plugin - handles application updates
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Single instance plugin - prevents multiple app instances
@@ -203,6 +205,7 @@ pub fn run() {
             update::download_and_install,
             update::get_app_version,
             update::relaunch_app,
+            update::show_update_notification,
         ])
         .setup(setup_app)
         .build(tauri::generate_context!())
