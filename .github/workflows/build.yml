@@ -155,6 +155,12 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: rustup target add aarch64-apple-darwin
 
+      - name: Install macOS dependencies
+        if: matrix.os == 'macos-latest'
+        run: |
+          # Install create-dmg for DMG bundling
+          brew install create-dmg || true
+
       - name: Install frontend dependencies (for Tauri CLI)
         working-directory: ./web
         run: npm ci
@@ -197,14 +203,31 @@ jobs:
             cp target/${{ matrix.target }}/release/neomind-extension-runner \
                web/src-tauri/binaries/neomind-extension-runner-${{ matrix.target }}
             chmod +x web/src-tauri/binaries/neomind-extension-runner-${{ matrix.target }}
+
+            # Also copy to target/release for Tauri's default lookup
+            mkdir -p target/release
+            cp target/${{ matrix.target }}/release/neomind-extension-runner \
+               target/release/neomind-extension-runner
+            chmod +x target/release/neomind-extension-runner
           fi
 
           echo "✅ Extension runner built for ${{ matrix.target }}"
           ls -lh web/src-tauri/binaries/
+          ls -lh target/release/neomind-extension-runner || true
 
       - name: Build Tauri app
         working-directory: ./web
-        run: npm run tauri build -- --target ${{ matrix.target }}
+        run: |
+          # Try building with DMG first, fall back to app bundle only if DMG fails
+          npm run tauri build -- --target ${{ matrix.target }} || {
+            echo "⚠️ Full build failed, trying without DMG..."
+            # If on macOS, try building just the app bundle
+            if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+              npm run tauri build -- --target ${{ matrix.target }} --bundles app
+            else
+              exit 1
+            fi
+          }
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
@@ -213,7 +236,12 @@ jobs:
         with:
           name: neomind-desktop-${{ matrix.platform }}
           path: |
-            web/src-tauri/target/${{ matrix.target }}/release/bundle/
+            web/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            web/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app
+            web/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            web/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            web/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            web/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
             web/src-tauri/target/${{ matrix.target }}/release/bundle/updater/*.tar.gz
             web/src-tauri/target/${{ matrix.target }}/release/bundle/updater/*.sig
           retention-days: 30
