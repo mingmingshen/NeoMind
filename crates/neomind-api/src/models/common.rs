@@ -413,7 +413,7 @@ mod tests {
     fn test_response_meta_default() {
         let meta = ResponseMeta::default();
 
-        assert!(meta.request_id.len() > 0);
+        assert!(!meta.request_id.is_empty());
         assert!(meta.pagination.is_none());
     }
 

@@ -16,7 +16,6 @@ use neomind_messages::{
     manager::MessageManager,
     message::{Message, MessageId, MessageSeverity, MessageStatus},
 };
-use std::sync::Arc;
 
 #[tokio::test]
 async fn test_message_creation() {

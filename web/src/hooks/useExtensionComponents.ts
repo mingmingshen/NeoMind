@@ -10,10 +10,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import type { DashboardComponentsResponse, DashboardComponentDto } from '@/types'
 import { dynamicRegistry } from '@/components/dashboard/registry/DynamicRegistry'
+import { getApiBase } from '@/lib/api'
 
 // In Tauri, we need to use the full URL since the backend runs on port 9375
 // In development/web, we can use relative path
-const API_BASE = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
+const API_BASE = getApiBase()
 
 /**
  * Manually sync extension components from the API

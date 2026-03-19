@@ -789,6 +789,7 @@ impl<'a> ArgParser<'a> {
 /// Extension statistics for WASM target
 /// This is a simplified version that doesn't require chrono
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ExtensionStats {
     /// Number of metrics produced
     pub metrics_produced: u64,

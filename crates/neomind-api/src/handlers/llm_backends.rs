@@ -1104,8 +1104,6 @@ fn detect_ollama_model_context(model_name: &str) -> usize {
         // Qwen2.5 supports 128k for some variants
         if name_lower.contains("qwen2") && name_lower.contains("128") {
             return 128000;
-        } else if name_lower.contains("qwen2") {
-            return 32000;
         } else {
             return 32000;
         }

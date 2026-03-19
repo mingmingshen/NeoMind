@@ -2,7 +2,6 @@
 //!
 //! Tests should use unique usernames/IDs to avoid conflicts when running in parallel.
 
-use std::sync::Arc;
 
 /// Create a mock server state for testing.
 ///

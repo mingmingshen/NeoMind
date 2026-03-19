@@ -1,5 +1,7 @@
 //! Tests for the `serve` command.
 
+#![allow(deprecated)]
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::net::SocketAddr;

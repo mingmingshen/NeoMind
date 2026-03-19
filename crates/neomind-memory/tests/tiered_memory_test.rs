@@ -7,7 +7,6 @@
 //! - Memory consolidation
 //! - Search operations (semantic, BM25, hybrid)
 
-use neomind_core::message::Message;
 use neomind_memory::tiered::{SearchMethod, TieredMemory, TieredMemoryConfig};
 
 #[tokio::test]
@@ -76,10 +75,10 @@ async fn test_consolidate() {
     // Add messages to short-term
     for i in 0..5 {
         memory
-            .add_message("user", &format!("Message {}", i))
+            .add_message("user", format!("Message {}", i))
             .unwrap();
         memory
-            .add_message("assistant", &format!("Response {}", i))
+            .add_message("assistant", format!("Response {}", i))
             .unwrap();
     }
 
@@ -141,10 +140,10 @@ async fn test_long_conversation() {
     // Add a long conversation
     for i in 0..50 {
         memory
-            .add_message("user", &format!("User message {}", i))
+            .add_message("user", format!("User message {}", i))
             .unwrap();
         memory
-            .add_message("assistant", &format!("Assistant response {}", i))
+            .add_message("assistant", format!("Assistant response {}", i))
             .unwrap();
     }
 
@@ -169,7 +168,7 @@ async fn test_query_all() {
     let results = memory.query_all("bluetooth", 5).await;
 
     // Should find results from short-term at least
-    assert!(results.short_term.len() > 0);
+    assert!(!results.short_term.is_empty());
 }
 
 #[tokio::test]
@@ -208,7 +207,7 @@ async fn test_search_in_short_term() {
     memory.add_message("user", "What about humidity?").unwrap();
 
     let results = memory.query_all("temperature", 5).await;
-    assert!(results.short_term.len() > 0);
+    assert!(!results.short_term.is_empty());
 }
 
 #[tokio::test]
@@ -217,7 +216,7 @@ async fn test_get_last_messages() {
 
     for i in 0..10 {
         memory
-            .add_message("user", &format!("Message {}", i))
+            .add_message("user", format!("Message {}", i))
             .unwrap();
     }
 
@@ -259,7 +258,7 @@ async fn test_mid_term_search() {
 
     // Search mid-term memory
     let results = memory.search_mid_term("WiFi connection settings", 5).await;
-    assert!(results.len() > 0);
+    assert!(!results.is_empty());
 }
 
 #[tokio::test]
@@ -279,7 +278,7 @@ async fn test_mid_term_bm25_search() {
     let results = memory
         .search_mid_term_bm25("password change settings", 5)
         .await;
-    assert!(results.len() > 0);
+    assert!(!results.is_empty());
 }
 
 #[tokio::test]

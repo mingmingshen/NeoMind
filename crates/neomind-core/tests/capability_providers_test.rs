@@ -6,6 +6,8 @@
 //! - Error handling for capabilities
 //! - Capability manifest structure
 
+#![allow(dead_code)]
+
 use neomind_core::extension::context::{
     ExtensionCapabilityProvider, CapabilityManifest, CapabilityError, ExtensionCapability,
 };

@@ -8,6 +8,9 @@
 //! - Event bus integration
 //! - Isolated extension event handling
 
+#![allow(dead_code)]
+#![allow(clippy::assertions_on_constants)]
+
 use neomind_core::extension::event_dispatcher::EventDispatcher;
 use neomind_core::extension::event_subscription::{EventSubscription, EventFilter};
 use neomind_core::extension::system::{

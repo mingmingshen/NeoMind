@@ -349,7 +349,7 @@ async fn test_full_ipc_flow() {
     // 1. Compiled extension-runner binary
     // 2. A test extension (native or WASM)
 
-    let event_bus = Arc::new(EventBus::new());
+    let _event_bus = Arc::new(EventBus::new());
 
     let config = IsolatedManagerConfig::default();
 
@@ -357,7 +357,7 @@ async fn test_full_ipc_flow() {
 
     // Set up capability provider
     let provider = create_test_provider();
-    manager.set_capability_provider(provider);
+    manager.set_capability_provider(provider).await;
 
     // Note: Full flow test would require:
     // 1. Loading an extension

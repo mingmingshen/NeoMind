@@ -199,7 +199,7 @@ mod tests {
     async fn test_registry_with_system_help() {
         let registry = ToolRegistryBuilder::new().with_system_help_tool().build();
 
-        assert!(registry.len() >= 1);
+        assert!(!registry.is_empty());
         assert!(registry.has("system_help"));
     }
 }

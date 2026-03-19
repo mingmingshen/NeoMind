@@ -230,7 +230,7 @@ async fn test_state_store_get_retryable() {
     let cmd3 = make_command("device3", "cmd3", CommandPriority::Normal);
     let id1 = cmd1.id.clone();
     let id2 = cmd2.id.clone();
-    let id3 = cmd3.id.clone();
+    let _id3 = cmd3.id.clone();
 
     store.store(&cmd1).await.unwrap();
     store.store(&cmd2).await.unwrap();

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
-import { createPortal } from "react-dom"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogContentBody, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -47,9 +46,18 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { api, fetchAPI } from "@/lib/api"
-import { useBodyScrollLock } from "@/hooks/useBodyScrollLock"
 import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import type { DeviceType, MetricDefinition, CommandDefinition } from "@/types"
+import {
+  FullScreenDialog,
+  FullScreenDialogHeader,
+  FullScreenDialogContent,
+  FullScreenDialogFooter,
+  FullScreenDialogSidebar,
+  FullScreenDialogMain,
+  VerticalStepper,
+  type Step,
+} from "@/components/automation/dialog"
 
 /**
  * Helper function to safely format data_type for display
@@ -101,7 +109,7 @@ interface AddDeviceTypeDialogProps {
   editDeviceType?: DeviceType | null
 }
 
-type Step = 'basic' | 'data' | 'commands' | 'review' | 'finish'
+type WizardStep = 'basic' | 'data' | 'commands' | 'review' | 'finish'
 
 // ============================================================================
 // STEP WIZARD DIALOG
@@ -120,14 +128,10 @@ export function AddDeviceTypeDialog({
   const { toast } = useToast()
   const isEditMode = !!editDeviceType
   const isMobile = useIsMobile()
-  const insets = useSafeAreaInsets()
-
-  // Lock body scroll when dialog is open
-  useBodyScrollLock(open)
 
   // Step state
-  const [currentStep, setCurrentStep] = useState<Step>('basic')
-  const [completedSteps, setCompletedSteps] = useState<Set<Step>>(new Set())
+  const [currentStep, setCurrentStep] = useState<WizardStep>('basic')
+  const [completedSteps, setCompletedSteps] = useState<Set<WizardStep>>(new Set())
 
   // Form data
   const [formData, setFormData] = useState<Partial<DeviceType>>({
@@ -183,7 +187,7 @@ export function AddDeviceTypeDialog({
   }
 
   // Validate current step
-  const validateStep = (step: Step): boolean => {
+  const validateStep = (step: WizardStep): boolean => {
     const errors: FormErrors = {}
 
     if (step === 'basic') {
@@ -225,7 +229,7 @@ export function AddDeviceTypeDialog({
     newCompleted.add(currentStep)
     setCompletedSteps(newCompleted)
 
-    const steps: Step[] = ['basic', 'data', 'commands', 'review', 'finish']
+    const steps: WizardStep[] = ['basic', 'data', 'commands', 'review', 'finish']
     const currentIndex = steps.indexOf(currentStep)
     if (currentIndex < steps.length - 1) {
       setCurrentStep(steps[currentIndex + 1])
@@ -234,14 +238,14 @@ export function AddDeviceTypeDialog({
 
   // Navigate to previous step
   const handlePrevious = () => {
-    const steps: Step[] = ['basic', 'data', 'commands', 'review', 'finish']
+    const steps: WizardStep[] = ['basic', 'data', 'commands', 'review', 'finish']
     const currentIndex = steps.indexOf(currentStep)
     if (currentIndex > 0) {
       const prevStep = steps[currentIndex - 1]
       setCurrentStep(prevStep)
       // Clear completed steps that come after the previous step
       // This ensures the completion state is accurate when navigating back
-      const newCompleted = new Set<Step>()
+      const newCompleted = new Set<WizardStep>()
       for (let i = 0; i < currentIndex - 1; i++) {
         newCompleted.add(steps[i])
       }
@@ -268,124 +272,55 @@ export function AddDeviceTypeDialog({
     }
   }
 
-  // Step navigation config
-  const steps: { key: Step; label: string; shortLabel: string; icon: React.ReactNode }[] = [
-    { key: 'basic', label: 'Basic Info', shortLabel: 'Basic', icon: <Settings className="h-4 w-4" /> },
-    { key: 'data', label: 'Data Definition', shortLabel: 'Data', icon: <ArrowDown className="h-4 w-4" /> },
-    { key: 'commands', label: 'Commands', shortLabel: 'Commands', icon: <FileText className="h-4 w-4" /> },
-    { key: 'review', label: 'Review', shortLabel: 'Review', icon: <Check className="h-4 w-4" /> },
-    { key: 'finish', label: 'Finish', shortLabel: 'Finish', icon: <Sparkles className="h-4 w-4" /> },
+  // Step navigation config for VerticalStepper
+  const stepperSteps: Step[] = [
+    { id: 'basic', label: 'Basic', icon: <Settings className="h-4 w-4" /> },
+    { id: 'data', label: 'Data', icon: <ArrowDown className="h-4 w-4" /> },
+    { id: 'commands', label: 'Commands', icon: <FileText className="h-4 w-4" /> },
+    { id: 'review', label: 'Review', icon: <Check className="h-4 w-4" /> },
+    { id: 'finish', label: 'Finish', icon: <Sparkles className="h-4 w-4" /> },
   ]
 
-  const stepIndex = steps.findIndex(s => s.key === currentStep)
+  const stepIndex = stepperSteps.findIndex(s => s.id === currentStep)
   const isFirstStep = currentStep === 'basic'
 
-  // Dialog content layout
-  const content = (
-    <>
+  return (
+    <FullScreenDialog
+      open={open}
+      onOpenChange={onOpenChange}
+    >
       {/* Header */}
-      <header
-        className="border-b shrink-0 bg-background"
-        style={isMobile ? { paddingTop: `${insets.top}px` } : undefined}
-      >
-        <div className={cn(
-          "flex items-center gap-3",
-          isMobile ? "px-4 py-4" : "px-4 py-3"
-        )}>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn("shrink-0", isMobile ? "h-10 w-10" : "h-8 w-8")}
-            onClick={() => onOpenChange(false)}
-          >
-            <X className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
-          </Button>
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <div className={cn(
-              "rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0",
-              isMobile ? "w-8 h-8" : "w-7 h-7"
-            )}>
-              <Zap className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "text-amber-500")} />
-            </div>
-            <h1 className={cn(
-              "font-medium truncate",
-              isMobile ? "text-base" : "text-sm"
-            )}>
-              {isEditMode ? 'Edit Device Type' : t('devices:types.add.title')}
-            </h1>
-          </div>
-        </div>
-      </header>
+      <FullScreenDialogHeader
+        icon={<Zap className="h-5 w-5" />}
+        iconBg="bg-amber-500/10 dark:bg-amber-500/20"
+        iconColor="text-amber-500"
+        title={isEditMode ? 'Edit Device Type' : t('devices:types.add.title')}
+        onClose={() => onOpenChange(false)}
+      />
 
-      {/* Content Area - Hide left sidebar on mobile */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar - Vertical Steps (Compact) - Hide on mobile */}
-        {!isMobile && (
-          <aside className="border-r shrink-0 bg-muted/20 w-[120px]">
-            <nav className="px-3 py-6 space-y-1">
-              {steps.map((step, index) => {
-                const isCompleted = completedSteps.has(step.key)
-                const isCurrent = step.key === currentStep
-                const isPast = index < stepIndex
-
-                return (
-                  <div key={step.key} className="relative">
-                    <button
-                      onClick={() => {
-                        if (isCompleted || isPast) {
-                          setCurrentStep(step.key)
-                        }
-                      }}
-                      className={cn(
-                        "w-full text-left px-2 py-2 rounded-md transition-all flex flex-col items-center gap-1.5",
-                        isCurrent && "bg-background shadow-sm",
-                        !isCurrent && isPast && "hover:bg-background/50 cursor-pointer",
-                        !isCurrent && !isPast && "opacity-50"
-                      )}
-                      title={step.label}
-                    >
-                      <div className="flex items-center justify-center">
-                        {isCompleted ? (
-                          <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
-                            <Check className="h-3 w-3 text-white" />
-                          </div>
-                        ) : isCurrent ? (
-                          <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center ring-4 ring-primary/20">
-                            <span className="text-[10px] font-medium text-primary-foreground">{index + 1}</span>
-                          </div>
-                        ) : (
-                          <div className="w-5 h-5 rounded-full bg-muted-foreground/20 flex items-center justify-center">
-                            <span className="text-[10px] font-medium text-muted-foreground">{index + 1}</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-[10px] font-medium text-center leading-tight">
-                        {step.shortLabel}
-                      </div>
-                    </button>
-
-                    {/* Connector line to next step */}
-                    {index < steps.length - 1 && (
-                      <div className="absolute left-[23px] top-8 h-4 w-px">
-                        <div className={cn(
-                          "h-full w-px",
-                          isPast ? "bg-primary" : "bg-border"
-                        )} />
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </nav>
-          </aside>
-        )}
+      {/* Content Area */}
+      <FullScreenDialogContent>
+        {/* Left Sidebar - Vertical Steps - Hide on mobile */}
+        <FullScreenDialogSidebar>
+          <VerticalStepper
+            steps={stepperSteps}
+            currentStep={currentStep}
+            completedSteps={Array.from(completedSteps)}
+            onStepClick={(stepId) => {
+              const idx = stepperSteps.findIndex(s => s.id === stepId)
+              if (completedSteps.has(stepId as WizardStep) || idx < stepIndex) {
+                setCurrentStep(stepId as WizardStep)
+              }
+            }}
+          />
+        </FullScreenDialogSidebar>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-y-auto">
+        <FullScreenDialogMain>
           <div className={cn(
-            isMobile ? "px-4 py-4" : "px-4 py-6"
+            isMobile ? "px-4 py-4" : "px-6 py-6"
           )}>
-            <div className="space-y-4">
+            <div className="space-y-4 max-w-2xl mx-auto">
               {currentStep === 'basic' && (
                 <BasicInfoStep
                   data={formData}
@@ -433,75 +368,34 @@ export function AddDeviceTypeDialog({
               )}
             </div>
           </div>
-        </main>
-      </div>
+        </FullScreenDialogMain>
+      </FullScreenDialogContent>
 
       {/* Footer Navigation */}
       {currentStep !== 'finish' && (
-        <footer className={cn(
-          "flex flex-row justify-end gap-2 sm:gap-3 border-t bg-background shrink-0",
-          isMobile ? "px-4 py-3" : "px-6 py-4"
-        )}>
-          <div className="flex gap-2 w-full sm:w-auto justify-between sm:justify-end">
-            {!isFirstStep && (
-              <Button variant="outline" size={isMobile ? "default" : "sm"} onClick={handlePrevious} className={isMobile ? "h-12 min-w-[100px]" : ""}>
-                <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "mr-1")} />
-                {t('common:previous')}
-              </Button>
-            )}
+        <FullScreenDialogFooter>
+          {!isFirstStep && (
+            <Button variant="outline" size={isMobile ? "default" : "sm"} onClick={handlePrevious}>
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              {t('common:previous')}
+            </Button>
+          )}
 
-            <div className="flex-1 sm:flex-1" />
+          <div className="flex-1" />
 
-            {currentStep === 'review' ? (
-              <Button variant="outline" size={isMobile ? "default" : "sm"} onClick={handleSave} disabled={adding} className={isMobile ? "h-12 min-w-[100px]" : ""}>
-                {adding ? (isEditMode ? 'Saving...' : t('devices:types.adding')) : (isEditMode ? 'Save' : t('common:save'))}
-              </Button>
-            ) : (
-              <Button size={isMobile ? "default" : "sm"} onClick={handleNext} className={isMobile ? "h-12 min-w-[100px]" : ""}>
-                {t('common:next')}
-                <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "ml-1")} />
-              </Button>
-            )}
-          </div>
-        </footer>
+          {currentStep === 'review' ? (
+            <Button size={isMobile ? "default" : "sm"} onClick={handleSave} disabled={adding}>
+              {adding ? (isEditMode ? 'Saving...' : t('devices:types.adding')) : (isEditMode ? 'Save' : t('common:save'))}
+            </Button>
+          ) : (
+            <Button size={isMobile ? "default" : "sm"} onClick={handleNext}>
+              {t('common:next')}
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          )}
+        </FullScreenDialogFooter>
       )}
-    </>
-  )
-
-  // Get portal root
-  const dialogRoot = typeof document !== 'undefined'
-    ? document.getElementById('portal-root') || document.body
-    : null
-
-  if (!dialogRoot) return null
-
-  return createPortal(
-    <div
-      className={cn(
-        "fixed inset-0 z-[100] bg-background flex flex-col",
-        !open && "hidden"
-      )}
-    >
-      {/* Overlay */}
-      <div
-        className={cn(
-          "fixed inset-0 bg-black/80 transition-opacity",
-          open ? "opacity-100" : "opacity-0 pointer-events-none"
-        )}
-        onClick={() => onOpenChange(false)}
-      />
-
-      {/* Main Content */}
-      <div className={cn(
-        "fixed bg-background shadow-lg flex flex-col overflow-hidden",
-        isMobile
-          ? "inset-0 rounded-none"
-          : "left-[50%] top-[50%] -translate-x-1/2 -translate-y-1/2 w-full max-w-4xl h-[90vh] max-h-[90vh] rounded-lg border"
-      )}>
-        {content}
-      </div>
-    </div>,
-    dialogRoot
+    </FullScreenDialog>
   )
 }
 
@@ -1330,7 +1224,7 @@ function CommandsStep({
 
 interface ReviewStepProps {
   data: DeviceType
-  onEdit: (step: Step) => void
+  onEdit: (step: WizardStep) => void
   onValidate: () => Promise<ValidationResult>
   validating: boolean
   validationResult: ValidationResult | null

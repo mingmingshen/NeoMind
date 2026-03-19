@@ -123,8 +123,10 @@ impl TieredMemory {
 
     /// Create a new tiered memory with embedding configuration.
     pub fn with_embedding_config(embed_config: EmbeddingConfig) -> Self {
-        let mut config = TieredMemoryConfig::default();
-        config.embedding_config = Some(embed_config);
+        let config = TieredMemoryConfig {
+            embedding_config: Some(embed_config),
+            ..Default::default()
+        };
         Self::with_config(config)
     }
 
@@ -635,7 +637,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_methods() {
-        let mut memory = TieredMemory::new();
+        let memory = TieredMemory::new();
 
         // Add some conversations
         memory
@@ -751,7 +753,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_retrieval_accuracy() {
-        let mut memory = TieredMemory::new();
+        let memory = TieredMemory::new();
 
         // Add conversations with specific topics
         memory

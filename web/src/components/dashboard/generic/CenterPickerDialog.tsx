@@ -6,12 +6,15 @@
  */
 
 import { useState, useCallback, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Check, MapPin, Crosshair } from 'lucide-react'
+import { Check, MapPin, Crosshair, X } from 'lucide-react'
 import { MapDisplay } from './MapDisplay'
 import { cn } from '@/lib/utils'
+import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
+import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
 
 interface CenterPickerDialogProps {
   open: boolean
@@ -31,8 +34,13 @@ export function CenterPickerDialog({
   onSave,
 }: CenterPickerDialogProps) {
   const { t } = useTranslation('dashboardComponents')
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
   const [selectedCenter, setSelectedCenter] = useState(initialCenter)
   const [hasSelected, setHasSelected] = useState(false)
+
+  // Lock body scroll on mobile
+  useMobileBodyScrollLock(isMobile && open)
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -63,6 +71,108 @@ export function CenterPickerDialog({
     markerType: 'marker' as const,
   }
 
+  // Mobile: Full-screen portal
+  if (isMobile) {
+    return createPortal(
+      open ? (
+        <div className="fixed inset-0 z-[100] bg-background animate-in fade-in duration-200">
+          <div className="flex h-full w-full flex-col">
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <Crosshair className="h-5 w-5 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base font-semibold truncate">
+                    {t('mapDisplay.selectCenter', '选择地图中心点')}
+                  </h1>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)} className="shrink-0">
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            {/* Instructions */}
+            <div className="px-4 py-3 bg-muted/30 border-b text-sm text-muted-foreground shrink-0">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-primary" />
+                <span>{t('mapDisplay.clickToSelectCenter', '点击地图选择中心点位置')}</span>
+              </div>
+            </div>
+
+            {/* Map Preview */}
+            <div className="flex-1 relative bg-muted/30">
+              <div className="absolute inset-0">
+                <MapDisplay
+                  center={selectedCenter}
+                  zoom={zoom}
+                  tileLayer={tileLayer}
+                  markers={[previewMarker]}
+                  showControls={true}
+                  showFullscreen={false}
+                  interactive={true}
+                  onMapClick={handleMapClick}
+                  className="w-full h-full"
+                />
+              </div>
+
+              {/* Crosshair overlay */}
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                <div className={cn(
+                  "w-8 h-8 relative transition-all duration-200",
+                  hasSelected && "scale-110"
+                )}>
+                  <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-primary/50 -translate-y-1/2" />
+                  <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-primary/50 -translate-x-1/2" />
+                </div>
+              </div>
+            </div>
+
+            {/* Selected coordinates display */}
+            <div className="px-4 py-3 border-t bg-muted/20 shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4 text-sm">
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground">{t('visualDashboard.latitude')}:</span>
+                    <span className="font-mono">{selectedCenter.lat.toFixed(4)}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground">{t('visualDashboard.longitude')}:</span>
+                    <span className="font-mono">{selectedCenter.lng.toFixed(4)}</span>
+                  </div>
+                </div>
+                {hasSelected && (
+                  <div className="text-sm text-green-600 dark:text-green-400">
+                    ✓ {t('mapDisplay.centerSelected', '已选择')}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div
+              className="flex items-center justify-end gap-2 px-4 py-4 border-t bg-background shrink-0"
+              style={{ paddingBottom: `calc(1rem + ${insets.bottom}px)` }}
+            >
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button onClick={handleSave} disabled={!hasSelected}>
+                <Check className="h-4 w-4 mr-1" />
+                {t('common.confirm')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null,
+      document.body
+    )
+  }
+
+  // Desktop: Traditional dialog
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl h-[70vh] p-0 gap-0 flex flex-col">

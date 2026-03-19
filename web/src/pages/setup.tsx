@@ -15,6 +15,7 @@ import {
 import { BrandName, BrandLogoHorizontal } from "@/components/shared/BrandName"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { logError } from '@/lib/errors'
+import { getApiBase, isTauriEnv } from '@/lib/api'
 
 const languages = [
   { code: 'en', name: 'English' },
@@ -204,7 +205,7 @@ export function SetupPage() {
 
   // Helper to get API base URL for current environment
   const getApiUrl = (path: string) => {
-    const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
+    const apiBase = getApiBase()
     return `${apiBase}${path}`
   }
 
@@ -212,8 +213,8 @@ export function SetupPage() {
     const result = await withErrorHandling(
       async () => {
         // Retry logic for Tauri environment where backend might be starting up
-        const maxRetries = (window as any).__TAURI__ ? 15 : 3
-        const initialDelay = (window as any).__TAURI__ ? 500 : 100
+        const maxRetries = isTauriEnv() ? 15 : 3
+        const initialDelay = isTauriEnv() ? 500 : 100
 
         for (let i = 0; i < maxRetries; i++) {
           try {

@@ -10,6 +10,8 @@
 //! - StreamSession management
 //! - SessionStats tracking
 
+#![allow(clippy::assertions_on_constants)]
+
 use neomind_core::extension::stream::{
     StreamDataType, DataChunk, StreamResult, StreamError,
     StreamCapability, StreamDirection, StreamMode, FlowControl,

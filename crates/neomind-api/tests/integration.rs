@@ -32,7 +32,7 @@ async fn test_device_to_rule_action_flow() {
     let mut rule_rx = bus.filter().rule_events();
 
     // Subscribe to action events (via LLM events for now)
-    let mut action_rx = bus.filter().llm_events();
+    let _action_rx = bus.filter().llm_events();
 
     // Publish a device metric event (temperature > 50)
     bus.publish(NeoMindEvent::DeviceMetric {
@@ -49,7 +49,7 @@ async fn test_device_to_rule_action_flow() {
 
     // The event was published - in a full integration test with rules engine,
     // we would verify rule triggering here
-    let received = rule_rx.try_recv();
+    let _received = rule_rx.try_recv();
     // Note: In actual integration, the rules engine would process and trigger
 
     println!("Device event published successfully");
@@ -73,7 +73,7 @@ async fn test_user_to_llm_to_device_flow() {
         .custom(|e| matches!(e, NeoMindEvent::UserMessage { .. }));
 
     // Subscribe to tool execution events
-    let mut tool_rx = bus
+    let _tool_rx = bus
         .filter()
         .custom(|e| matches!(e, NeoMindEvent::ToolExecutionStart { .. }));
 
@@ -103,13 +103,13 @@ async fn test_user_to_llm_to_device_flow() {
 /// 4. Action is performed
 #[tokio::test]
 async fn test_device_to_workflow_action_flow() {
-    use neomind_core::event::{MetricValue, NeoMindEvent};
+    use neomind_core::event::NeoMindEvent;
     use neomind_core::eventbus::EventBus;
 
     let bus = EventBus::new();
 
     // Subscribe to workflow events
-    let mut wf_rx = bus.filter().workflow_events();
+    let _wf_rx = bus.filter().workflow_events();
 
     // Publish device event that should trigger workflow
     bus.publish(NeoMindEvent::DeviceOnline {

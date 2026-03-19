@@ -8,6 +8,8 @@
 //! - Health checking
 //! - Metrics collection
 //! - Event bus integration
+
+#![allow(dead_code)]
 //! - Safety manager integration
 
 use neomind_core::extension::*;
@@ -537,8 +539,6 @@ async fn test_trait_get_extension() {
 
 #[tokio::test]
 async fn test_trait_execute_command() {
-    use neomind_core::extension::registry::ExtensionRegistryTrait;
-
     let registry = ExtensionRegistry::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
         Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))

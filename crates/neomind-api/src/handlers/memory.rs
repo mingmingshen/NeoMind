@@ -400,7 +400,7 @@ pub async fn get_knowledge_by_category_handler(
 ) -> HandlerResult<serde_json::Value> {
     let memory = get_global_memory(&state);
     let mem = memory.read().await;
-    let cat = KnowledgeCategory::from_str(&category);
+    let cat = KnowledgeCategory::parse(&category);
     let results = mem.get_knowledge_by_category(&cat).await;
 
     ok(json!({
@@ -455,7 +455,7 @@ pub async fn add_knowledge_handler(
 ) -> HandlerResult<serde_json::Value> {
     let memory = get_global_memory(&state);
     let mem = memory.read().await;
-    let category = KnowledgeCategory::from_str(&req.category);
+    let category = KnowledgeCategory::parse(&req.category);
 
     let mut entry = KnowledgeEntry::new(&req.title, &req.content, category);
     entry.tags = req.tags;

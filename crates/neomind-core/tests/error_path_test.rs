@@ -6,6 +6,11 @@
 //! - Context preservation
 //! - Recovery scenarios
 
+#![allow(dead_code)]
+#![allow(clippy::assertions_on_constants)]
+#![allow(clippy::bool_comparison)]
+#![allow(clippy::const_is_empty)]
+
 use neomind_core::config::{agent, agent_env_vars};
 use neomind_core::extension::system::{
     ExtensionError, MetricDataType, ParamMetricValue, ParameterDefinition,
@@ -127,8 +132,8 @@ fn test_enum_parameter_options() {
 #[test]
 fn test_config_default_values_valid() {
     // Test that default config values are within valid ranges
-    assert!(agent::DEFAULT_MAX_CONTEXT_TOKENS >= 1);
-    assert!(agent::DEFAULT_MAX_CONTEXT_TOKENS <= 200000);
+    const _: () = assert!(agent::DEFAULT_MAX_CONTEXT_TOKENS >= 1);
+    const _: () = assert!(agent::DEFAULT_MAX_CONTEXT_TOKENS <= 200000);
 
     assert!(agent::DEFAULT_TEMPERATURE >= 0.0);
     assert!(agent::DEFAULT_TEMPERATURE <= 2.0);
@@ -267,6 +272,8 @@ async fn test_concurrent_write_conflict() {
 // ============================================================================
 
 #[test]
+#[allow(clippy::assertions_on_constants)]
+#[allow(clippy::unnecessary_literal_unwrap)]
 fn test_panic_in_std_ops() {
     // Test that standard operations don't panic on edge cases
 
@@ -376,6 +383,7 @@ fn test_numeric_conversion() {
 // ============================================================================
 
 #[test]
+#[allow(clippy::assertions_on_constants)]
 fn test_string_edge_cases() {
     // Empty strings
     assert!("".is_empty());
@@ -405,8 +413,8 @@ fn test_string_edge_cases() {
 #[test]
 fn test_collection_edge_cases() {
     // Vec operations
-    let vec = vec![1, 2, 3];
-    assert_eq!(vec.get(0), Some(&1));
+    let vec = [1, 2, 3];
+    assert_eq!(vec.first(), Some(&1));
     assert_eq!(vec.get(10), None); // Out of bounds
     assert_eq!(vec.get(100), None);
 

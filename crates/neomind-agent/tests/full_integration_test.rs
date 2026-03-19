@@ -6,6 +6,8 @@
 //! 3. Agent can send notifications/alerts
 //! 4. End-to-end workflow with real data flow
 
+#![allow(dead_code)]
+
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use neomind_core::llm::backend::{GenerationParams, LlmInput};
 use neomind_core::{
@@ -53,7 +55,7 @@ impl FullTestContext {
 
         // Create message manager with console channel
         let message_manager = Arc::new(MessageManager::new());
-        let console_channel = Arc::new(ConsoleChannel::new("console".to_string()));
+        let _console_channel = Arc::new(ConsoleChannel::new("console".to_string()));
         // Note: MessageManager now initializes with default channels via register_default_channels
         message_manager.register_default_channels().await;
 

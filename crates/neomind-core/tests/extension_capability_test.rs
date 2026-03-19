@@ -13,7 +13,6 @@ use neomind_core::extension::context::{
     ExtensionCapabilityProvider, CapabilityManifest, CapabilityError,
     AvailableCapabilities,
 };
-use neomind_core::eventbus::EventBus;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::Arc;

@@ -1,11 +1,9 @@
 //! Tests for device management handlers.
 
-use axum::extract::{Path, Query, State};
 use neomind_api::handlers::devices::models::{
     AddDeviceRequest, BatchCurrentValuesRequest, PaginationQuery, TimeRangeQuery,
     UpdateDeviceRequest,
 };
-use neomind_api::handlers::ServerState;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -144,7 +142,7 @@ mod tests {
         let state = crate::common::create_test_server_state().await;
 
         // Just verify the state can be created
-        assert!(state.devices.service.list_devices().await.len() >= 0);
+        let _ = state.devices.service.list_devices().await.len(); // usize is always >= 0
     }
 
     #[tokio::test]

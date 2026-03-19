@@ -228,7 +228,6 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// - Old sled databases are **not compatible** with redb
 /// - Use `SessionStore::open(":memory:")` for in-memory storage
 /// - Vector document metadata is now serialized as JSON
-
 #[cfg(test)]
 mod tests {
     use super::*;

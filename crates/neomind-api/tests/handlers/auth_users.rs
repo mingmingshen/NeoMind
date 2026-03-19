@@ -278,7 +278,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_info() {
-        let now = chrono::Utc::now().timestamp();
+        let _now = chrono::Utc::now().timestamp();
         let info = SessionInfo {
             user_id: "user123".to_string(),
             username: "testuser".to_string(),

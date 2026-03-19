@@ -22,6 +22,9 @@
 //! - 历史数据趋势分析
 //! - 基线学习和异常检测
 
+#![allow(dead_code)]
+#![allow(clippy::too_many_arguments)]
+
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use neomind_core::{EventBus, MetricValue, NeoMindEvent};
 use neomind_llm::backends::ollama::{OllamaConfig, OllamaRuntime};
@@ -62,7 +65,7 @@ impl SimulationContext {
         let time_series = TimeSeriesStore::memory()?;
 
         let message_manager = Arc::new(MessageManager::new());
-        let console_channel = Arc::new(ConsoleChannel::new("console".to_string()));
+        let _console_channel = Arc::new(ConsoleChannel::new("console".to_string()));
         // Note: MessageManager now initializes with default channels via register_default_channels
         message_manager.register_default_channels().await;
 

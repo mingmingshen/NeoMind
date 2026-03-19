@@ -10,7 +10,7 @@
 
 use neomind_core::{
     event::{EventMetadata, MetricValue, NeoMindEvent, ProposedAction as Action},
-    eventbus::{EventBus, FilterBuilder, SharedEventBus},
+    eventbus::{EventBus, SharedEventBus},
     priority_eventbus::{EventPriority, PriorityEventBus},
 };
 use std::sync::Arc;
@@ -523,7 +523,7 @@ async fn test_metric_value_variants() {
     }
 
     match bool_val {
-        MetricValue::Boolean(v) => assert_eq!(v, true),
+        MetricValue::Boolean(v) => assert!(v),
         _ => panic!("Expected Boolean"),
     }
 }

@@ -1281,7 +1281,7 @@ mod tests {
             value: MetricValue::Float(22.5),
             quality: None,
         }];
-        let (is_stale, latest_ts, age) = tool.check_data_freshness(&stale_data);
+        let (is_stale, _latest_ts, age) = tool.check_data_freshness(&stale_data);
         assert!(is_stale, "Stale data should be marked as stale");
         assert_eq!(age, Some(600));
 

@@ -185,26 +185,25 @@ pub fn compact_conversation(
     }
 
     let mut result = Vec::new();
-    #[allow(unused_assignments)]
-    let mut current_tokens = 0;
+    let mut _current_tokens = 0;
 
     // First pass: keep recent messages intact
     let recent_start = messages.len().saturating_sub(keep_recent);
     for msg in &messages[recent_start..] {
         result.push(msg.clone());
-        current_tokens += tokenizer::estimate_message_tokens(msg);
+        _current_tokens += tokenizer::estimate_message_tokens(msg);
     }
 
     // If we're already under the token limit, return early
-    if current_tokens <= target_tokens {
+    if _current_tokens <= target_tokens {
         // Still need to add older messages in reverse order
         for msg in messages[..recent_start].iter().rev() {
             let msg_tokens = tokenizer::estimate_message_tokens(msg);
-            if current_tokens + msg_tokens > target_tokens {
+            if _current_tokens + msg_tokens > target_tokens {
                 break;
             }
             result.insert(0, msg.clone());
-            current_tokens += msg_tokens;
+            _current_tokens += msg_tokens;
         }
         return result;
     }
@@ -217,7 +216,7 @@ pub fn compact_conversation(
         // Always keep system messages
         if msg.role == "system" {
             compressed_older.push(msg.clone());
-            current_tokens += tokenizer::estimate_message_tokens(msg);
+            _current_tokens += tokenizer::estimate_message_tokens(msg);
             continue;
         }
 
@@ -233,7 +232,7 @@ pub fn compact_conversation(
                 content: truncated_content,
                 ..msg.clone()
             });
-            current_tokens += tokenizer::estimate_message_tokens(msg);
+            _current_tokens += tokenizer::estimate_message_tokens(msg);
             continue;
         }
 
@@ -612,6 +611,7 @@ impl ToolResultCache {
     }
 
     /// Invalidate all cache entries for a specific tool or prefix.
+    #[allow(dead_code)]
     fn invalidate(&mut self, tool_prefix: &str) {
         let keys_to_remove: Vec<_> = self
             .entries
@@ -626,6 +626,7 @@ impl ToolResultCache {
         tracing::debug!(prefix = %tool_prefix, count = count, "Invalidated cache entries");
     }
 
+    #[allow(dead_code)]
     fn clear(&mut self) {
         self.entries.clear();
     }
@@ -1095,9 +1096,11 @@ impl Agent {
         let mut system_tools = Vec::new();
 
         for tool in simplified_tools {
-            if tool.name.contains("device_discover") || tool.name.contains("device_control") {
-                device_tools.push(tool);
-            } else if tool.name.contains("device") || tool.name.contains("control") {
+            if tool.name.contains("device_discover")
+                || tool.name.contains("device_control")
+                || tool.name.contains("device")
+                || tool.name.contains("control")
+            {
                 device_tools.push(tool);
             } else if tool.name.contains("data")
                 || tool.name.contains("query")
@@ -1381,6 +1384,7 @@ impl Agent {
     /// - Device mentions (device IDs, locations)
     /// - Topic keywords (temperature, lighting, etc.)
     /// - Rule/automation mentions
+    #[allow(dead_code)]
     fn extract_conversation_entities_topics(
         &self,
         messages: &[AgentMessage],
@@ -1435,6 +1439,7 @@ impl Agent {
     /// Creates a system prompt that guides the LLM to recall relevant context
     /// from long-term memory. This is a framework that can be extended with
     /// actual memory queries when a persistent memory service is integrated.
+    #[allow(dead_code)]
     fn build_memory_injection_hint(
         &self,
         entities: &[String],
@@ -3120,7 +3125,7 @@ impl Drop for Agent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neomind_tools::{Result, Tool, ToolError, ToolOutput};
+    use neomind_tools::{Result, Tool, ToolOutput};
     use serde_json::json;
 
     /// Simple mock device_discover tool for testing

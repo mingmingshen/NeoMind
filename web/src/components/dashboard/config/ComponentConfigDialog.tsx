@@ -226,7 +226,7 @@ export function ComponentConfigDialog({
                   {/* Preview Card */}
                   <MobileConfigCard
                     title={t('componentConfig.preview')}
-                    icon={Eye}
+                    
                     isExpanded={expandedSections.has('preview')}
                     onToggle={() => toggleSection('preview')}
                   >
@@ -246,10 +246,10 @@ export function ComponentConfigDialog({
                   {hasDataSource && (
                     <MobileConfigCard
                       title={t('componentConfig.dataSource')}
-                      icon={Settings}
+                      
                       isExpanded={expandedSections.has('dataSource')}
                       onToggle={() => toggleSection('dataSource')}
-                      status={hasConfiguredDataSource ? 'configured' : 'empty'}
+                      
                     >
                       {shouldShowDataTransform ? (
                         <div className="space-y-3">
@@ -311,7 +311,7 @@ export function ComponentConfigDialog({
                   {shouldShowDataTransform && !hasDataSource && (
                     <MobileConfigCard
                       title={t('componentConfig.transform')}
-                      icon={Settings}
+                      
                       isExpanded={expandedSections.has('transform')}
                       onToggle={() => toggleSection('transform')}
                     >
@@ -327,7 +327,7 @@ export function ComponentConfigDialog({
                   {hasStyleConfig && (
                     <MobileConfigCard
                       title={t('componentConfig.style')}
-                      icon={Settings}
+                      
                       isExpanded={expandedSections.has('style')}
                       onToggle={() => toggleSection('style')}
                     >
@@ -339,7 +339,7 @@ export function ComponentConfigDialog({
                   {hasDisplayConfig && (
                     <MobileConfigCard
                       title={t('componentConfig.display')}
-                      icon={Settings}
+                      
                       isExpanded={expandedSections.has('display')}
                       onToggle={() => toggleSection('display')}
                     >
@@ -351,7 +351,7 @@ export function ComponentConfigDialog({
                   {!hasDataSource && !hasStyleConfig && !displaySections.length && allSections.length > 0 && (
                     <MobileConfigCard
                       title={t('componentConfig.configOptions')}
-                      icon={Settings}
+                      
                       isExpanded={true}
                       onToggle={() => {}}
                     >
@@ -683,7 +683,7 @@ export function ComponentConfigDialog({
  */
 interface MobileConfigCardProps {
   title: string
-  icon: React.ComponentType<{ className?: string }>
+  icon?: React.ComponentType<{ className?: string }>
   isExpanded: boolean
   onToggle: () => void
   children: React.ReactNode
@@ -705,7 +705,7 @@ function MobileConfigCard({
         className="w-full flex items-center justify-between px-4 py-4 bg-muted/30 hover:bg-muted/40 active:bg-muted/50 transition-colors touch-action-manipulation"
       >
         <div className="flex items-center gap-3">
-          <Icon className="h-5 w-5 text-muted-foreground" />
+          {Icon && <Icon className="h-5 w-5 text-muted-foreground" />}
           <span className="font-semibold text-foreground">{title}</span>
         </div>
         <div className="flex items-center gap-2">

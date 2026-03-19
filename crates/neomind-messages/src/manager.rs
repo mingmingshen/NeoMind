@@ -44,7 +44,7 @@ impl MessageManager {
     ///
     /// # Arguments
     /// * `data_dir` - Directory path where the database file will be stored.
-    ///                The actual database file will be `{data_dir}/messages.redb`
+    ///   The actual database file will be `{data_dir}/messages.redb`
     pub fn with_storage<P: AsRef<Path>>(data_dir: P) -> Result<Self> {
         let data_dir = data_dir.as_ref();
         std::fs::create_dir_all(data_dir)

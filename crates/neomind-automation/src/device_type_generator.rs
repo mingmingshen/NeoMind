@@ -568,7 +568,7 @@ mod tests {
 
     #[test]
     fn test_calculate_confidence() {
-        let metrics = vec![DiscoveredMetric {
+        let metrics = [DiscoveredMetric {
             name: "temperature".to_string(),
             display_name: "Temperature".to_string(),
             description: "Temperature reading".to_string(),
@@ -581,7 +581,7 @@ mod tests {
             is_writable: false,
         }];
 
-        let commands = vec![DiscoveredCommand {
+        let commands = [DiscoveredCommand {
             name: "turn_on".to_string(),
             display_name: "Turn On".to_string(),
             description: "Turn on".to_string(),
@@ -589,7 +589,7 @@ mod tests {
         }];
 
         // Simple confidence calculation based on completeness
-        let confidence = if metrics.len() > 0 && commands.len() > 0 {
+        let confidence = if !metrics.is_empty() && !commands.is_empty() {
             0.8
         } else {
             0.5

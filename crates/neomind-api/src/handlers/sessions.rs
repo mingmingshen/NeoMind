@@ -337,7 +337,7 @@ async fn process_stream_to_channel(
                     let _ = tx.send(StreamEvent {
                         json: end_json.to_string(),
                         session_id: session_id.clone(),
-                    });
+                    }).await;
                 }
                 break;
             }
@@ -357,7 +357,7 @@ async fn process_stream_to_channel(
                 let _ = tx.send(StreamEvent {
                     json: timeout_json.to_string(),
                     session_id: session_id.clone(),
-                });
+                }).await;
                 // Send end event after timeout
                 if !end_event_sent {
                     let end_json = json!({
@@ -367,7 +367,7 @@ async fn process_stream_to_channel(
                     let _ = tx.send(StreamEvent {
                         json: end_json.to_string(),
                         session_id: session_id.clone(),
-                    });
+                    }).await;
                 }
                 break;
             }

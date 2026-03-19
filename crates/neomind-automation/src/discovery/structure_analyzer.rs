@@ -444,7 +444,7 @@ mod tests {
             json!({"temp": 21, "pressure": 101}), // different field
             json!({"co2": 400}),                  // completely different
         ];
-        let result2 = analyzer.analyze(&inconsistent);
+        let _result2 = analyzer.analyze(&inconsistent);
         // Should still mark as somewhat consistent since 'temp' is common
         // but lower consistency
     }

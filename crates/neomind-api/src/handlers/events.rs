@@ -283,41 +283,33 @@ pub async fn event_stream_handler(
         let mut rx = rx;
         let mut _counter: u64 = 0;  // Event counter (reserved for future metrics)
 
-        loop {
-            match rx.recv().await {
-                Some((event, metadata)) => {
-                    // Apply event type filter if specified
-                    if !params.event_type.is_empty() {
-                        let event_type = event.type_name().to_string();
-                        if !params.event_type.contains(&event_type) {
-                            continue;
-                        }
-                    }
-
-                    _counter += 1;
-
-                    // Build SSE event with all data
-                    // Use extract_event_data to remove nested type field for frontend compatibility
-                    let data_with_id = serde_json::json!({
-                        "id": metadata.event_id,
-                        "type": event.type_name(),
-                        "timestamp": event.timestamp(),
-                        "source": metadata.source,
-                        "data": extract_event_data(&event),
-                    });
-
-                    let sse_event = Event::default()
-                        .event(event.type_name())
-                        .json_data(data_with_id)
-                        .unwrap_or_else(|_| Event::default().data(""));
-
-                    yield Ok(sse_event);
-                }
-                None => {
-                    // Channel closed
-                    break;
+        while let Some((event, metadata)) = rx.recv().await {
+            // Apply event type filter if specified
+            if !params.event_type.is_empty() {
+                let event_type = event.type_name().to_string();
+                if !params.event_type.contains(&event_type) {
+                    continue;
                 }
             }
+
+            _counter += 1;
+
+            // Build SSE event with all data
+            // Use extract_event_data to remove nested type field for frontend compatibility
+            let data_with_id = serde_json::json!({
+                "id": metadata.event_id,
+                "type": event.type_name(),
+                "timestamp": event.timestamp(),
+                "source": metadata.source,
+                "data": extract_event_data(&event),
+            });
+
+            let sse_event = Event::default()
+                .event(event.type_name())
+                .json_data(data_with_id)
+                .unwrap_or_else(|_| Event::default().data(""));
+
+            yield Ok(sse_event);
         }
     };
 
@@ -388,7 +380,6 @@ pub async fn event_websocket_handler(
         use axum::extract::ws::Message;
 
         let mut rx = create_filtered_receiver(&event_bus, &params.category);
-        let mut authenticated = false;
         let auth_user_state = state.auth.user_state.clone();
 
         // First, wait for authentication message
@@ -396,43 +387,40 @@ pub async fn event_websocket_handler(
             match msg {
                 Ok(Message::Text(text)) => {
                     // Handle authentication message
-                    if !authenticated {
-                        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if data["type"] == "Auth" {
-                                if let Some(token) = data["token"].as_str() {
-                                    match auth_user_state.validate_token(token) {
-                                        Ok(_) => {
-                                            authenticated = true;
-                                            tracing::info!("WebSocket event stream authenticated");
-                                            let _ = socket.send(Message::Text(
-                                                serde_json::json!({"type": "Authenticated", "message": "Authentication successful"}).to_string()
-                                            )).await;
+                    if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if data["type"] == "Auth" {
+                            if let Some(token) = data["token"].as_str() {
+                                match auth_user_state.validate_token(token) {
+                                    Ok(_) => {
+                                        tracing::info!("WebSocket event stream authenticated");
+                                        let _ = socket.send(Message::Text(
+                                            serde_json::json!({"type": "Authenticated", "message": "Authentication successful"}).to_string()
+                                        )).await;
 
-                                            // Break out of recv loop to start sending events
-                                            break;
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!(error = %e, "JWT validation failed, rejecting WebSocket connection");
-                                            let _ = socket.send(Message::Text(
-                                                serde_json::json!({"type": "Error", "message": "Invalid or expired token"}).to_string()
-                                            )).await;
-                                            let _ = socket.close().await;
-                                            return;
-                                        }
+                                        // Break out of recv loop to start sending events
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(error = %e, "JWT validation failed, rejecting WebSocket connection");
+                                        let _ = socket.send(Message::Text(
+                                            serde_json::json!({"type": "Error", "message": "Invalid or expired token"}).to_string()
+                                        )).await;
+                                        let _ = socket.close().await;
+                                        return;
                                     }
                                 }
                             }
                         }
-
-                        // If not authenticated after first message, close connection
-                        tracing::warn!("No valid auth message received, closing WebSocket connection");
-                        let _ = socket.send(Message::Text(
-                            serde_json::json!({"type": "Error", "message": "Authentication required"})
-                                .to_string(),
-                        )).await;
-                        let _ = socket.close().await;
-                        return;
                     }
+
+                    // If not authenticated after first message, close connection
+                    tracing::warn!("No valid auth message received, closing WebSocket connection");
+                    let _ = socket.send(Message::Text(
+                        serde_json::json!({"type": "Error", "message": "Authentication required"})
+                            .to_string(),
+                    )).await;
+                    let _ = socket.close().await;
+                    return;
                 }
                 Ok(Message::Close(_)) | Err(_) => {
                     return;

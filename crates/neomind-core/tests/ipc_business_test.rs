@@ -57,6 +57,12 @@ pub struct MockSession {
     pub last_sequence: u64,
 }
 
+impl Default for MockExtensionProcess {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockExtensionProcess {
     pub fn new() -> Self {
         Self {

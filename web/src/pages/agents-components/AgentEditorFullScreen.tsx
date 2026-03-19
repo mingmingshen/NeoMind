@@ -10,6 +10,8 @@
  * - AI-recommended resources based on prompt
  * - Resource selection in dialog
  * - Single-page, no wizard steps
+ *
+ * Using unified FullScreenDialog components with glassmorphism style.
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from "react"
@@ -70,6 +72,14 @@ import type {
   ExtensionCommandDescriptor,
 } from "@/types"
 import { AgentLogicPreview } from "./AgentLogicPreview"
+// Unified dialog components
+import {
+  FullScreenDialog,
+  FullScreenDialogHeader,
+  FullScreenDialogContent,
+  FullScreenDialogFooter,
+  FullScreenDialogMain,
+} from '@/components/automation/dialog'
 
 interface AgentEditorFullScreenProps {
   open: boolean
@@ -247,10 +257,6 @@ export function AgentEditorFullScreen({
   const { toast } = useToast()
   const { handleError } = useErrorHandler()
   const isMobile = useIsMobile()
-  const insets = useSafeAreaInsets()
-
-  // Lock body scroll when dialog is open (mobile only)
-  useBodyScrollLock(open, { mobileOnly: true })
 
   // ========================================================================
   // State
@@ -1072,60 +1078,23 @@ export function AgentEditorFullScreen({
   // Render
   // ========================================================================
 
-  // Get dialog root for portal rendering
-  const dialogRoot = typeof document !== 'undefined'
-    ? document.getElementById('dialog-root') || document.body
-    : null
+  return (
+    <FullScreenDialog
+      open={open}
+      onOpenChange={onOpenChange}
+    >
+      {/* Header */}
+      <FullScreenDialogHeader
+        icon={<Sparkles className="h-5 w-5" />}
+        iconBg="bg-purple-500/10 dark:bg-purple-500/20"
+        iconColor="text-purple-500"
+        title={agent ? tAgent('editAgent') : tAgent('createAgent')}
+        onClose={() => onOpenChange(false)}
+      />
 
-  if (!dialogRoot) return null
-
-  return createPortal(
-    <>
-      <div
-        className={cn(
-          "fixed inset-0 z-[100] bg-background flex flex-col",
-          !open && "hidden"
-        )}
-      >
-        {/* Header */}
-        <header
-          className="border-b shrink-0 bg-background"
-          style={isMobile ? { paddingTop: `${insets.top}px` } : undefined}
-        >
-          <div className={cn(
-            "flex items-center gap-3",
-            isMobile ? "px-4 py-4" : "px-4 py-3"
-          )}>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "shrink-0",
-                isMobile ? "h-10 w-10" : "h-8 w-8"
-              )}
-              onClick={() => onOpenChange(false)}
-            >
-              <X className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
-            </Button>
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <div className={cn(
-                "rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0",
-                isMobile ? "w-8 h-8" : "w-7 h-7"
-              )}>
-                <Sparkles className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "text-purple-500")} />
-              </div>
-              <h1 className={cn(
-                "font-medium truncate",
-                isMobile ? "text-base" : "text-sm"
-              )}>
-                {agent ? tAgent('editAgent') : tAgent('createAgent')}
-              </h1>
-            </div>
-          </div>
-        </header>
-
-        {/* Two Column Content: Preview (Left, narrow) + Config (Right, wide) */}
-        <main className="flex-1 overflow-hidden">
+      {/* Two Column Content: Preview (Left, narrow) + Config (Right, wide) */}
+      <FullScreenDialogContent>
+        <FullScreenDialogMain className="overflow-hidden">
           <div className="h-full grid grid-cols-1 lg:grid-cols-12 gap-0">
             {/* Left: Logic Preview (narrower) */}
             <div className="hidden lg:block lg:col-span-4 border-r overflow-hidden">
@@ -1668,47 +1637,44 @@ export function AgentEditorFullScreen({
           </div>
         </div>
         </div>
-        </main>
+        </FullScreenDialogMain>
+      </FullScreenDialogContent>
 
-        {/* Footer with action buttons and summary */}
-        <footer
-          className="border-t bg-background shrink-0"
-          style={isMobile ? { paddingBottom: `${insets.bottom}px` } : undefined}
-        >
+      {/* Footer with action buttons and summary */}
+      <FullScreenDialogFooter className="flex-col items-stretch">
+        <div className={cn(
+          "flex gap-2",
+          isMobile ? "justify-end" : "justify-end"
+        )}>
+          <Button
+            variant="outline"
+            size={isMobile ? "default" : "sm"}
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+            className={isMobile ? "min-w-[100px] h-12" : ""}
+          >
+            {tCommon('cancel')}
+          </Button>
+          <Button
+            size={isMobile ? "default" : "sm"}
+            onClick={handleSave}
+            disabled={!isValid || saving}
+            className={isMobile ? "min-w-[100px] h-12" : ""}
+          >
+            {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+            {saving ? 'Saving...' : agent ? tCommon('save') : tCommon('create')}
+          </Button>
+        </div>
+        {agentSummary && (
           <div className={cn(
-            "flex gap-2",
-            isMobile ? "px-4 py-4 justify-end" : "px-5 py-3 justify-end"
+            "flex items-center gap-2 text-muted-foreground border-t pt-2",
+            isMobile ? "text-xs" : "text-xs"
           )}>
-            <Button
-              variant="outline"
-              size={isMobile ? "default" : "sm"}
-              onClick={() => onOpenChange(false)}
-              disabled={saving}
-              className={isMobile ? "min-w-[100px] h-12" : ""}
-            >
-              {tCommon('cancel')}
-            </Button>
-            <Button
-              size={isMobile ? "default" : "sm"}
-              onClick={handleSave}
-              disabled={!isValid || saving}
-              className={isMobile ? "min-w-[100px] h-12" : ""}
-            >
-              {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {saving ? 'Saving...' : agent ? tCommon('save') : tCommon('create')}
-            </Button>
+            <Info className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "shrink-0")} />
+            <span className="line-clamp-1">{agentSummary}</span>
           </div>
-          {agentSummary && (
-            <div className={cn(
-              "flex items-center gap-2 text-muted-foreground border-t pt-2",
-              isMobile ? "px-4 pb-2 text-xs" : "px-5 pb-3 text-xs"
-            )}>
-              <Info className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "shrink-0")} />
-              <span className="line-clamp-1">{agentSummary}</span>
-            </div>
-          )}
-        </footer>
-      </div>
+        )}
+      </FullScreenDialogFooter>
 
       {/* Resource Selection Dialog */}
       <ResourceSelectionDialog
@@ -1725,8 +1691,7 @@ export function AgentEditorFullScreen({
         toggleRecommendation={toggleRecommendation}
         scheduleType={scheduleType}
       />
-    </>,
-    dialogRoot
+    </FullScreenDialog>
   )
 }
 

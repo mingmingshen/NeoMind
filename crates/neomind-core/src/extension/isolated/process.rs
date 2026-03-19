@@ -84,6 +84,7 @@ fn send_message_to_extension(
 
 /// Helper function to send a response to the extension process
 /// Used in the receiver thread for bidirectional communication
+#[allow(dead_code)]
 fn send_response_to_extension(
     stdin: &Arc<Mutex<Option<BufWriter<std::process::ChildStdin>>>>,
     extension_id: &str,
@@ -134,6 +135,7 @@ fn send_response_to_extension(
 }
 
 // ✨ FIX: IPC 缓冲区池配置
+#[allow(dead_code)]
 const IPC_BUFFER_POOL_SIZE: usize = 4;  // Reduced from 8 to minimize memory footprint
 const IPC_MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024;  // 10MB 最大缓冲区
 
@@ -216,6 +218,7 @@ impl ReusableBuffer {
     }
 
     /// Convert into the underlying data (consumes the wrapper)
+    #[allow(dead_code)]
     fn into_inner(mut self) -> Vec<u8> {
         // Prevent the buffer from being returned to pool
         self.data = Vec::new();
@@ -290,6 +293,7 @@ impl Default for IsolatedExtensionConfig {
 
 /// 🔧 Phase 1: Detailed crash event information
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum CrashEvent {
     UnexpectedExit { exit_code: Option<i32>, signal: Option<i32> },
     IpcFailure { reason: String, stage: IpcFailureStage },
@@ -298,6 +302,7 @@ pub enum CrashEvent {
 
 /// 🔧 Phase 1: IPC failure stage categorization
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum IpcFailureStage {
     ReadLength,
     ReadPayload,
@@ -632,11 +637,9 @@ impl IsolatedExtension {
         std::thread::spawn(move || {
             use std::io::{BufRead, BufReader};
             let reader = BufReader::new(stderr);
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    // Use eprintln to output directly, or tracing::info for structured logging
-                    eprintln!("[Extension:{}] {}", extension_id, line);
-                }
+            for line in reader.lines().map_while(Result::ok) {
+                // Use eprintln to output directly, or tracing::info for structured logging
+                eprintln!("[Extension:{}] {}", extension_id, line);
             }
         });
 
@@ -1363,7 +1366,7 @@ impl IsolatedExtension {
 
         let (request_id, rx) = self.in_flight.register().await;
 
-        if let Err(_) = self.send_message(&IpcMessage::HealthCheck { request_id }).await {
+        if self.send_message(&IpcMessage::HealthCheck { request_id }).await.is_err() {
             return Ok(false);
         }
 
@@ -2008,8 +2011,6 @@ impl IsolatedExtension {
             .map(|d| d.metrics.clone())
             .unwrap_or_default()
     }
-
-    /// Get performance metrics
 
     // Internal helper methods
 

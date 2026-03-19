@@ -1,14 +1,13 @@
 //! AI Agent Conversation History Integration Test
 
+#![allow(dead_code)]
+
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
-use neomind_core::{
-    message::{Content, Message, MessageRole},
-    EventBus, MetricValue, NeoMindEvent,
-};
+use neomind_core::EventBus;
 use neomind_storage::{
-    AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
-    ConversationTurn, DataCollected, Decision, DecisionProcess, LongTermMemory, ReasoningStep,
-    ScheduleType, ShortTermMemory, TurnInput, TurnOutput, WorkingMemory,
+    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
+    ConversationTurn, LongTermMemory,
+    ScheduleType, ShortTermMemory, WorkingMemory,
 };
 use std::sync::Arc;
 
@@ -99,11 +98,11 @@ impl TestContext {
     }
 
     async fn load_agent(&self, agent_id: &str) -> anyhow::Result<AiAgent> {
-        Ok(self
+        self
             .store
             .get_agent(agent_id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Agent not found"))?)
+            .ok_or_else(|| anyhow::anyhow!("Agent not found"))
     }
 
     async fn get_conversation_history(&self, agent_id: &str) -> Vec<ConversationTurn> {
@@ -287,7 +286,7 @@ async fn test_context_window_messages() -> anyhow::Result<()> {
         );
     }
 
-    assert!(messages.len() > 0);
+    assert!(!messages.is_empty());
 
     println!("\n✅ 上下文窗口测试通过！");
     Ok(())
@@ -341,7 +340,7 @@ async fn test_conversation_turn_structure() -> anyhow::Result<()> {
 
     assert!(!turn.execution_id.is_empty());
     assert!(turn.timestamp > 0);
-    assert!(turn.duration_ms >= 0);
+    let _ = turn.duration_ms; // u64 is always >= 0
 
     println!("\n✅ 对话轮次结构测试通过！");
     Ok(())
@@ -472,8 +471,7 @@ async fn test_full_lifecycle() -> anyhow::Result<()> {
     let ctx = TestContext::new().await?;
 
     println!(
-        "\n{}",
-        "============================================================"
+        "\n============================================================"
     );
     println!("=== 完整 Agent 对话生命周期测试 ===");
     println!("============================================================");
@@ -532,8 +530,7 @@ async fn test_full_lifecycle() -> anyhow::Result<()> {
     }
 
     println!(
-        "\n{}",
-        "============================================================"
+        "\n============================================================"
     );
     println!("✅ 完整生命周期测试全部通过！");
     println!("============================================================");
@@ -569,7 +566,7 @@ async fn test_conversation_turn_fields() -> anyhow::Result<()> {
         !turn.trigger_type.is_empty(),
         "trigger_type should not be empty"
     );
-    assert!(turn.duration_ms >= 0, "duration_ms should be non-negative");
+    let _ = turn.duration_ms; // u64 is always >= 0
 
     println!("\n字段验证:");
     println!("  ✓ execution_id: {}", turn.execution_id);

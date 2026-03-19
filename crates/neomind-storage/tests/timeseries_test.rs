@@ -88,7 +88,7 @@ async fn test_timeseries_aggregation() {
         .await
         .expect("Failed to query aggregated");
 
-    assert!(results.len() > 0);
+    assert!(!results.is_empty());
 }
 
 #[tokio::test]

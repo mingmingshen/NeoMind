@@ -23,6 +23,9 @@
 //! let total = counter.count_messages(&messages);
 //! ```
 
+#[cfg(feature = "tiktoken")]
+use std::sync::Arc;
+
 use crate::message::{Content, ContentPart, Message, MessageRole};
 use once_cell::sync::Lazy;
 
@@ -245,18 +248,6 @@ impl Default for TokenCounter {
 pub fn heuristic_count(text: &str) -> usize {
     use crate::llm::compaction::estimate_tokens;
     estimate_tokens(text)
-}
-
-/// Check if a character is CJK.
-#[allow(dead_code)]
-fn is_chinese(c: char) -> bool {
-    let cp = c as u32;
-    (0x4E00..=0x9FFF).contains(&cp)
-        || (0x3400..=0x4DBF).contains(&cp)
-        || (0xF900..=0xFAFF).contains(&cp)
-        || (0xFF00..=0xFFEF).contains(&cp)
-        || (0x3040..=0x309F).contains(&cp)
-        || (0x30A0..=0x30FF).contains(&cp)
 }
 
 /// Global token counter instance.

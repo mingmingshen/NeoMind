@@ -156,10 +156,12 @@ pub struct AutoOnboardManager {
     /// Blocked devices (spam detected)
     blocked_devices: Arc<RwLock<HashMap<String, (Instant, String)>>>,
     /// Path extractor for analyzing samples
+    #[allow(dead_code)]
     path_extractor: DataPathExtractor,
     /// Semantic inference
     semantic_inference: SemanticInference,
     /// Virtual metric generator
+    #[allow(dead_code)]
     metric_generator: VirtualMetricGenerator,
 }
 

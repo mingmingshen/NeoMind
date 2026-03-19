@@ -518,7 +518,7 @@ mod tests {
     fn test_auth_state_creation() {
         let auth = AuthState::new();
         // Auth state should create successfully
-        assert!(auth.validate_key("invalid-key") == false);
+        assert!(!auth.validate_key("invalid-key"));
     }
 
     #[test]

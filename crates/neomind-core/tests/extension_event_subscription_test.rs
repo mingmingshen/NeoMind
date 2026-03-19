@@ -24,7 +24,7 @@ use serde_json::json;
 use semver::Version;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc};
 
 // ============================================================================
 // Test Extensions

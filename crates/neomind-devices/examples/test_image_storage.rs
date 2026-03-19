@@ -1,4 +1,5 @@
 // Test image storage and retrieval
+use base64::{engine::general_purpose::STANDARD, Engine};
 use neomind_devices::mdl::MetricValue;
 use neomind_devices::telemetry::{DataPoint, TimeSeriesStorage};
 
@@ -22,7 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create a small PNG (1x1 red pixel)
     // This is a valid PNG file in base64
     let png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-    let png_bytes = base64::decode(png_base64)?;
+    let png_bytes = STANDARD.decode(png_base64)?;
 
     // Store as binary metric
     storage
@@ -44,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for point in results {
         match &point.value {
             MetricValue::Binary(data) => {
-                let encoded = base64::encode(data);
+                let encoded = STANDARD.encode(data);
                 println!("Binary data (base64): {}...", &encoded[..50]);
 
                 // Check if it starts with PNG signature

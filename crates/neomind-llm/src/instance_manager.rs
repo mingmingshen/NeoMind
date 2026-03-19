@@ -665,7 +665,7 @@ mod tests {
 
     #[test]
     fn test_backend_type_definition() {
-        let types = vec![BackendTypeDefinition {
+        let types = [BackendTypeDefinition {
             id: "ollama".to_string(),
             name: "Ollama".to_string(),
             description: "本地 Ollama".to_string(),

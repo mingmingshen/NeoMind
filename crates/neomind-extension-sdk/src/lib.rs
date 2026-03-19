@@ -492,8 +492,6 @@ impl CommandBuilder {
         self
     }
 
-    /// Set LLM hints for the command
-
     /// Add a parameter
     pub fn param(mut self, param: ParameterDefinition) -> Self {
         self.command.parameters.push(param);
@@ -684,7 +682,7 @@ macro_rules! static_commands {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 
     /// Test that SDK WASM capability names match Core capability names.
     /// This test only runs in Native mode where we can access neomind-core.
@@ -700,7 +698,7 @@ mod tests {
         
         // In native mode, we can't directly access wasm module, so we check the strings
         // This test ensures the strings are correct
-        let expected_names = [
+        let _expected_names = [
             ("DEVICE_METRICS_READ", "device_metrics_read"),
             ("DEVICE_METRICS_WRITE", "device_metrics_write"),
             ("DEVICE_CONTROL", "device_control"),

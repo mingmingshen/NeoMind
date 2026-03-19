@@ -409,8 +409,6 @@ impl ToolRegistryBuilder {
         )))
     }
 
-    /// Add the create agent tool.
-
     /// Add the update agent tool.
     pub fn with_update_agent_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
         self.with_tool(Arc::new(super::agent_tools::UpdateAgentTool::new(
@@ -814,7 +812,7 @@ mod tests {
     async fn test_builder_with_system_help() {
         let registry = ToolRegistryBuilder::new().with_system_help_tool().build();
 
-        assert!(registry.len() >= 1);
+        assert!(!registry.is_empty());
         assert!(registry.has("system_help"));
     }
 

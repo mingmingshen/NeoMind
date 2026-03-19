@@ -3452,7 +3452,7 @@ mod tests {
                 // Check for tool calls
                 if let Some(tool_start) = buffer.find("<tool_calls>") {
                     content_before_tools.push_str(&buffer[..tool_start]);
-                    if let Some(tool_end) = buffer.find("</tool_calls>") {
+                    if let Some(_tool_end) = buffer.find("</tool_calls>") {
                         tool_calls_found = true;
                         break;
                     }
@@ -3636,7 +3636,7 @@ mod tests {
         let result = parse_tool_calls(input);
         assert!(result.is_ok(), "Should parse tool calls successfully");
 
-        let (remaining, calls) = result.unwrap();
+        let (_remaining, calls) = result.unwrap();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "test_tool");
         assert_eq!(calls[0].arguments["param1"], "value1");

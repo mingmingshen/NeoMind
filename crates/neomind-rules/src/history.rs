@@ -580,7 +580,7 @@ mod tests {
 
         let entry = RuleHistoryEntry::from_result(&result);
         assert_eq!(entry.rule_name, "Test");
-        assert_eq!(entry.success, true);
+        assert!(entry.success);
         assert_eq!(entry.duration_ms, 50);
     }
 

@@ -1,20 +1,11 @@
 // CreateMessageDialog Component
 // Dialog for creating new messages/notifications
+// Uses UnifiedFormDialog for consistent styling across mobile and desktop
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogContentBody,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
+import { MessageSquare } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
@@ -23,6 +14,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { FormField } from '@/components/ui/field'
+import { FormSection, FormSectionGroup } from '@/components/ui/form-section'
+import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 import type { CreateMessageRequest, MessageSeverity, MessageCategory } from '@/types'
 import { useFormSubmit } from '@/hooks/useErrorHandler'
 
@@ -43,6 +37,10 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
   const [sourceType, setSourceType] = useState('')
   const [tags, setTags] = useState('')
 
+  // Validation state
+  const [titleError, setTitleError] = useState<string | null>(null)
+  const [messageError, setMessageError] = useState<string | null>(null)
+
   const { isSubmitting, handleSubmit: wrapSubmit } = useFormSubmit({
     onSuccess: () => {
       // Reset form
@@ -53,15 +51,37 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
       setTags('')
       setSeverity('info')
       setCategory('alert')
+      setTitleError(null)
+      setMessageError(null)
       onOpenChange(false)
     },
     errorOperation: 'Create message',
   })
 
-  const handleSubmit = () => {
-    if (!title.trim() || !message.trim()) return
+  const validateForm = useCallback(() => {
+    let isValid = true
 
-    wrapSubmit(async () => {
+    if (!title.trim()) {
+      setTitleError(t('messages.formTitle.required', { defaultValue: 'Title is required' }))
+      isValid = false
+    } else {
+      setTitleError(null)
+    }
+
+    if (!message.trim()) {
+      setMessageError(t('messages.content.required', { defaultValue: 'Message is required' }))
+      isValid = false
+    } else {
+      setMessageError(null)
+    }
+
+    return isValid
+  }, [title, message, t])
+
+  const handleFormSubmit = useCallback(async () => {
+    if (!validateForm()) return
+
+    await wrapSubmit(async () => {
       await onCreate({
         category,
         severity,
@@ -72,27 +92,31 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
         tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : undefined,
       })
     })()
-  }
-
-  const isValid = title.trim() && message.trim()
+  }, [validateForm, wrapSubmit, onCreate, category, severity, title, message, source, sourceType, tags])
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>{t('messages.createTitle')}</DialogTitle>
-          <DialogDescription>
-            {t('messages.createDescription')}
-          </DialogDescription>
-        </DialogHeader>
-
-        <DialogContentBody className="flex flex-col gap-4 py-4 overflow-y-auto">
-          {/* Category and Severity - side by side on desktop only */}
+    <UnifiedFormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('messages.createTitle')}
+      description={t('messages.createDescription')}
+      icon={<MessageSquare className="h-5 w-5" />}
+      width="md"
+      onSubmit={handleFormSubmit}
+      isSubmitting={isSubmitting}
+      submitLabel={t('common:create')}
+      loading={false}
+    >
+      <FormSectionGroup>
+        {/* Basic Settings Section */}
+        <FormSection
+          title={t('messages.basicSettings', { defaultValue: 'Basic Settings' })}
+          description={t('messages.basicSettingsDesc', { defaultValue: 'Configure message category and severity' })}
+        >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="category">{t('messages.category.label')}</Label>
+            <FormField label={t('messages.category.label')}>
               <Select value={category} onValueChange={(v) => setCategory(v as MessageCategory)}>
-                <SelectTrigger id="category">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -101,12 +125,11 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
                   <SelectItem value="business">{t('messages.category.business')}</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
+            </FormField>
 
-            <div className="space-y-2">
-              <Label htmlFor="severity">{t('messages.severity.label')}</Label>
+            <FormField label={t('messages.severity.label')}>
               <Select value={severity} onValueChange={(v) => setSeverity(v as MessageSeverity)}>
-                <SelectTrigger id="severity">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -116,79 +139,91 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
                   <SelectItem value="emergency">{t('messages.severity.emergency')}</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
+            </FormField>
           </div>
+        </FormSection>
 
-          {/* Title */}
-          <div className="space-y-2">
-            <Label htmlFor="title">{t('messages.formTitle.label')} *</Label>
-            <Input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={t('messages.formTitle.placeholder')}
-            />
-          </div>
-
-          {/* Message */}
-          <div className="space-y-2">
-            <Label htmlFor="message-content">{t('messages.content.label')} *</Label>
-            <Textarea
-              id="message-content"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder={t('messages.content.placeholder')}
-              rows={3}
-            />
-          </div>
-
-          {/* Source and Source Type - side by side on desktop only */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="source">{t('messages.sourceLabel')}</Label>
+        {/* Content Section */}
+        <FormSection
+          title={t('messages.contentSection', { defaultValue: 'Content' })}
+          description={t('messages.contentSectionDesc', { defaultValue: 'Enter message title and body' })}
+        >
+          <div className="space-y-4">
+            <FormField
+              label={t('messages.formTitle.label')}
+              required
+              error={titleError || undefined}
+            >
               <Input
-                id="source"
+                value={title}
+                onChange={(e) => {
+                  setTitle(e.target.value)
+                  if (titleError) setTitleError(null)
+                }}
+                placeholder={t('messages.formTitle.placeholder')}
+              />
+            </FormField>
+
+            <FormField
+              label={t('messages.content.label')}
+              required
+              error={messageError || undefined}
+            >
+              <Textarea
+                value={message}
+                onChange={(e) => {
+                  setMessage(e.target.value)
+                  if (messageError) setMessageError(null)
+                }}
+                placeholder={t('messages.content.placeholder')}
+                rows={3}
+              />
+            </FormField>
+          </div>
+        </FormSection>
+
+        {/* Source Section */}
+        <FormSection
+          title={t('messages.sourceSection', { defaultValue: 'Source (Optional)' })}
+          description={t('messages.sourceSectionDesc', { defaultValue: 'Identify the source of this message' })}
+          collapsible
+          defaultExpanded={false}
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormField
+              label={t('messages.sourceLabel')}
+            >
+              <Input
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
                 placeholder={t('messages.sourcePlaceholder')}
               />
-            </div>
+            </FormField>
 
-            <div className="space-y-2">
-              <Label htmlFor="source-type">{t('messages.sourceType.label')}</Label>
+            <FormField
+              label={t('messages.sourceType.label')}
+            >
               <Input
-                id="source-type"
                 value={sourceType}
                 onChange={(e) => setSourceType(e.target.value)}
                 placeholder={t('messages.sourceType.placeholder')}
               />
-            </div>
+            </FormField>
           </div>
 
-          {/* Tags */}
-          <div className="space-y-2">
-            <Label htmlFor="tags">{t('messages.tags.label')}</Label>
+          <FormField
+            label={t('messages.tags.label')}
+            helpText={t('messages.tags.hint')}
+            className="mt-4"
+          >
             <Input
-              id="tags"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               placeholder="tag1, tag2, tag3"
             />
-            <p className="text-xs text-muted-foreground">
-              {t('messages.tags.hint')}
-            </p>
-          </div>
-        </DialogContentBody>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            {t('common:cancel')}
-          </Button>
-          <Button onClick={handleSubmit} disabled={!isValid || isSubmitting}>
-            {isSubmitting ? t('common:creating') : t('common:create')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </FormField>
+        </FormSection>
+      </FormSectionGroup>
+    </UnifiedFormDialog>
   )
 }

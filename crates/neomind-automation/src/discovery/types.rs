@@ -977,7 +977,6 @@ pub struct DeviceTypeInference {
 /// ============================================================================
 /// Zero-Config Auto-Onboarding Types
 /// ============================================================================
-
 /// Status of a draft device in the auto-onboarding process
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1269,6 +1268,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_data_type_inference() {
         assert_eq!(
             DataType::from_json(&serde_json::json!(42)),

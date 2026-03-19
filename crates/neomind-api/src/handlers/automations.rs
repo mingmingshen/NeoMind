@@ -1001,7 +1001,7 @@ pub async fn process_data_handler(
                             value: neomind_core::MetricValue::Float(metric.value),
                             timestamp: metric.timestamp,
                             quality: metric.quality,
-                        });
+                        }).await;
                     }
                 }
             }

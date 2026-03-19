@@ -8,6 +8,8 @@
 //! - Event dispatching to extensions
 //! - Extension unregistration
 
+#![allow(dead_code)]
+
 use neomind_core::extension::event_dispatcher::EventDispatcher;
 use neomind_core::extension::system::{
     Extension, ExtensionMetadata, MetricDescriptor, ExtensionCommand, Result,

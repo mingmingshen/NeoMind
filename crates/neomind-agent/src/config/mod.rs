@@ -296,22 +296,28 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_timeout() {
-        let mut config = StreamingConfig::default();
-        config.max_stream_duration_secs = 5;
+        let config = StreamingConfig {
+            max_stream_duration_secs: 5,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_invalid_heartbeat() {
-        let mut config = StreamingConfig::default();
-        config.heartbeat_timeout_secs = 10; // Less than interval (30)
+        let config = StreamingConfig {
+            heartbeat_timeout_secs: 10, // Less than interval (30)
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validate_zero_iterations() {
-        let mut config = StreamingConfig::default();
-        config.max_tool_iterations = 0;
+        let config = StreamingConfig {
+            max_tool_iterations: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

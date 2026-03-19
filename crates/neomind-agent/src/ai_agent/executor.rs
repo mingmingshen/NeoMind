@@ -1,5 +1,7 @@
 //! AI Agent executor - runs agents and records decision processes.
 
+#![allow(clippy::too_many_arguments)]
+
 use futures::future::join_all;
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::{
@@ -892,7 +894,7 @@ fn score_turn_relevance(
     // Factor 1: Time decay (30% weight) - exponential decay
     // Recent turns (< 1 hour) get close to full score
     // Old turns (> 24 hours) get minimal score
-    let recency_score = (-0.03 * age_hours).exp().max(0.0).min(1.0);
+    let recency_score = (-0.03 * age_hours).exp().clamp(0.0, 1.0);
     score += recency_score * 0.3;
 
     // Factor 2: Success reference (20% weight)
@@ -931,7 +933,7 @@ fn score_turn_relevance(
     }
 
     // Clamp to [0, 1]
-    score.min(1.0).max(0.0)
+    score.clamp(0.0, 1.0)
 }
 
 impl AgentExecutor {
@@ -5744,9 +5746,11 @@ Respond in JSON format:
     }
 
     /// Parse command from decision.action field.
+    ///
     /// Expected formats:
     /// - "device_id:command_name" -> device command
     /// - "extension:ext_id:command_name" -> extension command
+    ///
     /// Returns: (type, id, command_name) where type is "device" or "extension"
     fn parse_command_from_action(action: &str) -> Option<(String, String, String)> {
         let action = action.trim();

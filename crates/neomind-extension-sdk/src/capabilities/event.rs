@@ -149,7 +149,7 @@ pub fn list_subscriptions(_context: &Context) -> Result<Value, CapabilityError> 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
     use serde_json::json;
 
     #[test]

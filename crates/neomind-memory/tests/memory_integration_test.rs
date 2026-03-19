@@ -10,10 +10,8 @@
 
 use neomind_memory::{
     TieredMemory, TieredMemoryConfig, KnowledgeEntry, KnowledgeCategory,
-    short_term::MemoryMessage,
     SearchMethod,
 };
-use serde_json::json;
 
 // ============================================================================
 // Short-term Memory Integration Tests
@@ -47,7 +45,7 @@ async fn test_short_term_memory_token_limit() {
 
     // Add many messages
     for i in 0..50 {
-        memory.add_message("user", &format!("Message number {} with some additional text to increase token count", i)).unwrap();
+        memory.add_message("user", format!("Message number {} with some additional text to increase token count", i)).unwrap();
     }
 
     let stats = memory.get_stats().await;
@@ -76,8 +74,8 @@ async fn test_mid_term_memory_consolidation() {
 
     // Add conversation
     for i in 0..5 {
-        memory.add_message("user", &format!("Question {}", i)).unwrap();
-        memory.add_message("assistant", &format!("Answer {}", i)).unwrap();
+        memory.add_message("user", format!("Question {}", i)).unwrap();
+        memory.add_message("assistant", format!("Answer {}", i)).unwrap();
     }
 
     // Consolidate to mid-term
@@ -125,7 +123,7 @@ async fn test_mid_term_memory_bm25_search() {
 
 #[tokio::test]
 async fn test_long_term_memory_knowledge() {
-    let mut memory = TieredMemory::new();
+    let memory = TieredMemory::new();
 
     // Add knowledge
     let entry = KnowledgeEntry::new(
@@ -141,7 +139,7 @@ async fn test_long_term_memory_knowledge() {
 
 #[tokio::test]
 async fn test_long_term_memory_troubleshooting() {
-    let mut memory = TieredMemory::new();
+    let memory = TieredMemory::new();
 
     // Add troubleshooting case
     let entry = KnowledgeEntry::new(
@@ -158,7 +156,7 @@ async fn test_long_term_memory_troubleshooting() {
 
 #[tokio::test]
 async fn test_long_term_memory_best_practices() {
-    let mut memory = TieredMemory::new();
+    let memory = TieredMemory::new();
 
     // Add best practice
     let entry = KnowledgeEntry::new(
@@ -253,7 +251,7 @@ async fn test_memory_config_limits() {
 
     // Add more messages than limit
     for i in 0..10 {
-        memory.add_message("user", &format!("Message {}", i)).unwrap();
+        memory.add_message("user", format!("Message {}", i)).unwrap();
     }
 
     // Should be limited
@@ -308,9 +306,8 @@ async fn test_special_characters_in_query() {
 
     memory.add_message("user", "Test message with special chars: @#$%").unwrap();
 
-    let results = memory.query_all("@#$%", 5).await;
+    let _results = memory.query_all("@#$%", 5).await;
     // Should not crash
-    assert!(results.short_term.len() >= 0);
 }
 
 #[tokio::test]
@@ -354,7 +351,7 @@ async fn test_concurrent_memory_access() {
         let mem = memory.clone();
         handles.push(tokio::spawn(async move {
             let mut m = mem.write().await;
-            m.add_message("user", &format!("Concurrent message {}", i)).unwrap();
+            m.add_message("user", format!("Concurrent message {}", i)).unwrap();
         }));
     }
 

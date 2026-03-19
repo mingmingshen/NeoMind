@@ -666,29 +666,6 @@ impl IpcResponse {
     }
 }
 
-/// Capability request from extension to host
-/// This is sent by the extension when it needs to invoke a host capability
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CapabilityRequest {
-    /// Request ID for tracking
-    pub request_id: u64,
-    /// Capability name (e.g., "device_metrics_read")
-    pub capability: String,
-    /// Parameters for the capability
-    pub params: serde_json::Value,
-}
-
-/// Capability response from host to extension
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CapabilityResponse {
-    /// Request ID
-    pub request_id: u64,
-    /// Result data
-    pub result: serde_json::Value,
-    /// Error message if failed
-    pub error: Option<String>,
-}
-
 /// Frame format for IPC communication
 ///
 /// Frame format:

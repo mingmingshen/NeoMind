@@ -621,7 +621,7 @@ impl IfEmpty for String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::{AccessType, Capability, CapabilityType, Resource, ResourceId};
+    use crate::context::{AccessType, Capability, CapabilityType, Resource};
 
     #[tokio::test]
     async fn test_dynamic_tool_generation() {

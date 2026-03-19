@@ -560,8 +560,8 @@ mod tests {
 
         // Note: This is a simple hash-based embedding, so similarity might not be semantic
         // Just test that it runs and returns values
-        assert!(sim_12 >= 0.0 && sim_12 <= 1.0);
-        assert!(sim_13 >= 0.0 && sim_13 <= 1.0);
+        assert!((0.0..=1.0).contains(&sim_12));
+        assert!((0.0..=1.0).contains(&sim_13));
     }
 
     #[test]

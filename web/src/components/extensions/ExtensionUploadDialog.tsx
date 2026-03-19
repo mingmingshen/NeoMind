@@ -1,18 +1,14 @@
-import { useState, useRef } from "react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { useState, useRef, useCallback } from "react"
+import { createPortal } from "react-dom"
+import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/hooks/use-toast"
 import { useStore } from "@/store"
-import { Loader2, Package, File } from "lucide-react"
-import { useTranslation } from "react-i18next"
-import { Progress } from "@/components/ui/progress"
+import { Loader2, Package, X } from "lucide-react"
+import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
+import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
+import { cn } from "@/lib/utils"
 
 interface ExtensionUploadDialogProps {
   open: boolean
@@ -38,10 +34,15 @@ export function ExtensionUploadDialog({
   const { toast } = useToast()
   const fetchExtensions = useStore((state) => state.fetchExtensions)
   const isAuthenticated = useStore((state) => state.isAuthenticated)
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
 
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState<UploadProgress | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Lock body scroll on mobile
+  useMobileBodyScrollLock(isMobile && open)
 
   const handleFileSelect = () => {
     fileInputRef.current?.click()
@@ -212,119 +213,226 @@ export function ExtensionUploadDialog({
     }
   }
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5" />
-            {t("extensions:uploadExtension")}
-          </DialogTitle>
-          <DialogDescription>
-            {t("extensions:dragDropDescription")}
-          </DialogDescription>
-        </DialogHeader>
+  const handleClose = useCallback(() => {
+    if (!uploading) {
+      onOpenChange(false)
+      resetForm()
+    }
+  }, [uploading, onOpenChange])
 
-        <div className="space-y-4 py-4 flex-1 overflow-y-auto -mx-6 px-6">
-          {/* File Upload */}
-          <div
-            className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-              progress?.status === 'error'
-                ? 'border-destructive/50 bg-destructive/5 cursor-pointer hover:border-destructive/70'
-                : 'cursor-pointer hover:border-primary/50'
-            }`}
-            onClick={() => {
-              // Allow clicking to retry when there's an error
-              if (progress?.status === 'error') {
-                resetForm()
-              }
-              handleFileSelect()
-            }}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".nep,.zip"
-              className="hidden"
-              onChange={handleFileInputChange}
-              disabled={uploading}
-            />
-            {progress && (uploading || progress.status === 'error') ? (
-              <div className="space-y-3">
-                {progress.status === 'error' ? (
-                  // Error state - show error with retry option
-                  <>
-                    <div className="flex items-center justify-center gap-2 text-destructive">
-                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <span className="text-sm font-medium">{t('extensions:installFailed')}</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">{progress.filename}</p>
-                    <div className="text-destructive/80 text-xs bg-destructive/10 rounded p-2">
-                      {progress.message || t('extensions:installFailed')}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {t('extensions:clickToRetry')}
-                    </p>
-                  </>
-                ) : (
-                  // Uploading/Processing state
-                  <>
-                    <div className="flex items-center justify-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span className="text-sm text-muted-foreground">
-                        {progress.status === 'processing'
-                          ? t('extensions:processing')
-                          : t('extensions:uploading')}
-                      </span>
-                    </div>
-                    <Progress value={(progress.loaded / progress.total) * 100} />
-                    <p className="text-sm text-muted-foreground">{progress.filename}</p>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Package className="h-12 w-12 mx-auto text-muted-foreground" />
-                <p className="text-sm font-medium">{t('extensions:dragDrop')}</p>
+  const UploadContent = () => (
+    <div className="space-y-4">
+      {/* File Upload */}
+      <div
+        className={cn(
+          "border-2 border-dashed rounded-lg p-6 text-center transition-colors",
+          progress?.status === 'error'
+            ? 'border-destructive/50 bg-destructive/5 cursor-pointer hover:border-destructive/70'
+            : 'cursor-pointer hover:border-primary/50'
+        )}
+        onClick={() => {
+          // Allow clicking to retry when there's an error
+          if (progress?.status === 'error') {
+            resetForm()
+          }
+          handleFileSelect()
+        }}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".nep,.zip"
+          className="hidden"
+          onChange={handleFileInputChange}
+          disabled={uploading}
+        />
+        {progress && (uploading || progress.status === 'error') ? (
+          <div className="space-y-3">
+            {progress.status === 'error' ? (
+              // Error state - show error with retry option
+              <>
+                <div className="flex items-center justify-center gap-2 text-destructive">
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm font-medium">{t('extensions:installFailed')}</span>
+                </div>
+                <p className="text-sm text-muted-foreground">{progress.filename}</p>
+                <div className="text-destructive/80 text-xs bg-destructive/10 rounded p-2">
+                  {progress.message || t('extensions:installFailed')}
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  {t('extensions:dragDropDescription')}
+                  {t('extensions:clickToRetry')}
                 </p>
-              </div>
+              </>
+            ) : (
+              // Uploading/Processing state
+              <>
+                <div className="flex items-center justify-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm text-muted-foreground">
+                    {progress.status === 'processing'
+                      ? t('extensions:processing')
+                      : t('extensions:uploading')}
+                  </span>
+                </div>
+                <Progress value={(progress.loaded / progress.total) * 100} />
+                <p className="text-sm text-muted-foreground">{progress.filename}</p>
+              </>
             )}
           </div>
-          <p className="text-xs text-muted-foreground text-center">
-            {t('extensions:supportedFormats')}: .nep, .zip
-          </p>
-        </div>
+        ) : (
+          <div className="space-y-2">
+            <Package className="h-12 w-12 mx-auto text-muted-foreground" />
+            <p className="text-sm font-medium">{t('extensions:dragDrop')}</p>
+            <p className="text-xs text-muted-foreground">
+              {t('extensions:dragDropDescription')}
+            </p>
+          </div>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground text-center">
+        {t('extensions:supportedFormats')}: .nep, .zip
+      </p>
+    </div>
+  )
 
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => {
-              onOpenChange(false)
-              resetForm()
-            }}
-            disabled={uploading}
-          >
-            {t("common:cancel")}
-          </Button>
-          <Button onClick={handleFileSelect} disabled={uploading}>
-            {uploading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {t('extensions:installing')}
-              </>
-            ) : (
-              <>
-                <Package className="mr-2 h-4 w-4" />
-                {t('extensions:uploadAndInstall')}
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+  // Mobile: Full-screen portal
+  if (isMobile) {
+    return createPortal(
+      open ? (
+        <div className="fixed inset-0 z-[100] bg-background animate-in fade-in duration-200">
+          <div className="flex h-full w-full flex-col">
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <Package className="h-5 w-5 text-primary shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base font-semibold truncate">{t('extensions:uploadExtension')}</h1>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {t('extensions:dragDropDescription')}
+                  </p>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={handleClose} disabled={uploading} className="shrink-0">
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="p-4">
+                <UploadContent />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div
+              className="flex items-center justify-end gap-3 px-4 py-4 border-t shrink-0 bg-background"
+              style={{ paddingBottom: `calc(1rem + ${insets.bottom}px)` }}
+            >
+              <Button variant="outline" onClick={handleClose} disabled={uploading} className="min-w-[80px]">
+                {t('common:cancel')}
+              </Button>
+              <Button onClick={handleFileSelect} disabled={uploading} className="min-w-[80px]">
+                {uploading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t('extensions:installing')}
+                  </>
+                ) : (
+                  <>
+                    <Package className="mr-2 h-4 w-4" />
+                    {t('extensions:uploadAndInstall')}
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null,
+      document.body
+    )
+  }
+
+  // Desktop: Traditional dialog
+  return (
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={handleClose}
+        />
+      )}
+
+      {/* Dialog */}
+      {open && (
+        <div
+          className={cn(
+            'fixed left-1/2 top-1/2 z-50',
+            'grid w-full gap-0',
+            'bg-background shadow-lg',
+            'duration-200',
+            'animate-in fade-in zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-[48%]',
+            'rounded-lg sm:rounded-xl',
+            'max-h-[calc(100vh-2rem)]',
+            'flex flex-col',
+            'max-w-md',
+            '-translate-x-1/2 -translate-y-1/2'
+          )}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between gap-2 px-6 py-4 border-b shrink-0">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <Package className="h-5 w-5 text-primary" />
+              <h2 className="text-lg font-semibold leading-none truncate">
+                {t('extensions:uploadExtension')}
+              </h2>
+            </div>
+            <button
+              onClick={handleClose}
+              disabled={uploading}
+              className="inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Description */}
+          <div className="px-6 pt-4">
+            <p className="text-sm text-muted-foreground">{t('extensions:dragDropDescription')}</p>
+          </div>
+
+          {/* Content */}
+          <div className="px-6 py-4">
+            <UploadContent />
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted/30">
+            <Button variant="outline" size="sm" onClick={handleClose} disabled={uploading}>
+              {t('common:cancel')}
+            </Button>
+            <Button size="sm" onClick={handleFileSelect} disabled={uploading}>
+              {uploading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {t('extensions:installing')}
+                </>
+              ) : (
+                <>
+                  <Package className="mr-2 h-4 w-4" />
+                  {t('extensions:uploadAndInstall')}
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

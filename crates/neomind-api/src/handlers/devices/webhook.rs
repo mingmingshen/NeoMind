@@ -47,7 +47,7 @@ pub struct WebhookPayload {
 ///
 /// Query parameters:
 /// - source: Optional data source identifier (e.g., "mqtt:device999", "webhook")
-///          Default: "webhook"
+///   Default: "webhook"
 ///
 /// Device can POST data like:
 /// ```json
@@ -576,7 +576,7 @@ mod tests {
 
     #[test]
     fn test_convert_json_to_metric_value() {
-        use neomind_core::event::MetricValue;
+        
 
         let int_val = serde_json::json!(42);
         let result = convert_json_to_metric_value(&int_val);

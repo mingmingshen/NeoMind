@@ -48,7 +48,7 @@ impl KnowledgeCategory {
     }
 
     /// Parse from string.
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s {
             "device_manual" => Self::DeviceManual,
             "troubleshooting" => Self::Troubleshooting,
@@ -536,11 +536,11 @@ mod tests {
     fn test_knowledge_category() {
         assert_eq!(KnowledgeCategory::DeviceManual.as_str(), "device_manual");
         assert_eq!(
-            KnowledgeCategory::from_str("device_manual"),
+            KnowledgeCategory::parse("device_manual"),
             KnowledgeCategory::DeviceManual
         );
         assert_eq!(
-            KnowledgeCategory::from_str("custom_cat"),
+            KnowledgeCategory::parse("custom_cat"),
             KnowledgeCategory::Custom("custom_cat".to_string())
         );
     }

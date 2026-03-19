@@ -1023,9 +1023,9 @@ pub enum ConversionError {
 mod tests {
     use super::*;
     use neomind_devices::mdl_format::MetricDefinition;
-    use neomind_devices::MetricDataType;
+    
     use neomind_rules::dsl::RuleDslParser;
-    use std::collections::HashMap;
+    
 
     #[test]
     fn test_language_code() {

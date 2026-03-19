@@ -11,7 +11,6 @@ use neomind_core::{
     message::{Message, MessageRole},
     session::{Session, SessionId},
 };
-use serde_json;
 
 #[test]
 fn test_session_id_new() {
@@ -52,7 +51,7 @@ fn test_session_new() {
     let session = Session::new();
     assert!(session.is_empty());
     assert_eq!(session.len(), 0);
-    assert!(session.id.as_str().len() > 0);
+    assert!(!session.id.as_str().is_empty());
 }
 
 #[test]
@@ -227,7 +226,7 @@ fn test_session_clone() {
 fn test_session_default() {
     let session = Session::default();
     assert!(session.is_empty());
-    assert!(session.id.as_str().len() > 0);
+    assert!(!session.id.as_str().is_empty());
 }
 
 #[test]

@@ -137,8 +137,10 @@ impl ExtensionRegistry {
             .await;
 
         // Store info
-        let mut stats = ExtensionStats::default();
-        stats.start_count = 1; // First registration counts as a start
+        let stats = ExtensionStats {
+            start_count: 1, // First registration counts as a start
+            ..Default::default()
+        };
 
         self.info_cache
             .write()

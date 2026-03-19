@@ -8,17 +8,15 @@
 //! - Stream capability handling
 //! - Session management proxying
 
-use neomind_core::extension::proxy::{IsolatedExtensionProxy, create_proxy, create_proxy_with_descriptor};
 use neomind_core::extension::isolated::IsolatedExtensionError;
 use neomind_core::extension::system::{
     Extension, ExtensionError, ExtensionMetadata, ExtensionDescriptor,
-    ExtensionCommand, MetricDescriptor, ExtensionMetricValue,
+    ExtensionCommand, MetricDescriptor,
 };
 use neomind_core::extension::stream::{
     StreamCapability, StreamDirection, StreamMode, StreamSession,
     ClientInfo, DataChunk, StreamDataType,
 };
-use std::sync::Arc;
 use serde_json::json;
 
 // ============================================================================

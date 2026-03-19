@@ -51,7 +51,7 @@ async fn test_error_display_stopped() {
 #[tokio::test]
 async fn test_error_display_other() {
     // Test AdapterError Other variant with anyhow
-    use anyhow::anyhow;
+    
 
     let inner_error = anyhow::anyhow!("test error");
     let error = AdapterError::Other(inner_error);

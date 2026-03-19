@@ -512,9 +512,9 @@ impl ResourceResolver {
             text.push_str("\n**Matched Resources**:\n");
             for resource in &resolved.resources {
                 text.push_str(&format!(
-                    "- {} ({}, relevance: {:.0}%, capabilities: {:?})\n",
+                    "- {} ({:?}, relevance: {:.0}%, capabilities: {:?})\n",
                     resource.name,
-                    format!("{:?}", resource.match_type),
+                    resource.match_type,
                     resource.relevance * 100.0,
                     resource.capabilities
                 ));

@@ -9,6 +9,8 @@
 //! - Industrial sensors
 //! - Energy monitoring
 
+#![allow(clippy::type_complexity)]
+
 use crate::context::{AccessType, Capability, CapabilityType, Resource};
 
 /// Generate 30 mock devices for testing.
@@ -811,7 +813,7 @@ pub fn get_device_summary() -> String {
 mod integration_tests {
     use super::*;
     use crate::context::{
-        AccessType, Capability, CapabilityType, DynamicToolGenerator, ResourceIndex,
+        DynamicToolGenerator, ResourceIndex,
         ResourceResolver,
     };
     use std::sync::Arc;

@@ -436,7 +436,7 @@ impl ExtensionToolExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neomind_core::extension::*;
+    
     use std::sync::Arc;
     use tokio::sync::RwLock;
     use std::any::Any;
@@ -507,7 +507,6 @@ mod tests {
             }],
             fixed_values: HashMap::new(),
             samples: vec![],
-            llm_hints: "A test command for processing input".to_string(),
             parameter_groups: vec![],
         }];
 

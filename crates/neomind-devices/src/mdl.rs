@@ -507,6 +507,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_metric_value_conversions() {
         let int_val = MetricValue::Integer(42);
         assert_eq!(int_val.as_i64(), Some(42));

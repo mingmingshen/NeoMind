@@ -4,8 +4,6 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use neomind_api::handlers::rules::*;
 use neomind_api::handlers::ServerState;
-use neomind_api::models::ErrorResponse;
-use neomind_rules::{ComparisonOperator, CompiledRule, RuleCondition, RuleStatus};
 use serde_json::json;
 
 async fn create_test_server_state() -> ServerState {
@@ -27,7 +25,7 @@ mod tests {
         assert!(value.get("count").is_some());
         let rules = value.get("rules").unwrap().as_array().unwrap();
         // Should return an array even if empty
-        assert!(!rules.is_empty() || true); // rules is &Vec<Value>, empty is ok
+        let _ = rules; // rules is &Vec<Value>, empty is ok
     }
 
     #[tokio::test]

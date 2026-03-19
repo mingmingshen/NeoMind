@@ -33,6 +33,7 @@ use neomind_llm::{OllamaConfig, OllamaRuntime};
 struct ToolCallingTestContext {
     pub session_manager: SessionManager,
     pub session_id: String,
+    #[allow(dead_code)]
     pub model_name: String,
 }
 
@@ -431,13 +432,13 @@ async fn test_comparison_all_queries() -> anyhow::Result<()> {
         println!("\n--- {} ---", name);
         let start = Instant::now();
 
-        let response = ctx.send_message(query).await?;
+        let _response = ctx.send_message(query).await?;
         let elapsed = start.elapsed();
 
         results.push((name, elapsed.as_millis()));
 
         // Create new session for next test
-        ctx.session_id.clone();
+        let _ = ctx.session_id.clone();
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 

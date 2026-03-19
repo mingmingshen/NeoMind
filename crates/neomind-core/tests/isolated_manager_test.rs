@@ -11,7 +11,6 @@
 
 use neomind_core::extension::isolated::{
     IsolatedExtensionManager, IsolatedManagerConfig, IsolatedExtensionConfig,
-    IsolatedExtensionError,
 };
 use neomind_core::extension::system::ExtensionDescriptor;
 

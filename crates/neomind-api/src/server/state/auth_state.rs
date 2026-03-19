@@ -29,9 +29,10 @@ impl AuthState {
             user_state,
         }
     }
+}
 
-    /// Create a default authentication state.
-    pub fn default() -> Self {
+impl Default for AuthState {
+    fn default() -> Self {
         Self {
             api_key_state: Arc::new(ApiKeyAuthState::new()),
             user_state: Arc::new(AuthUserState::new()),

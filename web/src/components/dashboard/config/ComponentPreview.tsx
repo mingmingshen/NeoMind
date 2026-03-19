@@ -104,13 +104,13 @@ export const ComponentPreview = memo(function ComponentPreview({
 
       // Show transition state
       setIsTransitioning(true)
-      
+
       // Set new timer to hide transition
       transitionTimerRef.current = setTimeout(() => {
         setIsTransitioning(false)
         transitionTimerRef.current = null
       }, 200)
-      
+
       setPrevDataSourceKey(newKey)
     }
   }, [dataSource, prevDataSourceKey])
@@ -126,13 +126,13 @@ export const ComponentPreview = memo(function ComponentPreview({
 
       // Force transition for config changes
       setIsTransitioning(true)
-      
+
       // Set new timer to hide transition
       transitionTimerRef.current = setTimeout(() => {
         setIsTransitioning(false)
         transitionTimerRef.current = null
       }, 150)
-      
+
       setPrevConfigKey(newKey)
     }
   }, [config, prevConfigKey])
@@ -257,11 +257,17 @@ export const ComponentPreview = memo(function ComponentPreview({
     </div>
   )
 }, (prevProps, nextProps) => {
-  // Simplified memo comparison - only skip re-render if everything is exactly the same
+  // Use content-based comparison for config to detect changes like base64 image updates
+  // This ensures preview updates when config content changes, not just when reference changes
+  const prevConfigKey = createStableKey(prevProps.config)
+  const nextConfigKey = createStableKey(nextProps.config)
+  const prevDsKey = createDataSourceKey(prevProps.dataSource)
+  const nextDsKey = createDataSourceKey(nextProps.dataSource)
+
   return (
     prevProps.componentType === nextProps.componentType &&
     prevProps.title === nextProps.title &&
-    prevProps.config === nextProps.config &&
-    prevProps.dataSource === nextProps.dataSource
+    prevConfigKey === nextConfigKey &&
+    prevDsKey === nextDsKey
   )
 })

@@ -3,6 +3,8 @@
 //! This test requires Ollama to be running on localhost:11434
 //! with at least one model available (e.g., qwen2.5:3b)
 
+#![allow(dead_code)]
+
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::EventBus;
@@ -115,10 +117,7 @@ impl LlmTestContext {
 
 fn ollama_available() -> bool {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 11434));
-    match std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(2)) {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(2)).is_ok()
 }
 
 // ========== Tests ==========

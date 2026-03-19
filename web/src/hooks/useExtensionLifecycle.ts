@@ -10,11 +10,12 @@ import { useEvents } from './useEvents'
 import { dynamicRegistry } from '@/components/dashboard/registry/DynamicRegistry'
 import type { ExtensionLifecycleEvent } from '@/lib/events'
 import { useStore } from '@/store'
+import { getApiBase } from '@/lib/api'
 import type { DashboardComponent, Dashboard } from '@/types/dashboard'
 
 // In Tauri, we need to use the full URL since the backend runs on port 9375
 // In development/web, we can use relative path
-const API_BASE = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
+const API_BASE = getApiBase()
 
 export interface UseExtensionLifecycleOptions {
   /** Auto-sync extension components on register (default: true) */

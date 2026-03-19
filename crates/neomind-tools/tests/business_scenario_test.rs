@@ -343,25 +343,27 @@ async fn scenario_7_all_rooms_sensor_data() {
                     }))
                     .await;
 
-                if query_result.is_ok() && query_result.as_ref().unwrap().success {
-                    let data = &query_result.unwrap().data;
-                    print!("  - {}: ", device_name);
+                if let Ok(result) = &query_result {
+                    if result.success {
+                        let data = &result.data;
+                        print!("  - {}: ", device_name);
 
-                    if let Some(metrics) = data["metrics"].as_array() {
-                        let values: Vec<String> = metrics
-                            .iter()
-                            .filter_map(|m| {
-                                let name = m["display_name"].as_str().unwrap();
-                                let value = m["current"].as_f64().unwrap_or(0.0);
-                                let unit = m["unit"].as_str().unwrap();
-                                Some(format!("{} {:.1}{}", name, value, unit))
-                            })
-                            .collect();
+                        if let Some(metrics) = data["metrics"].as_array() {
+                            let values: Vec<String> = metrics
+                                .iter()
+                                .map(|m| {
+                                    let name = m["display_name"].as_str().unwrap();
+                                    let value = m["current"].as_f64().unwrap_or(0.0);
+                                    let unit = m["unit"].as_str().unwrap();
+                                    format!("{} {:.1}{}", name, value, unit)
+                                })
+                                .collect();
 
-                        println!("{}", values.join(", "));
+                            println!("{}", values.join(", "));
+                        }
+                    } else {
+                        println!("  - {} (无数据)", device_name);
                     }
-                } else {
-                    println!("  - {} (无数据)", device_name);
                 }
             }
         }

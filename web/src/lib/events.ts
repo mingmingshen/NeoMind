@@ -2,7 +2,7 @@
 //
 // Provides real-time event streaming from the NeoMind event bus.
 
-import { tokenManager } from '@/lib/api'
+import { tokenManager, isTauriEnv } from '@/lib/api'
 
 export type EventType =
   | 'DeviceOnline'
@@ -317,7 +317,7 @@ export class EventsWebSocket {
     // In development, use relative URL to go through Vite proxy
     // In Tauri/production, connect directly to backend
     let wsUrl: string
-    if ((window as any).__TAURI__) {
+    if (isTauriEnv()) {
       // Tauri: backend runs on localhost:9375
       wsUrl = `ws://localhost:9375/api/events/ws?${params.toString()}`
     } else if (window.location.port === '5173') {

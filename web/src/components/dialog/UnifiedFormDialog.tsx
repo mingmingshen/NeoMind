@@ -1,0 +1,373 @@
+/**
+ * UnifiedFormDialog Component
+ *
+ * A unified form dialog with mobile full-screen support, safe area insets,
+ * loading states, and consistent interaction patterns.
+ *
+ * Features:
+ * - Mobile full-screen via portal to document.body
+ * - Safe area insets integration
+ * - Loading overlay pattern
+ * - Consistent footer with Cancel/Submit buttons
+ * - Validation error display
+ */
+
+import { ReactNode, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
+import { X, Loader2, AlertCircle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
+import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
+
+export interface UnifiedFormDialogProps {
+  /** Whether the dialog is open */
+  open: boolean
+  /** Callback when dialog open state changes */
+  onOpenChange: (open: boolean) => void
+  /** Dialog title */
+  title: string
+  /** Optional description below title */
+  description?: string
+  /** Optional icon displayed next to title */
+  icon?: ReactNode
+  /** Dialog width on desktop */
+  width?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl'
+  /** Whether to use full-screen on mobile (default: true) */
+  fullScreenOnMobile?: boolean
+  /** Whether the form content is loading */
+  loading?: boolean
+  /** Whether the form is currently being submitted */
+  isSubmitting?: boolean
+  /** Submit error to display */
+  submitError?: string | null
+  /** Async submit handler */
+  onSubmit?: () => Promise<void>
+  /** Custom submit button label */
+  submitLabel?: string
+  /** Custom cancel button label */
+  cancelLabel?: string
+  /** Whether to show the cancel button (default: true) */
+  showCancelButton?: boolean
+  /** Form content */
+  children: ReactNode
+  /** Additional class name for the dialog content */
+  className?: string
+  /** Custom footer content (replaces default buttons) */
+  footer?: ReactNode
+  /** Whether to prevent closing during submission */
+  preventCloseOnSubmit?: boolean
+}
+
+const widthClasses = {
+  sm: 'max-w-md',
+  md: 'max-w-lg',
+  lg: 'max-w-xl',
+  xl: 'max-w-2xl',
+  '2xl': 'max-w-3xl',
+  '3xl': 'max-w-5xl',
+}
+
+/**
+ * UnifiedFormDialog - A modern form dialog with mobile support
+ *
+ * @example
+ * <UnifiedFormDialog
+ *   open={open}
+ *   onOpenChange={setOpen}
+ *   title="Add Device"
+ *   description="Configure a new device"
+ *   onSubmit={handleSubmit}
+ *   isSubmitting={submitting}
+ *   submitError={error}
+ * >
+ *   <FormSection title="Basic Info">
+ *     <FormField label="Name" required error={errors.name}>
+ *       <Input {...} />
+ *     </FormField>
+ *   </FormSection>
+ * </UnifiedFormDialog>
+ */
+export function UnifiedFormDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  icon,
+  width = 'md',
+  fullScreenOnMobile = true,
+  loading = false,
+  isSubmitting = false,
+  submitError,
+  onSubmit,
+  submitLabel,
+  cancelLabel,
+  showCancelButton = true,
+  children,
+  className,
+  footer,
+  preventCloseOnSubmit = true,
+}: UnifiedFormDialogProps) {
+  const { t } = useTranslation('common')
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  // Default labels
+  const submitText = submitLabel || t('save', 'Save')
+  const cancelText = cancelLabel || t('cancel', 'Cancel')
+
+  // Lock body scroll on mobile
+  useMobileBodyScrollLock(isMobile && fullScreenOnMobile && open)
+
+  // Handle submit
+  const handleSubmit = useCallback(async () => {
+    if (isSubmitting || !onSubmit) return
+    try {
+      await onSubmit()
+    } catch {
+      // Error is handled via submitError prop
+    }
+  }, [isSubmitting, onSubmit])
+
+  // Handle close
+  const handleClose = useCallback(() => {
+    if (isSubmitting && preventCloseOnSubmit) return
+    onOpenChange(false)
+  }, [isSubmitting, preventCloseOnSubmit, onOpenChange])
+
+  // Scroll to top when dialog opens
+  useEffect(() => {
+    if (open && contentRef.current) {
+      contentRef.current.scrollTop = 0
+    }
+  }, [open])
+
+  // Keyboard handling
+  useEffect(() => {
+    if (!open) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !(isSubmitting && preventCloseOnSubmit)) {
+        handleClose()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [open, isSubmitting, preventCloseOnSubmit, handleClose])
+
+  const isDisabled = loading || isSubmitting
+
+  // Mobile full-screen render
+  if (isMobile && fullScreenOnMobile) {
+    return createPortal(
+      open ? (
+        <div className="fixed inset-0 z-[100] bg-background animate-in fade-in duration-200">
+          <div className="flex h-full w-full flex-col">
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                {icon && <div className="text-muted-foreground shrink-0">{icon}</div>}
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base font-semibold truncate">{title}</h1>
+                  {description && (
+                    <p className="text-xs text-muted-foreground truncate">{description}</p>
+                  )}
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleClose}
+                disabled={isSubmitting && preventCloseOnSubmit}
+                className="shrink-0"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            {/* Content */}
+            <div
+              ref={contentRef}
+              className="flex-1 overflow-y-auto overflow-x-hidden"
+            >
+              <div className="p-4 space-y-4">
+                {children}
+              </div>
+            </div>
+
+            {/* Error message */}
+            {submitError && (
+              <div className="px-4 py-3 bg-destructive/10 border-t border-destructive/20">
+                <div className="flex items-center gap-2 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{submitError}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Footer */}
+            <div
+              className="flex items-center justify-end gap-3 px-4 py-4 border-t shrink-0 bg-background"
+              style={{ paddingBottom: `calc(1rem + ${insets.bottom}px)` }}
+            >
+              {footer ? (
+                footer
+              ) : (
+                <>
+                  {showCancelButton && (
+                    <Button
+                      variant="outline"
+                      onClick={handleClose}
+                      disabled={isSubmitting && preventCloseOnSubmit}
+                      className="min-w-[80px]"
+                    >
+                      {cancelText}
+                    </Button>
+                  )}
+                  {onSubmit && (
+                    <Button
+                      onClick={handleSubmit}
+                      disabled={isDisabled}
+                      className="min-w-[80px]"
+                    >
+                      {isSubmitting && (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      )}
+                      {submitText}
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Loading overlay */}
+            {loading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background/80">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null,
+      document.body
+    )
+  }
+
+  // Desktop render
+  return (
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => !isDisabled && handleClose()}
+        />
+      )}
+
+      {/* Dialog */}
+      {open && (
+        <div
+          className={cn(
+            'fixed left-1/2 top-1/2 z-50',
+            'grid w-full gap-0',
+            'bg-background shadow-lg',
+            'duration-200',
+            'animate-in fade-in zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-[48%]',
+            'rounded-lg sm:rounded-xl',
+            'max-h-[calc(100vh-2rem)] sm:max-h-[85vh]',
+            'flex flex-col',
+            widthClasses[width],
+            '-translate-x-1/2 -translate-y-1/2',
+            className
+          )}
+          style={{ maxHeight: '85vh' }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between gap-2 px-6 py-4 border-b shrink-0">
+            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                {icon && <span className="text-muted-foreground">{icon}</span>}
+                <h2 className="text-lg font-semibold leading-none truncate">{title}</h2>
+              </div>
+              {description && (
+                <p className="text-sm text-muted-foreground">{description}</p>
+              )}
+            </div>
+            <button
+              onClick={handleClose}
+              disabled={isSubmitting && preventCloseOnSubmit}
+              className="inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+            >
+              <X className="h-4 w-4" />
+              <span className="sr-only">{t('close', 'Close')}</span>
+            </button>
+          </div>
+
+          {/* Content */}
+          <div
+            ref={contentRef}
+            className="flex-1 overflow-y-auto p-6"
+          >
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              children
+            )}
+          </div>
+
+          {/* Error message */}
+          {submitError && (
+            <div className="px-6 py-3 bg-destructive/10 border-t border-destructive/20">
+              <div className="flex items-center gap-2 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{submitError}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t shrink-0 bg-muted/30">
+            {footer ? (
+              footer
+            ) : (
+              <>
+                {showCancelButton && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleClose}
+                    disabled={isSubmitting && preventCloseOnSubmit}
+                  >
+                    {cancelText}
+                  </Button>
+                )}
+                {onSubmit && (
+                  <Button
+                    size="sm"
+                    onClick={handleSubmit}
+                    disabled={isDisabled}
+                  >
+                    {isSubmitting && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    {submitText}
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+export default UnifiedFormDialog

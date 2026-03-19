@@ -1,7 +1,8 @@
 //! Tests for extension system handlers.
 
+#![allow(clippy::assertions_on_constants)]
+
 use neomind_api::handlers::extensions::*;
-use neomind_api::handlers::ServerState;
 use serde_json::json;
 
 #[cfg(test)]
@@ -131,7 +132,7 @@ mod tests {
 
         assert_eq!(command.id, "turn_on");
         assert_eq!(command.display_name, "Turn On");
-        assert_eq!(command.config.is_stream, false);
+        assert!(!command.config.is_stream);
         assert_eq!(command.config.timeout_ms, 30000);
     }
 

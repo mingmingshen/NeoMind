@@ -42,7 +42,7 @@ async fn test_concurrent_counter() {
     // Simulate multiple concurrent requests
     let mut handles = vec![];
 
-    for i in 0..10 {
+    for _i in 0..10 {
         let counter_clone = counter.clone();
         let handle = tokio::spawn(async move {
             // Check limit
@@ -167,7 +167,7 @@ async fn test_concurrent_batch_operations() {
             let _permit = semaphore_clone.acquire().await.unwrap();
 
             // Create batch commands
-            let batch = (0..commands_per_batch)
+            let _batch = (0..commands_per_batch)
                 .map(|i| BatchCommand {
                     command: format!("batch_cmd_{}", i),
                     args: serde_json::json!({"index": i}),

@@ -396,7 +396,7 @@ mod tests {
     #[test]
     fn test_parse_json_array_without_id() {
         let text = r#"[{"name": "list_devices", "arguments": {}}]"#;
-        let (content, calls) = parse_tool_calls(text).unwrap();
+        let (_content, calls) = parse_tool_calls(text).unwrap();
 
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "list_devices");
@@ -407,7 +407,7 @@ mod tests {
     #[test]
     fn test_parse_json_object_with_id() {
         let text = r#"{"id": "call_xyz", "name": "query_data", "arguments": {"device": "sensor1"}}"#;
-        let (content, calls) = parse_tool_calls(text).unwrap();
+        let (_content, calls) = parse_tool_calls(text).unwrap();
 
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].id, "call_xyz"); // ID preserved!
@@ -426,7 +426,7 @@ mod tests {
     #[test]
     fn test_parse_xml_fallback() {
         let text = r#"<tool_calls><invoke name="device.query"><parameter name="device_id">sensor1</parameter></invoke></tool_calls>"#;
-        let (content, calls) = parse_tool_calls(text).unwrap();
+        let (_content, calls) = parse_tool_calls(text).unwrap();
 
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "device.query");

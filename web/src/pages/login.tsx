@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { BrandLogoHorizontal } from "@/components/shared/BrandName"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
-import { tokenManager } from "@/lib/api"
+import { tokenManager, getApiBase } from "@/lib/api"
 
 const languages = [
   { code: 'en', name: 'English' },
@@ -91,7 +91,7 @@ export function LoginPage() {
 
     // Check if this is first-time setup (no admin user exists)
     const checkSetupStatus = async () => {
-      const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
+      const apiBase = getApiBase()
       try {
         const response = await fetch(`${apiBase}/setup/status`, {
           signal: AbortSignal.timeout(5000),

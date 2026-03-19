@@ -110,11 +110,7 @@ pub async fn llm_generate_handler(
                 } => (api_key.clone(), endpoint.clone(), model.clone()),
                 _ => return Err(ErrorResponse::bad_request("Unsupported LLM backend")),
             };
-            let config = if endpoint.is_empty() {
-                CloudConfig::custom(&api_key, &endpoint).with_model(&model)
-            } else {
-                CloudConfig::custom(&api_key, &endpoint).with_model(&model)
-            };
+            let config = CloudConfig::custom(&api_key, &endpoint).with_model(&model);
             let runtime = CloudRuntime::new(config).map_err(|e| {
                 ErrorResponse::internal(format!("Failed to create Cloud runtime: {}", e))
             })?;

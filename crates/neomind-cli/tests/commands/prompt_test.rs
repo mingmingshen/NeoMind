@@ -1,5 +1,7 @@
 //! Tests for the `prompt` command.
 
+#![allow(deprecated)]
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 

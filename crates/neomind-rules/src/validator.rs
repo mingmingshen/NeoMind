@@ -678,7 +678,7 @@ impl RuleValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dsl::{ComparisonOperator, RuleAction};
+    use crate::dsl::ComparisonOperator;
 
     #[test]
     fn test_validate_device_not_found() {

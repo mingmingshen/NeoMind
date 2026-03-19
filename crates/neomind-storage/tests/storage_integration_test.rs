@@ -7,7 +7,7 @@
 //! - Performance tests
 
 use neomind_storage::{
-    TimeSeriesStore, TimeSeriesConfig, DataPoint,
+    TimeSeriesStore, DataPoint,
     SessionStore, SessionMessage,
     VectorStore, VectorDocument,
 };
@@ -148,9 +148,9 @@ fn test_session_multiple_messages() {
     let messages: Vec<SessionMessage> = (0..10)
         .map(|i| {
             if i % 2 == 0 {
-                SessionMessage::user(&format!("User message {}", i))
+                SessionMessage::user(format!("User message {}", i))
             } else {
-                SessionMessage::assistant(&format!("Assistant message {}", i))
+                SessionMessage::assistant(format!("Assistant message {}", i))
             }
         })
         .collect();
@@ -192,7 +192,7 @@ fn test_session_multiple_sessions() {
     for session_num in 0..3 {
         let session_id = format!("session-{}", session_num);
         let messages: Vec<SessionMessage> = (0..5)
-            .map(|i| SessionMessage::user(&format!("Session {} message {}", session_num, i)))
+            .map(|i| SessionMessage::user(format!("Session {} message {}", session_num, i)))
             .collect();
         store.save_session_id(&session_id).unwrap();
         store.save_history(&session_id, &messages).unwrap();
@@ -245,7 +245,7 @@ async fn test_vector_multiple_documents() {
 
     for i in 0..10 {
         let embedding: Vec<f32> = (0..4).map(|j| (i * 4 + j) as f32 / 100.0).collect();
-        let doc = VectorDocument::new(&format!("doc{}", i), embedding);
+        let doc = VectorDocument::new(format!("doc{}", i), embedding);
         store.insert(doc).await.unwrap();
     }
 
@@ -262,7 +262,7 @@ async fn test_vector_delete() {
     let doc = VectorDocument::new("doc1", vec![0.1, 0.2, 0.3, 0.4]);
     store.insert(doc).await.unwrap();
 
-    store.delete("doc1");
+    let _ = store.delete("doc1");
 
     let query = vec![0.1, 0.2, 0.3, 0.4];
     let results = store.search(&query, 10).await.unwrap();
@@ -446,7 +446,7 @@ async fn test_vector_concurrent_inserts() {
         let store = store.clone();
         let handle = tokio::spawn(async move {
             let embedding: Vec<f32> = (0..4).map(|j| (i * 4 + j) as f32 / 100.0).collect();
-            let doc = VectorDocument::new(&format!("doc{}", i), embedding);
+            let doc = VectorDocument::new(format!("doc{}", i), embedding);
             store.insert(doc).await.unwrap();
         });
         handles.push(handle);

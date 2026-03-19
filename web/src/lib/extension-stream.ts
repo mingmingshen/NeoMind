@@ -11,6 +11,7 @@ import type {
   ExtensionSessionStats,
 } from '@/types'
 import { tokenManager } from './auth'
+import { isTauriEnv } from './api'
 
 type MessageHandler = (message: ExtensionServerMessage) => void
 type ConnectionHandler = (state: ExtensionStreamConnectionState) => void
@@ -92,7 +93,7 @@ export class ExtensionStreamClient {
     this.notifyConnectionChange()
 
     // Build WebSocket URL
-    const isTauri = !!(window as any).__TAURI__
+    const isTauri = isTauriEnv()
     const isSecure = window.location.protocol === 'https:'
     const protocol = (isTauri ? false : isSecure) ? 'wss:' : 'ws:'
     const host = isTauri ? 'localhost:9375' : window.location.host

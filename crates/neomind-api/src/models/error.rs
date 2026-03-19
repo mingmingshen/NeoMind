@@ -121,7 +121,6 @@ impl fmt::Display for ErrorResponse {
 impl std::error::Error for ErrorResponse {}
 
 /// Conversion from common error types.
-
 impl From<anyhow::Error> for ErrorResponse {
     fn from(e: anyhow::Error) -> Self {
         Self::internal(e.to_string())

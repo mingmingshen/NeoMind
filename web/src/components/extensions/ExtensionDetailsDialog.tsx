@@ -1,13 +1,6 @@
-import { useState, useEffect } from "react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogContentBody,
-} from "@/components/ui/dialog"
+import { useState, useEffect, useCallback } from "react"
+import { createPortal } from "react-dom"
+import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -33,7 +26,11 @@ import { useStore } from "@/store"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useToast } from "@/hooks/use-toast"
 import { api } from "@/lib/api"
-import type { Extension, ExtensionStatsDto, ExtensionConfigResponse, ExtensionConfigSchema } from "@/types"
+import type { Extension, ExtensionStatsDto, ExtensionConfigResponse } from "@/types"
+import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
+import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
+import { cn } from "@/lib/utils"
+import { FormSection, FormSectionGroup } from "@/components/ui/form-section"
 
 interface ExtensionDetailsDialogProps {
   extension: Extension | null
@@ -46,12 +43,15 @@ export function ExtensionDetailsDialog({
   open,
   onOpenChange,
 }: ExtensionDetailsDialogProps) {
+  const { t } = useTranslation(['extensions', 'common'])
   const { handleError } = useErrorHandler()
   const { toast } = useToast()
   const getExtensionStats = useStore((state) => state.getExtensionStats)
   const getExtensionHealth = useStore((state) => state.getExtensionHealth)
   const fetchExtensions = useStore((state) => state.fetchExtensions)
   const reloadExtensionStore = useStore((state) => state.reloadExtension)
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
 
   const [stats, setStats] = useState<ExtensionStatsDto | null>(null)
   const [health, setHealth] = useState<{ healthy: boolean } | null>(null)
@@ -63,6 +63,10 @@ export function ExtensionDetailsDialog({
   const [configLoading, setConfigLoading] = useState(false)
   const [configValues, setConfigValues] = useState<Record<string, unknown>>({})
   const [saving, setSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState('info')
+
+  // Lock body scroll on mobile
+  useMobileBodyScrollLock(isMobile && open)
 
   // Load extension details when dialog opens
   const loadDetails = async () => {
@@ -133,16 +137,24 @@ export function ExtensionDetailsDialog({
     setConfigValues(prev => ({ ...prev, [name]: value }))
   }
 
+  // Handle tab change
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab)
+    if (tab === "info") loadDetails()
+    if (tab === "config") loadConfig()
+    if (tab === "stats") loadDetails()
+  }
+
   // Reset state when dialog closes
-  const handleClose = (open: boolean) => {
-    if (!open) {
+  const handleClose = useCallback(() => {
+    if (!saving && !reloading) {
       setStats(null)
       setHealth(null)
       setConfigData(null)
       setConfigValues({})
+      onOpenChange(false)
     }
-    onOpenChange(open)
-  }
+  }, [saving, reloading, onOpenChange])
 
   // Reload extension
   const handleReloadExtension = async () => {
@@ -164,6 +176,13 @@ export function ExtensionDetailsDialog({
       setReloading(false)
     }
   }
+
+  // Load details when dialog opens
+  useEffect(() => {
+    if (open && extension) {
+      loadDetails()
+    }
+  }, [open, extension?.id])
 
   // Render config input based on type
   const renderConfigInput = (paramName: string, param: any) => {
@@ -260,305 +279,433 @@ export function ExtensionDetailsDialog({
   const hasConfigParams = configData?.config_schema &&
     Object.keys(configData.config_schema.properties || {}).length > 0
 
-  return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[600px] sm:max-h-[90vh] flex flex-col overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>Extension Details</DialogTitle>
-          <DialogDescription>
-            {extension ? `View ${extension.name} details and capabilities` : "Select an extension"}
-          </DialogDescription>
-        </DialogHeader>
+  const isBusy = saving || reloading || loading
 
-        {!extension ? (
-          <div className="py-8 text-center text-muted-foreground">
-            No extension selected
-          </div>
-        ) : (
-          <DialogContentBody className="flex-1 overflow-hidden pt-6 pb-4 px-4 sm:px-6">
-            <Tabs defaultValue="info" className="w-full h-full flex flex-col overflow-hidden" onValueChange={(v) => {
-              if (v === "info") loadDetails()
-              if (v === "config") loadConfig()
-              if (v === "stats") loadDetails()
-            }}>
-            <TabsList className="w-full inline-flex grid grid-cols-5 sm:grid-cols-5">
-              <TabsTrigger value="info" className="gap-1 sm:gap-2">
-                <Info className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-0" />
-                <span className="hidden sm:inline">Info</span>
-                <span className="sm:hidden text-xs">Info</span>
-              </TabsTrigger>
-              <TabsTrigger value="capabilities" className="gap-1 sm:gap-2">
-                <Zap className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-0" />
-                <span className="hidden sm:inline">Capabilities</span>
-                <span className="sm:hidden text-xs">Caps</span>
-              </TabsTrigger>
-              <TabsTrigger value="config" className="gap-1 sm:gap-2">
-                <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-0" />
-                <span className="hidden sm:inline">Config</span>
-                <span className="sm:hidden text-xs">Cfg</span>
-              </TabsTrigger>
-              <TabsTrigger value="stats" className="gap-1 sm:gap-2">
-                <Terminal className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-0" />
-                <span className="hidden sm:inline">Stats</span>
-                <span className="sm:hidden text-xs">Stats</span>
-              </TabsTrigger>
-              <TabsTrigger value="file" className="gap-1 sm:gap-2">
-                <FileCode className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-0" />
-                <span className="hidden sm:inline">File</span>
-                <span className="sm:hidden text-xs">File</span>
-              </TabsTrigger>
-            </TabsList>
+  const TabButtons = () => (
+    <div className={cn(
+      "flex gap-1 p-1 bg-muted/50 rounded-xl",
+      isMobile ? "overflow-x-auto" : ""
+    )}>
+      {[
+        { value: 'info', icon: Info, label: t('extensions:tabs.info', { defaultValue: 'Info' }) },
+        { value: 'capabilities', icon: Zap, label: t('extensions:tabs.caps', { defaultValue: 'Caps' }) },
+        { value: 'config', icon: Settings, label: t('extensions:tabs.cfg', { defaultValue: 'Cfg' }) },
+        { value: 'stats', icon: Terminal, label: t('extensions:tabs.stats', { defaultValue: 'Stats' }) },
+        { value: 'file', icon: FileCode, label: t('extensions:tabs.file', { defaultValue: 'File' }) },
+      ].map(tab => (
+        <button
+          key={tab.value}
+          onClick={() => handleTabChange(tab.value)}
+          className={cn(
+            'flex items-center gap-1.5 py-2 px-3 text-sm font-medium rounded-lg transition-all whitespace-nowrap',
+            activeTab === tab.value
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <tab.icon className="h-4 w-4" />
+          <span className={cn(isMobile && "hidden")}>{tab.label}</span>
+        </button>
+      ))}
+    </div>
+  )
 
-            {/* Info Tab */}
-            <TabsContent value="info" className="flex-1 overflow-y-auto mt-4 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div>
-                  <Label className="text-muted-foreground text-xs">ID</Label>
-                  <p className="text-sm font-mono break-all">{extension.id}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground text-xs">Name</Label>
-                  <p className="text-sm break-words">{extension.name}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground text-xs">Version</Label>
-                  <p className="text-sm">{extension.version}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground text-xs">State</Label>
-                  <Badge variant={extension.state === "Running" ? "default" : "secondary"}>
-                    {extension.state}
-                  </Badge>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground text-xs">Commands</Label>
-                  <p className="text-sm">{extension.commands?.length ?? 0}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground text-xs">Metrics</Label>
-                  <p className="text-sm">{extension.metrics?.length ?? 0}</p>
-                </div>
+  const TabContent = () => {
+    switch (activeTab) {
+      case 'info':
+        return (
+          <FormSectionGroup>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-muted-foreground text-xs">{t('extensions:info.id', { defaultValue: 'ID' })}</Label>
+                <p className="text-sm font-mono break-all">{extension?.id}</p>
               </div>
+              <div>
+                <Label className="text-muted-foreground text-xs">{t('extensions:info.name', { defaultValue: 'Name' })}</Label>
+                <p className="text-sm break-words">{extension?.name}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground text-xs">{t('extensions:info.version', { defaultValue: 'Version' })}</Label>
+                <p className="text-sm">{extension?.version}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground text-xs">{t('extensions:info.state', { defaultValue: 'State' })}</Label>
+                <Badge variant={extension?.state === "Running" ? "default" : "secondary"}>
+                  {extension?.state}
+                </Badge>
+              </div>
+              <div>
+                <Label className="text-muted-foreground text-xs">{t('extensions:info.commands', { defaultValue: 'Commands' })}</Label>
+                <p className="text-sm">{extension?.commands?.length ?? 0}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground text-xs">{t('extensions:info.metrics', { defaultValue: 'Metrics' })}</Label>
+                <p className="text-sm">{extension?.metrics?.length ?? 0}</p>
+              </div>
+            </div>
 
-              {extension.description && (
-                <div>
-                  <Label className="text-muted-foreground text-xs">Description</Label>
-                  <p className="text-sm break-words">{extension.description}</p>
-                </div>
-              )}
+            {extension?.description && (
+              <div>
+                <Label className="text-muted-foreground text-xs">{t('extensions:info.description', { defaultValue: 'Description' })}</Label>
+                <p className="text-sm break-words">{extension.description}</p>
+              </div>
+            )}
 
-              {extension.author && (
-                <div>
-                  <Label className="text-muted-foreground text-xs">Author</Label>
-                  <p className="text-sm break-words">{extension.author}</p>
-                </div>
-              )}
+            {extension?.author && (
+              <div>
+                <Label className="text-muted-foreground text-xs">{t('extensions:info.author', { defaultValue: 'Author' })}</Label>
+                <p className="text-sm break-words">{extension.author}</p>
+              </div>
+            )}
 
-              {health && (
-                <div>
-                  <Label className="text-muted-foreground text-xs">Health Status</Label>
-                  <Badge variant={health.healthy ? "default" : "destructive"}>
-                    {health.healthy ? "Healthy" : "Unhealthy"}
-                  </Badge>
-                </div>
-              )}
-            </TabsContent>
+            {health && (
+              <div>
+                <Label className="text-muted-foreground text-xs">{t('extensions:info.health', { defaultValue: 'Health Status' })}</Label>
+                <Badge variant={health.healthy ? "default" : "destructive"}>
+                  {health.healthy ? t('extensions:info.healthy', { defaultValue: 'Healthy' }) : t('extensions:info.unhealthy', { defaultValue: 'Unhealthy' })}
+                </Badge>
+              </div>
+            )}
+          </FormSectionGroup>
+        )
 
-            {/* Capabilities Tab - Commands and Metrics */}
-            <TabsContent value="capabilities" className="flex-1 overflow-y-auto mt-4 space-y-4">
-              {/* Commands Section */}
-              {extension.commands && extension.commands.length > 0 && (
-                <Accordion type="single" collapsible defaultValue="commands" className="w-full">
-                  <AccordionItem value="commands">
-                    <AccordionTrigger className="py-3">
-                      <span className="flex items-center gap-2 text-sm font-medium">
-                        <Terminal className="h-4 w-4" />
-                        Commands ({extension.commands.length})
-                      </span>
-                    </AccordionTrigger>
-                    <AccordionContent className="pt-2 pb-4 space-y-2 max-h-[40vh] overflow-y-auto">
-                      {extension.commands.map((command) => (
-                        <div
-                          key={command.id}
-                          className="p-3 rounded-lg border bg-muted/30 space-y-2"
-                        >
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="outline" className="text-xs break-all">
-                              {command.id}
-                            </Badge>
-                            <span className="font-medium text-sm break-words">{command.display_name}</span>
-                          </div>
-                          {command.description && (
-                            <p className="text-xs text-muted-foreground break-words">{command.description}</p>
-                          )}
-                        </div>
-                      ))}
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-              )}
-
-              {/* Metrics Section */}
-              {extension.metrics && extension.metrics.length > 0 && (
-                <Accordion type="single" collapsible defaultValue="metrics" className="w-full">
-                  <AccordionItem value="metrics">
-                    <AccordionTrigger className="py-3">
-                      <span className="flex items-center gap-2 text-sm font-medium">
-                        <Database className="h-4 w-4" />
-                        Metrics ({extension.metrics.length})
-                      </span>
-                    </AccordionTrigger>
-                    <AccordionContent className="pt-2 pb-4 max-h-[40vh] overflow-y-auto">
-                      <div className="grid grid-cols-1 gap-2">
-                        {extension.metrics.map((metric) => (
-                          <div
-                            key={metric.name}
-                            className="p-3 rounded-lg border bg-muted/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
-                          >
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium text-sm break-words">{metric.display_name}</span>
-                              <Badge variant="outline" className="text-xs break-all">
-                                {metric.name}
-                              </Badge>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                              <span>{metric.data_type}</span>
-                              {metric.unit && <span>({metric.unit})</span>}
-                              {metric.min !== undefined && metric.max !== undefined && (
-                                <span>[{metric.min} - {metric.max}]</span>
-                              )}
-                              {metric.required && (
-                                <Badge variant="secondary" className="text-xs">required</Badge>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+      case 'capabilities':
+        return (
+          <FormSectionGroup>
+            {/* Commands Section */}
+            {extension?.commands && extension.commands.length > 0 && (
+              <FormSection
+                title={`${t('extensions:capabilities.commands', { defaultValue: 'Commands' })} (${extension.commands.length})`}
+                collapsible
+                defaultExpanded
+              >
+                <div className="space-y-2">
+                  {extension.commands.map((command) => (
+                    <div
+                      key={command.id}
+                      className="p-3 rounded-lg border bg-muted/30 space-y-2"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className="text-xs break-all">
+                          {command.id}
+                        </Badge>
+                        <span className="font-medium text-sm break-words">{command.display_name}</span>
                       </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-              )}
-
-              {/* Empty State */}
-              {(!extension.commands || extension.commands.length === 0) &&
-               (!extension.metrics || extension.metrics.length === 0) && (
-                <div className="text-center py-8 text-muted-foreground text-sm">
-                  No commands or metrics available for this extension
-                </div>
-              )}
-            </TabsContent>
-
-            {/* Config Tab */}
-            <TabsContent value="config" className="flex-1 overflow-y-auto mt-4 space-y-4">
-              {configLoading ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : hasConfigParams ? (
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b">
-                    <div>
-                      <h3 className="text-sm font-medium">Extension Configuration</h3>
-                      <p className="text-xs text-muted-foreground">
-                        Configure {extension.name} settings
-                      </p>
+                      {command.description && (
+                        <p className="text-xs text-muted-foreground break-words">{command.description}</p>
+                      )}
                     </div>
-                    <div className="flex gap-2 sm:gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={loadConfig}
-                        disabled={saving}
-                      >
-                        <RefreshCw className="h-4 w-4 mr-1" />
-                        Reload
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={saveConfig}
-                        disabled={saving}
-                      >
-                        <Save className="h-4 w-4 mr-1" />
-                        {saving ? 'Saving...' : 'Save & Reload'}
-                      </Button>
+                  ))}
+                </div>
+              </FormSection>
+            )}
+
+            {/* Metrics Section */}
+            {extension?.metrics && extension.metrics.length > 0 && (
+              <FormSection
+                title={`${t('extensions:capabilities.metrics', { defaultValue: 'Metrics' })} (${extension.metrics.length})`}
+                collapsible
+                defaultExpanded
+              >
+                <div className="space-y-2">
+                  {extension.metrics.map((metric) => (
+                    <div
+                      key={metric.name}
+                      className="p-3 rounded-lg border bg-muted/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-sm break-words">{metric.display_name}</span>
+                        <Badge variant="outline" className="text-xs break-all">
+                          {metric.name}
+                        </Badge>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                        <span>{metric.data_type}</span>
+                        {metric.unit && <span>({metric.unit})</span>}
+                        {metric.min !== undefined && metric.max !== undefined && (
+                          <span>[{metric.min} - {metric.max}]</span>
+                        )}
+                        {metric.required && (
+                          <Badge variant="secondary" className="text-xs">{t('common:required', { defaultValue: 'required' })}</Badge>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  ))}
+                </div>
+              </FormSection>
+            )}
 
-                  <div className="space-y-1">
-                    {Object.entries(configData!.config_schema.properties || {}).map(([name, param]) =>
-                      renderConfigInput(name, param)
-                    )}
-                  </div>
-
-                  <div className="pt-4 border-t">
-                    <p className="text-xs text-muted-foreground">
-                      Changes will be saved and the extension will be reloaded to apply the new configuration.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground text-sm">
-                  <Settings className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p>This extension does not have configurable options.</p>
-                </div>
-              )}
-            </TabsContent>
-
-            {/* Stats Tab */}
-            <TabsContent value="stats" className="flex-1 overflow-y-auto mt-4 space-y-4">
-              {loading ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : stats ? (
-                <div className="grid grid-cols-2 sm:grid-cols-2 gap-3 sm:gap-4">
-                  <div className="border rounded-lg p-3">
-                    <p className="text-xs text-muted-foreground">Start Count</p>
-                    <p className="text-2xl font-semibold">{stats.start_count ?? 0}</p>
-                  </div>
-                  <div className="border rounded-lg p-3">
-                    <p className="text-xs text-muted-foreground">Stop Count</p>
-                    <p className="text-2xl font-semibold">{stats.stop_count ?? 0}</p>
-                  </div>
-                  <div className="border rounded-lg p-3">
-                    <p className="text-xs text-muted-foreground">Error Count</p>
-                    <p className="text-2xl font-semibold">{stats.error_count ?? 0}</p>
-                  </div>
-                  {stats.last_error && (
-                    <div className="border rounded-lg p-3 col-span-2">
-                      <p className="text-xs text-muted-foreground">Last Error</p>
-                      <p className="text-sm text-destructive break-words">{stats.last_error}</p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground text-sm">
-                  Select Info tab to load extension details
-                </div>
-              )}
-            </TabsContent>
-
-            {/* File Info Tab */}
-            <TabsContent value="file" className="flex-1 overflow-y-auto mt-4 space-y-4">
-              <div>
-                <Label className="text-muted-foreground text-xs">File Path</Label>
-                <p className="text-sm font-mono break-all">{extension.file_path || "N/A"}</p>
+            {/* Empty State */}
+            {(!extension?.commands || extension.commands.length === 0) &&
+             (!extension?.metrics || extension.metrics.length === 0) && (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                {t('extensions:capabilities.noCapabilities', { defaultValue: 'No commands or metrics available for this extension' })}
               </div>
+            )}
+          </FormSectionGroup>
+        )
+
+      case 'config':
+        return configLoading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : hasConfigParams ? (
+          <FormSectionGroup>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b">
               <div>
-                <Label className="text-muted-foreground text-xs">Version</Label>
-                <p className="text-sm">{extension.version}</p>
+                <h3 className="text-sm font-medium">{t('extensions:config.title', { defaultValue: 'Extension Configuration' })}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {t('extensions:config.configure', { defaultValue: 'Configure' })} {extension?.name}
+                </p>
               </div>
-              {extension.loaded_at && (
-                <div>
-                  <Label className="text-muted-foreground text-xs">Loaded At</Label>
-                  <p className="text-sm break-all">{formatTimestamp(extension.loaded_at)}</p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={loadConfig}
+                  disabled={saving}
+                >
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                  {t('common:reload', { defaultValue: 'Reload' })}
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={saveConfig}
+                  disabled={saving}
+                >
+                  <Save className="h-4 w-4 mr-1" />
+                  {saving ? t('common:saving', { defaultValue: 'Saving...' }) : t('extensions:config.saveReload', { defaultValue: 'Save & Reload' })}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              {Object.entries(configData!.config_schema.properties || {}).map(([name, param]) =>
+                renderConfigInput(name, param)
+              )}
+            </div>
+
+            <div className="pt-4 border-t">
+              <p className="text-xs text-muted-foreground">
+                {t('extensions:config.changesNote', { defaultValue: 'Changes will be saved and the extension will be reloaded to apply the new configuration.' })}
+              </p>
+            </div>
+          </FormSectionGroup>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            <Settings className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p>{t('extensions:config.noConfig', { defaultValue: 'This extension does not have configurable options.' })}</p>
+          </div>
+        )
+
+      case 'stats':
+        return loading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : stats ? (
+          <FormSectionGroup>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="border rounded-lg p-3">
+                <p className="text-xs text-muted-foreground">{t('extensions:stats.startCount', { defaultValue: 'Start Count' })}</p>
+                <p className="text-2xl font-semibold">{stats.start_count ?? 0}</p>
+              </div>
+              <div className="border rounded-lg p-3">
+                <p className="text-xs text-muted-foreground">{t('extensions:stats.stopCount', { defaultValue: 'Stop Count' })}</p>
+                <p className="text-2xl font-semibold">{stats.stop_count ?? 0}</p>
+              </div>
+              <div className="border rounded-lg p-3">
+                <p className="text-xs text-muted-foreground">{t('extensions:stats.errorCount', { defaultValue: 'Error Count' })}</p>
+                <p className="text-2xl font-semibold">{stats.error_count ?? 0}</p>
+              </div>
+              {stats.last_error && (
+                <div className="border rounded-lg p-3 col-span-2">
+                  <p className="text-xs text-muted-foreground">{t('extensions:stats.lastError', { defaultValue: 'Last Error' })}</p>
+                  <p className="text-sm text-destructive break-words">{stats.last_error}</p>
                 </div>
               )}
-            </TabsContent>
-          </Tabs>
-          </DialogContentBody>
-        )}
-      </DialogContent>
-    </Dialog>
+            </div>
+          </FormSectionGroup>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            {t('extensions:stats.noStats', { defaultValue: 'Select Info tab to load extension details' })}
+          </div>
+        )
+
+      case 'file':
+        return (
+          <FormSectionGroup>
+            <div>
+              <Label className="text-muted-foreground text-xs">{t('extensions:file.filePath', { defaultValue: 'File Path' })}</Label>
+              <p className="text-sm font-mono break-all">{extension?.file_path || "N/A"}</p>
+            </div>
+            <div>
+              <Label className="text-muted-foreground text-xs">{t('extensions:file.version', { defaultValue: 'Version' })}</Label>
+              <p className="text-sm">{extension?.version}</p>
+            </div>
+            {extension?.loaded_at && (
+              <div>
+                <Label className="text-muted-foreground text-xs">{t('extensions:file.loadedAt', { defaultValue: 'Loaded At' })}</Label>
+                <p className="text-sm break-all">{formatTimestamp(extension.loaded_at)}</p>
+              </div>
+            )}
+          </FormSectionGroup>
+        )
+
+      default:
+        return null
+    }
+  }
+
+  if (!extension) {
+    return null
+  }
+
+  // Mobile: Full-screen portal
+  if (isMobile) {
+    return createPortal(
+      open ? (
+        <div className="fixed inset-0 z-[100] bg-background animate-in fade-in duration-200">
+          <div className="flex h-full w-full flex-col">
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <Info className="h-5 w-5 text-primary shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base font-semibold truncate">{t('extensions:details.title', { defaultValue: 'Extension Details' })}</h1>
+                  <p className="text-xs text-muted-foreground truncate">{extension.name}</p>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={handleClose} disabled={isBusy} className="shrink-0">
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            {/* Tabs */}
+            <div className="px-4 py-3 border-b shrink-0 bg-background">
+              <TabButtons />
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="p-4">
+                <TabContent />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div
+              className="flex items-center justify-end gap-3 px-4 py-4 border-t shrink-0 bg-background"
+              style={{ paddingBottom: `calc(1rem + ${insets.bottom}px)` }}
+            >
+              <Button variant="outline" onClick={handleClose} disabled={isBusy} className="min-w-[80px]">
+                {t('common:close')}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleReloadExtension}
+                disabled={isBusy}
+                className="min-w-[80px]"
+              >
+                {reloading ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                {t('common:reload', { defaultValue: 'Reload' })}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null,
+      document.body
+    )
+  }
+
+  // Desktop: Traditional dialog
+  return (
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={handleClose}
+        />
+      )}
+
+      {/* Dialog */}
+      {open && (
+        <div
+          className={cn(
+            'fixed left-1/2 top-1/2 z-50',
+            'grid w-full gap-0',
+            'bg-background shadow-lg',
+            'duration-200',
+            'animate-in fade-in zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-[48%]',
+            'rounded-lg sm:rounded-xl',
+            'max-h-[calc(100vh-2rem)] sm:max-h-[90vh]',
+            'flex flex-col',
+            'max-w-2xl',
+            '-translate-x-1/2 -translate-y-1/2'
+          )}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between gap-2 px-6 py-4 border-b shrink-0">
+            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <Info className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-semibold leading-none truncate">
+                  {t('extensions:details.title', { defaultValue: 'Extension Details' })}
+                </h2>
+              </div>
+              <p className="text-sm text-muted-foreground truncate">
+                {extension.name}
+              </p>
+            </div>
+            <button
+              onClick={handleClose}
+              disabled={isBusy}
+              className="inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Tabs */}
+          <div className="px-6 py-3 border-b shrink-0 bg-muted/20">
+            <TabButtons />
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            <TabContent />
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t shrink-0 bg-muted/30">
+            <Button variant="outline" size="sm" onClick={handleClose} disabled={isBusy}>
+              {t('common:close')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReloadExtension}
+              disabled={isBusy}
+            >
+              {reloading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              {t('common:reload', { defaultValue: 'Reload' })}
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

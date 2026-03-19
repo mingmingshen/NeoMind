@@ -15,12 +15,7 @@ use neomind_core::extension::context::{
 use neomind_core::extension::isolated::{
     IsolatedExtensionManager, IsolatedManagerConfig,
 };
-use neomind_core::extension::system::{
-    Extension, ExtensionMetadata, ExtensionDescriptor, ExtensionError,
-    MetricDescriptor, ExtensionCommand,
-};
 use neomind_core::eventbus::EventBus;
-use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -349,7 +344,7 @@ async fn test_ipc_capability_invocation() {
 
     // Set up capability provider
     let provider = Arc::new(TestCapabilityProvider::new("ipc-provider"));
-    manager.set_capability_provider(provider);
+    manager.set_capability_provider(provider).await;
 
     // Note: This test would require a real extension binary that uses capabilities
     // For now, we just verify the manager can be created with a provider

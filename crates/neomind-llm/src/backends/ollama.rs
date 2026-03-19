@@ -1750,6 +1750,7 @@ struct OllamaToolFunction {
 
 /// Tool call returned by the model.
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct OllamaToolCall {
     /// Tool call ID (for tracking)
     id: Option<String>,

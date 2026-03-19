@@ -1878,7 +1878,7 @@ mod tests {
         assert!(result.success);
 
         let data = &result.data;
-        assert!(data["groups"].as_array().unwrap().len() > 0);
+        assert!(!data["groups"].as_array().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -1897,7 +1897,7 @@ mod tests {
 
         let data = &result.data;
         assert_eq!(data["device_id"], "sensor_temp_living");
-        assert!(data["metrics"].as_array().unwrap().len() > 0);
+        assert!(!data["metrics"].as_array().unwrap().is_empty());
     }
 
     #[tokio::test]

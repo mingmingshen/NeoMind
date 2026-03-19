@@ -383,7 +383,7 @@ impl UnifiedStorage for MemoryStorage {
 
 #[cfg(test)]
 mod tests {
-    use super::super::system::{Extension, ExtensionMetadata, MetricDataType, MetricDefinition};
+    use super::super::system::{Extension, ExtensionMetadata, MetricDefinition};
     use super::*;
     use crate::eventbus::EventBus;
     use std::sync::Arc;

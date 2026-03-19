@@ -2,19 +2,21 @@
  * ProgressStepper Component
  *
  * Unified step progress indicator for automation wizards.
- * Shows visual progress through configuration steps.
+ * Glassmorphism design with clean visual hierarchy.
  */
 
 import { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useIsMobile } from '@/hooks/useMobile'
 
 export type StepStatus = 'pending' | 'active' | 'completed'
 
 export interface Step {
   id: string
   label: string
+  shortLabel?: string
   icon?: ReactNode
   optional?: boolean
 }
@@ -25,56 +27,152 @@ export interface ProgressStepperProps {
   completedSteps: string[]
   onStepClick?: (stepId: string) => void
   className?: string
+  /** Layout mode */
+  mode?: 'horizontal' | 'vertical'
 }
+
+// ============================================================================
+// Step Dot Component
+// ============================================================================
 
 function StepDot({
   status,
   icon,
-  optional,
+  size = 'default',
 }: {
   status: StepStatus
   icon?: ReactNode
-  optional?: boolean
+  size?: 'default' | 'large'
 }) {
+  const sizeClasses = size === 'large'
+    ? 'w-9 h-9 text-sm'
+    : 'w-7 h-7 text-xs'
+
   return (
     <div
       className={cn(
-        'w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all shrink-0',
-        status === 'pending' && 'bg-muted text-muted-foreground',
-        status === 'active' && 'bg-primary text-primary-foreground ring-4 ring-primary/20',
+        'rounded-full flex items-center justify-center font-medium transition-all shrink-0',
+        sizeClasses,
+        status === 'pending' && 'bg-black/5 dark:bg-white/10 text-muted-foreground',
+        status === 'active' && [
+          'bg-primary text-primary-foreground',
+          'ring-4 ring-primary/20',
+        ],
         status === 'completed' && 'bg-green-500 text-white'
       )}
     >
       {status === 'completed' ? (
-        <Check className="h-4 w-4" />
+        <Check className={size === 'large' ? 'h-4.5 w-4.5' : 'h-3.5 w-3.5'} />
       ) : icon ? (
         icon
-      ) : (
-        '?'
-      )}
+      ) : null}
     </div>
   )
 }
 
-function StepConnector({ active }: { active: boolean }) {
-  return (
-    <div
-      className={cn(
-        'h-0.5 w-8 md:w-16 transition-colors shrink-0',
-        active ? 'bg-green-500' : 'bg-muted'
-      )}
-    />
-  )
+// ============================================================================
+// Vertical Stepper (Sidebar)
+// ============================================================================
+
+export interface VerticalStepperProps {
+  steps: Step[]
+  currentStep: string
+  completedSteps: string[]
+  onStepClick?: (stepId: string) => void
+  className?: string
 }
 
-export function ProgressStepper({
+export function VerticalStepper({
   steps,
   currentStep,
   completedSteps,
   onStepClick,
   className,
-}: ProgressStepperProps) {
+}: VerticalStepperProps) {
+  const isMobile = useIsMobile()
+
+  const getStepStatus = (step: Step): StepStatus => {
+    if (completedSteps.includes(step.id)) return 'completed'
+    if (currentStep === step.id) return 'active'
+    return 'pending'
+  }
+
+  return (
+    <nav className={cn('p-4 space-y-1', className)}>
+      {steps.map((step, index) => {
+        const status = getStepStatus(step)
+        const isClickable = onStepClick && (completedSteps.includes(step.id) || status === 'active')
+        const isPast = index < steps.findIndex(s => s.id === currentStep)
+
+        return (
+          <div key={step.id} className="relative">
+            <button
+              onClick={() => isClickable && onStepClick?.(step.id)}
+              disabled={!isClickable}
+              className={cn(
+                'w-full text-left rounded-xl transition-all',
+                'flex items-center gap-3 px-3 py-3',
+                status === 'active' && [
+                  'bg-white/60 dark:bg-white/5',
+                  'shadow-sm',
+                  'border border-black/5 dark:border-white/10',
+                ],
+                status !== 'active' && isClickable && 'hover:bg-black/5 dark:hover:bg-white/5',
+                !isClickable && 'cursor-default opacity-60'
+              )}
+            >
+              <StepDot status={status} icon={step.icon} size="large" />
+              <div className="flex-1 min-w-0">
+                <div className={cn(
+                  'text-sm font-medium truncate',
+                  status === 'active' && 'text-foreground',
+                  status !== 'active' && 'text-muted-foreground'
+                )}>
+                  {step.shortLabel || step.label}
+                </div>
+              </div>
+            </button>
+
+            {/* Connector line */}
+            {index < steps.length - 1 && (
+              <div className="absolute left-[calc(1.5rem+18px)] top-[52px] h-3 w-px">
+                <div
+                  className={cn(
+                    'h-full w-px transition-colors',
+                    isPast || status === 'completed' ? 'bg-green-500' : 'bg-border'
+                  )}
+                />
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </nav>
+  )
+}
+
+// ============================================================================
+// Horizontal Stepper (Top Bar)
+// ============================================================================
+
+export interface HorizontalStepperProps {
+  steps: Step[]
+  currentStep: string
+  completedSteps: string[]
+  onStepClick?: (stepId: string) => void
+  className?: string
+}
+
+export function HorizontalStepper({
+  steps,
+  currentStep,
+  completedSteps,
+  onStepClick,
+  className,
+}: HorizontalStepperProps) {
   const { t } = useTranslation(['common'])
+  const isMobile = useIsMobile()
+
   const getStepStatus = (step: Step): StepStatus => {
     if (completedSteps.includes(step.id)) return 'completed'
     if (currentStep === step.id) return 'active'
@@ -84,48 +182,97 @@ export function ProgressStepper({
   const currentIndex = steps.findIndex(s => s.id === currentStep)
 
   return (
-    <div className={cn('px-4 md:px-6 py-4 border-b bg-muted/30 shrink-0', className)}>
-      <div className="flex items-center justify-center gap-0 md:gap-1 overflow-x-auto">
+    <div
+      className={cn(
+        'shrink-0 px-5 md:px-6 py-4',
+        'border-b border-black/5 dark:border-white/5',
+        'bg-black/[0.02] dark:bg-white/[0.02]',
+        className
+      )}
+    >
+      <div className="flex items-center justify-center gap-2 md:gap-3 overflow-x-auto">
         {steps.map((step, i) => {
           const status = getStepStatus(step)
-          const isActive = status === 'completed' || i <= currentIndex
           const isClickable = onStepClick && (completedSteps.includes(step.id) || i === currentIndex + 1)
+          const isPast = i < currentIndex
 
           return (
             <div key={step.id} className="flex items-center">
-              <div className="flex flex-col items-center gap-1">
-                <button
-                  onClick={() => isClickable && onStepClick?.(step.id)}
-                  disabled={!isClickable}
+              <button
+                onClick={() => isClickable && onStepClick?.(step.id)}
+                disabled={!isClickable}
+                className={cn(
+                  'flex flex-col items-center gap-2 transition-all',
+                  isClickable && 'hover:opacity-80 cursor-pointer',
+                  !isClickable && 'cursor-default'
+                )}
+              >
+                <StepDot status={status} icon={step.icon} />
+                <span
                   className={cn(
-                    'flex flex-col items-center gap-1 transition-all',
-                    isClickable && 'hover:opacity-80',
-                    !isClickable && 'cursor-default'
+                    'text-xs whitespace-nowrap',
+                    status === 'active' && 'font-semibold text-foreground',
+                    status === 'completed' && 'text-foreground',
+                    status === 'pending' && 'text-muted-foreground'
                   )}
                 >
-                  <StepDot status={status} icon={step.icon} optional={step.optional} />
-                  <span
-                    className={cn(
-                      'text-xs whitespace-nowrap hidden md:block',
-                      status === 'active' && 'font-semibold text-foreground',
-                      status === 'completed' && 'text-foreground',
-                      status === 'pending' && 'text-muted-foreground'
-                    )}
-                  >
-                    {step.label}
-                    {step.optional && (
-                      <span className="text-muted-foreground/60 ml-1">({t('common:optional')})</span>
-                    )}
-                  </span>
-                </button>
-              </div>
+                  {isMobile && step.shortLabel ? step.shortLabel : step.label}
+                  {step.optional && (
+                    <span className="text-muted-foreground/60 ml-1">
+                      ({t('common:optional')})
+                    </span>
+                  )}
+                </span>
+              </button>
+
+              {/* Connector */}
               {i < steps.length - 1 && (
-                <StepConnector active={isActive && completedSteps.includes(step.id)} />
+                <div
+                  className={cn(
+                    'h-0.5 w-8 md:w-12 mx-2 rounded-full transition-colors shrink-0',
+                    (status === 'completed' || isPast) ? 'bg-green-500' : 'bg-border'
+                  )}
+                />
               )}
             </div>
           )
         })}
       </div>
     </div>
+  )
+}
+
+// ============================================================================
+// Main ProgressStepper Component
+// ============================================================================
+
+export function ProgressStepper({
+  steps,
+  currentStep,
+  completedSteps,
+  onStepClick,
+  className,
+  mode = 'horizontal',
+}: ProgressStepperProps) {
+  if (mode === 'vertical') {
+    return (
+      <VerticalStepper
+        steps={steps}
+        currentStep={currentStep}
+        completedSteps={completedSteps}
+        onStepClick={onStepClick}
+        className={className}
+      />
+    )
+  }
+
+  return (
+    <HorizontalStepper
+      steps={steps}
+      currentStep={currentStep}
+      completedSteps={completedSteps}
+      onStepClick={onStepClick}
+      className={className}
+    />
   )
 }

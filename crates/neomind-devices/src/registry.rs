@@ -1350,9 +1350,8 @@ mod tests {
             .iter()
             .find(|p| p.name == "enable_ai");
         assert!(enable_ai_param.is_some(), "enable_ai parameter not found");
-        assert_eq!(
-            enable_ai_param.unwrap().required,
-            false,
+        assert!(
+            !enable_ai_param.unwrap().required,
             "enable_ai should not be required"
         );
     }

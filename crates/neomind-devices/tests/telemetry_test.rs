@@ -9,7 +9,6 @@
 //! - Concurrent operations
 
 use neomind_devices::{DataPoint, MetricValue, TimeSeriesStorage};
-use std::collections::HashMap;
 use std::time::Instant;
 
 #[tokio::test]

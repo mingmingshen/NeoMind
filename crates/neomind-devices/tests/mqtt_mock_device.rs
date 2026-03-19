@@ -4,6 +4,7 @@
 //! device management system. Supports various device types including image
 //! capture devices.
 
+use base64::{engine::general_purpose::STANDARD, Engine};
 use rumqttc::{AsyncClient, MqttOptions, QoS};
 use serde_json::json;
 use std::time::Duration;
@@ -35,7 +36,7 @@ impl MqttMockDevice {
         );
         mqttoptions.set_keep_alive(Duration::from_secs(60));
 
-        let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+        let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
 
         // Start the event loop in the background
         let device_id_clone = device_id.clone();
@@ -148,7 +149,7 @@ impl MqttMockDevice {
         let topic = self.build_metric_topic(metric_name);
 
         // Encode image data as Base64
-        let base64_data = base64::encode(image_data);
+        let base64_data = STANDARD.encode(image_data);
         let payload_json = json!({
             "data": base64_data,
             "mime_type": mime_type,

@@ -8,7 +8,6 @@
  * - IPC communication
  * - Resource operations
  */
-
 use tracing::{debug, error, info, info_span, warn, Instrument, Span};
 
 // =============================================================================
@@ -148,8 +147,8 @@ where
                 );
 
                 // Record error in span
-                Span::current().record("error_type", &"extension_error");
-                Span::current().record("error_message", &error.to_string());
+                Span::current().record("error_type", "extension_error");
+                Span::current().record("error_message", error.to_string());
             }
         }
 
@@ -203,8 +202,8 @@ where
                     "Extension load failed"
                 );
 
-                Span::current().record("error_type", &"load_error");
-                Span::current().record("error_message", &error.to_string());
+                Span::current().record("error_type", "load_error");
+                Span::current().record("error_message", error.to_string());
             }
         }
 
@@ -260,8 +259,8 @@ where
                     "IPC communication failed"
                 );
 
-                Span::current().record("error_type", &"ipc_error");
-                Span::current().record("error_message", &error.to_string());
+                Span::current().record("error_type", "ipc_error");
+                Span::current().record("error_message", error.to_string());
             }
         }
 

@@ -12,7 +12,8 @@
 //! - Results become virtual metrics
 //!
 //! # Auto-Registration
-//!
+
+#![allow(clippy::too_many_arguments)]
 //! Transform outputs are automatically registered as data sources when
 //! the transform executes successfully, making them available for:
 //! - Dashboard components
@@ -1828,10 +1829,10 @@ impl TransformEngine {
         }
 
         // Remove leading "$."
-        let path_parts = if path.starts_with("$.") {
-            &path[2..]
-        } else if path.starts_with("$") {
-            &path[1..]
+        let path_parts = if let Some(rest) = path.strip_prefix("$.") {
+            rest
+        } else if let Some(rest) = path.strip_prefix('$') {
+            rest
         } else {
             path
         };

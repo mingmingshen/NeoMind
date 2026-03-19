@@ -2,6 +2,7 @@
 import type { ServerMessage, ClientChatMessage, ChatImage } from '@/types'
 import { tokenManager } from './auth'
 import { storage } from './utils/storage'
+import { isTauriEnv } from './api'
 
 type MessageHandler = (message: ServerMessage) => void
 type ConnectionHandler = (connected: boolean, isReconnect?: boolean) => void
@@ -86,7 +87,7 @@ export class ChatWebSocket {
 
     // In Tauri desktop app, use localhost:9375 for WebSocket
     // because window.location would be tauri://localhost
-    const isTauri = !!(window as any).__TAURI__
+    const isTauri = isTauriEnv()
     const isSecure = window.location.protocol === 'https:'
     const protocol = (isTauri ? false : isSecure) ? 'wss:' : 'ws:'
     const host = isTauri ? 'localhost:9375' : window.location.host

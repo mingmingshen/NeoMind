@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn test_calculate_statistics() {
-        let data = create_test_data();
+        let _data = create_test_data();
         let stats = Statistics {
             min: 19.5,
             max: 24.0,
@@ -491,12 +491,10 @@ mod tests {
 
     #[test]
     fn test_threshold_intent() {
-        let intents = vec![
-            ThresholdIntent::AlertWhenHigh,
+        let intents = [ThresholdIntent::AlertWhenHigh,
             ThresholdIntent::AlertWhenLow,
             ThresholdIntent::DetectAnomaly,
-            ThresholdIntent::MaintainRange,
-        ];
+            ThresholdIntent::MaintainRange];
 
         assert_eq!(intents.len(), 4);
     }

@@ -4,9 +4,8 @@ import { useStore } from "@/store"
 import { TopNav } from "@/components/layout/TopNav"
 import { Toaster } from "@/components/ui/toaster"
 import { Confirmer } from "@/components/ui/confirmer"
-import { tokenManager } from "@/lib/api"
+import { tokenManager, getApiBase, isTauriEnv } from "@/lib/api"
 import { StartupLoading } from "@/components/StartupLoading"
-import { getCurrentWindow } from "@tauri-apps/api/window"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
 import { useExtensionComponents } from "@/hooks/useExtensionComponents"
 import { UpdateDialog } from '@/components/update'
@@ -82,7 +81,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Check setup status in background - don't block rendering
     const checkSetup = async (): Promise<void> => {
-      const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
+      const apiBase = getApiBase()
       try {
         const response = await fetch(`${apiBase}/setup/status`, {
           signal: AbortSignal.timeout(3000),
@@ -127,7 +126,7 @@ function SetupRoute({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const checkSetup = async (): Promise<boolean> => {
-      const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
+      const apiBase = getApiBase()
       try {
         const response = await fetch(`${apiBase}/setup/status`, {
           signal: AbortSignal.timeout(5000),
@@ -255,13 +254,13 @@ function App() {
 
   // Check if running in Tauri environment
   useEffect(() => {
-    setIsTauri(typeof window !== 'undefined' && '__TAURI__' in window)
+    setIsTauri(isTauriEnv())
   }, [])
 
   // Initial setup check - runs before routes are rendered
   useEffect(() => {
     const checkInitialSetup = async () => {
-      const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
+      const apiBase = getApiBase()
       try {
         const response = await fetch(`${apiBase}/setup/status`, {
           signal: AbortSignal.timeout(5000),

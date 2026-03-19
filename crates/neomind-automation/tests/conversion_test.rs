@@ -231,10 +231,10 @@ fn test_comparison_operator_all() {
     ];
 
     for op in operators {
-        let serialized = to_value(&op).unwrap();
+        let serialized = to_value(op).unwrap();
         let deserialized: ComparisonOperator = from_value(serialized.clone()).unwrap();
 
-        assert_eq!(serialized, to_value(&deserialized).unwrap());
+        assert_eq!(serialized, to_value(deserialized).unwrap());
     }
 }
 
@@ -247,10 +247,10 @@ fn test_alert_severity_all() {
     ];
 
     for severity in severities {
-        let serialized = to_value(&severity).unwrap();
+        let serialized = to_value(severity).unwrap();
         let deserialized: AlertSeverity = from_value(serialized.clone()).unwrap();
 
-        assert_eq!(serialized, to_value(&deserialized).unwrap());
+        assert_eq!(serialized, to_value(deserialized).unwrap());
     }
 }
 
@@ -264,9 +264,9 @@ fn test_log_level_all() {
     ];
 
     for level in levels {
-        let serialized = to_value(&level).unwrap();
+        let serialized = to_value(level).unwrap();
         let deserialized: LogLevel = from_value(serialized.clone()).unwrap();
 
-        assert_eq!(serialized, to_value(&deserialized).unwrap());
+        assert_eq!(serialized, to_value(deserialized).unwrap());
     }
 }

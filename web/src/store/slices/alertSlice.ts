@@ -7,7 +7,7 @@
 
 import type { StateCreator } from 'zustand'
 import type { AlertState } from '../types'
-import { api } from '@/lib/api'
+import { api, getApiBase } from '@/lib/api'
 import { logError } from '@/lib/errors'
 
 // Get auth token
@@ -38,7 +38,7 @@ export const createAlertSlice: StateCreator<
     try {
       const token = getToken()
       // Use correct API base for Tauri environment
-      const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
+      const apiBase = getApiBase()
       // Use the messages API instead of alerts
       const response = await fetch(`${apiBase}/messages`, {
         headers: {

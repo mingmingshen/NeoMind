@@ -13,6 +13,8 @@
 //! 4. **Full Integration**: AI Agent, Rules, Transform, Dashboard all support extensions
 //!
 //! # FFI Exports for Dynamic Loading
+
+#![allow(clippy::type_complexity)]
 //!
 //! Extensions must export these symbols for dynamic loading:
 //! - `neomind_extension_abi_version()` -> u32

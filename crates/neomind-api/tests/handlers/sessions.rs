@@ -5,7 +5,6 @@ use axum::Json;
 use neomind_api::handlers::sessions::*;
 use neomind_api::handlers::ServerState;
 use neomind_api::models::ChatRequest;
-use std::collections::HashMap;
 
 async fn create_test_server_state() -> ServerState {
     crate::common::create_test_server_state().await

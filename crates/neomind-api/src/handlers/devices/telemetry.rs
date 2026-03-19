@@ -28,7 +28,6 @@ fn get_transform_namespaces() -> &'static [&'static str; 5] {
 /// - metric: optional metric name (if not specified, returns all metrics)
 /// - start: optional start timestamp (default: 24 hours ago)
 /// - end: optional end timestamp (default: now)
-
 /// - limit: optional limit on number of data points (default: 100, max: 1000)
 /// - offset: optional offset for pagination (default: 0)
 /// - aggregate: optional aggregation type (avg, min, max, sum, last)
@@ -188,8 +187,6 @@ pub async fn get_device_telemetry_handler(
                 let device_service = state.devices.service.clone();
                 let device_id = device_id.clone();
                 let metric_name = metric_name.clone();
-                let offset = offset;
-                let limit = limit;
                 async move {
                     let (points, total) = match device_service
                         .query_telemetry(&device_id, &metric_name, Some(start), Some(end))

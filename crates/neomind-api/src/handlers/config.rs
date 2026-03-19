@@ -487,6 +487,6 @@ mod tests {
         let import: ConfigImport = serde_json::from_str(json).unwrap();
         assert_eq!(import.config.version, "1.0");
         assert!(import.config.llm_settings.is_some());
-        assert_eq!(import.options.unwrap().sections.llm_settings, true);
+        assert!(import.options.unwrap().sections.llm_settings);
     }
 }

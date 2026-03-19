@@ -9,6 +9,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -24,10 +25,13 @@ import {
   Map as MapIcon,
   MapPin,
   Monitor,
+  X,
 } from 'lucide-react'
 import { MapDisplay, type MapMarker } from './MapDisplay'
 import type { DataSource } from '@/types/dashboard'
 import { useStore } from '@/store'
+import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
+import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
 
 export type MapBindingType = 'device' | 'metric' | 'command' | 'marker'
 
@@ -132,10 +136,15 @@ export function MapEditorDialog({
 }: MapEditorDialogProps) {
   const { t } = useTranslation('dashboardComponents')
   const typeConfig = getTypeConfig(t)
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
 
   const [bindings, setBindings] = useState<MapBinding[]>(initialBindings)
   const [selectedBinding, setSelectedBinding] = useState<string | null>(null)
   const [addingMode, setAddingMode] = useState(false)
+
+  // Lock body scroll on mobile
+  useMobileBodyScrollLock(isMobile && open)
 
   // Get devices from store for reactive updates
   const devices = useStore(state => state.devices)
@@ -245,6 +254,145 @@ export function MapEditorDialog({
     onOpenChange(false)
   }, [bindings, onSave, onOpenChange])
 
+  // Render binding item (shared between mobile and desktop)
+  const renderBindingItem = (binding: MapBinding) => {
+    const config = typeConfig[binding.icon || binding.type]
+    const Icon = config.icon
+    const isSelected = selectedBinding === binding.id
+
+    return (
+      <div
+        key={binding.id}
+        className={cn(
+          'group flex items-center gap-2 p-2 rounded-lg border transition-all cursor-pointer',
+          isSelected
+            ? 'border-primary bg-primary/5'
+            : 'border-border hover:border-primary/50 hover:bg-muted/50'
+        )}
+        onClick={() => handleSelectBinding(binding.id)}
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
+
+        <div className={cn(
+          'w-8 h-8 rounded-full flex items-center justify-center',
+          config.bgColor === 'bg-blue-500' && 'bg-blue-500 text-white',
+          config.bgColor === 'bg-green-500' && 'bg-green-500 text-white',
+          config.bgColor === 'bg-orange-500' && 'bg-orange-500 text-white',
+          config.bgColor === 'bg-purple-500' && 'bg-purple-500 text-white',
+        )}>
+          <Icon className="h-4 w-4 text-white" />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium truncate">{binding.name}</div>
+          <div className="text-xs text-muted-foreground truncate">
+            {config.label}
+            {binding.position && binding.position !== 'auto' && (
+              <span> • ({binding.position.lat.toFixed(2)}, {binding.position.lng.toFixed(2)})</span>
+            )}
+            {binding.position === 'auto' && <span> • {t('mapDisplay.autoPosition')}</span>}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-destructive"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleRemoveBinding(binding.id)
+            }}
+            title={t('common.delete')}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Mobile: Full-screen portal
+  if (isMobile) {
+    return createPortal(
+      open ? (
+        <div className="fixed inset-0 z-[100] bg-background animate-in fade-in duration-200">
+          <div className="flex h-full w-full flex-col">
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <MapIcon className="h-5 w-5 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base font-semibold truncate">
+                    {t('mapDisplay.editorTitle')}
+                  </h1>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)} className="shrink-0">
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            {/* Map Preview - takes most space */}
+            <div className="flex-1 relative bg-muted/30">
+              <div className="absolute inset-0">
+                <MapDisplay
+                  center={center}
+                  zoom={zoom}
+                  tileLayer={tileLayer}
+                  markers={mapMarkers}
+                  showControls={true}
+                  showFullscreen={false}
+                  interactive={true}
+                  onMapClick={handleMapClick}
+                  className="w-full h-full"
+                />
+              </div>
+            </div>
+
+            {/* Bindings List - collapsible bottom panel */}
+            <div className="border-t bg-background shrink-0 max-h-[40vh] overflow-y-auto">
+              <div className="p-3 border-b bg-muted/30 sticky top-0">
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  {t('mapDisplay.boundItems')} ({bindings.length})
+                </div>
+              </div>
+              <div className="p-2 space-y-1">
+                {bindings.length === 0 ? (
+                  <div className="text-center py-4 text-muted-foreground">
+                    <MapIcon className="h-6 w-6 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">{t('mapDisplay.noMarkers')}</p>
+                  </div>
+                ) : (
+                  bindings.map(renderBindingItem)
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div
+              className="flex items-center justify-end gap-2 px-4 py-4 border-t bg-background shrink-0"
+              style={{ paddingBottom: `calc(1rem + ${insets.bottom}px)` }}
+            >
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button onClick={handleSave}>
+                <Check className="h-4 w-4 mr-1" />
+                {t('common.saveChanges')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null,
+      document.body
+    )
+  }
+
+  // Desktop: Traditional dialog
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl h-[80vh] p-0 gap-0 flex flex-col">
@@ -269,63 +417,7 @@ export function MapEditorDialog({
                   <p className="text-xs mt-1">{t('mapDisplay.addDataSourceHint')}</p>
                 </div>
               ) : (
-                bindings.map((binding) => {
-                  const config = typeConfig[binding.icon || binding.type]
-                  const Icon = config.icon
-                  const isSelected = selectedBinding === binding.id
-                  const isAdding = addingMode && isSelected
-
-                  return (
-                    <div
-                      key={binding.id}
-                      className={cn(
-                        'group flex items-center gap-2 p-2 rounded-lg border transition-all cursor-pointer',
-                        isSelected
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                      )}
-                      onClick={() => handleSelectBinding(binding.id)}
-                    >
-                      <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
-
-                      <div className={cn(
-                        'w-8 h-8 rounded-full flex items-center justify-center',
-                        config.bgColor === 'bg-blue-500' && 'bg-blue-500 text-white',
-                        config.bgColor === 'bg-green-500' && 'bg-green-500 text-white',
-                        config.bgColor === 'bg-orange-500' && 'bg-orange-500 text-white',
-                        config.bgColor === 'bg-purple-500' && 'bg-purple-500 text-white',
-                      )}>
-                        <Icon className="h-4 w-4 text-white" />
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate">{binding.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {config.label}
-                          {binding.position && binding.position !== 'auto' && (
-                            <span> • ({binding.position.lat.toFixed(2)}, {binding.position.lng.toFixed(2)})</span>
-                          )}
-                          {binding.position === 'auto' && <span> • {t('mapDisplay.autoPosition')}</span>}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-destructive"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleRemoveBinding(binding.id)
-                          }}
-                          title={t('common.delete')}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  )
-                })
+                bindings.map(renderBindingItem)
               )}
             </div>
           </div>

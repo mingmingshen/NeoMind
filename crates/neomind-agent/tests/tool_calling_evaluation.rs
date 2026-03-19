@@ -13,6 +13,8 @@
 //!   MODEL - Model name (default: qwen2.5:3b)
 //!   OLLAMA_ENDPOINT - Ollama endpoint (default: http://localhost:11434)
 
+#![allow(dead_code)]
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 

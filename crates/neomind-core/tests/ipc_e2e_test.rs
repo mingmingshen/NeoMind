@@ -3,7 +3,6 @@
 //! 使用真实的扩展进程测试完整的 IPC 流程
 
 use std::process::{Command, Stdio};
-use std::io::{Read, Write};
 use std::time::Duration;
 
 /// IPC Frame 格式: [4 bytes length][payload]
@@ -15,7 +14,7 @@ fn encode_frame(payload: &[u8]) -> Vec<u8> {
     frame
 }
 
-fn decode_frame(frame: &[u8]) -> Option<(Vec<u8>)> {
+fn decode_frame(frame: &[u8]) -> Option<Vec<u8>> {
     if frame.len() < 4 {
         return None;
     }
@@ -50,9 +49,10 @@ fn test_extension_process_startup() {
     
     // 等待进程初始化
     std::thread::sleep(Duration::from_millis(500));
-    
+
     // 清理
     child.kill().expect("Failed to kill process");
+    let _ = child.wait();
     println!("✓ 扩展进程已停止");
 }
 
@@ -119,7 +119,7 @@ fn test_large_message_handling() {
 /// 测试并发帧处理
 #[test]
 fn test_concurrent_frame_encoding() {
-    use std::sync::Arc;
+    
     use std::thread;
     
     println!("\n=== 测试: 并发帧编码 ===");
@@ -156,15 +156,15 @@ fn test_concurrent_frame_encoding() {
 #[test]
 fn test_frame_boundary_handling() {
     println!("\n=== 测试: 帧边界处理 ===");
-    
+
     // 测试不完整的帧
-    let incomplete_frames = vec![
-        vec![],                           // 空帧
-        vec![0, 0, 0],                    // 不完整的长度
-        vec![10, 0, 0, 0],                // 长度但无数据
-        vec![5, 0, 0, 0, b'h', b'e'],     // 部分数据
+    let incomplete_frames: &[&[u8]] = &[
+        &[],                           // 空帧
+        &[0, 0, 0],                    // 不完整的长度
+        &[10, 0, 0, 0],                // 长度但无数据
+        &[5, 0, 0, 0, b'h', b'e'],     // 部分数据
     ];
-    
+
     for (i, frame) in incomplete_frames.iter().enumerate() {
         let result = decode_frame(frame);
         assert!(result.is_none(), "帧 {} 应该解码失败", i);

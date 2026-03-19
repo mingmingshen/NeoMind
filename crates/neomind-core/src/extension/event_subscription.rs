@@ -304,8 +304,8 @@ impl EventFilter {
         let expr = expression.trim();
 
         // Remove $. prefix if present
-        let expr = if expr.starts_with("$.") {
-            &expr[2..]
+        let expr = if let Some(stripped) = expr.strip_prefix("$.") {
+            stripped
         } else {
             expr
         };
@@ -431,6 +431,17 @@ fn infer_source_from_event_type(event_type: &str) -> &'static str {
     }
 }
 
+impl Default for EventSubscription {
+    fn default() -> Self {
+        Self {
+            event_types: Vec::new(),
+            filters: None,
+            max_buffer_size: 1000,
+            enabled: true,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,16 +531,5 @@ mod tests {
         assert_eq!(infer_source_from_event_type("AgentExecutionStarted"), "agents");
         assert_eq!(infer_source_from_event_type("ExtensionOutput"), "extensions");
         assert_eq!(infer_source_from_event_type("RuleTriggered"), "rules");
-    }
-}
-
-impl Default for EventSubscription {
-    fn default() -> Self {
-        Self {
-            event_types: Vec::new(),
-            filters: None,
-            max_buffer_size: 1000,
-            enabled: true,
-        }
     }
 }

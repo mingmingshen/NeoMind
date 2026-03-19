@@ -462,43 +462,6 @@ impl ExtensionState {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_extension_storage_write_query() {
-        let storage = ExtensionMetricsStorage::memory().unwrap();
-
-        // Write a data point
-        let point = neomind_devices::telemetry::DataPoint::new(
-            1234567890,
-            neomind_devices::mdl::MetricValue::Float(42.5),
-        );
-
-        storage
-            .write("ext_test", "test_metric", point)
-            .await
-            .expect("Write failed");
-
-        // Query it back
-        let points = storage
-            .query("ext_test", "test_metric", 0, i64::MAX)
-            .await
-            .expect("Query failed");
-
-        assert_eq!(points.len(), 1);
-        assert_eq!(points[0].timestamp, 1234567890);
-    }
-
-    #[tokio::test]
-    async fn test_extension_state_create() {
-        let state = ExtensionState::minimal().await;
-        assert!(Arc::strong_count(&state.registry) > 0);
-        assert!(Arc::strong_count(&state.metrics_storage) > 0);
-    }
-}
-
 // ============================================================================
 // Adapter for neomind_rules ExtensionRegistry
 // ============================================================================
@@ -567,5 +530,42 @@ impl neomind_rules::ExtensionStorageLike for ExtensionMetricsStorageAdapter {
             Ok(None) => None,
             Err(_) => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_extension_storage_write_query() {
+        let storage = ExtensionMetricsStorage::memory().unwrap();
+
+        // Write a data point
+        let point = neomind_devices::telemetry::DataPoint::new(
+            1234567890,
+            neomind_devices::mdl::MetricValue::Float(42.5),
+        );
+
+        storage
+            .write("ext_test", "test_metric", point)
+            .await
+            .expect("Write failed");
+
+        // Query it back
+        let points = storage
+            .query("ext_test", "test_metric", 0, i64::MAX)
+            .await
+            .expect("Query failed");
+
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].timestamp, 1234567890);
+    }
+
+    #[tokio::test]
+    async fn test_extension_state_create() {
+        let state = ExtensionState::minimal().await;
+        assert!(Arc::strong_count(&state.registry) > 0);
+        assert!(Arc::strong_count(&state.metrics_storage) > 0);
     }
 }

@@ -6,7 +6,7 @@
 //! 3. Images are preserved in the conversion
 
 use neomind_agent::agent::types::{AgentMessage, AgentMessageImage};
-use neomind_core::message::{Content, ContentPart, Message, MessageRole};
+use neomind_core::message::{Content, ContentPart, MessageRole};
 
 #[test]
 fn test_agent_message_with_images() {

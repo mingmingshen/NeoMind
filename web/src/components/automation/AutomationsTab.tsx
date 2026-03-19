@@ -4,7 +4,6 @@ import { api } from '@/lib/api'
 import type { Automation, AutomationType } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -27,15 +26,8 @@ import {
   Edit,
   Trash2,
   ArrowRightLeft,
-  MoreVertical,
   Sparkles,
 } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
 
 export interface AutomationsTabProps {

@@ -649,6 +649,7 @@ pub struct CloudDeviceType {
 
 /// Index file structure for cloud device types
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct CloudDeviceTypesIndex {
     version: String,
     #[serde(default)]

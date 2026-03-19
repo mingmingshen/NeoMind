@@ -379,9 +379,15 @@ export function ImageDisplay({
   // Normalize data source to ensure raw points are included
   const normalizedDataSource = useMemo(() => normalizeDataSourceForImage(dataSource), [dataSource])
 
-  const { data, loading, error } = useDataSource(normalizedDataSource, {
+  // Only use useDataSource when there's an actual data source
+  const hasNormalizedDataSource = normalizedDataSource !== undefined
+  const { data, loading, error } = useDataSource(hasNormalizedDataSource ? normalizedDataSource : undefined, {
     fallback: propSrc,
   })
+
+  // When there's no data source, use propSrc directly to ensure immediate updates
+  // useDataSource's fallback only updates on initial mount, not when fallback prop changes
+  const effectiveData = hasNormalizedDataSource ? data : propSrc
 
   // Extract image value from various data formats
   const extractImageValue = (value: unknown): string => {
@@ -430,7 +436,7 @@ export function ImageDisplay({
     return ''
   }
 
-  const rawSrc = error ? propSrc : (extractImageValue(data) ?? propSrc ?? '')
+  const rawSrc = error ? propSrc : (extractImageValue(effectiveData) ?? propSrc ?? '')
 
   // Track last update timestamp for cache-busting
   const [lastUpdate, setLastUpdate] = useState(Date.now())

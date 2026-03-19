@@ -230,6 +230,16 @@ fn hash_string(s: &str) -> u64 {
     hasher.finish()
 }
 
+/// Background task to periodically clean up old rate limit entries.
+pub async fn cleanup_task(limiter: Arc<RateLimiter>, interval: Duration) {
+    let mut interval_timer = tokio::time::interval(interval);
+    loop {
+        interval_timer.tick().await;
+        // Note: cleanup_old_entries is now synchronous
+        limiter.cleanup_old_entries();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,15 +282,5 @@ mod tests {
         let h3 = hash_string("different");
         assert_eq!(h1, h2);
         assert_ne!(h1, h3);
-    }
-}
-
-/// Background task to periodically clean up old rate limit entries.
-pub async fn cleanup_task(limiter: Arc<RateLimiter>, interval: Duration) {
-    let mut interval_timer = tokio::time::interval(interval);
-    loop {
-        interval_timer.tick().await;
-        // Note: cleanup_old_entries is now synchronous
-        limiter.cleanup_old_entries();
     }
 }

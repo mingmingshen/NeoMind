@@ -351,18 +351,6 @@ impl Tool for GetAgentTool {
 // ============================================================================
 
 /// Tool for updating an existing agent.
-
-// ============================================================================
-// Agent Update Tools
-// ============================================================================
-
-/// Tool for updating an existing agent.
-
-// ============================================================================
-// Agent Update Tools
-// ============================================================================
-
-/// Tool for updating an existing agent.
 pub struct UpdateAgentTool {
     agent_store: Arc<AgentStore>,
 }

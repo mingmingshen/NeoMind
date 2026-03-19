@@ -1187,7 +1187,7 @@ impl RuleStatistics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neomind_rules::InMemoryValueProvider;
+    
     use neomind_rules::RuleDslParser;
 
     #[tokio::test]

@@ -7,20 +7,18 @@
 //! - Multi-extension coordination
 //! - Real-world usage scenarios
 
-use neomind_core::extension::*;
+#![allow(dead_code)]
+
 use neomind_core::extension::registry::ExtensionRegistry;
-use neomind_core::extension::unified::{UnifiedExtensionService, UnifiedExtensionConfig};
-use neomind_core::extension::event_dispatcher::EventDispatcher;
+use neomind_core::extension::unified::UnifiedExtensionService;
 use neomind_core::extension::context::{
     ExtensionContext, ExtensionContextConfig, ExtensionCapability,
 };
 use neomind_core::extension::system::{
     Extension, ExtensionMetadata, ExtensionError, ExtensionState,
     ExtensionMetricValue, MetricDescriptor, ExtensionCommand,
-    MetricDataType, ParameterDefinition, ParamMetricValue, ExtensionStats,
-    ExtensionDescriptor, Result,
+    MetricDataType, ParameterDefinition, ParamMetricValue, ExtensionStats, Result,
 };
-use neomind_core::eventbus::EventBus;
 use async_trait::async_trait;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};

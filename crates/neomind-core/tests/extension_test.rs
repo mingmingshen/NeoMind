@@ -124,7 +124,7 @@ fn test_parameter_definition() {
     };
 
     assert_eq!(param.name, "threshold");
-    assert_eq!(param.required, true);
+    assert!(param.required);
 }
 
 // ========================================================================
@@ -133,7 +133,7 @@ fn test_parameter_definition() {
 
 #[test]
 fn test_extension_command() {
-    let mut fixed_values: HashMap<String, serde_json::Value> = HashMap::new();
+    let fixed_values: HashMap<String, serde_json::Value> = HashMap::new();
 
     let cmd = ExtensionCommand {
         name: "detect_objects".to_string(),

@@ -10,6 +10,7 @@ import * as ReactDOM from 'react-dom'
 import * as lucideReact from 'lucide-react'
 import { ComponentMeta } from './types'
 import type { DashboardComponentDto, DashboardComponentsResponse } from '@/types'
+import { isTauriEnv } from '@/lib/api'
 
 // Make React and ReactDOM available globally for extension components
 // Extension bundles are built with React as an external dependency
@@ -143,7 +144,7 @@ export class DynamicComponentRegistry {
   private async doLoadComponent(def: DashboardComponentDto, type: string): Promise<unknown> {
     try {
       let bundleUrl = def.bundle_url
-      const isTauri = !!(window as any).__TAURI__
+      const isTauri = isTauriEnv()
 
       console.log(`[DynamicRegistry] Loading component ${type}:`, {
         isTauri,

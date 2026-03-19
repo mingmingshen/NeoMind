@@ -8,12 +8,14 @@
 //! - Lifecycle events
 //! - Multi-extension management
 
+#![allow(dead_code)]
+
 use neomind_core::extension::*;
 use neomind_core::extension::registry::ExtensionRegistry;
 use neomind_core::extension::system::{
     Extension, ExtensionMetadata, ExtensionError, ExtensionState,
     ExtensionMetricValue, MetricDescriptor, ExtensionCommand,
-    MetricDataType, ParameterDefinition, ParamMetricValue, ExtensionStats,
+    MetricDataType, ParamMetricValue, ExtensionStats,
 };
 use async_trait::async_trait;
 use std::sync::Arc;

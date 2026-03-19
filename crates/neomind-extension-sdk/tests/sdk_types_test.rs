@@ -737,7 +737,6 @@ fn test_metric_builder_string() {
 fn test_command_builder() {
     let cmd = CommandBuilder::new("execute")
         .display_name("Execute Command")
-        .llm_hints("Use this command to execute actions")
         .param_simple("target", "Target", MetricDataType::String)
         .param_optional("timeout", "Timeout", MetricDataType::Integer)
         .build();

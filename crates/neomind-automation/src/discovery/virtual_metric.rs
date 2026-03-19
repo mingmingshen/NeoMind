@@ -248,12 +248,10 @@ mod tests {
 
     #[test]
     fn test_aggregation_operation() {
-        let ops = vec![
-            AggregationOperation::Average,
+        let ops = [AggregationOperation::Average,
             AggregationOperation::Sum,
             AggregationOperation::Min,
-            AggregationOperation::Max,
-        ];
+            AggregationOperation::Max];
 
         assert!(ops.contains(&AggregationOperation::Average));
         assert_eq!(ops.len(), 4);
@@ -262,8 +260,7 @@ mod tests {
     #[test]
     fn test_deduplicate_metrics() {
         // This test verifies the deduplication logic structure
-        let metrics = vec![
-            DiscoveredMetric {
+        let metrics = [DiscoveredMetric {
                 name: "temp1".to_string(),
                 display_name: "Temperature 1".to_string(),
                 description: "Temperature reading".to_string(),
@@ -286,8 +283,7 @@ mod tests {
                 value_range: None,
                 is_readable: true,
                 is_writable: false,
-            },
-        ];
+            }];
 
         assert_eq!(metrics.len(), 2);
     }

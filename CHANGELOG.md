@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.6.1] - 2025-03-19
+
+### 🎉 Overview
+
+Minor release focusing on **UI refinements** and **code quality improvements**.
+
+**Highlights**:
+- 🎨 Removed focus ring outlines from form controls for cleaner UI
+- 🧹 Fixed all clippy warnings across the workspace
+- 🔧 Added `preserve_order` feature to serde_json for ABI compatibility
+- 📦 Dialog component refactoring and cleanup
+
+---
+
+### 🎨 UI Changes
+
+- Removed `focus:ring` and `focus-visible:ring` styles from:
+  - `Input` component
+  - `Select` component
+  - `Textarea` component
+- Cleaner form control appearance without focus border outlines
+
+---
+
+### 🔧 Code Quality
+
+- Fixed all clippy warnings across the Rust workspace
+- Added `#[allow(dead_code)]` annotations for unused but intentional code
+- Added `#![allow(clippy::too_many_arguments)]` for executor modules
+- Improved variable naming with underscore prefix for intentionally unused variables
+
+---
+
+### 📦 Dependency Changes
+
+- **serde_json**: Added `preserve_order` feature for stable ABI compatibility between extension-runner and extension binaries
+
+---
+
+### 📁 Changed Files
+
+**Deleted Files**:
+- `web/src/components/automation/FullScreenBuilder.tsx`
+- `web/src/components/dialog/FormDialog.tsx`
+
+**Modified**: 207 files, 7004 insertions(+), 5379 deletions(-)
+
+---
+
+### 🎯 Summary
+
+✅ Cleaner UI without focus ring distractions
+✅ Improved code quality with clippy fixes
+✅ Better ABI compatibility for extensions
+
+---
+
+**Previous Release**: [v0.6.0](https://github.com/camthink-ai/NeoMind/releases/tag/v0.6.0)
+**Release Date**: March 19, 2025
+
+---
+
 ## [v0.6.0] - 2025-03-18
 
 ### 🎉 Overview

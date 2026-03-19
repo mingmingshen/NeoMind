@@ -187,7 +187,7 @@ async fn test_queue_concurrent_enqueue() {
 
     // Wait for all to complete
     for handle in handles {
-        handle.await.unwrap();
+        let _ = handle.await.unwrap();
     }
 
     // All should succeed given large enough queue

@@ -11,7 +11,7 @@
 
 use neomind_core::extension::isolated::{
     IsolatedExtension, IsolatedExtensionConfig, IsolatedExtensionError,
-    IsolatedExtensionInfo, IsolatedManagerConfig, IsolatedResult,
+    IsolatedExtensionInfo, IsolatedManagerConfig,
 };
 use neomind_core::extension::system::{
     ExtensionDescriptor, ExtensionMetadata, ExtensionRuntimeState,

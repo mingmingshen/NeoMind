@@ -24,6 +24,7 @@ import {
   Clock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getApiBase } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 
 // Icon mapping for backend icon names
@@ -105,7 +106,7 @@ export function InputSuggestions({ input, onSelect, visible }: InputSuggestionsP
     setApiError(false)
     try {
       // Use correct API base for Tauri environment
-      const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
+      const apiBase = getApiBase()
       const response = await fetch(`${apiBase}/suggestions?input=${encodeURIComponent(searchInput)}&limit=20`)
       if (response.ok) {
         const data: SuggestionsResponse = await response.json()

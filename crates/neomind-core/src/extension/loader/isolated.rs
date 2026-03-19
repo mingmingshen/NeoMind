@@ -311,10 +311,12 @@ mod tests {
 
     #[test]
     fn test_should_use_isolated() {
-        let mut config = IsolatedLoaderConfig::default();
-        config.use_isolated_by_default = true;
-        config.force_isolated.push("dangerous-ext".to_string());
-        config.force_in_process.push("safe-ext".to_string());
+        let config = IsolatedLoaderConfig {
+            use_isolated_by_default: true,
+            force_isolated: vec!["dangerous-ext".to_string()],
+            force_in_process: vec!["safe-ext".to_string()],
+            ..Default::default()
+        };
 
         let loader = IsolatedExtensionLoader::new(config);
 

@@ -803,7 +803,6 @@ impl ToolErrorExt for ToolError {
 ///     timestamp: i64,
 /// },
 /// ```
-
 #[cfg(test)]
 mod tests {
     use super::*;

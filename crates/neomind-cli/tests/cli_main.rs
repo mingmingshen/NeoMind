@@ -1,5 +1,7 @@
 //! Basic CLI tests for neomind command-line interface.
 
+#![allow(deprecated)]
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 

@@ -80,7 +80,7 @@ fn bench_context_compaction(c: &mut Criterion) {
 fn bench_conversation_context(c: &mut Criterion) {
     c.bench_function("context_add_devices", |b| {
         b.iter_batched(
-            || neomind_agent::agent::ConversationContext::new(),
+            neomind_agent::agent::ConversationContext::new,
             |mut ctx| {
                 for i in 0..10 {
                     ctx.add_device(format!("device_{}", i));

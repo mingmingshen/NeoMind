@@ -1182,9 +1182,11 @@ impl SessionManager {
     }
 
     /// Clean up invalid/empty sessions.
+    ///
     /// Removes sessions that either:
     /// 1. Have corrupted history (can't load), or
     /// 2. Have no messages (empty sessions older than 1 hour)
+    ///
     /// Returns the number of sessions cleaned up.
     pub async fn cleanup_invalid_sessions(&self) -> usize {
         let db_session_ids = match self.store.list_sessions() {

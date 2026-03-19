@@ -8,7 +8,6 @@
 //! - Image detail levels
 
 use neomind_core::message::{Content, ContentPart, ImageDetail, Message, MessageRole};
-use serde_json;
 
 #[test]
 fn test_message_user_creation() {

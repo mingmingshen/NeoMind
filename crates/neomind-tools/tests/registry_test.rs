@@ -191,7 +191,7 @@ async fn test_tool_output_success() {
     let output = ToolOutput::success(json!({"result": "ok"}));
 
     assert!(output.success);
-    assert!(!output.error.is_some());
+    assert!(output.error.is_none());
     assert_eq!(output.data["result"], "ok");
 }
 
@@ -373,7 +373,7 @@ async fn test_registry_search() {
 
     // Search for temperature tools
     let results = registry.search("temperature");
-    assert!(results.len() > 0);
+    assert!(!results.is_empty());
     assert!(results[0].name.contains("temperature"));
 }
 

@@ -534,11 +534,9 @@ mod tests {
 
     #[test]
     fn test_trigger_type_entity() {
-        let types = vec![
-            TriggerTypeEntity::DeviceState,
+        let types = [TriggerTypeEntity::DeviceState,
             TriggerTypeEntity::Schedule,
-            TriggerTypeEntity::Manual,
-        ];
+            TriggerTypeEntity::Manual];
 
         assert_eq!(types.len(), 3);
         assert_eq!(types[0], TriggerTypeEntity::DeviceState);
@@ -546,12 +544,10 @@ mod tests {
 
     #[test]
     fn test_action_type_entity() {
-        let types = vec![
-            ActionTypeEntity::Notify,
+        let types = [ActionTypeEntity::Notify,
             ActionTypeEntity::ExecuteCommand,
             ActionTypeEntity::SetValue,
-            ActionTypeEntity::CreateAlert,
-        ];
+            ActionTypeEntity::CreateAlert];
 
         assert_eq!(types.len(), 4);
     }

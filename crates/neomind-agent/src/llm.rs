@@ -827,10 +827,11 @@ impl LlmInterface {
 
         // Build enhanced time context
         let local_time_with_context = format!(
-            "{} {} ({})",
+            "{} {} ({}{})",
             date_str,
             local_time,
-            format!("{}{}", time_period, day_of_week)
+            time_period,
+            day_of_week
         );
 
         // Replace placeholders

@@ -96,7 +96,23 @@ import { tokenManager as unifiedTokenManager } from './auth'
 
 // In Tauri, we need to use the full URL since the backend runs on port 9375
 // In development/web, we can use relative path
-const API_BASE = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
+
+/** Check if running in Tauri desktop environment */
+export function isTauriEnv(): boolean {
+  return typeof window !== 'undefined' && '__TAURI__' in window
+}
+
+/** Get API base URL based on environment */
+export function getApiBase(): string {
+  return isTauriEnv() ? 'http://localhost:9375/api' : '/api'
+}
+
+/** Get server origin URL based on environment */
+export function getServerOrigin(): string {
+  return isTauriEnv() ? 'http://localhost:9375' : window.location.origin
+}
+
+const API_BASE = getApiBase()
 
 // ============================================================================
 // 401 Handling Callback Registry
@@ -1176,7 +1192,7 @@ export const api = {
 
     // For large file uploads in development, bypass Vite proxy and connect directly to backend
     // This avoids EPIPE errors caused by the proxy's handling of large request bodies
-    const isTauri = !!(window as any).__TAURI__
+    const isTauri = isTauriEnv()
     const isDev = window.location.port === '5173'
     const uploadApiBase = isTauri ? 'http://localhost:9375/api' : (isDev ? 'http://127.0.0.1:9375/api' : API_BASE)
 

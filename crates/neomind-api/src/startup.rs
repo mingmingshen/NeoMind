@@ -418,7 +418,7 @@ impl StartupLogger {
             ServiceStatus::Error => ("✗", ANSI_RED),
             ServiceStatus::Disabled => ("○", ANSI_GRAY),
         };
-        println!("    {} {}", color(icon, color_code), format!("{:30}", name));
+        println!("    {} {:30}", color(icon, color_code), name);
     }
 }
 

@@ -93,6 +93,12 @@ pub struct LlmRuntimePool {
     metrics: RwLock<PoolMetrics>,
 }
 
+impl Default for LlmRuntimePool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LlmRuntimePool {
     /// Create a new LLM runtime pool with default configuration.
     pub fn new() -> Self {

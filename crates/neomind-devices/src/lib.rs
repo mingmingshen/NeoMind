@@ -99,6 +99,15 @@ pub const BUILD_PROFILE: &str = if cfg!(debug_assertions) {
     "release"
 };
 
+// Re-export core adapter types from local adapter module
+pub use adapter::{
+    AdapterConfig, AdapterError, AdapterResult, DeviceAdapter, DeviceEvent, DiscoveredDeviceInfo,
+    EventPublishingAdapter,
+};
+
+// Adapter creation utilities
+pub use adapters::{available_adapters, create_adapter};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,12 +117,3 @@ mod tests {
         assert!(!VERSION.is_empty());
     }
 }
-
-// Re-export core adapter types from local adapter module
-pub use adapter::{
-    AdapterConfig, AdapterError, AdapterResult, DeviceAdapter, DeviceEvent, DiscoveredDeviceInfo,
-    EventPublishingAdapter,
-};
-
-// Adapter creation utilities
-pub use adapters::{available_adapters, create_adapter};

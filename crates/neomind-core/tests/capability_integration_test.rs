@@ -527,9 +527,7 @@ async fn test_capability_error_handling() {
     match result {
         Err(CapabilityError::PermissionDenied(_)) => {
             // Expected - this capability is not in required_capabilities
-        }
-        Err(CapabilityError::PermissionDenied(_)) => {
-            // Also expected - no provider registered for this capability
+            // or no provider registered for this capability
         }
         _ => panic!("Expected PermissionDenied error"),
     }

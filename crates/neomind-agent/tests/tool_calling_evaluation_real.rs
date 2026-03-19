@@ -6,6 +6,8 @@
 //! Run with:
 //!   cargo test -p neomind-agent --test tool_calling_evaluation_real -- --ignored --nocapture
 
+#![allow(dead_code)]
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 

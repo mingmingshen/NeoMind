@@ -27,9 +27,8 @@ pub async fn generate_test_alerts_handler(
     let mut created = 0;
 
     for message in messages {
-        match state.core.message_manager.create_message(message).await {
-            Ok(_) => created += 1,
-            Err(_) => {} // Ignore duplicates
+        if state.core.message_manager.create_message(message).await.is_ok() {
+            created += 1;
         }
     }
 
@@ -101,101 +100,89 @@ pub async fn generate_test_data_handler(
 }
 
 fn generate_test_messages() -> Vec<Message> {
-    let mut messages = Vec::new();
-
-    // Emergency messages
-    messages.push(Message::new(
-        "alert",
-        MessageSeverity::Emergency,
-        "烟雾检测".to_string(),
-        "厨房传感器检测到烟雾，请立即确认！".to_string(),
-        "sensor/kitchen".to_string(),
-    ));
-
-    messages.push(Message::new(
-        "alert",
-        MessageSeverity::Emergency,
-        "漏水警报".to_string(),
-        "地下室检测到漏水，水泵已启动".to_string(),
-        "sensor/basement".to_string(),
-    ));
-
-    // Critical messages
-    messages.push(Message::new(
-        "alert",
-        MessageSeverity::Critical,
-        "冰箱温度过高".to_string(),
-        "冰箱内部温度达到 8°C，食物可能变质风险".to_string(),
-        "sensor/fridge".to_string(),
-    ));
-
-    messages.push(Message::new(
-        "alert",
-        MessageSeverity::Critical,
-        "门锁异常".to_string(),
-        "前门锁连续 3 次开锁失败，可能存在异常尝试".to_string(),
-        "lock/front".to_string(),
-    ));
-
-    messages.push(Message::new(
-        "alert",
-        MessageSeverity::Critical,
-        "电池电量低".to_string(),
-        "门锁电池电量低于 10%，请及时更换".to_string(),
-        "lock/front".to_string(),
-    ));
-
-    // Warning messages
-    messages.push(Message::new(
-        "alert",
-        MessageSeverity::Warning,
-        "温度偏高".to_string(),
-        "客厅温度达到 28°C，超过设定阈值 26°C".to_string(),
-        "sensor/living".to_string(),
-    ));
-
-    messages.push(Message::new(
-        "alert",
-        MessageSeverity::Warning,
-        "设备离线警告".to_string(),
-        "传感器 sensor/garden-01 已超过 5 分钟未上报数据".to_string(),
-        "device_monitor".to_string(),
-    ));
-
-    messages.push(Message::new(
-        "system",
-        MessageSeverity::Warning,
-        "存储空间不足".to_string(),
-        "系统存储空间使用率超过 85%".to_string(),
-        "system/monitor".to_string(),
-    ));
-
-    // Info messages
-    messages.push(Message::new(
-        "system",
-        MessageSeverity::Info,
-        "系统启动完成".to_string(),
-        "NeoMind 系统已成功启动，所有服务正常运行".to_string(),
-        "system".to_string(),
-    ));
-
-    messages.push(Message::new(
-        "system",
-        MessageSeverity::Info,
-        "固件更新可用".to_string(),
-        "网关设备有新固件版本 v2.1.0 可用".to_string(),
-        "update_manager".to_string(),
-    ));
-
-    messages.push(Message::new(
-        "business",
-        MessageSeverity::Info,
-        "场景执行成功".to_string(),
-        "「回家模式」场景已自动执行".to_string(),
-        "automation".to_string(),
-    ));
-
-    messages
+    vec![
+        // Emergency messages
+        Message::new(
+            "alert",
+            MessageSeverity::Emergency,
+            "烟雾检测".to_string(),
+            "厨房传感器检测到烟雾，请立即确认！".to_string(),
+            "sensor/kitchen".to_string(),
+        ),
+        Message::new(
+            "alert",
+            MessageSeverity::Emergency,
+            "漏水警报".to_string(),
+            "地下室检测到漏水，水泵已启动".to_string(),
+            "sensor/basement".to_string(),
+        ),
+        // Critical messages
+        Message::new(
+            "alert",
+            MessageSeverity::Critical,
+            "冰箱温度过高".to_string(),
+            "冰箱内部温度达到 8°C，食物可能变质风险".to_string(),
+            "sensor/fridge".to_string(),
+        ),
+        Message::new(
+            "alert",
+            MessageSeverity::Critical,
+            "门锁异常".to_string(),
+            "前门锁连续 3 次开锁失败，可能存在异常尝试".to_string(),
+            "lock/front".to_string(),
+        ),
+        Message::new(
+            "alert",
+            MessageSeverity::Critical,
+            "电池电量低".to_string(),
+            "门锁电池电量低于 10%，请及时更换".to_string(),
+            "lock/front".to_string(),
+        ),
+        // Warning messages
+        Message::new(
+            "alert",
+            MessageSeverity::Warning,
+            "温度偏高".to_string(),
+            "客厅温度达到 28°C，超过设定阈值 26°C".to_string(),
+            "sensor/living".to_string(),
+        ),
+        Message::new(
+            "alert",
+            MessageSeverity::Warning,
+            "设备离线警告".to_string(),
+            "传感器 sensor/garden-01 已超过 5 分钟未上报数据".to_string(),
+            "device_monitor".to_string(),
+        ),
+        Message::new(
+            "system",
+            MessageSeverity::Warning,
+            "存储空间不足".to_string(),
+            "系统存储空间使用率超过 85%".to_string(),
+            "system/monitor".to_string(),
+        ),
+        // Info messages
+        Message::new(
+            "system",
+            MessageSeverity::Info,
+            "系统启动完成".to_string(),
+            "NeoMind 系统已成功启动，所有服务正常运行".to_string(),
+            "system".to_string(),
+        ),
+        Message::new(
+            "system",
+            MessageSeverity::Info,
+            "固件更新可用".to_string(),
+            "网关设备有新固件版本 v2.1.0 可用".to_string(),
+            "update_manager".to_string(),
+        ),
+        Message::new(
+            "business",
+            MessageSeverity::Info,
+            "场景执行成功".to_string(),
+            "「回家模式」场景已自动执行".to_string(),
+            "automation".to_string(),
+        ),
+    ]
 }
 
 fn generate_test_events() -> Vec<NeoMindEvent> {

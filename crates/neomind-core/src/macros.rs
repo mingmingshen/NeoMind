@@ -74,6 +74,7 @@ macro_rules! newtype_wrapper {
 
             /// Get the inner value.
             #[inline]
+            #[allow(dead_code)]
             pub fn into_inner(self) -> $inner {
                 self.0
             }
@@ -179,7 +180,7 @@ macro_rules! __private_ident {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 
     #[test]
     fn test_newtype_wrapper() {

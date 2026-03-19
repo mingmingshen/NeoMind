@@ -1,5 +1,7 @@
 //! Tests for the `chat` command.
 
+#![allow(deprecated)]
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 

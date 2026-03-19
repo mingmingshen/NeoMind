@@ -25,6 +25,12 @@ pub struct EventDispatcher {
     isolated_event_senders: RwLock<std::collections::HashMap<String, tokio::sync::mpsc::Sender<(String, Value)>>>,
 }
 
+impl Default for EventDispatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventDispatcher {
     /// Create a new event dispatcher
     pub fn new() -> Self {

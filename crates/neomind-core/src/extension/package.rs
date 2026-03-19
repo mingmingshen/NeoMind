@@ -784,22 +784,20 @@ impl ExtensionPackage {
                     "payload_template": "",
                     "parameters": c.parameters.as_ref().map(|params| {
                         if let serde_json::Value::Object(props) = params {
-                            if let Some(properties) = props.get("properties") {
-                                if let serde_json::Value::Object(props_map) = properties {
-                                    return props_map.iter().map(|(name, _)| {
-                                        json!({
-                                            "name": name,
-                                            "display_name": name,
-                                            "description": "",
-                                            "param_type": "String",
-                                            "required": false,
-                                            "default_value": null,
-                                            "min": null,
-                                            "max": null,
-                                            "options": []
-                                        })
-                                    }).collect::<Vec<_>>();
-                                }
+                            if let Some(serde_json::Value::Object(props_map)) = props.get("properties") {
+                                return props_map.iter().map(|(name, _)| {
+                                    json!({
+                                        "name": name,
+                                        "display_name": name,
+                                        "description": "",
+                                        "param_type": "String",
+                                        "required": false,
+                                        "default_value": null,
+                                        "min": null,
+                                        "max": null,
+                                        "options": []
+                                    })
+                                }).collect::<Vec<_>>();
                             }
                         }
                         Vec::<serde_json::Value>::new()
@@ -924,22 +922,20 @@ impl ExtensionPackage {
                     "payload_template": "",
                     "parameters": c.parameters.as_ref().map(|params| {
                         if let serde_json::Value::Object(props) = params {
-                            if let Some(properties) = props.get("properties") {
-                                if let serde_json::Value::Object(props_map) = properties {
-                                    return props_map.iter().map(|(name, _)| {
-                                        json!({
-                                            "name": name,
-                                            "display_name": name,
-                                            "description": "",
-                                            "param_type": "String",
-                                            "required": false,
-                                            "default_value": null,
-                                            "min": null,
-                                            "max": null,
-                                            "options": []
-                                        })
-                                    }).collect::<Vec<_>>();
-                                }
+                            if let Some(serde_json::Value::Object(props_map)) = props.get("properties") {
+                                return props_map.iter().map(|(name, _)| {
+                                    json!({
+                                        "name": name,
+                                        "display_name": name,
+                                        "description": "",
+                                        "param_type": "String",
+                                        "required": false,
+                                        "default_value": null,
+                                        "min": null,
+                                        "max": null,
+                                        "options": []
+                                    })
+                                }).collect::<Vec<_>>();
                             }
                         }
                         Vec::<serde_json::Value>::new()

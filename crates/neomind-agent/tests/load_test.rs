@@ -7,6 +7,8 @@
 //! - Command execution rates
 //! - Performance metrics under load
 
+#![allow(dead_code)]
+
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use neomind_core::{EventBus, MetricValue, NeoMindEvent};
 use neomind_llm::backends::ollama::{OllamaConfig, OllamaRuntime};
@@ -241,21 +243,17 @@ impl LoadTestContext {
     fn generate_devices(&mut self, count: usize) {
         self.devices.clear();
 
-        let locations = vec![
-            "一号车间".to_string(),
+        let locations = ["一号车间".to_string(),
             "二号车间".to_string(),
             "仓库A".to_string(),
             "仓库B".to_string(),
-            "办公楼".to_string(),
-        ];
+            "办公楼".to_string()];
 
-        let device_types = vec![
-            ("温度传感器", vec!["temperature"]),
+        let device_types = [("温度传感器", vec!["temperature"]),
             ("温湿度传感器", vec!["temperature", "humidity"]),
             ("环境传感器", vec!["temperature", "humidity", "pressure"]),
             ("能耗监控", vec!["power", "voltage", "current"]),
-            ("空气质量", vec!["aqi", "co2", "pm25"]),
-        ];
+            ("空气质量", vec!["aqi", "co2", "pm25"])];
 
         for i in 0..count {
             let location = &locations[i % locations.len()];
@@ -535,7 +533,7 @@ async fn test_multi_agent_concurrent_execution() -> anyhow::Result<()> {
     for (name, prompt) in &agents {
         let agent = ctx.create_test_agent(name, prompt).await?;
         println!("创建: {}", agent.name);
-        agent_ids.push((agent.id, name.clone()));
+        agent_ids.push((agent.id, *name));
     }
 
     let execution_rounds = 10;

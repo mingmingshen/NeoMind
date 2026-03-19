@@ -332,7 +332,7 @@ async fn run_chat(session_id: Option<String>) -> Result<()> {
         }
 
         if input == "clear" {
-            if let Ok(_) = session_manager.clear_history(&session_id).await {
+            if session_manager.clear_history(&session_id).await.is_ok() {
                 println!("Conversation history cleared.\n");
             }
             continue;
@@ -640,9 +640,9 @@ async fn run_logs(tail: usize, follow: bool, level: Option<String>, _since: Opti
         // Tail mode - show last N lines
         let file = File::open(log_path)?;
         let reader = BufReader::new(file);
-        
+
         let lines: Vec<String> = reader.lines()
-            .filter_map(|l| l.ok())
+            .map_while(Result::ok)
             .filter(|l| {
                 if let Some(ref lvl) = level {
                     l.contains(lvl) || l.to_uppercase().contains(lvl.as_str())

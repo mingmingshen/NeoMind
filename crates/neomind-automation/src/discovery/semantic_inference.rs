@@ -597,12 +597,12 @@ impl SemanticInference {
         for parent_path in array_parent_paths {
             // Convert JSONPath format to field name (remove $. prefix)
             // Handle edge cases: "$.key", "$. key", etc.
-            let field_name = if parent_path.starts_with("$.") {
-                let rest = parent_path[2..].trim_start();
-                if rest.is_empty() {
+            let field_name = if let Some(rest) = parent_path.strip_prefix("$.") {
+                let trimmed = rest.trim_start();
+                if trimmed.is_empty() {
                     &parent_path
                 } else {
-                    rest
+                    trimmed
                 }
             } else {
                 &parent_path
@@ -1224,12 +1224,12 @@ impl SemanticInference {
     /// Navigate to a path in a JSON value
     fn navigate_to_path(value: &serde_json::Value, path: &str) -> Option<serde_json::Value> {
         // Strip $. prefix with whitespace handling
-        let path = if path.starts_with("$.") {
-            let rest = path[2..].trim_start();
-            if rest.is_empty() {
+        let path = if let Some(rest) = path.strip_prefix("$.") {
+            let trimmed = rest.trim_start();
+            if trimmed.is_empty() {
                 path
             } else {
-                rest
+                trimmed
             }
         } else {
             path

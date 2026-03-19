@@ -1,9 +1,11 @@
 //! Tests for the `plugin` command and its subcommands.
 
+#![allow(deprecated)]
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::TempDir;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::Write;
 
 /// Test that plugin command requires a subcommand.
@@ -188,7 +190,7 @@ fn test_plugin_validate_fake_native() {
     } else {
         "so"
     };
-    let fake_lib = temp_dir.path().join(&format!("test.{}", extension));
+    let fake_lib = temp_dir.path().join(format!("test.{}", extension));
 
     let mut file = File::create(&fake_lib).unwrap();
     file.write_all(b"fake library content").unwrap();

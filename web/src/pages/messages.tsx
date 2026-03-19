@@ -7,7 +7,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav, EmptyStateInline, Pagination, ResponsiveTable } from '@/components/shared'
 import { MessageSquare, Network } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, getApiBase } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { confirm } from '@/hooks/use-confirm'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
@@ -129,7 +129,7 @@ export default function MessagesPage() {
 
   // Helper to get API base URL for Tauri environment
   const getApiUrl = (path: string) => {
-    const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
+    const apiBase = getApiBase()
     return `${apiBase}${path}`
   }
 

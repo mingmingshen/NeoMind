@@ -30,7 +30,7 @@ fn test_parse_simple_temperature_rule() {
     let rule = RuleDslParser::parse(dsl).expect("Failed to parse rule");
 
     assert_eq!(rule.name, "High Temperature Alert");
-    assert!(rule.actions.len() > 0);
+    assert!(!rule.actions.is_empty());
 }
 
 #[test]

@@ -88,6 +88,7 @@ enum ClientMessage {
 /// Message type to client
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[allow(dead_code)]
 enum ServerMessage {
     /// Stream capability
     Capability {
@@ -213,6 +214,7 @@ impl From<&SessionStats> for SessionStatsDto {
 
 /// Active session data
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ActiveSession {
     id: String,
     extension_id: String,
@@ -224,10 +226,11 @@ struct ActiveSession {
 }
 
 /// Session manager for tracking active stream sessions
+#[allow(dead_code)]
 struct SessionManager {
     sessions: Arc<RwLock<HashMap<String, ActiveSession>>>,
 }
-
+#[allow(dead_code)]
 impl SessionManager {
     fn new() -> Self {
         Self {

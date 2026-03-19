@@ -2,14 +2,13 @@
  * SimpleRuleBuilderSplit Component
  *
  * Full-screen dialog for creating/editing automation rules.
- * Following the same pattern as AgentEditorFullScreen.
+ * Using unified FullScreenDialog components with glassmorphism style.
  *
  * @module automation
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { createPortal } from 'react-dom'
 import { generateId } from '@/lib/id'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -30,7 +29,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  ChevronUp,
   Check,
   Settings,
   Eye,
@@ -42,9 +40,19 @@ import {
   Play,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
-import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
+import { useIsMobile } from '@/hooks/useMobile'
 import type { Rule, RuleTrigger, RuleCondition, RuleAction, DeviceType, Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor } from '@/types'
+// Unified dialog components
+import {
+  FullScreenDialog,
+  FullScreenDialogHeader,
+  FullScreenDialogContent,
+  FullScreenDialogFooter,
+  FullScreenDialogSidebar,
+  FullScreenDialogMain,
+  VerticalStepper,
+  type Step as StepperStep,
+} from '@/components/automation/dialog'
 
 // ============================================================================
 // Utility Functions
@@ -1384,7 +1392,6 @@ export function SimpleRuleBuilderSplit({
   const tBuilder = (key: string) => t(`automation:ruleBuilder.${key}`)
   const isEditMode = !!rule
   const isMobile = useIsMobile()
-  const insets = useSafeAreaInsets()
 
   // Step state
   const [currentStep, setCurrentStep] = useState<Step>('basic')
@@ -1726,129 +1733,51 @@ export function SimpleRuleBuilderSplit({
   )
 }, [name, condition, actions, resources.devices, resources.extensions, forDuration, forUnit, tags, triggerType, cronExpression, tBuilder])
 
-  // Lock body scroll when dialog is open (mobile only to prevent layout shift)
-  useBodyScrollLock(open, { mobileOnly: true })
+  // Convert steps to VerticalStepper format
+  const stepperSteps: StepperStep[] = steps.map(step => ({
+    id: step.key,
+    label: step.label,
+    shortLabel: step.shortLabel,
+    icon: step.icon,
+  }))
 
-  // Get dialog root for portal rendering
-  const dialogRoot = typeof document !== 'undefined'
-    ? document.getElementById('dialog-root') || document.body
-    : null
-
-  if (!dialogRoot) return null
-
-  return createPortal(
-    <div
-      className={cn(
-        "fixed inset-0 z-[100] bg-background flex flex-col",
-        !open && "hidden"
-      )}
+  return (
+    <FullScreenDialog
+      open={open}
+      onOpenChange={onOpenChange}
     >
-        {/* Header - Simplified */}
-        <header
-          className="border-b shrink-0 bg-background"
-          style={isMobile ? { paddingTop: `${insets.top}px` } : undefined}
-        >
+      {/* Header */}
+      <FullScreenDialogHeader
+        icon={<Zap className="h-5 w-5" />}
+        iconBg="bg-purple-500/10 dark:bg-purple-500/20"
+        iconColor="text-purple-500"
+        title={isEditMode ? t('automation:edit') : t('automation:createRule')}
+        onClose={() => onOpenChange(false)}
+      />
+
+      {/* Content with Sidebar */}
+      <FullScreenDialogContent>
+        {/* Left Sidebar - Vertical Steps - Hide on mobile */}
+        <FullScreenDialogSidebar>
+          <VerticalStepper
+            steps={stepperSteps}
+            currentStep={currentStep}
+            completedSteps={Array.from(completedSteps)}
+            onStepClick={(stepId) => {
+              const clickedIndex = steps.findIndex(s => s.key === stepId)
+              if (completedSteps.has(stepId as Step) || clickedIndex < stepIndex) {
+                setCurrentStep(stepId as Step)
+              }
+            }}
+          />
+        </FullScreenDialogSidebar>
+
+        {/* Main Content */}
+        <FullScreenDialogMain>
           <div className={cn(
-            "flex items-center gap-3",
-            isMobile ? "px-4 py-4" : "px-4 py-3"
+            "max-w-4xl mx-auto",
+            isMobile ? "px-4 py-4" : "px-4 py-6"
           )}>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn("shrink-0", isMobile ? "h-10 w-10" : "h-8 w-8")}
-              onClick={() => onOpenChange(false)}
-            >
-              <X className={cn(isMobile ? "h-5 w-5" : "h-4 w-4")} />
-            </Button>
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <div className={cn(
-                "rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0",
-                isMobile ? "w-8 h-8" : "w-7 h-7"
-              )}>
-                <Zap className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "text-purple-500")} />
-              </div>
-              <h1 className={cn(
-                "font-medium truncate",
-                isMobile ? "text-base" : "text-sm"
-              )}>
-                {isEditMode ? t('automation:edit') : t('automation:createRule')}
-              </h1>
-            </div>
-          </div>
-        </header>
-
-        {/* Content Area - Hide left sidebar on mobile */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* Left Sidebar - Vertical Steps (Compact) - Hide on mobile */}
-          <aside className={cn(
-            "border-r shrink-0 bg-muted/20",
-            isMobile ? "hidden" : "w-[120px]"
-          )}>
-            <nav className="px-3 py-6 space-y-1">
-              {steps.map((step, index) => {
-                const isCompleted = completedSteps.has(step.key)
-                const isCurrent = step.key === currentStep
-                const isPast = index < stepIndex
-
-                return (
-                  <div key={step.key} className="relative">
-                    {/* Step Item */}
-                    <button
-                      onClick={() => {
-                        // Allow clicking on completed or current steps
-                        if (isCompleted || isPast) {
-                          setCurrentStep(step.key)
-                        }
-                      }}
-                      className={cn(
-                        "w-full text-left px-2 py-2 rounded-md transition-all flex flex-col items-center gap-1.5",
-                        isCurrent && "bg-background shadow-sm",
-                        !isCurrent && isPast && "hover:bg-background/50 cursor-pointer",
-                        !isCurrent && !isPast && "opacity-50"
-                      )}
-                      title={step.label}
-                    >
-                      <div className="flex items-center justify-center">
-                        {isCompleted ? (
-                          <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
-                            <Check className="h-3 w-3 text-white" />
-                          </div>
-                        ) : isCurrent ? (
-                          <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center ring-4 ring-primary/20">
-                            <span className="text-[10px] font-medium text-primary-foreground">{index + 1}</span>
-                          </div>
-                        ) : (
-                          <div className="w-5 h-5 rounded-full bg-muted-foreground/20 flex items-center justify-center">
-                            <span className="text-[10px] font-medium text-muted-foreground">{index + 1}</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-[10px] font-medium text-center leading-tight">
-                        {step.shortLabel || step.label}
-                      </div>
-                    </button>
-
-                    {/* Connector line to next step */}
-                    {index < steps.length - 1 && (
-                      <div className="absolute left-[23px] top-8 h-4 w-px">
-                        <div className={cn(
-                          "h-full w-px",
-                          isPast ? "bg-primary" : "bg-border"
-                        )} />
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </nav>
-          </aside>
-
-          {/* Main Content */}
-          <main className="flex-1 overflow-y-auto">
-            <div className={cn(
-              "max-w-4xl mx-auto",
-              isMobile ? "px-4 py-4" : "px-4 py-6"
-            )}>
               {/* Step 1: Basic Info */}
           {currentStep === 'basic' && (
             <BasicInfoStep
@@ -1922,12 +1851,13 @@ export function SimpleRuleBuilderSplit({
             />
           )}
             </div>
-          </main>
+        </FullScreenDialogMain>
 
-          {/* Right Preview Panel - Hide on mobile */}
+        {/* Right Preview Panel - Hide on mobile */}
+        {!isMobile && (
           <aside className={cn(
-            "w-[360px] border-l shrink-0 bg-muted/10 overflow-y-auto",
-            isMobile && "hidden"
+            "w-[360px] border-l shrink-0 overflow-y-auto",
+            "bg-black/[0.02] dark:bg-white/[0.02]"
           )}>
             <RulePreviewPanel
               name={name}
@@ -1947,40 +1877,32 @@ export function SimpleRuleBuilderSplit({
               tBuilder={tBuilder}
             />
           </aside>
-        </div>
+        )}
+      </FullScreenDialogContent>
 
-        {/* Step Navigation Footer - Compact */}
-        <footer
-          className="border-t bg-background shrink-0"
-          style={isMobile ? { paddingBottom: `${insets.bottom}px` } : undefined}
-        >
-          <div className={cn(
-            "flex gap-2",
-            isMobile ? "px-4 py-4" : "px-5 py-3"
-          )}>
-            {!isFirstStep && (
-              <Button variant="outline" size={isMobile ? "default" : "sm"} onClick={handlePrevious} disabled={saving} className={isMobile ? "h-12 min-w-[100px]" : ""}>
-                <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "mr-1")} />
-                {tBuilder('previous')}
-              </Button>
-            )}
+      {/* Step Navigation Footer */}
+      <FullScreenDialogFooter>
+        {!isFirstStep && (
+          <Button variant="outline" size={isMobile ? "default" : "sm"} onClick={handlePrevious} disabled={saving} className={isMobile ? "h-12 min-w-[100px]" : ""}>
+            <ChevronLeft className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "mr-1")} />
+            {tBuilder('previous')}
+          </Button>
+        )}
 
-            <div className="flex-1" />
+        <div className="flex-1" />
 
-            {currentStep === 'review' ? (
-              <Button size={isMobile ? "default" : "sm"} onClick={handleSave} disabled={saving || !name.trim()} className={isMobile ? "h-12 min-w-[100px]" : ""}>
-                {saving ? tBuilder('saving') : tBuilder('save')}
-              </Button>
-            ) : (
-              <Button size={isMobile ? "default" : "sm"} onClick={handleNext} disabled={!name.trim() && currentStep === 'basic'} className={isMobile ? "h-12 min-w-[100px]" : ""}>
-                {tBuilder('next')}
-                <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "ml-1")} />
-              </Button>
-            )}
-          </div>
-        </footer>
-    </div>,
-    dialogRoot
+        {currentStep === 'review' ? (
+          <Button size={isMobile ? "default" : "sm"} onClick={handleSave} disabled={saving || !name.trim()} className={isMobile ? "h-12 min-w-[100px]" : ""}>
+            {saving ? tBuilder('saving') : tBuilder('save')}
+          </Button>
+        ) : (
+          <Button size={isMobile ? "default" : "sm"} onClick={handleNext} disabled={!name.trim() && currentStep === 'basic'} className={isMobile ? "h-12 min-w-[100px]" : ""}>
+            {tBuilder('next')}
+            <ChevronRight className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5", "ml-1")} />
+          </Button>
+        )}
+      </FullScreenDialogFooter>
+    </FullScreenDialog>
   )
 }
 

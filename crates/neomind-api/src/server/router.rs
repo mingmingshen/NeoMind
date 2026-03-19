@@ -845,11 +845,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/extensions",
             post(extensions::register_extension_handler),
         )
-        // Multipart upload temporarily disabled due to Handler trait issues
-        // .route(
-        //     "/api/extensions/upload/multipart",
-        //     post(extensions::upload_extension_multipart_handler),
-        // )
         .route(
             "/api/extensions/:id/uninstall",
             delete(extensions::uninstall_extension_handler),

@@ -6,6 +6,9 @@
 //! - URL validation
 //! - Numeric range validation
 
+#![allow(dead_code)]
+#![allow(clippy::assertions_on_constants)]
+
 use neomind_core::config::{
     agent, agent_env_vars, endpoints, env_vars, models, normalize_ollama_endpoint,
     normalize_openai_endpoint,

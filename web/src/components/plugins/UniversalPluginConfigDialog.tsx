@@ -1,23 +1,19 @@
 import { useState, useEffect, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogContentBody,
-} from "@/components/ui/dialog"
+import { X, RefreshCw, Eye, Brain, Wrench, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { TestTube, Check, X, Plus, Trash2, RefreshCw, Eye, Brain, Wrench } from "lucide-react"
+import { FormField } from "@/components/ui/field"
+import { FormSection, FormSectionGroup } from "@/components/ui/form-section"
 import { ConfigFormBuilder } from "@/components/plugins/ConfigFormBuilder"
 import { useToast } from "@/hooks/use-toast"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
-import { confirm } from "@/hooks/use-confirm"
+import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
+import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { PluginConfigSchema } from "@/types"
@@ -53,14 +49,12 @@ export interface PluginInstance {
   enabled: boolean
   running?: boolean
   config?: Record<string, unknown>
-  // Type-specific status
   status?: {
     connected?: boolean
     active?: boolean
     error?: string
     latency_ms?: number
   }
-  // Additional metadata
   [key: string]: unknown
 }
 
@@ -74,15 +68,9 @@ export interface UnifiedPluginType {
   description: string
   icon: React.ReactNode
   color: string
-
-  // Schema-driven configuration
   config_schema: PluginConfigSchema
-
-  // Instance management
   can_add_multiple: boolean
   builtin: boolean
-
-  // Display info
   requires_api_key?: boolean
   supports_streaming?: boolean
   default_model?: string
@@ -95,17 +83,11 @@ interface UniversalPluginConfigDialogProps {
   pluginType: UnifiedPluginType
   instances: PluginInstance[]
   editingInstance?: PluginInstance | null
-
-  // API callbacks
   onCreate: (name: string, config: Record<string, unknown>) => Promise<string>
   onUpdate: (id: string, config: Record<string, unknown>) => Promise<void>
   onDelete?: (id: string) => Promise<void>
   onTest?: (id: string) => Promise<{ success: boolean; message?: string; error?: string; latency_ms?: number }>
-
-  // Refresh callback
   onRefresh: () => Promise<void>
-
-  // Test result tracking (optional external state)
   testResults?: Record<string, { success: boolean; message: string }>
   setTestResults?: (results: Record<string, { success: boolean; message: string }>) => void
 }
@@ -115,12 +97,9 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     open,
     onOpenChange,
     pluginType,
-    instances,
     editingInstance,
     onCreate,
     onUpdate,
-    onDelete,
-    onTest,
     onRefresh,
     testResults: externalTestResults,
     setTestResults: setExternalTestResults,
@@ -129,9 +108,12 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
   const { t } = useTranslation(["common", "plugins", "devices"])
   const { toast } = useToast()
   const { handleError } = useErrorHandler()
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
 
   const [saving, setSaving] = useState(false)
   const [newInstanceName, setNewInstanceName] = useState("")
+  const [nameError, setNameError] = useState<string | null>(null)
   const [internalTestResults, setInternalTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
 
   // Ollama model state
@@ -141,27 +123,20 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
   const [ollamaEndpoint, setOllamaEndpoint] = useState("http://localhost:11434")
 
   // Auto-detected capabilities state
-  const [detectedCapabilities, setDetectedCapabilities] = useState<{
-    supports_multimodal: boolean
-    supports_thinking: boolean
-    supports_tools: boolean
-    max_context: number
-  }>({
+  const [detectedCapabilities, setDetectedCapabilities] = useState({
     supports_multimodal: false,
     supports_thinking: false,
     supports_tools: true,
     max_context: 8192,
   })
 
+  // Lock body scroll on mobile
+  useMobileBodyScrollLock(isMobile && open)
+
   const testResults = externalTestResults ?? internalTestResults
   const setTestResults = setExternalTestResults ?? setInternalTestResults
-
   const isOllamaBackend = pluginType.type === "llm_backend" && pluginType.id === "ollama"
 
-  // Pass test and delete handlers to parent via prop for use in detail view
-  // The dialog itself no longer displays instance lists
-
-  // Fetch Ollama models
   const fetchOllamaModels = useCallback(async (endpoint?: string) => {
     if (!isOllamaBackend) return
 
@@ -170,11 +145,9 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
       const response = await api.listOllamaModels(endpoint)
       setOllamaModels(response.models || [])
 
-      // Auto-select the current model if editing
       if (editingInstance?.config?.model) {
         const currentModel = String(editingInstance.config.model)
         setSelectedModel(currentModel)
-        // Find capabilities for current model
         const modelWithCaps = response.models?.find(m => m.name === currentModel)
         if (modelWithCaps) {
           setDetectedCapabilities({
@@ -187,19 +160,18 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
       }
     } catch (error) {
       handleError(error, { operation: 'Fetch Ollama models', showToast: false })
-      // Don't show toast for this error - it's optional functionality
     } finally {
       setLoadingModels(false)
     }
-  }, [isOllamaBackend, editingInstance])
+  }, [isOllamaBackend, editingInstance, handleError])
 
-  // Reset form when dialog opens or plugin type changes
+  // Reset form when dialog opens
   useEffect(() => {
     if (open) {
       setNewInstanceName("")
       setSelectedModel("")
+      setNameError(null)
 
-      // If editing, load existing capabilities
       if (editingInstance && (editingInstance as any).capabilities) {
         const existingCaps = (editingInstance as any).capabilities
         setDetectedCapabilities({
@@ -208,26 +180,21 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
           supports_tools: existingCaps.supports_tools ?? true,
           max_context: existingCaps.max_context ?? 8192,
         })
-        // If it's Ollama and we're editing, also fetch models using the instance's endpoint
         if (pluginType.id === "ollama") {
           const instanceEndpoint = editingInstance?.config?.endpoint as string | undefined
           fetchOllamaModels(instanceEndpoint)
-          // Also update the local endpoint state if editing
           if (instanceEndpoint) {
             setOllamaEndpoint(instanceEndpoint)
           }
         }
       } else if (pluginType.type === "llm_backend") {
-        // Reset to default capabilities for new instances
         if (pluginType.id === "ollama") {
-          // Ollama default - will be updated when user selects a model
           setDetectedCapabilities({
-            supports_multimodal: false,  // Will be detected from selected model
+            supports_multimodal: false,
             supports_thinking: true,
             supports_tools: true,
             max_context: 8192,
           })
-          // Fetch models when Ollama dialog opens
           fetchOllamaModels()
         } else if (pluginType.id === "openai" || pluginType.id === "google" || pluginType.id === "anthropic") {
           setDetectedCapabilities({
@@ -248,11 +215,8 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     }
   }, [open, pluginType.id, pluginType.type, fetchOllamaModels, editingInstance])
 
-  // Handle model selection change
   const handleModelChange = (modelName: string) => {
     setSelectedModel(modelName)
-
-    // Auto-detect capabilities from selected model
     const model = ollamaModels.find(m => m.name === modelName)
     if (model) {
       setDetectedCapabilities({
@@ -264,39 +228,26 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     }
   }
 
-  // Get instance status display
   const getInstanceStatus = (instance: PluginInstance) => {
-    if (instance.status?.connected !== undefined) {
-      return instance.status.connected
-    }
-    if (instance.status?.active !== undefined) {
-      return instance.status.active
-    }
+    if (instance.status?.connected !== undefined) return instance.status.connected
+    if (instance.status?.active !== undefined) return instance.status.active
     return instance.running ?? instance.enabled
   }
 
-  // Handle create new instance
   const handleCreate = async (values: Record<string, unknown>) => {
     if (!newInstanceName.trim()) {
-      toast({
-        title: t("common:failed"),
-        description: t("plugins:instanceNameRequired", { defaultValue: "Instance name is required" }),
-        variant: "destructive",
-      })
+      setNameError(t("plugins:instanceNameRequired", { defaultValue: "Instance name is required" }))
       return
     }
 
     setSaving(true)
     try {
-      // For LLM backends, add capabilities (auto-detected for Ollama) and model for Ollama
       let configWithCaps = values
       if (pluginType.type === "llm_backend") {
         configWithCaps = {
           ...values,
           capabilities: detectedCapabilities,
-          // For Ollama, include the selected model from the dropdown
           ...(isOllamaBackend && selectedModel ? { model: selectedModel } : {}),
-          // For Ollama, include the endpoint from the input field
           ...(isOllamaBackend ? { endpoint: ollamaEndpoint } : {}),
         }
       }
@@ -321,19 +272,16 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     }
   }
 
-  // Handle update instance
   const handleUpdate = async (values: Record<string, unknown>) => {
     if (!editingInstance) return
 
     setSaving(true)
     try {
-      // For LLM backends, add capabilities and model for Ollama
       let configWithCaps = values
       if (pluginType.type === "llm_backend") {
         configWithCaps = {
           ...values,
           capabilities: detectedCapabilities,
-          // For Ollama, include the selected model from the dropdown
           ...(isOllamaBackend && selectedModel ? { model: selectedModel } : {}),
         }
       }
@@ -356,98 +304,20 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     }
   }
 
-  // Handle delete instance - exported for parent components to use
-  // This is no longer called from within the dialog
-  const handleDelete = async (instance: PluginInstance) => {
-    if (!onDelete) return
-
-    const confirmed = await confirm({
-      title: t("common:delete"),
-      description: t("plugins:confirmDeleteInstance", { defaultValue: "Delete this instance?" }),
-      confirmText: t("common:delete"),
-      cancelText: t("common:cancel"),
-      variant: "destructive"
-    })
-    if (!confirmed) return
-
-    setSaving(true)
-    try {
-      await onDelete(instance.id)
-      toast({
-        title: t("common:success"),
-        description: t("plugins:instanceDeleted", { defaultValue: "Instance deleted" }),
-      })
-      await onRefresh()
-    } catch (error) {
-      toast({
-        title: t("common:failed"),
-        description: String(error),
-        variant: "destructive",
-      })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  // Handle test connection - exported for parent components to use
-  // This is no longer called from within the dialog
-  const handleTest = async (instance: PluginInstance) => {
-    if (!onTest) return { success: false, message: "Test not available" }
-
-    try {
-      const result = await onTest(instance.id)
-      const newResult = { success: result.success, message: result.message || result.error || "" }
-      setTestResults({
-        ...testResults,
-        [instance.id]: newResult,
-      })
-      if (result.success) {
-        toast({
-          title: t("common:success"),
-          description: result.message || t("plugins:testSuccess", { defaultValue: "Connection successful" }),
-        })
-      } else {
-        toast({
-          title: t("common:failed"),
-          description: result.error || result.message || t("plugins:testFailed", { defaultValue: "Connection failed" }),
-          variant: "destructive",
-        })
-      }
-      return newResult
-    } catch (error) {
-      const message = String(error)
-      setTestResults({
-        ...testResults,
-        [instance.id]: { success: false, message },
-      })
-      toast({
-        title: t("common:failed"),
-        description: message,
-        variant: "destructive",
-      })
-      return { success: false, message }
-    }
-  }
-
-  // Prepare config schema with name field pre-filled
   const getConfigSchema = () => {
     const schema = { ...pluginType.config_schema }
 
-    // For Ollama backend, exclude the model field from the schema since it's handled by the specialized selector above
     if (isOllamaBackend && schema.properties?.model) {
       const { model, ...restProperties } = schema.properties
       schema.properties = restProperties
-      // Also remove model from required array if present
       if (schema.required) {
         schema.required = schema.required.filter((field: string) => field !== 'model')
       }
-      // Update field_order in ui_hints if present
       if (schema.ui_hints?.field_order) {
         schema.ui_hints.field_order = schema.ui_hints.field_order.filter((field: string) => field !== 'model')
       }
     }
 
-    // If editing, populate default values from existing config
     if (editingInstance && editingInstance.config) {
       if (!schema.properties) schema.properties = {}
       for (const [key, value] of Object.entries(editingInstance.config)) {
@@ -466,7 +336,6 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
   const isEditing = !!editingInstance
   const schema = getConfigSchema()
 
-  // Render capability badges
   const renderCapabilityBadges = () => (
     <div className="flex flex-wrap gap-2 mt-2">
       {detectedCapabilities.supports_multimodal && (
@@ -495,7 +364,6 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     </div>
   )
 
-  // Generate icon for model in select dropdown
   const getModelIcon = (model: OllamaModel) => {
     const icons = []
     if (model.supports_multimodal) icons.push(<Eye key="vision" className="h-3 w-3 text-blue-500" />)
@@ -505,150 +373,244 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     return <span className="flex items-center gap-0.5">{icons}</span>
   }
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl sm:max-h-[90vh] flex flex-col overflow-hidden">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <span className={pluginType.color}>{pluginType.icon}</span>
-            {isEditing
-              ? t("plugins:editInstance", { defaultValue: "Edit Instance" })
-              : pluginType.name
-            }
-          </DialogTitle>
-          <DialogDescription>
-            {isEditing
-              ? t("plugins:editInstanceDesc", { defaultValue: "Configure this instance" })
-              : pluginType.description
-            }
-          </DialogDescription>
-        </DialogHeader>
+  const handleClose = () => {
+    if (!saving) {
+      onOpenChange(false)
+    }
+  }
 
-        <DialogContentBody className="flex-1 overflow-y-auto px-4 pt-6 pb-4 sm:px-6">
-          {/* Instance Name Field (only for create mode) */}
-          {!isEditing && (
-            <div className="mb-4">
-              <Label htmlFor="instance-name">
-                {t("plugins:instanceName", { defaultValue: "Instance Name" })}
-              </Label>
-              <Input
-                id="instance-name"
-                value={newInstanceName}
-                onChange={(e) => setNewInstanceName(e.target.value)}
-                placeholder={t("plugins:instanceNamePlaceholder", { defaultValue: "My Instance" })}
-                disabled={saving}
-                autoFocus
-              />
+  // Content component shared between mobile and desktop
+  const FormContent = () => (
+    <FormSectionGroup>
+      {/* Instance Name Field (only for create mode) */}
+      {!isEditing && (
+        <FormField
+          label={t("plugins:instanceName", { defaultValue: "Instance Name" })}
+          required
+          error={nameError || undefined}
+        >
+          <Input
+            value={newInstanceName}
+            onChange={(e) => {
+              setNewInstanceName(e.target.value)
+              if (nameError) setNameError(null)
+            }}
+            placeholder={t("plugins:instanceNamePlaceholder", { defaultValue: "My Instance" })}
+            disabled={saving}
+          />
+        </FormField>
+      )}
+
+      {/* Edit Mode: Show instance info */}
+      {isEditing && (
+        <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+          <div>
+            <h3 className="font-medium">{editingInstance.name}</h3>
+            <div className="flex items-center gap-2 mt-1">
+              <Badge variant={getInstanceStatus(editingInstance) ? "default" : "secondary"}>
+                {getInstanceStatus(editingInstance)
+                  ? t("plugins:active", { defaultValue: "Active" })
+                  : t("plugins:inactive", { defaultValue: "Inactive" })
+                }
+              </Badge>
             </div>
-          )}
+          </div>
+        </div>
+      )}
 
-          {/* Edit Mode: Show instance info */}
-          {isEditing && (
-            <div className="flex items-center justify-between mb-4 p-3 bg-muted/30 rounded-lg">
-              <div>
-                <h3 className="font-medium">{editingInstance.name}</h3>
-                <div className="flex items-center gap-2 mt-1">
-                  <Badge variant={getInstanceStatus(editingInstance) ? "default" : "secondary"}>
-                    {getInstanceStatus(editingInstance)
-                      ? t("plugins:active", { defaultValue: "Active" })
-                      : t("plugins:inactive", { defaultValue: "Inactive" })
+      {/* Ollama endpoint configuration */}
+      {!isEditing && isOllamaBackend && (
+        <FormField label={t("plugins:llm.endpoint", { defaultValue: "Ollama Endpoint" })}>
+          <div className="flex items-center gap-2">
+            <Input
+              value={ollamaEndpoint}
+              onChange={(e) => setOllamaEndpoint(e.target.value)}
+              placeholder="http://localhost:11434"
+              disabled={saving}
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => fetchOllamaModels(ollamaEndpoint)}
+              disabled={loadingModels}
+            >
+              <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
+            </Button>
+          </div>
+        </FormField>
+      )}
+
+      {/* Ollama model selector */}
+      {isOllamaBackend && ollamaModels.length > 0 && (
+        <FormField label={t("plugins:llm.selectModel", { defaultValue: "Select Model" })}>
+          <div className="flex items-center gap-2">
+            <Select value={selectedModel} onValueChange={handleModelChange}>
+              <SelectTrigger className="flex-1">
+                <SelectValue placeholder={t("plugins:llm.selectModelPlaceholder", { defaultValue: "Select a model..." })} />
+              </SelectTrigger>
+              <SelectContent>
+                {ollamaModels.map((model) => (
+                  <SelectItem
+                    key={model.name}
+                    value={model.name}
+                  >
+                    {model.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!isEditing && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => fetchOllamaModels(ollamaEndpoint)}
+                disabled={loadingModels}
+              >
+                <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
+              </Button>
+            )}
+          </div>
+          {selectedModel && renderCapabilityBadges()}
+        </FormField>
+      )}
+
+      {/* No models message for Ollama */}
+      {isOllamaBackend && ollamaModels.length === 0 && !loadingModels && (
+        <div className="p-3 bg-muted/30 rounded-lg text-sm text-muted-foreground">
+          {t("plugins:llm.noModelsFound", { defaultValue: "No models found. Click refresh to fetch from Ollama." })}
+        </div>
+      )}
+
+      {/* Capability display for non-Ollama LLM backends */}
+      {pluginType.type === "llm_backend" && !isOllamaBackend && (
+        <div className="space-y-2">
+          <label className="text-sm font-medium">{t("plugins:llm.capabilities", { defaultValue: "Capabilities" })}</label>
+          {renderCapabilityBadges()}
+        </div>
+      )}
+
+      {/* Config Form - Embedded directly */}
+      <div className="mt-4">
+        <ConfigFormBuilder
+          schema={schema}
+          onSubmit={isEditing ? handleUpdate : handleCreate}
+          loading={saving}
+          submitLabel={isEditing
+            ? t("common:save", { defaultValue: "Save" })
+            : t("common:create", { defaultValue: "Create" })
+          }
+        />
+      </div>
+    </FormSectionGroup>
+  )
+
+  // Mobile: Full-screen portal
+  if (isMobile) {
+    return createPortal(
+      open ? (
+        <div className="fixed inset-0 z-[100] bg-background animate-in fade-in duration-200">
+          <div className="flex h-full w-full flex-col">
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-4 py-4 border-b shrink-0 bg-background"
+              style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <span className={pluginType.color}>{pluginType.icon}</span>
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base font-semibold truncate">
+                    {isEditing
+                      ? t("plugins:editInstance", { defaultValue: "Edit Instance" })
+                      : pluginType.name
                     }
-                  </Badge>
+                  </h1>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {isEditing
+                      ? t("plugins:editInstanceDesc", { defaultValue: "Configure this instance" })
+                      : pluginType.description
+                    }
+                  </p>
                 </div>
               </div>
+              <Button variant="ghost" size="icon" onClick={handleClose} disabled={saving} className="shrink-0">
+                <X className="h-5 w-5" />
+              </Button>
             </div>
-          )}
 
-          {/* Ollama endpoint configuration (only for create mode) */}
-          {!isEditing && isOllamaBackend && (
-            <div className="mb-4">
-              <Label htmlFor="ollama-endpoint">
-                {t("plugins:llm.endpoint", { defaultValue: "Ollama Endpoint" })}
-              </Label>
-              <div className="flex items-center gap-2 mt-1">
-                <Input
-                  id="ollama-endpoint"
-                  value={ollamaEndpoint}
-                  onChange={(e) => setOllamaEndpoint(e.target.value)}
-                  placeholder="http://localhost:11434"
-                  disabled={saving}
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => fetchOllamaModels(ollamaEndpoint)}
-                  disabled={loadingModels}
-                >
-                  <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
-                </Button>
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="p-4">
+                <FormContent />
               </div>
             </div>
-          )}
+          </div>
+        </div>
+      ) : null,
+      document.body
+    )
+  }
 
-          {/* Ollama model selector */}
-          {isOllamaBackend && ollamaModels.length > 0 && (
-            <div className="mb-4">
-              <Label htmlFor="model-select">
-                {t("plugins:llm.selectModel", { defaultValue: "Select Model" })}
-              </Label>
-              <div className="flex items-center gap-2 mt-1">
-                <Select value={selectedModel} onValueChange={handleModelChange}>
-                  <SelectTrigger id="model-select" className="flex-1">
-                    <SelectValue placeholder={t("plugins:llm.selectModelPlaceholder", { defaultValue: "Select a model..." })} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ollamaModels.map((model) => (
-                      <SelectItem
-                        key={model.name}
-                        value={model.name}
-                        icon={getModelIcon(model)}
-                      >
-                        {model.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {!isEditing && (
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => fetchOllamaModels(ollamaEndpoint)}
-                    disabled={loadingModels}
-                  >
-                    <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
-                  </Button>
-                )}
+  // Desktop: Traditional dialog
+  return (
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => !saving && onOpenChange(false)}
+        />
+      )}
+
+      {/* Dialog */}
+      {open && (
+        <div
+          className={cn(
+            'fixed left-1/2 top-1/2 z-50',
+            'grid w-full gap-0',
+            'bg-background shadow-lg',
+            'duration-200',
+            'animate-in fade-in zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-[48%]',
+            'rounded-lg sm:rounded-xl',
+            'max-h-[calc(100vh-2rem)] sm:max-h-[90vh]',
+            'flex flex-col',
+            'max-w-2xl',
+            '-translate-x-1/2 -translate-y-1/2'
+          )}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between gap-2 px-6 py-4 border-b shrink-0">
+            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className={pluginType.color}>{pluginType.icon}</span>
+                <h2 className="text-lg font-semibold leading-none truncate">
+                  {isEditing
+                    ? t("plugins:editInstance", { defaultValue: "Edit Instance" })
+                    : pluginType.name
+                  }
+                </h2>
               </div>
-              {selectedModel && renderCapabilityBadges()}
+              <p className="text-sm text-muted-foreground">
+                {isEditing
+                  ? t("plugins:editInstanceDesc", { defaultValue: "Configure this instance" })
+                  : pluginType.description
+                }
+              </p>
             </div>
-          )}
+            <button
+              onClick={handleClose}
+              disabled={saving}
+              className="inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
 
-          {/* No models message for Ollama */}
-          {isOllamaBackend && ollamaModels.length === 0 && !loadingModels && (
-            <div className="mb-4 p-3 bg-muted/30 rounded-lg text-sm text-muted-foreground">
-              {t("plugins:llm.noModelsFound", { defaultValue: "No models found. Click refresh to fetch from Ollama." })}
-            </div>
-          )}
-
-          {/* Capability display for non-Ollama LLM backends */}
-          {pluginType.type === "llm_backend" && !isOllamaBackend && (
-            <div className="mb-4">
-              {renderCapabilityBadges()}
-            </div>
-          )}
-
-          {/* Config Form */}
-          <ConfigFormBuilder
-            schema={schema}
-            onSubmit={isEditing ? handleUpdate : (values) => handleCreate(values)}
-            loading={saving}
-            submitLabel={isEditing
-              ? t("common:save", { defaultValue: "Save" })
-              : t("common:create", { defaultValue: "Create" })
-            }
-          />
-        </DialogContentBody>
-      </DialogContent>
-    </Dialog>
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto px-6 py-6">
+            <FormContent />
+          </div>
+        </div>
+      )}
+    </>
   )
 }

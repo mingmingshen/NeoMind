@@ -62,6 +62,7 @@ impl Default for ResourceLimitsConfig {
 
 impl ResourceLimitsConfig {
     /// Create a new config with memory limit only
+    #[allow(dead_code)]
     pub fn with_memory_limit_mb(mb: u64) -> Self {
         Self {
             memory_limit_mb: Some(mb),
@@ -70,6 +71,7 @@ impl ResourceLimitsConfig {
     }
 
     /// Create a new config with no limits (for testing)
+    #[allow(dead_code)]
     pub fn unrestricted() -> Self {
         Self {
             memory_limit_mb: None,
@@ -123,6 +125,7 @@ pub fn setup_resource_limits(config: &ResourceLimitsConfig) -> Result<(), Resour
 
 /// Error types for resource limit operations
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum ResourceLimitError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
@@ -213,7 +216,7 @@ fn setup_unix_limits(config: &ResourceLimitsConfig) -> Result<(), ResourceLimitE
 }
 
 #[cfg(unix)]
-fn set_cpu_affinity_unix(cores: &[usize]) -> Result<(), ResourceLimitError> {
+fn set_cpu_affinity_unix(_cores: &[usize]) -> Result<(), ResourceLimitError> {
     #[cfg(target_os = "linux")]
     {
         use libc::{cpu_set_t, sched_setaffinity, CPU_SET, CPU_ZERO};

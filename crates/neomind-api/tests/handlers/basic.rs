@@ -27,8 +27,8 @@ mod tests {
         let result = health_status_handler(State(state)).await;
         assert_eq!(result.0.status, "healthy");
         assert_eq!(result.0.service, "edge-ai-agent");
-        assert!(result.0.version.len() > 0);
-        assert!(result.0.uptime >= 0);
+        assert!(!result.0.version.is_empty());
+        let _ = result.0.uptime; // u64 is always >= 0
     }
 
     #[tokio::test]

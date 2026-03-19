@@ -1,0 +1,263 @@
+/**
+ * FullScreenDialog Component
+ *
+ * Unified full-screen dialog with glassmorphism effect.
+ * Used for complex forms like TransformBuilder, RuleBuilder, AgentEditor.
+ */
+
+import { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { X } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
+import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
+
+export interface FullScreenDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children: ReactNode
+  /** Disable closing by backdrop click */
+  disableBackdropClose?: boolean
+  /** Additional className for the dialog container */
+  className?: string
+}
+
+export function FullScreenDialog({
+  open,
+  onOpenChange,
+  children,
+  disableBackdropClose = false,
+  className,
+}: FullScreenDialogProps) {
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
+
+  // Lock body scroll when dialog is open
+  useBodyScrollLock(open, { mobileOnly: true })
+
+  // Get dialog root for portal rendering
+  const dialogRoot = typeof document !== 'undefined'
+    ? document.getElementById('dialog-root') || document.body
+    : null
+
+  if (!dialogRoot) return null
+
+  return createPortal(
+    <div
+      className={cn(
+        "fixed inset-0 z-[100] flex flex-col",
+        // Glassmorphism background - lower opacity to show content behind
+        "bg-black/20 dark:bg-black/40",
+        "backdrop-blur-sm",
+        !open && "hidden"
+      )}
+      onClick={() => !disableBackdropClose && onOpenChange(false)}
+    >
+      {/* Inner container - prevents click propagation */}
+      <div
+        className={cn(
+          "flex flex-col flex-1 m-3 md:m-4 overflow-hidden",
+          // Glass card effect
+          "bg-white/90 dark:bg-zinc-900/90",
+          "backdrop-blur-xl",
+          "border border-black/5 dark:border-white/10",
+          "rounded-2xl md:rounded-3xl",
+          "shadow-2xl shadow-black/10",
+          className
+        )}
+        onClick={(e) => e.stopPropagation()}
+        style={isMobile ? {
+          marginTop: `${insets.top + 12}px`,
+          marginBottom: `${insets.bottom + 12}px`,
+        } : undefined}
+      >
+        {children}
+      </div>
+    </div>,
+    dialogRoot
+  )
+}
+
+// ============================================================================
+// Header Component
+// ============================================================================
+
+export interface FullScreenDialogHeaderProps {
+  icon: ReactNode
+  iconBg?: string
+  iconColor?: string
+  title: string
+  subtitle?: string
+  onClose: () => void
+  /** Actions to show on the right side */
+  actions?: ReactNode
+}
+
+export function FullScreenDialogHeader({
+  icon,
+  iconBg = 'bg-blue-500/10 dark:bg-blue-500/20',
+  iconColor = 'text-blue-500',
+  title,
+  subtitle,
+  onClose,
+  actions,
+}: FullScreenDialogHeaderProps) {
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
+
+  return (
+    <header
+      className={cn(
+        "shrink-0 flex items-center justify-between gap-4",
+        "px-5 md:px-6 py-4 md:py-5",
+        "border-b border-black/5 dark:border-white/5"
+      )}
+    >
+      {/* Left: Icon + Title */}
+      <div className="flex items-center gap-4 min-w-0 flex-1">
+        <div className={cn(
+          "shrink-0 flex items-center justify-center",
+          "w-10 h-10 md:w-11 md:h-11",
+          "rounded-xl",
+          iconBg
+        )}>
+          <div className={cn("w-5 h-5 md:w-5.5 md:h-5.5", iconColor)}>
+            {icon}
+          </div>
+        </div>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg md:text-xl font-semibold truncate text-foreground">
+            {title}
+          </h1>
+          {subtitle && (
+            <p className="text-sm text-muted-foreground truncate mt-0.5">
+              {subtitle}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Right: Actions + Close */}
+      <div className="flex items-center gap-2 shrink-0">
+        {actions}
+        <button
+          onClick={onClose}
+          className={cn(
+            "shrink-0 flex items-center justify-center",
+            "w-9 h-9 md:w-10 md:h-10",
+            "rounded-xl",
+            "text-muted-foreground hover:text-foreground",
+            "bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10",
+            "transition-all"
+          )}
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+    </header>
+  )
+}
+
+// ============================================================================
+// Content Component
+// ============================================================================
+
+export interface FullScreenDialogContentProps {
+  children: ReactNode
+  className?: string
+}
+
+export function FullScreenDialogContent({
+  children,
+  className,
+}: FullScreenDialogContentProps) {
+  return (
+    <div className={cn("flex-1 overflow-hidden flex", className)}>
+      {children}
+    </div>
+  )
+}
+
+// ============================================================================
+// Footer Component
+// ============================================================================
+
+export interface FullScreenDialogFooterProps {
+  children: ReactNode
+  className?: string
+}
+
+export function FullScreenDialogFooter({
+  children,
+  className,
+}: FullScreenDialogFooterProps) {
+  const isMobile = useIsMobile()
+  const insets = useSafeAreaInsets()
+
+  return (
+    <footer
+      className={cn(
+        "shrink-0 flex items-center gap-3",
+        "px-5 md:px-6 py-4",
+        "border-t border-black/5 dark:border-white/5",
+        "bg-black/[0.02] dark:bg-white/[0.02]",
+        className
+      )}
+      style={isMobile ? { paddingBottom: `${Math.max(insets.bottom, 16)}px` } : undefined}
+    >
+      {children}
+    </footer>
+  )
+}
+
+// ============================================================================
+// Sidebar Component
+// ============================================================================
+
+export interface FullScreenDialogSidebarProps {
+  children: ReactNode
+  className?: string
+  /** Hide on mobile */
+  hideOnMobile?: boolean
+}
+
+export function FullScreenDialogSidebar({
+  children,
+  className,
+  hideOnMobile = true,
+}: FullScreenDialogSidebarProps) {
+  const isMobile = useIsMobile()
+
+  if (isMobile && hideOnMobile) return null
+
+  return (
+    <aside className={cn(
+      "shrink-0 w-[140px] md:w-[160px]",
+      "border-r border-black/5 dark:border-white/5",
+      "bg-black/[0.02] dark:bg-white/[0.02]",
+      className
+    )}>
+      {children}
+    </aside>
+  )
+}
+
+// ============================================================================
+// Main Content Component
+// ============================================================================
+
+export interface FullScreenDialogMainProps {
+  children: ReactNode
+  className?: string
+}
+
+export function FullScreenDialogMain({
+  children,
+  className,
+}: FullScreenDialogMainProps) {
+  return (
+    <main className={cn("flex-1 overflow-y-auto", className)}>
+      {children}
+    </main>
+  )
+}

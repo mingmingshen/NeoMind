@@ -80,7 +80,7 @@ impl UserRole {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "admin" => Some(UserRole::Admin),
             "user" => Some(UserRole::User),
@@ -409,7 +409,7 @@ impl AuthUserState {
         Ok(SessionInfo {
             user_id: payload["sub"].as_str().unwrap_or("").to_string(),
             username: payload["username"].as_str().unwrap_or("").to_string(),
-            role: UserRole::from_str(payload["role"].as_str().unwrap_or("user"))
+            role: UserRole::parse(payload["role"].as_str().unwrap_or("user"))
                 .unwrap_or(UserRole::User),
             created_at: payload["iat"].as_i64().unwrap_or(0),
             expires_at: exp,
@@ -735,7 +735,7 @@ mod tests {
 
     fn cleanup_test_db(path: &std::path::Path) {
         let _ = std::fs::remove_file(path);
-        let _ = std::fs::remove_file(&format!("{}.lock", path.display()));
+        let _ = std::fs::remove_file(format!("{}.lock", path.display()));
     }
 
     fn make_test_auth(test_name: &str) -> (AuthUserState, std::path::PathBuf) {

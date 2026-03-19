@@ -1095,6 +1095,12 @@ pub struct CompositeCapabilityProvider {
     providers: HashMap<String, Arc<dyn ExtensionCapabilityProvider>>,
 }
 
+impl Default for CompositeCapabilityProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CompositeCapabilityProvider {
     /// Create a new composite provider
     pub fn new() -> Self {

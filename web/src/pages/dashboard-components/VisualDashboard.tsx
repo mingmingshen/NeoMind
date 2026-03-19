@@ -92,6 +92,7 @@ import {
   List,
   Scroll,
   Play,
+  Upload,
 } from 'lucide-react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -1715,6 +1716,110 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     )
   }
 
+  // ImageSourceField component for image upload support - NOT memoized to ensure fresh props
+  interface ImageSourceFieldProps {
+    value: string
+    onChange: (value: string) => void
+  }
+
+  function ImageSourceField({ value, onChange }: ImageSourceFieldProps) {
+    const fileInputRef = useRef<HTMLInputElement>(null)
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      if (!file) return
+
+      if (!file.type.startsWith('image/')) {
+        console.error('Selected file is not an image')
+        return
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        console.error('Image file is too large (max 10MB)')
+        return
+      }
+
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string
+        if (base64) {
+          onChange(base64)
+        }
+      }
+      reader.readAsDataURL(file)
+      // Reset input to allow re-uploading the same file
+      e.target.value = ''
+    }
+
+    const handleUploadClick = () => {
+      fileInputRef.current?.click()
+    }
+
+    const handleClear = () => {
+      onChange('')
+    }
+
+    const isBase64Image = value?.startsWith('data:image')
+
+    return (
+      <div className="space-y-3">
+        <Field>
+          <Label>{t('visualDashboard.imageSource')}</Label>
+          <div className="flex gap-2">
+            <Input
+              value={value || ''}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder={t('visualDashboard.urlPlaceholder')}
+              className="h-9 flex-1"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleUploadClick}
+              className="h-9 px-3 shrink-0"
+            >
+              <Upload className="h-4 w-4 mr-1.5" />
+              {t('visualDashboard.upload')}
+            </Button>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {isBase64Image
+              ? t('visualDashboard.uploadedHint')
+              : t('visualDashboard.urlHint')}
+          </p>
+        </Field>
+
+        {isBase64Image && (
+          <div className="flex items-center gap-2">
+            <div className="w-12 h-12 rounded border overflow-hidden bg-muted/30">
+              <img
+                src={value}
+                alt="Preview"
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleClear}
+              className="h-8 text-destructive hover:text-destructive"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              {t('visualDashboard.clear')}
+            </Button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // Memoize grid components to prevent infinite re-renders
   // Only recalculate when actual component data changes (detected via stableKey)
   // Note: handleOpenConfig, removeComponent, duplicateComponent are NOT dependencies
@@ -3117,18 +3222,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <Field>
-                    <Label>{t('visualDashboard.imageSource')}</Label>
-                    <Input
-                      value={config.src || ''}
-                      onChange={(e) => updateConfig('src')(e.target.value)}
-                      placeholder={t('visualDashboard.urlPlaceholder')}
-                      className="h-9"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t('visualDashboard.urlHint')}
-                    </p>
-                  </Field>
+                  <ImageSourceField
+                    value={config.src || ''}
+                    onChange={updateConfig('src')}
+                  />
                   <SelectField
                     label={t('visualDashboard.fitMode')}
                     value={config.fit || 'contain'}

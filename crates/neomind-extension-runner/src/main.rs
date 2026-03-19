@@ -25,7 +25,7 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -231,7 +231,7 @@ enum ExtensionType {
 
 impl ExtensionType {
     /// Detect extension type from file path
-    fn from_path(path: &PathBuf) -> Self {
+    fn from_path(path: &std::path::Path) -> Self {
         path.extension()
             .and_then(|e| e.to_str())
             .map(|ext| match ext.to_lowercase().as_str() {
@@ -987,21 +987,6 @@ impl SyncIpcClient {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[allow(dead_code)]
-struct IpcCapabilityRequest {
-    pub request_id: u64,
-    pub capability: String,
-    pub params: serde_json::Value,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[allow(dead_code)]
-struct IpcCapabilityResponse {
-    pub request_id: u64,
-    pub result: Result<serde_json::Value, String>,
-}
-
 impl HostState {
     /// Create a new host state with WASI context
     fn new(wasi: WasiP1Ctx) -> Self {
@@ -1486,7 +1471,7 @@ impl Runner {
     }
 
     /// Load a native extension and return its descriptor
-    async fn load_native(extension_path: &PathBuf) -> Result<(DynExtension, neomind_core::extension::system::ExtensionDescriptor), String> {
+    async fn load_native(extension_path: &Path) -> Result<(DynExtension, neomind_core::extension::system::ExtensionDescriptor), String> {
         eprintln!("[Extension Runner] load_native called");
         let loader = NativeExtensionLoader::new();
         let loaded = loader.load(extension_path)
@@ -1594,7 +1579,7 @@ impl Runner {
     }
 
     /// Load WASM metadata (fallback from sidecar files)
-    fn load_wasm_metadata(extension_path: &PathBuf) -> Result<neomind_core::extension::system::ExtensionMetadata, String> {
+    fn load_wasm_metadata(extension_path: &Path) -> Result<neomind_core::extension::system::ExtensionMetadata, String> {
         // Try sidecar JSON
         let json_path = extension_path.with_extension("json");
         if json_path.exists() {
@@ -1656,7 +1641,7 @@ impl Runner {
         Ok(meta)
     }
 
-    fn find_nep_manifest(wasm_path: &PathBuf) -> Option<PathBuf> {
+    fn find_nep_manifest(wasm_path: &Path) -> Option<PathBuf> {
         let binaries_dir = wasm_path.parent()?;
         let wasm_dir = binaries_dir.parent()?;
         let extension_folder = wasm_dir.parent()?;
@@ -1857,46 +1842,6 @@ impl Runner {
 
             debug!("IPC forwarder thread exiting");
         }))
-    }
-
-    fn receive_message(&mut self) -> Result<Option<IpcMessage>, String> {
-        debug!("Reading length prefix from stdin...");
-        let mut len_bytes = [0u8; 4];
-        match std::io::stdin().read_exact(&mut len_bytes) {
-            Ok(()) => {
-                debug!("Read length prefix successfully");
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                debug!("stdin closed (UnexpectedEof)");
-                return Ok(None);
-            }
-            Err(e) => {
-                error!(error = %e, "Failed to read length prefix");
-                return Err(format!("Failed to read length: {}", e));
-            }
-        }
-
-        let len = u32::from_le_bytes(len_bytes) as usize;
-        if len > 10 * 1024 * 1024 {
-            return Err(format!("Message too large: {} bytes", len));
-        }
-
-        debug!("Reading payload of {} bytes", len);
-        let mut payload = vec![0u8; len];
-        std::io::stdin().read_exact(&mut payload)
-            .map_err(|e| {
-                error!(error = %e, "Failed to read payload");
-                format!("Failed to read payload: {}", e)
-            })?;
-
-        let message = IpcMessage::from_bytes(&payload)
-            .map_err(|e| {
-                error!(error = %e, "Failed to decode message");
-                format!("Failed to decode message: {}", e)
-            })?;
-
-        debug!(message_type = ?std::mem::discriminant(&message), "Received IPC message");
-        Ok(Some(message))
     }
 
     fn send_response(&mut self, response: IpcResponse) {
@@ -2490,7 +2435,7 @@ impl Runner {
             None => return false,
         };
 
-        let ext_clone = Arc::clone(ext);
+        let _ext_clone = Arc::clone(ext);
 
         tokio::task::block_in_place(|| {
             let handle = self.runtime.clone();

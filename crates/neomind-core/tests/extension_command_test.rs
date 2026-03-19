@@ -9,10 +9,12 @@
 //! - Error propagation
 //! - Command validation
 
+#![allow(dead_code)]
+
 use neomind_core::extension::*;
 use neomind_core::extension::registry::ExtensionRegistry;
 use neomind_core::extension::system::{
-    Extension, ExtensionMetadata, ExtensionError, ExtensionState,
+    Extension, ExtensionMetadata, ExtensionError,
     ExtensionMetricValue, MetricDescriptor, ExtensionCommand,
     MetricDataType, ParameterDefinition, ParamMetricValue, ExtensionStats,
 };
@@ -535,7 +537,7 @@ async fn test_execution_updates_statistics() {
     // Check stats
     let stats = registry.get_stats("cmd.test").await.unwrap();
     // Note: commands_executed is tracked by the extension, not the registry
-    assert!(stats.commands_executed >= 0);
+    let _ = stats.commands_executed;
 }
 
 #[tokio::test]
@@ -558,7 +560,7 @@ async fn test_error_updates_error_statistics() {
     // Check error stats - the registry tracks errors
     let stats = registry.get_stats("cmd.test").await.unwrap();
     // Note: error tracking is done by the registry
-    assert!(stats.error_count >= 0);
+    let _ = stats.error_count;
 }
 
 // ============================================================================

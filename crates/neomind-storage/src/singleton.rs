@@ -170,7 +170,7 @@ mod tests {
         let initial_size = cache_size();
         get_or_open_db(&temp1).unwrap();
         let size_after_first = cache_size();
-        assert!(size_after_first >= initial_size + 1);
+        assert!(size_after_first > initial_size);
 
         get_or_open_db(&temp2).unwrap();
         let size_after_second = cache_size();

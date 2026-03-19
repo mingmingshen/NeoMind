@@ -10,7 +10,7 @@ async fn main() {
     let mut receiver = event_bus.subscribe();
 
     // Start listening for events
-    let event_bus_clone = event_bus.clone();
+    let _event_bus_clone = event_bus.clone();
     let handle = tokio::spawn(async move {
         let mut count = 0;
         while let Some((event, _meta)) = receiver.recv().await {

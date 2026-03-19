@@ -1,7 +1,6 @@
 //! Test extension package parsing and installation
 
 use std::path::Path;
-use neomind_core::extension::package::ExtensionPackage;
 
 #[test]
 fn test_parse_extension_package() {

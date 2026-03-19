@@ -1,5 +1,4 @@
 use neomind_devices::mdl::MetricDataType;
-use serde_json::json;
 
 #[test]
 fn test_metric_data_type_title_case() {
