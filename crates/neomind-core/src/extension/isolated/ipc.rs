@@ -586,6 +586,8 @@ impl From<super::super::ExtensionError> for ErrorKind {
             ExtensionError::SessionNotFound(_) => ErrorKind::NotFound,
             ExtensionError::SessionAlreadyExists(_) => ErrorKind::Internal,
             ExtensionError::InferenceFailed(_) => ErrorKind::ExecutionFailed,
+            ExtensionError::ConfigurationError(_) => ErrorKind::Internal,
+            ExtensionError::InternalError(_) => ErrorKind::Internal,
             ExtensionError::Io(_) => ErrorKind::Internal,
             ExtensionError::Json(_) => ErrorKind::InvalidFormat,
             ExtensionError::Other(_) => ErrorKind::Internal,

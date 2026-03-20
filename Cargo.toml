@@ -15,6 +15,7 @@ members = [
     "crates/neomind-automation",
     "crates/neomind-extension-sdk",
     "crates/neomind-extension-runner",
+    "crates/neomind-native-capability-smoke-extension",
 ]
 exclude = ["web"]
 resolver = "2"

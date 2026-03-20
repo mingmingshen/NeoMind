@@ -32,8 +32,8 @@ struct ExtensionCollectionState {
 
 /// Extension metrics collector - periodically collects and stores extension metrics.
 pub struct ExtensionMetricsCollector {
-    /// Unified extension service for accessing both isolated and in-process extensions
-    unified_service: Arc<neomind_core::extension::unified::UnifiedExtensionService>,
+    /// Single-path extension runtime for isolated extensions.
+    runtime: Arc<neomind_core::extension::ExtensionRuntime>,
     /// Extension metrics storage (decoupled from device system)
     metrics_storage: Arc<ExtensionMetricsStorage>,
     /// Default collection interval (60 seconds)
@@ -45,11 +45,11 @@ pub struct ExtensionMetricsCollector {
 impl ExtensionMetricsCollector {
     /// Create a new collector.
     pub fn new(
-        unified_service: Arc<neomind_core::extension::unified::UnifiedExtensionService>,
+        runtime: Arc<neomind_core::extension::ExtensionRuntime>,
         metrics_storage: Arc<ExtensionMetricsStorage>,
     ) -> Self {
         Self {
-            unified_service,
+            runtime,
             metrics_storage,
             default_interval: Duration::from_secs(60),
             extension_states: RwLock::new(HashMap::new()),
@@ -64,7 +64,7 @@ impl ExtensionMetricsCollector {
 
     /// Get the collect_interval from extension config_parameters.
     /// Returns None if not configured (use default), Some(0) if disabled.
-    fn get_collect_interval(info: &neomind_core::extension::unified::UnifiedExtensionInfo) -> Option<u64> {
+    fn get_collect_interval(info: &neomind_core::extension::ExtensionRuntimeInfo) -> Option<u64> {
         if let Some(ref params) = info.metadata.config_parameters {
             for param in params {
                 if param.name == "collect_interval" {
@@ -132,7 +132,7 @@ impl ExtensionMetricsCollector {
     /// Collect metrics from all extensions and store them.
     async fn collect_and_store(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         debug!(category = "extensions", "collect_and_store() - starting");
-        let extensions = self.unified_service.list().await;
+        let extensions = self.runtime.list().await;
         debug!(
             category = "extensions",
             "Got {} extensions",
@@ -229,13 +229,12 @@ impl ExtensionMetricsCollector {
                     "Calling get_all_metrics for extension {}", extension_id
                 );
                 let _ = self
-                    .unified_service
+                    .runtime
                     .execute_command(&extension_id, "get_all_metrics", &serde_json::json!({}))
                     .await;
             }
 
-            // Get metrics using unified service (handles both isolated and in-process)
-            let metric_values = self.unified_service.get_metrics(&extension_id).await;
+            let metric_values = self.runtime.get_metrics(&extension_id).await;
 
             debug!(
                 category = "extensions",
@@ -348,11 +347,11 @@ impl ExtensionMetricsCollector {
 
 /// Spawn the extension metrics collector as a background task.
 pub fn spawn_extension_metrics_collector(
-    unified_service: Arc<neomind_core::extension::unified::UnifiedExtensionService>,
+    runtime: Arc<neomind_core::extension::ExtensionRuntime>,
     metrics_storage: Arc<ExtensionMetricsStorage>,
     interval_secs: u64,
 ) -> tokio::task::JoinHandle<()> {
-    let collector = ExtensionMetricsCollector::new(unified_service, metrics_storage)
+    let collector = ExtensionMetricsCollector::new(runtime, metrics_storage)
         .with_interval(Duration::from_secs(interval_secs));
 
     tokio::spawn(async move {

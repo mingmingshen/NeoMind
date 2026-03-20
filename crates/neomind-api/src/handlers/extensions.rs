@@ -212,7 +212,7 @@ pub async fn list_extensions_handler(
     Query(query): Query<ListExtensionsQuery>,
 ) -> HandlerResult<Vec<ExtensionDto>> {
     // Use unified service to get successfully loaded extensions
-    let loaded_extensions = state.extensions.unified_service.list().await;
+    let loaded_extensions = state.extensions.runtime.list().await;
     
     // Also get all extension records from storage (including failed ones)
     let stored_records = if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
@@ -272,7 +272,7 @@ pub async fn list_extensions_handler(
 }
 
 /// Helper function to convert ExtensionInfo to ExtensionDto
-fn extension_info_to_dto(info: &neomind_core::extension::unified::UnifiedExtensionInfo) -> ExtensionDto {
+fn extension_info_to_dto(info: &neomind_core::extension::ExtensionRuntimeInfo) -> ExtensionDto {
     use neomind_core::extension::system::ParamMetricValue;
     
     // Convert commands to DTOs (V2 format)
@@ -371,7 +371,7 @@ fn extension_info_to_dto(info: &neomind_core::extension::unified::UnifiedExtensi
         author: info.metadata.author.clone(),
         state: state_str.to_string(),
         file_path: info.path.as_ref().map(|p| p.display().to_string()),
-        loaded_at: None, // Not available in UnifiedExtensionInfo
+        loaded_at: None, // Not available in ExtensionRuntimeInfo
         health_status,
         last_error,
         last_error_at,
@@ -388,7 +388,7 @@ pub async fn get_extension_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<ExtensionDto> {
     // Use unified service to get both in-process and isolated extensions
-    let info = state.extensions.unified_service.get(&id).await
+    let info = state.extensions.runtime.get(&id).await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     // Convert commands to DTOs (V2 format)
@@ -505,13 +505,13 @@ pub async fn get_extension_stats_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<ExtensionStatsDto> {
     // Check if extension exists using unified service
-    let exists = state.extensions.unified_service.contains(&id).await;
+    let exists = state.extensions.runtime.contains(&id).await;
     if !exists {
         return Err(ErrorResponse::not_found(format!("Extension {}", id)));
     }
 
     // Get stats from unified service (supports both in-process and isolated extensions)
-    match state.extensions.unified_service.get_stats(&id).await {
+    match state.extensions.runtime.get_stats(&id).await {
         Ok(stats) => {
             ok(ExtensionStatsDto {
                 start_count: stats.start_count,
@@ -577,12 +577,11 @@ pub async fn register_extension_handler(
     State(state): State<ServerState>,
     Json(req): Json<RegisterExtensionRequest>,
 ) -> HandlerResult<serde_json::Value> {
-    let unified = &state.extensions.unified_service;
+    let runtime = &state.extensions.runtime;
 
     let path = PathBuf::from(&req.file_path);
 
-    // Load metadata from the extension file (unified handles isolated/in-process)
-    let metadata = unified.load(&path).await.map_err(|e| {
+    let metadata = runtime.load(&path).await.map_err(|e| {
         // Check for specific error types to return appropriate HTTP status codes
         let error_msg = e.to_string();
         if error_msg.contains("already registered") || error_msg.contains("Already registered") {
@@ -638,10 +637,10 @@ pub async fn unregister_extension_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let unified = &state.extensions.unified_service;
+    let runtime = &state.extensions.runtime;
 
     // Check if extension exists in memory or storage
-    let in_memory = unified.contains(&id).await;
+    let in_memory = runtime.contains(&id).await;
     let in_storage = if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
         store.load(&id).ok().flatten().is_some()
     } else {
@@ -655,7 +654,7 @@ pub async fn unregister_extension_handler(
 
     // Unregister from memory if present (handles both in-process and isolated)
     if in_memory {
-        if let Err(e) = unified.unregister(&id).await {
+        if let Err(e) = runtime.unregister(&id).await {
             tracing::warn!(
                 extension_id = %id,
                 error = %e,
@@ -756,9 +755,9 @@ pub async fn extension_health_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let unified = &state.extensions.unified_service;
+    let runtime = &state.extensions.runtime;
 
-    let healthy = unified
+    let healthy = runtime
         .health_check(&id)
         .await
         .map_err(|e| ErrorResponse::internal(format!("Health check failed: {}", e)))?;
@@ -788,7 +787,7 @@ async fn publish_extension_metrics(
 
     // Get extension info to know which metrics to extract
     // Use unified service to get info from both isolated and in-process extensions
-    let extensions = state.extensions.unified_service.list().await;
+    let extensions = state.extensions.runtime.list().await;
     let ext_info = match extensions.iter().find(|e| e.metadata.id == extension_id) {
         Some(info) => info,
         None => return, // Extension not found, skip
@@ -869,15 +868,15 @@ pub async fn execute_extension_command_handler(
     Path(id): Path<String>,
     Json(req): Json<ExecuteCommandRequest>,
 ) -> HandlerResult<serde_json::Value> {
-    let unified = &state.extensions.unified_service;
+    let runtime = &state.extensions.runtime;
 
     // Check if extension exists first
-    if !unified.contains(&id).await {
+    if !runtime.contains(&id).await {
         return Err(ErrorResponse::not_found(format!("Extension '{}' not found", id)));
     }
 
     // Execute command with panic protection
-    let result = match unified.execute_command(&id, &req.command, &req.args).await {
+    let result = match runtime.execute_command(&id, &req.command, &req.args).await {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!(
@@ -941,15 +940,15 @@ pub async fn invoke_extension_handler(
     Path(id): Path<String>,
     Json(req): Json<InvokeExtensionRequest>,
 ) -> HandlerResult<serde_json::Value> {
-    let unified = &state.extensions.unified_service;
+    let runtime = &state.extensions.runtime;
 
     // Check if extension exists
-    if !unified.contains(&id).await {
+    if !runtime.contains(&id).await {
         return Err(ErrorResponse::not_found(format!("Extension {}", id)));
     }
 
     // Execute command with proper error logging
-    let result = match unified.execute_command(&id, &req.command, &req.params).await {
+    let result = match runtime.execute_command(&id, &req.command, &req.params).await {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!(
@@ -986,7 +985,7 @@ pub async fn stream_extension_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     // Check if extension exists using unified service
-    let exists = state.extensions.unified_service.contains(&id).await;
+    let exists = state.extensions.runtime.contains(&id).await;
     if !exists {
         return Err(ErrorResponse::not_found(format!("Extension {}", id)));
     }
@@ -1060,7 +1059,7 @@ pub async fn list_extension_commands_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<Vec<CommandDescriptorDto>> {
-    let info = state.extensions.unified_service.get(&id).await
+    let info = state.extensions.runtime.get(&id).await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     let result: Vec<CommandDescriptorDto> = info.commands
@@ -1157,7 +1156,7 @@ pub async fn list_extension_data_sources_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<Vec<DataSourceInfoDto>> {
-    let info = state.extensions.unified_service.get(&id).await
+    let info = state.extensions.runtime.get(&id).await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     let mut sources = Vec::new();
@@ -1229,7 +1228,7 @@ pub struct ExtensionToolDto {
 pub async fn list_extension_capabilities_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<Vec<ExtensionCapabilityDto>> {
-    let extensions = state.extensions.unified_service.list().await;
+    let extensions = state.extensions.runtime.list().await;
 
     let mut capabilities = Vec::new();
 
@@ -1789,7 +1788,7 @@ pub async fn install_marketplace_extension_handler(
     State(state): State<ServerState>,
     Json(req): Json<MarketplaceInstallRequest>,
 ) -> HandlerResult<MarketplaceInstallResponse> {
-    let unified = &state.extensions.unified_service;
+    let runtime = &state.extensions.runtime;
 
     // First fetch metadata to get download URL
     let metadata_url = format!(
@@ -1956,11 +1955,11 @@ pub async fn install_marketplace_extension_handler(
                 );
 
                 // Check if already registered and unregister if needed
-                let is_registered = unified.contains(&ext_id).await;
+                let is_registered = runtime.contains(&ext_id).await;
 
                 if is_registered {
                     tracing::info!("Extension {} already registered, will replace", ext_id);
-                    if let Err(e) = unified.unregister(&ext_id).await {
+                    if let Err(e) = runtime.unregister(&ext_id).await {
                         return ok(MarketplaceInstallResponse {
                             success: false,
                             extension_id: req.id.clone(),
@@ -1973,7 +1972,7 @@ pub async fn install_marketplace_extension_handler(
                 }
 
                 // Load and register the extension binary (unified handles isolated/in-process)
-                match unified.load(&result.binary_path).await {
+                match runtime.load(&result.binary_path).await {
                     Ok(ext_metadata) => {
                         // Determine extension type from binary path
                         let extension_type = result.binary_path
@@ -2222,8 +2221,7 @@ pub async fn install_marketplace_extension_handler(
             (file_path, None)
         };
 
-        // Load and register the extension (unified handles isolated/in-process)
-        match unified.load(&file_path).await {
+        match runtime.load(&file_path).await {
             Ok(_) => {
                 // Save to persistent storage
                 if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
@@ -2280,7 +2278,7 @@ pub async fn install_marketplace_extension_handler(
 pub async fn check_marketplace_updates_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    let installed = state.extensions.unified_service.list().await;
+    let installed = state.extensions.runtime.list().await;
 
     let mut updates = Vec::new();
 
@@ -2341,7 +2339,7 @@ pub async fn get_extension_config_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     // Get extension info using unified service
-    let ext_info = state.extensions.unified_service.get(&id).await
+    let ext_info = state.extensions.runtime.get(&id).await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     // Get current config from storage
@@ -2380,7 +2378,7 @@ pub async fn update_extension_config_handler(
     Json(config): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
     // Verify extension exists using unified service
-    let ext_info = state.extensions.unified_service.get(&id).await
+    let ext_info = state.extensions.runtime.get(&id).await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     // Validate config against schema if present
@@ -2430,10 +2428,10 @@ pub async fn reload_extension_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let unified_service = state.extensions.unified_service.clone();
+    let runtime = state.extensions.runtime.clone();
 
     // Get extension info before reloading
-    let ext_info = unified_service
+    let ext_info = runtime
         .get_info(&id)
         .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
@@ -2449,7 +2447,7 @@ pub async fn reload_extension_handler(
         };
 
     // Unload the extension
-    unified_service
+    runtime
         .unload(&id)
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to unload: {}", e)))?;
@@ -2458,11 +2456,11 @@ pub async fn reload_extension_handler(
     let mut config_applied = false;
     if let Some(ref path) = file_path {
         // Load via unified service (handles both native and WASM)
-        match unified_service.load(path).await {
+        match runtime.load(path).await {
             Ok(metadata) => {
                 // Apply saved config
                 if let Some(ref cfg) = config {
-                    if let Err(e) = unified_service
+                    if let Err(e) = runtime
                         .execute_command(&metadata.id, "configure", cfg)
                         .await
                     {
@@ -2480,7 +2478,7 @@ pub async fn reload_extension_handler(
                     }
                 }
 
-                let is_isolated = unified_service.is_isolated(&id).await;
+                let is_isolated = runtime.is_isolated(&id).await;
                 tracing::info!(
                     extension_id = %id,
                     is_isolated = is_isolated,
@@ -2860,7 +2858,7 @@ pub async fn get_extension_components_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<DashboardComponentsResponse> {
     // Check if extension exists using unified service
-    let info = state.extensions.unified_service.get(&id).await
+    let info = state.extensions.runtime.get(&id).await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     // Try to load manifest from extension directory
@@ -3130,7 +3128,7 @@ pub async fn get_all_dashboard_components_handler(
     let mut all_components = Vec::new();
 
     // Load components only from registered extensions
-    let all_extensions = state.extensions.unified_service.list().await;
+    let all_extensions = state.extensions.runtime.list().await;
     for info in all_extensions {
         if let Some(components) =
             load_extension_components(&info.metadata.id, info.path.as_ref())
@@ -3176,13 +3174,13 @@ pub async fn upload_extension_package_handler(
     );
 
     // Check if extension is already registered
-    let unified = &state.extensions.unified_service;
-    let is_registered = unified.contains(&ext_id).await;
+    let runtime = &state.extensions.runtime;
+    let is_registered = runtime.contains(&ext_id).await;
 
     if is_registered {
         // Unregister existing version first
         tracing::info!("Extension {} already registered, will replace", ext_id);
-        unified.unregister(&ext_id).await
+        runtime.unregister(&ext_id).await
             .map_err(|e| ErrorResponse::internal(format!("Failed to unregister existing: {}", e)))?;
     }
 
@@ -3204,7 +3202,7 @@ pub async fn upload_extension_package_handler(
     );
 
     // Load and register the extension binary (handles both isolated and in-process)
-    let _metadata = unified.load(&install_result.binary_path).await
+    let _metadata = runtime.load(&install_result.binary_path).await
         .map_err(|e| ErrorResponse::internal(format!("Failed to load extension binary: {}", e)))?;
 
     // Save to storage
@@ -3316,19 +3314,19 @@ pub async fn uninstall_extension_handler(
 ) -> HandlerResult<serde_json::Value> {
     
 
-    let unified = &state.extensions.unified_service;
+    let runtime = &state.extensions.runtime;
 
     // Check if extension exists
-    let exists = unified.contains(&id).await;
+    let exists = runtime.contains(&id).await;
     let ext_info = if exists {
-        unified.get(&id).await
+        runtime.get(&id).await
     } else {
         None
     };
 
     // Unregister from memory
     if exists {
-        unified.unregister(&id).await
+        runtime.unregister(&id).await
             .map_err(|e| ErrorResponse::internal(format!("Failed to unregister: {}", e)))?;
     }
 
@@ -3468,17 +3466,17 @@ pub async fn upload_extension_file_handler(
 
     // Check if already registered and unregister if needed
     // Use unified service for consistent extension management
-    let unified_service = state.extensions.unified_service.clone();
-    let is_registered = unified_service.contains(&ext_id).await;
+    let runtime = state.extensions.runtime.clone();
+    let is_registered = runtime.contains(&ext_id).await;
 
     if is_registered {
         tracing::info!("Extension {} already registered, will replace", ext_id);
-        unified_service.unload(&ext_id).await
+        runtime.unload(&ext_id).await
             .map_err(|e| ErrorResponse::internal(format!("Failed to unregister existing: {}", e)))?;
     }
 
     // Load and register the extension binary with process isolation
-    let metadata = unified_service.load(&install_result.binary_path).await
+    let metadata = runtime.load(&install_result.binary_path).await
         .map_err(|e| ErrorResponse::internal(format!("Failed to load extension binary: {}", e)))?;
 
     // Determine extension type from binary path

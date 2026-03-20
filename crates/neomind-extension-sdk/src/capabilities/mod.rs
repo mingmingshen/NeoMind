@@ -66,13 +66,21 @@ pub use device::CapabilityError;
 // Re-export storage types
 pub use storage::{MetricValue, DeviceMetrics};
 
-// Re-export core types (Native only)
+// Re-export core types from host module (now self-contained)
 #[cfg(not(target_arch = "wasm32"))]
-pub use neomind_core::extension::context::*;
-
-#[cfg(not(target_arch = "wasm32"))]
-pub use neomind_core::event::NeoMindEvent;
+pub use crate::host::{
+    capabilities as native_capabilities,
+    AvailableCapabilities,
+    CapabilityError as NativeCapabilityError,
+    CapabilityManifest,
+    EventFilter,
+    EventSubscription,
+    ExtensionCapability,
+    ExtensionCapabilityProvider,
+    ExtensionContext,
+    ExtensionContextConfig,
+};
 
 // Re-export CapabilityContext for extensions
 #[cfg(not(target_arch = "wasm32"))]
-pub use neomind_core::extension::system::CapabilityContext;
+pub use crate::host::CapabilityContext;

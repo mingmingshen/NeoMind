@@ -451,7 +451,7 @@ mod tests {
                 use std::sync::OnceLock;
                 static META: OnceLock<ExtensionMetadata> = OnceLock::new();
                 META.get_or_init(|| {
-                    ExtensionMetadata::new("test-ext", "Test", semver::Version::new(1, 0, 0))
+                    ExtensionMetadata::new("test-ext", "Test", "1.0.0")
                 })
             }
 

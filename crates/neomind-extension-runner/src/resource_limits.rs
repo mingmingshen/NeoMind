@@ -216,7 +216,7 @@ fn setup_unix_limits(config: &ResourceLimitsConfig) -> Result<(), ResourceLimitE
 }
 
 #[cfg(unix)]
-fn set_cpu_affinity_unix(cores: &[usize]) -> Result<(), ResourceLimitError> {
+fn set_cpu_affinity_unix(_cores: &[usize]) -> Result<(), ResourceLimitError> {
     #[cfg(target_os = "linux")]
     {
         use libc::{cpu_set_t, sched_setaffinity, CPU_SET, CPU_ZERO};
@@ -224,7 +224,7 @@ fn set_cpu_affinity_unix(cores: &[usize]) -> Result<(), ResourceLimitError> {
         let mut cpuset: cpu_set_t = unsafe { std::mem::zeroed() };
         unsafe {
             CPU_ZERO(&mut cpuset);
-            for &core in cores {
+            for &core in _cores {
                 if core < libc::CPU_SETSIZE as usize {
                     CPU_SET(core, &mut cpuset);
                 } else {

@@ -15,7 +15,7 @@ use neomind_core::extension::system::{
 };
 use neomind_core::extension::stream::{
     StreamCapability, StreamDirection, StreamMode, StreamSession,
-    ClientInfo, DataChunk, StreamDataType,
+    ClientInfo, DataChunk, StreamDataType, FlowControl,
 };
 use serde_json::json;
 
@@ -61,7 +61,7 @@ fn test_extension_descriptor_creation() {
     let metadata = ExtensionMetadata::new(
         "test.extension",
         "Test Extension",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     );
 
     let descriptor = ExtensionDescriptor::new(metadata.clone());
@@ -77,7 +77,7 @@ fn test_extension_descriptor_with_capabilities() {
     let metadata = ExtensionMetadata::new(
         "test.extension",
         "Test Extension",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     );
 
     let commands = vec![
@@ -121,25 +121,73 @@ fn test_extension_descriptor_with_capabilities() {
 
 #[test]
 fn test_stream_capability_direction() {
-    let cap = StreamCapability::upload();
+    let cap = StreamCapability {
+        supported_data_types: vec![],
+        max_chunk_size: 1024,
+        preferred_chunk_size: 512,
+        max_concurrent_sessions: 1,
+        mode: StreamMode::Stateless,
+        direction: StreamDirection::Upload,
+        flow_control: FlowControl::default_stream(),
+    };
     assert_eq!(cap.direction, StreamDirection::Upload);
 
-    let cap = StreamCapability::download();
+    let cap = StreamCapability {
+        supported_data_types: vec![],
+        max_chunk_size: 1024,
+        preferred_chunk_size: 512,
+        max_concurrent_sessions: 1,
+        mode: StreamMode::Stateless,
+        direction: StreamDirection::Download,
+        flow_control: FlowControl::default_stream(),
+    };
     assert_eq!(cap.direction, StreamDirection::Download);
 
-    let cap = StreamCapability::stateful();
+    let cap = StreamCapability {
+        supported_data_types: vec![],
+        max_chunk_size: 1024,
+        preferred_chunk_size: 512,
+        max_concurrent_sessions: 1,
+        mode: StreamMode::Stateful,
+        direction: StreamDirection::Bidirectional,
+        flow_control: FlowControl::default_stream(),
+    };
     assert_eq!(cap.direction, StreamDirection::Bidirectional);
 }
 
 #[test]
 fn test_stream_capability_mode() {
-    let cap = StreamCapability::upload();
+    let cap = StreamCapability {
+        supported_data_types: vec![],
+        max_chunk_size: 1024,
+        preferred_chunk_size: 512,
+        max_concurrent_sessions: 1,
+        mode: StreamMode::Stateless,
+        direction: StreamDirection::Upload,
+        flow_control: FlowControl::default_stream(),
+    };
     assert_eq!(cap.mode, StreamMode::Stateless);
 
-    let cap = StreamCapability::stateful();
+    let cap = StreamCapability {
+        supported_data_types: vec![],
+        max_chunk_size: 1024,
+        preferred_chunk_size: 512,
+        max_concurrent_sessions: 1,
+        mode: StreamMode::Stateful,
+        direction: StreamDirection::Bidirectional,
+        flow_control: FlowControl::default_stream(),
+    };
     assert_eq!(cap.mode, StreamMode::Stateful);
 
-    let cap = StreamCapability::push();
+    let cap = StreamCapability {
+        supported_data_types: vec![],
+        max_chunk_size: 1024,
+        preferred_chunk_size: 512,
+        max_concurrent_sessions: 1,
+        mode: StreamMode::Push,
+        direction: StreamDirection::Download,
+        flow_control: FlowControl::default_stream(),
+    };
     assert_eq!(cap.mode, StreamMode::Push);
 }
 
@@ -164,8 +212,8 @@ fn test_stream_session_creation() {
 
     assert_eq!(session.id, "session-123");
     assert_eq!(session.extension_id, "test-extension");
-    assert_eq!(session.client_info.client_id, "test-client");
-    assert!(session.created_at > 0);
+    assert_eq!(session.client_info.as_ref().unwrap().client_id, "test-client");
+    assert!(session.started_at > 0);
 }
 
 // ============================================================================
@@ -201,14 +249,14 @@ fn test_extension_metadata_for_proxy() {
     let metadata = ExtensionMetadata::new(
         "proxy.test",
         "Proxy Test Extension",
-        semver::Version::new(2, 0, 0),
+        "2.0.0",
     )
     .with_description("A test extension for proxy testing")
     .with_author("Test Author");
 
     assert_eq!(metadata.id, "proxy.test");
     assert_eq!(metadata.name, "Proxy Test Extension");
-    assert_eq!(metadata.version, semver::Version::new(2, 0, 0));
+    assert_eq!(metadata.version, "2.0.0");
     assert!(metadata.description.is_some());
     assert!(metadata.author.is_some());
 }
@@ -232,7 +280,7 @@ fn test_descriptor_with_stream_capability() {
     let metadata = ExtensionMetadata::new(
         "stream.test",
         "Stream Test",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     );
 
     let descriptor = ExtensionDescriptor::new(metadata);
@@ -368,7 +416,7 @@ impl MockProxyExtension {
             metadata: ExtensionMetadata::new(
                 "mock.proxy",
                 "Mock Proxy Extension",
-                semver::Version::new(1, 0, 0),
+                "1.0.0",
             ),
             commands: vec![],
             metrics: vec![],

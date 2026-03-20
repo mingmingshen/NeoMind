@@ -356,6 +356,13 @@ jobs:
           # Verify binaries exist
           ls -la target/${{ matrix.target }}/release/neomind target/${{ matrix.target }}/release/neomind-extension-runner
 
+      - name: Run native capability IPC smoke test
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        shell: bash
+        run: |
+          cargo test -p neomind-core --test capability_e2e_test test_native_isolated_capability_ipc -- --ignored
+          cargo test -p neomind-core --test capability_e2e_test test_native_isolated_event_capability_ipc -- --ignored
+
       - name: Build server and extension runner (macOS)
         if: matrix.os == 'darwin'
         shell: bash

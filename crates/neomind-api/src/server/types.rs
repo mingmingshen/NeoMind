@@ -380,7 +380,7 @@ impl ServerState {
 
         // Wire rule engine to extension registry for extension command execution
         let extension_registry_adapter =
-            Arc::new(ExtensionRegistryAdapter::new(extensions.registry.clone()));
+            Arc::new(ExtensionRegistryAdapter::new(extensions.runtime.clone()));
         let extension_action_executor =
             Arc::new(ExtensionActionExecutor::new(extension_registry_adapter));
         rule_engine
@@ -653,7 +653,7 @@ impl ServerState {
             .await;
 
         let extension_registry_adapter =
-            Arc::new(ExtensionRegistryAdapter::new(extensions.registry.clone()));
+            Arc::new(ExtensionRegistryAdapter::new(extensions.runtime.clone()));
         let extension_action_executor =
             Arc::new(ExtensionActionExecutor::new(extension_registry_adapter));
         rule_engine

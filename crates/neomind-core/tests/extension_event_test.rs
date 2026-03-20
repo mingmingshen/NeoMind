@@ -56,7 +56,7 @@ impl Extension for EventRecordingExtension {
             ExtensionMetadata::new(
                 "event.recording.extension",
                 "Event Recording Extension",
-                semver::Version::new(1, 0, 0),
+                "1.0.0",
             )
         })
     }

@@ -1,4 +1,4 @@
-//! Extension registry for managing dynamically loaded extensions.
+//! Extension registry for managing in-host extension proxies.
 //!
 //! The registry provides:
 //! - Extension registration and lifecycle management
@@ -6,19 +6,18 @@
 //! - Health monitoring
 //! - Safety management (circuit breaker, panic isolation)
 //!
-//! Note: WASM extensions are now handled via the extension-runner process.
-//! This registry only handles native extensions directly.
+//! Note: Real extension execution is handled by the isolated runner/runtime.
+//! This registry now only stores host-side proxy objects for streaming support.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
 use parking_lot::RwLock;
 
 use crate::event::NeoMindEvent;
 use crate::eventbus::EventBus;
 use crate::extension::event_dispatcher::EventDispatcher;
-use crate::extension::loader::NativeExtensionLoader;
+use crate::extension::loader::NativeExtensionMetadataLoader;
 use crate::extension::safety::ExtensionSafetyManager;
 use crate::extension::system::{
     DynExtension, ExtensionError, ExtensionMetadata, ExtensionState, ExtensionStats,
@@ -51,21 +50,17 @@ pub struct ExtensionRegistry {
     /// Extension information cache.
     /// Using parking_lot::RwLock for consistent locking strategy.
     info_cache: RwLock<HashMap<String, ExtensionInfo>>,
-    /// Native extension loader
-    native_loader: NativeExtensionLoader,
+    /// Native extension metadata loader
+    native_loader: NativeExtensionMetadataLoader,
     /// Extension directories to scan
     extension_dirs: Vec<PathBuf>,
-    /// Loaded libraries kept alive to prevent unloading.
-    /// Maps extension ID to the library Arc, ensuring the library
-    /// stays loaded as long as the extension is registered.
-    loaded_libraries: RwLock<HashMap<String, Arc<libloading::Library>>>,
     /// Safety manager for circuit breaking and panic isolation
-    safety_manager: Arc<ExtensionSafetyManager>,
+    safety_manager: std::sync::Arc<ExtensionSafetyManager>,
     /// Event bus for publishing lifecycle events (optional)
-    event_bus: Option<Arc<EventBus>>,
+    event_bus: Option<std::sync::Arc<EventBus>>,
     /// Event dispatcher for pushing events to extensions (optional)
     /// Using Option<Arc<>> for interior mutability
-    event_dispatcher: parking_lot::RwLock<Option<Arc<EventDispatcher>>>,
+    event_dispatcher: parking_lot::RwLock<Option<std::sync::Arc<EventDispatcher>>>,
 }
 
 impl ExtensionRegistry {
@@ -74,22 +69,21 @@ impl ExtensionRegistry {
         Self {
             extensions: RwLock::new(HashMap::new()),
             info_cache: RwLock::new(HashMap::new()),
-            native_loader: NativeExtensionLoader::new(),
+            native_loader: NativeExtensionMetadataLoader::new(),
             extension_dirs: vec![],
-            loaded_libraries: RwLock::new(HashMap::new()),
-            safety_manager: Arc::new(ExtensionSafetyManager::new()),
+            safety_manager: std::sync::Arc::new(ExtensionSafetyManager::new()),
             event_bus: None,
             event_dispatcher: parking_lot::RwLock::new(None),
         }
     }
 
     /// Set the event bus for publishing lifecycle events.
-    pub fn set_event_bus(&mut self, event_bus: Arc<EventBus>) {
+    pub fn set_event_bus(&mut self, event_bus: std::sync::Arc<EventBus>) {
         self.event_bus = Some(event_bus);
     }
 
     /// Set the event dispatcher for pushing events to extensions.
-    pub fn set_event_dispatcher(&self, event_dispatcher: Arc<EventDispatcher>) {
+    pub fn set_event_dispatcher(&self, event_dispatcher: std::sync::Arc<EventDispatcher>) {
         *self.event_dispatcher.write() = Some(event_dispatcher);
     }
 
@@ -213,11 +207,6 @@ impl ExtensionRegistry {
         self.extensions.write().remove(id);
         self.info_cache.write().remove(id);
 
-        // Release the library handle, allowing the library to be unloaded.
-        // This should happen after removing the extension to ensure no code
-        // from the library is still being executed.
-        self.loaded_libraries.write().remove(id);
-
         // Unregister from safety manager
         self.safety_manager.unregister_extension(id).await;
 
@@ -304,35 +293,16 @@ impl ExtensionRegistry {
 
         match extension {
             Some("so") | Some("dylib") | Some("dll") => {
-                // Load the native extension
-                let loaded = self.native_loader.load(path)?;
-
-                // Get metadata and metrics/commands
-                let ext = loaded.extension.read().await;
-                let mut metadata = ext.metadata().clone();
-                let _metrics = ext.metrics().to_vec();
-                let _commands = ext.commands().to_vec();
-                drop(ext);
-
-                // Set file path for component loading
-                metadata.file_path = Some(path.to_path_buf());
-
-                // Register the extension with file path
-                let id = metadata.id.clone();
-
-                // Store the library handle to prevent unloading
-                let library_arc = loaded.library_arc();
-                self.loaded_libraries.write().insert(id.clone(), library_arc);
-
-                self.register_with_path(id, loaded.extension, Some(path.to_path_buf())).await?;
-
-                Ok(metadata)
+                Err(ExtensionError::InvalidFormat(
+                    "Direct native loading has been removed; use ExtensionRuntime for isolated execution"
+                        .to_string(),
+                ))
             }
             Some("wasm") => {
                 // WASM extensions should be loaded via extension-runner
                 // Return an error pointing users to the isolated extension path
                 Err(ExtensionError::InvalidFormat(
-                    "WASM extensions must be loaded via UnifiedExtensionService for process isolation".to_string()
+                    "WASM extensions must be loaded via ExtensionRuntime for process isolation".to_string()
                 ))
             }
             _ => Err(ExtensionError::InvalidFormat(format!(
@@ -438,7 +408,7 @@ impl ExtensionRegistry {
                 if let Some(info) = self.info_cache.write().get_mut(id) {
                     info.stats.commands_executed += 1;
                     info.stats.total_execution_time_ms += execution_time_ms;
-                    info.stats.last_execution_time = Some(chrono::Utc::now());
+                    info.stats.last_execution_time_ms = Some(chrono::Utc::now().timestamp_millis());
                 }
 
                 Ok(value)

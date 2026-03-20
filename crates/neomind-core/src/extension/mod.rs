@@ -1,6 +1,6 @@
 //! Extension system for NeoMind (V2).
 //!
-//! Extensions are dynamically loaded modules (.so/.dylib/.dll/.wasm) that extend
+//! Extensions are isolated modules (.so/.dylib/.dll/.wasm) that extend
 //! NeoMind's capabilities. They are distinct from user configurations like
 //! LLM backends, device connections, or alert channels.
 //!
@@ -22,21 +22,25 @@ pub mod loader;
 pub mod package;
 pub mod proxy;
 pub mod registry;
+pub mod runtime;
 pub mod safety;
 pub mod stream;
 pub mod system;
 pub mod tracing;
 pub mod types;
-pub mod unified;
 
 pub use executor::{CommandExecutor, CommandResult, UnifiedStorage};
 pub use isolated::{
     IsolatedExtension, IsolatedExtensionConfig, IsolatedExtensionError, IsolatedExtensionInfo,
     IsolatedExtensionManager, IsolatedManagerConfig, IsolatedResult,
 };
-pub use loader::{IsolatedExtensionLoader, IsolatedLoaderConfig, LoadedExtension, NativeExtensionLoader};
+pub use loader::{
+    IsolatedExtensionLoader, IsolatedLoaderConfig, LoadedExtension,
+    NativeExtensionMetadataLoader,
+};
 pub use package::{detect_platform, ExtensionPackage, InstallResult, PACKAGE_FORMAT, CURRENT_ABI_VERSION, MIN_ABI_VERSION};
 pub use registry::{ExtensionInfo, ExtensionRegistry, ExtensionRegistryTrait};
+pub use runtime::{ExtensionRuntime, ExtensionRuntimeConfig, ExtensionRuntimeInfo};
 pub use stream::{
     ClientInfo, DataChunk, FlowControl, SessionStats, StreamCapability, StreamDataType,
     StreamDirection, StreamError, StreamMode, StreamResult, StreamSession,
@@ -54,7 +58,6 @@ pub use tracing::{
     instrumented_command, instrumented_ipc, instrumented_load, ipc_communication_span,
     extension_command_span, extension_load_span, extension_unload_span,
 };
-pub use unified::{UnifiedExtensionConfig, UnifiedExtensionInfo, UnifiedExtensionService};
 pub use context::{
     ExtensionContext, ExtensionContextConfig, ExtensionCapability,
     ExtensionCapabilityProvider, CapabilityManifest, CapabilityError,

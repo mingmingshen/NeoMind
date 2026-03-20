@@ -65,14 +65,14 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     startup.service("Auto-onboarding events", ServiceStatus::Started);
 
     // Initialize extension metrics collector (decoupled from device system)
-    let unified_service = state.extensions.unified_service.clone();
+    let runtime = state.extensions.runtime.clone();
     let metrics_storage = state.extensions.metrics_storage.clone();
     let _metrics_task = tokio::spawn(async move {
         use crate::server::extension_metrics::ExtensionMetricsCollector;
         use std::time::Duration;
 
         let collector =
-            ExtensionMetricsCollector::new(unified_service, metrics_storage)
+            ExtensionMetricsCollector::new(runtime, metrics_storage)
                 .with_interval(Duration::from_secs(60));
 
         collector.run().await;
@@ -84,7 +84,7 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     state.init_extensions().await;
 
     // Start extension death monitoring for auto-restart
-    state.extensions.unified_service.clone().start_death_monitoring();
+    state.extensions.runtime.clone().start_death_monitoring();
     startup.service("Extension death monitoring", ServiceStatus::Started);
 
     // Initialize extension event subscription

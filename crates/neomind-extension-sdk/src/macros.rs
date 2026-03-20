@@ -107,36 +107,415 @@ macro_rules! neomind_export_with_constructor {
                 }
             }
 
-            #[no_mangle]
-            pub extern "C" fn neomind_extension_create(
-                config_json: *const u8,
-                config_len: usize,
-            ) -> *mut tokio::sync::RwLock<std::boxed::Box<dyn $crate::Extension>> {
-                let _config = if config_json.is_null() || config_len == 0 {
-                    serde_json::json!({})
-                } else {
-                    unsafe {
-                        let slice = std::slice::from_raw_parts(config_json, config_len);
-                        match std::str::from_utf8(slice) {
-                            Ok(s) => serde_json::from_str(s).unwrap_or(serde_json::json!({})),
-                            Err(_) => serde_json::json!({}),
-                        }
-                    }
-                };
+            static EXTENSION_INSTANCE: std::sync::OnceLock<
+                std::sync::Arc<tokio::sync::RwLock<std::boxed::Box<dyn $crate::Extension>>>,
+            > = std::sync::OnceLock::new();
 
-                let extension: $extension_type = <$extension_type>::$constructor();
-                let boxed: Box<dyn $crate::Extension> = Box::new(extension);
-                Box::into_raw(Box::new(tokio::sync::RwLock::new(boxed)))
+            fn extension_instance(
+            ) -> &'static std::sync::Arc<tokio::sync::RwLock<std::boxed::Box<dyn $crate::Extension>>> {
+                EXTENSION_INSTANCE.get_or_init(|| {
+                    let extension: $extension_type = <$extension_type>::$constructor();
+                    let boxed: Box<dyn $crate::Extension> = Box::new(extension);
+                    std::sync::Arc::new(tokio::sync::RwLock::new(boxed))
+                })
+            }
+
+            fn json_ptr(value: serde_json::Value) -> *mut std::os::raw::c_char {
+                let json = serde_json::to_string(&value).unwrap_or_else(|_| {
+                    "{\"success\":false,\"error\":\"failed to serialize native response\"}".to_string()
+                });
+                std::ffi::CString::new(json)
+                    .unwrap_or_else(|_| std::ffi::CString::new("{}").unwrap())
+                    .into_raw()
+            }
+
+            fn error_ptr(message: impl Into<String>) -> *mut std::os::raw::c_char {
+                json_ptr(serde_json::json!({
+                    "success": false,
+                    "error": message.into(),
+                }))
+            }
+
+            fn parse_input_json(
+                input_ptr: *const u8,
+                input_len: usize,
+            ) -> std::result::Result<serde_json::Value, String> {
+                if input_ptr.is_null() || input_len == 0 {
+                    return Ok(serde_json::json!({}));
+                }
+
+                let input = unsafe { std::slice::from_raw_parts(input_ptr, input_len) };
+                let input_str = std::str::from_utf8(input)
+                    .map_err(|e| format!("Invalid UTF-8 input: {}", e))?;
+                serde_json::from_str(input_str)
+                    .map_err(|e| format!("Invalid JSON input: {}", e))
+            }
+
+            fn block_on_result<F, T, E>(future: F) -> std::result::Result<T, String>
+            where
+                F: std::future::Future<Output = std::result::Result<T, E>>,
+                E: std::fmt::Display,
+            {
+                match tokio::runtime::Handle::try_current() {
+                    Ok(handle) => tokio::task::block_in_place(|| {
+                        handle.block_on(async { future.await.map_err(|e| e.to_string()) })
+                    }),
+                    Err(_) => {
+                        let runtime = tokio::runtime::Runtime::new()
+                            .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
+                        runtime.block_on(async { future.await.map_err(|e| e.to_string()) })
+                    }
+                }
+            }
+
+            fn descriptor_json_value() -> std::result::Result<serde_json::Value, String> {
+                let instance = extension_instance().clone();
+                block_on_result(async move {
+                    let ext = instance.read().await;
+                    let descriptor = $crate::ExtensionDescriptor::with_capabilities(
+                        ext.metadata().clone(),
+                        ext.commands(),
+                        ext.metrics(),
+                    );
+                    Ok::<serde_json::Value, String>(serde_json::json!({
+                        "success": true,
+                        "descriptor": descriptor,
+                    }))
+                })
             }
 
             #[no_mangle]
-            pub extern "C" fn neomind_extension_destroy(
-                ptr: *mut tokio::sync::RwLock<std::boxed::Box<dyn $crate::Extension>>,
-            ) {
+            pub extern "C" fn neomind_extension_free_string(ptr: *mut std::os::raw::c_char) {
                 if !ptr.is_null() {
                     unsafe {
-                        let _ = Box::from_raw(ptr);
+                        let _ = std::ffi::CString::from_raw(ptr);
                     }
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_set_capability_bridge(
+                invoke: $crate::NativeCapabilityInvokeFn,
+                free: $crate::NativeCapabilityFreeFn,
+            ) {
+                $crate::set_native_capability_bridge(invoke, free);
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_descriptor_json() -> *mut std::os::raw::c_char {
+                match descriptor_json_value() {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_execute_command_json(
+                input_ptr: *const u8,
+                input_len: usize,
+            ) -> *mut std::os::raw::c_char {
+                let input = match parse_input_json(input_ptr, input_len) {
+                    Ok(value) => value,
+                    Err(e) => return error_ptr(e),
+                };
+                let command = input
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let args = input.get("args").cloned().unwrap_or_else(|| serde_json::json!({}));
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let ext = instance.read().await;
+                    let result = ext.execute_command(&command, &args).await?;
+                    Ok::<serde_json::Value, $crate::ExtensionError>(serde_json::json!({
+                        "success": true,
+                        "result": result,
+                    }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_configure_json(
+                input_ptr: *const u8,
+                input_len: usize,
+            ) -> *mut std::os::raw::c_char {
+                let input = match parse_input_json(input_ptr, input_len) {
+                    Ok(value) => value,
+                    Err(e) => return error_ptr(e),
+                };
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let mut ext = instance.write().await;
+                    ext.configure(&input).await?;
+                    Ok::<serde_json::Value, $crate::ExtensionError>(serde_json::json!({
+                        "success": true,
+                    }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_produce_metrics_json() -> *mut std::os::raw::c_char {
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let ext = instance.read().await;
+                    let metrics = ext.produce_metrics()?;
+                    Ok::<serde_json::Value, $crate::ExtensionError>(serde_json::json!({
+                        "success": true,
+                        "metrics": metrics,
+                    }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_health_check_json() -> *mut std::os::raw::c_char {
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let ext = instance.read().await;
+                    let healthy = ext.health_check().await?;
+                    Ok::<serde_json::Value, $crate::ExtensionError>(serde_json::json!({
+                        "success": true,
+                        "healthy": healthy,
+                    }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_stats_json() -> *mut std::os::raw::c_char {
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let ext = instance.read().await;
+                    Ok::<serde_json::Value, String>(serde_json::json!({
+                        "success": true,
+                        "stats": ext.get_stats(),
+                    }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_event_subscriptions_json() -> *mut std::os::raw::c_char {
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let ext = instance.read().await;
+                    let event_types: Vec<String> = ext.event_subscriptions().iter().map(|s| s.to_string()).collect();
+                    Ok::<serde_json::Value, String>(serde_json::json!({
+                        "success": true,
+                        "event_types": event_types,
+                    }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_stream_capability_json() -> *mut std::os::raw::c_char {
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let ext = instance.read().await;
+                    Ok::<serde_json::Value, String>(serde_json::json!({
+                        "success": true,
+                        "capability": ext.stream_capability(),
+                    }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_init_session_json(
+                input_ptr: *const u8,
+                input_len: usize,
+            ) -> *mut std::os::raw::c_char {
+                let input = match parse_input_json(input_ptr, input_len) {
+                    Ok(value) => value,
+                    Err(e) => return error_ptr(e),
+                };
+                let session_id = input.get("session_id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                let config = input.get("config").cloned().unwrap_or_else(|| serde_json::json!({}));
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let ext = instance.read().await;
+                    let session = $crate::StreamSession::new(
+                        session_id,
+                        ext.metadata().id.clone(),
+                        config,
+                        $crate::ClientInfo {
+                            client_id: "runner".to_string(),
+                            ip_addr: None,
+                            user_agent: None,
+                        },
+                    );
+                    ext.init_session(&session).await?;
+                    Ok::<serde_json::Value, $crate::ExtensionError>(serde_json::json!({ "success": true }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_process_session_chunk_json(
+                input_ptr: *const u8,
+                input_len: usize,
+            ) -> *mut std::os::raw::c_char {
+                let input = match parse_input_json(input_ptr, input_len) {
+                    Ok(value) => value,
+                    Err(e) => return error_ptr(e),
+                };
+                let session_id = input.get("session_id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                let chunk: $crate::DataChunk = match input.get("chunk").cloned() {
+                    Some(value) => match serde_json::from_value(value) {
+                        Ok(chunk) => chunk,
+                        Err(e) => return error_ptr(format!("Invalid stream chunk JSON: {}", e)),
+                    },
+                    None => return error_ptr("Missing stream chunk"),
+                };
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let ext = instance.read().await;
+                    let result = ext.process_session_chunk(&session_id, chunk).await?;
+                    Ok::<serde_json::Value, $crate::ExtensionError>(serde_json::json!({
+                        "success": true,
+                        "result": result,
+                    }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_close_session_json(
+                input_ptr: *const u8,
+                input_len: usize,
+            ) -> *mut std::os::raw::c_char {
+                let input = match parse_input_json(input_ptr, input_len) {
+                    Ok(value) => value,
+                    Err(e) => return error_ptr(e),
+                };
+                let session_id = input.get("session_id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let ext = instance.read().await;
+                    let stats = ext.close_session(&session_id).await?;
+                    Ok::<serde_json::Value, $crate::ExtensionError>(serde_json::json!({
+                        "success": true,
+                        "stats": stats,
+                    }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_process_chunk_json(
+                input_ptr: *const u8,
+                input_len: usize,
+            ) -> *mut std::os::raw::c_char {
+                let input = match parse_input_json(input_ptr, input_len) {
+                    Ok(value) => value,
+                    Err(e) => return error_ptr(e),
+                };
+                let chunk: $crate::DataChunk = match input.get("chunk").cloned() {
+                    Some(value) => match serde_json::from_value(value) {
+                        Ok(chunk) => chunk,
+                        Err(e) => return error_ptr(format!("Invalid chunk JSON: {}", e)),
+                    },
+                    None => return error_ptr("Missing chunk"),
+                };
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let ext = instance.read().await;
+                    let result = ext.process_chunk(chunk).await?;
+                    Ok::<serde_json::Value, $crate::ExtensionError>(serde_json::json!({
+                        "success": true,
+                        "result": result,
+                    }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_start_push_json(
+                input_ptr: *const u8,
+                input_len: usize,
+            ) -> *mut std::os::raw::c_char {
+                let input = match parse_input_json(input_ptr, input_len) {
+                    Ok(value) => value,
+                    Err(e) => return error_ptr(e),
+                };
+                let session_id = input.get("session_id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let ext = instance.read().await;
+                    ext.start_push(&session_id).await?;
+                    Ok::<serde_json::Value, $crate::ExtensionError>(serde_json::json!({ "success": true }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_stop_push_json(
+                input_ptr: *const u8,
+                input_len: usize,
+            ) -> *mut std::os::raw::c_char {
+                let input = match parse_input_json(input_ptr, input_len) {
+                    Ok(value) => value,
+                    Err(e) => return error_ptr(e),
+                };
+                let session_id = input.get("session_id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let ext = instance.read().await;
+                    ext.stop_push(&session_id).await?;
+                    Ok::<serde_json::Value, $crate::ExtensionError>(serde_json::json!({ "success": true }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
+                }
+            }
+
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_handle_event_json(
+                input_ptr: *const u8,
+                input_len: usize,
+            ) -> *mut std::os::raw::c_char {
+                let input = match parse_input_json(input_ptr, input_len) {
+                    Ok(value) => value,
+                    Err(e) => return error_ptr(e),
+                };
+                let event_type = input.get("event_type").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                let payload = input.get("payload").cloned().unwrap_or_else(|| serde_json::json!({}));
+                let instance = extension_instance().clone();
+                match block_on_result(async move {
+                    let ext = instance.read().await;
+                    ext.handle_event(&event_type, &payload)?;
+                    Ok::<serde_json::Value, $crate::ExtensionError>(serde_json::json!({ "success": true }))
+                }) {
+                    Ok(value) => json_ptr(value),
+                    Err(e) => error_ptr(e),
                 }
             }
         }
@@ -538,5 +917,354 @@ macro_rules! ext_warn {
 macro_rules! ext_error {
     ($($arg:tt)*) => {
         $crate::ext_log!(error, $($arg)*)
+    };
+}
+
+// ============================================================================
+// Configuration-Style Extension Definition Macros
+// ============================================================================
+
+/// Define an extension with configuration-style syntax
+///
+/// This macro simplifies extension development by generating boilerplate code
+/// for metadata, metrics, and command definitions.
+///
+/// # Basic Example
+///
+/// ```rust,ignore
+/// use neomind_extension_sdk::prelude::*;
+///
+/// pub struct MyExtension {
+///     counter: std::sync::atomic::AtomicI64,
+/// }
+///
+/// impl MyExtension {
+///     pub fn new() -> Self {
+///         Self {
+///             counter: std::sync::atomic::AtomicI64::new(0),
+///         }
+///     }
+///
+///     // Business methods
+///     pub async fn increment(&self, amount: i64) -> Result<i64> {
+///         Ok(self.counter.fetch_add(amount, std::sync::atomic::Ordering::SeqCst) + amount)
+///     }
+/// }
+///
+/// // Define extension with configuration-style macro
+/// neomind_extension!(MyExtension {
+///     id: "my-extension",
+///     name: "My Extension",
+///     version: "1.0.0",
+///     description: "A simple counter extension",
+///
+///     commands: [
+///         ("increment", "Increment Counter", [
+///             ("amount", "Amount", Integer, optional)
+///         ])
+///     ],
+///
+///     dispatch: {
+///         "increment" => |ext, args| {
+///             let amount = args.get("amount").and_then(|v| v.as_i64()).unwrap_or(1);
+///             let result = ext.increment(amount).await?;
+///             Ok(serde_json::json!({ "counter": result }))
+///         }
+///     }
+/// });
+/// ```
+#[macro_export]
+macro_rules! neomind_extension {
+    (
+        $extension_type:ty {
+            id: $id:literal,
+            name: $name:literal,
+            version: $version:literal,
+
+            // Optional fields
+            $(description: $description:literal,)?
+            $(author: $author:literal,)?
+
+            // Metrics definition (optional)
+            $(metrics: [
+                $($metric_name:literal : $metric_display:literal => $metric_type:ident $(($metric_unit:literal, $metric_min:literal, $metric_max:literal))?),*
+            ],)?
+
+            // Commands definition (optional)
+            $(commands: [
+                $($cmd_name:literal : $cmd_display:literal => [$($param_name:literal : $param_display:literal : $param_type:ident),*]),*
+            ],)?
+
+            // Dispatch handlers
+            dispatch: {
+                $($dispatch_cmd:literal => |$dispatch_ext:ident, $dispatch_args:ident| $dispatch_body:block)*
+            }
+        }
+    ) => {
+        // Implement the Extension trait
+        #[async_trait::async_trait]
+        impl $crate::Extension for $extension_type {
+            fn metadata(&self) -> &$crate::ExtensionMetadata {
+                use std::sync::OnceLock;
+                static META: OnceLock<$crate::ExtensionMetadata> = OnceLock::new();
+                META.get_or_init(|| {
+                    let version = $crate::semver::Version::parse($version)
+                        .unwrap_or_else(|_| $crate::semver::Version::new(0, 0, 0));
+                    let mut meta = $crate::ExtensionMetadata::new($id, $name, version);
+                    $(meta.description = Some($description.to_string());)?
+                    $(meta.author = Some($author.to_string());)?
+                    meta
+                })
+            }
+
+            fn metrics(&self) -> Vec<$crate::MetricDescriptor> {
+                vec![
+                    $(
+                        $(
+                            $crate::MetricDescriptor {
+                                name: $metric_name.to_string(),
+                                display_name: $metric_display.to_string(),
+                                data_type: $crate::neomind_extension_metric_type!($metric_type),
+                                unit: String::new(),
+                                min: None,
+                                max: None,
+                                required: false,
+                            }
+                        ),*
+                    )?
+                ]
+            }
+
+            fn commands(&self) -> Vec<$crate::ExtensionCommand> {
+                vec![
+                    $(
+                        $(
+                            $crate::ExtensionCommand {
+                                name: $cmd_name.to_string(),
+                                display_name: $cmd_display.to_string(),
+                                description: String::new(),
+                                payload_template: String::new(),
+                                parameters: vec![
+                                    $(
+                                        $crate::ParameterDefinition {
+                                            name: $param_name.to_string(),
+                                            display_name: $param_display.to_string(),
+                                            description: String::new(),
+                                            param_type: $crate::neomind_extension_param_type!($param_type),
+                                            required: true,
+                                            default_value: None,
+                                            min: None,
+                                            max: None,
+                                            options: Vec::new(),
+                                        }
+                                    ),*
+                                ],
+                                fixed_values: std::collections::HashMap::new(),
+                                samples: Vec::new(),
+                                parameter_groups: Vec::new(),
+                            }
+                        ),*
+                    )?
+                ]
+            }
+
+            async fn execute_command(
+                &self,
+                command: &str,
+                args: &serde_json::Value,
+            ) -> $crate::Result<serde_json::Value> {
+                match command {
+                    $(
+                        $dispatch_cmd => {
+                            let $dispatch_ext = self;
+                            let $dispatch_args = args;
+                            $dispatch_body
+                        }
+                    )*
+                    _ => Err($crate::ExtensionError::CommandNotFound(command.to_string())),
+                }
+            }
+        }
+
+        // Export FFI functions
+        $crate::neomind_export!($extension_type);
+    };
+}
+
+/// Helper macro to convert type name to MetricDataType
+#[macro_export]
+macro_rules! neomind_extension_metric_type {
+    (Float) => { $crate::MetricDataType::Float };
+    (Integer) => { $crate::MetricDataType::Integer };
+    (Boolean) => { $crate::MetricDataType::Boolean };
+    (String) => { $crate::MetricDataType::String };
+    (Binary) => { $crate::MetricDataType::Binary };
+}
+
+/// Helper macro to convert type name to MetricDataType for parameters
+#[macro_export]
+macro_rules! neomind_extension_param_type {
+    (Float) => { $crate::MetricDataType::Float };
+    (Integer) => { $crate::MetricDataType::Integer };
+    (Boolean) => { $crate::MetricDataType::Boolean };
+    (String) => { $crate::MetricDataType::String };
+    (Binary) => { $crate::MetricDataType::Binary };
+}
+
+/// Simplified extension definition with minimal boilerplate
+///
+/// This macro is a simplified version of `neomind_extension!` that only requires
+/// the essential fields. Use this when you don't need metrics or complex commands.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// neomind_simple_extension!(MyExtension {
+///     id: "my-extension",
+///     name: "My Extension",
+///     version: "1.0.0",
+///
+///     dispatch: {
+///         "hello" => |_ext, _args| {
+///             Ok(serde_json::json!({ "message": "Hello, World!" }))
+///         }
+///     }
+/// });
+/// ```
+#[macro_export]
+macro_rules! neomind_simple_extension {
+    (
+        $extension_type:ty {
+            id: $id:literal,
+            name: $name:literal,
+            version: $version:literal,
+
+            $(description: $description:literal,)?
+
+            dispatch: {
+                $($dispatch_cmd:literal => |$dispatch_ext:ident, $dispatch_args:ident| $dispatch_body:block)*
+            }
+        }
+    ) => {
+        #[async_trait::async_trait]
+        impl $crate::Extension for $extension_type {
+            fn metadata(&self) -> &$crate::ExtensionMetadata {
+                use std::sync::OnceLock;
+                static META: OnceLock<$crate::ExtensionMetadata> = OnceLock::new();
+                META.get_or_init(|| {
+                    let version = $crate::semver::Version::parse($version)
+                        .unwrap_or_else(|_| $crate::semver::Version::new(0, 0, 0));
+                    let mut meta = $crate::ExtensionMetadata::new($id, $name, version);
+                    $(meta.description = Some($description.to_string());)?
+                    meta
+                })
+            }
+
+            async fn execute_command(
+                &self,
+                command: &str,
+                args: &serde_json::Value,
+            ) -> $crate::Result<serde_json::Value> {
+                match command {
+                    $(
+                        $dispatch_cmd => {
+                            let $dispatch_ext = self;
+                            let $dispatch_args = args;
+                            $dispatch_body
+                        }
+                    )*
+                    _ => Err($crate::ExtensionError::CommandNotFound(command.to_string())),
+                }
+            }
+        }
+
+        $crate::neomind_export!($extension_type);
+    };
+}
+
+/// Define metrics for an extension (helper macro)
+///
+/// Use this with the `metrics!` macro inside your extension impl block.
+#[macro_export]
+macro_rules! define_metrics {
+    ($($name:literal => $display:literal : $type:ident $([$unit:literal, $min:expr, $max:expr])?),* $(,)?) => {
+        vec![
+            $(
+                $crate::MetricDescriptor {
+                    name: $name.to_string(),
+                    display_name: $display.to_string(),
+                    data_type: $crate::neomind_extension_metric_type!($type),
+                    unit: String::new() $(.to_string() = $unit.to_string())?,
+                    min: None $(.or(Some($min as f64)))?,
+                    max: None $(.or(Some($max as f64)))?,
+                    required: false,
+                }
+            ),*
+        ]
+    };
+}
+
+/// Define commands for an extension (helper macro)
+#[macro_export]
+macro_rules! define_commands {
+    ($($name:literal => $display:literal : [$($param:tt),*] $(samples: [$($sample:expr),*])?),* $(,)?) => {
+        vec![
+            $(
+                $crate::ExtensionCommand {
+                    name: $name.to_string(),
+                    display_name: $display.to_string(),
+                    description: String::new(),
+                    payload_template: String::new(),
+                    parameters: $crate::define_params!($($param),*),
+                    fixed_values: std::collections::HashMap::new(),
+                    samples: vec![$($($sample.clone()),*)?],
+                    parameter_groups: Vec::new(),
+                }
+            ),*
+        ]
+    };
+}
+
+/// Define parameters for a command (helper macro)
+#[macro_export]
+macro_rules! define_params {
+    () => { Vec::new() };
+    ($name:literal : $display:literal : $type:ident $(, $rest:tt)*) => {
+        {
+            let mut params = vec![
+                $crate::ParameterDefinition {
+                    name: $name.to_string(),
+                    display_name: $display.to_string(),
+                    description: String::new(),
+                    param_type: $crate::neomind_extension_param_type!($type),
+                    required: true,
+                    default_value: None,
+                    min: None,
+                    max: None,
+                    options: Vec::new(),
+                }
+            ];
+            params.extend($crate::define_params!($($rest)*));
+            params
+        }
+    };
+    ($name:literal : $display:literal : $type:ident ? $(, $rest:tt)*) => {
+        {
+            let mut params = vec![
+                $crate::ParameterDefinition {
+                    name: $name.to_string(),
+                    display_name: $display.to_string(),
+                    description: String::new(),
+                    param_type: $crate::neomind_extension_param_type!($type),
+                    required: false,
+                    default_value: None,
+                    min: None,
+                    max: None,
+                    options: Vec::new(),
+                }
+            ];
+            params.extend($crate::define_params!($($rest)*));
+            params
+        }
     };
 }

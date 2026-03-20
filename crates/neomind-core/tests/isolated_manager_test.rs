@@ -24,7 +24,6 @@ fn test_isolated_manager_config_default() {
 
     assert!(config.isolated_by_default);
     assert!(config.force_isolated.is_empty());
-    assert!(config.force_in_process.is_empty());
 }
 
 #[test]
@@ -40,13 +39,11 @@ fn test_isolated_manager_config_custom() {
     let config = IsolatedManagerConfig {
         extension_config: IsolatedExtensionConfig::default(),
         isolated_by_default: false,
-        force_isolated: vec!["critical.extension".to_string()],
-        force_in_process: vec!["legacy.extension".to_string()],
+        force_isolated: vec!["legacy.extension".to_string()],
     };
 
     assert!(!config.isolated_by_default);
     assert_eq!(config.force_isolated.len(), 1);
-    assert_eq!(config.force_in_process.len(), 1);
 }
 
 // ============================================================================
@@ -65,7 +62,6 @@ async fn test_manager_with_custom_config() {
         extension_config: IsolatedExtensionConfig::default(),
         isolated_by_default: true,
         force_isolated: vec![],
-        force_in_process: vec![],
     };
 
     let manager = IsolatedExtensionManager::new(config);
@@ -121,7 +117,6 @@ fn test_should_use_isolated_force_isolated() {
         extension_config: IsolatedExtensionConfig::default(),
         isolated_by_default: false,
         force_isolated: vec!["critical.extension".to_string()],
-        force_in_process: vec![],
     };
 
     let manager = IsolatedExtensionManager::new(config);
@@ -134,21 +129,17 @@ fn test_should_use_isolated_force_isolated() {
 }
 
 #[test]
-fn test_should_use_isolated_force_in_process() {
+fn test_should_use_isolated_by_default() {
     let config = IsolatedManagerConfig {
         extension_config: IsolatedExtensionConfig::default(),
         isolated_by_default: true,
         force_isolated: vec![],
-        force_in_process: vec!["legacy.extension".to_string()],
     };
 
     let manager = IsolatedExtensionManager::new(config);
 
-    // Force in-process should override default
-    assert!(!manager.should_use_isolated("legacy.extension"));
-
-    // Other extensions should use isolated
-    assert!(manager.should_use_isolated("other.extension"));
+    // All extensions should use isolated when isolated_by_default is true
+    assert!(manager.should_use_isolated("any.extension"));
 }
 
 // ============================================================================
@@ -185,8 +176,7 @@ fn test_config_access() {
     let config = IsolatedManagerConfig {
         extension_config: IsolatedExtensionConfig::default(),
         isolated_by_default: true,
-        force_isolated: vec!["test".to_string()],
-        force_in_process: vec![],
+        force_isolated: vec![],
     };
 
     let manager = IsolatedExtensionManager::new(config.clone());
@@ -209,7 +199,7 @@ fn test_isolated_extension_info_metadata_accessor() {
     let metadata = ExtensionMetadata::new(
         "test.extension",
         "Test Extension",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     );
 
     let descriptor = ExtensionDescriptor::new(metadata.clone());
@@ -239,7 +229,7 @@ fn test_isolated_extension_info_runtime_state() {
     let metadata = ExtensionMetadata::new(
         "test.extension",
         "Test Extension",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     );
 
     let descriptor = ExtensionDescriptor::new(metadata);

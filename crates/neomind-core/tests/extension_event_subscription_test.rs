@@ -61,7 +61,7 @@ impl Extension for DeviceEventExtension {
             ExtensionMetadata::new(
                 "device-event-test",
                 "Device Event Test",
-                Version::parse("1.0.0").unwrap()
+                "1.0.0"
             )
         })
     }
@@ -138,7 +138,7 @@ impl Extension for AllEventsExtension {
             ExtensionMetadata::new(
                 "all-events-test",
                 "All Events Test",
-                Version::parse("1.0.0").unwrap()
+                "1.0.0"
             )
         })
     }
@@ -208,7 +208,7 @@ impl Extension for PrefixMatchExtension {
             ExtensionMetadata::new(
                 "prefix-match-test",
                 "Prefix Match Test",
-                Version::parse("1.0.0").unwrap()
+                "1.0.0"
             )
         })
     }
@@ -259,7 +259,7 @@ impl Extension for NoEventsExtension {
             ExtensionMetadata::new(
                 "no-events-test",
                 "No Events Test",
-                Version::parse("1.0.0").unwrap()
+                "1.0.0"
             )
         })
     }
@@ -866,7 +866,7 @@ async fn test_extension_event_subscription_error_handling() {
                 ExtensionMetadata::new(
                     "error-ext",
                     "Error Extension",
-                    Version::parse("1.0.0").unwrap()
+                    "1.0.0"
                 )
             })
         }
@@ -959,7 +959,7 @@ async fn test_extension_event_subscription_custom_event() {
                 ExtensionMetadata::new(
                     "custom-event-ext",
                     "Custom Event Extension",
-                    Version::parse("1.0.0").unwrap()
+                    "1.0.0"
                 )
             })
         }

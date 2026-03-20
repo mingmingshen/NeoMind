@@ -8,6 +8,8 @@ default = []
 tiktoken = ["dep:tiktoken-rs"]
 
 [dependencies]
+# Extension SDK (unified - replaces api and host-api)
+neomind-extension-sdk = { path = "../neomind-extension-sdk" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
@@ -48,5 +50,3 @@ clone_on_copy = "allow"
 derivable_impls = "allow"
 collapsible_if = "allow"
 map_clone = "allow"
-
-

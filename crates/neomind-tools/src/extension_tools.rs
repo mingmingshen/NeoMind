@@ -485,7 +485,7 @@ mod tests {
         let metadata = ExtensionMetadata::new(
             "test.extension",
             "Test Extension",
-            semver::Version::new(1, 0, 0),
+            "1.0.0",
         )
         .with_description("A test extension");
 

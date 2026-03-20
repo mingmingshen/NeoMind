@@ -63,7 +63,7 @@ fn test_isolated_manager_config_default() {
 
     assert!(config.isolated_by_default);
     assert!(config.force_isolated.is_empty());
-    assert!(config.force_in_process.is_empty());
+    assert!(config.force_isolated.is_empty());
 }
 
 #[test]
@@ -72,12 +72,12 @@ fn test_isolated_manager_config_custom() {
         extension_config: IsolatedExtensionConfig::default(),
         isolated_by_default: false,
         force_isolated: vec!["critical.extension".to_string()],
-        force_in_process: vec!["legacy.extension".to_string()],
+        force_isolated: vec!["legacy.extension".to_string()],
     };
 
     assert!(!config.isolated_by_default);
     assert_eq!(config.force_isolated.len(), 1);
-    assert_eq!(config.force_in_process.len(), 1);
+    assert_eq!(config.force_isolated.len(), 1);
 }
 
 // ============================================================================
@@ -269,7 +269,7 @@ fn test_extension_descriptor_new() {
     let metadata = ExtensionMetadata::new(
         "test.isolated",
         "Test Isolated Extension",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     );
 
     let descriptor = ExtensionDescriptor::new(metadata);
@@ -285,7 +285,7 @@ fn test_extension_descriptor_has_config() {
     let metadata = ExtensionMetadata::new(
         "test.config",
         "Test Config Extension",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     );
 
     let descriptor = ExtensionDescriptor::new(metadata);
@@ -303,7 +303,7 @@ fn test_isolated_extension_info_creation() {
     let metadata = ExtensionMetadata::new(
         "test.info",
         "Test Info Extension",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     );
 
     let descriptor = ExtensionDescriptor::new(metadata);
@@ -326,7 +326,7 @@ fn test_isolated_extension_info_stopped() {
     let metadata = ExtensionMetadata::new(
         "test.stopped",
         "Test Stopped Extension",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     );
 
     let descriptor = ExtensionDescriptor::new(metadata);
@@ -611,14 +611,14 @@ fn test_isolated_extension_metadata() {
     let metadata = ExtensionMetadata::new(
         "isolated.video.processor",
         "Video Processor Extension",
-        semver::Version::new(2, 1, 0),
+        "2.1.0",
     )
     .with_description("Process video streams in isolated process")
     .with_author("NeoMind Team");
 
     assert_eq!(metadata.id, "isolated.video.processor");
     assert_eq!(metadata.name, "Video Processor Extension");
-    assert_eq!(metadata.version, semver::Version::new(2, 1, 0));
+    assert_eq!(metadata.version, "2.1.0");
     assert!(metadata.description.is_some());
     assert!(metadata.author.is_some());
 }

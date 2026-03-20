@@ -10,7 +10,7 @@
 #![allow(dead_code)]
 
 use neomind_core::extension::registry::ExtensionRegistry;
-use neomind_core::extension::unified::UnifiedExtensionService;
+use neomind_core::extension::ExtensionRuntime;
 use neomind_core::extension::context::{
     ExtensionContext, ExtensionContextConfig, ExtensionCapability,
 };
@@ -56,7 +56,7 @@ impl Extension for WeatherExtension {
             ExtensionMetadata::new(
                 "neomind.weather.forecast",
                 "Weather Forecast Extension",
-                semver::Version::new(1, 0, 0),
+                "1.0.0",
             )
             .with_description("Provides weather forecast data")
             .with_author("NeoMind Team")
@@ -298,7 +298,7 @@ impl Extension for SensorExtension {
             ExtensionMetadata::new(
                 "neomind.sensor.environment",
                 "Environment Sensor Extension",
-                semver::Version::new(1, 0, 0),
+                "1.0.0",
             )
             .with_description("Provides environmental sensor readings")
         })
@@ -644,7 +644,7 @@ async fn test_extension_with_capabilities() {
         ],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     // Register mock capability provider
     let mock_provider = Arc::new(MockCapabilityProvider);
@@ -669,13 +669,13 @@ async fn test_extension_with_capabilities() {
 }
 
 // ============================================================================
-// Unified Service Workflow Tests
+// Runtime Workflow Tests
 // ============================================================================
 
 #[tokio::test]
-async fn test_unified_service_workflow() {
+async fn test_extension_runtime_workflow() {
     let registry = Arc::new(ExtensionRegistry::new());
-    let service = UnifiedExtensionService::with_defaults(registry.clone());
+    let service = ExtensionRuntime::with_defaults(registry.clone());
 
     // Verify initial state
     assert_eq!(service.count().await, 0);

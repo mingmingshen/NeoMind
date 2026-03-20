@@ -189,14 +189,14 @@ fn test_extension_metadata_builder() {
     let meta = ExtensionMetadata::new(
         "neomind.weather.live",
         "Live Weather Provider",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     )
     .with_description("Provides real-time weather data")
     .with_author("NeoMind Team");
 
     assert_eq!(meta.id, "neomind.weather.live");
     assert_eq!(meta.name, "Live Weather Provider");
-    assert_eq!(meta.version.major, 1);
+    assert_eq!(meta.version, "1.0.0");
     // V2: extension_type removed
     assert_eq!(
         meta.description,
@@ -207,7 +207,7 @@ fn test_extension_metadata_builder() {
 
 #[test]
 fn test_extension_metadata_serialization() {
-    let meta = ExtensionMetadata::new("test.ext", "Test Extension", semver::Version::new(0, 1, 0));
+    let meta = ExtensionMetadata::new("test.ext", "Test Extension", "0.1.0");
 
     let json = serde_json::to_string(&meta).unwrap();
     let parsed: ExtensionMetadata = serde_json::from_str(&json).unwrap();

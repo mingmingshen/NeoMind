@@ -68,7 +68,7 @@ impl Extension for LifecycleTrackingExtension {
             ExtensionMetadata::new(
                 "lifecycle.extension",
                 "Lifecycle Extension",
-                semver::Version::new(1, 0, 0),
+                "1.0.0",
             )
         })
     }

@@ -242,7 +242,7 @@ async fn test_provider_registration() {
         extension_id: "test-extension".to_string(),
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
     let provider = Arc::new(MockDeviceProvider::new());
     provider.init_with_devices().await;
 
@@ -270,7 +270,7 @@ async fn test_capability_invocation() {
         ],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
     let provider = Arc::new(MockDeviceProvider::new());
     provider.init_with_devices().await;
 
@@ -296,7 +296,7 @@ async fn test_capability_invocation() {
 async fn test_capability_check() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
     let provider = Arc::new(MockDeviceProvider::new());
     provider.init_with_devices().await;
 
@@ -323,7 +323,7 @@ async fn test_capability_check() {
 async fn test_multiple_providers() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     // Register device provider
     let device_provider = Arc::new(MockDeviceProvider::new());
@@ -355,7 +355,7 @@ async fn test_capability_write() {
         ],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
     let provider = Arc::new(MockDeviceProvider::new());
     provider.init_with_devices().await;
 
@@ -402,7 +402,7 @@ async fn test_capability_control() {
         ],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
     let provider = Arc::new(MockDeviceProvider::new());
     provider.init_with_devices().await;
 
@@ -435,7 +435,7 @@ async fn test_event_publish() {
         ],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
     let provider = Arc::new(MockEventProvider::new());
 
     context
@@ -475,7 +475,7 @@ async fn test_capability_error_handling() {
         ],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
     let provider = Arc::new(MockDeviceProvider::new());
     provider.init_with_devices().await;
 

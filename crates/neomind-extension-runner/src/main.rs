@@ -24,7 +24,9 @@
 //! All messages are framed with a 4-byte length prefix (little-endian).
 
 use std::collections::HashMap;
+use std::ffi::CStr;
 use std::io::{Read, Write};
+use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -38,10 +40,8 @@ use wasmtime_wasi::preview1::{self, WasiP1Ctx};
 use wasmtime_wasi::WasiCtxBuilder;
 
 use neomind_core::extension::isolated::{ErrorKind, IpcFrame, IpcMessage, IpcResponse, BatchCommand, BatchResult};
-use neomind_core::extension::loader::NativeExtensionLoader;
-use neomind_core::extension::system::DynExtension;
-// Import capability name constants from Core for consistency
-use neomind_core::extension::context::capabilities as cap;
+// Import capability name constants from SDK via Core for consistency
+use neomind_core::extension::context::capabilities::native_capabilities as cap;
 
 // Resource limits module
 mod resource_limits;
@@ -271,7 +271,7 @@ struct Args {
 /// Extension runner state
 struct Runner {
     /// Loaded extension (for native)
-    extension: Option<DynExtension>,
+    extension: Option<NativeExtensionBridge>,
     /// WASM runtime (for WASM)
     wasm_runtime: Option<WasmRuntime>,
     /// Extension descriptor (unified capabilities)
@@ -288,8 +288,404 @@ struct Runner {
     ipc_request_rx: Option<std::sync::mpsc::Receiver<SyncIpcRequest>>,
     /// IPC response sender (for returning results to WASM) - no longer used
     ipc_response_tx: Option<std::sync::mpsc::SyncSender<SyncIpcResponse>>,
-    /// Capability context for invoking host capabilities
-    capability_context: Option<neomind_core::extension::system::CapabilityContext>,
+}
+
+type JsonFn0 = unsafe extern "C" fn() -> *mut c_char;
+type JsonFn1 = unsafe extern "C" fn(*const u8, usize) -> *mut c_char;
+type FreeStringFn = unsafe extern "C" fn(*mut c_char);
+type SetCapabilityBridgeFn = unsafe extern "C" fn(HostCapabilityInvokeFn, HostCapabilityFreeFn);
+type HostCapabilityInvokeFn = unsafe extern "C" fn(*const u8, usize) -> *mut c_char;
+type HostCapabilityFreeFn = unsafe extern "C" fn(*mut c_char);
+
+static GLOBAL_NATIVE_IPC_CLIENT: std::sync::OnceLock<Arc<SyncIpcClient>> = std::sync::OnceLock::new();
+
+unsafe extern "C" fn runner_native_capability_invoke(
+    input_ptr: *const u8,
+    input_len: usize,
+) -> *mut c_char {
+    let error_json = |message: String| {
+        std::ffi::CString::new(json!({
+            "success": false,
+            "error": message,
+        }).to_string())
+            .unwrap_or_else(|_| std::ffi::CString::new("{\"success\":false,\"error\":\"runner bridge failed\"}").unwrap())
+            .into_raw()
+    };
+
+    if input_ptr.is_null() || input_len == 0 {
+        return error_json("empty native capability bridge input".to_string());
+    }
+
+    let input_bytes = std::slice::from_raw_parts(input_ptr, input_len);
+    let input = match serde_json::from_slice::<serde_json::Value>(input_bytes) {
+        Ok(value) => value,
+        Err(error) => return error_json(format!("invalid native capability bridge json: {}", error)),
+    };
+
+    let capability = input
+        .get("capability")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    let params = input.get("params").cloned().unwrap_or_else(|| json!({}));
+
+    let Some(ipc_client) = GLOBAL_NATIVE_IPC_CLIENT.get() else {
+        return error_json("native capability IPC client is not initialized".to_string());
+    };
+
+    let response = ipc_client.invoke(capability, &params);
+    std::ffi::CString::new(response.to_string())
+        .unwrap_or_else(|_| std::ffi::CString::new("{\"success\":false,\"error\":\"failed to serialize native capability response\"}").unwrap())
+        .into_raw()
+}
+
+unsafe extern "C" fn runner_native_capability_free(ptr: *mut c_char) {
+    if !ptr.is_null() {
+        let _ = std::ffi::CString::from_raw(ptr);
+    }
+}
+
+struct NativeExtensionBridge {
+    _library: Arc<libloading::Library>,
+    free_string: FreeStringFn,
+    descriptor_json: JsonFn0,
+    set_capability_bridge: Option<SetCapabilityBridgeFn>,
+    execute_command_json: JsonFn1,
+    configure_json: Option<JsonFn1>,
+    produce_metrics_json: JsonFn0,
+    health_check_json: Option<JsonFn0>,
+    stats_json: Option<JsonFn0>,
+    event_subscriptions_json: Option<JsonFn0>,
+    stream_capability_json: Option<JsonFn0>,
+    init_session_json: Option<JsonFn1>,
+    process_session_chunk_json: Option<JsonFn1>,
+    close_session_json: Option<JsonFn1>,
+    process_chunk_json: Option<JsonFn1>,
+    start_push_json: Option<JsonFn1>,
+    stop_push_json: Option<JsonFn1>,
+    handle_event_json: Option<JsonFn1>,
+}
+
+impl NativeExtensionBridge {
+    fn load(path: &Path) -> Result<(Self, neomind_core::extension::system::ExtensionDescriptor), String> {
+        let library = Arc::new(unsafe { libloading::Library::new(path) }
+            .map_err(|e| format!("Failed to load native extension library: {}", e))?);
+
+        let abi_version = Self::load_symbol::<unsafe extern "C" fn() -> u32>(
+            &library,
+            b"neomind_extension_abi_version\0",
+        )?;
+        let version = unsafe { abi_version() };
+        if version != neomind_core::extension::ABI_VERSION {
+            return Err(format!(
+                "Incompatible ABI version: expected {}, got {}",
+                neomind_core::extension::ABI_VERSION,
+                version
+            ));
+        }
+
+        let bridge = Self {
+            free_string: Self::load_symbol(&library, b"neomind_extension_free_string\0")?,
+            descriptor_json: Self::load_symbol(&library, b"neomind_extension_descriptor_json\0")?,
+            set_capability_bridge: Self::load_optional_symbol(&library, b"neomind_extension_set_capability_bridge\0"),
+            execute_command_json: Self::load_symbol(&library, b"neomind_extension_execute_command_json\0")?,
+            configure_json: Self::load_optional_symbol(&library, b"neomind_extension_configure_json\0"),
+            produce_metrics_json: Self::load_symbol(&library, b"neomind_extension_produce_metrics_json\0")?,
+            health_check_json: Self::load_optional_symbol(&library, b"neomind_extension_health_check_json\0"),
+            stats_json: Self::load_optional_symbol(&library, b"neomind_extension_stats_json\0"),
+            event_subscriptions_json: Self::load_optional_symbol(&library, b"neomind_extension_event_subscriptions_json\0"),
+            stream_capability_json: Self::load_optional_symbol(&library, b"neomind_extension_stream_capability_json\0"),
+            init_session_json: Self::load_optional_symbol(&library, b"neomind_extension_init_session_json\0"),
+            process_session_chunk_json: Self::load_optional_symbol(&library, b"neomind_extension_process_session_chunk_json\0"),
+            close_session_json: Self::load_optional_symbol(&library, b"neomind_extension_close_session_json\0"),
+            process_chunk_json: Self::load_optional_symbol(&library, b"neomind_extension_process_chunk_json\0"),
+            start_push_json: Self::load_optional_symbol(&library, b"neomind_extension_start_push_json\0"),
+            stop_push_json: Self::load_optional_symbol(&library, b"neomind_extension_stop_push_json\0"),
+            handle_event_json: Self::load_optional_symbol(&library, b"neomind_extension_handle_event_json\0"),
+            _library: library,
+        };
+
+        let descriptor_response = bridge.call_json0(bridge.descriptor_json)?;
+        let descriptor_json = if descriptor_response
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            descriptor_response
+                .get("descriptor")
+                .cloned()
+                .ok_or("Missing descriptor in native response".to_string())?
+        } else {
+            return Err(Self::extract_error(&descriptor_response));
+        };
+
+        let descriptor = WasmRuntime::parse_descriptor_json(&descriptor_json)?;
+        Ok((bridge, descriptor))
+    }
+
+    fn install_capability_bridge(&self, ipc_client: Arc<SyncIpcClient>) {
+        let _ = GLOBAL_NATIVE_IPC_CLIENT.set(ipc_client);
+        if let Some(set_bridge) = self.set_capability_bridge {
+            unsafe {
+                set_bridge(runner_native_capability_invoke, runner_native_capability_free);
+            }
+        }
+    }
+
+    fn execute_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
+        let response = self.call_json1(
+            self.execute_command_json,
+            &json!({ "command": command, "args": args }),
+        )?;
+        Self::extract_success_value(&response, "result")
+    }
+
+    fn produce_metrics(
+        &self,
+    ) -> Result<Vec<neomind_core::extension::system::ExtensionMetricValue>, String> {
+        let response = self.call_json0(self.produce_metrics_json)?;
+        let metrics = Self::extract_success_value(&response, "metrics")?;
+        serde_json::from_value(metrics).map_err(|e| format!("Failed to parse metrics JSON: {}", e))
+    }
+
+    fn configure(&self, config: &serde_json::Value) -> Result<(), String> {
+        self.call_unit_json(self.configure_json, config)
+    }
+
+    fn health_check(&self) -> bool {
+        let Some(func) = self.health_check_json else {
+            return true;
+        };
+        match self.call_json0(func) {
+            Ok(response) => response
+                .get("success")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+                && response
+                    .get("healthy")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+            Err(_) => false,
+        }
+    }
+
+    fn get_stats(&self) -> neomind_core::extension::system::ExtensionStats {
+        let Some(func) = self.stats_json else {
+            return neomind_core::extension::system::ExtensionStats::default();
+        };
+        let Ok(response) = self.call_json0(func) else {
+            return neomind_core::extension::system::ExtensionStats::default();
+        };
+        if !response.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return neomind_core::extension::system::ExtensionStats::default();
+        }
+        response
+            .get("stats")
+            .cloned()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default()
+    }
+
+    fn event_subscriptions(&self) -> Vec<String> {
+        let Some(func) = self.event_subscriptions_json else {
+            return Vec::new();
+        };
+        let Ok(response) = self.call_json0(func) else {
+            return Vec::new();
+        };
+        if !response.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return Vec::new();
+        }
+        response
+            .get("event_types")
+            .cloned()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default()
+    }
+
+    fn get_stream_capability(
+        &self,
+    ) -> Result<Option<neomind_core::extension::StreamCapability>, String> {
+        let Some(func) = self.stream_capability_json else {
+            return Ok(None);
+        };
+        let response = self.call_json0(func)?;
+        if !response.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return Err(Self::extract_error(&response));
+        }
+        match response.get("capability") {
+            Some(value) if !value.is_null() => {
+                serde_json::from_value(value.clone()).map(Some).map_err(|e| {
+                    format!("Failed to parse native stream capability JSON: {}", e)
+                })
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn init_session(&self, session_id: &str, config: serde_json::Value) -> Result<(), String> {
+        self.call_unit_json(
+            self.init_session_json,
+            &json!({ "session_id": session_id, "config": config }),
+        )
+    }
+
+    fn process_session_chunk(
+        &self,
+        session_id: &str,
+        chunk: neomind_core::extension::isolated::StreamDataChunk,
+    ) -> Result<neomind_core::extension::StreamResult, String> {
+        let chunk = neomind_core::extension::DataChunk {
+            sequence: chunk.sequence,
+            data_type: neomind_core::extension::StreamDataType::from_mime_type(&chunk.data_type)
+                .unwrap_or(neomind_core::extension::StreamDataType::Binary),
+            data: chunk.data,
+            timestamp: chunk.timestamp,
+            metadata: None,
+            is_last: chunk.is_last,
+        };
+        let response = self.call_required_json1(
+            self.process_session_chunk_json,
+            "native process_session_chunk",
+            &json!({ "session_id": session_id, "chunk": chunk }),
+        )?;
+        let result = Self::extract_success_value(&response, "result")?;
+        serde_json::from_value(result)
+            .map_err(|e| format!("Failed to parse native stream result JSON: {}", e))
+    }
+
+    fn close_session(
+        &self,
+        session_id: &str,
+    ) -> Result<neomind_core::extension::SessionStats, String> {
+        let response = self.call_required_json1(
+            self.close_session_json,
+            "native close_session",
+            &json!({ "session_id": session_id }),
+        )?;
+        let stats = Self::extract_success_value(&response, "stats")?;
+        serde_json::from_value(stats)
+            .map_err(|e| format!("Failed to parse native session stats JSON: {}", e))
+    }
+
+    fn process_chunk(
+        &self,
+        chunk: neomind_core::extension::isolated::StreamDataChunk,
+    ) -> Result<neomind_core::extension::StreamResult, String> {
+        let chunk = neomind_core::extension::DataChunk {
+            sequence: chunk.sequence,
+            data_type: neomind_core::extension::StreamDataType::from_mime_type(&chunk.data_type)
+                .unwrap_or(neomind_core::extension::StreamDataType::Binary),
+            data: chunk.data,
+            timestamp: chunk.timestamp,
+            metadata: None,
+            is_last: chunk.is_last,
+        };
+        let response = self.call_required_json1(
+            self.process_chunk_json,
+            "native process_chunk",
+            &json!({ "chunk": chunk }),
+        )?;
+        let result = Self::extract_success_value(&response, "result")?;
+        serde_json::from_value(result)
+            .map_err(|e| format!("Failed to parse native chunk result JSON: {}", e))
+    }
+
+    fn start_push(&self, session_id: &str) -> Result<(), String> {
+        self.call_unit_json(self.start_push_json, &json!({ "session_id": session_id }))
+    }
+
+    fn stop_push(&self, session_id: &str) -> Result<(), String> {
+        self.call_unit_json(self.stop_push_json, &json!({ "session_id": session_id }))
+    }
+
+    fn handle_event(&self, event_type: &str, payload: &serde_json::Value) -> Result<(), String> {
+        self.call_unit_json(
+            self.handle_event_json,
+            &json!({ "event_type": event_type, "payload": payload }),
+        )
+    }
+
+    fn call_unit_json(
+        &self,
+        func: Option<JsonFn1>,
+        input: &serde_json::Value,
+    ) -> Result<(), String> {
+        let response = self.call_required_json1(func, "native bridge function", input)?;
+        if response.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+            Ok(())
+        } else {
+            Err(Self::extract_error(&response))
+        }
+    }
+
+    fn call_required_json1(
+        &self,
+        func: Option<JsonFn1>,
+        name: &str,
+        input: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let func = func.ok_or_else(|| format!("{} is not supported by this extension", name))?;
+        self.call_json1(func, input)
+    }
+
+    fn call_json0(&self, func: JsonFn0) -> Result<serde_json::Value, String> {
+        self.read_json_ptr(unsafe { func() })
+    }
+
+    fn call_json1(
+        &self,
+        func: JsonFn1,
+        input: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let bytes = serde_json::to_vec(input)
+            .map_err(|e| format!("Failed to serialize native bridge input: {}", e))?;
+        self.read_json_ptr(unsafe { func(bytes.as_ptr(), bytes.len()) })
+    }
+
+    fn read_json_ptr(&self, ptr: *mut c_char) -> Result<serde_json::Value, String> {
+        if ptr.is_null() {
+            return Err("Native extension returned a null JSON pointer".to_string());
+        }
+        let json_string = unsafe { CStr::from_ptr(ptr) }
+            .to_string_lossy()
+            .to_string();
+        unsafe { (self.free_string)(ptr) };
+        serde_json::from_str(&json_string)
+            .map_err(|e| format!("Failed to parse native extension JSON response: {}", e))
+    }
+
+    fn extract_success_value(
+        response: &serde_json::Value,
+        key: &str,
+    ) -> Result<serde_json::Value, String> {
+        if response.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+            response
+                .get(key)
+                .cloned()
+                .ok_or_else(|| format!("Missing '{}' in native extension response", key))
+        } else {
+            Err(Self::extract_error(response))
+        }
+    }
+
+    fn extract_error(response: &serde_json::Value) -> String {
+        response
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Native extension returned an unknown error")
+            .to_string()
+    }
+
+    fn load_symbol<T: Copy>(library: &libloading::Library, name: &[u8]) -> Result<T, String> {
+        let symbol: libloading::Symbol<T> = unsafe { library.get(name) }
+            .map_err(|e| format!("Failed to load symbol {:?}: {}", String::from_utf8_lossy(name), e))?;
+        Ok(*symbol)
+    }
+
+    fn load_optional_symbol<T: Copy>(library: &libloading::Library, name: &[u8]) -> Option<T> {
+        let symbol: libloading::Symbol<T> = unsafe { library.get(name).ok()? };
+        Some(*symbol)
+    }
 }
 
 /// WASM runtime state
@@ -440,7 +836,7 @@ impl WasmRuntime {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let mut metadata = ExtensionMetadata::new(id, name, version);
+        let mut metadata = ExtensionMetadata::new(id, name, version.to_string());
         metadata.description = description;
         metadata.author = author;
 
@@ -1441,20 +1837,9 @@ impl Runner {
             (Some(client_arc), Some(request_rx), Some(response_tx))
         };
 
-        // Create Async CapabilityContext for Native extensions
-        let capability_context = if extension_type == ExtensionType::Native {
-            if let Some(ref client_arc) = ipc_client {
-                let client_for_invoker = client_arc.clone();
-                let invoker = Box::new(move |capability: &str, params: &serde_json::Value| -> serde_json::Value {
-                    client_for_invoker.invoke(capability, params)
-                });
-                Some(neomind_core::extension::system::CapabilityContext::new(invoker))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        if let (Some(extension), Some(ipc_client)) = (extension.as_ref(), ipc_client.as_ref()) {
+            extension.install_capability_bridge(ipc_client.clone());
+        }
 
         Ok(Self {
             extension,
@@ -1466,81 +1851,18 @@ impl Runner {
             ipc_client,
             ipc_request_rx,
             ipc_response_tx,
-            capability_context,
         })
     }
 
     /// Load a native extension and return its descriptor
-    async fn load_native(extension_path: &Path) -> Result<(DynExtension, neomind_core::extension::system::ExtensionDescriptor), String> {
+    async fn load_native(
+        extension_path: &Path,
+    ) -> Result<(NativeExtensionBridge, neomind_core::extension::system::ExtensionDescriptor), String> {
         eprintln!("[Extension Runner] load_native called");
-        let loader = NativeExtensionLoader::new();
-        let loaded = loader.load(extension_path)
-            .map_err(|e| format!("Failed to load native extension: {}", e))?;
-
-        eprintln!("[Extension Runner] Extension loaded, getting read lock...");
-
-        // Use the unified descriptor() method
-        let ext_guard = loaded.extension.read().await;
-        
-        eprintln!("[Extension Runner] Getting metadata...");
-        
-        // Get metadata, commands, and metrics separately
-        // We need to serialize/deserialize each to ensure memory safety across FFI boundary
-        let metadata = ext_guard.metadata();
-        
-        eprintln!("[Extension Runner] Metadata reference obtained, serializing...");
-        
-        let metadata_json = serde_json::to_string(&metadata)
-            .map_err(|e| format!("Failed to serialize metadata: {}", e))?;
-        
-        info!("Metadata serialized, deserializing...");
-        
-        let metadata: neomind_core::extension::system::ExtensionMetadata = serde_json::from_str(&metadata_json)
-            .map_err(|e| format!("Failed to deserialize metadata: {}", e))?;
-        
-        info!("Metadata obtained: id='{}', name='{}'", metadata.id, metadata.name);
-        
-        // Get commands and serialize/deserialize
-        info!("Getting commands...");
-        let commands = ext_guard.commands();
-        
-        info!("Commands reference obtained, serializing...");
-        let commands_json = serde_json::to_string(&commands)
-            .map_err(|e| format!("Failed to serialize commands: {}", e))?;
-        
-        info!("Commands serialized, deserializing...");
-        let commands: Vec<neomind_core::extension::system::ExtensionCommand> = serde_json::from_str(&commands_json)
-            .map_err(|e| format!("Failed to deserialize commands: {}", e))?;
-        
-        info!("Commands obtained: {} items", commands.len());
-        
-        // Get metrics and serialize/deserialize
-        info!("Getting metrics...");
-        let metrics = ext_guard.metrics();
-        
-        info!("Metrics reference obtained, serializing...");
-        let metrics_json = serde_json::to_string(&metrics)
-            .map_err(|e| format!("Failed to serialize metrics: {}", e))?;
-        
-        info!("Metrics serialized, deserializing...");
-        let metrics: Vec<neomind_core::extension::system::MetricDescriptor> = serde_json::from_str(&metrics_json)
-            .map_err(|e| format!("Failed to deserialize metrics: {}", e))?;
-        
-        info!("Metrics obtained: {} items", metrics.len());
-        
-        // Create descriptor from the deserialized data
-        let descriptor = neomind_core::extension::system::ExtensionDescriptor::with_capabilities(
-            metadata,
-            commands,
-            metrics,
-        );
-        
+        let (bridge, descriptor) = NativeExtensionBridge::load(extension_path)?;
         info!("Descriptor created: id='{}', commands={}, metrics={}", 
             descriptor.metadata.id, descriptor.commands.len(), descriptor.metrics.len());
-        
-        drop(ext_guard);
-
-        Ok((loaded.extension, descriptor))
+        Ok((bridge, descriptor))
     }
 
     /// Load a WASM extension with full descriptor support
@@ -1606,7 +1928,7 @@ impl Runner {
         Ok(neomind_core::extension::system::ExtensionMetadata::new(
             file_name.to_string(),
             format!("{} WASM Extension", file_name),
-            semver::Version::new(1, 0, 0),
+            "1.0.0",
         ))
     }
 
@@ -1633,7 +1955,7 @@ impl Runner {
         let mut meta = neomind_core::extension::system::ExtensionMetadata::new(
             json.id,
             json.name,
-            version,
+            version.to_string(),
         );
         meta.description = json.description;
         meta.author = json.author;
@@ -1990,25 +2312,13 @@ impl Runner {
             IpcMessage::Init { config } => {
                 debug!("Received Init message from host with config");
 
-                // Call configure on the extension if it's a native extension
-                if self.extension_type == ExtensionType::Native {
-                    if let Some(ref ext) = self.extension {
-                        let ext_clone = ext.clone();
-                        let config_clone = config.clone();
-                        
-                        // Call configure asynchronously (no block_on needed)
-                        let mut ext_guard = ext_clone.write().await;
-                        let configure_result = ext_guard.configure(&config_clone).await;
-                        
-                        match configure_result {
-                            Ok(_) => {
-                                debug!("Extension configure called successfully");
-                            }
-                            Err(e) => {
-                                warn!(error = %e, "Extension configure failed, continuing anyway");
-                            }
-                        }
-                    }
+                if let Err(error) = self.handle_init(config).await {
+                    self.send_response(IpcResponse::Error {
+                        request_id: 0,
+                        error,
+                        kind: ErrorKind::Internal,
+                    });
+                    return;
                 }
 
                 // Debug: Log descriptor details before sending
@@ -2066,8 +2376,7 @@ impl Runner {
             IpcMessage::GetEventSubscriptions { request_id } => {
                 // Get event subscriptions from the extension
                 let event_types = if let Some(extension) = &self.extension {
-                    let ext_guard = extension.read().await;
-                    ext_guard.event_subscriptions().iter().map(|s| s.to_string()).collect()
+                    extension.event_subscriptions()
                 } else {
                     vec![]
                 };
@@ -2166,47 +2475,25 @@ impl Runner {
                     "Received event push from host"
                 );
 
-                // For native extensions, call async handle_event_with_context method
+                // Forward event pushes to the native JSON bridge when available.
                 if let Some(extension) = &self.extension {
                     info!(
                         event_type = %event_type,
                         "Calling handle_event on extension"
                     );
-                    let ext_guard = extension.read().await;
-
-                    // Use handle_event_with_context if capability context is available
-                    if let Some(ref ctx) = self.capability_context {
-                        match ext_guard.handle_event_with_context(&event_type, &payload, ctx).await {
-                            Ok(_) => {
-                                info!(
-                                    event_type = %event_type,
-                                    "Event handled successfully by extension"
-                                );
-                            }
-                            Err(e) => {
-                                error!(
-                                    event_type = %event_type,
-                                    error = %e,
-                                    "Failed to handle event in extension"
-                                );
-                            }
+                    match extension.handle_event(&event_type, &payload) {
+                        Ok(_) => {
+                            info!(
+                                event_type = %event_type,
+                                "Event handled successfully by extension"
+                            );
                         }
-                    } else {
-                        // Fallback to handle_event for backward compatibility
-                        match ext_guard.handle_event(&event_type, &payload) {
-                            Ok(_) => {
-                                info!(
-                                    event_type = %event_type,
-                                    "Event handled successfully by extension"
-                                );
-                            }
-                            Err(e) => {
-                                error!(
-                                    event_type = %event_type,
-                                    error = %e,
-                                    "Failed to handle event in extension"
-                                );
-                            }
+                        Err(e) => {
+                            error!(
+                                event_type = %event_type,
+                                error = %e,
+                                "Failed to handle event in extension"
+                            );
                         }
                     }
                 } else {
@@ -2273,6 +2560,16 @@ impl Runner {
         }
     }
 
+    async fn handle_init(&mut self, config: serde_json::Value) -> Result<(), String> {
+        match self.extension_type {
+            ExtensionType::Native => {
+                let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
+                ext.configure(&config)
+            }
+            ExtensionType::Wasm => Ok(()),
+        }
+    }
+
     async fn handle_execute_batch(&mut self, commands: Vec<BatchCommand>, request_id: u64) {
         debug!(request_id, command_count = commands.len(), "Executing batch command");
 
@@ -2309,12 +2606,7 @@ impl Runner {
 
     async fn execute_native_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
-
-        let ext_clone = Arc::clone(ext);
-
-        let ext_guard = ext_clone.read().await;
-        ext_guard.execute_command(command, args).await
-            .map_err(|e| e.to_string())
+        ext.execute_command(command, args)
     }
 
     fn execute_wasm_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
@@ -2378,11 +2670,7 @@ impl Runner {
 
     async fn produce_native_metrics(&self) -> Result<Vec<neomind_core::extension::system::ExtensionMetricValue>, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
-
-        let ext_clone = Arc::clone(ext);
-        let ext_guard = ext_clone.read().await;
-        ext_guard.produce_metrics()
-            .map_err(|e| e.to_string())
+        ext.produce_metrics()
     }
 
     fn produce_wasm_metrics(&self) -> Result<Vec<neomind_core::extension::system::ExtensionMetricValue>, String> {
@@ -2434,17 +2722,7 @@ impl Runner {
             Some(e) => e,
             None => return false,
         };
-
-        let _ext_clone = Arc::clone(ext);
-
-        tokio::task::block_in_place(|| {
-            let handle = self.runtime.clone();
-            handle.block_on(async move {
-                let ext_clone = Arc::clone(ext);
-                let ext_guard = ext_clone.read().await;
-                ext_guard.health_check().await.unwrap_or(false)
-            })
-        })
+        ext.health_check()
     }
 
     fn wasm_health_check(&self) -> bool {
@@ -2497,7 +2775,6 @@ impl Runner {
 
     fn get_native_stats(&self) -> neomind_core::extension::system::ExtensionStats {
         debug!("Getting native extension stats");
-        
         let ext = match &self.extension {
             Some(e) => e,
             None => {
@@ -2505,12 +2782,7 @@ impl Runner {
                 return neomind_core::extension::system::ExtensionStats::default();
             }
         };
-
-        // Get stats synchronously using blocking_read
-        // get_stats() is a sync method so this is safe
-        let ext_guard = ext.blocking_read();
-        debug!("Got extension lock, calling get_stats()");
-        let stats = ext_guard.get_stats();
+        let stats = ext.get_stats();
         debug!(start_count = stats.start_count, stop_count = stats.stop_count, error_count = stats.error_count, "Got extension stats");
         stats
     }
@@ -2550,10 +2822,7 @@ impl Runner {
 
     async fn get_native_stream_capability(&self) -> Result<Option<neomind_core::extension::StreamCapability>, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
-
-        // Use read().await to avoid blocking in async context
-        let ext_guard = ext.read().await;
-        Ok(ext_guard.stream_capability())
+        ext.get_stream_capability()
     }
 
     async fn handle_init_stream_session(&mut self, session_id: String, config: serde_json::Value) {
@@ -2587,23 +2856,7 @@ impl Runner {
     }
     async fn init_native_stream_session(&self, session_id: &str, config: serde_json::Value) -> Result<(), String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
-
-        let ext_guard = ext.read().await;
-        
-        // Create StreamSession
-        let session = neomind_core::extension::StreamSession::new(
-            session_id.to_string(),
-            "extension".to_string(),  // Extension ID from metadata
-            config,
-            neomind_core::extension::ClientInfo {
-                client_id: "runner".to_string(),
-                ip_addr: None,
-                user_agent: None,
-            },
-        );
-
-        ext_guard.init_session(&session).await
-            .map_err(|e| e.to_string())
+        ext.init_session(session_id, config)
     }
     fn handle_process_stream_chunk(&mut self, request_id: u64, session_id: String, chunk: neomind_core::extension::isolated::StreamDataChunk) {
         debug!(session_id = %session_id, sequence = chunk.sequence, request_id, "Processing stream chunk");
@@ -2645,33 +2898,7 @@ impl Runner {
         chunk: neomind_core::extension::isolated::StreamDataChunk,
     ) -> Result<neomind_core::extension::StreamResult, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
-
-        let ext_clone = Arc::clone(ext);
-        let session_id_owned = session_id.to_string();
-let handle = self.runtime.clone().clone();
-
-        // Use spawn_blocking to avoid runtime conflicts
-        // This moves the async operation to a separate thread pool
-        let result = std::thread::spawn(move || {
-            handle.block_on(async {
-                let ext_guard = ext_clone.read().await;
-
-                // Convert StreamDataChunk to DataChunk
-                let data_chunk = neomind_core::extension::DataChunk {
-                    sequence: chunk.sequence,
-                    data_type: neomind_core::extension::StreamDataType::Binary,  // Will be overridden by actual data
-                    data: chunk.data,
-                    timestamp: chunk.timestamp,
-                    metadata: None,
-                    is_last: chunk.is_last,
-                };
-
-                ext_guard.process_session_chunk(&session_id_owned, data_chunk).await
-                    .map_err(|e| e.to_string())
-            })
-        }).join();
-
-        result.map_err(|e| format!("Thread join failed: {:?}", e))?
+        ext.process_session_chunk(session_id, chunk)
     }
 
     fn handle_close_stream_session(&mut self, session_id: String) {
@@ -2706,27 +2933,7 @@ let handle = self.runtime.clone().clone();
 
     fn close_native_stream_session(&self, session_id: &str) -> Result<neomind_core::extension::SessionStats, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
-
-        let ext_clone = Arc::clone(ext);
-        let session_id_owned = session_id.to_string();
-
-        // ✨ CRITICAL FIX: Use tokio::task::spawn_blocking instead of runtime.block_on
-        //
-        // Extension Runner's main() is async, so we're already in a Tokio runtime context.
-        // Using runtime.block_on() would try to block a thread that's already driving
-        // async tasks, causing "Cannot start a runtime from within a runtime" panic.
-        //
-        // spawn_blocking moves the closure to a dedicated blocking thread pool,
-        // which is safe and won't conflict with the async runtime.
-        let handle = self.runtime.clone();
-        
-        tokio::task::block_in_place(|| {
-            handle.block_on(async move {
-                let ext_guard = ext_clone.read().await;
-                ext_guard.close_session(&session_id_owned).await
-                    .map_err(|e| e.to_string())
-            })
-        })
+        ext.close_session(session_id)
     }
 
     // =========================================================================
@@ -2780,26 +2987,7 @@ let handle = self.runtime.clone().clone();
         chunk: neomind_core::extension::isolated::StreamDataChunk,
     ) -> Result<neomind_core::extension::StreamResult, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
-
-        let ext_clone = Arc::clone(ext);
-
-        self.runtime.block_on(async {
-            let ext_guard = ext_clone.read().await;
-
-            // Convert StreamDataChunk to DataChunk
-            let data_chunk = neomind_core::extension::DataChunk {
-                sequence: chunk.sequence,
-                data_type: neomind_core::extension::StreamDataType::from_mime_type(&chunk.data_type)
-                    .unwrap_or(neomind_core::extension::StreamDataType::Binary),
-                data: chunk.data,
-                timestamp: chunk.timestamp,
-                metadata: None,
-                is_last: chunk.is_last,
-            };
-
-            ext_guard.process_chunk(data_chunk).await
-                .map_err(|e| e.to_string())
-        })
+        ext.process_chunk(chunk)
     }
 
     // =========================================================================
@@ -2844,15 +3032,7 @@ let handle = self.runtime.clone().clone();
 
     fn start_native_push(&self, session_id: &str) -> Result<(), String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
-
-        let ext_clone = Arc::clone(ext);
-        let session_id_owned = session_id.to_string();
-
-        self.runtime.block_on(async {
-            let ext_guard = ext_clone.read().await;
-            ext_guard.start_push(&session_id_owned).await
-                .map_err(|e| e.to_string())
-        })
+        ext.start_push(session_id)
     }
 
     fn handle_stop_push(&mut self, request_id: u64, session_id: String) {
@@ -2897,15 +3077,7 @@ let handle = self.runtime.clone().clone();
 
     fn stop_native_push(&self, session_id: &str) -> Result<(), String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
-
-        let ext_clone = Arc::clone(ext);
-        let session_id_owned = session_id.to_string();
-
-        self.runtime.block_on(async {
-            let ext_guard = ext_clone.read().await;
-            ext_guard.stop_push(&session_id_owned).await
-                .map_err(|e| e.to_string())
-        })
+        ext.stop_push(session_id)
     }
 }
 
