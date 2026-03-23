@@ -418,6 +418,60 @@ impl ExtensionMetadata {
     pub fn parse_version(&self) -> std::result::Result<semver::Version, semver::Error> {
         semver::Version::parse(&self.version)
     }
+
+    /// Validate metadata fields for security constraints.
+    ///
+    /// # Security
+    /// Enforces maximum string lengths to prevent:
+    /// - Memory exhaustion from oversized metadata
+    /// - Log injection attacks
+    /// - Buffer overflows in downstream processing
+    pub fn validate(&self) -> std::result::Result<(), &'static str> {
+        const MAX_ID_LEN: usize = 256;
+        const MAX_NAME_LEN: usize = 512;
+        const MAX_VERSION_LEN: usize = 64;
+        const MAX_DESCRIPTION_LEN: usize = 4096;
+        const MAX_AUTHOR_LEN: usize = 256;
+        const MAX_HOMEPAGE_LEN: usize = 1024;
+        const MAX_LICENSE_LEN: usize = 128;
+
+        if self.id.len() > MAX_ID_LEN {
+            return Err("Extension ID exceeds maximum length (256 bytes)");
+        }
+        if self.name.len() > MAX_NAME_LEN {
+            return Err("Extension name exceeds maximum length (512 bytes)");
+        }
+        if self.version.len() > MAX_VERSION_LEN {
+            return Err("Extension version exceeds maximum length (64 bytes)");
+        }
+        if let Some(ref desc) = self.description {
+            if desc.len() > MAX_DESCRIPTION_LEN {
+                return Err("Extension description exceeds maximum length (4096 bytes)");
+            }
+        }
+        if let Some(ref author) = self.author {
+            if author.len() > MAX_AUTHOR_LEN {
+                return Err("Extension author exceeds maximum length (256 bytes)");
+            }
+        }
+        if let Some(ref homepage) = self.homepage {
+            if homepage.len() > MAX_HOMEPAGE_LEN {
+                return Err("Extension homepage exceeds maximum length (1024 bytes)");
+            }
+        }
+        if let Some(ref license) = self.license {
+            if license.len() > MAX_LICENSE_LEN {
+                return Err("Extension license exceeds maximum length (128 bytes)");
+            }
+        }
+
+        // Validate ID format (alphanumeric with hyphens/underscores)
+        if !self.id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+            return Err("Extension ID contains invalid characters (only alphanumeric, hyphen, underscore allowed)");
+        }
+
+        Ok(())
+    }
 }
 
 // ============================================================================
@@ -1560,6 +1614,11 @@ pub struct IpcFrame {
     pub payload: Vec<u8>,
 }
 
+/// Maximum IPC frame payload size (16 MB)
+/// This prevents malicious extensions from sending extremely large messages
+/// that could exhaust main process memory.
+pub const MAX_IPC_FRAME_SIZE: usize = 16 * 1024 * 1024;
+
 impl IpcFrame {
     /// Create a new frame from payload
     pub fn new(payload: Vec<u8>) -> Self {
@@ -1577,12 +1636,20 @@ impl IpcFrame {
 
     /// Decode frame from bytes
     /// Returns (frame, remaining_bytes) or error message
+    ///
+    /// # Security
+    /// Enforces MAX_IPC_FRAME_SIZE to prevent memory exhaustion attacks.
     pub fn decode(bytes: &[u8]) -> std::result::Result<(Self, usize), &'static str> {
         if bytes.len() < 4 {
             return Err("Not enough bytes for length prefix");
         }
 
         let len = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
+
+        // Security: Enforce maximum frame size to prevent memory exhaustion
+        if len > MAX_IPC_FRAME_SIZE {
+            return Err("Frame exceeds maximum allowed size (16 MB)");
+        }
 
         if bytes.len() < 4 + len {
             return Err("Not enough bytes for payload");

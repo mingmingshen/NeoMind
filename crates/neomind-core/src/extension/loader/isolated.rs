@@ -115,6 +115,17 @@ impl IsolatedExtensionLoader {
 
     /// Load an extension in isolated mode
     pub async fn load_isolated(&self, path: &Path) -> Result<Arc<IsolatedExtension>> {
+        // ALWAYS validate FFI interface first to prevent crashes with incompatible extensions
+        // This check is required even when using manifest.json for metadata
+        let _ = self.native_loader.load_metadata(path).await.map_err(|e| {
+            tracing::error!(
+                path = %path.display(),
+                error = %e,
+                "Extension FFI interface validation failed"
+            );
+            e
+        })?;
+
         // Try to load metadata from manifest.json first (more reliable)
         // Fall back to FFI metadata if manifest not found
         let metadata = if let Some(manifest_meta) = Self::load_metadata_from_manifest(path) {
@@ -122,6 +133,7 @@ impl IsolatedExtensionLoader {
             manifest_meta
         } else {
             tracing::debug!("manifest.json not found, using FFI metadata");
+            // Already validated above, so this won't fail again
             self.native_loader.load_metadata(path).await?
         };
 

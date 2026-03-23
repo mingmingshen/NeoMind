@@ -115,6 +115,27 @@ impl NativeExtensionMetadataLoader {
             });
         }
 
+        // Step 2: Check for required JSON-bridge FFI symbols
+        // Old extensions (pre-0.6.0) use _create/_destroy interface which is incompatible
+        // and would crash when called with the new JSON-bridge protocol
+        let required_symbols = [
+            "neomind_extension_descriptor_json\0",
+            "neomind_extension_free_string\0",
+            "neomind_extension_execute_command_json\0",
+            "neomind_extension_produce_metrics_json\0",
+        ];
+
+        for symbol_name in &required_symbols {
+            let symbol_result = unsafe { library.get::<unsafe extern "C" fn()>(symbol_name.as_bytes()) };
+            if symbol_result.is_err() {
+                return Err(ExtensionError::LoadFailed(format!(
+                    "Extension uses incompatible FFI interface (missing symbol: {}). \
+                     Extensions must be rebuilt with neomind-extension-sdk >= 0.6.0",
+                    symbol_name.trim_end_matches('\0')
+                )));
+            }
+        }
+
         let c_meta = Self::safe_call_ffi("metadata", || {
             let get_metadata: libloading::Symbol<unsafe extern "C" fn() -> CExtensionMetadata> = unsafe {
                 library
