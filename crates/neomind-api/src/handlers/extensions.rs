@@ -2306,7 +2306,7 @@ pub async fn check_marketplace_updates_handler(
                 if response.status().is_success() {
                     if let Ok(metadata) = response.json::<MarketplaceExtensionMetadata>().await {
                         // Compare versions (simple string comparison for now)
-                        if metadata.version != ext_info.metadata.version.to_string() {
+                        if metadata.version != ext_info.metadata.version {
                             updates.push(serde_json::json!({
                                 "id": ext_id,
                                 "name": ext_info.metadata.name,

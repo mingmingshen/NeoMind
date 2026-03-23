@@ -39,9 +39,17 @@ use wasmtime::{AsContext, AsContextMut, Config, Engine, Linker, Memory, Module, 
 use wasmtime_wasi::preview1::{self, WasiP1Ctx};
 use wasmtime_wasi::WasiCtxBuilder;
 
-use neomind_core::extension::isolated::{ErrorKind, IpcFrame, IpcMessage, IpcResponse, BatchCommand, BatchResult};
-// Import capability name constants from SDK via Core for consistency
-use neomind_core::extension::context::capabilities::native_capabilities as cap;
+use neomind_extension_sdk::{
+    ErrorKind, IpcFrame, IpcMessage, IpcResponse,
+    BatchCommand, BatchResult,
+    StreamDataChunk,
+    ExtensionMetadata, ExtensionDescriptor, ExtensionMetricValue,
+    MetricDataType,
+    ExtensionStats, ABI_VERSION,
+    StreamCapability, StreamDataType, DataChunk, StreamResult, SessionStats,
+    ExtensionCommand, MetricDescriptor, ParameterDefinition,
+    capability_constants as cap,
+};
 
 // Resource limits module
 mod resource_limits;
@@ -275,7 +283,7 @@ struct Runner {
     /// WASM runtime (for WASM)
     wasm_runtime: Option<WasmRuntime>,
     /// Extension descriptor (unified capabilities)
-    descriptor: neomind_core::extension::system::ExtensionDescriptor,
+    descriptor: ExtensionDescriptor,
     /// Extension type
     extension_type: ExtensionType,
     /// Shared runtime for native async extension calls
@@ -366,7 +374,7 @@ struct NativeExtensionBridge {
 }
 
 impl NativeExtensionBridge {
-    fn load(path: &Path) -> Result<(Self, neomind_core::extension::system::ExtensionDescriptor), String> {
+    fn load(path: &Path) -> Result<(Self, ExtensionDescriptor), String> {
         let library = Arc::new(unsafe { libloading::Library::new(path) }
             .map_err(|e| format!("Failed to load native extension library: {}", e))?);
 
@@ -375,10 +383,10 @@ impl NativeExtensionBridge {
             b"neomind_extension_abi_version\0",
         )?;
         let version = unsafe { abi_version() };
-        if version != neomind_core::extension::ABI_VERSION {
+        if version != ABI_VERSION {
             return Err(format!(
                 "Incompatible ABI version: expected {}, got {}",
-                neomind_core::extension::ABI_VERSION,
+                ABI_VERSION,
                 version
             ));
         }
@@ -441,7 +449,7 @@ impl NativeExtensionBridge {
 
     fn produce_metrics(
         &self,
-    ) -> Result<Vec<neomind_core::extension::system::ExtensionMetricValue>, String> {
+    ) -> Result<Vec<ExtensionMetricValue>, String> {
         let response = self.call_json0(self.produce_metrics_json)?;
         let metrics = Self::extract_success_value(&response, "metrics")?;
         serde_json::from_value(metrics).map_err(|e| format!("Failed to parse metrics JSON: {}", e))
@@ -468,15 +476,15 @@ impl NativeExtensionBridge {
         }
     }
 
-    fn get_stats(&self) -> neomind_core::extension::system::ExtensionStats {
+    fn get_stats(&self) -> ExtensionStats {
         let Some(func) = self.stats_json else {
-            return neomind_core::extension::system::ExtensionStats::default();
+            return ExtensionStats::default();
         };
         let Ok(response) = self.call_json0(func) else {
-            return neomind_core::extension::system::ExtensionStats::default();
+            return ExtensionStats::default();
         };
         if !response.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
-            return neomind_core::extension::system::ExtensionStats::default();
+            return ExtensionStats::default();
         }
         response
             .get("stats")
@@ -504,7 +512,7 @@ impl NativeExtensionBridge {
 
     fn get_stream_capability(
         &self,
-    ) -> Result<Option<neomind_core::extension::StreamCapability>, String> {
+    ) -> Result<Option<StreamCapability>, String> {
         let Some(func) = self.stream_capability_json else {
             return Ok(None);
         };
@@ -532,12 +540,12 @@ impl NativeExtensionBridge {
     fn process_session_chunk(
         &self,
         session_id: &str,
-        chunk: neomind_core::extension::isolated::StreamDataChunk,
-    ) -> Result<neomind_core::extension::StreamResult, String> {
-        let chunk = neomind_core::extension::DataChunk {
+        chunk: StreamDataChunk,
+    ) -> Result<StreamResult, String> {
+        let chunk = DataChunk {
             sequence: chunk.sequence,
-            data_type: neomind_core::extension::StreamDataType::from_mime_type(&chunk.data_type)
-                .unwrap_or(neomind_core::extension::StreamDataType::Binary),
+            data_type: StreamDataType::from_mime_type(&chunk.data_type)
+                .unwrap_or(StreamDataType::Binary),
             data: chunk.data,
             timestamp: chunk.timestamp,
             metadata: None,
@@ -556,7 +564,7 @@ impl NativeExtensionBridge {
     fn close_session(
         &self,
         session_id: &str,
-    ) -> Result<neomind_core::extension::SessionStats, String> {
+    ) -> Result<SessionStats, String> {
         let response = self.call_required_json1(
             self.close_session_json,
             "native close_session",
@@ -569,12 +577,12 @@ impl NativeExtensionBridge {
 
     fn process_chunk(
         &self,
-        chunk: neomind_core::extension::isolated::StreamDataChunk,
-    ) -> Result<neomind_core::extension::StreamResult, String> {
-        let chunk = neomind_core::extension::DataChunk {
+        chunk: StreamDataChunk,
+    ) -> Result<StreamResult, String> {
+        let chunk = DataChunk {
             sequence: chunk.sequence,
-            data_type: neomind_core::extension::StreamDataType::from_mime_type(&chunk.data_type)
-                .unwrap_or(neomind_core::extension::StreamDataType::Binary),
+            data_type: StreamDataType::from_mime_type(&chunk.data_type)
+                .unwrap_or(StreamDataType::Binary),
             data: chunk.data,
             timestamp: chunk.timestamp,
             metadata: None,
@@ -723,7 +731,7 @@ impl WasmRuntime {
     }
 
     /// Get the extension descriptor from the WASM module (blocking version)
-    fn get_descriptor_blocking(&self) -> Result<neomind_core::extension::system::ExtensionDescriptor, String> {
+    fn get_descriptor_blocking(&self) -> Result<ExtensionDescriptor, String> {
         let engine = self.engine.clone();
         let module = self.module.clone();
 
@@ -741,7 +749,7 @@ impl WasmRuntime {
         &self,
         engine: &Engine,
         module: &Module,
-    ) -> Result<neomind_core::extension::system::ExtensionDescriptor, String> {
+    ) -> Result<ExtensionDescriptor, String> {
         // Create linker with WASI support
         let mut linker = Linker::new(engine);
         preview1::add_to_linker_async(&mut linker, |t: &mut HostState| &mut t.wasi)
@@ -806,8 +814,8 @@ impl WasmRuntime {
     }
 
     /// Parse descriptor JSON into ExtensionDescriptor
-    fn parse_descriptor_json(json: &serde_json::Value) -> Result<neomind_core::extension::system::ExtensionDescriptor, String> {
-        use neomind_core::extension::system::{
+    fn parse_descriptor_json(json: &serde_json::Value) -> Result<ExtensionDescriptor, String> {
+        use {
             ExtensionMetadata, ExtensionCommand, MetricDescriptor, 
             MetricDataType, ParameterDefinition
         };
@@ -961,7 +969,7 @@ impl WasmRuntime {
             })
             .unwrap_or_default();
 
-        Ok(neomind_core::extension::system::ExtensionDescriptor::with_capabilities(
+        Ok(ExtensionDescriptor::with_capabilities(
             metadata,
             commands,
             metrics,
@@ -1204,8 +1212,8 @@ impl WasmRuntime {
         }
     }
 
-    fn produce_metrics(&self) -> Result<Vec<neomind_core::extension::system::ExtensionMetricValue>, String> {
-        use neomind_core::extension::system::ExtensionMetricValue;
+    fn produce_metrics(&self) -> Result<Vec<ExtensionMetricValue>, String> {
+        use ExtensionMetricValue;
 
         let values = self.metric_values.try_read()
             .map_err(|_| "Lock error".to_string())?;
@@ -1617,7 +1625,7 @@ fn write_bytes_to_memory(
 /// WASM extensions have limited capability access due to sandbox restrictions.
 /// For full capability access, use Native extensions in non-isolated mode.
 ///
-/// SYNC: Capability names are imported from neomind_core::extension::context::capabilities
+/// SYNC: Capability names are imported from context::capabilities
 fn handle_capability_invocation(capability: &str, params: &serde_json::Value) -> serde_json::Value {
     debug!(capability = %capability, "Handling capability invocation (WASM mock)");
     match capability {
@@ -1857,7 +1865,7 @@ impl Runner {
     /// Load a native extension and return its descriptor
     async fn load_native(
         extension_path: &Path,
-    ) -> Result<(NativeExtensionBridge, neomind_core::extension::system::ExtensionDescriptor), String> {
+    ) -> Result<(NativeExtensionBridge, ExtensionDescriptor), String> {
         eprintln!("[Extension Runner] load_native called");
         let (bridge, descriptor) = NativeExtensionBridge::load(extension_path)?;
         info!("Descriptor created: id='{}', commands={}, metrics={}", 
@@ -1866,7 +1874,7 @@ impl Runner {
     }
 
     /// Load a WASM extension with full descriptor support
-    async fn load_wasm(extension_path: &PathBuf) -> Result<(WasmRuntime, neomind_core::extension::system::ExtensionDescriptor), String> {
+    async fn load_wasm(extension_path: &PathBuf) -> Result<(WasmRuntime, ExtensionDescriptor), String> {
         // First, create the runtime
         let module_name = extension_path
             .file_stem()
@@ -1894,14 +1902,14 @@ impl Runner {
                 
                 // Fallback to sidecar JSON files
                 let metadata = Self::load_wasm_metadata(extension_path)?;
-                let descriptor = neomind_core::extension::system::ExtensionDescriptor::new(metadata);
+                let descriptor = ExtensionDescriptor::new(metadata);
                 Ok((runtime, descriptor))
             }
         }
     }
 
     /// Load WASM metadata (fallback from sidecar files)
-    fn load_wasm_metadata(extension_path: &Path) -> Result<neomind_core::extension::system::ExtensionMetadata, String> {
+    fn load_wasm_metadata(extension_path: &Path) -> Result<ExtensionMetadata, String> {
         // Try sidecar JSON
         let json_path = extension_path.with_extension("json");
         if json_path.exists() {
@@ -1925,14 +1933,14 @@ impl Runner {
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
 
-        Ok(neomind_core::extension::system::ExtensionMetadata::new(
+        Ok(ExtensionMetadata::new(
             file_name.to_string(),
             format!("{} WASM Extension", file_name),
             "1.0.0",
         ))
     }
 
-    fn parse_metadata_json(path: &PathBuf) -> Result<neomind_core::extension::system::ExtensionMetadata, String> {
+    fn parse_metadata_json(path: &PathBuf) -> Result<ExtensionMetadata, String> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| format!("Failed to read JSON: {}", e))?;
 
@@ -1952,7 +1960,7 @@ impl Runner {
 
         let version = semver::Version::parse(&json.version).unwrap_or(semver::Version::new(1, 0, 0));
 
-        let mut meta = neomind_core::extension::system::ExtensionMetadata::new(
+        let mut meta = ExtensionMetadata::new(
             json.id,
             json.name,
             version.to_string(),
@@ -2668,12 +2676,12 @@ impl Runner {
         }
     }
 
-    async fn produce_native_metrics(&self) -> Result<Vec<neomind_core::extension::system::ExtensionMetricValue>, String> {
+    async fn produce_native_metrics(&self) -> Result<Vec<ExtensionMetricValue>, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
         ext.produce_metrics()
     }
 
-    fn produce_wasm_metrics(&self) -> Result<Vec<neomind_core::extension::system::ExtensionMetricValue>, String> {
+    fn produce_wasm_metrics(&self) -> Result<Vec<ExtensionMetricValue>, String> {
         let runtime = self.wasm_runtime.as_ref().ok_or("No WASM runtime loaded")?;
         runtime.produce_metrics()
     }
@@ -2756,7 +2764,7 @@ impl Runner {
             ExtensionType::Wasm => {
                 // WASM extensions don't support stats yet
                 // Return default stats
-                neomind_core::extension::system::ExtensionStats::default()
+                ExtensionStats::default()
             }
         };
 
@@ -2773,13 +2781,13 @@ impl Runner {
         debug!(request_id, "Stats response sent");
     }
 
-    fn get_native_stats(&self) -> neomind_core::extension::system::ExtensionStats {
+    fn get_native_stats(&self) -> ExtensionStats {
         debug!("Getting native extension stats");
         let ext = match &self.extension {
             Some(e) => e,
             None => {
                 debug!("No extension loaded, returning default stats");
-                return neomind_core::extension::system::ExtensionStats::default();
+                return ExtensionStats::default();
             }
         };
         let stats = ext.get_stats();
@@ -2820,7 +2828,7 @@ impl Runner {
         }
     }
 
-    async fn get_native_stream_capability(&self) -> Result<Option<neomind_core::extension::StreamCapability>, String> {
+    async fn get_native_stream_capability(&self) -> Result<Option<StreamCapability>, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
         ext.get_stream_capability()
     }
@@ -2858,7 +2866,7 @@ impl Runner {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
         ext.init_session(session_id, config)
     }
-    fn handle_process_stream_chunk(&mut self, request_id: u64, session_id: String, chunk: neomind_core::extension::isolated::StreamDataChunk) {
+    fn handle_process_stream_chunk(&mut self, request_id: u64, session_id: String, chunk: StreamDataChunk) {
         debug!(session_id = %session_id, sequence = chunk.sequence, request_id, "Processing stream chunk");
 
         let result = match self.extension_type {
@@ -2895,8 +2903,8 @@ impl Runner {
     fn process_native_stream_chunk(
         &self,
         session_id: &str,
-        chunk: neomind_core::extension::isolated::StreamDataChunk,
-    ) -> Result<neomind_core::extension::StreamResult, String> {
+        chunk: StreamDataChunk,
+    ) -> Result<StreamResult, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
         ext.process_session_chunk(session_id, chunk)
     }
@@ -2909,7 +2917,7 @@ impl Runner {
                 self.close_native_stream_session(&session_id)
             }
             ExtensionType::Wasm => {
-                Ok(neomind_core::extension::SessionStats::default())
+                Ok(SessionStats::default())
             }
         };
 
@@ -2931,7 +2939,7 @@ impl Runner {
         }
     }
 
-    fn close_native_stream_session(&self, session_id: &str) -> Result<neomind_core::extension::SessionStats, String> {
+    fn close_native_stream_session(&self, session_id: &str) -> Result<SessionStats, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
         ext.close_session(session_id)
     }
@@ -2943,7 +2951,7 @@ impl Runner {
     fn handle_process_chunk(
         &mut self,
         request_id: u64,
-        chunk: neomind_core::extension::isolated::StreamDataChunk,
+        chunk: StreamDataChunk,
     ) {
         debug!(
             request_id,
@@ -2976,7 +2984,7 @@ impl Runner {
                 self.send_response(IpcResponse::Error {
                     request_id,
                     error: e,
-                    kind: neomind_core::extension::isolated::ErrorKind::ExecutionFailed,
+                    kind: ErrorKind::ExecutionFailed,
                 });
             }
         }
@@ -2984,8 +2992,8 @@ impl Runner {
 
     fn process_native_chunk(
         &self,
-        chunk: neomind_core::extension::isolated::StreamDataChunk,
-    ) -> Result<neomind_core::extension::StreamResult, String> {
+        chunk: StreamDataChunk,
+    ) -> Result<StreamResult, String> {
         let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
         ext.process_chunk(chunk)
     }

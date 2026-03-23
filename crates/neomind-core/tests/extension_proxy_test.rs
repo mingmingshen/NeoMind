@@ -129,6 +129,7 @@ fn test_stream_capability_direction() {
         mode: StreamMode::Stateless,
         direction: StreamDirection::Upload,
         flow_control: FlowControl::default_stream(),
+        ..Default::default()
     };
     assert_eq!(cap.direction, StreamDirection::Upload);
 
@@ -140,6 +141,7 @@ fn test_stream_capability_direction() {
         mode: StreamMode::Stateless,
         direction: StreamDirection::Download,
         flow_control: FlowControl::default_stream(),
+        ..Default::default()
     };
     assert_eq!(cap.direction, StreamDirection::Download);
 
@@ -151,6 +153,7 @@ fn test_stream_capability_direction() {
         mode: StreamMode::Stateful,
         direction: StreamDirection::Bidirectional,
         flow_control: FlowControl::default_stream(),
+        ..Default::default()
     };
     assert_eq!(cap.direction, StreamDirection::Bidirectional);
 }
@@ -165,6 +168,7 @@ fn test_stream_capability_mode() {
         mode: StreamMode::Stateless,
         direction: StreamDirection::Upload,
         flow_control: FlowControl::default_stream(),
+        ..Default::default()
     };
     assert_eq!(cap.mode, StreamMode::Stateless);
 
@@ -176,6 +180,7 @@ fn test_stream_capability_mode() {
         mode: StreamMode::Stateful,
         direction: StreamDirection::Bidirectional,
         flow_control: FlowControl::default_stream(),
+        ..Default::default()
     };
     assert_eq!(cap.mode, StreamMode::Stateful);
 
@@ -187,6 +192,7 @@ fn test_stream_capability_mode() {
         mode: StreamMode::Push,
         direction: StreamDirection::Download,
         flow_control: FlowControl::default_stream(),
+        ..Default::default()
     };
     assert_eq!(cap.mode, StreamMode::Push);
 }
@@ -363,8 +369,9 @@ fn test_stream_capability_validation() {
 fn test_flow_control_defaults() {
     let fc = neomind_core::extension::stream::FlowControl::default();
 
-    assert!(!fc.supports_backpressure);
-    assert_eq!(fc.window_size, 10);
+    // Default stream configuration has backpressure enabled with 64KB window
+    assert!(fc.supports_backpressure);
+    assert_eq!(fc.window_size, 64 * 1024);
     assert!(!fc.supports_throttling);
     assert_eq!(fc.max_rate, 0);
 }

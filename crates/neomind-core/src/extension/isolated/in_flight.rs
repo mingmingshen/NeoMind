@@ -19,7 +19,7 @@ use std::sync::Arc;
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::{timeout, Duration};
 
-use super::ipc::IpcResponse;
+use super::IpcResponse;
 
 /// Unique identifier for a pending request
 pub type RequestId = u64;

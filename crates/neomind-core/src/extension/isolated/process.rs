@@ -26,8 +26,7 @@ use tokio::sync::broadcast;
 use tracing::{debug, error, warn};
 
 use super::in_flight::InFlightRequests;
-use super::ipc::{IpcFrame, IpcMessage, IpcResponse};
-use super::{IsolatedExtensionError, IsolatedResult};
+use super::{ErrorKind, IpcFrame, IpcMessage, IpcResponse, IsolatedExtensionError, IsolatedResult};
 use crate::extension::system::{ExtensionMetadata, ExtensionMetricValue};
 use serde_json::Value;
 
@@ -404,7 +403,7 @@ pub struct IsolatedExtension {
     event_push_tx: Mutex<Option<tokio::sync::mpsc::Sender<(String, Value)>>>,
     /// Push output channel for receiving PushOutput messages from extension
     /// Uses std::sync::Mutex for thread safety in receiver thread
-    push_output_tx: Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<super::ipc::PushOutputData>>>>,
+    push_output_tx: Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<super::PushOutputData>>>>,
     /// ✨ FIX: Tiered IPC buffer pool for optimal memory management
     ipc_buffer_pool: Arc<TieredBufferPool>,
     /// ✨ FIX: Active stream sessions - used to notify clients when extension restarts
@@ -945,7 +944,7 @@ impl IsolatedExtension {
                     );
 
                     // Extract push output data and forward to channel
-                    if let Some(push_data) = Option::<super::ipc::PushOutputData>::from(response) {
+                    if let Some(push_data) = Option::<super::PushOutputData>::from(response) {
                         if let Some(tx) = push_output_tx.lock().unwrap().as_ref() {
                             if let Err(e) = tx.send(push_data) {
                                 warn!(
@@ -1119,7 +1118,6 @@ impl IsolatedExtension {
         match response {
             IpcResponse::Success { data, .. } => Ok(data),
             IpcResponse::Error { error, kind, .. } => {
-                use super::ipc::ErrorKind;
                 match kind {
                     ErrorKind::CommandNotFound => Err(IsolatedExtensionError::IpcError(error)),
                     ErrorKind::Timeout => Err(IsolatedExtensionError::Timeout(
@@ -1210,8 +1208,8 @@ impl IsolatedExtension {
     }
 
     /// Execute multiple commands in a batch
-    pub async fn execute_batch(&self, commands: Vec<super::ipc_batch_types::BatchCommand>)
-        -> IsolatedResult<super::ipc_batch_types::BatchResultsVec>
+    pub async fn execute_batch(&self, commands: Vec<super::BatchCommand>)
+        -> IsolatedResult<super::BatchResultsVec>
     {
         if !self.running.load(Ordering::SeqCst) {
             return Err(IsolatedExtensionError::NotRunning);
@@ -1224,14 +1222,14 @@ impl IsolatedExtension {
         for cmd in commands {
             let cmd_start = Instant::now();
             let result = match self.execute_command(&cmd.command, &cmd.args).await {
-                Ok(data) => super::ipc_batch_types::BatchResult {
+                Ok(data) => super::BatchResult {
                     command: cmd.command.clone(),
                     success: true,
                     data: Some(data),
                     error: None,
                     elapsed_ms: cmd_start.elapsed().as_secs_f64() * 1000.0,
                 },
-                Err(e) => super::ipc_batch_types::BatchResult {
+                Err(e) => super::BatchResult {
                     command: cmd.command.clone(),
                     success: false,
                     data: None,
@@ -1244,15 +1242,15 @@ impl IsolatedExtension {
 
         let total_elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
-        Ok(super::ipc_batch_types::BatchResultsVec {
+        Ok(super::BatchResultsVec {
             results,
             total_elapsed_ms,
         })
     }
 
     /// Send batch request to extension process
-    pub async fn execute_batch_ipc(&self, commands: Vec<super::ipc_batch_types::BatchCommand>)
-        -> IsolatedResult<super::ipc_batch_types::BatchResultsVec>
+    pub async fn execute_batch_ipc(&self, commands: Vec<super::BatchCommand>)
+        -> IsolatedResult<super::BatchResultsVec>
     {
         if !self.running.load(Ordering::SeqCst) {
             return Err(IsolatedExtensionError::NotRunning);
@@ -1322,7 +1320,7 @@ impl IsolatedExtension {
 
         match response {
             IpcResponse::BatchResults { results, total_elapsed_ms, .. } => {
-                Ok(super::ipc_batch_types::BatchResultsVec {
+                Ok(super::BatchResultsVec {
                     results,
                     total_elapsed_ms,
                 })
@@ -1486,7 +1484,7 @@ impl IsolatedExtension {
         // Register session as active
         self.register_session(session_id).await;
 
-        let client_info = super::ipc::StreamClientInfo {
+        let client_info = super::StreamClientInfo {
             client_id: "host".to_string(),
             ip_addr: None,
             user_agent: None,
@@ -1518,7 +1516,7 @@ impl IsolatedExtension {
         // Check resources before processing
         self.check_resources().await?;
 
-        let stream_chunk = super::ipc::StreamDataChunk {
+        let stream_chunk = super::StreamDataChunk {
             sequence: chunk.sequence,
             data_type: chunk.data_type.mime_type(),
             data: chunk.data,
@@ -1719,7 +1717,7 @@ impl IsolatedExtension {
         // Check resources before processing
         self.check_resources().await?;
 
-        let stream_chunk = super::ipc::StreamDataChunk {
+        let stream_chunk = super::StreamDataChunk {
             sequence: chunk.sequence,
             data_type: chunk.data_type.mime_type(),
             data: chunk.data,
@@ -1947,7 +1945,7 @@ impl IsolatedExtension {
     /// The host should set this before starting a Push mode session.
     pub async fn set_push_output_channel(
         &self,
-        tx: tokio::sync::mpsc::UnboundedSender<super::ipc::PushOutputData>,
+        tx: tokio::sync::mpsc::UnboundedSender<super::PushOutputData>,
     ) {
         *self.push_output_tx.lock().unwrap() = Some(tx);
     }
@@ -1955,7 +1953,7 @@ impl IsolatedExtension {
     /// Get a clone of the push output channel sender
     pub async fn get_push_output_channel(
         &self,
-    ) -> Option<tokio::sync::mpsc::UnboundedSender<super::ipc::PushOutputData>> {
+    ) -> Option<tokio::sync::mpsc::UnboundedSender<super::PushOutputData>> {
         self.push_output_tx.lock().unwrap().clone()
     }
 

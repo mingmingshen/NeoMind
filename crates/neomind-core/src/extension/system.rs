@@ -33,6 +33,10 @@ pub use neomind_extension_sdk::{
     ExtensionStats, MetricDataType, MetricDefinition, MetricDescriptor, MetricValue, ParamMetricValue,
     ParameterDefinition, ParameterGroup, PushOutputMessage, Result, ValidationRule,
     CapabilityContext, Extension,
+    // IPC Protocol Types (re-exported from SDK for backward compatibility)
+    IpcMessage, IpcResponse, IpcFrame, ErrorKind,
+    BatchCommand, BatchResult, BatchResultsVec,
+    StreamClientInfo, StreamDataChunk, PushOutputData,
 };
 
 /// Type alias for dynamic extension

@@ -277,7 +277,7 @@ fn test_extension_metadata_version_semver() {
     ];
 
     for version in &versions {
-        let meta = ExtensionMetadata::new("test.extension", "Test", version.clone());
+        let meta = ExtensionMetadata::new("test.extension", "Test", *version);
         assert_eq!(meta.version, *version);
     }
 }

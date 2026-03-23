@@ -12,6 +12,12 @@ pub struct NativeCapabilitySmokeExtension {
     last_event_result: Mutex<Option<serde_json::Value>>,
 }
 
+impl Default for NativeCapabilitySmokeExtension {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NativeCapabilitySmokeExtension {
     pub fn new() -> Self {
         Self {

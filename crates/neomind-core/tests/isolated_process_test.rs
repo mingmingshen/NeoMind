@@ -71,13 +71,11 @@ fn test_isolated_manager_config_custom() {
     let config = IsolatedManagerConfig {
         extension_config: IsolatedExtensionConfig::default(),
         isolated_by_default: false,
-        force_isolated: vec!["critical.extension".to_string()],
-        force_isolated: vec!["legacy.extension".to_string()],
+        force_isolated: vec!["critical.extension".to_string(), "legacy.extension".to_string()],
     };
 
     assert!(!config.isolated_by_default);
-    assert_eq!(config.force_isolated.len(), 1);
-    assert_eq!(config.force_isolated.len(), 1);
+    assert_eq!(config.force_isolated.len(), 2);
 }
 
 // ============================================================================

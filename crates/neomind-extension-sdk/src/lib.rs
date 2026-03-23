@@ -145,6 +145,10 @@ pub use ipc_types::{
     ExtensionMetricValue, ExtensionRuntimeState, ExtensionStats, MetricDataType,
     MetricDescriptor, MetricValue, ParamMetricValue,
     ParameterDefinition, ParameterGroup, PushOutputMessage, Result, ValidationRule,
+    // IPC Protocol Types (for process isolation)
+    IpcMessage, IpcResponse, IpcFrame, ErrorKind,
+    BatchCommand, BatchResult, BatchResultsVec,
+    StreamClientInfo, StreamDataChunk, PushOutputData,
 };
 
 // Alias for backward compatibility
