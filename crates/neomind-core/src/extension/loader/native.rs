@@ -199,6 +199,12 @@ impl NativeExtensionMetadataLoader {
     /// Supports two formats:
     /// 1. Legacy: Top-level binary files (e.g., `extension.dylib`)
     /// 2. .nep package format: Folders with `binaries/{platform}/extension.{ext}`
+    ///
+    /// # Safety
+    ///
+    /// This method NEVER loads native libraries during discovery to prevent crashes
+    /// from incompatible extensions. Instead, it reads sidecar JSON metadata files.
+    /// Extensions without sidecar JSON files are skipped with a warning.
     pub async fn discover(&self, dir: &Path) -> Vec<(PathBuf, ExtensionMetadata)> {
         let mut extensions = Vec::new();
 
@@ -226,15 +232,59 @@ impl NativeExtensionMetadataLoader {
             }
         }
 
-        // Load metadata for each extension
+        // Load metadata for each extension using sidecar JSON files only
+        // This is SAFE and never loads native libraries during discovery
         for path in extension_paths {
-            let loader = NativeExtensionMetadataLoader::new();
-            if let Ok(meta) = loader.load_metadata(&path).await {
-                extensions.push((path, meta));
+            match self.load_metadata_from_sidecar(&path) {
+                Ok(meta) => {
+                    tracing::info!(
+                        extension_id = %meta.id,
+                        path = %path.display(),
+                        "Discovered extension from sidecar JSON"
+                    );
+                    extensions.push((path, meta));
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "Extension missing sidecar JSON, skipping (use .nep package format for automatic metadata)"
+                    );
+                }
             }
         }
 
         extensions
+    }
+
+    /// Load metadata from sidecar JSON file (safe, no library loading).
+    ///
+    /// The sidecar JSON file should be named the same as the binary with .json extension.
+    /// For example: `extension.dylib` -> `extension.json`
+    ///
+    /// This is the SAFE way to get metadata without risking crashes from
+    /// incompatible native library initialization code.
+    fn load_metadata_from_sidecar(&self, binary_path: &Path) -> Result<ExtensionMetadata> {
+        let sidecar_path = binary_path.with_extension("json");
+
+        if !sidecar_path.exists() {
+            return Err(ExtensionError::LoadFailed(format!(
+                "No sidecar metadata file found at {}. Native extensions must have a sidecar JSON file for safe discovery.",
+                sidecar_path.display()
+            )));
+        }
+
+        let content = std::fs::read_to_string(&sidecar_path)
+            .map_err(|e| ExtensionError::LoadFailed(format!("Failed to read sidecar JSON: {}", e)))?;
+
+        let meta: ExtensionMetadata = serde_json::from_str(&content)
+            .map_err(|e| ExtensionError::LoadFailed(format!("Invalid sidecar JSON format: {}", e)))?;
+
+        // Update file_path to point to the actual binary
+        Ok(ExtensionMetadata {
+            file_path: Some(binary_path.to_path_buf()),
+            ..meta
+        })
     }
 
     /// Find binary file in .nep package folder structure.
