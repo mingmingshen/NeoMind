@@ -38,23 +38,6 @@ pub fn string_to_c_str_owned(s: &str) -> Option<(CString, *const c_char)> {
     })
 }
 
-/// Convert a Rust string to a C string pointer
-///
-/// # Safety
-///
-/// **DEPRECATED**: This function is unsafe because the returned pointer becomes invalid
-/// immediately after the call. Use `string_to_c_str_owned` instead, which properly
-/// manages the CString lifetime.
-///
-/// The returned pointer must not be used after the original CString is dropped.
-#[deprecated(note = "Use string_to_c_str_owned instead to properly manage CString lifetime")]
-pub fn string_to_c_str(s: &str) -> *const c_char {
-    match CString::new(s) {
-        Ok(cstr) => cstr.as_ptr(),
-        Err(_) => std::ptr::null(),
-    }
-}
-
 /// Safe wrapper for FFI calls that may panic
 ///
 /// This function catches panics in FFI calls and converts them to errors.
