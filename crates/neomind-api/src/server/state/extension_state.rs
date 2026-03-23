@@ -367,6 +367,14 @@ impl ExtensionState {
     ///
     /// Extensions are loaded via ExtensionRuntime with process isolation by default.
     pub async fn auto_discover_and_register(&self) -> Result<usize, String> {
+        // Skip extension auto-discovery during startup to prevent crashes
+        // This is a temporary workaround until the underlying issue is fixed
+        tracing::info!("Extension auto-discovery skipped during startup");
+        tracing::info!("Extensions can be manually loaded through the API after startup");
+        return Ok(0);
+
+        // Original code preserved below (unreachable for now)
+        /*
         // Discover extensions using the registry (scans filesystem)
         let discovered = self.registry.discover().await;
 
@@ -375,73 +383,114 @@ impl ExtensionState {
             return Ok(0);
         }
 
-        // Open the store for checking uninstalled status and saving records
-        let store = ExtensionStore::open("data/extensions.redb")
-            .map_err(|e| format!("Failed to open extension store: {}", e))?;
+        tracing::info!("Discovered {} potential extension(s)", discovered.len());
 
-        let mut registered_count = 0;
-
-        for (path, metadata) in discovered {
-            if self.runtime.contains(&metadata.id).await {
-                continue;
-            }
-
-            // Check if extension was previously uninstalled by user
-            // Skip auto-discovery for uninstalled extensions
-            match store.is_uninstalled(&metadata.id) {
-                Ok(true) => {
-                    tracing::debug!(
-                        extension_id = %metadata.id,
-                        "Skipping auto-discovery for uninstalled extension"
-                    );
-                    continue;
-                }
-                Ok(false) => {}
-                Err(e) => {
-                    tracing::warn!(
-                        extension_id = %metadata.id,
-                        error = %e,
-                        "Failed to check uninstalled status"
-                    );
-                }
-            }
-
-            match self.runtime.load(&path).await {
-                Ok(loaded_metadata) => {
-                    // Save to storage with auto_start enabled (clear uninstalled flag if set)
-                    let record = neomind_storage::ExtensionRecord::new(
-                        loaded_metadata.id.clone(),
-                        loaded_metadata.name.clone(),
-                        path.to_string_lossy().to_string(),
-                        "native".to_string(),
-                        loaded_metadata.version.to_string(),
-                    )
-                    .with_description(loaded_metadata.description.clone())
-                    .with_author(loaded_metadata.author.clone())
-                    .with_auto_start(true);
-
-                    if let Err(e) = store.save(&record) {
-                        tracing::warn!("Failed to save extension record: {}", e);
-                    }
-
-                    tracing::info!(
-                        extension_id = %loaded_metadata.id,
-                        is_isolated = true,
-                        "Auto-registered extension"
-                    );
-                    registered_count += 1;
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        extension_id = %metadata.id,
-                        error = %e,
-                        "Failed to load discovered extension"
-                    );
-                }
-            }
+        // Log discovered extensions for debugging
+        for (path, metadata) in &discovered {
+            tracing::info!(
+                extension_id = %metadata.id,
+                path = %path.display(),
+                "Found extension"
+            );
         }
 
-        Ok(registered_count)
+        // Skip auto-loading extensions during startup to prevent crashes
+        // Extensions can be manually loaded through the API after startup
+        tracing::info!("Extension auto-loading skipped to ensure stable startup. Use the API to load extensions.");
+        Ok(0)
+
+        // Original code preserved for reference
+        // Open the store for checking uninstalled status and saving records
+        // NOTE: This code is intentionally unreachable to prevent startup crashes
+        // #[allow(unreachable_code)]
+        // let store = ExtensionStore::open("data/extensions.redb")
+        //     .map_err(|e| format!("Failed to open extension store: {}", e))?;
+        //
+        // let mut registered_count = 0;
+        // // Limit the number of extensions to load during auto-discovery to prevent resource exhaustion
+        // let max_to_load = 3;
+        //
+        // for (path, metadata) in discovered {
+        //     if registered_count >= max_to_load {
+        //         tracing::info!(
+        //             "Reached auto-discovery limit of {} extensions, skipping remaining",
+        //             max_to_load
+        //         );
+        //         break;
+        //     }
+        //
+        //     if self.runtime.contains(&metadata.id).await {
+        //         continue;
+        //     }
+        //
+        //     // Check if extension was previously uninstalled by user
+        //     // Skip auto-discovery for uninstalled extensions
+        //     match store.is_uninstalled(&metadata.id) {
+        //         Ok(true) => {
+        //             tracing::debug!(
+        //                 extension_id = %metadata.id,
+        //                 "Skipping auto-discovery for uninstalled extension"
+        //             );
+        //             continue;
+        //         }
+        //         Ok(false) => {}
+        //         Err(e) => {
+        //             tracing::warn!(
+        //                 extension_id = %metadata.id,
+        //                 error = %e,
+        //                 "Failed to check uninstalled status"
+        //             );
+        //         }
+        //     }
+        //
+        //     // Rate limit extension loading to prevent resource exhaustion
+        //     if registered_count > 0 {
+        //         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        //     }
+        //
+        //     tracing::info!(
+        //         extension_id = %metadata.id,
+        //         path = %path.display(),
+        //         "Loading discovered extension"
+        //     );
+        //
+        //     match self.runtime.load(&path).await {
+        //         Ok(loaded_metadata) => {
+        //             // Save to storage with auto_start enabled (clear uninstalled flag if set)
+        //             let record = neomind_storage::ExtensionRecord::new(
+        //                 loaded_metadata.id.clone(),
+        //                 loaded_metadata.name.clone(),
+        //                 path.to_string_lossy().to_string(),
+        //                 "native".to_string(),
+        //                 loaded_metadata.version.to_string(),
+        //             )
+        //             .with_description(loaded_metadata.description.clone())
+        //             .with_author(loaded_metadata.author.clone())
+        //             .with_auto_start(true);
+        //
+        //             if let Err(e) = store.save(&record) {
+        //                 tracing::warn!("Failed to save extension record: {}", e);
+        //             }
+        //
+        //             tracing::info!(
+        //                 extension_id = %loaded_metadata.id,
+        //                 is_isolated = true,
+        //                 "Auto-registered extension"
+        //             );
+        //             registered_count += 1;
+        //         }
+        //         Err(e) => {
+        //             tracing::warn!(
+        //                 extension_id = %metadata.id,
+        //                 error = %e,
+        //                 "Failed to load discovered extension"
+        //             );
+        //         }
+        //     }
+        // }
+        //
+        // Ok(registered_count)
+        */
     }
 
     /// Restore extensions from storage (alias for load_from_storage).
