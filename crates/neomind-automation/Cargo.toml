@@ -32,7 +32,3 @@ redb = { workspace = true }
 
 [dev-dependencies]
 futures = { workspace = true }
-
-[features]
-default = []
-javascript = []
