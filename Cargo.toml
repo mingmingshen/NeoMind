@@ -8,14 +8,11 @@ members = [
     "crates/neomind-storage",
     "crates/neomind-rules",
     "crates/neomind-messages",
-    "crates/neomind-memory",
-    "crates/neomind-tools",
     "crates/neomind-agent",
-    "crates/neomind-commands",
-    "crates/neomind-automation",
     "crates/neomind-extension-sdk",
     "crates/neomind-extension-runner",
-    "crates/neomind-native-capability-smoke-extension",
+    # Testing utilities (not part of main release)
+    "crates/neomind-testing/smoke-extension",
 ]
 exclude = ["web"]
 resolver = "2"
