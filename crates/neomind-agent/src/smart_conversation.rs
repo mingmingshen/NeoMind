@@ -41,12 +41,17 @@ pub struct SmartConversationManager {
     rules: Vec<Rule>,
 }
 
+/// Device information for smart conversation and followup.
+/// Shared between smart_conversation and smart_followup modules.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Device {
     pub id: String,
     pub name: String,
     pub location: String,
     pub device_type: String,
+    /// Device capabilities (e.g., ["on_off", "brightness", "color_temp"])
+    #[serde(default)]
+    pub capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -6,10 +6,10 @@
 //! - Approving/rejecting draft devices
 //! - Managing auto-onboarding configuration
 
-use neomind_automation::discovery::auto_onboard::AutoOnboardConfig;
-use neomind_automation::discovery::types::DataType;
-use neomind_automation::SemanticType;
-use neomind_automation::{AutoOnboardManager, DiscoveredMetric};
+use crate::automation::discovery::auto_onboard::AutoOnboardConfig;
+use crate::automation::discovery::types::DataType;
+use crate::automation::SemanticType;
+use crate::automation::{AutoOnboardManager, DiscoveredMetric};
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_devices::{
     ConnectionConfig, DeviceConfig, DeviceTypeMode, DeviceTypeTemplate,
@@ -370,7 +370,7 @@ pub async fn approve_draft_device(
 
 /// Convert discovered metrics to MetricDefinition format
 fn convert_metrics_to_template(metrics: &[DiscoveredMetric]) -> Vec<MetricDefinition> {
-    use neomind_automation::SemanticType;
+    use crate::automation::SemanticType;
     use neomind_devices::MetricDataType;
 
     metrics
@@ -515,7 +515,7 @@ pub async fn enhance_draft_with_llm(
     let metrics_clone = gen_type.metrics.clone();
     tokio::spawn(async move {
         // Use the manager's public method for LLM enhancement
-        let enhancements: Vec<(String, neomind_automation::discovery::MetricEnhancement)> =
+        let enhancements: Vec<(String, crate::automation::discovery::MetricEnhancement)> =
             manager_clone
                 .enhance_draft_with_llm(
                     &device_id_clone,
@@ -528,7 +528,7 @@ pub async fn enhance_draft_with_llm(
         let enhancement_map: std::collections::HashMap<String, _> =
             enhancements.into_iter().collect();
 
-        let enhanced_metrics: Vec<neomind_automation::DiscoveredMetric> = metrics_clone
+        let enhanced_metrics: Vec<crate::automation::DiscoveredMetric> = metrics_clone
             .into_iter()
             .map(|mut m| {
                 if let Some(enhancement) = enhancement_map.get(&m.name) {
@@ -775,17 +775,17 @@ pub struct DraftDeviceDto {
     pub user_name: Option<String>,
 }
 
-impl From<neomind_automation::DraftDevice> for DraftDeviceDto {
-    fn from(draft: neomind_automation::DraftDevice) -> Self {
+impl From<crate::automation::DraftDevice> for DraftDeviceDto {
+    fn from(draft: crate::automation::DraftDevice) -> Self {
         // Convert status to snake_case string for API consistency
         let status_str = match draft.status {
-            neomind_automation::DraftDeviceStatus::Collecting => "collecting",
-            neomind_automation::DraftDeviceStatus::Analyzing => "analyzing",
-            neomind_automation::DraftDeviceStatus::WaitingProcessing => "waiting_processing",
-            neomind_automation::DraftDeviceStatus::Registering => "registering",
-            neomind_automation::DraftDeviceStatus::Registered => "registered",
-            neomind_automation::DraftDeviceStatus::Rejected => "rejected",
-            neomind_automation::DraftDeviceStatus::Failed => "failed",
+            crate::automation::DraftDeviceStatus::Collecting => "collecting",
+            crate::automation::DraftDeviceStatus::Analyzing => "analyzing",
+            crate::automation::DraftDeviceStatus::WaitingProcessing => "waiting_processing",
+            crate::automation::DraftDeviceStatus::Registering => "registering",
+            crate::automation::DraftDeviceStatus::Registered => "registered",
+            crate::automation::DraftDeviceStatus::Rejected => "rejected",
+            crate::automation::DraftDeviceStatus::Failed => "failed",
         };
 
         Self {
@@ -817,8 +817,8 @@ pub struct GeneratedDeviceTypeDto {
     pub summary: ProcessingSummaryDto,
 }
 
-impl From<neomind_automation::GeneratedDeviceType> for GeneratedDeviceTypeDto {
-    fn from(gen_type: neomind_automation::GeneratedDeviceType) -> Self {
+impl From<crate::automation::GeneratedDeviceType> for GeneratedDeviceTypeDto {
+    fn from(gen_type: crate::automation::GeneratedDeviceType) -> Self {
         Self {
             device_type: gen_type.device_type,
             name: gen_type.name,
@@ -845,8 +845,8 @@ pub struct MetricSummaryDto {
     pub confidence: f32,
 }
 
-impl From<neomind_automation::DiscoveredMetric> for MetricSummaryDto {
-    fn from(metric: neomind_automation::DiscoveredMetric) -> Self {
+impl From<crate::automation::DiscoveredMetric> for MetricSummaryDto {
+    fn from(metric: crate::automation::DiscoveredMetric) -> Self {
         Self {
             name: metric.name,
             path: metric.path,
@@ -869,8 +869,8 @@ pub struct ProcessingSummaryDto {
     pub recommendations: Vec<String>,
 }
 
-impl From<&neomind_automation::ProcessingSummary> for ProcessingSummaryDto {
-    fn from(summary: &neomind_automation::ProcessingSummary) -> Self {
+impl From<&crate::automation::ProcessingSummary> for ProcessingSummaryDto {
+    fn from(summary: &crate::automation::ProcessingSummary) -> Self {
         Self {
             samples_analyzed: summary.samples_analyzed,
             fields_discovered: summary.fields_discovered,

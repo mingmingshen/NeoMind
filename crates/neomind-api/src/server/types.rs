@@ -5,7 +5,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use neomind_agent::SessionManager;
-use neomind_commands::{CommandManager, CommandQueue, CommandStateStore};
 use neomind_core::{extension::ExtensionRegistry, EventBus};
 use neomind_devices::adapter::AdapterResult;
 use neomind_devices::{DeviceRegistry, DeviceService, TimeSeriesStorage};
@@ -16,11 +15,11 @@ use neomind_rules::{
 use neomind_storage::dashboards::DashboardStore;
 use neomind_storage::llm_backends::LlmBackendStore;
 
-use neomind_automation::{
+use crate::automation::{
     intent::IntentAnalyzer, store::SharedAutomationStore, transform::TransformEngine,
     AutoOnboardManager,
 };
-use neomind_memory::TieredMemory;
+use neomind_agent::memory::TieredMemory;
 use neomind_messages::MessageManager;
 
 use crate::auth::AuthState as ApiKeyAuthState;
@@ -46,7 +45,7 @@ pub const MAX_EXTENSION_UPLOAD_SIZE: usize = 100 * 1024 * 1024;
 /// Organized into logical sub-states for better maintainability.
 #[derive(Clone)]
 pub struct ServerState {
-    /// Core system services (EventBus, CommandManager, MessageManager)
+    /// Core system services (EventBus, MessageManager)
     pub core: CoreState,
 
     /// Device management (Registry, Service, Telemetry, Broker)
@@ -153,11 +152,6 @@ impl ServerState {
         self.core.event_bus.clone()
     }
 
-    /// Get command manager (backward compatibility).
-    pub fn command_manager(&self) -> Option<Arc<CommandManager>> {
-        self.core.command_manager.clone()
-    }
-
     /// Get API key auth state (backward compatibility).
     pub fn auth_state(&self) -> Arc<ApiKeyAuthState> {
         self.auth.api_key_state.clone()
@@ -223,11 +217,6 @@ impl ServerState {
         // Create event bus FIRST (needed for adapters to publish events)
         let event_bus = Some(Arc::new(EventBus::new()));
 
-        // Create command manager
-        let command_queue = Arc::new(CommandQueue::new(1000));
-        let command_state = Arc::new(CommandStateStore::new(10000));
-        let command_manager = Some(Arc::new(CommandManager::new(command_queue, command_state)));
-
         // Create message manager with persistent storage
         let message_manager = match MessageManager::with_storage("data") {
             Ok(manager) => {
@@ -241,7 +230,7 @@ impl ServerState {
         };
         message_manager.register_default_channels().await;
 
-        let core = CoreState::new(event_bus.clone(), command_manager, message_manager.clone());
+        let core = CoreState::new(event_bus.clone(), message_manager.clone());
 
         // ========== Build DEVICE STATE ==========
         // Create device registry with persistent storage
@@ -591,15 +580,12 @@ impl ServerState {
 
         // ========== Build CORE STATE ==========
         let event_bus = Some(Arc::new(EventBus::new()));
-        let command_queue = Arc::new(CommandQueue::new(1000));
-        let command_state = Arc::new(CommandStateStore::new(10000));
-        let command_manager = Some(Arc::new(CommandManager::new(command_queue, command_state)));
 
         // In-memory message manager
         let message_manager = Arc::new(MessageManager::new());
         message_manager.register_default_channels().await;
 
-        let core = CoreState::new(event_bus.clone(), command_manager, message_manager.clone());
+        let core = CoreState::new(event_bus.clone(), message_manager.clone());
 
         // ========== Build DEVICE STATE ==========
         // In-memory device registry
@@ -1034,7 +1020,7 @@ impl ServerState {
 
     /// Initialize tool registry with real service connections.
     pub async fn init_tools(&self) {
-        use neomind_tools::ToolRegistryBuilder;
+        use neomind_agent::toolkit::ToolRegistryBuilder;
         use std::sync::Arc;
 
         // Build tool registry with real implementations that connect to actual services
@@ -1407,7 +1393,7 @@ impl ServerState {
                         }
                     };
 
-                    let manager = Arc::new(neomind_automation::AutoOnboardManager::new(
+                    let manager = Arc::new(crate::automation::AutoOnboardManager::new(
                         llm,
                         event_bus.clone(),
                     ));

@@ -9,7 +9,7 @@ use neomind_agent::LlmBackend;
 use neomind_core::config::{
     endpoints, env_vars, models, normalize_ollama_endpoint, normalize_openai_endpoint,
 };
-use neomind_memory::{EmbeddingConfig, TieredMemoryConfig};
+use neomind_agent::memory::{EmbeddingConfig, TieredMemoryConfig};
 use neomind_storage::{LlmBackendType, LlmSettings};
 use serde::Deserialize;
 use std::sync::Arc;

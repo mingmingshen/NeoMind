@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::sync::Arc;
 
 use super::types::{AgentMessage, ToolCall};
-use neomind_tools::ToolRegistry;
+use crate::toolkit::ToolRegistry;
 
 /// Fallback rule configuration.
 #[derive(Debug, Clone)]

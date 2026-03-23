@@ -8,8 +8,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use neomind_tools::tool::{array_property, object_schema, string_property};
-use neomind_tools::{Tool, ToolDefinition, ToolOutput};
+use crate::toolkit::tool::{array_property, object_schema, string_property};
+use crate::toolkit::{Tool, ToolDefinition, ToolOutput};
 
 /// Think Tool for structured reasoning.
 ///
@@ -132,11 +132,11 @@ impl Tool for ThinkTool {
         )
     }
 
-    async fn execute(&self, args: Value) -> Result<ToolOutput, neomind_tools::ToolError> {
+    async fn execute(&self, args: Value) -> Result<ToolOutput, crate::toolkit::ToolError> {
         self.validate_args(&args)?;
 
         let thought = args["thought"].as_str().ok_or_else(|| {
-            neomind_tools::ToolError::InvalidArguments("thought must be a string".to_string())
+            crate::toolkit::ToolError::InvalidArguments("thought must be a string".to_string())
         })?;
 
         let task_breakdown: Option<Vec<String>> = args["task_breakdown"].as_array().map(|arr| {

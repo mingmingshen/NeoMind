@@ -15,7 +15,7 @@ use tokio::sync::RwLock;
 
 use neomind_core::event::NeoMindEvent;
 use neomind_core::eventbus::EventBus;
-use neomind_tools::{ToolError, ToolOutput, ToolRegistry};
+use crate::toolkit::{ToolError, ToolOutput, ToolRegistry};
 
 /// Maximum number of tool execution records to keep in history.
 const MAX_HISTORY_SIZE: usize = 1000;
@@ -387,7 +387,7 @@ impl EventIntegratedToolRegistry {
     }
 
     /// Get all tool definitions.
-    pub fn definitions(&self) -> Vec<neomind_tools::ToolDefinition> {
+    pub fn definitions(&self) -> Vec<crate::toolkit::ToolDefinition> {
         self.inner.definitions()
     }
 
@@ -806,8 +806,8 @@ impl ToolErrorExt for ToolError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neomind_tools::tool::{Tool, ToolCategory, ToolOutput};
-    use neomind_tools::ToolRegistryBuilder;
+    use crate::toolkit::tool::{Tool, ToolCategory, ToolOutput};
+    use crate::toolkit::ToolRegistryBuilder;
     use std::sync::Arc;
 
     /// Simple mock tool for testing
@@ -842,7 +842,7 @@ mod tests {
         async fn execute(
             &self,
             _args: serde_json::Value,
-        ) -> Result<ToolOutput, neomind_tools::ToolError> {
+        ) -> Result<ToolOutput, crate::toolkit::ToolError> {
             Ok(ToolOutput {
                 success: true,
                 data: serde_json::json!({"status": "ok"}),

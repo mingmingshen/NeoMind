@@ -1,7 +1,7 @@
 //! Device type management.
 
-use neomind_automation::device_type_generator::{DeviceTypeGenerator, GenerationConfig};
-use neomind_automation::discovery::DeviceSample;
+use crate::automation::device_type_generator::{DeviceTypeGenerator, GenerationConfig};
+use crate::automation::discovery::DeviceSample;
 
 use axum::{
     extract::{Path, State},

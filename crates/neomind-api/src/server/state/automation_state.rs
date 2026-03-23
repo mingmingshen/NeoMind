@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use neomind_automation::{
+use crate::automation::{
     intent::IntentAnalyzer, store::SharedAutomationStore, transform::TransformEngine,
 };
 use neomind_rules::{store::RuleStore, RuleEngine};

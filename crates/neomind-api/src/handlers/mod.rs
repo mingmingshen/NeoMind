@@ -5,8 +5,6 @@ pub mod auth;
 pub mod auth_users;
 pub mod automations;
 pub mod basic;
-pub mod bulk;
-pub mod commands;
 pub mod common;
 pub mod config;
 pub mod dashboards;
@@ -16,19 +14,15 @@ pub mod extensions;
 pub mod capabilities;
 pub mod extension_stream;
 pub mod llm_backends;
-pub mod memory;
 pub mod message_channels;
 pub mod messages;
 pub mod mqtt;
 pub mod rules;
-pub mod search;
 pub mod sessions;
 pub mod settings;
 pub mod setup;
 pub mod stats;
 pub mod suggestions;
-pub mod test_data;
-pub mod tools;
 pub mod ws;
 
 // Re-export ServerState so handlers can use it
@@ -63,11 +57,6 @@ pub use sessions::{
     ws_chat_handler,
 };
 pub use settings::llm_generate_handler;
-// Commands API
-pub use commands::{
-    cancel_command_handler, cleanup_commands_handler, get_command_handler,
-    get_command_stats_handler, list_commands_handler, retry_command_handler,
-};
 // Stats API
 pub use stats::{get_device_stats_handler, get_rule_stats_handler, get_system_stats_handler};
 // Extensions API

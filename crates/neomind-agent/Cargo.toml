@@ -12,7 +12,6 @@ default = []
 [dependencies]
 neomind-core = { path = "../neomind-core" }
 neomind-llm = { path = "../neomind-llm", features = ["cloud"] }
-neomind-tools = { path = "../neomind-tools" }
 neomind-devices = { path = "../neomind-devices" }
 neomind-storage = { path = "../neomind-storage" }
 neomind-rules = { path = "../neomind-rules" }
@@ -36,7 +35,11 @@ rand = { workspace = true }
 base64 = { workspace = true }
 # Cron scheduling libraries
 cron = "0.12"
-# Optional system info dependency
+
+# Memory system dependencies (merged from neomind-memory)
+reqwest = { workspace = true }
+lru = { workspace = true }
+dashmap = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

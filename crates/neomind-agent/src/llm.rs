@@ -715,7 +715,7 @@ impl LlmInterface {
             .push_str("Output in response: [{\"name\":\"tool_name\",\"arguments\":{\"param\":\"value\"}}]\n\n");
 
         // Add simplified tools
-        use neomind_tools::simplified;
+        use crate::toolkit::simplified;
         let simplified_tools = simplified::get_simplified_tools();
 
         prompt.push_str("## Available Tools\n\n");
@@ -889,9 +889,9 @@ impl LlmInterface {
     #[allow(dead_code)]
     fn filter_simplified_tools(
         &self,
-        tools: &[neomind_tools::simplified::LlmToolDefinition],
+        tools: &[crate::toolkit::simplified::LlmToolDefinition],
         intent: &crate::agent::staged::IntentResult,
-    ) -> Vec<neomind_tools::simplified::LlmToolDefinition> {
+    ) -> Vec<crate::toolkit::simplified::LlmToolDefinition> {
         let mut filtered = Vec::new();
 
         // Always include tools that match the intent category

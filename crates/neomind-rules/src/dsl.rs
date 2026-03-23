@@ -1270,21 +1270,8 @@ impl RuleDslParser {
     }
 }
 
-/// Rule compilation error.
-#[derive(Debug, thiserror::Error)]
-pub enum RuleError {
-    #[error("Parse error: {0}")]
-    Parse(String),
-
-    #[error("Validation error: {0}")]
-    Validation(String),
-
-    #[error("Compilation error: {0}")]
-    Compilation(String),
-
-    #[error("Execution error: {0}")]
-    Execution(String),
-}
+// Use crate::error::RuleError instead of defining a duplicate here
+pub use crate::error::RuleError;
 
 #[cfg(test)]
 mod tests {

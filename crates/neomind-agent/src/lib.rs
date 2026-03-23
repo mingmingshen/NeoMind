@@ -41,9 +41,11 @@ pub mod context;
 pub mod context_selector;
 pub mod error;
 pub mod llm;
+pub mod memory;
 pub mod prompts;
 pub mod session;
 pub mod smart_conversation;
+pub mod toolkit;
 pub mod tools;
 pub mod translation;
 

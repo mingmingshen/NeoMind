@@ -4,7 +4,8 @@
 //! enabling rule actions to control devices and send notifications.
 //! Also supports extension command execution.
 
-use crate::dsl::{RuleAction, RuleError};
+use crate::dsl::RuleAction;
+use crate::error::RuleError;
 use crate::engine::{CompiledRule, RuleExecutionResult, RuleId, ValueProvider};
 use crate::extension_integration::ExtensionRegistry;
 use neomind_core::{

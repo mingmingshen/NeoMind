@@ -5,6 +5,7 @@
 pub mod audit;
 pub mod auth;
 pub mod auth_users;
+pub mod automation;
 pub mod cache;
 pub mod capability_providers;
 pub mod config;

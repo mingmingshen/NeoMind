@@ -17,7 +17,8 @@ use uuid::Uuid;
 
 use super::dependencies::DependencyManager;
 use super::device_integration::DeviceActionExecutor;
-use super::dsl::{ParsedRule, RuleAction, RuleCondition, RuleError};
+use super::dsl::{ParsedRule, RuleAction, RuleCondition};
+use super::error::RuleError;
 use super::extension_integration::{try_parse_extension_action, ExtensionActionExecutor};
 use super::store::RuleStore;
 

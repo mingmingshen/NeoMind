@@ -441,11 +441,6 @@ pub fn log_startup() -> StartupLogger {
     StartupLogger::new()
 }
 
-/// Convert various message types to structured logging.
-pub trait StructuredLog {
-    fn to_startup_message(&self) -> String;
-}
-
 /// Log categories for consistent tagging.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogCategory {

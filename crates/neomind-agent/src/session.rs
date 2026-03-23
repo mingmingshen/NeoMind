@@ -207,7 +207,7 @@ pub struct SessionManager {
     /// Default LLM backend (configured for new sessions)
     default_llm_backend: Arc<RwLock<Option<LlmBackend>>>,
     /// Tool registry for all sessions
-    tool_registry: Arc<RwLock<Option<Arc<neomind_tools::ToolRegistry>>>>,
+    tool_registry: Arc<RwLock<Option<Arc<crate::toolkit::ToolRegistry>>>>,
     /// Session cleanup configuration
     cleanup_config: SessionCleanupConfig,
     /// Whether cleanup task is running
@@ -512,7 +512,7 @@ impl SessionManager {
     }
 
     /// Set the tool registry for all new sessions.
-    pub async fn set_tool_registry(&self, registry: Arc<neomind_tools::ToolRegistry>) {
+    pub async fn set_tool_registry(&self, registry: Arc<crate::toolkit::ToolRegistry>) {
         *self.tool_registry.write().await = Some(registry);
     }
 

@@ -14,7 +14,7 @@ use neomind_rules::{
     dsl::{ComparisonOperator, RuleAction, RuleCondition},
     CompiledRule, HistoryFilter, RuleEngine, RuleHistoryStorage, RuleId, RuleStatus,
 };
-use neomind_tools::{
+use crate::toolkit::{
     error::Result as ToolResult,
     tool::{boolean_property, number_property, object_schema, string_property},
     Tool, ToolError, ToolOutput,

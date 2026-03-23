@@ -54,7 +54,7 @@ struct DependencyNode {
 /// 3. Detects and handles conflicts (mutually exclusive tools)
 pub async fn build_execution_plan(
     tool_calls: Vec<ToolCall>,
-    tools: &neomind_tools::ToolRegistry,
+    tools: &crate::toolkit::ToolRegistry,
 ) -> Result<ToolExecutionPlan> {
     if tool_calls.is_empty() {
         return Ok(ToolExecutionPlan {
@@ -99,7 +99,7 @@ pub async fn build_execution_plan(
 /// Build dependency graph from tool calls and tool metadata.
 async fn build_dependency_graph(
     tool_calls: &[ToolCall],
-    tools: &neomind_tools::ToolRegistry,
+    tools: &crate::toolkit::ToolRegistry,
 ) -> Result<Vec<DependencyNode>> {
     let mut nodes = Vec::new();
 
@@ -153,7 +153,7 @@ async fn build_dependency_graph(
 /// Get tool relationships from the tool registry.
 async fn get_tool_relationships(
     tool_name: &str,
-    tools: &neomind_tools::ToolRegistry,
+    tools: &crate::toolkit::ToolRegistry,
 ) -> Result<ToolRelationships> {
     // Try to get tool from registry
     if let Some(tool) = tools.get(tool_name) {

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
-use neomind_automation::{
+use crate::automation::{
     transform::JsTransformExecutor, Automation, AutomationConverter, AutomationType, IntentResult,
 };
 
@@ -602,7 +602,7 @@ pub async fn analyze_intent_handler(
 
 /// Quick heuristic analysis for intent classification (used when LLM is not available)
 fn heuristic_analysis(description: &str) -> IntentResult {
-    use neomind_automation::AutomationType;
+    use crate::automation::AutomationType;
 
     let desc_lower = description.to_lowercase();
 
