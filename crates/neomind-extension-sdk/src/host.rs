@@ -345,8 +345,10 @@ impl ExtensionContext {
 
 /// Stream direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum StreamDirection {
     #[serde(rename = "upload")]
+    #[default]
     Upload,
     #[serde(rename = "download")]
     Download,
@@ -354,16 +356,20 @@ pub enum StreamDirection {
     Bidirectional,
 }
 
+
 /// Stream mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum StreamMode {
     #[serde(rename = "stateless")]
+    #[default]
     Stateless,
     #[serde(rename = "stateful")]
     Stateful,
     #[serde(rename = "push")]
     Push,
 }
+
 
 /// Stream data type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -531,6 +537,41 @@ pub struct StreamError {
     pub retryable: bool,
 }
 
+impl StreamError {
+    /// Create a new stream error.
+    pub fn new(code: impl Into<String>, message: impl Into<String>, retryable: bool) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            retryable,
+        }
+    }
+
+    /// Create a fatal (non-retryable) error.
+    pub fn fatal(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            retryable: false,
+        }
+    }
+
+    /// Create a retryable error.
+    pub fn retryable(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            retryable: true,
+        }
+    }
+}
+
+impl std::fmt::Display for StreamError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}] {}", self.code, self.message)
+    }
+}
+
 /// Stream result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamResult {
@@ -580,7 +621,21 @@ impl StreamResult {
         ))
     }
 
-    pub fn error(
+    /// Create an error result with minimal arguments.
+    pub fn error(input_sequence: Option<u64>, error: StreamError) -> Self {
+        Self {
+            input_sequence,
+            output_sequence: 0,
+            data: Vec::new(),
+            data_type: StreamDataType::Binary,
+            processing_ms: 0.0,
+            metadata: None,
+            error: Some(error),
+        }
+    }
+
+    /// Create an error result with full arguments.
+    pub fn error_with_details(
         input_sequence: Option<u64>,
         output_sequence: u64,
         error: StreamError,
@@ -600,6 +655,16 @@ impl StreamResult {
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = Some(metadata);
         self
+    }
+
+    /// Parse the data as JSON.
+    pub fn as_json(&self) -> std::result::Result<serde_json::Value, serde_json::Error> {
+        serde_json::from_slice(&self.data)
+    }
+
+    /// Parse the data as text.
+    pub fn as_text(&self) -> std::result::Result<&str, std::str::Utf8Error> {
+        std::str::from_utf8(&self.data)
     }
 }
 
@@ -623,8 +688,14 @@ impl FlowControl {
     }
 }
 
+impl Default for FlowControl {
+    fn default() -> Self {
+        Self::default_stream()
+    }
+}
+
 /// Stream capability descriptor.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StreamCapability {
     pub supported_data_types: Vec<StreamDataType>,
     pub max_chunk_size: usize,
@@ -633,6 +704,80 @@ pub struct StreamCapability {
     pub mode: StreamMode,
     pub direction: StreamDirection,
     pub flow_control: FlowControl,
+    /// Optional JSON schema for stream configuration
+    #[serde(default)]
+    pub config_schema: Option<serde_json::Value>,
+}
+
+impl StreamCapability {
+    /// Create a push capability with common defaults.
+    pub fn push() -> Self {
+        Self {
+            supported_data_types: vec![StreamDataType::Binary],
+            max_chunk_size: 64 * 1024,
+            preferred_chunk_size: 16 * 1024,
+            max_concurrent_sessions: 5,
+            mode: StreamMode::Push,
+            direction: StreamDirection::Download,
+            flow_control: FlowControl::default(),
+            config_schema: None,
+        }
+    }
+
+    /// Create an upload capability with common defaults.
+    pub fn upload() -> Self {
+        Self {
+            supported_data_types: vec![StreamDataType::Binary],
+            max_chunk_size: 1024 * 1024,
+            preferred_chunk_size: 64 * 1024,
+            max_concurrent_sessions: 5,
+            mode: StreamMode::Stateless,
+            direction: StreamDirection::Upload,
+            flow_control: FlowControl::default(),
+            config_schema: None,
+        }
+    }
+
+    /// Create a download capability with common defaults.
+    pub fn download() -> Self {
+        Self {
+            supported_data_types: vec![StreamDataType::Binary],
+            max_chunk_size: 1024 * 1024,
+            preferred_chunk_size: 64 * 1024,
+            max_concurrent_sessions: 5,
+            mode: StreamMode::Stateless,
+            direction: StreamDirection::Download,
+            flow_control: FlowControl::default(),
+            config_schema: None,
+        }
+    }
+
+    /// Create a stateful capability with common defaults.
+    pub fn stateful() -> Self {
+        Self {
+            supported_data_types: vec![StreamDataType::Binary],
+            max_chunk_size: 1024 * 1024,
+            preferred_chunk_size: 64 * 1024,
+            max_concurrent_sessions: 5,
+            mode: StreamMode::Stateful,
+            direction: StreamDirection::Bidirectional,
+            flow_control: FlowControl::default(),
+            config_schema: None,
+        }
+    }
+
+    /// Add a supported data type.
+    pub fn with_data_type(mut self, data_type: StreamDataType) -> Self {
+        self.supported_data_types.push(data_type);
+        self
+    }
+
+    /// Set chunk size constraints.
+    pub fn with_chunk_size(mut self, preferred: usize, max: usize) -> Self {
+        self.preferred_chunk_size = preferred;
+        self.max_chunk_size = max;
+        self
+    }
 }
 
 /// Client information.
@@ -681,10 +826,23 @@ impl StreamSession {
             metadata: None,
         }
     }
+
+    /// Get the age of this session in seconds.
+    pub fn age_secs(&self) -> i64 {
+        let now = chrono::Utc::now().timestamp();
+        (now - self.started_at).max(0)
+    }
+
+    /// Get session age in milliseconds.
+    pub fn age_ms(&self) -> i64 {
+        let now = chrono::Utc::now().timestamp_millis();
+        let started_ms = self.started_at * 1000;
+        (now - started_ms).max(0)
+    }
 }
 
 /// Session statistics.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionStats {
     pub input_chunks: u64,
     pub output_chunks: u64,
@@ -692,6 +850,41 @@ pub struct SessionStats {
     pub output_bytes: u64,
     pub errors: u64,
     pub last_activity: i64,
+}
+
+impl Default for SessionStats {
+    fn default() -> Self {
+        Self {
+            input_chunks: 0,
+            output_chunks: 0,
+            input_bytes: 0,
+            output_bytes: 0,
+            errors: 0,
+            last_activity: chrono::Utc::now().timestamp(),
+        }
+    }
+}
+
+impl SessionStats {
+    /// Record an error, incrementing the error counter.
+    pub fn record_error(&mut self) {
+        self.errors += 1;
+        self.last_activity = chrono::Utc::now().timestamp();
+    }
+
+    /// Record input data.
+    pub fn record_input(&mut self, bytes: u64) {
+        self.input_chunks += 1;
+        self.input_bytes += bytes;
+        self.last_activity = chrono::Utc::now().timestamp();
+    }
+
+    /// Record output data.
+    pub fn record_output(&mut self, bytes: u64) {
+        self.output_chunks += 1;
+        self.output_bytes += bytes;
+        self.last_activity = chrono::Utc::now().timestamp();
+    }
 }
 
 // ============================================================================
@@ -777,6 +970,11 @@ impl EventSubscription {
             max_buffer_size: 1000,
             enabled: true,
         }
+    }
+
+    pub fn with_filters(mut self, filters: EventFilter) -> Self {
+        self.filters = Some(filters);
+        self
     }
 
     pub fn is_subscribed(&self, event_type: &str) -> bool {
@@ -1068,5 +1266,3 @@ pub trait Extension: Send + Sync {
 // Re-exports for compatibility
 // ============================================================================
 
-/// Alias for backward compatibility.
-pub type MetricDefinition = MetricDescriptor;

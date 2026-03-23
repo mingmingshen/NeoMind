@@ -46,8 +46,6 @@ pollster = "0.4"
 
 [features]
 default = []
-native = []
-wasm = []
 
 [dev-dependencies]
 tokio-test = "0.4"
