@@ -88,7 +88,6 @@ enum ClientMessage {
 /// Message type to client
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[allow(dead_code)]
 enum ServerMessage {
     /// Stream capability
     Capability {
@@ -204,108 +203,6 @@ impl From<&SessionStats> for SessionStatsDto {
             input_bytes: stats.input_bytes,
             output_bytes: stats.output_bytes,
             errors: stats.errors,
-        }
-    }
-}
-
-// ============================================================================
-// Session Manager
-// ============================================================================
-
-/// Active session data
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct ActiveSession {
-    id: String,
-    extension_id: String,
-    config: serde_json::Value,
-    client_info: ClientInfoMessage,
-    created_at: i64,
-    frame_count: Arc<std::sync::atomic::AtomicU64>,
-    stats: Arc<RwLock<SessionStats>>,
-}
-
-/// Session manager for tracking active stream sessions
-#[allow(dead_code)]
-struct SessionManager {
-    sessions: Arc<RwLock<HashMap<String, ActiveSession>>>,
-}
-#[allow(dead_code)]
-impl SessionManager {
-    fn new() -> Self {
-        Self {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
-
-    async fn create(
-        &self,
-        id: String,
-        extension_id: String,
-        config: serde_json::Value,
-        client_info: ClientInfoMessage,
-    ) -> Result<(), ActiveSession> {
-        let mut sessions = self.sessions.write().await;
-
-        if sessions.contains_key(&id) {
-            return Err(ActiveSession {
-                id: id.clone(),
-                extension_id,
-                config,
-                client_info,
-                created_at: 0,
-                frame_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-                stats: Arc::new(RwLock::new(SessionStats::default())),
-            });
-        }
-
-        let session = ActiveSession {
-            id: id.clone(),
-            extension_id,
-            config,
-            client_info,
-            created_at: chrono::Utc::now().timestamp_millis(),
-            frame_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            stats: Arc::new(RwLock::new(SessionStats::default())),
-        };
-
-        sessions.insert(id.clone(), session);
-        Ok(())
-    }
-
-    async fn get(&self, id: &str) -> Option<ActiveSession> {
-        let sessions = self.sessions.read().await;
-        sessions.get(id).cloned()
-    }
-
-    async fn remove(&self, id: &str) -> Option<ActiveSession> {
-        let mut sessions = self.sessions.write().await;
-        sessions.remove(id)
-    }
-
-    async fn count(&self) -> usize {
-        let sessions = self.sessions.read().await;
-        sessions.len()
-    }
-
-    /// Cleanup inactive sessions (older than timeout_ms)
-    async fn cleanup_inactive(&self, timeout_ms: i64) {
-        let mut to_remove = vec![];
-        let now = chrono::Utc::now().timestamp_millis();
-
-        {
-            let sessions = self.sessions.read().await;
-            for (id, session) in sessions.iter() {
-                let stats = session.stats.read().await;
-                if now - stats.last_activity > timeout_ms {
-                    to_remove.push(id.clone());
-                }
-            }
-        }
-
-        for id in to_remove {
-            tracing::info!("Cleaning up inactive session: {}", id);
-            self.remove(&id).await;
         }
     }
 }

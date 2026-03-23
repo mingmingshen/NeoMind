@@ -7,9 +7,7 @@
 //! 4. Auto-registers high-confidence devices
 
 use super::types::*;
-use super::{
-    DataPathExtractor, MetricEnhancement, SemanticInference, VirtualMetricGenerator,
-};
+use super::{MetricEnhancement, SemanticInference};
 use neomind_core::{EventBus, LlmRuntime};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -155,14 +153,8 @@ pub struct AutoOnboardManager {
     rate_limiters: Arc<RwLock<HashMap<String, MessageRateLimiter>>>,
     /// Blocked devices (spam detected)
     blocked_devices: Arc<RwLock<HashMap<String, (Instant, String)>>>,
-    /// Path extractor for analyzing samples
-    #[allow(dead_code)]
-    path_extractor: DataPathExtractor,
     /// Semantic inference
     semantic_inference: SemanticInference,
-    /// Virtual metric generator
-    #[allow(dead_code)]
-    metric_generator: VirtualMetricGenerator,
 }
 
 /// Result of device registration with enhancement
@@ -186,9 +178,7 @@ impl AutoOnboardManager {
     /// Create a new auto-onboard manager
     pub fn new(llm: Arc<dyn LlmRuntime>, event_bus: Arc<EventBus>) -> Self {
         let config = Arc::new(RwLock::new(AutoOnboardConfig::default()));
-        let path_extractor = DataPathExtractor::new(llm.clone());
         let semantic_inference = SemanticInference::new(llm.clone());
-        let metric_generator = VirtualMetricGenerator::new(llm.clone());
 
         Self {
             llm,
@@ -200,9 +190,7 @@ impl AutoOnboardManager {
             full_type_signatures: Arc::new(RwLock::new(HashMap::new())),
             rate_limiters: Arc::new(RwLock::new(HashMap::new())),
             blocked_devices: Arc::new(RwLock::new(HashMap::new())),
-            path_extractor,
             semantic_inference,
-            metric_generator,
         }
     }
 
@@ -1471,9 +1459,7 @@ impl AutoOnboardManager {
             full_type_signatures: self.full_type_signatures.clone(),
             rate_limiters: self.rate_limiters.clone(),
             blocked_devices: self.blocked_devices.clone(),
-            path_extractor: DataPathExtractor::new(self.llm.clone()),
             semantic_inference: SemanticInference::new(self.llm.clone()),
-            metric_generator: VirtualMetricGenerator::new(self.llm.clone()),
         }
     }
 }
