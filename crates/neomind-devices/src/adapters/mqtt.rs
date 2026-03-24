@@ -184,7 +184,6 @@ pub struct MqttAdapter {
     extractor: Arc<UnifiedExtractor>,
 }
 
-#[allow(dead_code)]
 impl MqttAdapter {
     /// Create a new MQTT adapter.
     pub fn new(config: MqttAdapterConfig) -> Self {
@@ -518,6 +517,7 @@ impl MqttAdapter {
     }
 
     /// Extract device ID from topic using pattern matching.
+    #[allow(dead_code)]
     fn extract_device_id(&self, topic: &str) -> Option<String> {
         // Try device/{device_type}/{device_id}/{direction} format first
         let parts: Vec<&str> = topic.split('/').collect();
@@ -542,6 +542,7 @@ impl MqttAdapter {
     }
 
     /// Match a topic against a pattern and extract device ID.
+    #[allow(dead_code)]
     fn match_topic_pattern(topic: &str, pattern: &str) -> Option<String> {
         let pattern_parts: Vec<&str> = pattern.split('/').collect();
         let topic_parts: Vec<&str> = topic.split('/').collect();
@@ -578,6 +579,7 @@ impl MqttAdapter {
     }
 
     /// Extract metric name from topic.
+    #[allow(dead_code)]
     fn extract_metric_name(&self, topic: &str) -> Option<String> {
         let parts: Vec<&str> = topic.split('/').collect();
         if parts.len() >= 4 && parts[0] == "device" {
@@ -592,6 +594,7 @@ impl MqttAdapter {
     }
 
     /// Parse MQTT payload to MetricValue.
+    #[allow(dead_code)]
     fn parse_payload(&self, payload: &[u8]) -> Result<MetricValue, String> {
         // Try protocol mapping first
         // Default payload parsing
@@ -630,6 +633,7 @@ impl MqttAdapter {
     }
 
     /// Process an incoming MQTT message and emit device events.
+    #[allow(dead_code)]
     async fn process_message(&self, topic: &str, payload: &[u8]) {
         let Some(device_id) = self.extract_device_id(topic) else {
             debug!("Could not extract device ID from topic: {}", topic);
@@ -677,6 +681,7 @@ impl MqttAdapter {
     }
 
     /// Handle a discovery announcement message.
+    #[allow(dead_code)]
     async fn handle_discovery_announcement(&self, device_id: String, _topic: &str, payload: &[u8]) {
         #[derive(Debug, Deserialize)]
         struct Announcement {
@@ -767,6 +772,7 @@ impl MqttAdapter {
     }
 
     /// Handle uplink message from device.
+    #[allow(dead_code)]
     async fn handle_uplink_message(&self, device_id: String, device_type: String, payload: &[u8]) {
         let now = chrono::Utc::now();
 
@@ -865,6 +871,7 @@ impl MqttAdapter {
     }
 
     /// Convert payload to a raw metric value (for _raw storage).
+    #[allow(dead_code)]
     fn payload_to_raw_metric(&self, payload: &[u8]) -> MetricValue {
         if let Ok(json_str) = std::str::from_utf8(payload) {
             if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(json_str) {
@@ -882,6 +889,7 @@ impl MqttAdapter {
 
     /// Emit a metric event to both channels and telemetry storage.
     /// EventBus publishing is handled by the event forwarding task to avoid duplicates.
+    #[allow(dead_code)]
     async fn emit_metric_event(
         &self,
         device_id: String,

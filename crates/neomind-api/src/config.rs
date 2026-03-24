@@ -333,6 +333,7 @@ struct TomlLlmConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct TomlMqttConfig {
     /// Listen address for embedded broker
     #[serde(default = "default_mqtt_listen")]
@@ -343,7 +344,6 @@ struct TomlMqttConfig {
     #[serde(default = "default_mqtt_discovery_prefix")]
     discovery_prefix: String,
     #[serde(default = "default_mqtt_auto_discovery")]
-    #[allow(dead_code)] // Reserved for future auto-discovery feature
     auto_discovery: bool,
 }
 

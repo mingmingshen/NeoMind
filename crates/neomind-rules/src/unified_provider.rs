@@ -182,35 +182,6 @@ impl UnifiedValueProvider {
             .await;
     }
 
-    /// Get a value from storage (bypassing cache).
-    #[allow(dead_code)]
-    async fn fetch_from_storage(
-        &self,
-        source_type: &str,
-        source_id: &str,
-        metric: &str,
-    ) -> Option<f64> {
-        match source_type {
-            "device" => {
-                let storage = self.device_storage.read().await;
-                if let Some(s) = storage.as_ref() {
-                    s.query_latest(source_id, metric).await
-                } else {
-                    None
-                }
-            }
-            "extension" => {
-                let storage = self.extension_storage.read().await;
-                if let Some(s) = storage.as_ref() {
-                    s.query_latest(source_id, metric).await
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
     /// Clear expired cache entries.
     pub async fn clear_expired(&self) {
         let mut cache = self.cache.write().await;

@@ -1135,7 +1135,6 @@ impl MqttDeviceManager {
 
     /// Handle metric message from device
     /// Topic format: device/{device_type}/{device_id}/uplink or /downlink
-    #[allow(dead_code)]
     async fn _handle_metric_message(
         topic: &str,
         payload: &[u8],

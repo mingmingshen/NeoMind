@@ -60,27 +60,6 @@ impl Default for ResourceLimitsConfig {
     }
 }
 
-impl ResourceLimitsConfig {
-    /// Create a new config with memory limit only
-    #[allow(dead_code)]
-    pub fn with_memory_limit_mb(mb: u64) -> Self {
-        Self {
-            memory_limit_mb: Some(mb),
-            ..Default::default()
-        }
-    }
-
-    /// Create a new config with no limits (for testing)
-    #[allow(dead_code)]
-    pub fn unrestricted() -> Self {
-        Self {
-            memory_limit_mb: None,
-            memory_limit_hard_mb: None,
-            cpu_affinity: None,
-            nice_level: None,
-        }
-    }
-}
 
 /// Set up resource limits for the current process
 ///
@@ -125,16 +104,9 @@ pub fn setup_resource_limits(config: &ResourceLimitsConfig) -> Result<(), Resour
 
 /// Error types for resource limit operations
 #[derive(Debug, thiserror::Error)]
-#[allow(dead_code)]
 pub enum ResourceLimitError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
-
-    #[error("Platform not supported")]
-    PlatformNotSupported,
-
-    #[error("Invalid configuration: {0}")]
-    InvalidConfig(String),
 
     #[error("System error: {0}")]
     SystemError(String),
@@ -313,26 +285,5 @@ mod tests {
         let config = ResourceLimitsConfig::default();
         assert_eq!(config.memory_limit_mb, Some(512));
         assert_eq!(config.nice_level, Some(10));
-    }
-
-    #[test]
-    fn test_config_with_memory() {
-        let config = ResourceLimitsConfig::with_memory_limit_mb(256);
-        assert_eq!(config.memory_limit_mb, Some(256));
-        assert_eq!(config.nice_level, Some(10));
-    }
-
-    #[test]
-    fn test_config_unrestricted() {
-        let config = ResourceLimitsConfig::unrestricted();
-        assert_eq!(config.memory_limit_mb, None);
-        assert_eq!(config.nice_level, None);
-    }
-
-    #[test]
-    fn test_setup_limits_unrestricted() {
-        // Should not fail with unrestricted config
-        let result = setup_resource_limits(&ResourceLimitsConfig::unrestricted());
-        assert!(result.is_ok());
     }
 }

@@ -1624,9 +1624,14 @@ pub struct MarketplaceInstallResponse {
 pub async fn list_marketplace_extensions_handler(
     State(_state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
+    // Add cache-busting timestamp to prevent GitHub CDN from serving stale data
+    let cache_buster = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     let index_url = format!(
-        "{}/{}/extensions/index.json",
-        MARKET_BASE_URL, MARKET_BRANCH
+        "{}/{}/extensions/index.json?t={}",
+        MARKET_BASE_URL, MARKET_BRANCH, cache_buster
     );
 
     let client = reqwest::Client::builder()
@@ -1637,6 +1642,7 @@ pub async fn list_marketplace_extensions_handler(
     let response = match client
         .get(&index_url)
         .header("User-Agent", "NeoMind-Extension-Marketplace")
+        .header("Cache-Control", "no-cache")
         .send()
         .await
     {

@@ -917,28 +917,6 @@ impl<'a> ArgParser<'a> {
 // Extension Statistics (for WASM target)
 // ============================================================================
 
-/// Extension statistics for WASM target
-/// This is a simplified version that doesn't require chrono
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ExtensionStats {
-    /// Number of metrics produced
-    pub metrics_produced: u64,
-    /// Number of commands executed
-    pub commands_executed: u64,
-    /// Total execution time in milliseconds
-    pub total_execution_time_ms: u64,
-    /// Last execution timestamp (Unix timestamp in milliseconds)
-    pub last_execution_time_ms: Option<i64>,
-    /// Number of times the extension has been started
-    pub start_count: u64,
-    /// Number of times the extension has been stopped
-    pub stop_count: u64,
-    /// Number of errors
-    pub error_count: u64,
-    /// Last error message
-    pub last_error: Option<String>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

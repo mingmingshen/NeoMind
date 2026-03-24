@@ -857,12 +857,6 @@ impl RuleDslParser {
         }
     }
 
-    /// Parse device.metric from a condition string (deprecated, use parse_source_metric).
-    #[allow(dead_code)]
-    fn parse_device_metric(input: &str) -> Result<(String, String), RuleError> {
-        Self::parse_source_metric(input)
-    }
-
     /// Parse simple condition like "device.metric > 50" or "EXTENSION ext.metric > 50".
     fn parse_simple_condition(
         input: &str,

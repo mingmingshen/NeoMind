@@ -339,17 +339,6 @@ impl MemoryConsolidator {
         }
     }
 
-    /// Check if a message is too old based on max_message_age_seconds.
-    #[allow(dead_code)]
-    fn is_message_too_old(&self, timestamp: i64, current_time: i64) -> bool {
-        if let Some(max_age) = self.config.max_message_age_seconds {
-            let age = current_time - timestamp;
-            age > max_age
-        } else {
-            false
-        }
-    }
-
     /// Get the consolidation config.
     pub fn config(&self) -> &MemoryConfig {
         &self.config

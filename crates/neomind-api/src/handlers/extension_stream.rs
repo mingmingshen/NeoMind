@@ -130,6 +130,7 @@ enum ServerMessage {
         stats: SessionStatsDto,
     },
     /// Heartbeat
+    #[allow(dead_code)]
     Heartbeat {
         timestamp: i64,
     },

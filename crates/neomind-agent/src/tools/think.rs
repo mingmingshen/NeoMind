@@ -42,8 +42,8 @@ pub trait ThinkStorage: Send + Sync {
 /// Convenience wrapper for async storage.
 ///
 /// Implementations can spawn tasks internally if needed.
+#[allow(dead_code)]
 pub struct AsyncThinkStorage<T> {
-    #[allow(dead_code)]
     inner: Arc<T>,
     runtime: Option<Arc<tokio::runtime::Handle>>,
 }

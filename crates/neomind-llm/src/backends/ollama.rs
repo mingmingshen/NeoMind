@@ -1810,10 +1810,9 @@ where
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct OllamaChatResponse {
-    #[allow(dead_code)]
     model: String,
-    #[allow(dead_code)]
     created_at: String,
     message: OllamaResponseMessage,
     done: bool,

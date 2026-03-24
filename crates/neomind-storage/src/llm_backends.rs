@@ -640,13 +640,6 @@ impl LlmBackendStore {
         Ok(None)
     }
 
-    /// Migrate from legacy LlmSettings if not already done
-    #[cfg(not(feature = "settings"))]
-    #[allow(dead_code)]
-    fn try_migrate_legacy(&self) -> Result<Option<LlmBackendInstance>, Error> {
-        Ok(None)
-    }
-
     /// Generate a unique ID for a new instance
     pub fn generate_id(prefix: &str) -> String {
         format!(

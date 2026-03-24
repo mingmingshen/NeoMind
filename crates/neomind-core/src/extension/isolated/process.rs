@@ -17,7 +17,7 @@
 
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -81,61 +81,7 @@ fn send_message_to_extension(
     }
 }
 
-/// Helper function to send a response to the extension process
-/// Used in the receiver thread for bidirectional communication
-#[allow(dead_code)]
-fn send_response_to_extension(
-    stdin: &Arc<Mutex<Option<BufWriter<std::process::ChildStdin>>>>,
-    extension_id: &str,
-    response: IpcResponse,
-) {
-    match response.to_bytes() {
-        Ok(bytes) => {
-            let frame = IpcFrame::new(bytes);
-            let encoded = frame.encode();
-
-            // Try to send - use try_lock to avoid blocking the receiver thread
-            if let Ok(mut stdin_guard) = stdin.try_lock() {
-                if let Some(stdin_writer) = stdin_guard.as_mut() {
-                    if let Err(e) = stdin_writer.write_all(&encoded) {
-                        warn!(
-                            extension_id = %extension_id,
-                            error = %e,
-                            "Failed to send response to extension"
-                        );
-                    } else if let Err(e) = stdin_writer.flush() {
-                        warn!(
-                            extension_id = %extension_id,
-                            error = %e,
-                            "Failed to flush response to extension"
-                        );
-                    } else {
-                        debug!(
-                            extension_id = %extension_id,
-                            "Response sent to extension"
-                        );
-                    }
-                }
-            } else {
-                warn!(
-                    extension_id = %extension_id,
-                    "Could not acquire stdin lock to send response"
-                );
-            }
-        }
-        Err(e) => {
-            warn!(
-                extension_id = %extension_id,
-                error = %e,
-                "Failed to serialize response"
-            );
-        }
-    }
-}
-
 // ✨ FIX: IPC 缓冲区池配置
-#[allow(dead_code)]
-const IPC_BUFFER_POOL_SIZE: usize = 4;  // Reduced from 8 to minimize memory footprint
 const IPC_MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024;  // 10MB 最大缓冲区
 
 // Tiered buffer pool configuration
@@ -215,14 +161,6 @@ impl ReusableBuffer {
     fn as_ref(&self) -> &[u8] {
         &self.data
     }
-
-    /// Convert into the underlying data (consumes the wrapper)
-    #[allow(dead_code)]
-    fn into_inner(mut self) -> Vec<u8> {
-        // Prevent the buffer from being returned to pool
-        self.data = Vec::new();
-        std::mem::take(&mut self.data)
-    }
 }
 
 impl Drop for ReusableBuffer {
@@ -292,21 +230,15 @@ impl Default for IsolatedExtensionConfig {
 
 /// 🔧 Phase 1: Detailed crash event information
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum CrashEvent {
     UnexpectedExit { exit_code: Option<i32>, signal: Option<i32> },
     IpcFailure { reason: String, stage: IpcFailureStage },
-    Timeout { operation: String, duration_secs: u64 },
 }
 
 /// 🔧 Phase 1: IPC failure stage categorization
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub enum IpcFailureStage {
     ReadLength,
-    ReadPayload,
-    ParseResponse,
-    ChannelClosed,
 }
 
 impl CrashEvent {
@@ -321,9 +253,6 @@ impl CrashEvent {
             }
             CrashEvent::IpcFailure { reason, stage } => {
                 format!("IPC failure during {:?}: {}", stage, reason)
-            }
-            CrashEvent::Timeout { operation, duration_secs } => {
-                format!("Operation '{}' timed out after {}s", operation, duration_secs)
             }
         }
     }
@@ -383,12 +312,6 @@ pub struct IsolatedExtension {
     descriptor: Mutex<Option<super::super::system::ExtensionDescriptor>>,
     /// Configuration
     config: IsolatedExtensionConfig,
-    #[allow(dead_code)]
-    /// Restart counter
-    restart_count: AtomicU64,
-    #[allow(dead_code)]
-    /// Last restart time
-    last_restart: Mutex<Option<Instant>>,
     /// 🔧 Phase 2: Process start time for health monitoring
     start_time: Mutex<Option<SystemTime>>,
     /// Running state (shared with background receiver thread)
@@ -435,8 +358,6 @@ impl IsolatedExtension {
             shutdown_tx: Mutex::new(None),
             descriptor: Mutex::new(None),
             config,
-            restart_count: AtomicU64::new(0),
-            last_restart: Mutex::new(None),
             running: Arc::new(AtomicBool::new(false)),
             process_id: Mutex::new(None),
             active_requests: Arc::new(AtomicUsize::new(0)),
@@ -2428,13 +2349,5 @@ mod tests {
         };
         assert!(event.description().contains("IPC failure during ReadLength"));
         assert!(event.description().contains("Broken pipe"));
-
-        // Test Timeout
-        let event = CrashEvent::Timeout {
-            operation: "execute_command".to_string(),
-            duration_secs: 30,
-        };
-        assert!(event.description().contains("execute_command"));
-        assert!(event.description().contains("30s"));
     }
 }

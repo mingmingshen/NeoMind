@@ -1004,11 +1004,11 @@ struct ApiMessageResponse {
 
 /// Tool call in OpenAI response format
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct OpenAiToolCallResponse {
     /// Tool call ID
     id: Option<String>,
     /// Tool type (always "function")
-    #[allow(dead_code)]
     #[serde(rename = "type")]
     call_type: Option<String>,
     /// Function call details
@@ -1063,13 +1063,13 @@ struct StreamDelta {
 
 /// Tool call in streaming response (incremental)
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct StreamToolCall {
     /// Index of this tool call in the array
     index: u32,
     /// Tool call ID (only in first chunk)
     id: Option<String>,
     /// Tool type (only in first chunk)
-    #[allow(dead_code)]
     #[serde(rename = "type")]
     call_type: Option<String>,
     /// Function call details (incremental)
