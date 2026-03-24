@@ -71,6 +71,8 @@ pub struct ChannelRegistry {
     configs: RwLock<HashMap<String, serde_json::Value>>,
     /// Persistent storage backend (redb)
     storage: RwLock<Option<Arc<redb::Database>>>,
+    /// Override enabled states (for toggling without recreating channels)
+    enabled_states: RwLock<HashMap<String, bool>>,
 }
 
 impl ChannelRegistry {
@@ -80,6 +82,7 @@ impl ChannelRegistry {
             channels: RwLock::new(HashMap::new()),
             configs: RwLock::new(HashMap::new()),
             storage: RwLock::new(None),
+            enabled_states: RwLock::new(HashMap::new()),
         }
     }
 
@@ -110,6 +113,7 @@ impl ChannelRegistry {
             channels: RwLock::new(HashMap::new()),
             configs: RwLock::new(HashMap::new()),
             storage: RwLock::new(Some(Arc::new(db))),
+            enabled_states: RwLock::new(HashMap::new()),
         })
     }
 
@@ -297,11 +301,16 @@ impl ChannelRegistry {
     pub async fn get_info(&self, name: &str) -> Option<ChannelInfo> {
         let channels = self.channels.read().await;
         let configs = self.configs.read().await;
-        channels.get(name).map(|channel| ChannelInfo {
-            name: name.to_string(),
-            channel_type: channel.channel_type().to_string(),
-            enabled: channel.is_enabled(),
-            config: configs.get(name).cloned(),
+        let enabled_states = self.enabled_states.read().await;
+        channels.get(name).map(|channel| {
+            // Check if there's an override in enabled_states, otherwise use channel's internal state
+            let enabled = enabled_states.get(name).copied().unwrap_or_else(|| channel.is_enabled());
+            ChannelInfo {
+                name: name.to_string(),
+                channel_type: channel.channel_type().to_string(),
+                enabled,
+                config: configs.get(name).cloned(),
+            }
         })
     }
 
@@ -309,16 +318,20 @@ impl ChannelRegistry {
     pub async fn list_info(&self) -> Vec<ChannelInfo> {
         let channels = self.channels.read().await;
         let configs = self.configs.read().await;
+        let enabled_states = self.enabled_states.read().await;
         channels
             .keys()
-            .map(|name| ChannelInfo {
-                name: name.clone(),
-                channel_type: channels
-                    .get(name)
-                    .map(|c| c.channel_type().to_string())
-                    .unwrap_or_default(),
-                enabled: channels.get(name).map(|c| c.is_enabled()).unwrap_or(false),
-                config: configs.get(name).cloned(),
+            .map(|name| {
+                let channel = channels.get(name);
+                ChannelInfo {
+                    name: name.clone(),
+                    channel_type: channel
+                        .map(|c| c.channel_type().to_string())
+                        .unwrap_or_default(),
+                    enabled: enabled_states.get(name).copied()
+                        .unwrap_or_else(|| channel.map(|c| c.is_enabled()).unwrap_or(false)),
+                    config: configs.get(name).cloned(),
+                }
             })
             .collect()
     }
@@ -326,23 +339,62 @@ impl ChannelRegistry {
     /// Get channel statistics.
     pub async fn get_stats(&self) -> ChannelStats {
         let channels = self.channels.read().await;
+        let enabled_states = self.enabled_states.read().await;
         let mut by_type = HashMap::new();
-        let mut enabled = 0;
+        let mut enabled_count = 0;
 
-        for channel in channels.values() {
+        for (name, channel) in channels.iter() {
             let ct = channel.channel_type().to_string();
             *by_type.entry(ct).or_insert(0) += 1;
-            if channel.is_enabled() {
-                enabled += 1;
+            // Check override first, then channel's internal state
+            let is_enabled = enabled_states.get(name).copied().unwrap_or_else(|| channel.is_enabled());
+            if is_enabled {
+                enabled_count += 1;
             }
         }
 
         ChannelStats {
             total: channels.len(),
-            enabled,
-            disabled: channels.len() - enabled,
+            enabled: enabled_count,
+            disabled: channels.len() - enabled_count,
             by_type,
         }
+    }
+
+    /// Set the enabled state of a channel.
+    /// This updates both the in-memory state and persists to storage.
+    pub async fn set_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+        // Check if channel exists
+        {
+            let channels = self.channels.read().await;
+            if !channels.contains_key(name) {
+                return Err(Error::NotFound(format!("Channel not found: {}", name)));
+            }
+        }
+
+        // Update in-memory state
+        {
+            let mut enabled_states = self.enabled_states.write().await;
+            enabled_states.insert(name.to_string(), enabled);
+        }
+
+        // Update persistence
+        {
+            let configs = self.configs.read().await;
+            let channels = self.channels.read().await;
+            if let (Some(config), Some(channel)) = (configs.get(name), channels.get(name)) {
+                let stored = StoredChannelConfig {
+                    name: name.to_string(),
+                    channel_type: channel.channel_type().to_string(),
+                    config: config.clone(),
+                    enabled,
+                };
+                self.save_channel(&stored).await?;
+            }
+        }
+
+        tracing::info!("Channel '{}' enabled state set to: {}", name, enabled);
+        Ok(())
     }
 
     /// Test a channel by sending a test message.

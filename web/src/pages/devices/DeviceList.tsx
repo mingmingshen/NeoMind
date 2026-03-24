@@ -21,9 +21,6 @@ interface DeviceListProps {
   onDelete: (id: string) => void
   onPageChange: (page: number) => void
   onAddDevice: () => void
-  discoveryDialogOpen: boolean
-  onDiscoveryOpenChange: (open: boolean) => void
-  discoveryDialog: React.ReactNode
   addDeviceDialog: React.ReactNode
 }
 
@@ -39,9 +36,6 @@ export function DeviceList({
   onDelete,
   onPageChange,
   onAddDevice: _onAddDevice,
-  discoveryDialogOpen: _discoveryDialogOpen,
-  onDiscoveryOpenChange: _onDiscoveryOpenChange,
-  discoveryDialog,
   addDeviceDialog,
 }: DeviceListProps) {
   const { t } = useTranslation(['common', 'devices'])
@@ -73,7 +67,6 @@ export function DeviceList({
     <>
       {/* Dialogs (由上层 TAB 操作按钮控制 open 状态) */}
       {addDeviceDialog}
-      {discoveryDialog}
 
       <ResponsiveTable
         columns={[

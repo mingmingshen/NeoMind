@@ -653,24 +653,6 @@ export const api = {
       body: JSON.stringify(request),
     }),
 
-  // Device Discovery
-  discoverDevices: (host: string, ports?: number[], timeoutMs?: number) =>
-    fetchAPI<{
-      devices: Array<{
-        id: string
-        device_type: string | null
-        host: string
-        port: number
-        confidence: number
-        info: Record<string, string>
-      }>
-      count: number
-      host: string
-    }>('/devices/discover', {
-      method: 'POST',
-      body: JSON.stringify({ host, ports, timeout_ms: timeoutMs }),
-    }),
-
   // Messages (replaces Alerts) - response format: { messages: NotificationMessage[], count: number }
   getMessages: () => fetchAPI<{ messages: NotificationMessage[]; count: number }>('/messages'),
   getMessage: (id: string) => fetchAPI<NotificationMessage>(`/messages/${id}`),

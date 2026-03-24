@@ -334,15 +334,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/device-types/cloud/import",
             post(devices::import_cloud_device_types_handler),
         )
-        // Device Discovery API
-        .route(
-            "/api/devices/discover",
-            post(devices::discover_devices_handler),
-        )
-        .route(
-            "/api/devices/discover/info",
-            get(devices::discovery_info_handler),
-        )
         // MDL Generation API
         .route(
             "/api/devices/generate-mdl",

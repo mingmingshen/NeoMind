@@ -57,6 +57,15 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -197,6 +206,9 @@ export default function MessagesPage() {
   const [testingChannel, setTestingChannel] = useState<string | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
 
+  // View channel dialog state
+  const [viewChannel, setViewChannel] = useState<MessageChannel | null>(null)
+
   // Test a channel
   const handleTestChannel = async (channelName: string) => {
     setTestingChannel(channelName)
@@ -225,6 +237,45 @@ export default function MessagesPage() {
       toast({ title: t('common.failed'), description: errorMsg, variant: 'destructive' })
     } finally {
       setTestingChannel(null)
+    }
+  }
+
+  // Toggle channel enabled state
+  const handleToggleEnabled = async (channelName: string, enabled: boolean) => {
+    try {
+      const response = await fetch(getApiUrl(`/messages/channels/${encodeURIComponent(channelName)}/enabled`), {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ enabled }),
+      })
+      if (response.ok) {
+        // Update local state
+        setChannels(prev => prev.map(c =>
+          c.name === channelName ? { ...c, enabled } : c
+        ))
+        toast({
+          title: t('common.success'),
+          description: enabled
+            ? t('messages.channels.enableSuccess', 'Channel enabled')
+            : t('messages.channels.disableSuccess', 'Channel disabled')
+        })
+      } else {
+        const result = await response.json()
+        throw new Error(result.message || 'Failed to update channel')
+      }
+    } catch (error) {
+      handleError(error, { operation: 'Toggle channel', showToast: true })
+    }
+  }
+
+  // View channel details
+  const handleViewChannel = async (channelName: string) => {
+    const channel = channels.find(c => c.name === channelName)
+    if (channel) {
+      setViewChannel(channel)
     }
   }
 
@@ -895,16 +946,33 @@ export default function MessagesPage() {
               {
                 label: t('common.view'),
                 icon: <Eye className="h-4 w-4" />,
-                onClick: () => {
-                  // Handle view
+                onClick: (rowData) => {
+                  const channel = rowData as unknown as MessageChannel
+                  handleViewChannel(channel.name)
                 },
               },
               {
                 label: t('common.enable'),
-                icon: <RefreshCw className="h-4 w-4" />,
+                icon: <CheckCircle2 className="h-4 w-4" />,
+                show: (rowData) => {
+                  const channel = rowData as unknown as MessageChannel
+                  return !channel.enabled && channel.channel_type !== 'console' && channel.channel_type !== 'memory'
+                },
                 onClick: (rowData) => {
                   const channel = rowData as unknown as MessageChannel
-                  // Handle enable/disable
+                  handleToggleEnabled(channel.name, true)
+                },
+              },
+              {
+                label: t('common.disable'),
+                icon: <X className="h-4 w-4" />,
+                show: (rowData) => {
+                  const channel = rowData as unknown as MessageChannel
+                  return channel.enabled && channel.channel_type !== 'console' && channel.channel_type !== 'memory'
+                },
+                onClick: (rowData) => {
+                  const channel = rowData as unknown as MessageChannel
+                  handleToggleEnabled(channel.name, false)
                 },
               },
             ]}
@@ -954,6 +1022,104 @@ export default function MessagesPage() {
           }
         }}
       />
+
+      {/* View Channel Dialog */}
+      <Dialog open={!!viewChannel} onOpenChange={(open) => !open && setViewChannel(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('messages.channels.channelDetails', 'Channel Details')}</DialogTitle>
+          </DialogHeader>
+          {viewChannel && (
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label className="text-muted-foreground">{t('messages.channels.name')}</Label>
+                  <div className="font-medium">{viewChannel.name}</div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">{t('messages.channels.type')}</Label>
+                  <div className="font-medium capitalize">{viewChannel.channel_type}</div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">{t('status')}</Label>
+                  <Badge variant={viewChannel.enabled ? 'default' : 'secondary'}>
+                    {viewChannel.enabled ? t('enabled') : t('disabled')}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Webhook config */}
+              {viewChannel.channel_type === 'webhook' && viewChannel.config && (
+                <div className="space-y-3">
+                  <Label className="text-muted-foreground">{t('messages.channels.config')}</Label>
+                  <div className="bg-muted/50 rounded-lg p-3 text-sm font-mono break-all">
+                    {(() => {
+                      const cfg = viewChannel.config as Record<string, unknown>
+                      return typeof cfg === 'object' && cfg !== null && 'url' in cfg
+                        ? String(cfg.url)
+                        : JSON.stringify(viewChannel.config, null, 2)
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* Email config */}
+              {viewChannel.channel_type === 'email' && viewChannel.config && (
+                <div className="space-y-3">
+                  <Label className="text-muted-foreground">{t('messages.channels.config')}</Label>
+                  <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
+                    {(() => {
+                      const cfg = viewChannel.config as Record<string, unknown>
+                      return (
+                        <>
+                          {cfg && 'smtp_server' in cfg && (
+                            <div>{t('messages.channels.smtpServer')}: {String(cfg.smtp_server)}</div>
+                          )}
+                          {cfg && 'smtp_port' in cfg && (
+                            <div>{t('messages.channels.smtpPort')}: {String(cfg.smtp_port)}</div>
+                          )}
+                          {cfg && 'from_address' in cfg && (
+                            <div>{t('messages.channels.emailFrom')}: {String(cfg.from_address)}</div>
+                          )}
+                        </>
+                      )
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-4">
+                {viewChannel.channel_type !== 'console' && viewChannel.channel_type !== 'memory' && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        handleTestChannel(viewChannel.name)
+                        setViewChannel(null)
+                      }}
+                      disabled={testingChannel === viewChannel.name}
+                    >
+                      <TestTube className="h-4 w-4 mr-1" />
+                      {t('messages.channels.test')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        handleToggleEnabled(viewChannel.name, !viewChannel.enabled)
+                        setViewChannel(null)
+                      }}
+                    >
+                      {viewChannel.enabled ? t('disable') : t('enable')}
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

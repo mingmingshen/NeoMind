@@ -581,16 +581,6 @@ export interface SendCommandRequest {
   params: Record<string, unknown>
 }
 
-// Discovery Types
-export interface DiscoveredDevice {
-  id: string
-  device_type: string | null
-  host: string
-  port: number
-  confidence: number
-  info: Record<string, string>
-}
-
 // Device Telemetry Types
 export interface TelemetryDataResponse {
   device_id: string

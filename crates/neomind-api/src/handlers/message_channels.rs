@@ -5,6 +5,7 @@
 //! GET    /api/messages/channels/:name        - Get channel
 //! DELETE /api/messages/channels/:name        - Delete channel
 //! POST   /api/messages/channels/:name/test   - Test channel
+//! PUT    /api/messages/channels/:name/enabled - Toggle channel enabled state
 //! GET    /api/messages/channels/stats        - Channel stats
 //! GET    /api/messages/channels/types        - Available channel types
 //! GET    /api/messages/channels/types/:type/schema - Channel schema
@@ -221,6 +222,40 @@ pub async fn test_channel_handler(
     ok(json!(result))
 }
 
+/// Request to toggle channel enabled state.
+#[derive(Debug, Deserialize)]
+pub struct ToggleEnabledRequest {
+    pub enabled: bool,
+}
+
+/// Toggle channel enabled state.
+/// PUT /api/messages/channels/:name/enabled
+pub async fn toggle_enabled_handler(
+    State(state): State<ServerState>,
+    Path(name): Path<String>,
+    Json(req): Json<ToggleEnabledRequest>,
+) -> HandlerResult<serde_json::Value> {
+    let registry = state.core.message_manager.channels().await;
+    let registry_guard = registry.read().await;
+
+    registry_guard
+        .set_enabled(&name, req.enabled)
+        .await
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+
+    // Get updated info
+    let info = registry_guard
+        .get_info(&name)
+        .await
+        .ok_or_else(|| ErrorResponse::not_found("Channel not found"))?;
+
+    ok(json!({
+        "message": if req.enabled { "Channel enabled successfully" } else { "Channel disabled successfully" },
+        "message_zh": if req.enabled { "通道已启用" } else { "通道已禁用" },
+        "channel": info,
+    }))
+}
+
 /// Get channel statistics.
 /// GET /api/messages/channels/stats
 pub async fn get_channel_stats_handler(
@@ -235,7 +270,7 @@ pub async fn get_channel_stats_handler(
 
 /// Router for message channel endpoints.
 pub fn message_channels_router() -> axum::Router<ServerState> {
-    use axum::routing::{delete, get, post};
+    use axum::routing::{delete, get, post, put};
 
     axum::Router::new()
         .route(
@@ -251,4 +286,5 @@ pub fn message_channels_router() -> axum::Router<ServerState> {
         .route("/messages/channels/:name", get(get_channel_handler))
         .route("/messages/channels/:name", delete(delete_channel_handler))
         .route("/messages/channels/:name/test", post(test_channel_handler))
+        .route("/messages/channels/:name/enabled", put(toggle_enabled_handler))
 }

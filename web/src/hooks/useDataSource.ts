@@ -831,7 +831,8 @@ function extractValueFromData(data: unknown, property: string): unknown {
  */
 function hasCurrentValuesChanged(
   current: Record<string, unknown> | undefined | null,
-  prev: Record<string, unknown> | undefined | null
+  prev: Record<string, unknown> | undefined | null,
+  useDeepComparison: boolean = false
 ): boolean {
   // Quick reference check - most common case
   if (current === prev) return false
@@ -850,7 +851,33 @@ function hasCurrentValuesChanged(
   // Check each key's value reference
   for (let i = 0; i < currentKeys.length; i++) {
     const key = currentKeys[i]
-    if (current[key] !== prev[key]) return true
+    const currentValue = current[key]
+    const prevValue = prev[key]
+
+    // For primitive values (number, string, boolean), shallow comparison is sufficient
+    if (typeof currentValue !== 'object' || currentValue === null) {
+      if (currentValue !== prevValue) {
+        return true
+      }
+    } else {
+      // For object values, use deep comparison if requested
+      // This handles nested objects like { values: { temperature: 25 } }
+      if (useDeepComparison) {
+        try {
+          if (JSON.stringify(currentValue) !== JSON.stringify(prevValue)) {
+            return true
+          }
+        } catch {
+          // Fallback for circular references or non-serializable values
+          return false
+        }
+      } else {
+        // Shallow comparison for objects (reference check only)
+        if (currentValue !== prevValue) {
+          return true
+        }
+      }
+    }
   }
 
   return false
@@ -969,6 +996,8 @@ export function useDataSource<T = unknown>(
   // Track processed event IDs to prevent duplicate processing
   const processedEventsRef = useRef<Set<string>>(new Set())
   const lastProcessedEventCountRef = useRef(0)
+  // Track last processed event ID to detect truncation when array length stays same
+  const lastProcessedEventIdRef = useRef<string | null>(null)
 
   // Ref to read current data from inside store subscribe (for telemetry merge from store)
   const dataRef = useRef<T | null>(null)
@@ -1261,6 +1290,17 @@ export function useDataSource<T = unknown>(
       const devicesChanged = state.devices !== prev.devices
       const devicesLengthChanged = state.devices.length !== prev.devices.length
 
+      // DEBUG: Log store subscription triggers
+      if (devicesChanged || devicesLengthChanged) {
+        console.log('[useDataSource] Store changed', {
+          devicesChanged,
+          devicesLengthChanged,
+          prevLength: prev.devices.length,
+          newLength: state.devices.length,
+          relevantDevices: Array.from(relevantDeviceIdsRef.current)
+        })
+      }
+
       let currentValuesChanged = false
       // Track which specific devices had their values changed
       // This is critical for preventing cross-device interference in telemetry updates
@@ -1288,14 +1328,37 @@ export function useDataSource<T = unknown>(
           const prevDevice = prevDeviceMap.get(deviceId)
 
           if (device && prevDevice) {
-            // Use shallow comparison - much faster than JSON.stringify
-            if (hasCurrentValuesChanged(device.current_values as Record<string, unknown> | null, prevDevice.current_values as Record<string, unknown> | null)) {
+            // DEBUG: Log comparison details
+            const currentCV = device.current_values as Record<string, unknown> | null
+            const prevCV = prevDevice.current_values as Record<string, unknown> | null
+            const refEqual = currentCV === prevCV
+
+            // Use deep comparison to detect nested object changes
+            const valuesChanged = hasCurrentValuesChanged(currentCV, prevCV, true)
+
+            if (!refEqual && !valuesChanged) {
+              // DEBUG: Log when reference changed but values are same
+              console.log('[useDataSource] Reference changed but values same', {
+                deviceId,
+                currentRef: currentCV ? 'exists' : 'null',
+                prevRef: prevCV ? 'exists' : 'null',
+                currentKeys: currentCV ? Object.keys(currentCV).slice(0, 3) : [],
+                prevKeys: prevCV ? Object.keys(prevCV).slice(0, 3) : []
+              })
+            }
+
+            if (valuesChanged) {
               const hasDataNow = device.current_values && Object.keys(device.current_values).length > 0
               if (hasDataNow) {
                 currentValuesChanged = true
                 // CRITICAL: Track which specific device changed
                 // This prevents adding data points to telemetry sources for unrelated devices
                 changedDeviceIds.add(deviceId)
+                console.log('[useDataSource] Device values changed', {
+                  deviceId,
+                  currentKeys: device.current_values ? Object.keys(device.current_values) : [],
+                  prevKeys: prevDevice.current_values ? Object.keys(prevDevice.current_values) : []
+                })
                 // Don't break - we need to find ALL changed devices
               }
             }
@@ -1452,14 +1515,22 @@ export function useDataSource<T = unknown>(
         // Connection lost - clear event processing state
         processedEventsRef.current.clear()
         lastProcessedEventCountRef.current = 0
+        lastProcessedEventIdRef.current = null
       } else {
         // Connection established - also reset to handle reconnection scenarios
         // The events array may be reset by useEvents on reconnection
         processedEventsRef.current.clear()
         lastProcessedEventCountRef.current = 0
+        lastProcessedEventIdRef.current = null
       }
     },
   })
+
+  // Track extension event processing state (declared before useEvents to avoid reference issues)
+  const extensionProcessedEventsRef = useRef<Set<string>>(new Set())
+  const extensionLastProcessedEventCountRef = useRef(0)
+  // Track last processed extension event ID to detect truncation
+  const extensionLastProcessedEventIdRef = useRef<string | null>(null)
 
   // Subscribe to extension events for real-time extension metric updates
   const { events: extensionEvents } = useEvents({
@@ -1470,13 +1541,10 @@ export function useDataSource<T = unknown>(
         // Clear extension event processing state
         extensionProcessedEventsRef.current.clear()
         extensionLastProcessedEventCountRef.current = 0
+        extensionLastProcessedEventIdRef.current = null
       }
     },
   })
-
-  // Track extension event processing state
-  const extensionProcessedEventsRef = useRef<Set<string>>(new Set())
-  const extensionLastProcessedEventCountRef = useRef(0)
 
   // Create a stable key from events that detects actual changes
   // Using last event ID + length ensures we detect new events even if total length stays same
@@ -1496,24 +1564,54 @@ export function useDataSource<T = unknown>(
     // Only process new events since the last run
     // This prevents re-processing all events on every render
     // CRITICAL: Handle case where events array was truncated (maxEvents limit)
-    // If lastProcessedEventCountRef > events.length, the array was reset/truncated
-    // In this case, we need to process all events from the beginning
-    let startIndex = lastProcessedEventCountRef.current
+    // We track the last processed event ID to detect truncation even when array length stays same
+    let startIndex = 0
 
-    // CRITICAL FIX: Detect array truncation and reset the counter
-    // When events array is truncated (e.g., maxEvents limit reached),
-    // the processed count will exceed array length - reset to process from beginning
+    // Find where we left off by looking for the last processed event ID
+    const lastProcessedId = lastProcessedEventIdRef.current
+    if (lastProcessedId) {
+      const lastIndex = events.findIndex(e => e.id === lastProcessedId)
+      if (lastIndex !== -1) {
+        // Found the last processed event, start from the next one
+        startIndex = lastIndex + 1
+      } else {
+        // Last processed event is gone (array was truncated)
+        // Start from beginning and rely on processedEventsRef to skip duplicates
+        console.log('[useDataSource] Last processed event not found, array was truncated', {
+          lastProcessedId,
+          eventsLength: events.length,
+          relevantDevices: Array.from(relevantDeviceIdsRef.current)
+        })
+        startIndex = 0
+        // Clear processed events set since we're re-scanning from beginning
+        // But keep the most recent 50 to avoid re-processing
+        const entries = Array.from(processedEventsRef.current)
+        processedEventsRef.current = new Set(entries.slice(-50))
+      }
+    }
+
+    // Also handle case where count exceeds length (shouldn't happen with new logic, but safety check)
     if (startIndex > events.length) {
       startIndex = 0
-      // Also clear the processed events set since we're re-processing from beginning
       processedEventsRef.current.clear()
     }
 
     const newEvents = events.slice(startIndex)
     if (newEvents.length === 0) return
 
+    console.log('[useDataSource] Processing events', {
+      totalEvents: events.length,
+      startIndex,
+      newEventsCount: newEvents.length,
+      processedSetSize: processedEventsRef.current.size,
+      relevantDevices: Array.from(relevantDeviceIdsRef.current)
+    })
+
     // Update the processed count
     lastProcessedEventCountRef.current = events.length
+
+    // Track if we processed any events to update lastProcessedEventIdRef
+    let lastProcessedIdInBatch: string | null = null
 
     // Process each new event
     for (const latestEvent of newEvents) {
@@ -1537,6 +1635,9 @@ export function useDataSource<T = unknown>(
         continue
       }
       processedEventsRef.current.add(uniqueEventId)
+
+      // Track this event as the latest processed
+      lastProcessedIdInBatch = uniqueEventId
 
       // Limit the processed events set size to prevent memory leaks
       // Use more aggressive cleanup to keep memory usage low
@@ -1752,8 +1853,20 @@ export function useDataSource<T = unknown>(
             }
 
             const transformedData = transformFn ? transformFn(finalData) : (finalData as T)
+            console.log('[useDataSource] Updating data from event', {
+              dataSourceType: 'telemetry',
+              validResultsCount: validResults.length,
+              dataLength: Array.isArray(transformedData) ? transformedData.length : 'not array',
+              firstValue: Array.isArray(transformedData) && transformedData[0] ? (transformedData[0] as any).value : 'N/A'
+            })
             setData(transformedData)
             setLastUpdate(Date.now())
+          } else {
+            console.log('[useDataSource] No valid results to update', {
+              hasUpdated,
+              validResultsCount: validResults.length,
+              updatedResultsLength: updatedResults.length
+            })
           }
 
           // Schedule cache refresh after short delay to allow multiple rapid events to coalesce
@@ -2061,6 +2174,12 @@ export function useDataSource<T = unknown>(
         setLastUpdate(Date.now())
       }
     }
+
+    // Update last processed event ID after processing all events
+    // This allows us to find our position in the array even if truncation occurs
+    if (lastProcessedIdInBatch) {
+      lastProcessedEventIdRef.current = lastProcessedIdInBatch
+    }
   }, [enabled, dataSourceKey, eventsKey])  // eventsKey ensures effect runs when new events arrive
 
   // Handle extension events for real-time updates
@@ -2086,7 +2205,26 @@ export function useDataSource<T = unknown>(
 
     // Only process new events since the last run
     // CRITICAL FIX: Handle array truncation (same as device events)
-    let extStartIndex = extensionLastProcessedEventCountRef.current
+    // We track the last processed event ID to detect truncation even when array length stays same
+    let extStartIndex = 0
+
+    // Find where we left off by looking for the last processed extension event ID
+    const lastProcessedExtId = extensionLastProcessedEventIdRef.current
+    if (lastProcessedExtId) {
+      const lastIndex = extensionEvents.findIndex(e => e.id === lastProcessedExtId)
+      if (lastIndex !== -1) {
+        // Found the last processed event, start from the next one
+        extStartIndex = lastIndex + 1
+      } else {
+        // Last processed event is gone (array was truncated)
+        extStartIndex = 0
+        // Keep the most recent 50 to avoid re-processing
+        const entries = Array.from(extensionProcessedEventsRef.current)
+        extensionProcessedEventsRef.current = new Set(entries.slice(-50))
+      }
+    }
+
+    // Also handle case where count exceeds length (safety check)
     if (extStartIndex > extensionEvents.length) {
       extStartIndex = 0
       extensionProcessedEventsRef.current.clear()
@@ -2106,6 +2244,9 @@ export function useDataSource<T = unknown>(
 
     if (extensionDataSources.length === 0) return
 
+    // Track last processed event ID in this batch
+    let lastProcessedExtIdInBatch: string | null = null
+
     // Process each new extension event
     for (const latestEvent of newEvents) {
       const eventData = (latestEvent as any).data || latestEvent
@@ -2118,6 +2259,9 @@ export function useDataSource<T = unknown>(
       const uniqueEventId = latestEvent.id || `${eventType}_${Date.now()}_${Math.random()}`
       if (extensionProcessedEventsRef.current.has(uniqueEventId)) continue
       extensionProcessedEventsRef.current.add(uniqueEventId)
+
+      // Track this event as the latest processed
+      lastProcessedExtIdInBatch = uniqueEventId
 
       // Limit the processed events set size
       if (extensionProcessedEventsRef.current.size > 100) {
@@ -2168,6 +2312,11 @@ export function useDataSource<T = unknown>(
         setData(transformedData)
         setLastUpdate(Date.now())
       }
+    }
+
+    // Update the last processed event ID for next iteration
+    if (lastProcessedExtIdInBatch) {
+      extensionLastProcessedEventIdRef.current = lastProcessedExtIdInBatch
     }
   }, [enabled, dataSourceKey, extensionEventsKey, needsExtensionWebSocket, relevantExtensionIds.size])
 

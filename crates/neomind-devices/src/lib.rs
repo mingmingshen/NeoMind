@@ -7,7 +7,6 @@
 //! | Feature | Default | Description |
 //! |---------|---------|-------------|
 //! | `mqtt` | ✅ | MQTT protocol support |
-//! | `discovery` | ❌ | mDNS device discovery |
 //! | `embedded-broker` | ❌ | Embedded MQTT broker |
 //! | `all` | ❌ | All features |
 //!
@@ -22,7 +21,6 @@
 //! Devices are configured using `DeviceConfig` and accessed through `DeviceService`.
 //! Protocol adapters are registered as plugins for unified management.
 
-pub mod discovery;
 pub mod mdl;
 pub mod mdl_format;
 pub mod mqtt;
@@ -69,7 +67,6 @@ pub use mdl_format::{
 };
 
 // New architecture exports
-pub use discovery::{DeviceDiscovery, DiscoveredDevice, DiscoveryResult};
 pub use registry::{
     ConnectionConfig, DeviceConfig, DeviceRegistry, DeviceTypeMode, DeviceTypeTemplate,
 };

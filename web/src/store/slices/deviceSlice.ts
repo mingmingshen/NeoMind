@@ -1,7 +1,7 @@
 /**
  * Device Slice
  *
- * Handles device state, device types, discovery, and telemetry.
+ * Handles device state, device types, and telemetry.
  */
 
 import type { StateCreator } from 'zustand'
@@ -12,7 +12,6 @@ import type {
 import type {
   Device,
   DeviceType,
-  DiscoveredDevice,
   AddDeviceRequest,
 } from '@/types'
 import { api } from '@/lib/api'
@@ -41,9 +40,6 @@ export interface DeviceSlice extends DeviceState, TelemetryState {
   fetchDeviceDetails: (id: string) => Promise<Device | null>
   fetchDeviceTypeDetails: (deviceType: string) => Promise<DeviceType | null>
 
-  discoverDevices: (host: string, ports?: number[], timeoutMs?: number) => Promise<void>
-  setDiscoveredDevices: (devices: DiscoveredDevice[]) => void
-
   fetchTelemetryData: (deviceId: string, metric?: string, start?: number, end?: number, limit?: number, offset?: number) => Promise<void>
   fetchTelemetrySummary: (deviceId: string, hours?: number) => Promise<void>
   fetchDeviceCurrentState: (deviceId: string) => Promise<void>  // New: unified device + metrics
@@ -69,8 +65,6 @@ export const createDeviceSlice: StateCreator<
   selectedDeviceId: null,
   deviceDetails: null,
   deviceTypeDetails: null,
-  discovering: false,
-  discoveredDevices: [],
   devicesLoading: false,
   deviceTypesLoading: false,
   addDeviceDialogOpen: false,
@@ -257,22 +251,6 @@ export const createDeviceSlice: StateCreator<
     }
   },
 
-  // Device Discovery
-  discoverDevices: async (host, ports, timeoutMs) => {
-    set({ discovering: true })
-    try {
-      const result = await api.discoverDevices(host, ports, timeoutMs)
-      set({ discoveredDevices: result.devices || [] })
-    } catch (error) {
-      logError(error, { operation: 'Discover devices' })
-      set({ discoveredDevices: [] })
-    } finally {
-      set({ discovering: false })
-    }
-  },
-
-  setDiscoveredDevices: (devices) => set({ discoveredDevices: devices }),
-
   // Telemetry
   fetchTelemetryData: async (deviceId, metric, start, end, limit, offset) => {
     set({ telemetryLoading: true })
@@ -439,19 +417,27 @@ export const createDeviceSlice: StateCreator<
   // Supports nested property paths like "values.battery" or "temperature"
   // If device doesn't exist in store, silently skip (will be added by fetchDevices)
   updateDeviceMetric: (deviceId: string, property: string, value: unknown) => {
-    // Helper function to set nested property
-    const setNestedProperty = (obj: Record<string, unknown>, path: string, value: unknown) => {
+    // Helper function to set nested property with proper immutable updates
+    // This creates new object references at every level of nesting to ensure React detects changes
+    const setNestedProperty = (obj: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> => {
       const parts = path.split('.')
-      let current: Record<string, unknown> = obj
+
+      // Create a completely new object tree with new references at every level
+      let result = { ...obj }
+      let current = result
+
       for (let i = 0; i < parts.length - 1; i++) {
         const part = parts[i]
-        if (!(part in current) || typeof current[part] !== 'object' || current[part] === null) {
-          current[part] = {}
-        }
-        current = current[part] as Record<string, unknown>
+        // Get the nested object (or create new one)
+        const nestedObj = typeof current[part] === 'object' && current[part] !== null
+          ? { ...current[part] as Record<string, unknown> }  // Create new reference
+          : {}
+        current[part] = nestedObj
+        current = nestedObj
       }
+
       current[parts[parts.length - 1]] = value
-      return obj
+      return result
     }
 
     // Single atomic update for both devices array and selectedDevice
