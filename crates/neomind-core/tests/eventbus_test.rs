@@ -6,12 +6,10 @@
 //! - Filtered subscriptions
 //! - Event metadata
 //! - Concurrent operations
-//! - Priority event bus
 
 use neomind_core::{
     event::{EventMetadata, MetricValue, NeoMindEvent, ProposedAction as Action},
     eventbus::{EventBus, SharedEventBus},
-    priority_eventbus::{EventPriority, PriorityEventBus},
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -360,55 +358,6 @@ async fn test_event_bus_with_name() {
 }
 
 #[tokio::test]
-async fn test_priority_event_bus() {
-    let inner_bus = EventBus::new();
-    let priority_bus = PriorityEventBus::new(inner_bus);
-
-    // Publish events with different priorities
-    priority_bus
-        .publish_critical(NeoMindEvent::AlertCreated {
-            alert_id: "alert1".to_string(),
-            title: "Critical Alert".to_string(),
-            severity: "critical".to_string(),
-            message: "System failure".to_string(),
-            timestamp: 1000,
-        })
-        .await;
-
-    priority_bus
-        .publish_with_priority(
-            NeoMindEvent::DeviceOnline {
-                device_id: "device1".to_string(),
-                device_type: "sensor".to_string(),
-                timestamp: 1001,
-            },
-            EventPriority::Normal,
-        )
-        .await;
-
-    priority_bus
-        .publish_with_priority(
-            NeoMindEvent::DeviceMetric {
-                device_id: "sensor1".to_string(),
-                metric: "temperature".to_string(),
-                value: MetricValue::Float(25.0),
-                timestamp: 1002,
-                quality: None,
-            },
-            EventPriority::Low,
-        )
-        .await;
-
-    // Check pending count
-    let pending = priority_bus.pending_count().await;
-    assert_eq!(pending, 3);
-
-    // Process the queue
-    let processed = priority_bus.process_queue(10).await;
-    assert_eq!(processed, 3);
-}
-
-#[tokio::test]
 async fn test_event_bus_multiple_filter_types() {
     let bus = EventBus::new();
 
@@ -526,45 +475,6 @@ async fn test_metric_value_variants() {
         MetricValue::Boolean(v) => assert!(v),
         _ => panic!("Expected Boolean"),
     }
-}
-
-#[tokio::test]
-async fn test_priority_event_bus_max_queue() {
-    let inner_bus = EventBus::new();
-    let priority_bus = PriorityEventBus::new(inner_bus).with_max_queue_size(5);
-
-    // Fill the queue
-    for i in 0..5 {
-        priority_bus
-            .publish_with_priority(
-                NeoMindEvent::DeviceOnline {
-                    device_id: format!("device{}", i),
-                    device_type: "sensor".to_string(),
-                    timestamp: i as i64,
-                },
-                EventPriority::Normal,
-            )
-            .await;
-    }
-
-    assert_eq!(priority_bus.pending_count().await, 5);
-
-    // Low priority event should be dropped when queue is full
-    let result = priority_bus
-        .publish_with_priority(
-            NeoMindEvent::DeviceOnline {
-                device_id: "overflow".to_string(),
-                device_type: "sensor".to_string(),
-                timestamp: 100,
-            },
-            EventPriority::Low,
-        )
-        .await;
-
-    assert!(
-        !result,
-        "Low priority event should be dropped when queue is full"
-    );
 }
 
 #[tokio::test]

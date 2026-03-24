@@ -13,10 +13,6 @@ pub mod extension;
 pub mod llm;
 pub mod macros;
 pub mod message;
-pub mod priority_eventbus;
-// Plugin system has been migrated to Extension system
-// Use neomind_core::extension instead
-pub mod registry;
 pub mod session;
 pub mod storage;
 pub mod tools;
@@ -107,7 +103,4 @@ pub mod prelude {
         AggregatedValue, DataPoint, DataSourceCatalog, DataSourceId, DataSourceInfo,
         DataSourceType, QueryError, QueryParams, QueryResult, UnifiedQueryService,
     };
-
-    // Registry system
-    pub use crate::registry::{Registry, RegistryError};
 }
