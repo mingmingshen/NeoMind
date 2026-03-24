@@ -6224,7 +6224,7 @@ Respond in JSON format:
         Ok((actions_executed, notifications_sent))
     }
 
-    /// Send an alert for a specific decision.
+    /// Send a message for a specific decision (notification or alert based on decision type).
     async fn send_alert_for_decision(
         &self,
         agent: &AiAgent,
@@ -6240,6 +6240,18 @@ Respond in JSON format:
         if let Some(ref message_manager) = self.message_manager {
             use neomind_messages::{Message, MessageSeverity};
 
+            // Determine if this is an alert or notification based on decision type
+            let is_alert = decision.decision_type.to_lowercase().contains("alert")
+                || decision.decision_type.to_lowercase().contains("报警")
+                || decision.decision_type.to_lowercase().contains("critical")
+                || decision.decision_type.to_lowercase().contains("emergency")
+                || decision.decision_type.to_lowercase().contains("紧急")
+                || decision.decision_type.to_lowercase().contains("warning")
+                || decision.decision_type.to_lowercase().contains("警告")
+                || decision.decision_type.to_lowercase().contains("error")
+                || decision.decision_type.to_lowercase().contains("异常")
+                || decision.decision_type.to_lowercase().contains("故障");
+
             // Determine severity based on decision type
             let severity = if decision.decision_type.to_lowercase().contains("critical")
                 || decision.decision_type.to_lowercase().contains("emergency")
@@ -6248,16 +6260,24 @@ Respond in JSON format:
                 MessageSeverity::Critical
             } else if decision.decision_type.to_lowercase().contains("warning")
                 || decision.decision_type.to_lowercase().contains("警告")
+                || decision.decision_type.to_lowercase().contains("error")
             {
                 MessageSeverity::Warning
             } else {
                 MessageSeverity::Info
             };
 
-            // Set source_type to "agent" for better tracking
-            let mut msg = Message::alert(
+            // Create message with appropriate category
+            let (category, title_prefix) = if is_alert {
+                ("alert", "Agent Alert")
+            } else {
+                ("notification", "Agent Notification")
+            };
+
+            let mut msg = Message::new(
+                category,
                 severity,
-                format!("Agent Alert: {}", agent.name),
+                format!("{}: {}", title_prefix, agent.name),
                 alert_message.clone(),
                 agent.id.clone(),
             );
@@ -6265,6 +6285,7 @@ Respond in JSON format:
 
             tracing::info!(
                 agent_id = %agent.id,
+                category = %category,
                 alert_message = %alert_message,
                 severity = ?severity,
                 "Sending message via MessageManager"

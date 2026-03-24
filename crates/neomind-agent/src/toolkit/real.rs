@@ -350,16 +350,18 @@ FOR 5 seconds | FOR 2 minutes | FOR 1 hour
 ## 可用动作（DO）
 
 1. NOTIFY "消息" [channel1, channel2]
-   发送通知到指定渠道
+   发送**通知**到消息中心。用于一般性信息通知，如"温度已恢复正常"、"设备已开启"。
+   消息分类为 notification。
 
-2. EXECUTE device_id.command(param=value, ...)
+2. ALERT "标题" "消息"
+   创建**告警**到消息中心。用于需要关注的异常情况，如"温度过高"、"设备离线"。
+   消息分类为 alert，比通知更紧急，需要用户关注或处理。
+
+3. EXECUTE device_id.command(param=value, ...)
    执行设备命令
 
-3. SET device_id.property = value
+4. SET device_id.property = value
    设置设备属性值
-
-4. ALERT "标题" "消息"
-   创建告警（ severity=WARNING/ERROR/CRITICAL）
 
 5. LOG level, "消息", severity="low"
    记录日志（level: alert/info/warning/error）
@@ -370,21 +372,25 @@ FOR 5 seconds | FOR 2 minutes | FOR 1 hour
 7. HTTP GET/POST/PUT/DELETE url
    发送HTTP请求
 
+**NOTIFY vs ALERT 选择指南：**
+- NOTIFY：信息性通知，不需要用户立即处理（如：状态变化、操作完成）
+- ALERT：告警性消息，需要用户关注或处理（如：异常、故障、超阈值）
+
 ## 示例
 
-低电量告警：
+低电量告警（异常情况→ALERT）：
 RULE "低电量告警"
 WHEN ne101.battery_percent < 50
-DO NOTIFY "设备ne101电量低于50%"
+DO ALERT "低电量告警" "设备ne101电量低于50%"
 END
 
-温度范围告警：
+温度异常告警（异常情况→ALERT）：
 RULE "温度异常"
 WHEN (sensor.temp > 35) OR (sensor.temp < 10)
 DO ALERT "温度异常" "温度超出安全范围"
 END
 
-执行设备控制：
+执行设备控制后通知（信息性→NOTIFY）：
 RULE "高温开启风扇"
 WHEN sensor.temperature > 30
 FOR 5 minutes
@@ -418,28 +424,28 @@ END
             example: Some(ToolExample {
                 arguments: serde_json::json!({
                     "name": "高温告警",
-                    "dsl": "RULE \"高温告警\"\nWHEN sensor.temperature > 35\nFOR 5 minutes\nDO NOTIFY \"温度过高，请注意\"\nEND"
+                    "dsl": "RULE \"高温告警\"\nWHEN sensor.temperature > 35\nFOR 5 minutes\nDO ALERT \"高温告警\" \"温度过高，请注意\"\nEND"
                 }),
                 result: serde_json::json!({
                     "rule_id": "rule_123",
                     "status": "created"
                 }),
-                description: "创建一个温度超过35度时触发告警的规则".to_string(),
+                description: "创建一个温度超过35度时触发告警的规则（使用ALERT）".to_string(),
             }),
             category: neomind_core::tools::ToolCategory::Rule,
             scenarios: vec![
                 UsageScenario {
                     description: "创建低电量告警规则".to_string(),
                     example_query: "当ne101电量低于50%时告警".to_string(),
-                    suggested_call: Some(r#"{"name": "低电量告警", "dsl": "RULE \"低电量告警\"\nWHEN ne101.battery_percent < 50\nDO NOTIFY \"设备ne101电量低于50%\"\nEND"}"#.to_string()),
+                    suggested_call: Some(r#"{"name": "低电量告警", "dsl": "RULE \"低电量告警\"\nWHEN ne101.battery_percent < 50\nDO ALERT \"低电量\" \"设备ne101电量低于50%\"\nEND"}"#.to_string()),
                 },
                 UsageScenario {
                     description: "创建高温告警规则".to_string(),
                     example_query: "温度超过30度时告警".to_string(),
-                    suggested_call: Some(r#"{"name": "高温告警", "dsl": "RULE \"高温告警\"\nWHEN sensor.temperature > 30\nDO NOTIFY \"温度过高\"\nEND"}"#.to_string()),
+                    suggested_call: Some(r#"{"name": "高温告警", "dsl": "RULE \"高温告警\"\nWHEN sensor.temperature > 30\nDO ALERT \"高温\" \"温度过高\"\nEND"}"#.to_string()),
                 },
                 UsageScenario {
-                    description: "创建范围告警规则".to_string(),
+                    description: "创建范围通知规则".to_string(),
                     example_query: "温度在20-25度之间时通知".to_string(),
                     suggested_call: Some(r#"{"name": "温度范围通知", "dsl": "RULE \"温度范围通知\"\nWHEN sensor.temperature BETWEEN 20 AND 25\nDO NOTIFY \"温度在舒适范围内\"\nEND"}"#.to_string()),
                 },
@@ -449,9 +455,9 @@ END
                     suggested_call: Some(r#"{"name": "高温开启风扇", "dsl": "RULE \"高温开启风扇\"\nWHEN sensor.temperature > 30\nDO EXECUTE sensor.fan(speed=100)\nEND"}"#.to_string()),
                 },
                 UsageScenario {
-                    description: "创建复杂条件规则".to_string(),
+                    description: "创建复杂条件告警规则".to_string(),
                     example_query: "温度过高或过低时告警".to_string(),
-                    suggested_call: Some(r#"{"name": "温度异常告警", "dsl": "RULE \"温度异常\"\nWHEN (sensor.temp > 35) OR (sensor.temp < 10)\nDO NOTIFY \"温度超出安全范围\"\nEND"}"#.to_string()),
+                    suggested_call: Some(r#"{"name": "温度异常告警", "dsl": "RULE \"温度异常\"\nWHEN (sensor.temp > 35) OR (sensor.temp < 10)\nDO ALERT \"温度异常\" \"温度超出安全范围\"\nEND"}"#.to_string()),
                 },
             ],
             relationships: ToolRelationships {
@@ -467,24 +473,24 @@ END
                 ToolExample {
                     arguments: serde_json::json!({
                         "name": "高温告警",
-                        "dsl": "RULE \"高温告警\"\nWHEN sensor.temperature > 35\nFOR 5 minutes\nDO NOTIFY \"温度过高，请注意\"\nEND"
+                        "dsl": "RULE \"高温告警\"\nWHEN sensor.temperature > 35\nFOR 5 minutes\nDO ALERT \"高温告警\" \"温度过高，请注意\"\nEND"
                     }),
                     result: serde_json::json!({
                         "rule_id": "rule_123",
                         "status": "created"
                     }),
-                    description: "创建温度告警规则，带持续时间".to_string(),
+                    description: "创建温度告警规则（异常→ALERT），带持续时间".to_string(),
                 },
                 ToolExample {
                     arguments: serde_json::json!({
                         "name": "低电量告警",
-                        "dsl": "RULE \"低电量告警\"\nWHEN ne101.battery_percent < 50\nDO NOTIFY \"设备ne101电量低于50%，请及时充电\"\nEND"
+                        "dsl": "RULE \"低电量告警\"\nWHEN ne101.battery_percent < 50\nDO ALERT \"低电量\" \"设备ne101电量低于50%，请及时充电\"\nEND"
                     }),
                     result: serde_json::json!({
                         "rule_id": "rule_124",
                         "status": "created"
                     }),
-                    description: "创建低电量告警规则，指定设备ID".to_string(),
+                    description: "创建低电量告警规则（异常→ALERT），指定设备ID".to_string(),
                 },
                 ToolExample {
                     arguments: serde_json::json!({
@@ -495,7 +501,7 @@ END
                         "rule_id": "rule_125",
                         "status": "created"
                     }),
-                    description: "创建带设备控制的规则，多个动作".to_string(),
+                    description: "创建带设备控制的规则，操作完成通知（信息→NOTIFY）".to_string(),
                 },
                 ToolExample {
                     arguments: serde_json::json!({
@@ -506,7 +512,7 @@ END
                         "rule_id": "rule_126",
                         "status": "created"
                     }),
-                    description: "创建复杂条件规则，使用OR逻辑和ALERT动作".to_string(),
+                    description: "创建复杂条件告警规则（异常→ALERT）".to_string(),
                 },
             ],
             response_format: Some("concise".to_string()),

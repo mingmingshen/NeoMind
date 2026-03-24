@@ -1258,6 +1258,9 @@ export function useDataSource<T = unknown>(
       const devicesLengthChanged = state.devices.length !== prev.devices.length
 
       let currentValuesChanged = false
+      // Track which specific devices had their values changed
+      // This is critical for preventing cross-device interference in telemetry updates
+      const changedDeviceIds = new Set<string>()
 
       if (!devicesLengthChanged) {
         // Build device lookup maps for O(1) access instead of O(n) find()
@@ -1286,7 +1289,10 @@ export function useDataSource<T = unknown>(
               const hasDataNow = device.current_values && Object.keys(device.current_values).length > 0
               if (hasDataNow) {
                 currentValuesChanged = true
-                break
+                // CRITICAL: Track which specific device changed
+                // This prevents adding data points to telemetry sources for unrelated devices
+                changedDeviceIds.add(deviceId)
+                // Don't break - we need to find ALL changed devices
               }
             }
 
@@ -1296,19 +1302,21 @@ export function useDataSource<T = unknown>(
                   device.online !== prevDevice.online ||
                   device.last_seen !== prevDevice.last_seen) {
                 currentValuesChanged = true
-                break
+                changedDeviceIds.add(deviceId)
+                // Don't break - continue checking other devices
               }
             }
           } else if (device && !prevDevice) {
             // New device appeared
             if (device.current_values && Object.keys(device.current_values).length > 0) {
               currentValuesChanged = true
-              break
+              changedDeviceIds.add(deviceId)
+              // Don't break - continue checking other devices
             }
           } else if (!device && prevDevice) {
             // Device was removed - might need to update
             currentValuesChanged = true
-            break
+            // Don't break - continue checking other devices
           }
         }
       }
@@ -1320,6 +1328,8 @@ export function useDataSource<T = unknown>(
 
         // For telemetry-only sources (e.g. image history), readDataFromStore skips them.
         // Merge latest from store so UI updates when device current_values change (e.g. from event).
+        // CRITICAL: Only process telemetry sources for devices that ACTUALLY changed
+        // This prevents cross-device interference where one device's update affects another's widget
         const currentDataSources = dataSourcesRef.current
         const telemetrySources = currentDataSources.filter((ds) => ds.type === 'telemetry')
         if (telemetrySources.length > 0) {
@@ -1335,6 +1345,13 @@ export function useDataSource<T = unknown>(
             if (ds.type !== 'telemetry') return undefined
             const deviceId = ds.deviceId!
             const metricId = ds.metricId || ds.property || 'value'
+
+            // CRITICAL FIX: Skip this telemetry source if its device didn't actually change
+            // This prevents adding new data points to widgets for unrelated devices
+            if (changedDeviceIds.size > 0 && !changedDeviceIds.has(deviceId)) {
+              return undefined
+            }
+
             const device = state.devices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
             const latestValue = device?.current_values
               ? extractValueFromData(device.current_values, metricId)
