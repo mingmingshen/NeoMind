@@ -505,10 +505,10 @@ export function ComponentConfigDialog({
           ) : (
             // No data source: Left = Preview, Right = Style/Display Config
             <>
-              {/* Left: Preview only */}
+              {/* Left: Preview only - top aligned */}
               <div className="w-1/2 flex flex-col bg-background overflow-hidden border-r">
-                <div className="flex-1 flex items-center justify-center p-6">
-                  <div className="w-full max-w-lg">
+                <div className="flex-1 flex items-start justify-center p-6 pt-6">
+                  <div className="w-full">
                     <ComponentPreview
                       key={previewKey}
                       componentType={componentType}
@@ -525,7 +525,7 @@ export function ComponentConfigDialog({
               <div className="w-1/2 flex flex-col overflow-hidden bg-background">
                 {(hasStyleConfig || hasDisplayConfig) && (
                   <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0">
-                    <TabsList className="w-auto justify-start bg-muted/50 p-1 rounded-lg px-4 h-12 shrink-0 border-b rounded-none">
+                    <TabsList className="w-full justify-start bg-muted/50 px-4 h-12 shrink-0 border-b rounded-none">
                       {hasStyleConfig && (
                         <TabsTrigger value="style" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
                           {t('componentConfig.style')}
