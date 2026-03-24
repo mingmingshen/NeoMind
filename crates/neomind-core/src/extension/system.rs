@@ -92,33 +92,6 @@ pub struct ToolDescriptor {
 }
 
 // ============================================================================
-// Extension Registry Trait
-// ============================================================================
-
-/// Trait for registries that manage extensions.
-///
-/// This trait allows the tool system to work with different
-/// registry implementations.
-#[async_trait::async_trait]
-pub trait ExtensionRegistryTrait: Send + Sync {
-    /// Get all registered extensions.
-    async fn get_extensions(&self) -> Vec<DynExtension>;
-
-    /// Get a specific extension by ID.
-    async fn get_extension(&self, id: &str) -> Option<DynExtension>;
-
-    /// Execute a command on an extension.
-    async fn execute_command(
-        &self,
-        extension_id: &str,
-        command: &str,
-        args: &serde_json::Value,
-    ) -> std::result::Result<serde_json::Value, String>;
-
-    /// Get metrics from an extension.
-    async fn get_metrics(&self, extension_id: &str) -> Vec<MetricDescriptor>;
-}
-
 // ============================================================================
 // Tests
 // ============================================================================
