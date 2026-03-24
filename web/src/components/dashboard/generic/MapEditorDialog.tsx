@@ -396,20 +396,20 @@ export function MapEditorDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl h-[80vh] p-0 gap-0 flex flex-col z-[110]">
-        <DialogHeader className="px-6 py-4 border-b">
-          <DialogTitle className="text-lg">{t('mapDisplay.editorTitle')}</DialogTitle>
+        <DialogHeader className="px-4 py-3 border-b shrink-0">
+          <DialogTitle className="text-base">{t('mapDisplay.editorTitle')}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden min-h-0">
           {/* Left Panel - Bindings List */}
           <div className="w-80 border-r bg-muted/20 flex flex-col">
-            <div className="p-3 border-b bg-muted/30">
+            <div className="p-2 border-b bg-muted/30 shrink-0">
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 {t('mapDisplay.boundItems')} ({bindings.length})
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            <div className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0">
               {bindings.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <MapIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -423,7 +423,7 @@ export function MapEditorDialog({
           </div>
 
           {/* Right Panel - Map Preview */}
-          <div className="flex-1 relative bg-muted/30">
+          <div className="flex-1 relative bg-muted/30 min-w-0">
             <div className="absolute inset-0">
               <MapDisplay
                 center={center}
@@ -441,11 +441,11 @@ export function MapEditorDialog({
           </div>
         </div>
 
-        <DialogFooter className="px-6 py-4 border-t bg-muted/20">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="px-4 py-3 border-t bg-muted/20 shrink-0 justify-end">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={handleSave}>
+          <Button size="sm" onClick={handleSave}>
             <Check className="h-4 w-4 mr-1" />
             {t('common.saveChanges')}
           </Button>
