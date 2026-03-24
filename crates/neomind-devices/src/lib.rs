@@ -26,7 +26,6 @@ pub mod discovery;
 pub mod mdl;
 pub mod mdl_format;
 pub mod mqtt;
-pub mod mqtt_v2;
 pub mod telemetry;
 
 // Simplified device management
