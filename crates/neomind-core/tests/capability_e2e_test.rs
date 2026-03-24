@@ -402,7 +402,7 @@ fn build_test_binaries() {
             "-p",
             "neomind-extension-runner",
             "-p",
-            "neomind-native-capability-smoke-extension",
+            "neomind-smoke-extension",
         ])
         .status()
         .expect("failed to run cargo build for native capability IPC test");
@@ -415,11 +415,11 @@ fn runner_dir() -> PathBuf {
 
 fn smoke_extension_path() -> PathBuf {
     let lib_name = if cfg!(target_os = "macos") {
-        "libneomind_extension_native_capability_smoke.dylib"
+        "libneomind_smoke_extension.dylib"
     } else if cfg!(target_os = "windows") {
-        "neomind_extension_native_capability_smoke.dll"
+        "neomind_smoke_extension.dll"
     } else {
-        "libneomind_extension_native_capability_smoke.so"
+        "libneomind_smoke_extension.so"
     };
     runner_dir().join(lib_name)
 }
@@ -448,12 +448,12 @@ async fn test_native_isolated_capability_ipc() {
     let metadata = manager
         .load(&extension_path)
         .await
-        .expect("failed to load native capability smoke extension");
-    assert_eq!(metadata.id, "native-capability-smoke");
+        .expect("failed to load smoke extension");
+    assert_eq!(metadata.id, "smoke-test");
 
     let response = manager
         .execute_command(
-            "native-capability-smoke",
+            "smoke-test",
             "write_virtual_metric",
             &json!({
                 "device_id": "device-42",
@@ -474,7 +474,7 @@ async fn test_native_isolated_capability_ipc() {
     assert_eq!(capability_response.get("value"), Some(&json!("ok")));
     assert_eq!(capability_response.get("is_virtual"), Some(&json!(true)));
 
-    manager.unload("native-capability-smoke").await.expect("failed to unload smoke extension");
+    manager.unload("smoke-test").await.expect("failed to unload smoke extension");
 }
 
 #[tokio::test]
@@ -517,7 +517,7 @@ async fn test_native_isolated_event_capability_ipc() {
 
     let response = manager
         .execute_command(
-            "native-capability-smoke",
+            "smoke-test",
             "get_last_event_result",
             &json!({}),
         )
@@ -534,5 +534,5 @@ async fn test_native_isolated_event_capability_ipc() {
     assert_eq!(capability_response.get("value"), Some(&json!("from-event")));
     assert_eq!(capability_response.get("is_virtual"), Some(&json!(true)));
 
-    manager.unload("native-capability-smoke").await.expect("failed to unload smoke extension");
+    manager.unload("smoke-test").await.expect("failed to unload smoke extension");
 }

@@ -401,21 +401,15 @@ The installer will be in `web/src-tauri/target/release/bundle/`
 neomind/
 ├── crates/
 │   ├── neomind-core/          # Core traits and type definitions
-│   ├── neomind-llm/           # LLM runtime (Ollama/OpenAI/Anthropic)
 │   ├── neomind-api/           # Web API server (Axum)
-│   ├── neomind-agent/         # AI Agent with tool calling
-│   ├── neomind-automation/    # Unified automation system (rules + transforms)
+│   ├── neomind-agent/         # AI Agent with tool calling and LLM backends
 │   ├── neomind-devices/       # Device management (MQTT)
 │   ├── neomind-storage/       # Storage system (redb)
-│   ├── neomind-memory/        # Three-tier LLM memory
 │   ├── neomind-messages/      # Unified messaging and notification
-│   ├── neomind-tools/         # Function calling framework
-│   ├── neomind-commands/      # Command queue with retry
 │   ├── neomind-rules/         # Rule engine for automation
 │   ├── neomind-extension-sdk/ # SDK for building extensions
 │   ├── neomind-extension-runner/ # Extension process isolation runner
-│   ├── neomind-cli/           # Command-line interface
-│   └── neomind-testing/       # Testing utilities
+│   └── neomind-cli/           # Command-line interface
 ├── web/               # React frontend + Tauri desktop app
 │   ├── src/           # TypeScript source
 │   └── src-tauri/     # Rust backend for desktop
@@ -709,9 +703,9 @@ cargo test
 
 # Run tests for specific crate
 cargo test -p neomind-agent
-cargo test -p neomind-llm
 cargo test -p neomind-core
 cargo test -p neomind-api
+cargo test -p neomind-storage
 
 # Check compilation without building
 cargo check
@@ -768,7 +762,7 @@ curl http://localhost:9375/api/health/status
 ## Documentation
 
 - **[Development Guide](CLAUDE.md)** - Development and architecture documentation
-- **[Extension Development](docs/guides/16-extension-dev.md)** - Build your first extension
+- **[Extension Development](docs/guides/en/extension-system.md)** - Build your first extension
 - **[Module Guides](docs/guides/)** - Detailed module documentation
 
 ---

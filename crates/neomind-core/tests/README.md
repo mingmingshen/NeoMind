@@ -73,7 +73,7 @@ cargo test -p neomind-core test_extension_load
 ## Test Dependencies
 
 Tests may depend on:
-- `neomind-smoke-extension` - For loading real extension binaries
+- `fixtures/smoke-extension/` - For loading real extension binaries
 - Test event bus in `test_event_bus/`
 
 ## Adding New Tests

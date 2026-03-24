@@ -9,7 +9,7 @@ name = "neomind_smoke_extension"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-neomind-extension-sdk = { path = "../../neomind-extension-sdk" }
+neomind-extension-sdk = { path = "../../../../neomind-extension-sdk" }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
 semver = { workspace = true }

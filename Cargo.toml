@@ -11,7 +11,7 @@ members = [
     "crates/neomind-extension-sdk",
     "crates/neomind-extension-runner",
     # Testing utilities (not part of main release)
-    "crates/neomind-testing/smoke-extension",
+    "crates/neomind-core/tests/fixtures/smoke-extension",
 ]
 exclude = ["web"]
 resolver = "2"
