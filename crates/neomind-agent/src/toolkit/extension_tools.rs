@@ -13,7 +13,8 @@ use super::tool::{Tool, ToolDefinition, ToolOutput};
 use neomind_core::extension::registry::ExtensionRegistry;
 use neomind_core::extension::*;
 use neomind_core::extension::{DynExtension, ExtensionCommand};
-use neomind_core::tools::{ToolCategory, ToolExample};
+use neomind_core::tools::ToolCategory;
+use super::tool::ToolExample;
 
 /// Extension tool wrapper - exposes an extension command as a Tool.
 ///

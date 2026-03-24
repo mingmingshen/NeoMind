@@ -18,7 +18,8 @@ use super::tool::{
     boolean_property, number_property, object_schema, string_property, Tool, ToolDefinition,
     ToolOutput,
 };
-use neomind_core::tools::{ToolCategory, ToolExample, ToolRelationships, UsageScenario};
+use neomind_core::tools::{ToolCategory, ToolRelationships, UsageScenario};
+use super::tool::ToolExample;
 
 use neomind_storage::agents::{
     AgentFilter, AgentResource, AgentStatus, IntentType, LearnedPattern, ParsedIntent,

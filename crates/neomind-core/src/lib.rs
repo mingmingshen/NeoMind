@@ -75,8 +75,8 @@ pub mod prelude {
     // Storage
     pub use crate::storage::{StorageBackend, StorageError, StorageFactory};
 
-    // Tools
-    pub use crate::tools::{DynTool, Parameter, Tool, ToolDefinition, ToolError, ToolOutput};
+    // Tools (core types only - Tool trait implementation is in neomind-agent)
+    pub use crate::tools::{ToolCategory, ToolError, ToolRelationships, UsageScenario};
 
     // Extension system V2 (device-standard compatible)
     pub use crate::extension::{

@@ -19,7 +19,8 @@ use super::tool::{
     array_property, boolean_property, number_property, object_schema, string_property, Tool,
     ToolDefinition, ToolOutput,
 };
-use neomind_core::tools::{ToolCategory, ToolExample, ToolRelationships, UsageScenario};
+use neomind_core::tools::{ToolCategory, ToolRelationships, UsageScenario};
+use super::tool::ToolExample;
 
 // ============================================================================
 // System Information Tools

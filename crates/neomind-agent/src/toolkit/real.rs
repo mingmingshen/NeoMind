@@ -11,7 +11,8 @@ use super::error::ToolError;
 use super::tool::{
     number_property, object_schema, string_property, Tool, ToolDefinition, ToolOutput,
 };
-use neomind_core::tools::{ToolExample, ToolRelationships, UsageScenario};
+use neomind_core::tools::{ToolRelationships, UsageScenario};
+use super::tool::ToolExample;
 
 pub type ToolResult<T> = std::result::Result<T, ToolError>;
 

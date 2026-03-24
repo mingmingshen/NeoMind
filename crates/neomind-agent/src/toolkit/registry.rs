@@ -694,7 +694,8 @@ mod tests {
     use super::*;
     use crate::toolkit::{Tool, ToolOutput};
     use async_trait::async_trait;
-    use neomind_core::tools::{ToolCategory, ToolDefinition, ToolRelationships};
+    use neomind_core::tools::{ToolCategory, ToolRelationships};
+    use crate::toolkit::ToolDefinition;
     use serde_json::Value;
 
     // Simple test tool for registry testing

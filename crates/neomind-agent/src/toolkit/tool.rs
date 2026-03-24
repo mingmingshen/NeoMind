@@ -9,9 +9,7 @@ use serde_json::Value;
 use super::error::{Result, ToolError};
 
 // Re-export from core for unified types
-pub use neomind_core::tools::{
-    ToolCategory, ToolDefinition as CoreToolDefinition, ToolRelationships, UsageScenario,
-};
+pub use neomind_core::tools::{ToolCategory, ToolRelationships, UsageScenario};
 
 /// Tool execution result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -167,10 +165,36 @@ pub enum ResponseFormat {
     Detailed,
 }
 
-/// Tool definition for LLM.
-///
-/// This re-exports the core ToolDefinition for consistency.
-pub type ToolDefinition = CoreToolDefinition;
+/// Tool definition for LLM function calling.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    /// Tool name
+    pub name: String,
+    /// Tool description
+    pub description: String,
+    /// Parameters as JSON Schema
+    pub parameters: Value,
+    /// Example usage
+    pub example: Option<ToolExample>,
+    /// Tool category
+    pub category: ToolCategory,
+    /// Usage scenarios
+    pub scenarios: Vec<UsageScenario>,
+    /// Tool relationships
+    pub relationships: ToolRelationships,
+    /// Whether the tool is deprecated
+    pub deprecated: bool,
+    /// What tool replaces this deprecated tool
+    pub replaced_by: Option<String>,
+    /// Tool version
+    pub version: String,
+    /// Multiple examples
+    pub examples: Vec<ToolExample>,
+    /// Response format preference (string like "concise" or "detailed")
+    pub response_format: Option<String>,
+    /// Namespace for the tool
+    pub namespace: Option<String>,
+}
 
 /// Tool trait for function calling.
 ///

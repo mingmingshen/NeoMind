@@ -78,8 +78,7 @@ pub type ToolCallList = Vec<ToolCall>;
 // Re-exports from core (backward compatibility)
 pub use neomind_core::tools::{
     array_property, boolean_property, number_property, object_schema, property, string_property,
-    Parameter as CoreParameter, Tool as CoreTool, ToolDefinition as CoreToolDefinition,
-    ToolError as CoreToolError, ToolFactory, ToolOutput as CoreToolOutput,
+    ToolCategory, ToolRelationships, UsageScenario,
 };
 
 // ============================================================================
