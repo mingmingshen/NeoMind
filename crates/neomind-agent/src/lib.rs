@@ -41,6 +41,7 @@ pub mod context;
 pub mod context_selector;
 pub mod error;
 pub mod llm;
+pub mod llm_backends; // Merged from neomind-llm crate
 pub mod memory;
 pub mod prompts;
 pub mod session;
@@ -61,6 +62,13 @@ pub use session::SessionManager;
 pub use tools::{
     resolve_tool_name as map_tool_name, EventIntegratedToolRegistry, ToolExecutionHistory,
     ToolExecutionRecord, ToolExecutionStats, ToolNameMapper,
+};
+
+// Re-export llm_backends types for backward compatibility (merged from neomind-llm crate)
+pub use llm_backends::{
+    get_instance_manager, BackendTypeDefinition, LlmBackendInstanceManager,
+    CloudConfig, CloudProvider, CloudRuntime,
+    OllamaConfig, OllamaRuntime,
 };
 
 /// Version information

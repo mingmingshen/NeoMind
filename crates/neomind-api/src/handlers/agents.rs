@@ -6,7 +6,7 @@ use axum::{
 };
 use serde_json::{json, Value};
 
-use neomind_llm::instance_manager::get_instance_manager;
+use neomind_agent::llm_backends::get_instance_manager;
 use neomind_storage::{
     AgentExecutionRecord, AgentFilter, AgentMemory, AgentSchedule, AgentStats, AgentStatus,
     AiAgent, ResourceType, ScheduleType, UserMessage,

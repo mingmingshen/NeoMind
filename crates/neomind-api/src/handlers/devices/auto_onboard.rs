@@ -15,7 +15,7 @@ use neomind_devices::{
     ConnectionConfig, DeviceConfig, DeviceTypeMode, DeviceTypeTemplate,
     MdlMetricDefinition as MetricDefinition,
 };
-use neomind_llm::backends::{OllamaConfig, OllamaRuntime};
+use neomind_agent::llm_backends::backends::{OllamaConfig, OllamaRuntime};
 
 use crate::handlers::common::{ok, HandlerResult};
 use crate::models::ErrorResponse;

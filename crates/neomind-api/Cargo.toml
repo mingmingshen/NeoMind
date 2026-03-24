@@ -17,8 +17,7 @@ testing = []  # Enable test-only APIs for parallel test execution
 
 [dependencies]
 neomind-core = { path = "../neomind-core" }
-neomind-agent = { path = "../neomind-agent" }
-neomind-llm = { path = "../neomind-llm" }
+neomind-agent = { path = "../neomind-agent", features = ["cloud"] }
 neomind-devices = { path = "../neomind-devices", features = ["embedded-broker"] }
 neomind-rules = { path = "../neomind-rules" }
 neomind-messages = { path = "../neomind-messages", features = ["webhook", "email"] }

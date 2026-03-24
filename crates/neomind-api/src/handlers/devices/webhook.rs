@@ -98,7 +98,7 @@ pub async fn webhook_handler(
                 m.clone()
             } else {
                 // Create manager on first use
-                use neomind_llm::backends::{OllamaConfig, OllamaRuntime};
+                use neomind_agent::llm_backends::backends::{OllamaConfig, OllamaRuntime};
                 let llm = OllamaConfig::new("qwen2.5:3b")
                     .with_endpoint("http://localhost:11434")
                     .with_timeout_secs(120);
@@ -432,7 +432,7 @@ pub async fn webhook_generic_handler(
                 m.clone()
             } else {
                 // Create manager on first use
-                use neomind_llm::backends::{OllamaConfig, OllamaRuntime};
+                use neomind_agent::llm_backends::backends::{OllamaConfig, OllamaRuntime};
                 let llm = OllamaConfig::new("qwen2.5:3b")
                     .with_endpoint("http://localhost:11434")
                     .with_timeout_secs(120);

@@ -25,7 +25,7 @@ use crate::error::NeoMindError;
 use crate::error::Result as AgentResult;
 
 /// Re-export the instance manager types for convenience
-pub use neomind_llm::instance_manager::{
+pub use crate::llm_backends::{
     get_instance_manager, BackendTypeDefinition, LlmBackendInstanceManager,
 };
 

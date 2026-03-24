@@ -1325,7 +1325,7 @@ impl ServerState {
                 } else {
                     // Create default LLM runtime
                     use neomind_core::llm::backend::LlmRuntime;
-                    use neomind_llm::backends::{OllamaConfig, OllamaRuntime};
+                    use neomind_agent::llm_backends::backends::{OllamaConfig, OllamaRuntime};
 
                     let config = OllamaConfig::new("qwen2.5:3b")
                         .with_endpoint("http://localhost:11434")
@@ -1579,7 +1579,7 @@ impl ServerState {
         {
             use neomind_agent::LlmBackend;
             use neomind_core::llm::backend::LlmRuntime;
-            use neomind_llm::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
+            use neomind_agent::llm_backends::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
 
             match backend {
                 LlmBackend::Ollama { endpoint, model , capabilities: _} => {

@@ -37,7 +37,7 @@ pub async fn llm_generate_handler(
     // Convert LlmBackend to a Box<dyn LlmRuntime>
     let (llm_runtime, model_name): (Box<dyn LlmRuntime>, String) = match backend_config {
         LlmBackend::Ollama { endpoint, model , capabilities: _} => {
-            use neomind_llm::{OllamaConfig, OllamaRuntime};
+            use neomind_agent::llm_backends::{OllamaConfig, OllamaRuntime};
             let config = OllamaConfig::new(&model).with_endpoint(&endpoint);
             let runtime = OllamaRuntime::new(config).map_err(|e| {
                 ErrorResponse::internal(format!("Failed to create Ollama runtime: {}", e))
@@ -50,7 +50,7 @@ pub async fn llm_generate_handler(
             model,
             capabilities: _,
         } => {
-            use neomind_llm::{CloudConfig, CloudRuntime};
+            use neomind_agent::llm_backends::{CloudConfig, CloudRuntime};
             let config = if endpoint.is_empty() || endpoint.contains("api.openai.com") {
                 CloudConfig::openai(&api_key).with_model(&model)
             } else {
@@ -64,7 +64,7 @@ pub async fn llm_generate_handler(
         // Other backends (Anthropic, Google, XAi, Qwen, DeepSeek, GLM, MiniMax)
         // use CloudConfig with custom endpoint
         _backend => {
-            use neomind_llm::{CloudConfig, CloudRuntime};
+            use neomind_agent::llm_backends::{CloudConfig, CloudRuntime};
             let (api_key, endpoint, model) = match &_backend {
                 LlmBackend::Anthropic {
                     api_key,

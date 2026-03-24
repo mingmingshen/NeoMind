@@ -9,7 +9,7 @@ use neomind_core::{
     EventBus, MetricValue, NeoMindEvent,
 };
 use neomind_devices::DeviceService;
-use neomind_llm::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
+use crate::llm_backends::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
 use neomind_messages::MessageManager;
 use neomind_storage::{
     AgentExecutionRecord,

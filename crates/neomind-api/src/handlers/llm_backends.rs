@@ -16,7 +16,7 @@ use super::{
 };
 use crate::models::ErrorResponse;
 
-use neomind_llm::instance_manager::{
+use neomind_agent::llm_backends::{
     get_instance_manager, BackendTypeDefinition, LlmBackendInstanceManager,
 };
 use neomind_core::llm::detect_vision_capability;

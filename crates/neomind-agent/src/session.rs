@@ -15,7 +15,7 @@ use super::agent::{Agent, AgentConfig, AgentEvent, AgentMessage, LlmBackend};
 use super::error::{NeoMindError, Result};
 
 // Re-export instance manager for convenience
-pub use neomind_llm::instance_manager::{
+pub use crate::llm_backends::{
     get_instance_manager, BackendTypeDefinition, LlmBackendInstanceManager,
 };
 
