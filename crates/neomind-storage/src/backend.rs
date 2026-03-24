@@ -16,8 +16,11 @@ use crate::Result;
 // Format: "table_name:key"
 const UNIFIED_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("unified_storage");
 
-/// Storage backend trait for unified data access.
-pub trait StorageBackend: Send + Sync {
+/// Internal storage backend trait for unified data access.
+///
+/// This is an internal trait used by `UnifiedStorage`. For the public storage
+/// backend trait, see `neomind_core::storage::StorageBackend`.
+pub trait InternalStorageBackend: Send + Sync {
     /// Write a value to a key.
     fn write(&self, table: &str, key: &str, value: &[u8]) -> Result<()>;
 
@@ -110,7 +113,7 @@ impl RedbBackend {
     }
 }
 
-impl StorageBackend for RedbBackend {
+impl InternalStorageBackend for RedbBackend {
     fn write(&self, table: &str, key: &str, value: &[u8]) -> Result<()> {
         let namespaced = make_key(table, key);
         let txn = self.db.begin_write()?;
@@ -224,7 +227,7 @@ impl Default for MemoryBackend {
     }
 }
 
-impl StorageBackend for MemoryBackend {
+impl InternalStorageBackend for MemoryBackend {
     fn write(&self, table: &str, key: &str, value: &[u8]) -> Result<()> {
         let mut data = self.data.write().unwrap();
         let table_data = data.entry(table.to_string()).or_default();
@@ -276,7 +279,7 @@ impl StorageBackend for MemoryBackend {
 /// Unified storage manager that routes to appropriate backend.
 pub struct UnifiedStorage {
     /// Backend implementation.
-    backend: Arc<dyn StorageBackend>,
+    backend: Arc<dyn InternalStorageBackend>,
 }
 
 impl UnifiedStorage {
@@ -317,7 +320,7 @@ impl UnifiedStorage {
     }
 
     /// Get the underlying backend.
-    pub fn backend(&self) -> &Arc<dyn StorageBackend> {
+    pub fn backend(&self) -> &Arc<dyn InternalStorageBackend> {
         &self.backend
     }
 
