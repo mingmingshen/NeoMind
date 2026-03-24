@@ -2,7 +2,6 @@
 //!
 //! This crate provides the HTTP/WebSocket API server for the Edge AI Agent system.
 
-pub mod audit;
 pub mod auth;
 pub mod auth_users;
 pub mod automation;
@@ -20,10 +19,6 @@ pub mod shutdown;
 pub mod startup;
 pub mod validator;
 
-pub use audit::{
-    audit_logger, audit_middleware, init_audit_logger, log_audit, AuditCategory, AuditConfig,
-    AuditEntry, AuditLogger, AuditSeverity,
-};
 pub use auth::{ApiKeyInfo, AuthState, ValidatedApiKey};
 pub use cache::{cache_key, CacheConfig, CacheStats, CachedResponse, ResponseCache};
 pub use config::{load_llm_config, LlmSettingsRequest};
