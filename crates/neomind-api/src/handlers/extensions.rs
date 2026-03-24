@@ -1307,6 +1307,9 @@ pub async fn list_extension_capabilities_handler(
 const _MARKET_REPO: &str = "camthink-ai/NeoMind-Extensions";
 const MARKET_BRANCH: &str = "main";
 const MARKET_BASE_URL: &str = "https://raw.githubusercontent.com/camthink-ai/NeoMind-Extensions";
+/// Market version for cache-busting - update this when releasing new extension packages
+/// This ensures GitHub CDN serves the latest index.json after version updates
+const MARKET_VERSION: &str = "2.3.0";
 
 /// Cloud extension metadata from index
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1624,13 +1627,16 @@ pub struct MarketplaceInstallResponse {
 pub async fn list_marketplace_extensions_handler(
     State(_state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    // Add cache-busting timestamp to prevent GitHub CDN from serving stale data
-    let cache_buster = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    // Use market version for cache-busting - this ensures CDN serves latest content
+    // after version updates. Combine with timestamp for extra safety during the same version.
+    let cache_buster = format!("v{}-{}", MARKET_VERSION,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    );
     let index_url = format!(
-        "{}/{}/extensions/index.json?t={}",
+        "{}/{}/extensions/index.json?cache={}",
         MARKET_BASE_URL, MARKET_BRANCH, cache_buster
     );
 
