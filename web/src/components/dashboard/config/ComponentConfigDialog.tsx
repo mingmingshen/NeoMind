@@ -3,9 +3,8 @@
  *
  * Full-screen dialog for configuring dashboard components.
  * Layout:
- * - Desktop: Two-column layout with sidebar
- *   - If hasDataSource: Left = Preview, Right = DataSource + Config
- *   - If no DataSource: Left = Preview, Right = Config (style/display)
+ * - Has DataSource: Left = Preview + Style/Display (vertical), Right = DataSource config
+ * - No DataSource: Left = Preview, Right = Style/Display config
  * - Mobile: Full-screen with scrollable tiled sections
  *
  * Fully responsive with touch-friendly controls and safe area support.
@@ -21,9 +20,6 @@ import {
   ChevronDown,
   ChevronUp,
   X,
-  Layers,
-  Palette,
-  Database,
   Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -36,8 +32,6 @@ import {
   FullScreenDialogHeader,
   FullScreenDialogContent,
   FullScreenDialogFooter,
-  FullScreenDialogSidebar,
-  FullScreenDialogMain,
 } from '@/components/automation/dialog'
 import { ConfigRenderer } from './ConfigRenderer'
 import { ComponentPreview } from './ComponentPreview'
@@ -49,7 +43,6 @@ import { normalizeDataSource } from '@/types/dashboard'
 import { cn } from '@/lib/utils'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
-import type { Step } from '@/components/automation/dialog'
 
 export interface ComponentConfigDialogProps {
   open: boolean
@@ -201,32 +194,6 @@ export function ComponentConfigDialog({
   }, [showTitleInDisplay, titleSection, displaySections])
 
   const finalDisplaySections = showTitleInDisplay ? enhancedDisplaySections : displaySections
-
-  // Sidebar steps configuration
-  const sidebarSteps: Step[] = useMemo(() => {
-    const steps: Step[] = [
-      { id: 'preview', label: t('componentConfig.preview'), icon: <Eye className="h-4 w-4" /> },
-    ]
-    if (hasDataSource) {
-      steps.push({ id: 'datasource', label: t('componentConfig.dataSource'), icon: <Database className="h-4 w-4" /> })
-    }
-    if (hasStyleConfig) {
-      steps.push({ id: 'style', label: t('componentConfig.style'), icon: <Palette className="h-4 w-4" /> })
-    }
-    if (hasDisplayConfig) {
-      steps.push({ id: 'display', label: t('componentConfig.display'), icon: <Layers className="h-4 w-4" /> })
-    }
-    return steps
-  }, [hasDataSource, hasStyleConfig, hasDisplayConfig, t])
-
-  // Current step state for sidebar navigation
-  const [currentStep, setCurrentStep] = useState<string>('preview')
-
-  useEffect(() => {
-    if (open) {
-      setCurrentStep('preview')
-    }
-  }, [open])
 
   // For mobile: render full-screen portal
   if (isMobile) {
@@ -422,62 +389,14 @@ export function ComponentConfigDialog({
       />
 
       {/* Content Area */}
-      <FullScreenDialogContent>
-        {/* Left Sidebar - Step Navigation */}
-        <FullScreenDialogSidebar>
-          <div className="py-2">
-            <nav className="space-y-1">
-              {sidebarSteps.map((step) => {
-                const isActive = currentStep === step.id
-                const isCompleted = step.id === 'preview' ||
-                  (step.id === 'datasource' && hasConfiguredDataSource) ||
-                  (step.id === 'style') ||
-                  (step.id === 'display')
-
-                return (
-                  <button
-                    key={step.id}
-                    onClick={() => setCurrentStep(step.id)}
-                    className={cn(
-                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all",
-                      isActive
-                        ? "bg-primary/10 text-primary font-medium"
-                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                    )}
-                  >
-                    <span className={cn(
-                      "flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center",
-                      isActive ? "bg-primary/20" : "bg-muted"
-                    )}>
-                      {step.icon}
-                    </span>
-                    <span className="text-sm">{step.label}</span>
-                    {isCompleted && step.id !== 'preview' && (
-                      <CheckCircle2 className="h-4 w-4 ml-auto text-green-500" />
-                    )}
-                  </button>
-                )
-              })}
-            </nav>
-          </div>
-        </FullScreenDialogSidebar>
-
-        {/* Main Content */}
-        <FullScreenDialogMain>
-          <div className="h-full flex">
-            {/* Preview Section - Always on left */}
-            <div className={cn(
-              "flex flex-col border-r",
-              hasDataSource ? "w-1/2" : "w-1/2"
-            )}>
-              <div className="shrink-0 px-4 py-3 border-b bg-muted/30">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Eye className="h-4 w-4" />
-                  {t('componentConfig.preview')}
-                </h3>
-              </div>
-              <div className="flex-1 overflow-auto p-4">
-                <div className="rounded-lg border bg-muted/20 p-4">
+      <FullScreenDialogContent className="!p-0">
+        <div className="h-full flex">
+          {hasDataSource ? (
+            // Has data source: Left = Preview + Config (vertical), Right = DataSource
+            <>
+              {/* Left: Preview + Style/Display Config */}
+              <div className="w-1/2 flex flex-col bg-background overflow-hidden border-r">
+                <div className="shrink-0 border-b overflow-hidden">
                   <ComponentPreview
                     key={previewKey}
                     componentType={componentType}
@@ -487,15 +406,47 @@ export function ComponentConfigDialog({
                     showHeader={true}
                   />
                 </div>
-              </div>
-            </div>
 
-            {/* Right Panel - Data Source or Config */}
-            <div className="flex-1 flex flex-col min-w-0">
-              {hasDataSource ? (
-                // Has data source: Show DataSource + Transform
-                <>
-                  <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/30 border-b shrink-0">
+                {(hasStyleConfig || hasDisplayConfig) && (
+                  <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0">
+                    <TabsList className="w-auto justify-start bg-muted/50 p-1 rounded-lg px-3 h-10 shrink-0">
+                      {hasStyleConfig && (
+                        <TabsTrigger value="style" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded">
+                          {t('componentConfig.style')}
+                        </TabsTrigger>
+                      )}
+                      {hasDisplayConfig && (
+                        <TabsTrigger value="display" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded">
+                          {t('componentConfig.display')}
+                        </TabsTrigger>
+                      )}
+                    </TabsList>
+
+                    {hasStyleConfig && (
+                      <TabsContent value="style" className="min-h-0 overflow-y-auto p-3">
+                        <ConfigRenderer sections={filteredStyleSections} />
+                      </TabsContent>
+                    )}
+
+                    {hasDisplayConfig && (
+                      <TabsContent value="display" className="min-h-0 overflow-y-auto p-3">
+                        <ConfigRenderer sections={finalDisplaySections} />
+                      </TabsContent>
+                    )}
+                  </Tabs>
+                )}
+
+                {!hasStyleConfig && !hasDisplayConfig && allSections.length > 0 && !hasDataSource && (
+                  <div className="flex-1 overflow-y-auto p-3">
+                    <ConfigRenderer sections={allSections} />
+                  </div>
+                )}
+              </div>
+
+              {/* Right: Data Source + Transform Config */}
+              <div className="w-1/2 flex flex-col overflow-hidden bg-background">
+                <div className="flex-1 min-h-0 flex flex-col">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 border-b shrink-0">
                     <div className="flex gap-1">
                       <button
                         onClick={() => setRightDataSourceTab('datasource')}
@@ -533,7 +484,7 @@ export function ComponentConfigDialog({
                         maxSources={maxSources}
                       />
                     ) : (
-                      <div className="flex-1 overflow-y-auto p-4">
+                      <div className="flex-1 overflow-y-auto p-3">
                         <DataTransformConfig
                           dataSource={previewDataSource}
                           onChange={handleDataTransformChange}
@@ -544,55 +495,72 @@ export function ComponentConfigDialog({
                   </div>
 
                   {dataSourceSections.length > 1 && (
-                    <div className="px-4 py-3 border-t shrink-0">
+                    <div className="px-5 py-3 border-t shrink-0">
                       <ConfigRenderer sections={dataSourceSections.slice(1)} />
                     </div>
                   )}
-                </>
-              ) : (
-                // No data source: Show Style + Display config on right
-                <>
-                  {(hasStyleConfig || hasDisplayConfig) && (
-                    <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0">
-                      <TabsList className="w-auto justify-start bg-muted/50 px-4 h-12 shrink-0 border-b rounded-none">
-                        {hasStyleConfig && (
-                          <TabsTrigger value="style" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                            <Palette className="h-4 w-4" />
-                            {t('componentConfig.style')}
-                          </TabsTrigger>
-                        )}
-                        {hasDisplayConfig && (
-                          <TabsTrigger value="display" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                            <Layers className="h-4 w-4" />
-                            {t('componentConfig.display')}
-                          </TabsTrigger>
-                        )}
-                      </TabsList>
+                </div>
+              </div>
+            </>
+          ) : (
+            // No data source: Left = Preview, Right = Style/Display Config
+            <>
+              {/* Left: Preview only */}
+              <div className="w-1/2 flex flex-col bg-background overflow-hidden border-r">
+                <div className="flex-1 flex items-center justify-center p-6">
+                  <div className="w-full max-w-lg">
+                    <ComponentPreview
+                      key={previewKey}
+                      componentType={componentType}
+                      config={livePreviewConfig}
+                      dataSource={livePreviewDataSource}
+                      title={title}
+                      showHeader={true}
+                    />
+                  </div>
+                </div>
+              </div>
 
+              {/* Right: Style/Display Config */}
+              <div className="w-1/2 flex flex-col overflow-hidden bg-background">
+                {(hasStyleConfig || hasDisplayConfig) && (
+                  <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0">
+                    <TabsList className="w-auto justify-start bg-muted/50 p-1 rounded-lg px-4 h-12 shrink-0 border-b rounded-none">
                       {hasStyleConfig && (
-                        <TabsContent value="style" className="flex-1 min-h-0 overflow-y-auto p-4 data-[state=active]:flex data-[state=active]:flex-col">
-                          <ConfigRenderer sections={filteredStyleSections} />
-                        </TabsContent>
+                        <TabsTrigger value="style" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                          {t('componentConfig.style')}
+                        </TabsTrigger>
                       )}
-
                       {hasDisplayConfig && (
-                        <TabsContent value="display" className="flex-1 min-h-0 overflow-y-auto p-4 data-[state=active]:flex data-[state=active]:flex-col">
-                          <ConfigRenderer sections={finalDisplaySections} />
-                        </TabsContent>
+                        <TabsTrigger value="display" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                          {t('componentConfig.display')}
+                        </TabsTrigger>
                       )}
-                    </Tabs>
-                  )}
+                    </TabsList>
 
-                  {!hasStyleConfig && !hasDisplayConfig && allSections.length > 0 && (
-                    <div className="flex-1 overflow-y-auto p-4">
-                      <ConfigRenderer sections={allSections} />
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </FullScreenDialogMain>
+                    {hasStyleConfig && (
+                      <TabsContent value="style" className="flex-1 min-h-0 overflow-y-auto p-4">
+                        <ConfigRenderer sections={filteredStyleSections} />
+                      </TabsContent>
+                    )}
+
+                    {hasDisplayConfig && (
+                      <TabsContent value="display" className="flex-1 min-h-0 overflow-y-auto p-4">
+                        <ConfigRenderer sections={finalDisplaySections} />
+                      </TabsContent>
+                    )}
+                  </Tabs>
+                )}
+
+                {!hasStyleConfig && !hasDisplayConfig && allSections.length > 0 && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <ConfigRenderer sections={allSections} />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </FullScreenDialogContent>
 
       {/* Footer */}

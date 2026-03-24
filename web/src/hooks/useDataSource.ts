@@ -1332,7 +1332,10 @@ export function useDataSource<T = unknown>(
         // This prevents cross-device interference where one device's update affects another's widget
         const currentDataSources = dataSourcesRef.current
         const telemetrySources = currentDataSources.filter((ds) => ds.type === 'telemetry')
-        if (telemetrySources.length > 0) {
+        if (telemetrySources.length > 0 && currentValuesChanged && changedDeviceIds.size > 0) {
+          // Only process telemetry when:
+          // 1. currentValuesChanged is true (actual data changed, not just array reference)
+          // 2. changedDeviceIds has entries (we know which devices changed)
           const currentData = dataRef.current as unknown
           const now = Math.floor(Date.now() / 1000)
           const getTs = (p: unknown): number => {
@@ -1348,7 +1351,7 @@ export function useDataSource<T = unknown>(
 
             // CRITICAL FIX: Skip this telemetry source if its device didn't actually change
             // This prevents adding new data points to widgets for unrelated devices
-            if (changedDeviceIds.size > 0 && !changedDeviceIds.has(deviceId)) {
+            if (!changedDeviceIds.has(deviceId)) {
               return undefined
             }
 
