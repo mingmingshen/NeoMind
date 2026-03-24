@@ -197,7 +197,7 @@ export function FullScreenDialogFooter({
   return (
     <footer
       className={cn(
-        "shrink-0 flex items-center gap-3",
+        "shrink-0 flex items-center justify-end gap-3",
         "px-5 md:px-6 py-4",
         "border-t border-black/5 dark:border-white/5",
         "bg-black/[0.02] dark:bg-white/[0.02]",

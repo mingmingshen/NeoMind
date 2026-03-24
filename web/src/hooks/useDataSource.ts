@@ -894,8 +894,12 @@ export function useDataSource<T = unknown>(
   // Telemetry refresh trigger - incremented when WebSocket event matches telemetry source
   const [telemetryRefreshTrigger, setTelemetryRefreshTrigger] = useState(0)
 
-  // Track interval with ref to prevent leaks when dataSources change
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Track intervals with refs to prevent leaks when dataSources change
+  // CRITICAL: Use SEPARATE refs for each data type to prevent cross-interference
+  // When effects share the same ref, clearing one interval clears ALL intervals!
+  const telemetryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const systemIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const extensionIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   // Track telemetry refresh timer at component level (replaces global window._telemetryRefreshTimer)
   const telemetryRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -1494,7 +1498,17 @@ export function useDataSource<T = unknown>(
     // CRITICAL: Handle case where events array was truncated (maxEvents limit)
     // If lastProcessedEventCountRef > events.length, the array was reset/truncated
     // In this case, we need to process all events from the beginning
-    const startIndex = Math.min(lastProcessedEventCountRef.current, events.length)
+    let startIndex = lastProcessedEventCountRef.current
+
+    // CRITICAL FIX: Detect array truncation and reset the counter
+    // When events array is truncated (e.g., maxEvents limit reached),
+    // the processed count will exceed array length - reset to process from beginning
+    if (startIndex > events.length) {
+      startIndex = 0
+      // Also clear the processed events set since we're re-processing from beginning
+      processedEventsRef.current.clear()
+    }
+
     const newEvents = events.slice(startIndex)
     if (newEvents.length === 0) return
 
@@ -2071,7 +2085,14 @@ export function useDataSource<T = unknown>(
     if (!needsExtensionWebSocket || !enabled || extensionEvents.length === 0) return
 
     // Only process new events since the last run
-    const newEvents = extensionEvents.slice(extensionLastProcessedEventCountRef.current)
+    // CRITICAL FIX: Handle array truncation (same as device events)
+    let extStartIndex = extensionLastProcessedEventCountRef.current
+    if (extStartIndex > extensionEvents.length) {
+      extStartIndex = 0
+      extensionProcessedEventsRef.current.clear()
+    }
+
+    const newEvents = extensionEvents.slice(extStartIndex)
     if (newEvents.length === 0) return
 
     // Update the processed count
@@ -2185,9 +2206,9 @@ export function useDataSource<T = unknown>(
   useEffect(() => {
     if (!hasTelemetrySource || !enabled) {
       // Clean up any existing interval when disabled
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
+      if (telemetryIntervalRef.current) {
+        clearInterval(telemetryIntervalRef.current)
+        telemetryIntervalRef.current = null
       }
       return
     }
@@ -2502,9 +2523,9 @@ export function useDataSource<T = unknown>(
     }
 
     // Clean up existing interval before creating a new one
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
+    if (telemetryIntervalRef.current) {
+      clearInterval(telemetryIntervalRef.current)
+      telemetryIntervalRef.current = null
     }
 
     fetchTelemetryData()
@@ -2515,14 +2536,14 @@ export function useDataSource<T = unknown>(
 
     if (minRefreshSeconds) {
       const minRefreshMs = minRefreshSeconds * 1000
-      intervalRef.current = setInterval(fetchTelemetryData, minRefreshMs)
+      telemetryIntervalRef.current = setInterval(fetchTelemetryData, minRefreshMs)
     }
 
     // Cleanup function - always clear interval on unmount or dependency change
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
+      if (telemetryIntervalRef.current) {
+        clearInterval(telemetryIntervalRef.current)
+        telemetryIntervalRef.current = null
       }
     }
   }, [telemetryKey, enabled, telemetryRefreshTrigger])
@@ -2546,9 +2567,9 @@ export function useDataSource<T = unknown>(
   useEffect(() => {
     if (!hasSystemSource || !enabled) {
       // Clean up any existing interval when disabled
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
+      if (systemIntervalRef.current) {
+        clearInterval(systemIntervalRef.current)
+        systemIntervalRef.current = null
       }
       return
     }
@@ -2599,9 +2620,9 @@ export function useDataSource<T = unknown>(
     }
 
     // Clean up existing interval before creating a new one
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
+    if (systemIntervalRef.current) {
+      clearInterval(systemIntervalRef.current)
+      systemIntervalRef.current = null
     }
 
     fetchSystemData()
@@ -2612,14 +2633,14 @@ export function useDataSource<T = unknown>(
 
     if (minRefreshSeconds) {
       const minRefreshMs = minRefreshSeconds * 1000
-      intervalRef.current = setInterval(fetchSystemData, minRefreshMs)
+      systemIntervalRef.current = setInterval(fetchSystemData, minRefreshMs)
     }
 
     // Cleanup function - always clear interval on unmount or dependency change
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
+      if (systemIntervalRef.current) {
+        clearInterval(systemIntervalRef.current)
+        systemIntervalRef.current = null
       }
     }
   }, [systemKey, enabled])
@@ -2644,9 +2665,9 @@ export function useDataSource<T = unknown>(
   useEffect(() => {
     if (!hasExtensionSource || !enabled) {
       // Clean up any existing interval when disabled
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
+      if (extensionIntervalRef.current) {
+        clearInterval(extensionIntervalRef.current)
+        extensionIntervalRef.current = null
       }
       return
     }
@@ -2783,9 +2804,9 @@ export function useDataSource<T = unknown>(
 
     // Cleanup function - always clear interval on unmount or dependency change
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
+      if (extensionIntervalRef.current) {
+        clearInterval(extensionIntervalRef.current)
+        extensionIntervalRef.current = null
       }
     }
   }, [extensionKey, enabled])

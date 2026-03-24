@@ -660,7 +660,7 @@ export function LayerEditorDialog({
   // Desktop: Traditional dialog
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl h-[80vh] p-0 gap-0 flex flex-col">
+      <DialogContent className="max-w-6xl h-[80vh] p-0 gap-0 flex flex-col z-[110]">
         <DialogHeader className="px-6 py-4 border-b">
           <DialogTitle className="text-lg">{t('customLayer.editorTitle')}</DialogTitle>
         </DialogHeader>
