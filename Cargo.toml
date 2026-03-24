@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "crates/neomind-core",
-    "crates/neomind-llm",
     "crates/neomind-api",
     "crates/neomind-cli",
     "crates/neomind-devices",
