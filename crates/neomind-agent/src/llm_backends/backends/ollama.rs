@@ -166,6 +166,57 @@ impl OllamaRuntime {
         self
     }
 
+    /// Fetch model capabilities from Ollama's /api/show endpoint.
+    /// This provides accurate capability detection instead of name-based heuristics.
+    pub async fn fetch_capabilities_from_api(&self) -> Option<ModelCapability> {
+        let url = format!("{}/api/show", self.config.endpoint);
+        let request = serde_json::json!({
+            "name": self.model,
+            "verbose": false
+        });
+
+        match self.client.post(&url).json(&request).send().await {
+            Ok(response) if response.status().is_success() => {
+                match response.json::<OllamaShowResponse>().await {
+                    Ok(show_response) => {
+                        let supports_multimodal = show_response.supports_vision();
+                        let supports_tools = true; // Most modern Ollama models support tools
+                        let supports_thinking = show_response.has_attention_heads();
+                        let max_context = show_response.context_length().unwrap_or(4096);
+
+                        tracing::info!(
+                            model = %self.model,
+                            multimodal = %supports_multimodal,
+                            thinking = %supports_thinking,
+                            tools = %supports_tools,
+                            max_context = %max_context,
+                            "Fetched model capabilities from Ollama API"
+                        );
+
+                        Some(ModelCapability {
+                            supports_multimodal,
+                            supports_thinking,
+                            supports_tools,
+                            max_context,
+                        })
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "Failed to parse Ollama show response");
+                        None
+                    }
+                }
+            }
+            Ok(response) => {
+                tracing::warn!(status = %response.status(), "Ollama show request failed");
+                None
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "Failed to fetch capabilities from Ollama API");
+                None
+            }
+        }
+    }
+
     /// Warm up the model by sending a minimal request.
     ///
     /// This eliminates the ~500ms first-request latency by triggering model loading
@@ -1524,7 +1575,7 @@ struct OllamaOptions {
 
 /// Model capability information
 #[derive(Debug, Clone)]
-struct ModelCapability {
+pub struct ModelCapability {
     supports_tools: bool,
     supports_thinking: bool,
     supports_multimodal: bool,
@@ -1574,7 +1625,7 @@ fn detect_model_capabilities(model_name: &str) -> ModelCapability {
     // Models that support multimodal (vision)
     // Common Ollama vision models: qwen-vl, qwen2-vl, qwen3-vl, llava, bakllava, moondream, etc.
     // IMPORTANT: This is name-based heuristic detection. For accurate detection,
-    // use Ollama's /api/show endpoint which returns the "vision" capability.
+    // use Ollama's /api/show endpoint through runtime.capabilities() method.
     let supports_multimodal = name_lower.contains("vl")
         || name_lower.contains("vision")
         || name_lower.contains("-mm")
@@ -1585,6 +1636,11 @@ fn detect_model_capabilities(model_name: &str) -> ModelCapability {
         || name_lower.contains("minigpt")
         || name_lower.contains("clip")
         || name_lower.contains("minicpm-v")
+        || name_lower.contains("pixtral")  // Mistral's vision model
+        || name_lower.contains("llama3.2-vision")
+        || name_lower.contains("gemma3")   // Gemma 3 supports vision
+        || name_lower.contains("ministral") // Ministral models support vision
+        || name_lower.contains("mistral3")   // Mistral3 architecture supports vision
         || name_lower.contains("cogvlm")
         || name_lower.contains("internvl")
         || name_lower.contains("yi-vl")
@@ -1727,6 +1783,41 @@ fn detect_model_context(model_name: &str) -> usize {
     4_096
 }
 
+/// Detect backend capabilities for an Ollama model from its name.
+///
+/// This is a public helper function that can be used when creating `LlmBackend`
+/// to provide accurate capabilities instead of `None`.
+///
+/// # Example
+/// ```ignore
+/// use neomind_agent::llm_backends::ollama::detect_ollama_capabilities;
+///
+/// let caps = detect_ollama_capabilities("qwen3-vl:2b");
+/// let backend = LlmBackend::Ollama {
+///     endpoint: "http://localhost:11434".to_string(),
+///     model: "qwen3-vl:2b".to_string(),
+///     capabilities: Some(caps),
+/// };
+/// ```
+pub fn detect_ollama_capabilities(model_name: &str) -> BackendCapabilities {
+    let caps = detect_model_capabilities(model_name);
+    let mut builder = BackendCapabilities::builder()
+        .streaming()
+        .max_context(caps.max_context);
+
+    if caps.supports_multimodal {
+        builder = builder.multimodal();
+    }
+    if caps.supports_thinking {
+        builder = builder.thinking_display();
+    }
+    if caps.supports_tools {
+        builder = builder.function_calling();
+    }
+
+    builder.build()
+}
+
 /// Tool definition in OpenAI-compatible format for Ollama.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct OllamaTool {
@@ -1746,6 +1837,43 @@ struct OllamaToolFunction {
     description: String,
     /// Function parameters as JSON Schema
     parameters: serde_json::Value,
+}
+
+/// Response from Ollama /api/show endpoint
+#[derive(Debug, Clone, Deserialize)]
+struct OllamaShowResponse {
+    /// Model name
+    #[allow(dead_code)]
+    name: String,
+    /// Model details - Ollama returns flat key-value pairs like "llama.context_length": 8192
+    #[serde(default)]
+    model_info: std::collections::HashMap<String, serde_json::Value>,
+}
+
+impl OllamaShowResponse {
+    /// Check if the model supports vision/multimodal
+    fn supports_vision(&self) -> bool {
+        self.model_info.keys().any(|k| {
+            k.contains(".vision.") || k.contains("vision_encoder") || k.contains("projector")
+        })
+    }
+
+    /// Get the context length
+    fn context_length(&self) -> Option<usize> {
+        for (key, value) in &self.model_info {
+            if key.ends_with(".context_length") {
+                if let Some(v) = value.as_u64() {
+                    return Some(v as usize);
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if model has attention heads (indicates reasoning capability)
+    fn has_attention_heads(&self) -> bool {
+        self.model_info.keys().any(|k| k.contains(".attention.head_count"))
+    }
 }
 
 /// Tool call returned by the model.

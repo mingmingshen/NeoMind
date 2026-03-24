@@ -391,9 +391,15 @@ impl LlmInterface {
         // This takes precedence over instance manager to support backendId selection
         let llm_guard = self.llm.read().await;
         if let Some(runtime) = llm_guard.as_ref() {
+            tracing::debug!(
+                model = %runtime.model_name(),
+                "get_runtime: using direct runtime from configure_llm"
+            );
             return Ok(Arc::clone(runtime));
         }
         drop(llm_guard);
+
+        tracing::debug!("get_runtime: no direct runtime, checking instance manager");
 
         // Fall back to instance manager if no direct runtime is set
         if self.uses_instance_manager() {
@@ -518,19 +524,33 @@ impl LlmInterface {
     pub async fn supports_multimodal(&self) -> bool {
         // First, try to query the runtime directly (most accurate - uses model name detection)
         if let Ok(runtime) = self.get_runtime().await {
-            return runtime.capabilities().multimodal;
+            let caps = runtime.capabilities();
+            tracing::debug!(
+                multimodal = %caps.multimodal,
+                model = %runtime.model_name(),
+                "supports_multimodal: checking runtime capabilities"
+            );
+            return caps.multimodal;
         }
+
+        tracing::debug!("supports_multimodal: no runtime available, checking instance manager");
 
         // Fall back to instance manager if runtime is not available
         if self.uses_instance_manager() {
             if let Some(manager) = &self.instance_manager {
                 if let Some(instance) = manager.get_active_instance() {
                     // Instance has capabilities with supports_multimodal (storage layer)
+                    tracing::debug!(
+                        supports_multimodal = %instance.capabilities.supports_multimodal,
+                        model = %instance.model,
+                        "supports_multimodal: using instance manager capabilities"
+                    );
                     return instance.capabilities.supports_multimodal;
                 }
             }
         }
 
+        tracing::warn!("supports_multimodal: no runtime or instance available, returning false");
         false
     }
 

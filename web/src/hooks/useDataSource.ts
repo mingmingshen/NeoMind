@@ -398,7 +398,6 @@ async function fetchHistoricalTelemetry(
 }
 
 /** Window (seconds) to treat points as near-duplicates when value is the same */
-const TELEMETRY_DEDUP_WINDOW_SEC = 5
 
 /**
  * Check if a point is image data (has src, url, or value field with base64/URL content)
@@ -515,26 +514,21 @@ function dedupeTelemetryPoints(
   }
 
   // Normal deduplication for non-image data
+  // IMPORTANT: Only remove EXACT timestamp duplicates (backend double-write issue)
+  // Do NOT remove "same value + near timestamp" as these are legitimate data points
   const deduped: unknown[] = []
   for (const p of sorted) {
     const ts = getTs(p)
-    const val = getPointValue(p)
 
-    // Exact timestamp duplicate - always remove
-    const exactDup = deduped.some((k) => getTs(k) === ts)
+    // Only check for exact timestamp duplicates (same second)
+    // This handles the backend double-write issue without blocking legitimate same-value updates
+    const exactDup = deduped.some((k) => {
+      const kTs = getTs(k)
+      // Exact same timestamp (within 1 second tolerance for clock skew)
+      return Math.abs(ts - kTs) < 1
+    })
     if (exactDup) continue
 
-    // Near-duplicate: same value, within window (handles double-write from backend)
-    const nearDup = deduped.some((k) => {
-      const kVal = getPointValue(k)
-      const kTs = getTs(k)
-      const valueEqual =
-        val === kVal ||
-        (typeof val === 'object' && typeof kVal === 'object' && val != null && kVal != null &&
-          JSON.stringify(val) === JSON.stringify(kVal))
-      return valueEqual && Math.abs(ts - kTs) <= TELEMETRY_DEDUP_WINDOW_SEC
-    })
-    if (nearDup) continue
     deduped.push(p)
     if (deduped.length >= maxLimit) break
   }
@@ -655,14 +649,39 @@ function findPropertyValue(obj: Record<string, unknown>, property: string): unkn
 }
 
 /**
+ * Transform-generated metric namespaces (same as backend).
+ * Metrics starting with these prefixes are virtual/computed metrics from Transforms.
+ */
+const TRANSFORM_NAMESPACES = ['transform.', 'virtual.', 'computed.', 'derived.', 'aggregated.']
+
+/**
+ * Check if a metric name is a transform-generated virtual metric.
+ */
+function isVirtualMetric(metricName: string): boolean {
+  return TRANSFORM_NAMESPACES.some(ns => metricName.startsWith(ns))
+}
+
+/**
  * Check if event metric matches widget metricId (supports nested paths like values.image vs image).
  * This handles both directions:
  * - Event "values.image" matches widget "image" (event is nested, widget is simple)
  * - Event "image" matches widget "values.image" (event is simple, widget is nested)
+ *
+ * IMPORTANT: Transform-generated virtual metrics (e.g., "transform.temperature") should NOT
+ * match real metrics (e.g., "temperature"). This prevents dashboard widgets bound to real
+ * metrics from incorrectly displaying virtual metric values.
  */
 function eventMetricMatches(eventMetric: string, widgetMetricId: string): boolean {
   if (!eventMetric || !widgetMetricId) return false
   if (eventMetric === widgetMetricId) return true
+
+  // CRITICAL: If event is a virtual metric but widget is not (or vice versa), don't match
+  // This prevents "transform.temperature" from matching "temperature"
+  const eventIsVirtual = isVirtualMetric(eventMetric)
+  const widgetIsVirtual = isVirtualMetric(widgetMetricId)
+  if (eventIsVirtual !== widgetIsVirtual) {
+    return false
+  }
 
   // Case 1: Event has nested path, widget is simple
   // e.g., event "values.image" matches widget "image"
@@ -903,6 +922,12 @@ export function useDataSource<T = unknown>(
     )
     return ids
   }, [dataSources])
+
+  // CRITICAL: Keep relevantDeviceIds in a ref for event processing
+  // Event useEffect depends on eventsKey, not relevantDeviceIds, so it uses stale closure values
+  // This ref ensures we always use the latest device IDs
+  const relevantDeviceIdsRef = useRef(relevantDeviceIds)
+  relevantDeviceIdsRef.current = relevantDeviceIds
 
   // Memoize device-info device IDs for status change tracking
   const deviceInfoIds = useMemo(() => {
@@ -1237,11 +1262,13 @@ export function useDataSource<T = unknown>(
       if (!devicesLengthChanged) {
         // Build device lookup maps for O(1) access instead of O(n) find()
         // This is especially important when there are many devices
+        // IMPORTANT: Use ref to always get latest device IDs (prevents stale closure)
+        const currentRelevantDeviceIds = relevantDeviceIdsRef.current
         const stateDeviceMap = new Map<string, Device>()
         const prevDeviceMap = new Map<string, Device>()
 
         // Only populate maps with devices we care about
-        for (const deviceId of relevantDeviceIds) {
+        for (const deviceId of currentRelevantDeviceIds) {
           const stateDev = state.devices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
           const prevDev = prev.devices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
           if (stateDev) stateDeviceMap.set(deviceId, stateDev)
@@ -1249,7 +1276,7 @@ export function useDataSource<T = unknown>(
         }
 
         // Check only relevant devices
-        for (const deviceId of relevantDeviceIds) {
+        for (const deviceId of currentRelevantDeviceIds) {
           const device = stateDeviceMap.get(deviceId)
           const prevDevice = prevDeviceMap.get(deviceId)
 
@@ -1401,6 +1428,11 @@ export function useDataSource<T = unknown>(
         // Connection lost - clear event processing state
         processedEventsRef.current.clear()
         lastProcessedEventCountRef.current = 0
+      } else {
+        // Connection established - also reset to handle reconnection scenarios
+        // The events array may be reset by useEvents on reconnection
+        processedEventsRef.current.clear()
+        lastProcessedEventCountRef.current = 0
       }
     },
   })
@@ -1439,7 +1471,11 @@ export function useDataSource<T = unknown>(
 
     // Only process new events since the last run
     // This prevents re-processing all events on every render
-    const newEvents = events.slice(lastProcessedEventCountRef.current)
+    // CRITICAL: Handle case where events array was truncated (maxEvents limit)
+    // If lastProcessedEventCountRef > events.length, the array was reset/truncated
+    // In this case, we need to process all events from the beginning
+    const startIndex = Math.min(lastProcessedEventCountRef.current, events.length)
+    const newEvents = events.slice(startIndex)
     if (newEvents.length === 0) return
 
     // Update the processed count
@@ -1451,10 +1487,12 @@ export function useDataSource<T = unknown>(
       const eventType = (latestEvent as any).type
 
       // Early exit: skip events that don't have a device_id we care about
+      // Use ref to always get latest device IDs (prevents stale closure issue)
+      const currentRelevantDeviceIds = relevantDeviceIdsRef.current
       const hasDeviceId = eventData && typeof eventData === 'object' && 'device_id' in eventData
-      if (hasDeviceId && relevantDeviceIds.size > 0) {
+      if (hasDeviceId && currentRelevantDeviceIds.size > 0) {
         const eventDeviceId = eventData.device_id as string
-        if (!relevantDeviceIds.has(eventDeviceId)) {
+        if (!currentRelevantDeviceIds.has(eventDeviceId)) {
           continue  // Skip events for devices we don't care about
         }
       }
@@ -1479,6 +1517,9 @@ export function useDataSource<T = unknown>(
                                   normalizedEventType.includes('metric') ||
                                   eventType === 'DeviceMetric'
 
+      // Extract event metric name for matching (used to prevent cross-metric interference)
+      const eventMetric = typeof (eventData as any).metric === 'string' ? (eventData as any).metric : ''
+
       let shouldUpdate = false
 
       // Update store for device metric events: use metric name as property so
@@ -1498,7 +1539,8 @@ export function useDataSource<T = unknown>(
       }
 
       // Check if event matches data sources
-      for (const ds of dataSources) {
+      // IMPORTANT: Use dataSourcesRef.current to always get latest data source configuration
+      for (const ds of dataSourcesRef.current) {
         if (ds.type === 'device' && hasDeviceId && eventData.device_id === ds.deviceId && isDeviceMetricEvent) {
           shouldUpdate = true
           break
@@ -1515,10 +1557,13 @@ export function useDataSource<T = unknown>(
           break
         } else if (
           // Telemetry sources: trigger refresh when matching device metric event occurs
+          // IMPORTANT: Both device_id AND metric must match to prevent cross-metric interference
+          // BUT: If event has no explicit metric field, allow update (legacy compatibility)
           ds.type === 'telemetry' &&
           hasDeviceId &&
           eventData.device_id === ds.deviceId &&
-          isDeviceMetricEvent
+          isDeviceMetricEvent &&
+          (!eventMetric || eventMetricMatches(eventMetric, ds.metricId || ds.property || 'value'))
         ) {
           shouldUpdate = true
           break
@@ -1536,14 +1581,27 @@ export function useDataSource<T = unknown>(
 
       // For telemetry sources, merge event value directly and schedule cache refresh
       // This avoids race condition where old cached data is used during async API fetch
-      const hasTelemetrySource = dataSources.some((ds) => ds.type === 'telemetry')
+      // IMPORTANT: Use dataSourcesRef.current to always get latest data source configuration
+      const currentDataSourcesForTelemetry = dataSourcesRef.current
+      const hasTelemetrySource = currentDataSourcesForTelemetry.some((ds) => ds.type === 'telemetry')
+      // Track if telemetry was already processed by the dedicated logic
+      let telemetryAlreadyProcessed = false
+
       if (hasTelemetrySource && isDeviceMetricEvent && hasDeviceId) {
         const eventDeviceId = eventData.device_id as string
-        const matchingTelemetrySources = dataSources.filter((ds) =>
-          ds.type === 'telemetry' && ds.deviceId === eventDeviceId
-        )
+        // Filter telemetry sources by both device_id AND metric to prevent cross-metric interference
+        // If event has no explicit metric, include all telemetry sources for this device (legacy)
+        const matchingTelemetrySources = currentDataSourcesForTelemetry.filter((ds) => {
+          if (ds.type !== 'telemetry' || ds.deviceId !== eventDeviceId) return false
+          // If event has no explicit metric, include this source (legacy compatibility)
+          if (!eventMetric) return true
+          // Otherwise, only include if metric matches
+          const metricId = ds.metricId || ds.property || 'value'
+          return eventMetric === metricId || eventMetricMatches(eventMetric, metricId)
+        })
 
         if (matchingTelemetrySources.length > 0) {
+          telemetryAlreadyProcessed = true
           const currentDataSources = dataSourcesRef.current
           const currentData = dataRef.current as unknown
           const now = Math.floor(Date.now() / 1000)
@@ -1578,10 +1636,19 @@ export function useDataSource<T = unknown>(
             const hasValueKey = 'value' in eventData
             const metricMatches = eventMetric === metricId || eventMetricMatches(eventMetric, metricId)
 
+            // CRITICAL: Only extract value when metric matches
+            // This prevents cross-metric interference where one metric's event
+            // affects another metric's widget
             if (hasValueKey && metricMatches) {
+              // Direct match: use the value field
               eventValue = eventData.value
-            } else {
+            } else if (!eventMetric) {
+              // No explicit metric in event (legacy/compatibility): try to extract
               eventValue = extractValueFromData(eventData, metricId)
+            } else {
+              // Event has explicit metric that doesn't match widget: skip this update
+              // This is the key fix to prevent metrics from affecting each other
+              return undefined
             }
 
             if (eventValue === undefined) return undefined
@@ -1627,15 +1694,27 @@ export function useDataSource<T = unknown>(
           const hasUpdated = updatedResults.some((r) => r !== undefined)
           const validResults = updatedResults.filter((r) => r !== undefined)
 
-          if (hasUpdated) {
+          if (hasUpdated && validResults.length > 0) {
             const { transform: transformFn } = optionsRef.current
             const isPreserveMultiple = optionsRef.current.preserveMultiple
 
             let finalData: unknown
             if (isPreserveMultiple && currentDataSources.length > 1) {
-              finalData = updatedResults.map((r, i) => r ?? (Array.isArray(currentData) && Array.isArray(currentData[i]) ? currentData[i] : []))
+              finalData = updatedResults.map((r, i) => {
+                if (r !== undefined) return r
+                // For undefined results, use empty array (not old data) to prevent stale references
+                return []
+              })
             } else {
-              finalData = updatedResults.find((r) => r !== undefined) ?? currentData
+              // Only use valid results (new data), never fall back to currentData
+              // This ensures React always sees a new reference and triggers re-render
+              const validResult = validResults[0]
+              if (validResult !== undefined) {
+                finalData = validResult
+              } else {
+                // No valid result - skip this update entirely
+                return
+              }
             }
 
             const transformedData = transformFn ? transformFn(finalData) : (finalData as T)
@@ -1675,6 +1754,14 @@ export function useDataSource<T = unknown>(
       }
 
       if (shouldUpdate) {
+        // CRITICAL: Skip this block if telemetry was already processed by the dedicated telemetry logic above
+        // This prevents double-processing and ensures telemetry uses the optimized merge path
+        if (telemetryAlreadyProcessed) {
+          // Telemetry was already handled by the dedicated merge logic above
+          // Skip this redundant update to prevent stale data overwrites
+          return
+        }
+
         const { transform: transformFn } = optionsRef.current
 
         // Extract value directly from event
@@ -1698,15 +1785,23 @@ export function useDataSource<T = unknown>(
 
               if (isDeviceMetricEvent && eventData.device_id === deviceId) {
                 const eventMetric = typeof eventData.metric === 'string' ? eventData.metric : ''
-                if ('metric' in eventData && 'value' in eventData && (eventMetric === property || eventMetricMatches(eventMetric, property))) {
+                const metricMatches = eventMetric === property || eventMetricMatches(eventMetric, property)
+
+                // CRITICAL: Only use event data when metric matches
+                // This prevents cross-metric interference
+                if ('metric' in eventData && 'value' in eventData && metricMatches) {
                   result = eventData.value
                   break
                 }
-                const extracted = extractValueFromData(eventData, property)
-                if (extracted !== undefined) {
-                  result = extracted
-                  break
+                // Only extract from event if no explicit metric field (legacy compatibility)
+                if (!eventMetric) {
+                  const extracted = extractValueFromData(eventData, property)
+                  if (extracted !== undefined) {
+                    result = extracted
+                    break
+                  }
                 }
+                // If event has explicit metric that doesn't match, fall through to store
               }
 
               const device = currentDevices.find((d: Device) => d.id === deviceId)
@@ -1725,15 +1820,23 @@ export function useDataSource<T = unknown>(
 
               if (isDeviceMetricEvent) {
                 const eventMetric = typeof eventData.metric === 'string' ? eventData.metric : ''
-                if ('metric' in eventData && 'value' in eventData && (eventMetric === metricId || eventMetricMatches(eventMetric, metricId))) {
+                const metricMatches = eventMetric === metricId || eventMetricMatches(eventMetric, metricId)
+
+                // CRITICAL: Only use event data when metric matches
+                // This prevents cross-metric interference
+                if ('metric' in eventData && 'value' in eventData && metricMatches) {
                   result = eventData.value
                   break
                 }
-                const extracted = extractValueFromData(eventData, metricId)
-                if (extracted !== undefined) {
-                  result = extracted
-                  break
+                // Only extract from event if no explicit metric field (legacy compatibility)
+                if (!eventMetric) {
+                  const extracted = extractValueFromData(eventData, metricId)
+                  if (extracted !== undefined) {
+                    result = extracted
+                    break
+                  }
                 }
+                // If event has explicit metric that doesn't match, fall through to store
               }
 
               for (const device of currentDevices) {
@@ -1759,15 +1862,23 @@ export function useDataSource<T = unknown>(
 
               if (isDeviceMetricEvent && eventData.device_id === deviceId) {
                 const eventMetric = typeof eventData.metric === 'string' ? eventData.metric : ''
-                if ('metric' in eventData && 'value' in eventData && (eventMetric === property || eventMetricMatches(eventMetric, property))) {
+                const metricMatches = eventMetric === property || eventMetricMatches(eventMetric, property)
+
+                // CRITICAL: Only use event data when metric matches
+                // This prevents cross-metric interference
+                if ('metric' in eventData && 'value' in eventData && metricMatches) {
                   result = eventData.value
                   break
                 }
-                const extracted = extractValueFromData(eventData, property)
-                if (extracted !== undefined) {
-                  result = extracted
-                  break
+                // Only extract from event if no explicit metric field (legacy compatibility)
+                if (!eventMetric) {
+                  const extracted = extractValueFromData(eventData, property)
+                  if (extracted !== undefined) {
+                    result = extracted
+                    break
+                  }
                 }
+                // If event has explicit metric that doesn't match, fall through to store
               }
 
               const device = currentDevices.find((d: Device) => d.id === deviceId)
@@ -1826,11 +1937,21 @@ export function useDataSource<T = unknown>(
                 const metricId = ds.metricId || ds.property || 'value'
                 let eventValue: unknown
                 const eventMetric = typeof (eventData as any).metric === 'string' ? (eventData as any).metric : ''
-                if ('value' in eventData && (eventMetric === metricId || eventMetricMatches(eventMetric, metricId))) {
+                const metricMatches = eventMetric === metricId || eventMetricMatches(eventMetric, metricId)
+
+                // CRITICAL: Only extract value when metric matches
+                // This prevents cross-metric interference where one metric's event
+                // affects another metric's widget
+                if ('value' in eventData && metricMatches) {
                   eventValue = eventData.value
-                } else {
+                } else if (!eventMetric) {
+                  // No explicit metric in event (legacy/compatibility): try to extract
                   eventValue = extractValueFromData(eventData, metricId)
+                } else {
+                  // Event has explicit metric that doesn't match widget: skip this update
+                  eventValue = undefined
                 }
+
                 if (eventValue !== undefined) {
                   // Use event timestamp for correct temporal ordering instead of current time
                   // Event timestamps are in milliseconds, convert to seconds for consistency
@@ -2163,18 +2284,25 @@ export function useDataSource<T = unknown>(
         }
 
         // Helper to find metric value with fuzzy matching
+        // IMPORTANT: Virtual metrics should only be matched when the target is also virtual
         const findMetricValue = (
           currentValues: Record<string, unknown>,
           metricId: string
         ): { value: unknown; matchedKey: string } | undefined => {
+          // Determine if the target metric is a virtual metric
+          const targetIsVirtual = isVirtualMetric(metricId)
+
           // 1. Try exact match
           if (metricId in currentValues) {
             return { value: currentValues[metricId], matchedKey: metricId }
           }
 
           // 2. Try case-insensitive match
+          // Only skip virtual namespace containers when looking for a real metric
           const lowerMetricId = metricId.toLowerCase()
           for (const key of Object.keys(currentValues)) {
+            // Skip virtual metric namespace containers if we're looking for a real metric
+            if (!targetIsVirtual && isVirtualMetric(key + '.')) continue
             if (key.toLowerCase() === lowerMetricId) {
               return { value: currentValues[key], matchedKey: key }
             }
@@ -2188,6 +2316,8 @@ export function useDataSource<T = unknown>(
             .replace(/_url$/i, '')
             .replace(/_str$/i, '')
           for (const key of Object.keys(currentValues)) {
+            // Skip virtual metric namespace containers if we're looking for a real metric
+            if (!targetIsVirtual && isVirtualMetric(key + '.')) continue
             const keyBase = key
               .replace(/_base64$/i, '')
               .replace(/^image_/i, '')
@@ -2209,10 +2339,18 @@ export function useDataSource<T = unknown>(
           }
 
           // 5. Try nested path like "values.image"
+          // NOTE: Only block traversal into virtual namespaces if the target metric is NOT virtual
+          // This allows widgets bound to virtual metrics (e.g., "transform.TH.status") to work correctly
           const parts = metricId.split('.')
           let nested: unknown = currentValues
           for (const part of parts) {
             if (nested && typeof nested === 'object' && part in nested) {
+              // Only prevent traversal into virtual namespaces when looking for a real metric
+              // This prevents "temperature" from accidentally matching "transform.temperature"
+              if (!targetIsVirtual && isVirtualMetric(part + '.')) {
+                nested = undefined
+                break
+              }
               nested = (nested as Record<string, unknown>)[part]
             } else {
               nested = undefined

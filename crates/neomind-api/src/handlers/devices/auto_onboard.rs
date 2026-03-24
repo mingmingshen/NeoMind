@@ -813,7 +813,6 @@ pub struct GeneratedDeviceTypeDto {
     pub description: String,
     pub category: String,
     pub metrics: Vec<MetricSummaryDto>,
-    pub confidence: f32,
     pub summary: ProcessingSummaryDto,
 }
 
@@ -829,7 +828,6 @@ impl From<crate::automation::GeneratedDeviceType> for GeneratedDeviceTypeDto {
                 .into_iter()
                 .map(MetricSummaryDto::from)
                 .collect(),
-            confidence: 1.0, // Default confidence
             summary: ProcessingSummaryDto::from(&gen_type.summary),
         }
     }
@@ -842,7 +840,6 @@ pub struct MetricSummaryDto {
     pub path: String,
     pub semantic_type: String,
     pub display_name: String,
-    pub confidence: f32,
 }
 
 impl From<crate::automation::DiscoveredMetric> for MetricSummaryDto {
@@ -852,7 +849,6 @@ impl From<crate::automation::DiscoveredMetric> for MetricSummaryDto {
             path: metric.path,
             semantic_type: metric.semantic_type.display_name().to_string(),
             display_name: metric.display_name,
-            confidence: 1.0, // Default confidence
         }
     }
 }

@@ -1065,7 +1065,7 @@ impl RuleEngine {
                 let message_manager = self.message_manager.read().await;
                 if let Some(manager) = message_manager.as_ref() {
                     let mut msg = Message::new(
-                        "alert".to_string(),
+                        "notification".to_string(),
                         sev,
                         title.clone(),
                         message.clone(),

@@ -49,14 +49,11 @@ pub mod budget;
 pub mod compression;
 pub mod embeddings;
 pub mod error;
-pub mod graph;
-pub mod importance;
 pub mod long_term;
 pub mod mid_term;
 pub mod semantic;
 pub mod short_term;
 pub mod tiered;
-pub mod unified;
 
 // Re-export commonly used types
 pub use bm25::{
@@ -74,17 +71,7 @@ pub use embeddings::{
     OpenAIEmbedding, SimpleEmbedding,
 };
 pub use error::{MemoryError, NeoMindError, Result};
-pub use graph::{
-    CentralityMetrics, Entity, EntityId, EntityType, GraphConfig, GraphPath, MemoryGraph,
-    RelationId, RelationType, Relationship, TraversalResult,
-};
-pub use importance::{
-    AccessRecord, AccessType, FactorScores, HeatScore, ImportanceConfig, ImportanceScorer,
-    MemoryItem as ImportanceMemoryItem, ReactionType, SourceType, Temperature,
-    DEFAULT_CROSS_REF_WEIGHT, DEFAULT_DECAY_HALFLIFE, DEFAULT_EMOTIONAL_WEIGHT,
-    DEFAULT_FREQUENCY_WEIGHT, DEFAULT_RECENCY_WEIGHT, DEFAULT_RELEVANCE_WEIGHT, HOT_THRESHOLD,
-    WARM_THRESHOLD,
-};
+
 pub use long_term::{
     KnowledgeCategory, KnowledgeEntry, LongTermMemory, SolutionStep, TroubleshootingCase,
 };
@@ -95,10 +82,7 @@ pub use semantic::{
 };
 pub use short_term::{MemoryMessage, ShortTermMemory, DEFAULT_MAX_MESSAGES, DEFAULT_MAX_TOKENS};
 pub use tiered::{MemoryQueryResult, MemoryStats, SearchMethod, TieredMemory, TieredMemoryConfig};
-pub use unified::{
-    MemoryItem, MemoryLayer, MemoryQuery, MemoryResults, PromotionPolicy, UnifiedMemory,
-    UnifiedMemoryConfig,
-};
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg(test)]

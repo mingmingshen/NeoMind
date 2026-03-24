@@ -4,32 +4,23 @@
 //! - Message creation and management
 //! - Message categories
 //! - Severity levels
-//! - Channel operations
 //! - Message lifecycle
 
 use neomind_messages::{
-    category::MessageCategory,
-    channels::{
-        ChannelFactory, ConsoleChannel, ConsoleChannelFactory, MemoryChannel, MemoryChannelFactory,
-        MessageChannel,
-    },
     manager::MessageManager,
     message::{Message, MessageId, MessageSeverity, MessageStatus},
 };
 
 #[tokio::test]
 async fn test_message_creation() {
-    let message = Message::new(
-        MessageCategory::System.as_str(),
-        MessageSeverity::Info,
+    let message = Message::system(
         "Test Alert".to_string(),
         "Test message".to_string(),
-        "test_source".to_string(),
     );
 
     assert_eq!(message.title, "Test Alert");
     assert_eq!(message.severity, MessageSeverity::Info);
-    assert_eq!(message.category, MessageCategory::System.as_str());
+    assert_eq!(message.category, "system");
     assert_eq!(message.status, MessageStatus::Active);
 }
 
@@ -44,7 +35,7 @@ async fn test_message_alert_helper() {
 
     assert_eq!(message.title, "High Temperature");
     assert_eq!(message.severity, MessageSeverity::Warning);
-    assert_eq!(message.category, MessageCategory::Alert.as_str());
+    assert_eq!(message.category, "alert");
 }
 
 #[tokio::test]
@@ -56,7 +47,7 @@ async fn test_message_system_helper() {
 
     assert_eq!(message.title, "System Started");
     assert_eq!(message.severity, MessageSeverity::Info);
-    assert_eq!(message.category, MessageCategory::System.as_str());
+    assert_eq!(message.category, "system");
 }
 
 #[tokio::test]
@@ -98,12 +89,9 @@ async fn test_message_status_transitions() {
 async fn test_message_manager_create() {
     let manager = MessageManager::new();
 
-    let message = Message::new(
-        MessageCategory::System.as_str(),
-        MessageSeverity::Info,
+    let message = Message::system(
         "Test Alert".to_string(),
         "Test message".to_string(),
-        "test".to_string(),
     );
 
     let created = manager.create_message(message).await.unwrap();
@@ -118,12 +106,9 @@ async fn test_message_manager_list() {
     let manager = MessageManager::new();
 
     manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Info,
+        .create_message(Message::system(
             "Alert 1".to_string(),
             "Message 1".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
@@ -147,34 +132,25 @@ async fn test_message_manager_filter_by_status() {
     let manager = MessageManager::new();
 
     let _msg1 = manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Info,
+        .create_message(Message::system(
             "Info Alert".to_string(),
             "Info".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
 
     let msg2 = manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Warning,
+        .create_message(Message::system(
             "Warning Alert".to_string(),
             "Warning".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
 
     let msg3 = manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Critical,
+        .create_message(Message::system(
             "Critical Alert".to_string(),
             "Critical".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
@@ -222,13 +198,13 @@ async fn test_message_manager_filter_by_category() {
         .unwrap();
 
     let system_alerts = manager
-        .list_messages_by_category(MessageCategory::System.as_str())
+        .list_messages_by_category("system")
         .await;
     assert_eq!(system_alerts.len(), 1);
     assert_eq!(system_alerts[0].title, "System Alert");
 
     let device_alerts = manager
-        .list_messages_by_category(MessageCategory::Alert.as_str())
+        .list_messages_by_category("alert")
         .await;
     assert_eq!(device_alerts.len(), 1);
     assert_eq!(device_alerts[0].title, "Device Alert");
@@ -239,12 +215,9 @@ async fn test_message_manager_acknowledge() {
     let manager = MessageManager::new();
 
     let message = manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Info,
+        .create_message(Message::system(
             "Test Alert".to_string(),
             "Test".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
@@ -280,12 +253,9 @@ async fn test_message_manager_delete() {
     let manager = MessageManager::new();
 
     let message = manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Info,
+        .create_message(Message::system(
             "Test Alert".to_string(),
             "Test".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
@@ -302,34 +272,25 @@ async fn test_message_manager_stats() {
 
     // Create multiple messages
     let msg1 = manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Info,
+        .create_message(Message::system(
             "Alert 0".to_string(),
             "Test".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
 
     let msg2 = manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Info,
+        .create_message(Message::system(
             "Alert 1".to_string(),
             "Test".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
 
     let msg3 = manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Info,
+        .create_message(Message::system(
             "Alert 2".to_string(),
             "Test".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
@@ -347,76 +308,18 @@ async fn test_message_manager_stats() {
 }
 
 #[tokio::test]
-async fn test_console_channel() {
-    let channel = ConsoleChannel::new("console".to_string());
-    let message = Message::system("Test".to_string(), "Test message".to_string());
-
-    // Console channel should send without error
-    let result = channel.send(&message).await;
-    assert!(result.is_ok());
-}
-
-#[tokio::test]
-async fn test_memory_channel() {
-    let channel = MemoryChannel::new("test_channel".to_string());
-    let message = Message::system("Test".to_string(), "Test message".to_string());
-
-    channel.send(&message).await.unwrap();
-
-    let messages = channel.get_messages().await;
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].title, "Test");
-}
-
-#[tokio::test]
-async fn test_channel_factory_console() {
-    let factory = ConsoleChannelFactory;
-    let channel = factory.create(&serde_json::json!({})).unwrap();
-
-    let message = Message::system("Test".to_string(), "Test message".to_string());
-    let result = channel.send(&message).await;
-
-    assert!(result.is_ok());
-}
-
-#[tokio::test]
-async fn test_channel_factory_memory() {
-    // Just test that the factory creates a channel that works
-    let factory = MemoryChannelFactory;
-    let channel = factory
-        .create(&serde_json::json!({"name": "test"}))
-        .unwrap();
-
-    let message = Message::alert(
-        MessageSeverity::Warning,
-        "Test Alert".to_string(),
-        "Test".to_string(),
-        "sensor1".to_string(),
-    );
-    let result = channel.send(&message).await;
-
-    assert!(result.is_ok());
-    assert_eq!(channel.name(), "test");
-    assert_eq!(channel.channel_type(), "memory");
-}
-
-#[tokio::test]
 async fn test_message_categories() {
-    let categories = vec![
-        MessageCategory::Alert,
-        MessageCategory::System,
-        MessageCategory::Business,
-    ];
+    let categories = vec!["alert", "system", "business"];
 
     for category in categories {
         let message = Message::new(
-            category.as_str(),
+            category.to_string(),
             MessageSeverity::Info,
-            format!("{:?} Alert", category),
+            format!("{} Alert", category),
             "Test".to_string(),
             "test".to_string(),
         );
-        assert_eq!(message.category, category.as_str());
+        assert_eq!(message.category, category);
     }
 }
 
@@ -430,12 +333,10 @@ async fn test_message_severities() {
     ];
 
     for severity in severities {
-        let message = Message::new(
-            MessageCategory::System.as_str(),
+        let message = Message::system_with_severity(
             severity,
             format!("{:?} Alert", severity),
             "Test".to_string(),
-            "test".to_string(),
         );
         assert_eq!(message.severity, severity);
     }
@@ -465,34 +366,25 @@ async fn test_message_manager_bulk_operations() {
     let manager = MessageManager::new();
 
     let msg1 = manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Info,
+        .create_message(Message::system(
             "Alert 0".to_string(),
             "Test".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
 
     let msg2 = manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Info,
+        .create_message(Message::system(
             "Alert 1".to_string(),
             "Test".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
 
     let msg3 = manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Info,
+        .create_message(Message::system(
             "Alert 2".to_string(),
             "Test".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
@@ -518,12 +410,9 @@ async fn test_message_manager_clear() {
 
     for i in 0..5 {
         manager
-            .create_message(Message::new(
-                MessageCategory::System.as_str(),
-                MessageSeverity::Info,
+            .create_message(Message::system(
                 format!("Alert {}", i),
                 "Test".to_string(),
-                "test".to_string(),
             ))
             .await
             .unwrap();
@@ -543,12 +432,9 @@ async fn test_message_manager_cleanup_old() {
     // Create some messages
     for i in 0..3 {
         manager
-            .create_message(Message::new(
-                MessageCategory::System.as_str(),
-                MessageSeverity::Info,
+            .create_message(Message::system(
                 format!("Alert {}", i),
                 "Test".to_string(),
-                "test".to_string(),
             ))
             .await
             .unwrap();
@@ -568,23 +454,17 @@ async fn test_message_manager_active_messages() {
     let manager = MessageManager::new();
 
     let msg1 = manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Info,
+        .create_message(Message::system(
             "Active 1".to_string(),
             "Test".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
 
     let msg2 = manager
-        .create_message(Message::new(
-            MessageCategory::System.as_str(),
-            MessageSeverity::Info,
+        .create_message(Message::system(
             "Active 2".to_string(),
             "Test".to_string(),
-            "test".to_string(),
         ))
         .await
         .unwrap();
@@ -598,42 +478,10 @@ async fn test_message_manager_active_messages() {
 }
 
 #[tokio::test]
-async fn test_memory_channel_clear() {
-    let channel = MemoryChannel::new("test_channel".to_string());
-
-    use neomind_messages::MessageChannel;
-
-    channel
-        .send(&Message::system(
-            "Test 1".to_string(),
-            "Message 1".to_string(),
-        ))
-        .await
-        .unwrap();
-
-    channel
-        .send(&Message::system(
-            "Test 2".to_string(),
-            "Message 2".to_string(),
-        ))
-        .await
-        .unwrap();
-
-    assert_eq!(channel.get_messages().await.len(), 2);
-
-    channel.clear().await;
-
-    assert_eq!(channel.get_messages().await.len(), 0);
-}
-
-#[tokio::test]
 async fn test_message_clone() {
-    let message = Message::new(
-        MessageCategory::System.as_str(),
-        MessageSeverity::Info,
+    let message = Message::system(
         "Original".to_string(),
         "Test".to_string(),
-        "test".to_string(),
     );
 
     let cloned = message.clone();
@@ -697,23 +545,6 @@ async fn test_message_status_from_string() {
 }
 
 #[tokio::test]
-async fn test_category_from_string() {
-    assert_eq!(
-        MessageCategory::from_string("alert"),
-        Some(MessageCategory::Alert)
-    );
-    assert_eq!(
-        MessageCategory::from_string("system"),
-        Some(MessageCategory::System)
-    );
-    assert_eq!(
-        MessageCategory::from_string("business"),
-        Some(MessageCategory::Business)
-    );
-    assert_eq!(MessageCategory::from_string("invalid"), None);
-}
-
-#[tokio::test]
 async fn test_manager_alert_helper() {
     let manager = MessageManager::new();
 
@@ -728,7 +559,7 @@ async fn test_manager_alert_helper() {
         .unwrap();
 
     assert_eq!(created.title, "Test Alert");
-    assert_eq!(created.category, MessageCategory::Alert.as_str());
+    assert_eq!(created.category, "alert");
 }
 
 #[tokio::test]
@@ -741,7 +572,7 @@ async fn test_manager_system_message_helper() {
         .unwrap();
 
     assert_eq!(created.title, "System Info");
-    assert_eq!(created.category, MessageCategory::System.as_str());
+    assert_eq!(created.category, "system");
 }
 
 #[tokio::test]

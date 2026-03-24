@@ -802,6 +802,7 @@ impl Agent {
             LlmBackend::Ollama { endpoint, model, capabilities } => {
                 tracing::info!(
                     endpoint = %endpoint, model = %model, timeout = ollama_timeout,
+                    capabilities = ?capabilities,
                     "Creating OllamaRuntime"
                 );
                 let config = OllamaConfig::new(&model)
@@ -809,17 +810,26 @@ impl Agent {
                     .with_timeout_secs(ollama_timeout);
                 let mut runtime =
                     OllamaRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
-                
+
                 // Set capabilities override if provided
                 if let Some(caps) = capabilities {
+                    tracing::debug!(
+                        multimodal = %caps.multimodal,
+                        thinking_display = %caps.thinking_display,
+                        function_calling = %caps.function_calling,
+                        max_context = %caps.max_context.unwrap_or(8192),
+                        "Applying capabilities override to OllamaRuntime"
+                    );
                     runtime = runtime.with_capabilities_override(
                         caps.multimodal,
                         caps.thinking_display,
                         caps.function_calling,
                         caps.max_context.unwrap_or(8192),
                     );
+                } else {
+                    tracing::warn!("No capabilities provided for OllamaRuntime, using default detection");
                 }
-                
+
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::Qwen {

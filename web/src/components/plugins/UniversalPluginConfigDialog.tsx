@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import { X, RefreshCw, Eye, Brain, Wrench, Loader2 } from "lucide-react"
@@ -165,9 +165,13 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     }
   }, [isOllamaBackend, editingInstance, handleError])
 
-  // Reset form when dialog opens
+  // Track previous open state to detect dialog open transitions
+  const prevOpenRef = useRef(open)
+
+  // Reset form when dialog opens (only on open transition, not on every render)
   useEffect(() => {
-    if (open) {
+    // Only reset when dialog transitions from closed to open
+    if (open && !prevOpenRef.current) {
       setNewInstanceName("")
       setSelectedModel("")
       setNameError(null)
@@ -213,6 +217,8 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
         }
       }
     }
+    // Update ref for next render
+    prevOpenRef.current = open
   }, [open, pluginType.id, pluginType.type, fetchOllamaModels, editingInstance])
 
   const handleModelChange = (modelName: string) => {
@@ -283,6 +289,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
           ...values,
           capabilities: detectedCapabilities,
           ...(isOllamaBackend && selectedModel ? { model: selectedModel } : {}),
+          ...(isOllamaBackend ? { endpoint: ollamaEndpoint } : {}),
         }
       }
 
@@ -307,14 +314,15 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
   const getConfigSchema = () => {
     const schema = { ...pluginType.config_schema }
 
-    if (isOllamaBackend && schema.properties?.model) {
-      const { model, ...restProperties } = schema.properties
+    // For Ollama backends, exclude endpoint and model fields since they're handled separately
+    if (isOllamaBackend && schema.properties) {
+      const { model, endpoint, ...restProperties } = schema.properties
       schema.properties = restProperties
       if (schema.required) {
-        schema.required = schema.required.filter((field: string) => field !== 'model')
+        schema.required = schema.required.filter((field: string) => field !== 'model' && field !== 'endpoint')
       }
       if (schema.ui_hints?.field_order) {
-        schema.ui_hints.field_order = schema.ui_hints.field_order.filter((field: string) => field !== 'model')
+        schema.ui_hints.field_order = schema.ui_hints.field_order.filter((field: string) => field !== 'model' && field !== 'endpoint')
       }
     }
 
@@ -379,9 +387,17 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     }
   }
 
-  // Content component shared between mobile and desktop
-  const FormContent = () => (
-    <FormSectionGroup>
+  // Stable key for form content to prevent unnecessary remounting
+  // Changes only when dialog type/instance changes, not on every keystroke
+  const formKey = useMemo(() =>
+    `${pluginType.id}-${editingInstance?.id || 'new'}-${open ? 'open' : 'closed'}`,
+    [pluginType.id, editingInstance?.id, open]
+  )
+
+  // Render form content - defined as a function to avoid JSX-in-JSX issues
+  // but called directly (not as component) to prevent remounting
+  const renderFormContent = () => (
+    <FormSectionGroup key={formKey}>
       {/* Instance Name Field (only for create mode) */}
       {!isEditing && (
         <FormField
@@ -419,7 +435,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
       )}
 
       {/* Ollama endpoint configuration */}
-      {!isEditing && isOllamaBackend && (
+      {isOllamaBackend && (
         <FormField label={t("plugins:llm.endpoint", { defaultValue: "Ollama Endpoint" })}>
           <div className="flex items-center gap-2">
             <Input
@@ -459,16 +475,14 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
                 ))}
               </SelectContent>
             </Select>
-            {!isEditing && (
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => fetchOllamaModels(ollamaEndpoint)}
-                disabled={loadingModels}
-              >
-                <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => fetchOllamaModels(ollamaEndpoint)}
+              disabled={loadingModels}
+            >
+              <RefreshCw className={cn("h-4 w-4", loadingModels && "animate-spin")} />
+            </Button>
           </div>
           {selectedModel && renderCapabilityBadges()}
         </FormField>
@@ -540,7 +554,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
             {/* Content */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden">
               <div className="p-4">
-                <FormContent />
+                {renderFormContent()}
               </div>
             </div>
           </div>
@@ -607,7 +621,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto px-6 py-6">
-            <FormContent />
+            {renderFormContent()}
           </div>
         </div>
       )}

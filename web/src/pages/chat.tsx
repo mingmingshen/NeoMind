@@ -1099,22 +1099,18 @@ export function ChatPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
                             <p className="text-sm truncate">{backend.name || backend.model}</p>
-                            {/* Capability badges */}
-                            {backend.capabilities?.supports_multimodal && (
-                              <span className="text-[10px] px-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 flex items-center" title={t('chat:model.supportsVision')}>
-                                <Eye className="h-3 w-3" />
-                              </span>
-                            )}
-                            {backend.capabilities?.supports_tools && (
-                              <span className="text-[10px] px-1 rounded bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300 flex items-center" title={t('chat:model.supportsTools')}>
-                                <Wrench className="h-3 w-3" />
-                              </span>
-                            )}
-                            {backend.capabilities?.supports_thinking && (
-                              <span className="text-[10px] px-1 rounded bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 flex items-center" title={t('chat:model.supportsThinking')}>
-                                <Brain className="h-3 w-3" />
-                              </span>
-                            )}
+                            {/* Capability icons - simple monochrome style */}
+                            <div className="flex items-center gap-0.5 text-muted-foreground">
+                              {backend.capabilities?.supports_multimodal && (
+                                <span title={t('chat:model.supportsVision')}><Eye className="h-3 w-3" /></span>
+                              )}
+                              {backend.capabilities?.supports_tools && (
+                                <span title={t('chat:model.supportsTools')}><Wrench className="h-3 w-3" /></span>
+                              )}
+                              {backend.capabilities?.supports_thinking && (
+                                <span title={t('chat:model.supportsThinking')}><Brain className="h-3 w-3" /></span>
+                              )}
+                            </div>
                           </div>
                           <p className="text-[10px] text-muted-foreground truncate">
                             {backend.backend_type} · {backend.model}

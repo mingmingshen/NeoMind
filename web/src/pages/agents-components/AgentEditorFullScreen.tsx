@@ -61,6 +61,9 @@ import {
   ChevronRight,
   Bell,
   Lightbulb,
+  Eye,
+  Brain,
+  Wrench,
 } from "lucide-react"
 import type {
   AiAgentDetail,
@@ -1203,12 +1206,37 @@ export function AgentEditorFullScreen({
               </div>
               <Select value={llmBackendId ?? activeBackendId ?? ''} onValueChange={setLlmBackendId}>
                 <SelectTrigger className="h-10">
-                  <SelectValue placeholder={tAgent('creator.basicInfo.defaultBackend')} />
+                  <SelectValue placeholder={tAgent('creator.basicInfo.useActiveBackend')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="default">{tAgent('creator.basicInfo.defaultBackend')}</SelectItem>
+                  <SelectItem value="default">
+                    <div className="flex items-center gap-2">
+                      <span>{tAgent('creator.basicInfo.useActiveBackend')}</span>
+                      {activeBackendId && (
+                        <span className="text-xs text-muted-foreground">
+                          ({tAgent('creator.basicInfo.active')})
+                        </span>
+                      )}
+                    </div>
+                  </SelectItem>
                   {llmBackends.map((backend) => (
-                    <SelectItem key={backend.id} value={backend.id}>{backend.name}</SelectItem>
+                    <SelectItem key={backend.id} value={backend.id}>
+                      <div className="flex items-center gap-2">
+                        <span>{backend.name}</span>
+                        <div className="flex items-center gap-0.5 text-muted-foreground">
+                          {backend.capabilities?.supports_multimodal && (
+                            <span title={tAgent('creator.basicInfo.supportsVision')}><Eye className="h-3 w-3" /></span>
+                          )}
+                          {backend.capabilities?.supports_tools && (
+                            <span title={tAgent('creator.basicInfo.supportsTools')}><Wrench className="h-3 w-3" /></span>
+                          )}
+                          {backend.capabilities?.supports_thinking && (
+                            <span title={tAgent('creator.basicInfo.supportsThinking')}><Brain className="h-3 w-3" /></span>
+                          )}
+                        </div>
+                        <span className="text-xs text-muted-foreground ml-auto">{backend.model}</span>
+                      </div>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>

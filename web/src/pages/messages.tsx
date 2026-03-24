@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav, EmptyStateInline, Pagination, ResponsiveTable } from '@/components/shared'
-import { MessageSquare, Network } from 'lucide-react'
+import { MessageSquare, Network, Settings } from 'lucide-react'
 import { api, getApiBase } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { confirm } from '@/hooks/use-confirm'
@@ -471,6 +471,9 @@ export default function MessagesPage() {
     ...(activeTab === 'messages' ? [
       { label: t('messages.create'), onClick: () => setCreateDialogOpen(true) },
     ] : []),
+    ...(activeTab === 'channels' ? [
+      { label: t('messages.channels.goToSettings', 'Settings'), icon: <Settings className="h-4 w-4" />, variant: 'outline' as const, onClick: () => navigate('/settings?tab=alert-channels') },
+    ] : []),
     { label: t('refresh'), variant: 'outline' as const, onClick: activeTab === 'messages' ? fetchMessages : fetchChannels, disabled: loading },
   ]
 
@@ -802,11 +805,6 @@ export default function MessagesPage() {
 
         {/* Channels Tab */}
         <PageTabsContent value="channels" activeTab={activeTab}>
-          {/* Channel count */}
-          <div className="text-sm text-muted-foreground mb-4">
-            {channels.filter(c => c.enabled).length} {t('enabled')} channels
-          </div>
-
           {/* Channels Responsive Table */}
           <ResponsiveTable
             columns={[

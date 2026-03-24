@@ -999,8 +999,9 @@ async fn handle_ws_socket(
                                                     process_stream_to_channel(stream, task_session_id, chat_req.message.clone(), task_tx, task_state).await;
                                                 });
                                             }
-                                            Err(_e) => {
+                                            Err(e) => {
                                                 // Fallback to non-streaming on error
+                                                tracing::error!(error = %e, session_id = %task_session_id, backend_id = ?backend_id_str, "Streaming multimodal failed, falling back to non-streaming");
                                                 let response = match task_state.agents.session_manager.process_message_multimodal_with_backend(
                                                     &task_session_id,
                                                     &chat_req.message,
@@ -1039,8 +1040,9 @@ async fn handle_ws_socket(
                                                     process_stream_to_channel(stream, task_session_id, chat_req.message.clone(), task_tx, task_state).await;
                                                 });
                                             }
-                                            Err(_e) => {
+                                            Err(e) => {
                                                 // Fallback to non-streaming on error
+                                                tracing::error!(error = %e, session_id = %session_id, backend_id = ?chat_req.backend_id, "Streaming text failed, falling back to non-streaming");
                                                 let backend_id = chat_req.backend_id.as_deref();
                                                 let response = match state.agents.session_manager.process_message_with_backend(&session_id, &chat_req.message, backend_id).await {
                                                     Ok(resp) => json!({

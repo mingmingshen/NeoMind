@@ -15,7 +15,7 @@
 //! - **Message Management**: Create, track, acknowledge, and resolve messages
 //! - **Categories**: Alert, System, Business
 //! - **Severity Levels**: Info, Warning, Critical, Emergency
-//! - **Notification Channels**: Console, Memory, Webhook, Email
+//! - **Notification Channels**: Webhook, Email (extensible)
 //! - **Plugin System**: Extensible channel architecture
 //!
 //! ## Example
@@ -46,13 +46,10 @@ pub mod error;
 pub mod manager;
 pub mod message;
 
-pub use channels::{ChannelRegistry, ConsoleChannel, MemoryChannel, MessageChannel};
+pub use channels::{ChannelRegistry, MessageChannel};
 pub use error::{Error, Result};
 pub use manager::{MessageManager, MessageStats};
 pub use message::{Message, MessageId, MessageSeverity, MessageStatus};
-
-// Channel factory exports
-pub use channels::{ConsoleChannelFactory, MemoryChannelFactory};
 
 // Conditional exports for feature-gated channels
 #[cfg(feature = "webhook")]

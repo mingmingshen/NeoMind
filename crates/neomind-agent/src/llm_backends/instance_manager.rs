@@ -13,6 +13,9 @@ use neomind_storage::{
     BackendCapabilities, ConnectionTestResult, LlmBackendInstance, LlmBackendStore, LlmBackendType,
 };
 
+use super::backends::ollama::{OllamaConfig, OllamaRuntime};
+use super::backends::create_backend;
+
 /// Detect model capabilities from model name (for Ollama instances)
 fn detect_ollama_capabilities(model_name: &str) -> BackendCapabilities {
     let name_lower = model_name.to_lowercase();
@@ -166,26 +169,39 @@ impl LlmBackendInstanceManager {
         &self,
         instance: &LlmBackendInstance,
     ) -> Result<Arc<dyn LlmRuntime>, LlmError> {
-        use super::backends::create_backend;
-
         // Build config based on backend type
-        // Ollama uses "endpoint" field, CloudConfig uses "base_url" field
-        let config = if matches!(instance.backend_type, LlmBackendType::Ollama) {
-            serde_json::json!({
-                "endpoint": instance.endpoint.clone().unwrap_or_else(|| "http://localhost:11434".to_string()),
-                "model": instance.model,
-                "timeout_secs": 180,
-            })
+        let runtime: Arc<dyn LlmRuntime> = if matches!(instance.backend_type, LlmBackendType::Ollama) {
+            // For Ollama, create runtime with capabilities override
+            let config = OllamaConfig::new(&instance.model)
+                .with_endpoint(instance.endpoint.as_deref().unwrap_or("http://localhost:11434"))
+                .with_timeout_secs(180);
+            
+            let ollama_runtime = OllamaRuntime::new(config)
+                .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?;
+            
+            // Apply capabilities override from storage (detected via /api/show)
+            let caps = &instance.capabilities;
+            let ollama_runtime = ollama_runtime.with_capabilities_override(
+                caps.supports_multimodal,
+                caps.supports_thinking,
+                caps.supports_tools,
+                caps.max_context,
+            );
+            
+            Arc::new(ollama_runtime) as Arc<dyn LlmRuntime>
         } else {
-            serde_json::json!({
+            // For cloud backends, use the generic create_backend
+            let config = serde_json::json!({
                 "base_url": instance.endpoint,
                 "model": instance.model,
                 "api_key": instance.api_key,
-            })
+            });
+            
+            create_backend(instance.backend_name(), &config)
+                .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?
         };
 
-        create_backend(instance.backend_name(), &config)
-            .map_err(|e| LlmError::BackendUnavailable(e.to_string()))
+        Ok(runtime)
     }
 
     /// Set the active backend

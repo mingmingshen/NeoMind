@@ -131,23 +131,11 @@ impl MessageManager {
         self.channels.clone()
     }
 
-    /// Register default channels (console, memory).
+    /// Register default channels (currently none - users should create webhook/email channels manually).
     pub async fn register_default_channels(&self) {
-        let channels = self.channels.read().await;
-        channels
-            .register_with_config(
-                "console".to_string(),
-                std::sync::Arc::new(super::channels::ConsoleChannel::new("console".to_string())),
-                serde_json::json!({"include_details": true}),
-            )
-            .await;
-        channels
-            .register_with_config(
-                "memory".to_string(),
-                std::sync::Arc::new(super::channels::MemoryChannel::new("memory".to_string())),
-                serde_json::json!({}),
-            )
-            .await;
+        // No default channels registered.
+        // Users should create webhook/email channels through the API or UI.
+        tracing::info!("MessageManager initialized with no default channels");
     }
 
     /// Create and send a message.

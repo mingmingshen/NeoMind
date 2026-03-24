@@ -1,8 +1,5 @@
 //! Notification channels for sending messages.
 
-pub mod console;
-pub mod memory;
-
 #[cfg(feature = "webhook")]
 pub mod webhook;
 
@@ -16,9 +13,6 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::{Error, Message, Result};
-
-pub use console::{ConsoleChannel, ConsoleChannelFactory};
-pub use memory::{MemoryChannel, MemoryChannelFactory};
 
 #[cfg(feature = "webhook")]
 pub use webhook::{WebhookChannel, WebhookChannelFactory};
@@ -260,24 +254,6 @@ pub struct ChannelTypeInfo {
 /// List all available channel types.
 pub fn list_channel_types() -> Vec<ChannelTypeInfo> {
     vec![
-        ChannelTypeInfo {
-            id: "console".to_string(),
-            name: "Console".to_string(),
-            name_zh: "控制台".to_string(),
-            description: "Print messages to the console output".to_string(),
-            description_zh: "将消息打印到控制台输出".to_string(),
-            icon: "terminal".to_string(),
-            category: "builtin".to_string(),
-        },
-        ChannelTypeInfo {
-            id: "memory".to_string(),
-            name: "Memory".to_string(),
-            name_zh: "内存".to_string(),
-            description: "Store messages in memory for testing".to_string(),
-            description_zh: "将消息存储在内存中用于测试".to_string(),
-            icon: "database".to_string(),
-            category: "builtin".to_string(),
-        },
         #[cfg(feature = "webhook")]
         ChannelTypeInfo {
             id: "webhook".to_string(),
@@ -304,19 +280,6 @@ pub fn list_channel_types() -> Vec<ChannelTypeInfo> {
 /// Get channel type configuration schema.
 pub fn get_channel_schema(channel_type: &str) -> Option<serde_json::Value> {
     match channel_type {
-        "console" => Some(serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "include_details": {"type": "boolean"}
-            }
-        })),
-        "memory" => Some(serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"}
-            }
-        })),
         #[cfg(feature = "webhook")]
         "webhook" => Some(serde_json::json!({
             "type": "object",
@@ -350,6 +313,40 @@ pub fn get_channel_schema(channel_type: &str) -> Option<serde_json::Value> {
 mod tests {
     use super::*;
 
+    /// Mock channel for testing purposes only.
+    struct MockChannel {
+        name: String,
+        enabled: bool,
+    }
+
+    impl MockChannel {
+        fn new(name: String) -> Self {
+            Self {
+                name,
+                enabled: true,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl MessageChannel for MockChannel {
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn channel_type(&self) -> &str {
+            "mock"
+        }
+
+        fn is_enabled(&self) -> bool {
+            self.enabled
+        }
+
+        async fn send(&self, _message: &Message) -> Result<()> {
+            Ok(())
+        }
+    }
+
     #[tokio::test]
     async fn test_registry_creation() {
         let registry = ChannelRegistry::new();
@@ -360,7 +357,7 @@ mod tests {
     #[tokio::test]
     async fn test_register_channel() {
         let registry = ChannelRegistry::new();
-        let channel = Arc::new(ConsoleChannel::new("test".to_string()));
+        let channel = Arc::new(MockChannel::new("test".to_string()));
 
         registry.register(channel).await;
 
@@ -371,7 +368,7 @@ mod tests {
     #[tokio::test]
     async fn test_unregister_channel() {
         let registry = ChannelRegistry::new();
-        let channel = Arc::new(ConsoleChannel::new("test".to_string()));
+        let channel = Arc::new(MockChannel::new("test".to_string()));
 
         registry.register(channel).await;
         assert_eq!(registry.len().await, 1);
@@ -386,10 +383,10 @@ mod tests {
         let registry = ChannelRegistry::new();
 
         registry
-            .register(Arc::new(ConsoleChannel::new("ch1".to_string())))
+            .register(Arc::new(MockChannel::new("ch1".to_string())))
             .await;
         registry
-            .register(Arc::new(ConsoleChannel::new("ch2".to_string())))
+            .register(Arc::new(MockChannel::new("ch2".to_string())))
             .await;
 
         let names = registry.list_names().await;
@@ -403,32 +400,50 @@ mod tests {
         let registry = ChannelRegistry::new();
 
         registry
-            .register(Arc::new(ConsoleChannel::new("ch1".to_string())))
+            .register(Arc::new(MockChannel::new("ch1".to_string())))
             .await;
         registry
-            .register(Arc::new(MemoryChannel::new("ch2".to_string())))
+            .register(Arc::new(MockChannel::new("ch2".to_string())))
             .await;
 
         let stats = registry.get_stats().await;
         assert_eq!(stats.total, 2);
         assert_eq!(stats.enabled, 2);
-        assert_eq!(stats.by_type.get("console"), Some(&1));
     }
 
     #[test]
     fn test_list_channel_types() {
         let types = list_channel_types();
-        assert!(!types.is_empty());
-        assert!(types.iter().any(|t| t.id == "console"));
-        assert!(types.iter().any(|t| t.id == "memory"));
+        // Only webhook and email should be available (when features enabled)
+        #[cfg(feature = "webhook")]
+        assert!(types.iter().any(|t| t.id == "webhook"));
+        #[cfg(feature = "email")]
+        assert!(types.iter().any(|t| t.id == "email"));
+        // console and memory should NOT be available
+        assert!(!types.iter().any(|t| t.id == "console"));
+        assert!(!types.iter().any(|t| t.id == "memory"));
     }
 
     #[test]
     fn test_get_channel_schema() {
-        let schema = get_channel_schema("console");
-        assert!(schema.is_some());
+        #[cfg(feature = "webhook")]
+        {
+            let schema = get_channel_schema("webhook");
+            assert!(schema.is_some());
+        }
+        #[cfg(feature = "email")]
+        {
+            let schema = get_channel_schema("email");
+            assert!(schema.is_some());
+        }
 
         let schema = get_channel_schema("invalid");
+        assert!(schema.is_none());
+
+        // console and memory should NOT have schemas
+        let schema = get_channel_schema("console");
+        assert!(schema.is_none());
+        let schema = get_channel_schema("memory");
         assert!(schema.is_none());
     }
 }

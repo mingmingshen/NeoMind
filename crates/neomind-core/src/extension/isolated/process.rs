@@ -17,13 +17,13 @@
 
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use tokio::sync::Mutex;
 use tokio::sync::broadcast;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use super::in_flight::InFlightRequests;
 use super::{ErrorKind, IpcFrame, IpcMessage, IpcResponse, IsolatedExtensionError, IsolatedResult};
@@ -337,6 +337,10 @@ pub struct IsolatedExtension {
     death_tx: Arc<Mutex<Option<broadcast::Sender<()>>>>,
     /// Capability provider for handling InvokeCapability requests from extension
     capability_provider: Arc<std::sync::RwLock<Option<Arc<dyn super::super::context::ExtensionCapabilityProvider>>>>,
+    /// Crash loop detection: consecutive crash count
+    consecutive_crashes: AtomicU32,
+    /// Crash loop detection: timestamp of last crash
+    last_crash_time: Mutex<Option<Instant>>,
 }
 
 impl IsolatedExtension {
@@ -370,6 +374,9 @@ impl IsolatedExtension {
             death_tx: Arc::new(Mutex::new(None)),
             capability_provider: Arc::new(std::sync::RwLock::new(None)),
             start_time: Mutex::new(None),
+            // Crash loop detection
+            consecutive_crashes: AtomicU32::new(0),
+            last_crash_time: Mutex::new(None),
         }
     }
 
@@ -647,6 +654,8 @@ impl IsolatedExtension {
         match response {
             IpcResponse::Ready { descriptor } => {
                 *self.descriptor.lock().await = Some(descriptor);
+                // Record successful start for crash loop detection
+                self.record_successful_start().await;
                 debug!(extension_id = %self.extension_id, "Extension started successfully");
                 Ok(())
             }
@@ -2063,6 +2072,9 @@ impl IsolatedExtension {
                             "Extension process exited unexpectedly"
                         );
                         self.kill_internal(&mut process_guard).await;
+                        drop(process_guard);
+                        // Record crash for crash loop detection
+                        self.record_crash().await;
                         return Err(IsolatedExtensionError::Crashed(
                             format!("Process exited with status: {:?}", status)
                         ));
@@ -2089,6 +2101,9 @@ impl IsolatedExtension {
                             "Extension process exited unexpectedly"
                         );
                         self.kill_internal(&mut *process_guard).await;
+                        drop(process_guard);
+                        // Record crash for crash loop detection
+                        self.record_crash().await;
                         return Err(IsolatedExtensionError::Crashed(
                             format!("Process exited with code: {:?}", status.code())
                         ));
@@ -2121,8 +2136,14 @@ impl IsolatedExtension {
                     self.kill_internal(&mut *process_guard).await;
                     drop(process_guard);
 
-                    // Attempt restart
+                    // Record crash for crash loop detection
+                    self.record_crash().await;
+
+                    // Attempt restart with crash loop detection
                     if self.config.restart_on_crash {
+                        if let Err(e) = self.should_allow_restart().await {
+                            return Err(e);
+                        }
                         return self.start().await;
                     }
                     return Err(IsolatedExtensionError::Crashed(
@@ -2162,8 +2183,14 @@ impl IsolatedExtension {
                     self.kill_internal(&mut process_guard).await;
                     drop(process_guard);
 
-                    // Attempt restart
+                    // Record crash for crash loop detection
+                    self.record_crash().await;
+
+                    // Attempt restart with crash loop detection
                     if self.config.restart_on_crash {
+                        if let Err(e) = self.should_allow_restart().await {
+                            return Err(e);
+                        }
                         return self.start().await;
                     }
                     return Err(IsolatedExtensionError::Crashed(
@@ -2263,6 +2290,77 @@ impl IsolatedExtension {
                 "Request timeout".to_string()
             )),
         }
+    }
+
+    // ========================================================================
+    // Crash Loop Detection Methods
+    // ========================================================================
+
+    /// Check if restart should be allowed based on crash history
+    ///
+    /// Returns Ok(()) if restart is allowed, or Err if crash loop is detected.
+    /// A crash loop is detected when:
+    /// - Consecutive crashes >= max_restart_attempts
+    /// - AND last crash was within the cooldown period
+    pub async fn should_allow_restart(&self) -> IsolatedResult<()> {
+        let consecutive = self.consecutive_crashes.load(Ordering::SeqCst);
+        let last_crash = self.last_crash_time.lock().await;
+
+        if consecutive >= self.config.max_restart_attempts {
+            // Check if cooldown period has passed
+            if let Some(last_time) = *last_crash {
+                let cooldown = Duration::from_secs(self.config.restart_cooldown_secs * 10); // 10x cooldown for crash loop
+                if last_time.elapsed() < cooldown {
+                    warn!(
+                        extension_id = %self.extension_id,
+                        consecutive_crashes = consecutive,
+                        max_restart_attempts = self.config.max_restart_attempts,
+                        "Crash loop detected - too many crashes in cooldown period. Will not auto restart."
+                    );
+                    return Err(IsolatedExtensionError::Crashed(
+                        format!(
+                            "Crash loop detected: {} consecutive crashes within cooldown period. \
+                             Extension has stability issues. Will not restart.",
+                            consecutive
+                        )
+                    ));
+                } else {
+                    // Cooldown passed, reset counter and allow restart
+                    drop(last_crash);
+                    self.consecutive_crashes.store(0, Ordering::SeqCst);
+                    info!(
+                        extension_id = %self.extension_id,
+                        "Crash loop cooldown expired, resetting crash counter"
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Record a crash for crash loop detection
+    pub async fn record_crash(&self) {
+        let consecutive = self.consecutive_crashes.fetch_add(1, Ordering::SeqCst);
+        let mut last_crash = self.last_crash_time.lock().await;
+        *last_crash = Some(Instant::now());
+        warn!(
+            extension_id = %self.extension_id,
+            consecutive_crashes = consecutive + 1,
+            "Extension crash recorded for crash loop detection"
+        );
+    }
+
+    /// Record successful start - reset crash counter after stable period
+    pub async fn record_successful_start(&self) {
+        self.consecutive_crashes.store(0, Ordering::SeqCst);
+        let mut last_crash = self.last_crash_time.lock().await;
+        *last_crash = None;
+
+        info!(
+            extension_id = %self.extension_id,
+            "Extension started successfully, resetting crash loop counter"
+        );
     }
 }
 

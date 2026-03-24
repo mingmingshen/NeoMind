@@ -55,6 +55,10 @@ use neomind_extension_sdk::{
 mod resource_limits;
 use resource_limits::{setup_resource_limits, ResourceLimitsConfig};
 
+// Dylib validation module
+mod dylib_validation;
+use dylib_validation::validate_library;
+
 // ============================================================================
 // Message routing for capability invocation
 // ============================================================================
@@ -1867,10 +1871,61 @@ impl Runner {
         extension_path: &Path,
     ) -> Result<(NativeExtensionBridge, ExtensionDescriptor), String> {
         eprintln!("[Extension Runner] load_native called");
-        let (bridge, descriptor) = NativeExtensionBridge::load(extension_path)?;
-        info!("Descriptor created: id='{}', commands={}, metrics={}", 
-            descriptor.metadata.id, descriptor.commands.len(), descriptor.metrics.len());
-        Ok((bridge, descriptor))
+
+        // Pre-load validation: check dylib headers before loading
+        // This catches issues like incorrect LC_ID_DYLIB on macOS
+        if let Err(e) = validate_library(extension_path) {
+            error!(
+                path = %extension_path.display(),
+                error = %e,
+                "Library validation failed - this extension may crash on other machines"
+            );
+            return Err(format!(
+                "Library validation failed: {}. The extension may have been built incorrectly. \
+                 On macOS, ensure LC_ID_DYLIB is set to '@rpath/extension.dylib' using: \
+                 install_name_tool -id '@rpath/extension.dylib' extension.dylib",
+                e
+            ));
+        }
+
+        // Use catch_unwind to catch panics during library loading
+        // This prevents the runner process from crashing abruptly
+        let path = extension_path.to_path_buf();
+        let load_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            NativeExtensionBridge::load(&path)
+        }));
+
+        match load_result {
+            Ok(Ok((bridge, descriptor))) => {
+                info!("Descriptor created: id='{}', commands={}, metrics={}",
+                    descriptor.metadata.id, descriptor.commands.len(), descriptor.metrics.len());
+                Ok((bridge, descriptor))
+            }
+            Ok(Err(e)) => {
+                // Extension returned an error (not a panic)
+                Err(e)
+            }
+            Err(panic_payload) => {
+                // Library loading panicked - extract panic message
+                let panic_msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown panic during library loading".to_string()
+                };
+                error!(
+                    path = %extension_path.display(),
+                    panic = %panic_msg,
+                    "Native library loading panicked - extension is likely corrupted or incompatible"
+                );
+                Err(format!(
+                    "Library loading panicked: {}. The extension binary may be corrupted, \
+                     incompatible with this platform, or built with incorrect settings.",
+                    panic_msg
+                ))
+            }
+        }
     }
 
     /// Load a WASM extension with full descriptor support
@@ -3091,6 +3146,27 @@ impl Runner {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() {
+    // Set up panic hook FIRST to capture any panics during loading
+    // This ensures we can report errors to the parent process before dying
+    std::panic::set_hook(Box::new(|panic_info| {
+        let location = panic_info.location()
+            .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+
+        let message = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Unknown panic".to_string()
+        };
+
+        // Write to stderr in a format the parent process can parse
+        eprintln!("[EXTENSION_RUNNER_PANIC] {} at {}", message, location);
+        eprintln!("[EXTENSION_RUNNER_FATAL] Extension runner crashed - see panic details above");
+        let _ = std::io::stderr().flush();
+    }));
+
     let args = Args::parse();
 
     let log_level = if args.verbose {

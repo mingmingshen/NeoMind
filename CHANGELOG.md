@@ -7,6 +7,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.6.2] - 2025-03-24
+
+### 🎉 Overview
+
+Minor release focusing on **lightweight architecture refactoring** and **code cleanup**.
+
+**Highlights**:
+- 🧹 Removed unused memory system components (graph, importance, unified)
+- 📦 Simplified messaging channels (removed console/memory channels)
+- 🔧 Removed knowledge storage module
+- 🔒 Added dylib validation for extension runner
+- 🎨 Various UI and code refinements
+
+---
+
+### 🏗️ Architecture Changes
+
+#### Memory System Cleanup
+- **Removed** `memory/graph.rs` - Graph-based memory storage (unused)
+- **Removed** `memory/importance.rs` - Memory importance scoring (unused)
+- **Removed** `memory/unified.rs` - Unified memory implementation (unused)
+- Simplified memory module to essential components only
+
+#### Messaging System Cleanup
+- **Removed** `channels/console.rs` - Console channel (unused)
+- **Removed** `channels/memory.rs` - Memory channel (unused)
+- Streamlined channel management
+
+#### Storage Cleanup
+- **Removed** `storage/knowledge.rs` - Knowledge graph storage (unused)
+- Cleaner storage module interface
+
+---
+
+### ✨ New Features
+
+- Added `dylib_validation.rs` for extension runner dynamic library validation
+- Improved extension security and validation
+
+---
+
+### 🔧 Improvements
+
+- Refined agent module architecture
+- Updated LLM backend instance manager
+- Improved extension isolation process handling
+- Various web UI refinements in dashboard, LLM backends, plugins, and chat
+
+---
+
+### 📁 Changed Files
+
+**Deleted Files**:
+- `crates/neomind-agent/src/memory/graph.rs`
+- `crates/neomind-agent/src/memory/importance.rs`
+- `crates/neomind-agent/src/memory/unified.rs`
+- `crates/neomind-messages/src/channels/console.rs`
+- `crates/neomind-messages/src/channels/memory.rs`
+- `crates/neomind-storage/src/knowledge.rs`
+
+**New Files**:
+- `crates/neomind-extension-runner/src/dylib_validation.rs`
+
+**Modified**: 25+ files across agent, API, core, messages, storage, and web modules
+
+---
+
+### 🎯 Summary
+
+✅ Lighter codebase with removed unused modules
+✅ Cleaner architecture with focused components
+✅ Enhanced extension security
+✅ Improved maintainability
+
+---
+
+**Previous Release**: [v0.6.1](https://github.com/camthink-ai/NeoMind/releases/tag/v0.6.1)
+**Release Date**: March 24, 2025
+
+---
+
 ## [v0.6.1] - 2025-03-19
 
 ### 🎉 Overview

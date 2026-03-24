@@ -876,8 +876,9 @@ impl TransformEngine {
     ) -> Result<TransformResult> {
         let mut metrics = Vec::new();
         let mut warnings = Vec::new();
-        // Use milliseconds for consistency with device metrics storage
-        let timestamp = Utc::now().timestamp_millis();
+        // Use seconds (not milliseconds) for consistency with device metrics storage
+        // Device metrics use timestamp.timestamp() which returns seconds since epoch
+        let timestamp = Utc::now().timestamp();
 
         // Build the actual output prefix based on scope to avoid naming conflicts
         // - Global: "transform.{metric}"

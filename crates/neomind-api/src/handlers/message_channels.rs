@@ -139,18 +139,6 @@ pub async fn create_channel_handler(
 
     // Create channel based on type
     let channel: std::sync::Arc<dyn MessageChannel> = match req.channel_type.as_str() {
-        "console" => {
-            let factory = neomind_messages::ConsoleChannelFactory;
-            factory
-                .create(&req.config)
-                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
-        }
-        "memory" => {
-            let factory = neomind_messages::MemoryChannelFactory;
-            factory
-                .create(&req.config)
-                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
-        }
         #[cfg(feature = "webhook")]
         "webhook" => {
             let factory = WebhookChannelFactory;
@@ -167,7 +155,7 @@ pub async fn create_channel_handler(
         }
         _ => {
             return Err(ErrorResponse::bad_request(format!(
-                "Unknown channel type: {}",
+                "Unknown channel type: {}. Supported types: webhook, email",
                 req.channel_type
             )));
         }

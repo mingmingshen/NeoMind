@@ -68,7 +68,6 @@ pub mod device_registry;
 pub mod device_state;
 pub mod error;
 pub mod extensions;
-pub mod knowledge;
 pub mod llm_backends;
 pub mod llm_data;
 pub mod messages;
