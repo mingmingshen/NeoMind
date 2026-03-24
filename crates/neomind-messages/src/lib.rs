@@ -41,13 +41,11 @@
 //! }
 //! ```
 
-pub mod category;
 pub mod channels;
 pub mod error;
 pub mod manager;
 pub mod message;
 
-pub use category::MessageCategory;
 pub use channels::{ChannelRegistry, ConsoleChannel, MemoryChannel, MessageChannel};
 pub use error::{Error, Result};
 pub use manager::{MessageManager, MessageStats};

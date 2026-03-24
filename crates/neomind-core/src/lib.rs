@@ -10,7 +10,6 @@ pub mod error;
 pub mod event;
 pub mod eventbus;
 pub mod extension;
-pub mod integration;
 pub mod llm;
 pub mod macros;
 pub mod message;
@@ -111,31 +110,4 @@ pub mod prelude {
 
     // Registry system
     pub use crate::registry::{Registry, RegistryError};
-
-    // Integration system
-    pub use crate::integration::{
-        // Connector exports
-        connector::{
-            BaseConnector, ConnectionMetrics, Connector, ConnectorConfig, ConnectorError,
-            DynConnector, Result as ConnectorResult,
-        },
-        // Transformer exports
-        transformer::{
-            BaseTransformer, ConversionFunction, DynTransformer, EntityMapping, MappingConfig,
-            Result as TransformerResult, TransformType, TransformationContext, TransformationError,
-            Transformer, UnitConversion, ValueTransform,
-        },
-        DiscoveredInfo,
-        DynIntegration,
-        Integration,
-        IntegrationCommand,
-        IntegrationConfig,
-        IntegrationError,
-        IntegrationEvent,
-        IntegrationMetadata,
-        IntegrationResponse,
-        IntegrationState,
-        IntegrationType,
-        Result as IntegrationResult,
-    };
 }
