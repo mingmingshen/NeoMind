@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-default = ["ollama"]
+default = ["ollama", "cloud"]
 ollama = []
 cloud = []
 openai = ["cloud"]

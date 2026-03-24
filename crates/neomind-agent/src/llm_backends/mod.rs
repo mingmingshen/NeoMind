@@ -20,6 +20,8 @@ pub mod tokenizer;
 // Re-export backend types - available unconditionally for backward compatibility
 // (actual instantiation requires appropriate feature)
 pub use backends::ollama::{OllamaConfig, OllamaRuntime};
+
+#[cfg(feature = "cloud")]
 pub use backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
 
 // Config and utilities
@@ -36,9 +38,11 @@ pub use instance_manager::{
     get_instance_manager, BackendTypeDefinition, LlmBackendInstanceManager,
 };
 
+#[cfg(feature = "cloud")]
 pub use backend_plugin::register_builtin_backends;
 
 // Factory exports
+#[cfg(feature = "cloud")]
 pub use factories::CloudFactory;
 pub use factories::MockFactory;
 pub use factories::OllamaFactory;

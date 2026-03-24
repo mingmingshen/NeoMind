@@ -1307,9 +1307,6 @@ pub async fn list_extension_capabilities_handler(
 const _MARKET_REPO: &str = "camthink-ai/NeoMind-Extensions";
 const MARKET_BRANCH: &str = "main";
 const MARKET_BASE_URL: &str = "https://raw.githubusercontent.com/camthink-ai/NeoMind-Extensions";
-/// Market version for cache-busting - update this when releasing new extension packages
-/// This ensures GitHub CDN serves the latest index.json after version updates
-const MARKET_VERSION: &str = "2.3.0";
 
 /// Cloud extension metadata from index
 #[derive(Debug, Clone, Serialize, Deserialize)]

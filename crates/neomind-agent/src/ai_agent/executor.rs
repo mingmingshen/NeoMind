@@ -9,7 +9,10 @@ use neomind_core::{
     EventBus, MetricValue, NeoMindEvent,
 };
 use neomind_devices::DeviceService;
-use crate::llm_backends::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
+use crate::llm_backends::{OllamaConfig, OllamaRuntime};
+
+#[cfg(feature = "cloud")]
+use crate::llm_backends::{CloudConfig, CloudRuntime};
 use neomind_messages::MessageManager;
 use neomind_storage::{
     AgentExecutionRecord,
@@ -1139,7 +1142,7 @@ impl AgentExecutor {
                         "LLM runtime cache miss, creating new runtime"
                     );
 
-                    let runtime = match backend.backend_type {
+                    let runtime: Result<Arc<dyn LlmRuntime + Send + Sync>, _> = match backend.backend_type {
                         LlmBackendType::Ollama => {
                             let endpoint = backend
                                 .endpoint

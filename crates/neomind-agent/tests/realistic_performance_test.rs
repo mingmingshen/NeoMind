@@ -10,7 +10,7 @@ use neomind_core::{
     message::{Content, Message, MessageRole},
     EventBus, LlmRuntime,
 };
-use neomind_llm::backends::ollama::{OllamaConfig, OllamaRuntime};
+use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_storage::{
     AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
     DataPoint, LongTermMemory, ResourceType, ScheduleType, ShortTermMemory, TimeSeriesStore,

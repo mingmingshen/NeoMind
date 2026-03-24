@@ -1,7 +1,7 @@
 # LLM Module
 
-**Package**: `neomind-llm`
-**Version**: 0.5.11
+**Package**: `neomind-agent`
+**Version**: 0.6.1
 **Completion**: 95%
 **Purpose**: Provides multi-backend LLM support
 
@@ -28,12 +28,12 @@ The LLM module implements a unified LLM runtime interface, supporting multiple l
 ## Module Structure
 
 ```
-crates/llm/src/
-├── lib.rs                      # Public interface
+crates/neomind-agent/src/llm_backends/
+├── mod.rs                      # Public interface
 ├── backends/
 │   ├── mod.rs                  # Backend factory
 │   ├── ollama.rs               # Ollama backend
-│   └── openai.rs               # Cloud backends (OpenAI/Anthropic/Google/xAI)
+│   └── openai.rs               # Cloud backends (OpenAI/Anthropic/Google/xAI/Qwen/DeepSeek/GLM/MiniMax)
 ├── backend_plugin.rs           # Backend plugin system
 ├── config.rs                   # Configuration definitions
 ├── factories.rs                # Backend factories
@@ -155,7 +155,7 @@ NeoMind natively supports major Chinese LLM providers:
 ### Creating Chinese LLM Backends
 
 ```rust
-use neomind_llm::{CloudConfig, CloudRuntime};
+use neomind_agent::{CloudConfig, CloudRuntime};
 
 // Qwen (Alibaba)
 let qwen_config = CloudConfig::qwen("your-dashscope-api-key");
@@ -225,7 +225,8 @@ pub struct BackendTypeDefinition {
 ### Creating Ollama Backend
 
 ```rust
-use neomind_llm::{OllamaConfig, OllamaRuntime, create_backend};
+use neomind_agent::{OllamaConfig, OllamaRuntime};
+use neomind_agent::llm_backends::create_backend;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -253,7 +254,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Creating Cloud Backend
 
 ```rust
-use neomind_llm::{CloudConfig, CloudProvider, CloudRuntime};
+use neomind_agent::{CloudConfig, CloudProvider, CloudRuntime};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
