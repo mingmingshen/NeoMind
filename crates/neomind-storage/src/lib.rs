@@ -71,10 +71,8 @@ pub mod extensions;
 pub mod knowledge;
 pub mod llm_backends;
 pub mod llm_data;
-pub mod maintenance;
 pub mod messages;
 pub mod monitoring;
-pub mod multimodal;
 pub mod session;
 pub mod settings;
 pub mod singleton;
@@ -97,8 +95,6 @@ pub use session::{
     PendingStreamState, SessionMessage, SessionMessageImage, SessionMetadata, SessionStore,
     StreamStage,
 };
-
-pub use multimodal::{DocumentMetadata, ImageMetadata, MultimodalStore};
 
 pub use messages::{MessageStats, MessageStore, StoredMessage};
 
@@ -177,8 +173,6 @@ pub use business::{
 pub use llm_data::{LongTermMemoryStore, MemoryEntry, MemoryFilter, MemoryStats};
 
 pub use backup::{BackupConfig, BackupHandler, BackupManager, BackupMetadata, BackupType};
-
-pub use maintenance::{CleanupUtils, MaintenanceConfig, MaintenanceResult, MaintenanceScheduler};
 
 pub use monitoring::{
     AlertThresholds, CheckResult, HealthCheckResult, HealthStatus, MonitoringConfig,
