@@ -390,12 +390,12 @@ export function ComponentConfigDialog({
 
       {/* Content Area */}
       <FullScreenDialogContent className="!p-0">
-        <div className="h-full flex">
+        <div className="h-full w-full flex">
           {hasDataSource ? (
             // Has data source: Left = Preview + Config (vertical), Right = DataSource
             <>
               {/* Left: Preview + Style/Display Config */}
-              <div className="w-1/2 flex flex-col bg-background overflow-hidden border-r">
+              <div className="flex-1 flex flex-col bg-background overflow-hidden border-r min-w-0">
                 <div className="shrink-0 border-b overflow-hidden">
                   <ComponentPreview
                     key={previewKey}
@@ -409,7 +409,7 @@ export function ComponentConfigDialog({
 
                 {(hasStyleConfig || hasDisplayConfig) && (
                   <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0">
-                    <TabsList className="w-auto justify-start bg-muted/50 p-1 rounded-lg px-3 h-10 shrink-0">
+                    <TabsList className="w-full justify-start bg-muted/50 p-1 px-3 h-10 shrink-0">
                       {hasStyleConfig && (
                         <TabsTrigger value="style" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded">
                           {t('componentConfig.style')}
@@ -423,13 +423,13 @@ export function ComponentConfigDialog({
                     </TabsList>
 
                     {hasStyleConfig && (
-                      <TabsContent value="style" className="min-h-0 overflow-y-auto p-3">
+                      <TabsContent value="style" className="flex-1 min-h-0 overflow-y-auto p-3">
                         <ConfigRenderer sections={filteredStyleSections} />
                       </TabsContent>
                     )}
 
                     {hasDisplayConfig && (
-                      <TabsContent value="display" className="min-h-0 overflow-y-auto p-3">
+                      <TabsContent value="display" className="flex-1 min-h-0 overflow-y-auto p-3">
                         <ConfigRenderer sections={finalDisplaySections} />
                       </TabsContent>
                     )}
@@ -444,7 +444,7 @@ export function ComponentConfigDialog({
               </div>
 
               {/* Right: Data Source + Transform Config */}
-              <div className="w-1/2 flex flex-col overflow-hidden bg-background">
+              <div className="flex-1 flex flex-col overflow-hidden bg-background min-w-0">
                 <div className="flex-1 min-h-0 flex flex-col">
                   <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 border-b shrink-0">
                     <div className="flex gap-1">
@@ -506,7 +506,7 @@ export function ComponentConfigDialog({
             // No data source: Left = Preview, Right = Style/Display Config
             <>
               {/* Left: Preview only - top aligned */}
-              <div className="w-1/2 flex flex-col bg-background overflow-hidden border-r">
+              <div className="flex-1 flex flex-col bg-background overflow-hidden border-r min-w-0">
                 <div className="flex-1 flex items-start justify-center p-6 pt-6">
                   <div className="w-full">
                     <ComponentPreview
@@ -522,7 +522,7 @@ export function ComponentConfigDialog({
               </div>
 
               {/* Right: Style/Display Config */}
-              <div className="w-1/2 flex flex-col overflow-hidden bg-background">
+              <div className="flex-1 flex flex-col overflow-hidden bg-background min-w-0">
                 {(hasStyleConfig || hasDisplayConfig) && (
                   <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0">
                     <TabsList className="w-full justify-start bg-muted/50 px-4 h-12 shrink-0 border-b rounded-none">
