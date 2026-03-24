@@ -1797,9 +1797,14 @@ pub async fn install_marketplace_extension_handler(
     let runtime = &state.extensions.runtime;
 
     // First fetch metadata to get download URL
+    // Add cache-busting to avoid GitHub CDN serving stale content
+    let cache_buster = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     let metadata_url = format!(
-        "{}/{}/extensions/{}/metadata.json",
-        MARKET_BASE_URL, MARKET_BRANCH, req.id
+        "{}/{}/extensions/{}/metadata.json?t={}",
+        MARKET_BASE_URL, MARKET_BRANCH, req.id, cache_buster
     );
 
     let client = reqwest::Client::builder()

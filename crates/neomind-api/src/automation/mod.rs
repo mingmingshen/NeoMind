@@ -6,38 +6,12 @@
 //!
 //! - **Transform Layer**: Process raw device data into usable metrics
 //! - **Unified Types**: Single `Automation` enum that wraps transforms and rules
-//! - **Intent Analysis**: AI-powered recommendation of transform/rule based on natural language
 //! - **Shared Resources**: Common templates, devices, and metrics for all types
-//!
-//! ## Example
-//!
-//! ```rust,no_run,ignore
-//! use crate::automation::{Automation, AutomationType, TransformScope, TransformOperation};
-//!
-//! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     // Create a transform to process sensor array data
-//!     let transform = TransformAutomation::new("avg-temp", "Average Temperature", TransformScope::DeviceType("sensor".to_string()))
-//!         .with_operation(TransformOperation::ArrayAggregation {
-//!             json_path: "$.sensors",
-//!             aggregation: AggregationFunc::Mean,
-//!             value_path: Some("temp".to_string()),
-//!             output_metric: "temperature_avg".to_string(),
-//!         });
-//!
-//!     // Analyze intent to determine automation type
-//!     let intent = analyzer.analyze("When temperature exceeds 30°C, send an alert").await?;
-//!
-//!     Ok(())
-//! }
-//! ```
 
 pub mod conversion;
 pub mod device_type_generator;
 pub mod discovery;
 pub mod error;
-pub mod intent;
-pub mod nl2automation;
 pub mod output_registry;
 pub mod store;
 pub mod transform;
@@ -52,11 +26,6 @@ pub use device_type_generator::{
     DeviceCapabilities, DeviceTypeGenerator, GenerationConfig, ValidationResult,
 };
 pub use error::{AutomationError, Result};
-pub use nl2automation::{
-    ActionEntity, ActionTypeEntity, ConditionEntity, DeviceInfo, ExtractedEntities,
-    ExtractionContext, Language, MetricInfo, Nl2Automation, TimeConstraints, TriggerEntity,
-    TriggerTypeEntity,
-};
 
 // Re-export discovery module
 pub use discovery::{

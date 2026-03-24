@@ -579,24 +579,11 @@ pub async fn set_automation_status_handler(
 ///
 /// POST /api/automations/analyze-intent
 pub async fn analyze_intent_handler(
-    State(state): State<ServerState>,
+    State(_state): State<ServerState>,
     Json(req): Json<AnalyzeIntentRequest>,
 ) -> HandlerResult<IntentResult> {
-    // Use intent analyzer if available, otherwise use heuristic analysis
-    let result = if let Some(analyzer) = &state.automation.intent_analyzer {
-        match analyzer.analyze(&req.description).await {
-            Ok(result) => result,
-            Err(e) => {
-                tracing::error!("Error analyzing intent: {}", e);
-                // Fallback to heuristic analysis
-                heuristic_analysis(&req.description)
-            }
-        }
-    } else {
-        // Intent analyzer not initialized, use heuristic analysis
-        heuristic_analysis(&req.description)
-    };
-
+    // Use heuristic analysis (LLM-based intent analysis removed for simplification)
+    let result = heuristic_analysis(&req.description);
     ok(result)
 }
 

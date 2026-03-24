@@ -15,10 +15,7 @@ use neomind_rules::{
 use neomind_storage::dashboards::DashboardStore;
 use neomind_storage::llm_backends::LlmBackendStore;
 
-use crate::automation::{
-    intent::IntentAnalyzer, store::SharedAutomationStore, transform::TransformEngine,
-    AutoOnboardManager,
-};
+use crate::automation::{store::SharedAutomationStore, transform::TransformEngine, AutoOnboardManager};
 use neomind_agent::memory::TieredMemory;
 use neomind_messages::MessageManager;
 
@@ -131,10 +128,6 @@ impl ServerState {
         self.automation.automation_store.clone()
     }
 
-    /// Get intent analyzer (backward compatibility).
-    pub fn intent_analyzer(&self) -> Option<Arc<IntentAnalyzer>> {
-        self.automation.intent_analyzer.clone()
-    }
 
     /// Get transform engine (backward compatibility).
     pub fn transform_engine(&self) -> Option<Arc<TransformEngine>> {
@@ -462,7 +455,6 @@ impl ServerState {
             rule_engine,
             rule_store,
             automation_store,
-            None, // intent_analyzer - TODO: Initialize with LLM backend
             transform_engine,
             rule_history_store,
         );
@@ -661,7 +653,6 @@ impl ServerState {
             rule_engine,
             None, // rule_store - skip for tests
             automation_store,
-            None, // intent_analyzer
             transform_engine,
             rule_history_store,
         );
