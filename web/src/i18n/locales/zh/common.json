@@ -59,6 +59,7 @@
     "category": {
       "label": "分类",
       "alert": "告警",
+      "notification": "通知",
       "system": "系统",
       "business": "业务"
     },
@@ -67,6 +68,7 @@
       "active": "活跃",
       "byCategory": {
         "alert": "告警",
+        "notification": "通知",
         "system": "系统",
         "business": "业务"
       },

@@ -69,13 +69,38 @@ impl MessageManager {
             }
         }
 
+        // Create persistent channel registry
+        let channels = ChannelRegistry::with_storage(data_dir)
+            .map_err(|e| Error::Storage(format!("Failed to create channel registry: {}", e)))?;
+
         Ok(Self {
             messages: Arc::new(RwLock::new(messages)),
             storage: Arc::new(RwLock::new(Some(store))),
-            channels: Arc::new(RwLock::new(ChannelRegistry::new())),
+            channels: Arc::new(RwLock::new(channels)),
             event_bus: Arc::new(RwLock::new(None)),
             data_dir: Arc::new(RwLock::new(Some(data_dir.to_string_lossy().to_string()))),
         })
+    }
+
+    /// Load persisted channel configurations.
+    /// This should be called after creating the MessageManager to restore
+    /// previously saved channels.
+    pub async fn load_persisted_channels(&self) {
+        let channels = self.channels.read().await;
+        let configs = channels.load_persisted().await;
+
+        // Log loaded channels
+        if !configs.is_empty() {
+            tracing::info!("Loaded {} persisted channel configurations", configs.len());
+            for config in configs {
+                tracing::debug!(
+                    "Channel: {} (type: {}, enabled: {})",
+                    config.name,
+                    config.channel_type,
+                    config.enabled
+                );
+            }
+        }
     }
 
     /// Convert StoredMessage to Message.

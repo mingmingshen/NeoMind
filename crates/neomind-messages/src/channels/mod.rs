@@ -7,8 +7,10 @@ pub mod webhook;
 pub mod email;
 
 use async_trait::async_trait;
+use redb::ReadableTable;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -50,18 +52,171 @@ pub trait ChannelFactory: Send + Sync {
     fn create(&self, config: &serde_json::Value) -> Result<std::sync::Arc<dyn MessageChannel>>;
 }
 
+/// Persistent channel configuration for storage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredChannelConfig {
+    /// Channel name
+    pub name: String,
+    /// Channel type (webhook, email, etc.)
+    pub channel_type: String,
+    /// Channel configuration
+    pub config: serde_json::Value,
+    /// Whether the channel is enabled
+    pub enabled: bool,
+}
+
 /// Channel registry for managing notification channels.
 pub struct ChannelRegistry {
     channels: RwLock<HashMap<String, Arc<dyn MessageChannel>>>,
     configs: RwLock<HashMap<String, serde_json::Value>>,
+    /// Persistent storage backend (redb)
+    storage: RwLock<Option<Arc<redb::Database>>>,
 }
 
 impl ChannelRegistry {
+    /// Create a new in-memory channel registry (no persistence).
     pub fn new() -> Self {
         Self {
             channels: RwLock::new(HashMap::new()),
             configs: RwLock::new(HashMap::new()),
+            storage: RwLock::new(None),
         }
+    }
+
+    /// Create a channel registry with persistent storage.
+    pub fn with_storage<P: AsRef<Path>>(data_dir: P) -> Result<Self> {
+        let data_dir = data_dir.as_ref();
+        std::fs::create_dir_all(data_dir)
+            .map_err(|e| Error::Storage(format!("Failed to create data directory: {}", e)))?;
+
+        let db_path = data_dir.join("channels.redb");
+        let db = redb::Database::create(&db_path)
+            .map_err(|e| Error::Storage(format!("Failed to open channels database: {}", e)))?;
+
+        // Create table
+        let write_txn = db
+            .begin_write()
+            .map_err(|e| Error::Storage(format!("Failed to begin write: {}", e)))?;
+        {
+            write_txn
+                .open_table(redb::TableDefinition::<&str, &str>::new("channels"))
+                .map_err(|e| Error::Storage(format!("Failed to open channels table: {}", e)))?;
+        }
+        write_txn
+            .commit()
+            .map_err(|e| Error::Storage(format!("Failed to commit: {}", e)))?;
+
+        Ok(Self {
+            channels: RwLock::new(HashMap::new()),
+            configs: RwLock::new(HashMap::new()),
+            storage: RwLock::new(Some(Arc::new(db))),
+        })
+    }
+
+    /// Load persisted channel configurations.
+    /// Returns a list of stored channel configs that need to be recreated.
+    pub async fn load_persisted(&self) -> Vec<StoredChannelConfig> {
+        let storage = self.storage.read().await;
+        if let Some(db) = storage.as_ref() {
+            let read_txn = match db.begin_read() {
+                Ok(txn) => txn,
+                Err(e) => {
+                    tracing::warn!("Failed to read channels from storage: {}", e);
+                    return Vec::new();
+                }
+            };
+
+            let table = match read_txn.open_table(redb::TableDefinition::<&str, &str>::new("channels")) {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::warn!("Failed to open channels table: {}", e);
+                    return Vec::new();
+                }
+            };
+
+            let mut configs = Vec::new();
+            let iter = match table.iter() {
+                Ok(i) => i,
+                Err(e) => {
+                    tracing::warn!("Failed to iterate channels: {}", e);
+                    return Vec::new();
+                }
+            };
+
+            for result in iter {
+                let (_key, value) = match result {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::warn!("Failed to read channel entry: {}", e);
+                        continue;
+                    }
+                };
+                if let Ok(stored) = serde_json::from_str::<StoredChannelConfig>(value.value()) {
+                    // Also load into memory
+                    self.configs.write().await.insert(stored.name.clone(), stored.config.clone());
+                    configs.push(stored);
+                }
+            }
+
+            tracing::info!("Loaded {} persisted channel configurations", configs.len());
+            return configs;
+        }
+        Vec::new()
+    }
+
+    /// Save a channel configuration to persistent storage.
+    async fn save_channel(&self, stored: &StoredChannelConfig) -> Result<()> {
+        let storage = self.storage.read().await;
+        if let Some(db) = storage.as_ref() {
+            let json = serde_json::to_string(stored)
+                .map_err(|e| Error::Storage(format!("Failed to serialize channel config: {}", e)))?;
+
+            let write_txn = db
+                .begin_write()
+                .map_err(|e| Error::Storage(format!("Failed to begin write: {}", e)))?;
+
+            {
+                let mut table = write_txn
+                    .open_table(redb::TableDefinition::<&str, &str>::new("channels"))
+                    .map_err(|e| Error::Storage(format!("Failed to open channels table: {}", e)))?;
+                table
+                    .insert(stored.name.as_str(), json.as_str())
+                    .map_err(|e| Error::Storage(format!("Failed to save channel config: {}", e)))?;
+            }
+
+            write_txn
+                .commit()
+                .map_err(|e| Error::Storage(format!("Failed to commit: {}", e)))?;
+
+            tracing::debug!("Saved channel configuration: {}", stored.name);
+        }
+        Ok(())
+    }
+
+    /// Delete a channel configuration from persistent storage.
+    async fn delete_channel(&self, name: &str) -> Result<()> {
+        let storage = self.storage.read().await;
+        if let Some(db) = storage.as_ref() {
+            let write_txn = db
+                .begin_write()
+                .map_err(|e| Error::Storage(format!("Failed to begin write: {}", e)))?;
+
+            {
+                let mut table = write_txn
+                    .open_table(redb::TableDefinition::<&str, &str>::new("channels"))
+                    .map_err(|e| Error::Storage(format!("Failed to open channels table: {}", e)))?;
+                table
+                    .remove(name)
+                    .map_err(|e| Error::Storage(format!("Failed to delete channel config: {}", e)))?;
+            }
+
+            write_txn
+                .commit()
+                .map_err(|e| Error::Storage(format!("Failed to commit: {}", e)))?;
+
+            tracing::debug!("Deleted channel configuration: {}", name);
+        }
+        Ok(())
     }
 
     /// Register a channel instance.
@@ -70,24 +225,52 @@ impl ChannelRegistry {
         self.channels.write().await.insert(name, channel);
     }
 
-    /// Register a channel with its configuration.
+    /// Register a channel with its configuration (persists to storage).
     pub async fn register_with_config(
         &self,
         name: String,
         channel: Arc<dyn MessageChannel>,
         config: serde_json::Value,
     ) {
-        let mut channels = self.channels.write().await;
-        let mut configs = self.configs.write().await;
-        channels.insert(name.clone(), channel);
-        configs.insert(name, config);
+        let channel_type = channel.channel_type().to_string();
+        let enabled = channel.is_enabled();
+
+        // Save to memory
+        {
+            let mut channels = self.channels.write().await;
+            let mut configs = self.configs.write().await;
+            channels.insert(name.clone(), channel);
+            configs.insert(name.clone(), config.clone());
+        }
+
+        // Persist to storage
+        let stored = StoredChannelConfig {
+            name: name.clone(),
+            channel_type,
+            config,
+            enabled,
+        };
+        if let Err(e) = self.save_channel(&stored).await {
+            tracing::warn!("Failed to persist channel config: {}", e);
+        }
     }
 
-    /// Unregister a channel by name.
+    /// Unregister a channel by name (also removes from persistent storage).
     pub async fn unregister(&self, name: &str) -> bool {
-        let mut channels = self.channels.write().await;
-        let mut configs = self.configs.write().await;
-        channels.remove(name).is_some() || configs.remove(name).is_some()
+        let removed = {
+            let mut channels = self.channels.write().await;
+            let mut configs = self.configs.write().await;
+            channels.remove(name).is_some() || configs.remove(name).is_some()
+        };
+
+        if removed {
+            // Remove from persistent storage
+            if let Err(e) = self.delete_channel(name).await {
+                tracing::warn!("Failed to delete channel from storage: {}", e);
+            }
+        }
+
+        removed
     }
 
     /// Get a channel by name.

@@ -209,7 +209,7 @@ export interface Alert {
 
 export type MessageSeverity = 'info' | 'warning' | 'critical' | 'emergency'
 export type MessageStatus = 'active' | 'acknowledged' | 'resolved' | 'archived'
-export type MessageCategory = 'alert' | 'system' | 'business'
+export type MessageCategory = 'alert' | 'notification' | 'system' | 'business'
 
 /**
  * Message/Notification type - must match backend Message (crates/messages/src/message.rs)

@@ -221,6 +221,8 @@ impl ServerState {
                 Arc::new(MessageManager::new())
             }
         };
+        // Load persisted channel configurations
+        message_manager.load_persisted_channels().await;
         message_manager.register_default_channels().await;
 
         let core = CoreState::new(event_bus.clone(), message_manager.clone());

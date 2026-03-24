@@ -20,6 +20,8 @@ export interface FullScreenDialogProps {
   disableBackdropClose?: boolean
   /** Additional className for the dialog container */
   className?: string
+  /** Z-index for the dialog (default: 100). Use 110 for nested dialogs. */
+  zIndex?: number
 }
 
 export function FullScreenDialog({
@@ -28,6 +30,7 @@ export function FullScreenDialog({
   children,
   disableBackdropClose = false,
   className,
+  zIndex = 100,
 }: FullScreenDialogProps) {
   const isMobile = useIsMobile()
   const insets = useSafeAreaInsets()
@@ -45,12 +48,13 @@ export function FullScreenDialog({
   return createPortal(
     <div
       className={cn(
-        "fixed inset-0 z-[100] flex flex-col",
+        "fixed inset-0 flex flex-col",
         // Glassmorphism background - lower opacity to show content behind
         "bg-black/20 dark:bg-black/40",
         "backdrop-blur-sm",
         !open && "hidden"
       )}
+      style={{ zIndex }}
       onClick={() => !disableBackdropClose && onOpenChange(false)}
     >
       {/* Inner container - prevents click propagation */}

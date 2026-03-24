@@ -3,13 +3,13 @@
  *
  * Shows a live preview of a dashboard component with real-time data.
  * Used in the configuration dialog to visualize changes as they are made.
- * Uses the component's actual default size from the registry.
+ * Auto-scales content proportionally to fit within container.
  */
 
-import { memo, useRef, useEffect, useState } from 'react'
+import { memo, useRef, useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react'
+import { Eye, AlertCircle, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useDataSource } from '@/hooks/useDataSource'
 import ComponentRenderer from '@/components/dashboard/registry/ComponentRenderer'
@@ -40,37 +40,13 @@ export interface ComponentPreviewProps {
   title?: string
   showHeader?: boolean
   className?: string
+  /** Maximum height for the preview content area (default: 200) */
+  maxContentHeight?: number
 }
 
-// Grid cell height in pixels (typical dashboard grid)
+// Grid dimensions (matching dashboard grid)
+const GRID_CELL_WIDTH = 100
 const GRID_CELL_HEIGHT = 80
-
-// Minimum preview height in pixels
-const MIN_PREVIEW_HEIGHT = 140
-
-/**
- * Format data source label for display
- */
-function formatDataSourceLabel(ds: DataSource | undefined, t: (key: string) => string): string {
-  if (!ds) return t('componentPreview.noDataSource')
-
-  const tc = (key: string) => t(`componentPreview.${key}`)
-
-  switch (ds.type) {
-    case 'device':
-      return `${tc('device')}: ${ds.deviceId}${ds.property ? ` (${ds.property})` : ''}`
-    case 'device-info':
-      return `${tc('deviceInfo')}: ${ds.deviceId}${ds.infoProperty ? ` (${ds.infoProperty})` : ''}`
-    case 'metric':
-      return `${tc('metric')}: ${ds.metricId || t('componentPreview.notSpecified')}`
-    case 'command':
-      return `${tc('command')}: ${ds.deviceId} → ${ds.command || 'toggle'}`
-    case 'telemetry':
-      return `${tc('telemetry')}: ${ds.deviceId} / ${ds.metricId || 'raw'}`
-    default:
-      return tc('unknownType')
-  }
-}
 
 export const ComponentPreview = memo(function ComponentPreview({
   componentType,
@@ -79,6 +55,7 @@ export const ComponentPreview = memo(function ComponentPreview({
   title,
   showHeader = true,
   className,
+  maxContentHeight = 200,
 }: ComponentPreviewProps) {
   const { t } = useTranslation('dashboardComponents')
   const meta = getComponentMeta(componentType as ImplementedComponentType)
@@ -87,25 +64,26 @@ export const ComponentPreview = memo(function ComponentPreview({
   const [prevDataSourceKey, setPrevDataSourceKey] = useState<string>(() => createDataSourceKey(dataSource))
   const [isTransitioning, setIsTransitioning] = useState(false)
 
-  // Track config changes for components with static content (like MarkdownDisplay)
+  // Track config changes for components with static content
   const [prevConfigKey, setPrevConfigKey] = useState<string>(() => createStableKey(config))
 
   // Use ref to track the active timer for cleanup
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Refs for auto-scaling
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(1)
+
   // Detect dataSource changes
   useEffect(() => {
     const newKey = createDataSourceKey(dataSource)
     if (newKey !== prevDataSourceKey) {
-      // Clear any existing timer
       if (transitionTimerRef.current) {
         clearTimeout(transitionTimerRef.current)
       }
 
-      // Show transition state
       setIsTransitioning(true)
 
-      // Set new timer to hide transition
       transitionTimerRef.current = setTimeout(() => {
         setIsTransitioning(false)
         transitionTimerRef.current = null
@@ -115,19 +93,16 @@ export const ComponentPreview = memo(function ComponentPreview({
     }
   }, [dataSource, prevDataSourceKey])
 
-  // Detect config changes (for static content components like MarkdownDisplay)
+  // Detect config changes
   useEffect(() => {
     const newKey = createStableKey(config)
     if (newKey !== prevConfigKey) {
-      // Clear any existing timer
       if (transitionTimerRef.current) {
         clearTimeout(transitionTimerRef.current)
       }
 
-      // Force transition for config changes
       setIsTransitioning(true)
 
-      // Set new timer to hide transition
       transitionTimerRef.current = setTimeout(() => {
         setIsTransitioning(false)
         transitionTimerRef.current = null
@@ -152,7 +127,6 @@ export const ComponentPreview = memo(function ComponentPreview({
 
   // Try to fetch real data for preview
   const { data, loading, error } = useDataSource(dataSource, {
-    // Only fetch if we have a valid data source
     enabled: !!dataSource && meta?.hasDataSource,
   })
 
@@ -162,8 +136,6 @@ export const ComponentPreview = memo(function ComponentPreview({
       if (data !== null && data !== undefined) {
         prevDataRef.current = data
       }
-      // Mark as loaded even if data is null (e.g., when no dataSource)
-      // This prevents showing loading skeleton indefinitely
       hasLoadedOnceRef.current = true
     }
   }, [data, loading, error])
@@ -173,7 +145,6 @@ export const ComponentPreview = memo(function ComponentPreview({
   const defaultH = meta?.sizeConstraints.defaultH ?? 3
 
   // Build a mock component for rendering with actual default size
-  // Some components (led-indicator, progress-bar) use 'label' instead of 'title'
   const componentDisplayTitle = title || (config.label as string) || (config.title as string) || ''
 
   const mockComponent: DashboardComponent = {
@@ -183,21 +154,58 @@ export const ComponentPreview = memo(function ComponentPreview({
     title: componentDisplayTitle,
     config: {
       ...config,
-      editMode: true, // Signal to components that this is a preview/edit mode
+      editMode: true,
     },
     dataSource,
   }
 
-  // Calculate preview height based on component's default grid height
-  // Limit max height to prevent overflow in config dialog
-  const rawHeight = defaultH * GRID_CELL_HEIGHT + 32 // +32 for padding
-  const maxPreviewHeight = 280 // Max height for preview area in dialog
-  const previewHeight = Math.min(Math.max(MIN_PREVIEW_HEIGHT, rawHeight), maxPreviewHeight)
+  // Calculate ideal component dimensions based on grid size
+  const idealWidth = defaultW * GRID_CELL_WIDTH
+  const idealHeight = defaultH * GRID_CELL_HEIGHT
+
+  // Calculate scale to fit content within container proportionally
+  const updateScale = useCallback(() => {
+    if (!containerRef.current) return
+
+    const containerWidth = containerRef.current.clientWidth - 16 // Account for padding
+    const containerHeight = containerRef.current.clientHeight - 16
+
+    if (containerWidth <= 0 || containerHeight <= 0) return
+
+    // Calculate scale factors for both dimensions
+    const scaleX = containerWidth / idealWidth
+    const scaleY = containerHeight / idealHeight
+
+    // Use the smaller scale to ensure content fits both dimensions (maintains aspect ratio)
+    const newScale = Math.min(scaleX, scaleY, 1) // Don't scale up beyond 100%
+
+    setScale(newScale)
+  }, [idealWidth, idealHeight])
+
+  // Update scale on mount and when container/props change
+  useEffect(() => {
+    // Initial scale calculation with slight delay for layout
+    const timer = requestAnimationFrame(() => {
+      updateScale()
+    })
+
+    // Update on resize
+    const resizeObserver = new ResizeObserver(() => {
+      updateScale()
+    })
+
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current)
+    }
+
+    return () => {
+      cancelAnimationFrame(timer)
+      resizeObserver.disconnect()
+    }
+  }, [updateScale])
 
   // Show previous data during loading (except on first load)
-  const displayData = loading && hasLoadedOnceRef.current ? prevDataRef.current : data
   const showLoading = loading && !hasLoadedOnceRef.current
-  const hasData = !loading && !error && !!dataSource
   const hasError = !!error
 
   return (
@@ -208,7 +216,6 @@ export const ComponentPreview = memo(function ComponentPreview({
           <div className="flex items-center gap-2">
             <Eye className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">{t('componentPreview.title')}</span>
-            {/* Loading indicator */}
             {(loading || isTransitioning) && (
               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/50" />
             )}
@@ -216,14 +223,15 @@ export const ComponentPreview = memo(function ComponentPreview({
         </div>
       )}
 
-      {/* Preview area - dynamic height based on component size */}
+      {/* Preview area - fixed height with proportional scaling */}
       <div
+        ref={containerRef}
         className={cn(
-          'min-h-0 p-3 bg-muted/10 overflow-hidden relative',
+          'min-h-0 p-2 bg-muted/10 overflow-hidden relative',
           'transition-opacity duration-200',
           isTransitioning && 'opacity-60'
         )}
-        style={{ height: `${previewHeight}px` }}
+        style={{ height: `${maxContentHeight}px` }}
       >
         {showLoading ? (
           <div className="w-full h-full flex items-center justify-center">
@@ -236,29 +244,47 @@ export const ComponentPreview = memo(function ComponentPreview({
             <p className="text-xs text-muted-foreground/60 mt-1">{t('componentPreview.usingStaticData')}</p>
           </div>
         ) : (
-          <div className={cn(
-            'w-full h-full flex items-center justify-center p-2 transition-all duration-200 ease-out overflow-hidden',
-            isTransitioning && 'scale-[0.98] blur-[1px]'
-          )}>
-            <ComponentRenderer key={`preview-${componentType}-${(config.backgroundType as string) || 'default'}`} component={mockComponent} />
+          <div className="w-full h-full flex items-center justify-center overflow-hidden">
+            {/* Scaled component container */}
+            <div
+              className={cn(
+                'transition-transform duration-200 ease-out origin-center',
+                isTransitioning && 'blur-[1px]'
+              )}
+              style={{
+                width: `${idealWidth}px`,
+                height: `${idealHeight}px`,
+                transform: `scale(${scale})`,
+              }}
+            >
+              <ComponentRenderer
+                key={`preview-${componentType}-${(config.backgroundType as string) || 'default'}`}
+                component={mockComponent}
+              />
+            </div>
           </div>
         )}
       </div>
 
       {/* Footer with component info */}
-      <div className="px-3 py-2 border-t bg-muted/20 shrink-0">
+      <div className="px-3 py-1.5 border-t bg-muted/20 shrink-0">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{meta?.name || componentType}</span>
-          <span className="text-muted-foreground/60">
-            {defaultW}×{defaultH}
-          </span>
+          <div className="flex items-center gap-2">
+            {scale < 0.95 && (
+              <span className="text-muted-foreground/50 tabular-nums">
+                {Math.round(scale * 100)}%
+              </span>
+            )}
+            <span className="text-muted-foreground/60">
+              {defaultW}×{defaultH}
+            </span>
+          </div>
         </div>
       </div>
     </div>
   )
 }, (prevProps, nextProps) => {
-  // Use content-based comparison for config to detect changes like base64 image updates
-  // This ensures preview updates when config content changes, not just when reference changes
   const prevConfigKey = createStableKey(prevProps.config)
   const nextConfigKey = createStableKey(nextProps.config)
   const prevDsKey = createDataSourceKey(prevProps.dataSource)
@@ -268,6 +294,7 @@ export const ComponentPreview = memo(function ComponentPreview({
     prevProps.componentType === nextProps.componentType &&
     prevProps.title === nextProps.title &&
     prevConfigKey === nextConfigKey &&
-    prevDsKey === nextDsKey
+    prevDsKey === nextDsKey &&
+    prevProps.maxContentHeight === nextProps.maxContentHeight
   )
 })

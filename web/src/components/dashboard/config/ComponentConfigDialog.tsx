@@ -404,6 +404,7 @@ export function ComponentConfigDialog({
                     dataSource={livePreviewDataSource}
                     title={title}
                     showHeader={true}
+                    maxContentHeight={200}
                   />
                 </div>
 

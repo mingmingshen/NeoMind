@@ -69,6 +69,7 @@ const STATUS_CONFIG: Record<MessageStatus, { label: string; variant: 'default' |
 // Category badge mapping
 const CATEGORY_CONFIG: Record<MessageCategory, { label: string }> = {
   alert: { label: 'messages.category.alert' },
+  notification: { label: 'messages.category.notification' },
   system: { label: 'messages.category.system' },
   business: { label: 'messages.category.business' },
 }
@@ -220,6 +221,7 @@ export function MessagesTab({
           <SelectContent>
             <SelectItem value="all">{t('messages.filter.all')}</SelectItem>
             <SelectItem value="alert">{t('messages.category.alert')}</SelectItem>
+            <SelectItem value="notification">{t('messages.category.notification')}</SelectItem>
             <SelectItem value="system">{t('messages.category.system')}</SelectItem>
             <SelectItem value="business">{t('messages.category.business')}</SelectItem>
           </SelectContent>
