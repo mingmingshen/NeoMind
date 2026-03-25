@@ -1013,6 +1013,12 @@ export default function MessagesPage() {
                   width: 'w-[90px]',
                 },
                 {
+                  key: 'messageType',
+                  label: t('messages.type.label'),
+                  width: 'w-[100px]',
+                  align: 'center',
+                },
+                {
                   key: 'status',
                   label: t('messages.status.label'),
                   width: 'w-[90px]',
@@ -1073,6 +1079,27 @@ export default function MessagesPage() {
                         <CategoryIcon className="h-3.5 w-3.5 text-muted-foreground" />
                         <span className="text-xs">{t(categoryConfig.label)}</span>
                       </div>
+                    )
+                  case 'messageType':
+                    const msgType = message.message_type || 'notification'
+                    const isDataPush = msgType === 'data_push'
+                    return (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs",
+                          isDataPush
+                            ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
+                            : "bg-blue-500/10 text-blue-600 border-blue-500/20"
+                        )}
+                      >
+                        {isDataPush ? (
+                          <Send className="h-3 w-3 mr-1" />
+                        ) : (
+                          <Bell className="h-3 w-3 mr-1" />
+                        )}
+                        {t(`messages.type.${msgType}`)}
+                      </Badge>
                     )
                   case 'status':
                     return (
