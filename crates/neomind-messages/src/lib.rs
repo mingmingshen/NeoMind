@@ -49,7 +49,7 @@ pub mod message;
 pub use channels::{ChannelRegistry, MessageChannel};
 pub use error::{Error, Result};
 pub use manager::{MessageManager, MessageStats};
-pub use message::{Message, MessageId, MessageSeverity, MessageStatus};
+pub use message::{Message, MessageId, MessageSeverity, MessageStatus, MessageType};
 
 // Conditional exports for feature-gated channels
 #[cfg(feature = "webhook")]

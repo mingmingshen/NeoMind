@@ -30,6 +30,40 @@ impl std::fmt::Display for MessageId {
     }
 }
 
+/// Message type distinguishing notifications from data pushes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageType {
+    /// Human-readable notification (stored long-term)
+    #[default]
+    Notification,
+    /// Structured data push (short-term delivery log)
+    DataPush,
+}
+
+impl MessageType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Notification => "notification",
+            Self::DataPush => "data_push",
+        }
+    }
+
+    pub fn from_string(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "notification" => Some(Self::Notification),
+            "data_push" | "datapush" => Some(Self::DataPush),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for MessageType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// Message severity levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum MessageSeverity {
@@ -205,6 +239,15 @@ pub struct Message {
     /// Associated tags
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Message type (notification or data_push)
+    #[serde(default)]
+    pub message_type: MessageType,
+    /// Explicit source ID for filtering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
+    /// Structured payload for DataPush
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload: Option<serde_json::Value>,
 }
 
 impl Message {
@@ -229,6 +272,9 @@ impl Message {
             status: MessageStatus::Active,
             metadata: None,
             tags: Vec::new(),
+            message_type: MessageType::Notification,
+            source_id: None,
+            payload: None,
         }
     }
 
@@ -286,6 +332,22 @@ impl Message {
         let mut msg = Self::alert(severity, title, message, rule_id.clone());
         msg.source_type = "rule".to_string();
         msg.tags.push("rule".to_string());
+        msg
+    }
+
+    /// Create a data push message with structured payload
+    pub fn data_push(
+        category: String,
+        title: String,
+        payload: serde_json::Value,
+        source_type: String,
+        source_id: String,
+    ) -> Self {
+        let mut msg = Self::new(category, MessageSeverity::Info, title, String::new(), source_id.clone());
+        msg.message_type = MessageType::DataPush;
+        msg.source_type = source_type;
+        msg.source_id = Some(source_id);
+        msg.payload = Some(payload);
         msg
     }
 
@@ -494,5 +556,28 @@ mod tests {
         assert!(summary.contains("High Temp"));
         assert!(summary.contains("Temperature is too high"));
         assert!(summary.contains("sensor_1"));
+    }
+
+    #[test]
+    fn test_message_type_from_string() {
+        assert_eq!(MessageType::from_string("notification"), Some(MessageType::Notification));
+        assert_eq!(MessageType::from_string("data_push"), Some(MessageType::DataPush));
+        assert_eq!(MessageType::from_string("invalid"), None);
+    }
+
+    #[test]
+    fn test_message_type_as_str() {
+        assert_eq!(MessageType::Notification.as_str(), "notification");
+        assert_eq!(MessageType::DataPush.as_str(), "data_push");
+    }
+
+    #[test]
+    fn test_message_type_serialization() {
+        let mt = MessageType::DataPush;
+        let json = serde_json::to_string(&mt).unwrap();
+        assert_eq!(json, "\"data_push\"");
+
+        let parsed: MessageType = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, MessageType::DataPush);
     }
 }

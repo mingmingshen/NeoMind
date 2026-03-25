@@ -9,8 +9,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::channels::ChannelRegistry;
+use super::channels::ChannelFactory;
 use super::error::{Error, Result};
-use super::{Message, MessageId, MessageSeverity, MessageStatus};
+use super::{Message, MessageId, MessageSeverity, MessageStatus, MessageType};
 
 /// Persistent message manager with storage backend.
 #[derive(Clone)]
@@ -88,18 +89,90 @@ impl MessageManager {
     pub async fn load_persisted_channels(&self) {
         let channels = self.channels.read().await;
         let configs = channels.load_persisted().await;
+        // Need to drop the read lock before acquiring write lock
+        drop(channels);
 
-        // Log loaded channels
-        if !configs.is_empty() {
-            tracing::info!("Loaded {} persisted channel configurations", configs.len());
-            for config in configs {
-                tracing::debug!(
-                    "Channel: {} (type: {}, enabled: {})",
-                    config.name,
-                    config.channel_type,
-                    config.enabled
-                );
+        // First, load all recipients from storage
+        {
+            let registry = self.channels.read().await;
+            registry.load_all_recipients().await;
+        }
+
+        // Recreate and register channels from persisted configs
+        let mut loaded_count = 0;
+        for stored in configs {
+            // Add enabled state to config for factory
+            let mut config = stored.config.clone();
+            if let Some(obj) = config.as_object_mut() {
+                obj.insert("enabled".to_string(), serde_json::json!(stored.enabled));
+                obj.insert("name".to_string(), serde_json::json!(stored.name));
             }
+
+            // Add recipients to config for email channels
+            if stored.channel_type == "email" {
+                let registry = self.channels.read().await;
+                let channel_recipients = registry.get_recipients(&stored.name).await;
+                drop(registry);
+                if !channel_recipients.is_empty() {
+                    if let Some(obj) = config.as_object_mut() {
+                        obj.insert("recipients".to_string(), serde_json::json!(channel_recipients));
+                    }
+                }
+            }
+
+            // Create channel using factory based on type
+            let channel_result = match stored.channel_type.as_str() {
+                #[cfg(feature = "webhook")]
+                "webhook" => {
+                    let factory = crate::WebhookChannelFactory;
+                    factory.create(&config).map(|c| Some(c))
+                }
+                #[cfg(feature = "email")]
+                "email" => {
+                    let factory = crate::EmailChannelFactory;
+                    factory.create(&config).map(|c| Some(c))
+                }
+                _ => {
+                    tracing::warn!("Unknown channel type: {}, skipping", stored.channel_type);
+                    Ok(None)
+                }
+            };
+
+            match channel_result {
+                Ok(Some(channel)) => {
+                    let registry = self.channels.write().await;
+                    registry.register_with_config(
+                        stored.name.clone(),
+                        channel,
+                        stored.config,
+                    ).await;
+                    // Set enabled state if different from default
+                    if !stored.enabled {
+                        let _ = registry.set_enabled(&stored.name, false).await;
+                    }
+                    loaded_count += 1;
+                    tracing::info!(
+                        "Restored channel: {} (type: {}, enabled: {})",
+                        stored.name,
+                        stored.channel_type,
+                        stored.enabled
+                    );
+                }
+                Ok(None) => {
+                    // Unknown channel type, already logged
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to recreate channel '{}': {}",
+                        stored.name,
+                        e
+                    );
+                }
+            }
+        }
+
+        if loaded_count > 0 {
+            tracing::info!("Successfully restored {} persisted channels", loaded_count);
         }
     }
 
@@ -119,6 +192,9 @@ impl MessageManager {
             status: MessageStatus::from_string(&stored.status).unwrap_or(MessageStatus::Active),
             metadata: stored.metadata,
             tags: stored.tags.unwrap_or_default(),
+            message_type: MessageType::Notification,
+            source_id: None,
+            payload: None,
         }
     }
 
