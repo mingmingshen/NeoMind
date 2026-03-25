@@ -10,6 +10,8 @@ import {
   Database,
   Puzzle,
   Trash2,
+  Pencil,
+  Filter,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -18,13 +20,31 @@ import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { UniversalPluginConfigDialog, type PluginInstance, type UnifiedPluginType } from "@/components/plugins/UniversalPluginConfigDialog"
-import type { AlertChannel, ChannelTypeInfo, ChannelSchemaResponse, PluginConfigSchema, ExtensionCapabilityDto } from "@/types"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import type { AlertChannel, ChannelTypeInfo, ChannelSchemaResponse, PluginConfigSchema, ExtensionCapabilityDto, ChannelFilter, MessageType, MessageSeverity } from "@/types"
 
 type View = 'list' | 'detail'
 
 interface UnifiedAlertChannelsTabProps {
   onListChannels?: () => Promise<{ channels: AlertChannel[]; stats: any }>
   onCreateChannel?: (data: any) => Promise<void>
+  onUpdateChannel?: (name: string, config: Record<string, unknown>) => Promise<void>
   onDeleteChannel?: (name: string) => Promise<void>
   onTestChannel?: (name: string) => Promise<{ success: boolean; message: string }>
 }
@@ -151,6 +171,7 @@ function toPluginInstance(channel: AlertChannel): PluginInstance {
 export function UnifiedAlertChannelsTab({
   onListChannels,
   onCreateChannel,
+  onUpdateChannel,
   onDeleteChannel,
   onTestChannel,
 }: UnifiedAlertChannelsTabProps) {
@@ -168,6 +189,17 @@ export function UnifiedAlertChannelsTab({
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
   const [editingInstance, setEditingInstance] = useState<PluginInstance | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
+
+  // Filter configuration dialog state
+  const [filterDialogChannel, setFilterDialogChannel] = useState<AlertChannel | null>(null)
+  const [filterConfig, setFilterConfig] = useState<ChannelFilter>({
+    message_types: [],
+    source_types: [],
+    categories: [],
+    min_severity: null,
+    source_ids: [],
+  })
+  const [savingFilter, setSavingFilter] = useState(false)
 
   const hasFetched = useRef(false)
   useEffect(() => {
@@ -336,10 +368,13 @@ export function UnifiedAlertChannelsTab({
     return name // Return the ID (name for channels)
   }
 
-  // Handle update channel (not currently supported for alert channels)
-  const handleUpdate = async () => {
-    // Alert channels don't support updates via the current API
-    throw new Error(t('alerts:updateNotSupported'))
+  // Handle update channel
+  const handleUpdate = async (id: string, config: Record<string, unknown>) => {
+    if (onUpdateChannel) {
+      await onUpdateChannel(id, config)
+    } else {
+      await api.updateMessageChannel(id, config)
+    }
   }
 
   // Handle delete channel
@@ -365,6 +400,38 @@ export function UnifiedAlertChannelsTab({
     return {
       success: result.success,
       message: result.message,
+    }
+  }
+
+  // Open filter dialog
+  const handleOpenFilterDialog = async (channel: AlertChannel) => {
+    setFilterDialogChannel(channel)
+    try {
+      const filter = await api.getChannelFilter(channel.name)
+      setFilterConfig(filter)
+    } catch (error) {
+      // Use default filter on error
+      setFilterConfig({
+        message_types: [],
+        source_types: [],
+        categories: [],
+        min_severity: null,
+        source_ids: [],
+      })
+    }
+  }
+
+  // Save filter configuration
+  const handleSaveFilter = async () => {
+    if (!filterDialogChannel) return
+    setSavingFilter(true)
+    try {
+      await api.updateChannelFilter(filterDialogChannel.name, filterConfig)
+      setFilterDialogChannel(null)
+    } catch (error) {
+      handleError(error, { operation: 'Save filter' })
+    } finally {
+      setSavingFilter(false)
     }
   }
 
@@ -523,17 +590,48 @@ export function UnifiedAlertChannelsTab({
                             <TestTube className="h-4 w-4" />
                           </Button>
                         )}
-                        {onDeleteChannel && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                            onClick={() => handleDelete(instance.id)}
-                            title={t('plugins:delete')}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => {
+                            const channel = typeChannels.find(c => c.name === instance.id)
+                            if (channel) handleOpenFilterDialog(channel)
+                          }}
+                          title={t('common:messages.channels.configureFilter')}
+                        >
+                          <Filter className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => {
+                            setEditingInstance(instance)
+                            setConfigDialogOpen(true)
+                          }}
+                          title={t('common:edit')}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          onClick={async () => {
+                            if (confirm(t('common:messages.channels.confirmDelete', 'Are you sure you want to delete this channel?', { name: instance.name }))) {
+                              try {
+                                await handleDelete(instance.id)
+                                await loadData()
+                              } catch (err) {
+                                handleError(err, { operation: 'Delete channel' })
+                              }
+                            }
+                          }}
+                          title={t('plugins:delete')}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
                   </CardHeader>
@@ -590,6 +688,174 @@ export function UnifiedAlertChannelsTab({
           testResults={testResults}
           setTestResults={setTestResults}
         />
+
+        {/* Filter Configuration Dialog */}
+        <Dialog open={!!filterDialogChannel} onOpenChange={() => setFilterDialogChannel(null)}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{t('common:messages.channels.filterConfig')}</DialogTitle>
+              <DialogDescription>
+                {t('common:messages.channels.filterConfigDesc')}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              {/* Message Types */}
+              <div className="space-y-2">
+                <Label>{t('common:messages.channels.messageTypes')}</Label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={filterConfig.message_types.length === 0 || filterConfig.message_types.includes('notification')}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setFilterConfig(prev => ({
+                            ...prev,
+                            message_types: [...new Set([...prev.message_types, 'notification' as MessageType])]
+                          }))
+                        } else {
+                          setFilterConfig(prev => ({
+                            ...prev,
+                            message_types: prev.message_types.filter(t => t !== 'notification')
+                          }))
+                        }
+                      }}
+                    />
+                    {t('common:messages.channels.notification')}
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={filterConfig.message_types.length === 0 || filterConfig.message_types.includes('data_push')}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setFilterConfig(prev => ({
+                            ...prev,
+                            message_types: [...new Set([...prev.message_types, 'data_push' as MessageType])]
+                          }))
+                        } else {
+                          setFilterConfig(prev => ({
+                            ...prev,
+                            message_types: prev.message_types.filter(t => t !== 'data_push')
+                          }))
+                        }
+                      }}
+                    />
+                    {t('common:messages.channels.dataPush')}
+                  </label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t('common:messages.channels.messageTypesHint')}
+                </p>
+              </div>
+
+              {/* Source Types */}
+              <div className="space-y-2">
+                <Label>{t('common:messages.channels.sourceTypes')}</Label>
+                <div className="flex flex-wrap gap-2">
+                  {['device', 'rule', 'telemetry', 'schedule', 'llm', 'system'].map(st => (
+                    <label key={st} className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={filterConfig.source_types.includes(st)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setFilterConfig(prev => ({
+                              ...prev,
+                              source_types: [...prev.source_types, st]
+                            }))
+                          } else {
+                            setFilterConfig(prev => ({
+                              ...prev,
+                              source_types: prev.source_types.filter(t => t !== st)
+                            }))
+                          }
+                        }}
+                      />
+                      {st}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t('common:messages.channels.sourceTypesHint')}
+                </p>
+              </div>
+
+              {/* Categories */}
+              <div className="space-y-2">
+                <Label>{t('common:messages.channels.categories')}</Label>
+                <div className="flex flex-wrap gap-2">
+                  {['alert', 'system', 'business', 'notification'].map(cat => (
+                    <label key={cat} className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={filterConfig.categories.includes(cat)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setFilterConfig(prev => ({
+                              ...prev,
+                              categories: [...prev.categories, cat]
+                            }))
+                          } else {
+                            setFilterConfig(prev => ({
+                              ...prev,
+                              categories: prev.categories.filter(t => t !== cat)
+                            }))
+                          }
+                        }}
+                      />
+                      {cat}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Min Severity */}
+              <div className="space-y-2">
+                <Label>{t('common:messages.channels.minSeverity')}</Label>
+                <Select
+                  value={filterConfig.min_severity || ''}
+                  onValueChange={(value) => {
+                    setFilterConfig(prev => ({
+                      ...prev,
+                      min_severity: (value || null) as MessageSeverity | null
+                    }))
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('common:messages.channels.allSeverities')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">{t('common:messages.channels.allSeverities')}</SelectItem>
+                    <SelectItem value="info">Info</SelectItem>
+                    <SelectItem value="warning">Warning</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                    <SelectItem value="emergency">Emergency</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Preview */}
+              <div className="p-3 bg-muted/50 rounded-md">
+                <p className="text-sm font-medium mb-1">{t('common:messages.channels.filterPreview')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {filterConfig.message_types.length === 0 && filterConfig.source_types.length === 0
+                    ? t('common:messages.channels.filterAcceptAll')
+                    : t('common:messages.channels.filterWillMatch', {
+                        types: filterConfig.message_types.length > 0 ? filterConfig.message_types.join(', ') : t('common:messages.channels.all'),
+                        sources: filterConfig.source_types.length > 0 ? filterConfig.source_types.join(', ') : t('common:messages.channels.all')
+                      })}
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setFilterDialogChannel(null)}>
+                {t('common:cancel')}
+              </Button>
+              <Button onClick={handleSaveFilter} disabled={savingFilter}>
+                {savingFilter ? t('common:saving') : t('common:save')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </>
     )
   }
