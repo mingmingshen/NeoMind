@@ -5002,40 +5002,40 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         {/* Header - fixed at top - hidden in fullscreen */}
         {!isFullscreen && (
           <header className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-border bg-background z-10">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => isMobile ? handleSidebarOpenChange(true) : handleSidebarOpenChange(!sidebarOpen)}
                 className={cn(
-                  "active:scale-95",
+                  "h-7 w-7 active:scale-95",
                   !isDesktop && sidebarOpen && "bg-muted"
                 )}
               >
-                <PanelsTopLeft className="h-5 w-5" />
+                <PanelsTopLeft className="h-4 w-4" />
               </Button>
-              <h1 className="text-lg font-semibold">
+              <h1 className="text-sm font-semibold">
                 {currentDashboard.name}
               </h1>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Button
                 variant={editMode ? "default" : "outline"}
                 size="sm"
                 onClick={() => setEditMode(!editMode)}
-                className={editMode ? "shadow-sm" : ""}
+                className={cn("h-7 text-xs", editMode ? "shadow-sm" : "")}
               >
                 {editMode ? (
                   <>
-                    <Check className="h-4 w-4 mr-1" />
+                    <Check className="h-3.5 w-3.5 mr-1" />
                     <span className="hidden sm:inline">Done</span>
                     <span className="sm:hidden">Done</span>
                   </>
                 ) : (
                   <>
-                    <Settings2 className="h-4 w-4 mr-1" />
-                    <span className="hidden sm:inline">Edit Layout</span>
+                    <Settings2 className="h-3.5 w-3.5 mr-1" />
+                    <span className="hidden sm:inline">Edit</span>
                     <span className="sm:hidden">Edit</span>
                   </>
                 )}
@@ -5050,10 +5050,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   <Button
                     variant="default"
                     size="sm"
-                    className="shadow-sm"
+                    className="h-7 text-xs shadow-sm"
                     disabled={!editMode}
                   >
-                    <Plus className="h-4 w-4 mr-1" />
+                    <Plus className="h-3.5 w-3.5 mr-1" />
                     <span className="hidden sm:inline">{t('visualDashboard.add')}</span>
                     <span className="sm:hidden">{t('visualDashboard.add')}</span>
                   </Button>
@@ -5098,8 +5098,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
               {/* Fullscreen toggle button */}
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon"
+                className="h-7 w-7"
                 onClick={toggleFullscreen}
                 title={t('visualDashboard.fullscreen')}
               >

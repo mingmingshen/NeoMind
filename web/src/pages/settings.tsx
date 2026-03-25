@@ -67,7 +67,7 @@ export function SettingsPage() {
 
         {/* Alert Channels Tab */}
         <PageTabsContent value="alert-channels" activeTab={activeTab}>
-          <UnifiedAlertChannelsTab />
+          <UnifiedAlertChannelsTab hideFilterButton />
         </PageTabsContent>
 
         {/* Preferences Tab */}

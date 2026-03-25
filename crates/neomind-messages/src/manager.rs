@@ -8,8 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::channels::ChannelRegistry;
-use super::channels::ChannelFactory;
+use super::channels::{ChannelRegistry, ChannelFactory, ChannelFilter};
 use super::delivery_log::{DeliveryLog, DeliveryLogId, DeliveryLogQuery, DeliveryStats, DeliveryStatus};
 use super::error::{Error, Result};
 use super::{Message, MessageId, MessageSeverity, MessageStatus, MessageType};
@@ -65,12 +64,24 @@ impl MessageManager {
 
         // Load existing messages into memory
         let mut messages = HashMap::new();
-        if let Ok(stored_msgs) = store.list() {
-            for stored_msg in stored_msgs {
-                if let Ok(id) = MessageId::from_string(&stored_msg.id) {
-                    let msg = Self::stored_to_message(stored_msg);
-                    messages.insert(id, msg);
+        match store.list() {
+            Ok(stored_msgs) => {
+                tracing::info!("Loading {} messages from storage", stored_msgs.len());
+                for stored_msg in stored_msgs {
+                    match MessageId::from_string(&stored_msg.id) {
+                        Ok(id) => {
+                            let msg = Self::stored_to_message(stored_msg);
+                            messages.insert(id, msg);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to parse message ID '{}': {}", stored_msg.id, e);
+                        }
+                    }
                 }
+                tracing::info!("Successfully loaded {} messages into memory", messages.len());
+            }
+            Err(e) => {
+                tracing::error!("Failed to load messages from storage: {}", e);
             }
         }
 
@@ -155,6 +166,12 @@ impl MessageManager {
                     if !stored.enabled {
                         let _ = registry.set_enabled(&stored.name, false).await;
                     }
+                    // Restore filter configuration if not default
+                    if stored.filter != ChannelFilter::default() {
+                        if let Err(e) = registry.set_filter(&stored.name, stored.filter.clone()).await {
+                            tracing::warn!("Failed to restore filter for channel '{}': {}", stored.name, e);
+                        }
+                    }
                     loaded_count += 1;
                     tracing::info!(
                         "Restored channel: {} (type: {}, enabled: {})",
@@ -231,7 +248,7 @@ impl MessageManager {
             } else {
                 Some(msg.tags.clone())
             },
-            metadata: if msg.payload.is_some() || msg.source_id.is_some() {
+            metadata: if msg.payload.is_some() || msg.source_id.is_some() || msg.message_type != MessageType::Notification {
                 let mut meta = msg.metadata.clone().unwrap_or(serde_json::json!({}));
                 if let Some(obj) = meta.as_object_mut() {
                     obj.insert("message_type".to_string(), serde_json::json!(msg.message_type.as_str()));
@@ -277,20 +294,18 @@ impl MessageManager {
         let severity = message.severity;
         let message_type = message.message_type;
 
-        // Store in memory (for Notification only)
-        if message_type == MessageType::Notification {
-            self.messages
-                .write()
-                .await
-                .insert(id.clone(), message.clone());
+        // Store in memory for all message types (Notification and DataPush)
+        self.messages
+            .write()
+            .await
+            .insert(id.clone(), message.clone());
 
-            // Persist to storage if available (only for Notification)
-            if let Some(store) = self.storage.read().await.as_ref() {
-                let stored = Self::message_to_stored(&message);
-                store
-                    .insert(&stored)
-                    .map_err(|e| Error::Storage(format!("Failed to persist message: {}", e)))?;
-            }
+        // Persist to storage if available (for all message types)
+        if let Some(store) = self.storage.read().await.as_ref() {
+            let stored = Self::message_to_stored(&message);
+            store
+                .insert(&stored)
+                .map_err(|e| Error::Storage(format!("Failed to persist message: {}", e)))?;
         }
 
         // Send through channels (don't fail if channels fail - message is already stored)

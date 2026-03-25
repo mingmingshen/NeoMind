@@ -662,7 +662,19 @@ export const api = {
   // Messages (replaces Alerts) - response format: { messages: NotificationMessage[], count: number }
   getMessages: () => fetchAPI<{ messages: NotificationMessage[]; count: number }>('/messages'),
   getMessage: (id: string) => fetchAPI<NotificationMessage>(`/messages/${id}`),
-  createMessage: (req: { category?: string; title: string; message: string; severity?: string; source?: string }) =>
+  createMessage: (req: {
+    category?: string
+    title: string
+    message: string
+    severity?: string
+    source?: string
+    source_type?: string
+    source_id?: string
+    tags?: string[]
+    message_type?: string
+    payload?: Record<string, unknown>
+    metadata?: Record<string, unknown>
+  }) =>
     fetchAPI<{ id: string; message: string; message_zh: string }>('/messages', {
       method: 'POST',
       body: JSON.stringify({
@@ -671,6 +683,12 @@ export const api = {
         message: req.message,
         severity: req.severity || 'info',
         source: req.source || 'api',
+        source_type: req.source_type,
+        source_id: req.source_id,
+        tags: req.tags,
+        message_type: req.message_type,
+        payload: req.payload,
+        metadata: req.metadata,
       }),
     }),
   acknowledgeMessage: (id: string) =>

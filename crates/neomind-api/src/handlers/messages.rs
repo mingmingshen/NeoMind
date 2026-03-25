@@ -89,20 +89,25 @@ pub async fn create_message_handler(
     }
 
     // Handle message_type
-    if let Some(mt) = req.message_type {
-        if let Some(msg_type) = MessageType::from_string(&mt) {
+    if let Some(mt) = &req.message_type {
+        tracing::info!("Received message_type: {}", mt);
+        if let Some(msg_type) = MessageType::from_string(mt) {
+            tracing::info!("Parsed message_type: {:?}", msg_type);
             msg.message_type = msg_type;
+        } else {
+            tracing::warn!("Failed to parse message_type: {}", mt);
         }
+    }
+
+    // Handle payload
+    if let Some(payload) = &req.payload {
+        tracing::info!("Received payload: {:?}", payload);
+        msg.payload = Some(payload.clone());
     }
 
     // Handle source_id
     if let Some(source_id) = req.source_id {
         msg.source_id = Some(source_id);
-    }
-
-    // Handle payload
-    if let Some(payload) = req.payload {
-        msg.payload = Some(payload);
     }
 
     let created = state

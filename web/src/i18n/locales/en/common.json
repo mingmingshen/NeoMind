@@ -12,7 +12,7 @@
   },
   "messages": {
     "title": "Messages",
-    "description": "Manage system notifications and alerts",
+    "description": "Manage notifications, alerts and data push",
     "tabs": {
       "messages": "Messages",
       "channels": "Channels"
@@ -38,7 +38,10 @@
       "category": "Category",
       "all": "All",
       "clear": "Clear",
-      "clearAll": "Clear All"
+      "clearAll": "Clear All",
+      "showing": "Showing {{count}} messages",
+      "allVisible": "All messages visible",
+      "activeCount": "{{count}} filters active"
     },
     "items": "items",
     "severity": {
@@ -185,7 +188,19 @@
       "hint": "Separate multiple tags with commas"
     },
     "sourceLabel": "Source",
-    "sourcePlaceholder": "e.g. api, system"
+    "sourcePlaceholder": "e.g. api, system",
+    "sourceId": {
+      "label": "Source ID",
+      "hint": "Unique identifier for filtering (e.g., device:001)"
+    },
+    "payload": {
+      "label": "Payload (JSON)",
+      "section": "Payload Data",
+      "sectionDesc": "Structured data for Data Push messages (JSON format)",
+      "invalidJson": "Invalid JSON format"
+    },
+    "timestamp": "Timestamp",
+    "metadata": "Metadata"
   },
   "connection": {
     "connected": "Connected",

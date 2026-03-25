@@ -469,6 +469,29 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/messages/channels/:name/recipients/:email",
             delete(message_channels::remove_recipient_handler),
         )
+        // Message Channel Filter API
+        .route(
+            "/api/messages/channels/:name/filter",
+            get(message_channels::get_channel_filter_handler),
+        )
+        .route(
+            "/api/messages/channels/:name/filter",
+            put(message_channels::update_channel_filter_handler),
+        )
+        // Message Channel Toggle Enabled
+        .route(
+            "/api/messages/channels/:name/enabled",
+            put(message_channels::toggle_enabled_handler),
+        )
+        // Delivery Log API
+        .route(
+            "/api/messages/delivery-logs",
+            get(message_channels::list_delivery_logs_handler),
+        )
+        .route(
+            "/api/messages/delivery-logs/stats",
+            get(message_channels::get_delivery_stats_handler),
+        )
         // LLM Generation API (one-shot, no session)
         .route("/api/llm/generate", post(settings::llm_generate_handler))
         // Global Timezone Settings API

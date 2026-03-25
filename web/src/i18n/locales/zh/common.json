@@ -12,7 +12,7 @@
   },
   "messages": {
     "title": "消息",
-    "description": "管理系统通知和告警",
+    "description": "管理通知告警和数据推送",
     "tabs": {
       "messages": "消息",
       "channels": "通知通道"
@@ -38,7 +38,10 @@
       "category": "分类",
       "all": "全部",
       "clear": "清除",
-      "clearAll": "清除全部"
+      "clearAll": "清除全部",
+      "showing": "显示 {{count}} 条消息",
+      "allVisible": "显示全部消息",
+      "activeCount": "{{count}} 个筛选条件"
     },
     "items": "条",
     "severity": {
@@ -185,7 +188,19 @@
       "hint": "用逗号分隔多个标签"
     },
     "sourceLabel": "来源",
-    "sourcePlaceholder": "如: api, system"
+    "sourcePlaceholder": "如: api, system",
+    "sourceId": {
+      "label": "来源 ID",
+      "hint": "用于筛选的唯一标识符 (如: device:001)"
+    },
+    "payload": {
+      "label": "数据载荷 (JSON)",
+      "section": "数据载荷",
+      "sectionDesc": "数据推送消息的结构化数据 (JSON 格式)",
+      "invalidJson": "JSON 格式无效"
+    },
+    "timestamp": "时间戳",
+    "metadata": "元数据"
   },
   "connection": {
     "connected": "已连接",

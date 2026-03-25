@@ -47,6 +47,8 @@ interface UnifiedAlertChannelsTabProps {
   onUpdateChannel?: (name: string, config: Record<string, unknown>) => Promise<void>
   onDeleteChannel?: (name: string) => Promise<void>
   onTestChannel?: (name: string) => Promise<{ success: boolean; message: string }>
+  /** Hide the filter configuration button (for Settings page) */
+  hideFilterButton?: boolean
 }
 
 // Alert Channel type info
@@ -174,6 +176,7 @@ export function UnifiedAlertChannelsTab({
   onUpdateChannel,
   onDeleteChannel,
   onTestChannel,
+  hideFilterButton = false,
 }: UnifiedAlertChannelsTabProps) {
   const { t } = useTranslation(['plugins', 'alerts', 'common'])
   const { handleError } = useErrorHandler()
@@ -590,18 +593,20 @@ export function UnifiedAlertChannelsTab({
                             <TestTube className="h-4 w-4" />
                           </Button>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0"
-                          onClick={() => {
-                            const channel = typeChannels.find(c => c.name === instance.id)
-                            if (channel) handleOpenFilterDialog(channel)
-                          }}
-                          title={t('common:messages.channels.configureFilter')}
-                        >
-                          <Filter className="h-4 w-4" />
-                        </Button>
+                        {!hideFilterButton && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => {
+                              const channel = typeChannels.find(c => c.name === instance.id)
+                              if (channel) handleOpenFilterDialog(channel)
+                            }}
+                            title={t('common:messages.channels.configureFilter')}
+                          >
+                            <Filter className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -811,11 +816,11 @@ export function UnifiedAlertChannelsTab({
               <div className="space-y-2">
                 <Label>{t('common:messages.channels.minSeverity')}</Label>
                 <Select
-                  value={filterConfig.min_severity || ''}
+                  value={filterConfig.min_severity || 'all'}
                   onValueChange={(value) => {
                     setFilterConfig(prev => ({
                       ...prev,
-                      min_severity: (value || null) as MessageSeverity | null
+                      min_severity: value === 'all' ? null : value as MessageSeverity | null
                     }))
                   }}
                 >
@@ -823,7 +828,7 @@ export function UnifiedAlertChannelsTab({
                     <SelectValue placeholder={t('common:messages.channels.allSeverities')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">{t('common:messages.channels.allSeverities')}</SelectItem>
+                    <SelectItem value="all">{t('common:messages.channels.allSeverities')}</SelectItem>
                     <SelectItem value="info">Info</SelectItem>
                     <SelectItem value="warning">Warning</SelectItem>
                     <SelectItem value="critical">Critical</SelectItem>

@@ -99,7 +99,10 @@ pub use messages::{
 };
 // Message channels API
 pub use message_channels::{
-    create_channel_handler, delete_channel_handler, get_channel_handler, get_channel_stats_handler,
-    get_channel_type_schema_handler, list_channel_types_handler, list_channels_handler,
-    test_channel_handler,
+    create_channel_handler, delete_channel_handler, get_channel_filter_handler,
+    get_channel_handler, get_channel_stats_handler, get_channel_type_schema_handler,
+    get_delivery_stats_handler, list_channel_types_handler, list_channels_handler,
+    list_delivery_logs_handler, test_channel_handler, toggle_enabled_handler,
+    update_channel_filter_handler, add_recipient_handler, list_recipients_handler,
+    remove_recipient_handler, update_channel_handler,
 };

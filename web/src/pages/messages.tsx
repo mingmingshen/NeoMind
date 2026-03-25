@@ -6,13 +6,13 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav, EmptyStateInline, Pagination, ResponsiveTable } from '@/components/shared'
-import { MessageSquare, Network, Settings } from 'lucide-react'
+import { MessageSquare, Network, Settings, Filter as FilterIcon } from 'lucide-react'
 import { api, getApiBase } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { confirm } from '@/hooks/use-confirm'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { useIsMobile } from '@/hooks/useMobile'
-import type { NotificationMessage, MessageSeverity, MessageStatus, MessageCategory, MessageChannel, MessageType, DeliveryLog } from '@/types'
+import type { NotificationMessage, MessageSeverity, MessageStatus, MessageCategory, MessageChannel, MessageType, DeliveryLog, ChannelFilter } from '@/types'
 import type { StandardError } from '@/lib/errors'
 
 // Raw API response types
@@ -29,6 +29,9 @@ interface RawNotificationMessage {
   status?: MessageStatus
   tags?: string[]
   metadata?: Record<string, unknown>
+  message_type?: MessageType
+  source_id?: string
+  payload?: Record<string, unknown>
 }
 
 interface MessagesApiResponse {
@@ -56,16 +59,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 import { Label } from '@/components/ui/label'
+import { FormSection } from '@/components/ui/form-section'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/field'
 import {
@@ -76,6 +72,13 @@ import {
   DropdownMenuTrigger,
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet'
 import {
   AlertCircle,
   Info,
@@ -94,7 +97,12 @@ import {
   Mail,
   UserPlus,
   Send,
+  ChevronDown,
+  Check,
+  Tag,
+  Database,
 } from 'lucide-react'
+import { Separator } from '@/components/ui/separator'
 import { CreateMessageDialog } from '@/components/messages/CreateMessageDialog'
 import { formatTimestamp } from '@/lib/utils/format'
 import { cn } from '@/lib/utils'
@@ -241,6 +249,59 @@ export default function MessagesPage() {
 
   // View channel dialog state
   const [viewChannel, setViewChannel] = useState<MessageChannel | null>(null)
+
+  // Channel filter configuration state
+  const [filterDialogChannel, setFilterDialogChannel] = useState<MessageChannel | null>(null)
+  const [filterConfig, setFilterConfig] = useState<ChannelFilter>({
+    message_types: [] as MessageType[],
+    source_types: [],
+    categories: [],
+    min_severity: null,
+    source_ids: [],
+  })
+  const [savingFilter, setSavingFilter] = useState(false)
+
+  // Handle opening filter dialog
+  const handleOpenFilterDialog = useCallback(async (channel: MessageChannel) => {
+    setFilterDialogChannel(channel)
+    try {
+      const filter = await api.getChannelFilter(channel.name)
+      setFilterConfig({
+        message_types: (filter.message_types || []) as MessageType[],
+        source_types: filter.source_types || [],
+        categories: filter.categories || [],
+        min_severity: filter.min_severity || null,
+        source_ids: filter.source_ids || [],
+      })
+    } catch {
+      // Use default filter on error
+      setFilterConfig({
+        message_types: [] as MessageType[],
+        source_types: [],
+        categories: [],
+        min_severity: null,
+        source_ids: [],
+      })
+    }
+  }, [api])
+
+  // Handle saving filter configuration
+  const handleSaveFilter = async () => {
+    if (!filterDialogChannel) return
+    setSavingFilter(true)
+    try {
+      await api.updateChannelFilter(filterDialogChannel.name, filterConfig)
+      setFilterDialogChannel(null)
+      toast({
+        title: t('common:success'),
+        description: t('common:messages.channels.filterSaved', 'Filter configuration saved'),
+      })
+    } catch (error) {
+      handleError(error, { operation: 'Save filter' })
+    } finally {
+      setSavingFilter(false)
+    }
+  }
 
   // Recipients management dialog state
   const [recipientsDialogChannel, setRecipientsDialogChannel] = useState<MessageChannel | null>(null)
@@ -508,11 +569,15 @@ export default function MessagesPage() {
     }
   }, [messages, messagePage, messagesPerPage, isMobile])
 
+  // Filtered count for display
+  const filteredCount = messages.length
+
   // Channels state
   const [channels, setChannels] = useState<MessageChannel[]>([])
 
   // Dialogs
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [selectedMessage, setSelectedMessage] = useState<NotificationMessage | null>(null)
 
   const { toast } = useToast()
 
@@ -549,6 +614,12 @@ export default function MessagesPage() {
         }).catch(() => null) // Gracefully handle if delivery logs endpoint is not available
       ])
 
+      // Check if messages response is successful
+      if (!messagesResponse.ok) {
+        const errorData = await messagesResponse.json().catch(() => ({}))
+        throw new Error(`Failed to fetch messages: ${messagesResponse.status} - ${errorData.error || 'Unknown error'}`)
+      }
+
       const rawData: unknown = await messagesResponse.json()
 
       // Handle different response formats from messages endpoint
@@ -582,14 +653,25 @@ export default function MessagesPage() {
         status: msg.status || 'active',
         tags: msg.tags || [],
         metadata: msg.metadata,
-        message_type: (msg.metadata?.message_type as MessageType) || 'notification',
+        // Get message_type directly from msg, fallback to metadata, then default to 'notification'
+        message_type: (msg.message_type as MessageType) || (msg.metadata?.message_type as MessageType) || 'notification',
+        // Preserve payload for data_push messages
+        payload: msg.payload,
+        source_id: msg.source_id,
       }))
 
       // Fetch and process delivery logs
       let allDeliveryLogs: DeliveryLog[] = []
       if (deliveryLogsResponse && deliveryLogsResponse.ok) {
         const logsData = await deliveryLogsResponse.json()
-        allDeliveryLogs = logsData.logs || logsData || []
+        // Ensure we always get an array
+        if (Array.isArray(logsData)) {
+          allDeliveryLogs = logsData
+        } else if (logsData && Array.isArray(logsData.logs)) {
+          allDeliveryLogs = logsData.logs
+        } else if (logsData && Array.isArray(logsData.delivery_logs)) {
+          allDeliveryLogs = logsData.delivery_logs
+        }
         setDeliveryLogs(allDeliveryLogs)
 
         // Convert delivery logs to message format for display
@@ -791,10 +873,10 @@ export default function MessagesPage() {
 
   // Filter dropdown for actionsExtra
   const filterExtra = activeTab === 'messages' ? (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <Sheet>
+      <SheetTrigger asChild>
         <Button variant="outline" size="sm" className="h-9 gap-2">
-          <Filter className="h-4 w-4" />
+          <FilterIcon className="h-4 w-4" />
           {t('messages.filter.title')}
           {getActiveFilterCount() > 0 && (
             <Badge variant="secondary" className="h-5 px-1.5 text-xs">
@@ -802,99 +884,247 @@ export default function MessagesPage() {
             </Badge>
           )}
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56 max-h-[70vh] overflow-y-auto">
-        {/* Severity Filter */}
-        <div className="px-2 py-1.5">
-          <p className="text-xs font-medium text-muted-foreground mb-1">{t('messages.severity.label')}</p>
-          {(['info', 'warning', 'critical', 'emergency'] as MessageSeverity[]).map((sev) => (
-            <DropdownMenuCheckboxItem
-              key={sev}
-              checked={selectedSeverities.has(sev)}
-              onCheckedChange={() => toggleSeverity(sev)}
-            >
-              <div className="flex items-center gap-2">
-                {sev === 'info' && <Info className="h-3.5 w-3.5 text-blue-500" />}
-                {sev === 'warning' && <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />}
-                {sev === 'critical' && <AlertCircle className="h-3.5 w-3.5 text-orange-500" />}
-                {sev === 'emergency' && <ShieldAlert className="h-3.5 w-3.5 text-red-500" />}
-                {t(`messages.severity.${sev}`)}
-              </div>
-            </DropdownMenuCheckboxItem>
-          ))}
-        </div>
-
-        <DropdownMenuSeparator />
-
-        {/* Status Filter */}
-        <div className="px-2 py-1.5">
-          <p className="text-xs font-medium text-muted-foreground mb-1">{t('messages.status.label')}</p>
-          {(['active', 'acknowledged', 'resolved', 'archived'] as MessageStatus[]).map((stat) => (
-            <DropdownMenuCheckboxItem
-              key={stat}
-              checked={selectedStatuses.has(stat)}
-              onCheckedChange={() => toggleStatus(stat)}
-            >
-              {t(`messages.status.${stat}`)}
-            </DropdownMenuCheckboxItem>
-          ))}
-        </div>
-
-        <DropdownMenuSeparator />
-
-        {/* Category Filter */}
-        <div className="px-2 py-1.5">
-          <p className="text-xs font-medium text-muted-foreground mb-1">{t('messages.category.label')}</p>
-          {availableCategories.map((cat) => {
-            const config = getCategoryConfig(cat)
-            const Icon = config.icon
-            return (
-              <DropdownMenuCheckboxItem
-                key={cat}
-                checked={selectedCategories.has(cat)}
-                onCheckedChange={() => toggleCategory(cat)}
+      </SheetTrigger>
+      <SheetContent className="w-[320px] sm:w-[400px] p-0 flex flex-col">
+        <div className="p-4 border-b shrink-0">
+          <div className="flex items-center justify-between">
+            <SheetTitle className="flex items-center gap-2">
+              <FilterIcon className="h-5 w-5" />
+              {t('messages.filter.title')}
+            </SheetTitle>
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-muted-foreground hover:text-foreground"
+                onClick={clearAllFilters}
               >
-                <div className="flex items-center gap-2">
-                  <Icon className="h-3.5 w-3.5" />
-                  {t(config.label)}
+                <X className="h-3.5 w-3.5 mr-1" />
+                {t('messages.filter.clear')}
+              </Button>
+            )}
+          </div>
+          {hasActiveFilters && (
+            <p className="text-sm text-muted-foreground mt-1">
+              {t('messages.filter.activeCount', { count: getActiveFilterCount() })}
+            </p>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {/* Message Type Section */}
+          <CollapsibleSection
+            title={t('messages.type.label')}
+            icon={<Bell className="h-4 w-4" />}
+            count={selectedMessageTypes.size}
+            defaultOpen={true}
+          >
+            <div className="grid grid-cols-2 gap-2">
+              {(['notification', 'data_push'] as const).map((type) => (
+                <button
+                  key={type}
+                  onClick={() => toggleMessageType(type)}
+                  className={cn(
+                    "flex items-center gap-2 p-3 rounded-lg border transition-all text-left",
+                    selectedMessageTypes.has(type)
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border hover:border-primary/50 hover:bg-muted/50"
+                  )}
+                >
+                  {type === 'notification' ? (
+                    <Bell className={cn("h-4 w-4", selectedMessageTypes.has(type) ? "text-primary" : "text-blue-500")} />
+                  ) : (
+                    <Send className={cn("h-4 w-4", selectedMessageTypes.has(type) ? "text-primary" : "text-purple-500")} />
+                  )}
+                  <span className="text-sm font-medium">{t(`messages.type.${type}`)}</span>
+                </button>
+              ))}
+            </div>
+          </CollapsibleSection>
+
+          <Separator />
+
+          {/* Severity Section */}
+          <CollapsibleSection
+            title={t('messages.severity.label')}
+            icon={<AlertTriangle className="h-4 w-4" />}
+            count={selectedSeverities.size}
+            defaultOpen={true}
+          >
+            <div className="space-y-1">
+              {(['emergency', 'critical', 'warning', 'info'] as MessageSeverity[]).map((sev) => {
+                const icons = {
+                  emergency: <ShieldAlert className="h-4 w-4 text-red-500" />,
+                  critical: <AlertCircle className="h-4 w-4 text-orange-500" />,
+                  warning: <AlertTriangle className="h-4 w-4 text-yellow-500" />,
+                  info: <Info className="h-4 w-4 text-blue-500" />,
+                }
+                const bgColors = {
+                  emergency: "bg-red-500/10 border-red-500/30",
+                  critical: "bg-orange-500/10 border-orange-500/30",
+                  warning: "bg-yellow-500/10 border-yellow-500/30",
+                  info: "bg-blue-500/10 border-blue-500/30",
+                }
+                return (
+                  <button
+                    key={sev}
+                    onClick={() => toggleSeverity(sev)}
+                    className={cn(
+                      "w-full flex items-center justify-between p-2.5 rounded-lg border transition-all",
+                      selectedSeverities.has(sev)
+                        ? `${bgColors[sev]} border-primary`
+                        : "border-border hover:bg-muted/50"
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      {icons[sev]}
+                      <span className="text-sm font-medium">{t(`messages.severity.${sev}`)}</span>
+                    </div>
+                    {selectedSeverities.has(sev) && (
+                      <Check className="h-4 w-4 text-primary" />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </CollapsibleSection>
+
+          <Separator />
+
+          {/* Status Section */}
+          <CollapsibleSection
+            title={t('messages.status.label')}
+            icon={<CheckCircle2 className="h-4 w-4" />}
+            count={selectedStatuses.size}
+          >
+            <div className="grid grid-cols-2 gap-2">
+              {(['active', 'acknowledged', 'resolved', 'archived'] as MessageStatus[]).map((stat) => {
+                const statusConfig = {
+                  active: { color: "text-blue-500", bg: "bg-blue-500/10 border-blue-500/30" },
+                  acknowledged: { color: "text-yellow-500", bg: "bg-yellow-500/10 border-yellow-500/30" },
+                  resolved: { color: "text-green-500", bg: "bg-green-500/10 border-green-500/30" },
+                  archived: { color: "text-gray-500", bg: "bg-gray-500/10 border-gray-500/30" },
+                }
+                return (
+                  <button
+                    key={stat}
+                    onClick={() => toggleStatus(stat)}
+                    className={cn(
+                      "flex items-center gap-2 p-2.5 rounded-lg border transition-all",
+                      selectedStatuses.has(stat)
+                        ? `${statusConfig[stat].bg} border-primary`
+                        : "border-border hover:bg-muted/50"
+                    )}
+                  >
+                    <span className="text-sm">{t(`messages.status.${stat}`)}</span>
+                    {selectedStatuses.has(stat) && (
+                      <Check className={cn("h-3.5 w-3.5 ml-auto", statusConfig[stat].color)} />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </CollapsibleSection>
+
+          <Separator />
+
+          {/* Category Section */}
+          {availableCategories.length > 0 && (
+            <>
+              <CollapsibleSection
+                title={t('messages.category.label')}
+                icon={<Tag className="h-4 w-4" />}
+                count={selectedCategories.size}
+              >
+                <div className="flex flex-wrap gap-2">
+                  {availableCategories.map((cat) => {
+                    const config = getCategoryConfig(cat)
+                    const Icon = config.icon
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => toggleCategory(cat)}
+                        className={cn(
+                          "flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm transition-all",
+                          selectedCategories.has(cat)
+                            ? "bg-primary/10 border-primary text-primary"
+                            : "border-border hover:border-primary/50 hover:bg-muted/50"
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {t(config.label)}
+                      </button>
+                    )
+                  })}
                 </div>
-              </DropdownMenuCheckboxItem>
-            )
-          })}
+              </CollapsibleSection>
+              <Separator />
+            </>
+          )}
         </div>
 
-        <DropdownMenuSeparator />
-
-        {/* Message Type Filter */}
-        <div className="px-2 py-1.5">
-          <p className="text-xs font-medium text-muted-foreground mb-1">{t('messages.type.label')}</p>
-          {(['notification', 'data_push'] as const).map((type) => (
-            <DropdownMenuCheckboxItem
-              key={type}
-              checked={selectedMessageTypes.has(type)}
-              onCheckedChange={() => toggleMessageType(type)}
-            >
-              <div className="flex items-center gap-2">
-                {type === 'notification' && <Bell className="h-3.5 w-3.5 text-blue-500" />}
-                {type === 'data_push' && <Send className="h-3.5 w-3.5 text-purple-500" />}
-                {t(`messages.type.${type}`)}
-              </div>
-            </DropdownMenuCheckboxItem>
-          ))}
+        {/* Footer */}
+        <div className="p-4 border-t shrink-0 bg-muted/30">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {hasActiveFilters
+                ? t('messages.filter.showing', { count: filteredCount })
+                : t('messages.filter.allVisible')
+              }
+            </p>
+            <SheetClose asChild>
+              <Button size="sm" className="gap-2">
+                <Check className="h-4 w-4" />
+                {t('common.apply')}
+              </Button>
+            </SheetClose>
+          </div>
         </div>
-
-        {hasActiveFilters && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={clearAllFilters}>
-              <X className="h-4 w-4 mr-2" />
-              {t('messages.filter.clear')}
-            </DropdownMenuItem>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </SheetContent>
+    </Sheet>
   ) : null
+
+  // Collapsible Section Component
+  function CollapsibleSection({
+    title,
+    icon,
+    count,
+    defaultOpen = false,
+    children,
+  }: {
+    title: string
+    icon: React.ReactNode
+    count: number
+    defaultOpen?: boolean
+    children: React.ReactNode
+  }) {
+    const [isOpen, setIsOpen] = useState(defaultOpen)
+
+    return (
+      <div className="py-2">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-full flex items-center justify-between px-4 py-2 hover:bg-muted/50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            {icon}
+            <span className="font-medium text-sm">{title}</span>
+            {count > 0 && (
+              <Badge variant="secondary" className="h-5 px-1.5 text-xs">
+                {count}
+              </Badge>
+            )}
+          </div>
+          <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
+        </button>
+        {isOpen && (
+          <div className="px-4 py-2">
+            {children}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <>
@@ -927,6 +1157,23 @@ export default function MessagesPage() {
           {/* Active Filter Chips */}
           {hasActiveFilters && (
             <div className="flex flex-wrap items-center gap-2 mb-4 shrink-0">
+              <span className="text-sm text-muted-foreground mr-1">
+                {t('messages.filter.activeCount', { count: getActiveFilterCount() })}:
+              </span>
+
+              {Array.from(selectedMessageTypes).map((mt) => (
+                <Badge
+                  key={`mt-${mt}`}
+                  variant="secondary"
+                  className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
+                  onClick={() => toggleMessageType(mt)}
+                >
+                  <Bell className="h-3 w-3" />
+                  {t(`messages.type.${mt === 'notification' ? 'notification' : 'data_push'}`)}
+                  <X className="h-3 w-3 ml-1 text-muted-foreground" />
+                </Badge>
+              ))}
+
               {Array.from(selectedSeverities).map((sev) => (
                 <Badge
                   key={`sev-${sev}`}
@@ -984,9 +1231,8 @@ export default function MessagesPage() {
           )}
 
           {/* Messages Table - Responsive (Desktop: Table, Mobile: Cards) */}
-          <div className="overflow-auto h-full">
-            <ResponsiveTable
-              columns={[
+          <ResponsiveTable
+            columns={[
                 {
                   key: 'messageType',
                   label: t('messages.type.label'),
@@ -1123,6 +1369,14 @@ export default function MessagesPage() {
               }}
               actions={[
                 {
+                  label: t('messages.viewDetails', 'View Details'),
+                  icon: <Eye className="h-4 w-4" />,
+                  onClick: (rowData) => {
+                    const message = rowData as unknown as NotificationMessage
+                    setSelectedMessage(message)
+                  },
+                },
+                {
                   label: t('messages.acknowledge'),
                   icon: <Eye className="h-4 w-4" />,
                   show: (rowData) => (rowData as unknown as NotificationMessage).status === 'active',
@@ -1162,8 +1416,6 @@ export default function MessagesPage() {
                 ) : undefined
               }
             />
-            {/* Pagination - shows as footer on desktop, infinite scroll trigger on mobile */}
-          </div>
         </PageTabsContent>
 
         {/* Channels Tab */}
@@ -1275,6 +1527,18 @@ export default function MessagesPage() {
                 },
               },
               {
+                label: t('messages.channels.configureFilter', 'Configure Filter'),
+                icon: <FilterIcon className="h-4 w-4" />,
+                show: (rowData) => {
+                  const channel = rowData as unknown as MessageChannel
+                  return channel.channel_type !== 'console' && channel.channel_type !== 'memory'
+                },
+                onClick: (rowData) => {
+                  const channel = rowData as unknown as MessageChannel
+                  handleOpenFilterDialog(channel)
+                },
+              },
+              {
                 label: t('messages.channels.manageRecipients', 'Manage Recipients'),
                 icon: <UserPlus className="h-4 w-4" />,
                 show: (rowData) => {
@@ -1360,6 +1624,9 @@ export default function MessagesPage() {
               source: req.source || 'manual',
               source_type: req.source_type || 'ui',
               tags: req.tags || [],
+              message_type: req.message_type,
+              source_id: req.source_id,
+              payload: req.payload,
             }),
           })
           if (response.ok) {
@@ -1371,103 +1638,287 @@ export default function MessagesPage() {
         }}
       />
 
+      {/* Message Detail Dialog */}
+      <UnifiedFormDialog
+        open={!!selectedMessage}
+        onOpenChange={(open) => !open && setSelectedMessage(null)}
+        title={selectedMessage?.title || t('messages.messageDetails', 'Message Details')}
+        icon={selectedMessage?.message_type === 'data_push' ? (
+          <Send className="h-5 w-5 text-purple-500" />
+        ) : (
+          <Bell className="h-5 w-5 text-blue-500" />
+        )}
+        width="xl"
+        showCancelButton={false}
+        footer={
+          <div className="flex justify-end gap-2">
+            {selectedMessage?.status === 'active' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  handleAcknowledge(selectedMessage.id)
+                  setSelectedMessage(null)
+                }}
+              >
+                <Eye className="h-4 w-4 mr-1" />
+                {t('messages.acknowledge', 'Acknowledge')}
+              </Button>
+            )}
+            {selectedMessage?.status !== 'resolved' && selectedMessage?.status !== 'archived' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (selectedMessage) {
+                    handleResolve(selectedMessage.id)
+                    setSelectedMessage(null)
+                  }
+                }}
+              >
+                <CheckCircle2 className="h-4 w-4 mr-1" />
+                {t('messages.resolve', 'Resolve')}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedMessage(null)}
+            >
+              {t('close', 'Close')}
+            </Button>
+          </div>
+        }
+      >
+        {selectedMessage && (
+          <div className="space-y-1">
+            {/* Status Badges */}
+            <div className="flex items-center gap-2 pb-2">
+              <Badge
+                variant="outline"
+                className={
+                  selectedMessage.message_type === 'data_push'
+                    ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
+                    : "bg-blue-500/10 text-blue-600 border-blue-500/20"
+                }
+              >
+                {selectedMessage.message_type === 'data_push' ? (
+                  <>
+                    <Send className="h-3 w-3 mr-1" />
+                    {t('messages.type.data_push', 'Data Push')}
+                  </>
+                ) : (
+                  <>
+                    <Bell className="h-3 w-3 mr-1" />
+                    {t('messages.type.notification', 'Notification')}
+                  </>
+                )}
+              </Badge>
+              <Badge variant="outline" className={
+                selectedMessage.severity === 'critical' ? 'bg-red-500/10 text-red-600' :
+                selectedMessage.severity === 'warning' ? 'bg-yellow-500/10 text-yellow-600' :
+                'bg-blue-500/10 text-blue-600'
+              }>
+                {t(`messages.severity.${selectedMessage.severity}`, selectedMessage.severity)}
+              </Badge>
+              <Badge variant={selectedMessage.status === 'active' ? 'default' : 'secondary'}>
+                {t(`messages.status.${selectedMessage.status}`, selectedMessage.status)}
+              </Badge>
+            </div>
+
+            {/* Basic Info Section */}
+            <FormSection
+              title={t('messages.basicInfo', 'Basic Information')}
+              description={t('messages.basicInfoDesc', 'Message category and source details')}
+            >
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground text-xs">{t('messages.category.label', 'Category')}</Label>
+                  <div className="font-medium">{selectedMessage.category}</div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">{t('messages.source', 'Source')}</Label>
+                  <div className="font-medium">{selectedMessage.source || '-'}</div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">{t('messages.sourceType.label', 'Source Type')}</Label>
+                  <div className="font-medium">{selectedMessage.source_type || '-'}</div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">{t('messages.sourceId.label', 'Source ID')}</Label>
+                  <div className="font-medium font-mono text-xs">{selectedMessage.source_id || '-'}</div>
+                </div>
+                <div className="col-span-2">
+                  <Label className="text-muted-foreground text-xs">{t('messages.timestamp', 'Timestamp')}</Label>
+                  <div className="font-medium">{formatTimestamp(selectedMessage.timestamp, true)}</div>
+                </div>
+              </div>
+            </FormSection>
+
+            {/* Content Section */}
+            <FormSection
+              title={t('messages.contentSection', 'Content')}
+              description={t('messages.contentSectionDesc', 'Message body')}
+            >
+              <div className="bg-muted/30 rounded-lg p-3 text-sm whitespace-pre-wrap">
+                {selectedMessage.message}
+              </div>
+            </FormSection>
+
+            {/* Tags Section */}
+            {selectedMessage.tags && selectedMessage.tags.length > 0 && (
+              <FormSection
+                title={t('messages.tags.label', 'Tags')}
+                description={t('messages.tags.hint', 'Comma-separated tags for categorization')}
+              >
+                <div className="flex flex-wrap gap-1">
+                  {selectedMessage.tags.map((tag, i) => (
+                    <Badge key={i} variant="secondary" className="text-xs">{tag}</Badge>
+                  ))}
+                </div>
+              </FormSection>
+            )}
+
+            {/* Payload Section - Only for Data Push */}
+            {selectedMessage.message_type === 'data_push' && selectedMessage.payload && (
+              <FormSection
+                title={t('messages.payload.section', 'Payload Data')}
+                description={t('messages.payload.sectionDesc', 'Structured data for Data Push messages (JSON format)')}
+              >
+                <pre className="bg-muted/50 rounded-lg p-3 text-xs font-mono overflow-x-auto max-h-60 overflow-y-auto">
+                  {JSON.stringify(selectedMessage.payload, null, 2)}
+                </pre>
+              </FormSection>
+            )}
+
+            {/* Metadata Section */}
+            {selectedMessage.metadata && Object.keys(selectedMessage.metadata).length > 0 && (
+              <FormSection
+                title={t('messages.metadata', 'Metadata')}
+                description={t('messages.metadataDesc', 'Additional message metadata')}
+                collapsible
+                defaultExpanded={false}
+              >
+                <pre className="bg-muted/50 rounded-lg p-3 text-xs font-mono overflow-x-auto max-h-40 overflow-y-auto">
+                  {JSON.stringify(selectedMessage.metadata, null, 2)}
+                </pre>
+              </FormSection>
+            )}
+          </div>
+        )}
+      </UnifiedFormDialog>
+
       {/* View Channel Dialog */}
-      <Dialog open={!!viewChannel} onOpenChange={(open) => !open && setViewChannel(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t('messages.channels.channelDetails', 'Channel Details')}</DialogTitle>
-          </DialogHeader>
-          {viewChannel && (
-            <div className="space-y-4 py-4">
+      <UnifiedFormDialog
+        open={!!viewChannel}
+        onOpenChange={(open) => !open && setViewChannel(null)}
+        title={t('messages.channels.channelDetails', 'Channel Details')}
+        description={viewChannel?.name || ''}
+        icon={<Network className="h-5 w-5" />}
+        width="md"
+        showCancelButton={false}
+        footer={
+          <div className="flex justify-end gap-2">
+            {viewChannel && viewChannel.channel_type !== 'console' && viewChannel.channel_type !== 'memory' && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    handleTestChannel(viewChannel.name)
+                    setViewChannel(null)
+                  }}
+                  disabled={testingChannel === viewChannel.name}
+                >
+                  <TestTube className="h-4 w-4 mr-1" />
+                  {t('messages.channels.test')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    handleToggleEnabled(viewChannel.name, !viewChannel.enabled)
+                    setViewChannel(null)
+                  }}
+                >
+                  {viewChannel.enabled ? t('disable') : t('enable')}
+                </Button>
+              </>
+            )}
+          </div>
+        }
+      >
+        {viewChannel && (
+          <div className="space-y-1">
+            {/* Basic Info Section */}
+            <FormSection
+              title={t('messages.basicInfo', 'Basic Information')}
+              description={t('messages.basicInfoDesc', 'Channel name and type')}
+            >
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <Label className="text-muted-foreground">{t('messages.channels.name')}</Label>
+                  <Label className="text-muted-foreground text-xs">{t('messages.channels.name')}</Label>
                   <div className="font-medium">{viewChannel.name}</div>
                 </div>
                 <div>
-                  <Label className="text-muted-foreground">{t('messages.channels.type')}</Label>
+                  <Label className="text-muted-foreground text-xs">{t('messages.channels.type')}</Label>
                   <div className="font-medium capitalize">{viewChannel.channel_type}</div>
                 </div>
                 <div>
-                  <Label className="text-muted-foreground">{t('status')}</Label>
+                  <Label className="text-muted-foreground text-xs">{t('status')}</Label>
                   <Badge variant={viewChannel.enabled ? 'default' : 'secondary'}>
                     {viewChannel.enabled ? t('enabled') : t('disabled')}
                   </Badge>
                 </div>
               </div>
+            </FormSection>
 
-              {/* Webhook config */}
-              {viewChannel.channel_type === 'webhook' && viewChannel.config && (
-                <div className="space-y-3">
-                  <Label className="text-muted-foreground">{t('messages.channels.config')}</Label>
-                  <div className="bg-muted/50 rounded-lg p-3 text-sm font-mono break-all">
-                    {(() => {
-                      const cfg = viewChannel.config as Record<string, unknown>
-                      return typeof cfg === 'object' && cfg !== null && 'url' in cfg
-                        ? String(cfg.url)
-                        : JSON.stringify(viewChannel.config, null, 2)
-                    })()}
-                  </div>
+            {/* Config Section - Webhook */}
+            {viewChannel.channel_type === 'webhook' && viewChannel.config && (
+              <FormSection
+                title={t('messages.channels.config', 'Configuration')}
+                description={t('messages.channels.webhookConfigDesc', 'Webhook endpoint URL')}
+              >
+                <div className="bg-muted/50 rounded-lg p-3 text-sm font-mono break-all">
+                  {(() => {
+                    const cfg = viewChannel.config as Record<string, unknown>
+                    return typeof cfg === 'object' && cfg !== null && 'url' in cfg
+                      ? String(cfg.url)
+                      : JSON.stringify(viewChannel.config, null, 2)
+                  })()}
                 </div>
-              )}
+              </FormSection>
+            )}
 
-              {/* Email config */}
-              {viewChannel.channel_type === 'email' && viewChannel.config && (
-                <div className="space-y-3">
-                  <Label className="text-muted-foreground">{t('messages.channels.config')}</Label>
-                  <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
-                    {(() => {
-                      const cfg = viewChannel.config as Record<string, unknown>
-                      return (
-                        <>
-                          {cfg && 'smtp_server' in cfg && (
-                            <div>{t('messages.channels.smtpServer')}: {String(cfg.smtp_server)}</div>
-                          )}
-                          {cfg && 'smtp_port' in cfg && (
-                            <div>{t('messages.channels.smtpPort')}: {String(cfg.smtp_port)}</div>
-                          )}
-                          {cfg && 'from_address' in cfg && (
-                            <div>{t('messages.channels.emailFrom')}: {String(cfg.from_address)}</div>
-                          )}
-                        </>
-                      )
-                    })()}
-                  </div>
+            {/* Config Section - Email */}
+            {viewChannel.channel_type === 'email' && viewChannel.config && (
+              <FormSection
+                title={t('messages.channels.config', 'Configuration')}
+                description={t('messages.channels.emailConfigDesc', 'Email server settings')}
+              >
+                <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
+                  {(() => {
+                    const cfg = viewChannel.config as Record<string, unknown>
+                    return (
+                      <>
+                        {cfg && 'smtp_server' in cfg && (
+                          <div>{t('messages.channels.smtpServer')}: {String(cfg.smtp_server)}</div>
+                        )}
+                        {cfg && 'smtp_port' in cfg && (
+                          <div>{t('messages.channels.smtpPort')}: {String(cfg.smtp_port)}</div>
+                        )}
+                        {cfg && 'from_address' in cfg && (
+                          <div>{t('messages.channels.emailFrom')}: {String(cfg.from_address)}</div>
+                        )}
+                      </>
+                    )
+                  })()}
                 </div>
-              )}
-
-              <div className="flex justify-end gap-2 pt-4">
-                {viewChannel.channel_type !== 'console' && viewChannel.channel_type !== 'memory' && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        handleTestChannel(viewChannel.name)
-                        setViewChannel(null)
-                      }}
-                      disabled={testingChannel === viewChannel.name}
-                    >
-                      <TestTube className="h-4 w-4 mr-1" />
-                      {t('messages.channels.test')}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        handleToggleEnabled(viewChannel.name, !viewChannel.enabled)
-                        setViewChannel(null)
-                      }}
-                    >
-                      {viewChannel.enabled ? t('disable') : t('enable')}
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+              </FormSection>
+            )}
+          </div>
+        )}
+      </UnifiedFormDialog>
 
       {/* Recipients Management Dialog */}
       <UnifiedFormDialog
@@ -1553,6 +2004,169 @@ export default function MessagesPage() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      </UnifiedFormDialog>
+
+      {/* Channel Filter Configuration Dialog */}
+      <UnifiedFormDialog
+        open={!!filterDialogChannel}
+        onOpenChange={(open) => !open && setFilterDialogChannel(null)}
+        title={t('messages.channels.filterConfig', 'Filter Configuration')}
+        description={t('messages.channels.filterConfigDesc', 'Configure which messages this channel should receive')}
+        icon={<FilterIcon className="h-5 w-5" />}
+        width="md"
+        onSubmit={handleSaveFilter}
+        isSubmitting={savingFilter}
+        submitLabel={t('save')}
+        cancelLabel={t('cancel')}
+      >
+        <div className="space-y-1">
+          {/* Message Types Section */}
+          <FormSection
+            title={t('messages.channels.messageTypes', 'Message Types')}
+            description={t('messages.channels.messageTypesHint', 'Leave unchecked to accept all types')}
+          >
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={filterConfig.message_types.length === 0 || filterConfig.message_types.includes('notification')}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setFilterConfig(prev => ({
+                        ...prev,
+                        message_types: [...new Set([...prev.message_types, 'notification' as MessageType])] as MessageType[]
+                      }))
+                    } else {
+                      setFilterConfig(prev => ({
+                        ...prev,
+                        message_types: prev.message_types.filter(t => t !== 'notification')
+                      }))
+                    }
+                  }}
+                />
+                {t('messages.type.notification')}
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={filterConfig.message_types.length === 0 || filterConfig.message_types.includes('data_push')}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setFilterConfig(prev => ({
+                        ...prev,
+                        message_types: [...new Set([...prev.message_types, 'data_push' as MessageType])] as MessageType[]
+                      }))
+                    } else {
+                      setFilterConfig(prev => ({
+                        ...prev,
+                        message_types: prev.message_types.filter(t => t !== 'data_push')
+                      }))
+                    }
+                  }}
+                />
+                {t('messages.type.data_push')}
+              </label>
+            </div>
+          </FormSection>
+
+          {/* Source Types Section */}
+          <FormSection
+            title={t('messages.channels.sourceTypes', 'Source Types')}
+            description={t('messages.channels.sourceTypesHint', 'Leave unchecked to accept all sources')}
+          >
+            <div className="flex flex-wrap gap-2">
+              {['device', 'rule', 'telemetry', 'schedule', 'llm', 'system'].map(st => (
+                <label key={st} className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
+                    checked={filterConfig.source_types.includes(st)}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        setFilterConfig(prev => ({
+                          ...prev,
+                          source_types: [...prev.source_types, st]
+                        }))
+                      } else {
+                        setFilterConfig(prev => ({
+                          ...prev,
+                          source_types: prev.source_types.filter(t => t !== st)
+                        }))
+                      }
+                    }}
+                  />
+                  {st}
+                </label>
+              ))}
+            </div>
+          </FormSection>
+
+          {/* Categories Section */}
+          <FormSection
+            title={t('messages.channels.categories', 'Categories')}
+            description={t('messages.channels.categoriesHint', 'Leave unchecked to accept all categories')}
+          >
+            <div className="flex flex-wrap gap-2">
+              {['alert', 'system', 'business', 'notification'].map(cat => (
+                <label key={cat} className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
+                    checked={filterConfig.categories.includes(cat)}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        setFilterConfig(prev => ({
+                          ...prev,
+                          categories: [...prev.categories, cat]
+                        }))
+                      } else {
+                        setFilterConfig(prev => ({
+                          ...prev,
+                          categories: prev.categories.filter(t => t !== cat)
+                        }))
+                      }
+                    }}
+                  />
+                  {t(`messages.category.${cat}`, cat)}
+                </label>
+              ))}
+            </div>
+          </FormSection>
+
+          {/* Minimum Severity Section */}
+          <FormSection
+            title={t('messages.channels.minSeverity', 'Minimum Severity')}
+            description={t('messages.channels.minSeverityHint', 'Only receive messages at or above this severity level')}
+          >
+            <Select
+              value={filterConfig.min_severity || 'all'}
+              onValueChange={(value) => {
+                setFilterConfig(prev => ({
+                  ...prev,
+                  min_severity: value === 'all' ? null : value as MessageSeverity
+                }))
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={t('messages.channels.allSeverities', 'All Severities')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('messages.channels.allSeverities', 'All Severities')}</SelectItem>
+                <SelectItem value="info">Info</SelectItem>
+                <SelectItem value="warning">Warning</SelectItem>
+                <SelectItem value="critical">Critical</SelectItem>
+                <SelectItem value="emergency">Emergency</SelectItem>
+              </SelectContent>
+            </Select>
+          </FormSection>
+
+          {/* Filter Preview */}
+          <div className="p-3 bg-muted/50 rounded-md">
+            <p className="text-sm font-medium mb-1">{t('messages.channels.filterPreview', 'Filter Preview')}</p>
+            <p className="text-xs text-muted-foreground">
+              {filterConfig.message_types.length === 0 && filterConfig.source_types.length === 0
+                ? t('messages.channels.filterAcceptAll', 'This channel will receive all messages')
+                : t('messages.channels.filterWillMatch', 'Types: {{types}}, Sources: {{sources}}', {
+                    types: filterConfig.message_types.length > 0 ? filterConfig.message_types.join(', ') : t('messages.channels.all', 'All'),
+                    sources: filterConfig.source_types.length > 0 ? filterConfig.source_types.join(', ') : t('messages.channels.all', 'All')
+                  })}
+            </p>
           </div>
         </div>
       </UnifiedFormDialog>

@@ -7,6 +7,188 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### 🎉 Overview
+
+**Major feature release** introducing comprehensive platform enhancements with **96 new features**, **47 refactorings**, and **204 bug fixes**.
+
+**Highlights**:
+- 📨 **Messages Pipeline Extension** - Complete message routing with DeliveryLog tracking
+- 🔌 **Extension System 2.0** - SDK, isolated execution, capability framework, streaming support
+- 🧠 **Hierarchical Memory System** - Short-term and long-term memory for AI Agents
+- 📊 **Visual Dashboard** - Telemetry data binding with Sparkline, ProgressBar, LED components
+- 🤖 **Native LLM Backend** - Rust-based inference using Candle framework
+- 🛠️ **Tool Calling System** - Complete tool calling for AI dialogue
+- 🌏 **Chinese LLM Support** - Optimized for Chinese language backends
+- 🔄 **Auto-Update System** - In-app updates with progress notifications
+- 🏗️ **Workspace Consolidation** - Reduced from 15 to 10 crates
+
+---
+
+### ✨ New Features
+
+#### Messages System
+- **Messages Pipeline Extension** with DeliveryLog for DataPush tracking
+- **MessageType enum** and **ChannelFilter** for message routing
+- Channel filter configuration UI and API endpoints
+- Message type column in messages table with filtering
+
+#### Extension System
+- **Extension SDK** and isolated execution support
+- **Capability framework** with event subscription system
+- Extension streaming support for real-time data
+- **.nep package format** support for extension discovery
+- Resource limits and security validation for extension runner
+- Per-extension `collect_interval` configuration
+- Extension upload handling improvements
+
+#### Agent System
+- **Hierarchical Memory System** - Short-term and long-term memory
+- LLM-based analysis integration during agent execution
+- Agent editor redesign with card grid layout
+- Dashboard integration for agents
+- More role options with card-style selection
+- Agent resources and intent parsing APIs
+
+#### Visual Dashboard
+- Complete dashboard system with telemetry data binding
+- **Sparkline** component with configurable labels
+- **ProgressBar** component with custom labels
+- **LED Indicators** with gradient glow effects
+- **CustomLayer** component with data binding editor
+- Map enhancements with marker types and command execution
+- Image/video components with titles and fullscreen mode
+
+#### LLM & AI
+- **Native Rust LLM Backend** using Candle framework
+- Tool calling support for native backend
+- Chinese LLM backends support and optimization
+- Improved prompt engineering for better responses
+- Thinking character count in collapsed state
+
+#### Platform & Infrastructure
+- **Auto-Update System** for Tauri desktop with progress notifications
+- One-line installation script with embedded Web UI
+- Server deployment options (Docker, binary, systemd)
+- CI/CD optimization with manual triggers and caching
+- Tauri v2 key generation helper scripts
+
+#### Alerting & Automation
+- **Alert Channels Plugin System** with device enhancements
+- Complete tool calling system for dialogue
+- Rule engine improvements with scheduler, retry, channels parsing
+- Rules API handlers and storage layer
+
+#### Mobile & UX
+- Mobile infinite scroll and pagination optimization
+- Standardized dialog components for mobile
+- Improved drawer experience and z-index stacking
+- Startup loading screen for Tauri desktop
+
+---
+
+### 🏗️ Architecture Changes
+
+#### Workspace Consolidation
+- **Reduced from 15 to 10 crates** for simpler architecture
+- Merged `neomind-llm` into `neomind-agent`
+- Consolidated IPC types into SDK for ABI isolation
+- Removed 4 crates to 2 for better ABI isolation
+
+#### Removed Unused Modules
+- `neomind-testing` crate
+- `intent` and `nl2automation` modules
+- `multimodal` and `maintenance` storage
+- `mqtt_v2` and `mock_devices`
+- `audit`, `prometheus metrics`
+- `Local Network Scan` feature
+- Duplicate `ExtensionRegistryTrait` and `Tool` trait
+
+---
+
+### 🔧 Improvements
+
+#### Code Quality
+- Dead code cleanup across workspace
+- Removed unnecessary `#[allow(dead_code)]` annotations
+- Unified `StorageBackend` trait naming
+- Cleaner module interfaces
+
+#### UI/UX
+- Unified tab bar styling across all pages
+- Improved dialog patterns and scaling
+- Reduced padding in nested dialogs
+- Better loading UI states
+
+#### Performance
+- IPC buffer management optimization
+- Agent streaming optimization
+- Frontend performance improvements
+- UTF-8 handling fixes
+
+---
+
+### 🐛 Bug Fixes
+
+- Fixed extension startup crashes with safe sidecar discovery
+- Fixed nested dialog z-index and footer alignment
+- Fixed input focus loss in plugin config forms
+- Fixed death monitor restarting extensions during unload
+- Fixed CI/CD build errors for macOS DMG bundling
+- Fixed WebSocket persistence and connection handling
+
+---
+
+### 📁 Changed Files
+
+**New Files** (Key Additions):
+- `crates/neomind-extension-sdk/` - Extension SDK
+- `web/src/components/dashboard/` - Dashboard components
+- `web/src/components/update/` - Auto-update UI
+- `scripts/` - Installation and CI/CD scripts
+- `docs/guides/` - Comprehensive documentation
+
+**Removed Files**:
+- 20+ unused modules and crates
+- Duplicate trait definitions
+
+**Modified**: 500+ files across all modules
+
+---
+
+### 📊 Statistics
+
+| Category | Count |
+|----------|-------|
+| Commits | 546 |
+| Features | 96 |
+| Refactorings | 47 |
+| Bug Fixes | 204 |
+| Files Changed | 500+ |
+
+---
+
+### 🎯 Summary
+
+✅ Complete messages pipeline with routing and tracking
+✅ Modern extension system with SDK and isolation
+✅ AI Agent memory system for context retention
+✅ Visual dashboard with real-time data binding
+✅ Native LLM backend for edge deployment
+✅ Simplified architecture (15 → 10 crates)
+✅ Auto-update system for seamless upgrades
+✅ Chinese language LLM optimization
+
+**Production-ready and recommended for all users.**
+
+---
+
+**Previous Release**: [v0.6.2](https://github.com/camthink-ai/NeoMind/releases/tag/v0.6.2)
+**Release Date**: March 25, 2026
+
+---
+
 ## [v0.6.2] - 2025-03-24
 
 ### 🎉 Overview

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Message, MessageSeverity, MessageType};
 
 /// Filter configuration for a channel to select which messages to receive.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ChannelFilter {
     /// Message types to receive (empty = all)
     #[serde(default)]
