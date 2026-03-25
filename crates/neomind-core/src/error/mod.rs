@@ -298,3 +298,7 @@ macro_rules! auth_err {
 
 // Module re-export
 pub use Error as NeoMindError;
+
+// External library error conversions (optional)
+#[cfg(feature = "redb")]
+mod redb;

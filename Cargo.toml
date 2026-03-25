@@ -41,11 +41,6 @@ base64 = "0.22"
 hex = "0.4"
 urlencoding = "2.1"
 
-# ML/LLM - Tokenizer (Candle temporarily disabled due to dependency issues)
-# candle-core = { version = "0.7", optional = true }
-# candle-transformers = { version = "0.7", optional = true }
-# candle-nn = { version = "0.7", optional = true }
-
 # UI (Web)
 axum = "0.7"
 tower-http = { version = "0.6", features = ["fs", "cors", "compression-gzip", "limit"] }
