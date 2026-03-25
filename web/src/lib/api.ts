@@ -65,6 +65,8 @@ import type {
   MessageChannel,
   MessageChannelListResponse,
   CreateMessageChannelRequest,
+  MessageType,
+  ChannelFilter,
   DraftDevice,
   SuggestedDeviceType,
   // AI Agent Types
@@ -701,11 +703,42 @@ export const api = {
       `/messages/channels/${encodeURIComponent(name)}`,
       { method: 'DELETE' }
     ),
+  updateMessageChannel: (name: string, config: Record<string, unknown>) =>
+    fetchAPI<{ message: string; message_zh: string; channel: AlertChannel }>(
+      `/messages/channels/${encodeURIComponent(name)}`,
+      { method: 'PUT', body: JSON.stringify({ config }) }
+    ),
   testMessageChannel: (name: string) =>
     fetchAPI<ChannelTestResult>(`/messages/channels/${encodeURIComponent(name)}/test`, {
       method: 'POST',
     }),
   getChannelStats: () => fetchAPI<ChannelStats>('/messages/channels/stats'),
+  // Channel Filter API
+  getChannelFilter: (name: string) =>
+    fetchAPI<ChannelFilter>(`/messages/channels/${encodeURIComponent(name)}/filter`),
+  updateChannelFilter: (name: string, filter: ChannelFilter) =>
+    fetchAPI<{ message: string; message_zh: string; channel: string; filter: ChannelFilter }>(
+      `/messages/channels/${encodeURIComponent(name)}/filter`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(filter),
+      }
+    ),
+  // Recipient management for email channels
+  listChannelRecipients: (name: string) =>
+    fetchAPI<{ channel: string; recipients: string[]; count: number }>(
+      `/messages/channels/${encodeURIComponent(name)}/recipients`
+    ),
+  addChannelRecipient: (name: string, email: string) =>
+    fetchAPI<{ message: string; message_zh: string; channel: string; recipients: string[] }>(
+      `/messages/channels/${encodeURIComponent(name)}/recipients`,
+      { method: 'POST', body: JSON.stringify({ email }) }
+    ),
+  removeChannelRecipient: (name: string, email: string) =>
+    fetchAPI<{ message: string; message_zh: string; channel: string; recipients: string[] }>(
+      `/messages/channels/${encodeURIComponent(name)}/recipients/${encodeURIComponent(email)}`,
+      { method: 'DELETE' }
+    ),
   cleanupMessages: (req: { older_than_days: number }) =>
     fetchAPI<{ cleaned: number; message: string; message_zh: string }>('/messages/cleanup', {
       method: 'POST',
