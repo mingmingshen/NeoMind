@@ -449,8 +449,25 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             delete(message_channels::delete_channel_handler),
         )
         .route(
+            "/api/messages/channels/:name",
+            put(message_channels::update_channel_handler),
+        )
+        .route(
             "/api/messages/channels/:name/test",
             post(message_channels::test_channel_handler),
+        )
+        // Message Channel Recipients API
+        .route(
+            "/api/messages/channels/:name/recipients",
+            get(message_channels::list_recipients_handler),
+        )
+        .route(
+            "/api/messages/channels/:name/recipients",
+            post(message_channels::add_recipient_handler),
+        )
+        .route(
+            "/api/messages/channels/:name/recipients/:email",
+            delete(message_channels::remove_recipient_handler),
         )
         // LLM Generation API (one-shot, no session)
         .route("/api/llm/generate", post(settings::llm_generate_handler))

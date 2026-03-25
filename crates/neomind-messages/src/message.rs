@@ -65,7 +65,7 @@ impl std::fmt::Display for MessageType {
 }
 
 /// Message severity levels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, serde::Serialize, serde::Deserialize)]
 pub enum MessageSeverity {
     /// Informational - no action required
     #[default]

@@ -236,15 +236,8 @@ export function MessageChannelsTab({
                 onChange={(e) => setNewChannelConfig(prev => ({ ...prev, from_address: e.target.value }))}
               />
             </div>
-            <div>
-              <Label htmlFor="email-to">{t('messages.channels.emailTo')}</Label>
-              <Input
-                id="email-to"
-                type="email"
-                placeholder={t('messages.channels.yourEmailPlaceholder')}
-                value={(newChannelConfig.recipients as string[])?.[0] || ''}
-                onChange={(e) => setNewChannelConfig(prev => ({ ...prev, recipients: [e.target.value] }))}
-              />
+            <div className="text-xs text-muted-foreground">
+              {t('messages.channels.recipientsHint', 'Add recipients after creating the channel by clicking "Manage Recipients"')}
             </div>
           </>
         )}

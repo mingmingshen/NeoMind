@@ -28,7 +28,7 @@
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use neomind_core::{EventBus, MetricValue, NeoMindEvent};
 use neomind_agent::{OllamaConfig, OllamaRuntime};
-use neomind_messages::{channels::ConsoleChannel, MessageManager, MessageSeverity};
+use neomind_messages::{MessageManager, MessageSeverity};
 use neomind_storage::{
     AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
     DataPoint, LongTermMemory, ResourceType, ScheduleType, ShortTermMemory, TimeSeriesStore,
@@ -65,7 +65,6 @@ impl SimulationContext {
         let time_series = TimeSeriesStore::memory()?;
 
         let message_manager = Arc::new(MessageManager::new());
-        let _console_channel = Arc::new(ConsoleChannel::new("console".to_string()));
         // Note: MessageManager now initializes with default channels via register_default_channels
         message_manager.register_default_channels().await;
 

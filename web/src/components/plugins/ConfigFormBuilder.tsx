@@ -118,6 +118,7 @@ function buildZodSchema(schema: PluginConfigSchema): z.ZodType<Record<string, un
         }
         break
       case 'number':
+      case 'integer':
         // Build number schema with constraints first, then add string coercion
         let numSchema = z.number()
         if (prop.minimum !== undefined) {
@@ -372,6 +373,30 @@ function FormField({
             />
           )}
         />
+      ) : prop.type === 'number' || prop.type === 'integer' ? (
+        <Controller
+          name={fieldName}
+          control={control}
+          render={({ field }) => (
+            <Input
+              id={fieldName}
+              type="number"
+              inputMode="numeric"
+              value={field.value ?? ''}
+              onChange={(e) => {
+                const value = e.target.value
+                // Allow empty string or convert to number
+                if (value === '') {
+                  field.onChange('')
+                } else {
+                  const num = Number(value)
+                  field.onChange(isNaN(num) ? value : num)
+                }
+              }}
+              placeholder={schema.ui_hints?.placeholders?.[fieldName]}
+            />
+          )}
+        />
       ) : (
         <div className="relative">
           <Input
@@ -482,7 +507,26 @@ export function ConfigFormBuilder({
   }, [visibilityValues, schema.ui_hints, fieldOrder])
 
   const handleFormSubmit = async (values: Record<string, unknown>) => {
-    await onSubmit(values)
+    // Convert string values to proper types based on schema
+    const convertedValues: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(values)) {
+      const prop = schema.properties[key]
+      if (prop) {
+        if ((prop.type === 'number' || prop.type === 'integer') && typeof value === 'string') {
+          // Convert string to number for numeric fields
+          const num = Number(value)
+          convertedValues[key] = isNaN(num) ? value : num
+        } else if (prop.type === 'boolean' && typeof value === 'string') {
+          // Convert string to boolean for boolean fields
+          convertedValues[key] = value === 'true'
+        } else {
+          convertedValues[key] = value
+        }
+      } else {
+        convertedValues[key] = value
+      }
+    }
+    await onSubmit(convertedValues)
   }
 
   return (

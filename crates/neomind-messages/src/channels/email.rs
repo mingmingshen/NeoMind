@@ -56,6 +56,16 @@ impl EmailChannel {
         self
     }
 
+    /// Set recipients (for updating after creation)
+    pub fn set_recipients_internal(&mut self, addresses: Vec<String>) {
+        self.to_addresses = addresses;
+    }
+
+    /// Get current recipients
+    pub fn get_recipients_internal(&self) -> &[String] {
+        &self.to_addresses
+    }
+
     pub fn without_tls(mut self) -> Self {
         self.use_tls = false;
         self
@@ -176,9 +186,18 @@ impl MessageChannel for EmailChannel {
         tokio::task::spawn_blocking(move || {
             let creds =
                 lettre::transport::smtp::authentication::Credentials::new(username, password);
-            let relay = format!("{}:{}", smtp_server, smtp_port);
-            let mailer = lettre::SmtpTransport::relay(&relay)
+
+            use lettre::transport::smtp::client::Tls;
+            use lettre::transport::smtp::client::TlsParametersBuilder;
+
+            let tls_params = TlsParametersBuilder::new(smtp_server.clone())
+                .build()
+                .map_err(|e| Error::SendFailed(format!("Failed to build TLS params: {}", e)))?;
+
+            let mailer = lettre::SmtpTransport::relay(&smtp_server)
                 .map_err(|e| Error::SendFailed(format!("Invalid SMTP server: {}", e)))?
+                .port(smtp_port)
+                .tls(Tls::Required(tls_params))
                 .credentials(creds)
                 .build();
 
@@ -189,6 +208,14 @@ impl MessageChannel for EmailChannel {
         })
         .await
         .map_err(|e| Error::SendFailed(format!("Task join error: {}", e)))?
+    }
+
+    fn set_recipients(&mut self, recipients: Vec<String>) {
+        self.to_addresses = recipients;
+    }
+
+    fn get_recipients(&self) -> Vec<String> {
+        self.to_addresses.clone()
     }
 }
 
@@ -208,10 +235,19 @@ impl super::ChannelFactory for EmailChannelFactory {
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::InvalidConfiguration("Missing smtp_server".to_string()))?;
 
+        // Support both number and string types for smtp_port
         let smtp_port = config
             .get("smtp_port")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| Error::InvalidConfiguration("Missing smtp_port".to_string()))?
+            .and_then(|v| {
+                if let Some(n) = v.as_u64() {
+                    Some(n)
+                } else if let Some(s) = v.as_str() {
+                    s.parse::<u64>().ok()
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| Error::InvalidConfiguration("Missing or invalid smtp_port".to_string()))?
             as u16;
 
         let username = config

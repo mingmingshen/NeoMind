@@ -14,7 +14,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use neomind_messages::{Message, MessageId, MessageSeverity};
+use neomind_messages::{Message, MessageId, MessageSeverity, MessageType};
 
 use super::{
     common::{ok, HandlerResult},
@@ -48,6 +48,12 @@ pub struct CreateMessageRequest {
     pub source_type: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub tags: Option<Vec<String>>,
+    /// Message type: notification or data_push
+    pub message_type: Option<String>,
+    /// Source ID for filtering
+    pub source_id: Option<String>,
+    /// Payload for DataPush messages
+    pub payload: Option<serde_json::Value>,
 }
 
 /// Create a message.
@@ -80,6 +86,23 @@ pub async fn create_message_handler(
 
     if let Some(tags) = req.tags {
         msg.tags = tags;
+    }
+
+    // Handle message_type
+    if let Some(mt) = req.message_type {
+        if let Some(msg_type) = MessageType::from_string(&mt) {
+            msg.message_type = msg_type;
+        }
+    }
+
+    // Handle source_id
+    if let Some(source_id) = req.source_id {
+        msg.source_id = Some(source_id);
+    }
+
+    // Handle payload
+    if let Some(payload) = req.payload {
+        msg.payload = Some(payload);
     }
 
     let created = state
