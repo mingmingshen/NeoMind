@@ -178,6 +178,18 @@ impl MessageManager {
 
     /// Convert StoredMessage to Message.
     fn stored_to_message(stored: neomind_storage::StoredMessage) -> Message {
+        let (message_type, source_id, payload) = if let Some(ref meta) = stored.metadata {
+            let mt = meta.get("message_type")
+                .and_then(|v| v.as_str())
+                .and_then(|s| MessageType::from_string(s))
+                .unwrap_or(MessageType::Notification);
+            let sid = meta.get("source_id").and_then(|v| v.as_str()).map(String::from);
+            let p = meta.get("payload").cloned();
+            (mt, sid, p)
+        } else {
+            (MessageType::Notification, None, None)
+        };
+
         Message {
             id: MessageId::from_string(&stored.id).unwrap_or_else(|_| MessageId::new()),
             category: stored.category,
@@ -192,9 +204,9 @@ impl MessageManager {
             status: MessageStatus::from_string(&stored.status).unwrap_or(MessageStatus::Active),
             metadata: stored.metadata,
             tags: stored.tags.unwrap_or_default(),
-            message_type: MessageType::Notification,
-            source_id: None,
-            payload: None,
+            message_type,
+            source_id,
+            payload,
         }
     }
 
@@ -214,7 +226,21 @@ impl MessageManager {
             } else {
                 Some(msg.tags.clone())
             },
-            metadata: msg.metadata.clone(),
+            metadata: if msg.payload.is_some() || msg.source_id.is_some() {
+                let mut meta = msg.metadata.clone().unwrap_or(serde_json::json!({}));
+                if let Some(obj) = meta.as_object_mut() {
+                    obj.insert("message_type".to_string(), serde_json::json!(msg.message_type.as_str()));
+                    if let Some(sid) = &msg.source_id {
+                        obj.insert("source_id".to_string(), serde_json::json!(sid));
+                    }
+                    if let Some(p) = &msg.payload {
+                        obj.insert("payload".to_string(), p.clone());
+                    }
+                }
+                Some(meta)
+            } else {
+                msg.metadata.clone()
+            },
             timestamp: msg.timestamp.timestamp(),
             acknowledged_at: None,
             resolved_at: None,
@@ -244,6 +270,7 @@ impl MessageManager {
         let id = message.id.clone();
         let _is_active = message.is_active();
         let severity = message.severity;
+        let message_type = message.message_type;
 
         // Store in memory
         self.messages
@@ -251,12 +278,14 @@ impl MessageManager {
             .await
             .insert(id.clone(), message.clone());
 
-        // Persist to storage if available
-        if let Some(store) = self.storage.read().await.as_ref() {
-            let stored = Self::message_to_stored(&message);
-            store
-                .insert(&stored)
-                .map_err(|e| Error::Storage(format!("Failed to persist message: {}", e)))?;
+        // Persist to storage if available (only for Notification)
+        if message_type == MessageType::Notification {
+            if let Some(store) = self.storage.read().await.as_ref() {
+                let stored = Self::message_to_stored(&message);
+                store
+                    .insert(&stored)
+                    .map_err(|e| Error::Storage(format!("Failed to persist message: {}", e)))?;
+            }
         }
 
         // Send through channels (don't fail if channels fail - message is already stored)
@@ -267,8 +296,23 @@ impl MessageManager {
         for channel_name in &channel_names {
             if let Some(channel) = channels.get(channel_name).await {
                 if channel.is_enabled() {
+                    // Apply filter before sending
+                    let filter = channels.get_filter(channel_name).await;
+                    if !filter.matches(&message) {
+                        tracing::debug!(
+                            "Channel '{}' filter rejected message '{}'",
+                            channel_name,
+                            message.title
+                        );
+                        continue;
+                    }
+
+                    tracing::info!("Sending message through channel '{}' (type: {})", channel_name, channel.channel_type());
                     match channel.send(&message).await {
-                        Ok(()) => send_results.push((channel_name.clone(), Ok(()))),
+                        Ok(()) => {
+                            tracing::info!("Successfully sent message through channel '{}'", channel_name);
+                            send_results.push((channel_name.clone(), Ok(())));
+                        }
                         Err(e) => {
                             // Log channel failure but don't fail the entire operation
                             tracing::warn!(
@@ -900,5 +944,25 @@ mod tests {
         assert!(rule.evaluate());
         let msg = rule.generate_message();
         assert_eq!(msg.title, "Generated");
+    }
+
+    #[tokio::test]
+    async fn test_message_filtering_by_source_type() {
+        use crate::channels::ChannelFilter;
+
+        let mut filter = ChannelFilter::default();
+        filter.source_types = vec!["device".to_string()];
+
+        let device_msg = Message::device(
+            MessageSeverity::Warning,
+            "Device Alert".to_string(),
+            "Test".to_string(),
+            "sensor_1".to_string(),
+        );
+
+        let system_msg = Message::system("System".to_string(), "Test".to_string());
+
+        assert!(filter.matches(&device_msg));
+        assert!(!filter.matches(&system_msg));
     }
 }
