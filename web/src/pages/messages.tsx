@@ -988,6 +988,12 @@ export default function MessagesPage() {
             <ResponsiveTable
               columns={[
                 {
+                  key: 'messageType',
+                  label: t('messages.type.label'),
+                  width: 'w-[100px]',
+                  align: 'center',
+                },
+                {
                   key: 'severity',
                   label: '',
                   width: 'w-[50px]',
@@ -1011,12 +1017,6 @@ export default function MessagesPage() {
                   key: 'category',
                   label: t('messages.category.label'),
                   width: 'w-[90px]',
-                },
-                {
-                  key: 'messageType',
-                  label: t('messages.type.label'),
-                  width: 'w-[100px]',
-                  align: 'center',
                 },
                 {
                   key: 'status',
