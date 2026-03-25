@@ -9,264 +9,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [v0.6.2] - 2025-03-25
+
 ### 🎉 Overview
 
-**Major feature release** introducing comprehensive platform enhancements with **96 new features**, **47 refactorings**, and **204 bug fixes**.
+Major refactoring release focusing on **lightweight architecture** and **Messages Pipeline Extension**.
 
 **Highlights**:
 - 📨 **Messages Pipeline Extension** - Complete message routing with DeliveryLog tracking
-- 🔌 **Extension System 2.0** - SDK, isolated execution, capability framework, streaming support
-- 🧠 **Hierarchical Memory System** - Short-term and long-term memory for AI Agents
-- 📊 **Visual Dashboard** - Telemetry data binding with Sparkline, ProgressBar, LED components
-- 🤖 **Native LLM Backend** - Rust-based inference using Candle framework
-- 🛠️ **Tool Calling System** - Complete tool calling for AI dialogue
-- 🌏 **Chinese LLM Support** - Optimized for Chinese language backends
-- 🔄 **Auto-Update System** - In-app updates with progress notifications
-- 🏗️ **Workspace Consolidation** - Reduced from 15 to 10 crates
+- 🔀 **Channel Filter System** - MessageType enum and ChannelFilter for flexible routing
+- 🏗️ **Workspace Consolidation** - Reduced from 15 to 12 crates
+- 🔧 **Tauri v2.10 Sync** - Fixed NPM/Rust crate version mismatch
+- 🧹 **Dead Code Cleanup** - Removed 20+ unused modules
+- 🎨 **UI Improvements** - Fullscreen dialogs, better layouts
 
 ---
 
 ### ✨ New Features
 
-#### Messages System
-- **Messages Pipeline Extension** with DeliveryLog for DataPush tracking
-- **MessageType enum** and **ChannelFilter** for message routing
-- Channel filter configuration UI and API endpoints
-- Message type column in messages table with filtering
+#### Messages Pipeline Extension
+- **DeliveryLog System** - Track DataPush delivery status with timestamps
+- **MessageType Enum** - Categorize messages by type (Command, Telemetry, Event, etc.)
+- **ChannelFilter Model** - Route messages to specific channels based on criteria
+- **Channel Filter API** - Configuration endpoints for filter management
+- **Channel Filter UI** - Web interface for managing message routing rules
+- Message type column and filter in messages table
 
-#### Extension System
-- **Extension SDK** and isolated execution support
-- **Capability framework** with event subscription system
-- Extension streaming support for real-time data
-- **.nep package format** support for extension discovery
-- Resource limits and security validation for extension runner
-- Per-extension `collect_interval` configuration
-- Extension upload handling improvements
-
-#### Agent System
-- **Hierarchical Memory System** - Short-term and long-term memory
-- LLM-based analysis integration during agent execution
-- Agent editor redesign with card grid layout
-- Dashboard integration for agents
-- More role options with card-style selection
-- Agent resources and intent parsing APIs
-
-#### Visual Dashboard
-- Complete dashboard system with telemetry data binding
-- **Sparkline** component with configurable labels
-- **ProgressBar** component with custom labels
-- **LED Indicators** with gradient glow effects
-- **CustomLayer** component with data binding editor
-- Map enhancements with marker types and command execution
-- Image/video components with titles and fullscreen mode
-
-#### LLM & AI
-- **Native Rust LLM Backend** using Candle framework
-- Tool calling support for native backend
-- Chinese LLM backends support and optimization
-- Improved prompt engineering for better responses
-- Thinking character count in collapsed state
-
-#### Platform & Infrastructure
-- **Auto-Update System** for Tauri desktop with progress notifications
-- One-line installation script with embedded Web UI
-- Server deployment options (Docker, binary, systemd)
-- CI/CD optimization with manual triggers and caching
-- Tauri v2 key generation helper scripts
-
-#### Alerting & Automation
-- **Alert Channels Plugin System** with device enhancements
-- Complete tool calling system for dialogue
-- Rule engine improvements with scheduler, retry, channels parsing
-- Rules API handlers and storage layer
-
-#### Mobile & UX
-- Mobile infinite scroll and pagination optimization
-- Standardized dialog components for mobile
-- Improved drawer experience and z-index stacking
-- Startup loading screen for Tauri desktop
+#### Dashboard Improvements
+- **Fullscreen Config Dialog** - Split layout for component configuration
+- **Component Preview** - Real-time preview in config editor
+- Better nested dialog z-index handling
+- Improved input focus in plugin config forms
 
 ---
 
 ### 🏗️ Architecture Changes
 
-#### Workspace Consolidation
-- **Reduced from 15 to 10 crates** for simpler architecture
-- Merged `neomind-llm` into `neomind-agent`
-- Consolidated IPC types into SDK for ABI isolation
-- Removed 4 crates to 2 for better ABI isolation
+#### Workspace Consolidation (15 → 12 crates)
+- **Merged** `neomind-llm` into `neomind-agent`
+- **Consolidated** IPC types into SDK for ABI isolation
+- Removed duplicate `Tool` trait and `ExtensionRegistryTrait`
 
 #### Removed Unused Modules
 - `neomind-testing` crate
 - `intent` and `nl2automation` modules
 - `multimodal` and `maintenance` storage
-- `mqtt_v2` and `mock_devices`
-- `audit`, `prometheus metrics`
+- `mqtt_v2` and `mock_devices` modules
+- `audit` module and `prometheus metrics`
 - `Local Network Scan` feature
-- Duplicate `ExtensionRegistryTrait` and `Tool` trait
+- `priority_eventbus` and `registry` modules
+- Memory system: `graph.rs`, `importance.rs`, `unified.rs`
+- Messaging: `console.rs`, `memory.rs` channels
+- Storage: `knowledge.rs`
 
 ---
 
 ### 🔧 Improvements
+
+#### Extension System
+- Security validation for extension loading
+- Safe sidecar JSON discovery to prevent startup crashes
+- Disabled auto-discovery during startup for stability
+- MARKET_VERSION constant for cache-busting
+
+#### Dependency Updates
+- **Tauri**: synced NPM (`@tauri-apps/api@2.10.1`) and Rust (`tauri@2.10.3`) versions
+- **tauri-build**: updated to `2.5.6`
 
 #### Code Quality
 - Dead code cleanup across workspace
 - Removed unnecessary `#[allow(dead_code)]` annotations
 - Unified `StorageBackend` trait naming
-- Cleaner module interfaces
-
-#### UI/UX
-- Unified tab bar styling across all pages
-- Improved dialog patterns and scaling
-- Reduced padding in nested dialogs
-- Better loading UI states
-
-#### Performance
-- IPC buffer management optimization
-- Agent streaming optimization
-- Frontend performance improvements
-- UTF-8 handling fixes
+- Deprecated `string_to_c_str` function removed
 
 ---
 
 ### 🐛 Bug Fixes
 
-- Fixed extension startup crashes with safe sidecar discovery
+- Fixed Tauri NPM/Rust version mismatch error
+- Fixed channel filter persistence in dialogs
 - Fixed nested dialog z-index and footer alignment
 - Fixed input focus loss in plugin config forms
-- Fixed death monitor restarting extensions during unload
-- Fixed CI/CD build errors for macOS DMG bundling
-- Fixed WebSocket persistence and connection handling
+- Fixed extension startup crashes with safe sidecar discovery
+- Fixed config dialog content width and layout
 
 ---
 
 ### 📁 Changed Files
 
-**New Files** (Key Additions):
-- `crates/neomind-extension-sdk/` - Extension SDK
-- `web/src/components/dashboard/` - Dashboard components
-- `web/src/components/update/` - Auto-update UI
-- `scripts/` - Installation and CI/CD scripts
-- `docs/guides/` - Comprehensive documentation
+**New Files**:
+- `crates/neomind-messages/src/delivery_log.rs`
+- `crates/neomind-messages/src/channels/filter.rs`
+- `crates/neomind-extension-runner/src/dylib_validation.rs`
 
-**Removed Files**:
-- 20+ unused modules and crates
-- Duplicate trait definitions
+**Deleted Files** (20+ unused modules):
+- Memory: `graph.rs`, `importance.rs`, `unified.rs`
+- Messages: `channels/console.rs`, `channels/memory.rs`, `category.rs`
+- Storage: `knowledge.rs`, `maintenance.rs`, `multimodal.rs`
+- Core: `priority_eventbus.rs`, `registry.rs`, `integration/`
+- And more...
 
-**Modified**: 500+ files across all modules
-
----
-
-### 📊 Statistics
-
-| Category | Count |
-|----------|-------|
-| Commits | 546 |
-| Features | 96 |
-| Refactorings | 47 |
-| Bug Fixes | 204 |
-| Files Changed | 500+ |
+**Modified**: 283 files, 9,690 insertions(+), 28,284 deletions(-)
 
 ---
 
 ### 🎯 Summary
 
-✅ Complete messages pipeline with routing and tracking
-✅ Modern extension system with SDK and isolation
-✅ AI Agent memory system for context retention
-✅ Visual dashboard with real-time data binding
-✅ Native LLM backend for edge deployment
-✅ Simplified architecture (15 → 10 crates)
-✅ Auto-update system for seamless upgrades
-✅ Chinese language LLM optimization
+✅ Messages Pipeline Extension with delivery tracking
+✅ Channel Filter for flexible message routing
+✅ Lighter codebase (15→12 crates, -18K lines)
+✅ Tauri version sync for stable builds
+✅ Better extension security and stability
+✅ Improved dashboard and dialog UX
 
 **Production-ready and recommended for all users.**
 
 ---
 
-**Previous Release**: [v0.6.2](https://github.com/camthink-ai/NeoMind/releases/tag/v0.6.2)
-**Release Date**: March 25, 2026
-
----
-
-## [v0.6.2] - 2025-03-24
-
-### 🎉 Overview
-
-Minor release focusing on **lightweight architecture refactoring** and **code cleanup**.
-
-**Highlights**:
-- 🧹 Removed unused memory system components (graph, importance, unified)
-- 📦 Simplified messaging channels (removed console/memory channels)
-- 🔧 Removed knowledge storage module
-- 🔒 Added dylib validation for extension runner
-- 🎨 Various UI and code refinements
-
----
-
-### 🏗️ Architecture Changes
-
-#### Memory System Cleanup
-- **Removed** `memory/graph.rs` - Graph-based memory storage (unused)
-- **Removed** `memory/importance.rs` - Memory importance scoring (unused)
-- **Removed** `memory/unified.rs` - Unified memory implementation (unused)
-- Simplified memory module to essential components only
-
-#### Messaging System Cleanup
-- **Removed** `channels/console.rs` - Console channel (unused)
-- **Removed** `channels/memory.rs` - Memory channel (unused)
-- Streamlined channel management
-
-#### Storage Cleanup
-- **Removed** `storage/knowledge.rs` - Knowledge graph storage (unused)
-- Cleaner storage module interface
-
----
-
-### ✨ New Features
-
-- Added `dylib_validation.rs` for extension runner dynamic library validation
-- Improved extension security and validation
-
----
-
-### 🔧 Improvements
-
-- Refined agent module architecture
-- Updated LLM backend instance manager
-- Improved extension isolation process handling
-- Various web UI refinements in dashboard, LLM backends, plugins, and chat
-
----
-
-### 📁 Changed Files
-
-**Deleted Files**:
-- `crates/neomind-agent/src/memory/graph.rs`
-- `crates/neomind-agent/src/memory/importance.rs`
-- `crates/neomind-agent/src/memory/unified.rs`
-- `crates/neomind-messages/src/channels/console.rs`
-- `crates/neomind-messages/src/channels/memory.rs`
-- `crates/neomind-storage/src/knowledge.rs`
-
-**New Files**:
-- `crates/neomind-extension-runner/src/dylib_validation.rs`
-
-**Modified**: 25+ files across agent, API, core, messages, storage, and web modules
-
----
-
-### 🎯 Summary
-
-✅ Lighter codebase with removed unused modules
-✅ Cleaner architecture with focused components
-✅ Enhanced extension security
-✅ Improved maintainability
-
----
-
 **Previous Release**: [v0.6.1](https://github.com/camthink-ai/NeoMind/releases/tag/v0.6.1)
-**Release Date**: March 24, 2025
+**Release Date**: March 25, 2025
 
 ---
 
