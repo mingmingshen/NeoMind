@@ -208,8 +208,28 @@ export interface Alert {
 // New unified message/notification system
 
 export type MessageSeverity = 'info' | 'warning' | 'critical' | 'emergency'
+// Message Type - must match backend MessageType enum
+export type MessageType = 'notification' | 'data_push'
 export type MessageStatus = 'active' | 'acknowledged' | 'resolved' | 'archived'
-export type MessageCategory = 'alert' | 'notification' | 'system' | 'business'
+// Category is a flexible string - backend can provide any category value
+export type MessageCategory = string
+
+// Channel Filter - must match backend ChannelFilter struct
+export interface ChannelFilter {
+  message_types: MessageType[]
+  source_types: string[]
+  categories: string[]
+  min_severity: MessageSeverity | null
+  source_ids: string[]
+}
+
+// Known category values for reference (not exhaustive)
+export const KNOWN_CATEGORIES = {
+  alert: 'alert',
+  system: 'system',
+  business: 'business',
+  notification: 'notification',
+} as const
 
 /**
  * Message/Notification type - must match backend Message (crates/messages/src/message.rs)
@@ -226,6 +246,10 @@ export interface NotificationMessage {
   status: MessageStatus
   metadata?: Record<string, unknown>
   tags: string[]
+  // New fields
+  message_type?: MessageType
+  source_id?: string
+  payload?: Record<string, unknown>
 }
 
 /**
@@ -251,14 +275,30 @@ export interface MessageStats {
  * Create message request
  */
 export interface CreateMessageRequest {
-  category: MessageCategory
-  severity: MessageSeverity
+  category?: MessageCategory
+  severity?: MessageSeverity
   title: string
   message: string
   source?: string
   source_type?: string
   metadata?: Record<string, unknown>
   tags?: string[]
+  // New fields
+  message_type?: MessageType
+  source_id?: string
+  payload?: Record<string, unknown>
+}
+
+// Helper to get display label for MessageType
+export function getMessageTypeLabel(type: MessageType): string {
+  switch (type) {
+    case 'notification':
+      return '通知'
+    case 'data_push':
+      return '数据推送'
+    default:
+      return type
+  }
 }
 
 /**
@@ -338,6 +378,7 @@ export interface MessageChannel {
   channel_type: 'console' | 'memory' | 'webhook' | 'email'
   enabled: boolean
   config?: Record<string, unknown>
+  recipients?: string[]  // For email channels
 }
 
 export interface MessageChannelListResponse {
