@@ -6,6 +6,8 @@
 //! DELETE /api/messages/channels/:name        - Delete channel
 //! POST   /api/messages/channels/:name/test   - Test channel
 //! PUT    /api/messages/channels/:name/enabled - Toggle channel enabled state
+//! GET    /api/messages/channels/:name/filter - Get channel filter
+//! PUT    /api/messages/channels/:name/filter - Update channel filter
 //! GET    /api/messages/channels/stats        - Channel stats
 //! GET    /api/messages/channels/types        - Available channel types
 //! GET    /api/messages/channels/types/:type/schema - Channel schema
@@ -17,6 +19,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use neomind_messages::{ChannelFactory, ChannelInfo, ChannelStats, MessageChannel};
+use neomind_messages::channels::ChannelFilter;
 
 #[cfg(feature = "webhook")]
 use neomind_messages::WebhookChannelFactory;
@@ -222,6 +225,102 @@ pub async fn test_channel_handler(
     ok(json!(result))
 }
 
+/// Request to update a channel.
+#[derive(Debug, Deserialize)]
+pub struct UpdateChannelRequest {
+    pub config: serde_json::Value,
+}
+
+/// Update a channel's configuration.
+/// PUT /api/messages/channels/:name
+pub async fn update_channel_handler(
+    State(state): State<ServerState>,
+    Path(name): Path<String>,
+    Json(req): Json<UpdateChannelRequest>,
+) -> HandlerResult<serde_json::Value> {
+    use std::sync::Arc;
+
+    let registry = state.core.message_manager.channels().await;
+
+    // Get existing channel info first
+    let (channel_type, enabled, recipients) = {
+        let registry_guard = registry.read().await;
+        let info = registry_guard
+            .get_info(&name)
+            .await
+            .ok_or_else(|| ErrorResponse::not_found("Channel not found"))?;
+        (
+            info.channel_type.clone(),
+            info.enabled,
+            info.recipients.clone().unwrap_or_default(),
+        )
+    };
+
+    // Include recipients in config for email channels
+    let mut config = req.config.clone();
+    if channel_type == "email" && !recipients.is_empty() {
+        if let Some(obj) = config.as_object_mut() {
+            obj.insert("recipients".to_string(), serde_json::json!(recipients));
+        }
+    }
+
+    // Create new channel with updated config
+    let channel: Arc<dyn MessageChannel> = match channel_type.as_str() {
+        #[cfg(feature = "webhook")]
+        "webhook" => {
+            let factory = WebhookChannelFactory;
+            factory
+                .create(&config)
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
+        }
+        #[cfg(feature = "email")]
+        "email" => {
+            let factory = EmailChannelFactory;
+            factory
+                .create(&config)
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
+        }
+        _ => {
+            return Err(ErrorResponse::bad_request(format!(
+                "Unknown channel type: {}",
+                channel_type
+            )));
+        }
+    };
+
+    // Register the updated channel (this replaces the old one)
+    {
+        let registry_guard = registry.write().await;
+        registry_guard
+            .register_with_config(name.clone(), channel, config)
+            .await;
+    }
+
+    // Restore enabled state
+    {
+        let registry_guard = registry.read().await;
+        if let Err(e) = registry_guard.set_enabled(&name, enabled).await {
+            tracing::warn!("Failed to restore enabled state: {}", e);
+        }
+    }
+
+    // Note: recipients remain in the registry's memory map after update
+    // and are already included in the channel config for email channels
+
+    // Get updated info
+    let registry_guard = registry.read().await;
+    let info = registry_guard
+        .get_info(&name)
+        .await
+        .expect("Just updated");
+
+    ok(json!({
+        "message": "Channel updated successfully",
+        "message_zh": "通道更新成功",
+        "channel": info,
+    }))
+}
+
 /// Request to toggle channel enabled state.
 #[derive(Debug, Deserialize)]
 pub struct ToggleEnabledRequest {
@@ -268,6 +367,171 @@ pub async fn get_channel_stats_handler(
     ok(json!(stats))
 }
 
+// ========== Recipient Management ==========
+
+/// Add recipient request.
+#[derive(Debug, Deserialize)]
+pub struct AddRecipientRequest {
+    pub email: String,
+}
+
+/// Get recipients for a channel.
+/// GET /api/messages/channels/:name/recipients
+pub async fn list_recipients_handler(
+    State(state): State<ServerState>,
+    Path(name): Path<String>,
+) -> HandlerResult<serde_json::Value> {
+    let registry = state.core.message_manager.channels().await;
+    let registry_guard = registry.read().await;
+
+    // Check if channel exists
+    if registry_guard.get(&name).await.is_none() {
+        return Err(ErrorResponse::not_found("Channel not found"));
+    }
+
+    let recipients = registry_guard.get_recipients(&name).await;
+
+    ok(json!({
+        "channel": name,
+        "recipients": recipients,
+        "count": recipients.len(),
+    }))
+}
+
+/// Add a recipient to a channel.
+/// POST /api/messages/channels/:name/recipients
+pub async fn add_recipient_handler(
+    State(state): State<ServerState>,
+    Path(name): Path<String>,
+    Json(req): Json<AddRecipientRequest>,
+) -> HandlerResult<serde_json::Value> {
+    let registry = state.core.message_manager.channels().await;
+    let registry_guard = registry.read().await;
+
+    registry_guard
+        .add_recipient(&name, &req.email)
+        .await
+        .map_err(|e| ErrorResponse::bad_request(e.to_string()))?;
+
+    let recipients = registry_guard.get_recipients(&name).await;
+
+    ok(json!({
+        "message": "Recipient added successfully",
+        "message_zh": "收件人添加成功",
+        "channel": name,
+        "recipients": recipients,
+    }))
+}
+
+/// Remove a recipient from a channel.
+/// DELETE /api/messages/channels/:name/recipients/:email
+pub async fn remove_recipient_handler(
+    State(state): State<ServerState>,
+    Path((name, email)): Path<(String, String)>,
+) -> HandlerResult<serde_json::Value> {
+    let registry = state.core.message_manager.channels().await;
+    let registry_guard = registry.read().await;
+
+    // URL decode the email
+    let email_decoded = urlencoding::decode(&email)
+        .map(|s| s.to_string())
+        .unwrap_or(email);
+
+    registry_guard
+        .remove_recipient(&name, &email_decoded)
+        .await
+        .map_err(|e| match e {
+            neomind_messages::Error::NotFound(msg) => ErrorResponse::not_found(&msg),
+            _ => ErrorResponse::bad_request(e.to_string()),
+        })?;
+
+    let recipients = registry_guard.get_recipients(&name).await;
+
+    ok(json!({
+        "message": "Recipient removed successfully",
+        "message_zh": "收件人删除成功",
+        "channel": name,
+        "recipients": recipients,
+    }))
+}
+
+// ========== Filter Management ==========
+
+/// Get channel filter configuration.
+/// GET /api/messages/channels/:name/filter
+pub async fn get_channel_filter_handler(
+    State(state): State<ServerState>,
+    Path(name): Path<String>,
+) -> HandlerResult<serde_json::Value> {
+    let registry = state.core.message_manager.channels().await;
+    let registry_guard = registry.read().await;
+
+    // Check if channel exists
+    if registry_guard.get(&name).await.is_none() {
+        return Err(ErrorResponse::not_found("Channel not found"));
+    }
+
+    let filter = registry_guard.get_filter(&name).await;
+
+    ok(json!(filter))
+}
+
+/// Request to update channel filter.
+#[derive(Debug, Deserialize)]
+pub struct UpdateFilterRequest {
+    pub message_types: Vec<String>,
+    pub source_types: Vec<String>,
+    pub categories: Vec<String>,
+    pub min_severity: Option<String>,
+    pub source_ids: Vec<String>,
+}
+
+/// Update channel filter configuration.
+/// PUT /api/messages/channels/:name/filter
+pub async fn update_channel_filter_handler(
+    State(state): State<ServerState>,
+    Path(name): Path<String>,
+    Json(req): Json<UpdateFilterRequest>,
+) -> HandlerResult<serde_json::Value> {
+    let registry = state.core.message_manager.channels().await;
+    let registry_guard = registry.read().await;
+
+    // Check if channel exists
+    if registry_guard.get(&name).await.is_none() {
+        return Err(ErrorResponse::not_found(&format!("Channel not found: {}", name)));
+    }
+
+    // Build ChannelFilter
+    let mut filter = ChannelFilter::default();
+
+    // Parse message_types
+    for mt in req.message_types {
+        if let Some(parsed) = neomind_messages::MessageType::from_string(&mt) {
+            filter.message_types.push(parsed);
+        }
+    }
+
+    filter.source_types = req.source_types;
+    filter.categories = req.categories;
+
+    if let Some(sev) = req.min_severity {
+        filter.min_severity = neomind_messages::MessageSeverity::from_string(&sev);
+    }
+
+    filter.source_ids = req.source_ids;
+
+    // Save filter
+    registry_guard.set_filter(&name, filter.clone()).await
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+
+    ok(json!({
+        "message": "Filter updated successfully",
+        "message_zh": "过滤器更新成功",
+        "channel": name,
+        "filter": filter
+    }))
+}
+
 /// Router for message channel endpoints.
 pub fn message_channels_router() -> axum::Router<ServerState> {
     use axum::routing::{delete, get, post, put};
@@ -287,4 +551,11 @@ pub fn message_channels_router() -> axum::Router<ServerState> {
         .route("/messages/channels/:name", delete(delete_channel_handler))
         .route("/messages/channels/:name/test", post(test_channel_handler))
         .route("/messages/channels/:name/enabled", put(toggle_enabled_handler))
+        // Recipient management (for email channels)
+        .route("/messages/channels/:name/recipients", get(list_recipients_handler))
+        .route("/messages/channels/:name/recipients", post(add_recipient_handler))
+        .route("/messages/channels/:name/recipients/:email", delete(remove_recipient_handler))
+        // Filter management
+        .route("/messages/channels/:name/filter", get(get_channel_filter_handler))
+        .route("/messages/channels/:name/filter", put(update_channel_filter_handler))
 }

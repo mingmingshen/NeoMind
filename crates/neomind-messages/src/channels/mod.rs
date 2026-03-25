@@ -740,6 +740,50 @@ impl ChannelRegistry {
         }
         ChannelFilter::default()
     }
+
+    /// Set the filter for a channel.
+    pub async fn set_filter(&self, channel_name: &str, filter: ChannelFilter) -> Result<()> {
+        let storage = self.storage.read().await;
+        if let Some(db) = storage.as_ref() {
+            // Read existing config
+            let read_txn = db.begin_read()
+                .map_err(|e| Error::Storage(format!("Failed to begin read: {}", e)))?;
+
+            let table = read_txn.open_table(redb::TableDefinition::<&str, &str>::new("channels"))
+                .map_err(|e| Error::Storage(format!("Failed to open channels table: {}", e)))?;
+
+            let existing = table.get(channel_name)
+                .map_err(|e| Error::Storage(format!("Failed to read channel: {}", e)))?;
+
+            if let Some(value) = existing {
+                let mut stored: StoredChannelConfig = serde_json::from_str(value.value())
+                    .map_err(|e| Error::Storage(format!("Failed to deserialize channel config: {}", e)))?;
+
+                // Update filter
+                stored.filter = filter;
+
+                // Save updated config
+                let json = serde_json::to_string(&stored)
+                    .map_err(|e| Error::Storage(format!("Failed to serialize channel config: {}", e)))?;
+
+                let write_txn = db.begin_write()
+                    .map_err(|e| Error::Storage(format!("Failed to begin write: {}", e)))?;
+
+                {
+                    let mut table = write_txn.open_table(redb::TableDefinition::<&str, &str>::new("channels"))
+                        .map_err(|e| Error::Storage(format!("Failed to open channels table: {}", e)))?;
+                    table.insert(channel_name, json.as_str())
+                        .map_err(|e| Error::Storage(format!("Failed to save channel filter: {}", e)))?;
+                }
+
+                write_txn.commit()
+                    .map_err(|e| Error::Storage(format!("Failed to commit: {}", e)))?;
+
+                tracing::info!("Updated filter for channel '{}'", channel_name);
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Default for ChannelRegistry {
