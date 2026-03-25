@@ -315,6 +315,51 @@ export interface CleanupMessagesRequest {
   older_than_days: number
 }
 
+// ========== Delivery Log Types ==========
+
+/**
+ * Delivery status - must match backend DeliveryStatus enum
+ */
+export type DeliveryStatus = 'pending' | 'success' | 'failed' | 'retrying'
+
+/**
+ * Delivery log entry - must match backend DeliveryLog struct
+ */
+export interface DeliveryLog {
+  id: string
+  event_id: string
+  channel_name: string
+  status: DeliveryStatus
+  payload_summary: string
+  error_message?: string
+  retry_count: number
+  max_retries: number
+  created_at: string  // ISO 8601 string
+  updated_at: string  // ISO 8601 string
+}
+
+/**
+ * Delivery log query parameters
+ */
+export interface DeliveryLogQueryParams {
+  channel?: string
+  status?: string
+  event_id?: string
+  hours?: number
+  limit?: number
+}
+
+/**
+ * Delivery statistics - must match backend DeliveryStats struct
+ */
+export interface DeliveryStats {
+  total: number
+  pending: number
+  success: number
+  failed: number
+  retrying: number
+}
+
 // Message Channel Types (formerly AlertChannel for backward compatibility)
 export interface AlertChannel {
   name: string

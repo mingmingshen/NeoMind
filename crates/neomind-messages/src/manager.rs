@@ -10,6 +10,7 @@ use tokio::sync::RwLock;
 
 use super::channels::ChannelRegistry;
 use super::channels::ChannelFactory;
+use super::delivery_log::{DeliveryLog, DeliveryLogId, DeliveryLogQuery, DeliveryStats, DeliveryStatus};
 use super::error::{Error, Result};
 use super::{Message, MessageId, MessageSeverity, MessageStatus, MessageType};
 
@@ -27,6 +28,8 @@ pub struct MessageManager {
     /// Data directory for persistent storage (reserved for future use).
     #[allow(dead_code)]
     data_dir: Arc<RwLock<Option<String>>>,
+    /// Delivery log storage (in-memory with optional persistence)
+    delivery_logs: Arc<RwLock<HashMap<DeliveryLogId, DeliveryLog>>>,
 }
 
 impl MessageManager {
@@ -38,6 +41,7 @@ impl MessageManager {
             channels: Arc::new(RwLock::new(ChannelRegistry::new())),
             event_bus: Arc::new(RwLock::new(None)),
             data_dir: Arc::new(RwLock::new(None)),
+            delivery_logs: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -80,6 +84,7 @@ impl MessageManager {
             channels: Arc::new(RwLock::new(channels)),
             event_bus: Arc::new(RwLock::new(None)),
             data_dir: Arc::new(RwLock::new(Some(data_dir.to_string_lossy().to_string()))),
+            delivery_logs: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -272,14 +277,14 @@ impl MessageManager {
         let severity = message.severity;
         let message_type = message.message_type;
 
-        // Store in memory
-        self.messages
-            .write()
-            .await
-            .insert(id.clone(), message.clone());
-
-        // Persist to storage if available (only for Notification)
+        // Store in memory (for Notification only)
         if message_type == MessageType::Notification {
+            self.messages
+                .write()
+                .await
+                .insert(id.clone(), message.clone());
+
+            // Persist to storage if available (only for Notification)
             if let Some(store) = self.storage.read().await.as_ref() {
                 let stored = Self::message_to_stored(&message);
                 store
@@ -291,7 +296,7 @@ impl MessageManager {
         // Send through channels (don't fail if channels fail - message is already stored)
         let channels = self.channels.read().await;
         let channel_names = channels.list_names().await;
-        let mut send_results = Vec::new();
+        let mut send_results: Vec<(String, std::result::Result<(), String>)> = Vec::new();
 
         for channel_name in &channel_names {
             if let Some(channel) = channels.get(channel_name).await {
@@ -308,10 +313,39 @@ impl MessageManager {
                     }
 
                     tracing::info!("Sending message through channel '{}' (type: {})", channel_name, channel.channel_type());
+
+                    // Create delivery log entry for DataPush
+                    let delivery_log = if message_type == MessageType::DataPush {
+                        let payload_summary = message.payload
+                            .as_ref()
+                            .map(|p| {
+                                let s = p.to_string();
+                                // Truncate to 500 chars for display
+                                if s.len() > 500 {
+                                    format!("{}...", &s[..497])
+                                } else {
+                                    s
+                                }
+                            })
+                            .unwrap_or_default();
+                        Some(DeliveryLog::new(
+                            id.to_string(),
+                            channel_name.clone(),
+                            payload_summary,
+                        ))
+                    } else {
+                        None
+                    };
+
                     match channel.send(&message).await {
                         Ok(()) => {
                             tracing::info!("Successfully sent message through channel '{}'", channel_name);
                             send_results.push((channel_name.clone(), Ok(())));
+                            // Log successful delivery for DataPush
+                            if let Some(mut log) = delivery_log {
+                                log = log.with_status(DeliveryStatus::Success);
+                                self.delivery_logs.write().await.insert(log.id.clone(), log);
+                            }
                         }
                         Err(e) => {
                             // Log channel failure but don't fail the entire operation
@@ -320,7 +354,13 @@ impl MessageManager {
                                 channel_name,
                                 e
                             );
-                            send_results.push((channel_name.clone(), Err(e)));
+                            let error_msg = e.to_string();
+                            send_results.push((channel_name.clone(), Err(error_msg.clone())));
+                            // Log failed delivery for DataPush
+                            if let Some(mut log) = delivery_log {
+                                log = log.with_status(DeliveryStatus::Failed).with_error(error_msg);
+                                self.delivery_logs.write().await.insert(log.id.clone(), log);
+                            }
                         }
                     }
                 }
@@ -642,6 +682,101 @@ impl MessageManager {
             by_severity,
             by_status,
         }
+    }
+
+    // =========================================================================
+    // Delivery Log Methods
+    // =========================================================================
+
+    /// List delivery logs with optional filtering.
+    pub async fn list_delivery_logs(&self, query: DeliveryLogQuery) -> Vec<DeliveryLog> {
+        let logs = self.delivery_logs.read().await;
+
+        // Default values
+        let hours = query.hours.unwrap_or(24);
+        let limit = query.limit.unwrap_or(100);
+        let cutoff = chrono::Utc::now() - chrono::Duration::hours(hours);
+
+        let mut result: Vec<DeliveryLog> = logs
+            .values()
+            .filter(|log| {
+                // Filter by channel
+                if let Some(ref channel) = query.channel {
+                    if log.channel_name != *channel {
+                        return false;
+                    }
+                }
+
+                // Filter by status
+                if let Some(ref status) = query.status {
+                    if log.status.as_str() != *status {
+                        return false;
+                    }
+                }
+
+                // Filter by event_id
+                if let Some(ref event_id) = query.event_id {
+                    if log.event_id != *event_id {
+                        return false;
+                    }
+                }
+
+                // Filter by time
+                if log.created_at < cutoff {
+                    return false;
+                }
+
+                true
+            })
+            .cloned()
+            .collect();
+
+        // Sort by created_at descending (most recent first)
+        result.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        // Apply limit
+        result.truncate(limit);
+
+        result
+    }
+
+    /// Get a specific delivery log by ID.
+    pub async fn get_delivery_log(&self, id: &DeliveryLogId) -> Option<DeliveryLog> {
+        self.delivery_logs.read().await.get(id).cloned()
+    }
+
+    /// Get delivery log statistics.
+    pub async fn get_delivery_stats(&self) -> DeliveryStats {
+        let logs = self.delivery_logs.read().await;
+
+        let mut stats = DeliveryStats::default();
+        stats.total = logs.len();
+
+        for log in logs.values() {
+            match log.status {
+                DeliveryStatus::Pending => stats.pending += 1,
+                DeliveryStatus::Success => stats.success += 1,
+                DeliveryStatus::Failed => stats.failed += 1,
+                DeliveryStatus::Retrying => stats.retrying += 1,
+            }
+        }
+
+        stats
+    }
+
+    /// Cleanup old delivery logs (older than retention_days).
+    pub async fn cleanup_delivery_logs(&self, retention_days: i64) -> usize {
+        let mut logs = self.delivery_logs.write().await;
+        let initial_count = logs.len();
+
+        logs.retain(|_, log| !log.is_expired(retention_days));
+
+        initial_count - logs.len()
+    }
+
+    /// Clear all delivery logs.
+    pub async fn clear_delivery_logs(&self) {
+        self.delivery_logs.write().await.clear();
     }
 
     /// Clear all messages (use with caution).

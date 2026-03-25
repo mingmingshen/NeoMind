@@ -532,6 +532,55 @@ pub async fn update_channel_filter_handler(
     }))
 }
 
+// ========== Delivery Log Management ==========
+
+/// Query parameters for delivery logs.
+#[derive(Debug, Deserialize)]
+pub struct DeliveryLogQueryParams {
+    /// Filter by channel name
+    pub channel: Option<String>,
+    /// Filter by status (pending, success, failed, retrying)
+    pub status: Option<String>,
+    /// Filter by event ID
+    pub event_id: Option<String>,
+    /// Hours to look back (default: 24)
+    pub hours: Option<i64>,
+    /// Maximum results (default: 100)
+    pub limit: Option<usize>,
+}
+
+/// List delivery logs.
+/// GET /api/messages/delivery-logs
+pub async fn list_delivery_logs_handler(
+    State(state): State<ServerState>,
+    axum::extract::Query(params): axum::extract::Query<DeliveryLogQueryParams>,
+) -> HandlerResult<serde_json::Value> {
+    let query = neomind_messages::DeliveryLogQuery {
+        channel: params.channel,
+        status: params.status,
+        event_id: params.event_id,
+        hours: params.hours,
+        limit: params.limit,
+    };
+
+    let logs = state.core.message_manager.list_delivery_logs(query).await;
+
+    ok(json!({
+        "logs": logs,
+        "count": logs.len(),
+    }))
+}
+
+/// Get delivery log statistics.
+/// GET /api/messages/delivery-logs/stats
+pub async fn get_delivery_stats_handler(
+    State(state): State<ServerState>,
+) -> HandlerResult<serde_json::Value> {
+    let stats = state.core.message_manager.get_delivery_stats().await;
+
+    ok(json!(stats))
+}
+
 /// Router for message channel endpoints.
 pub fn message_channels_router() -> axum::Router<ServerState> {
     use axum::routing::{delete, get, post, put};
@@ -558,4 +607,7 @@ pub fn message_channels_router() -> axum::Router<ServerState> {
         // Filter management
         .route("/messages/channels/:name/filter", get(get_channel_filter_handler))
         .route("/messages/channels/:name/filter", put(update_channel_filter_handler))
+        // Delivery log management
+        .route("/messages/delivery-logs", get(list_delivery_logs_handler))
+        .route("/messages/delivery-logs/stats", get(get_delivery_stats_handler))
 }

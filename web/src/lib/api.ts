@@ -62,6 +62,10 @@ import type {
   CreateMessageRequest,
   BulkMessageRequest,
   CleanupMessagesRequest,
+  // Delivery Log Types
+  DeliveryLog,
+  DeliveryLogQueryParams,
+  DeliveryStats,
   MessageChannel,
   MessageChannelListResponse,
   CreateMessageChannelRequest,
@@ -739,6 +743,18 @@ export const api = {
       `/messages/channels/${encodeURIComponent(name)}/recipients/${encodeURIComponent(email)}`,
       { method: 'DELETE' }
     ),
+  // Delivery Log API
+  getDeliveryLogs: (params?: DeliveryLogQueryParams) =>
+    fetchAPI<{ logs: DeliveryLog[]; count: number }>(
+      `/messages/delivery-logs${params ? `?${new URLSearchParams(
+        Object.entries(params).reduce((acc, [key, value]) => {
+          if (value !== undefined) acc[key] = String(value)
+          return acc
+        }, {} as Record<string, string>)
+      )}` : ''}`
+    ),
+  getDeliveryStats: () =>
+    fetchAPI<DeliveryStats>('/messages/delivery-logs/stats'),
   cleanupMessages: (req: { older_than_days: number }) =>
     fetchAPI<{ cleaned: number; message: string; message_zh: string }>('/messages/cleanup', {
       method: 'POST',

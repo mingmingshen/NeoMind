@@ -42,6 +42,7 @@
 //! ```
 
 pub mod channels;
+pub mod delivery_log;
 pub mod error;
 pub mod manager;
 pub mod message;
@@ -63,6 +64,9 @@ pub use channels::{ChannelFactory, ChannelInfo, ChannelStats, ChannelTypeInfo, T
 
 // Re-export channel helper functions
 pub use channels::{get_channel_schema, list_channel_types};
+
+// Delivery log exports
+pub use delivery_log::{DeliveryLog, DeliveryLogId, DeliveryLogQuery, DeliveryStats, DeliveryStatus};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
