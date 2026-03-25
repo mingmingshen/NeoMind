@@ -63,6 +63,11 @@
       "system": "系统",
       "business": "业务"
     },
+    "type": {
+      "label": "消息类型",
+      "notification": "通知",
+      "data_push": "数据推送"
+    },
     "stats": {
       "total": "总计",
       "active": "活跃",

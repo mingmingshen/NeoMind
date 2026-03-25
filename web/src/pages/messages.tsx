@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast'
 import { confirm } from '@/hooks/use-confirm'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { useIsMobile } from '@/hooks/useMobile'
-import type { NotificationMessage, MessageSeverity, MessageStatus, MessageCategory, MessageChannel } from '@/types'
+import type { NotificationMessage, MessageSeverity, MessageStatus, MessageCategory, MessageChannel, MessageType, DeliveryLog } from '@/types'
 import type { StandardError } from '@/lib/errors'
 
 // Raw API response types
@@ -64,7 +64,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { UnifiedFormDialog } from '@/components/dialog/UnifiedFormDialog'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { FormField } from '@/components/ui/field'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -88,6 +91,9 @@ import {
   X,
   CheckCircle2,
   TestTube,
+  Mail,
+  UserPlus,
+  Send,
 } from 'lucide-react'
 import { CreateMessageDialog } from '@/components/messages/CreateMessageDialog'
 import { formatTimestamp } from '@/lib/utils/format'
@@ -122,11 +128,20 @@ const STATUS_CONFIG: Record<string, { variant: 'default' | 'secondary' | 'outlin
   false_positive: { variant: 'outline', label: 'messages.status.false_positive' },
 }
 
-// Category config
+// Category config - supports any category from backend with fallback
 const CATEGORY_CONFIG: Record<string, { label: string; icon: typeof Bell }> = {
   alert: { label: 'messages.category.alert', icon: AlertCircle },
   system: { label: 'messages.category.system', icon: Bell },
   business: { label: 'messages.category.business', icon: Megaphone },
+  notification: { label: 'messages.category.notification', icon: Bell },
+}
+
+// Helper to get category config with fallback for unknown categories
+const getCategoryConfig = (category: string) => {
+  return CATEGORY_CONFIG[category] || {
+    label: category, // Use raw category name as label for unknown categories
+    icon: Bell,
+  }
 }
 
 export default function MessagesPage() {
@@ -156,13 +171,21 @@ export default function MessagesPage() {
   // Filters - support multiple selections
   const [selectedSeverities, setSelectedSeverities] = useState<Set<MessageSeverity>>(new Set())
   const [selectedStatuses, setSelectedStatuses] = useState<Set<MessageStatus>>(new Set())
-  const [selectedCategories, setSelectedCategories] = useState<Set<MessageCategory>>(new Set())
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set())
+  const [selectedMessageTypes, setSelectedMessageTypes] = useState<Set<string>>(new Set())
+
+  // Delivery logs for DataPush messages
+  const [deliveryLogs, setDeliveryLogs] = useState<DeliveryLog[]>([])
+
+  // Dynamic categories from API
+  const [availableCategories, setAvailableCategories] = useState<string[]>([])
 
   // Check if any filters are active
-  const hasActiveFilters = selectedSeverities.size > 0 || selectedStatuses.size > 0 || selectedCategories.size > 0
+  const hasActiveFilters = selectedSeverities.size > 0 || selectedStatuses.size > 0 || selectedCategories.size > 0 || selectedMessageTypes.size > 0
 
   // Clear all filters
   const clearAllFilters = () => {
+    setSelectedMessageTypes(new Set())
     setSelectedSeverities(new Set())
     setSelectedStatuses(new Set())
     setSelectedCategories(new Set())
@@ -189,7 +212,7 @@ export default function MessagesPage() {
     setSelectedStatuses(newSet)
   }
 
-  const toggleCategory = (category: MessageCategory) => {
+  const toggleCategory = (category: string) => {
     const newSet = new Set(selectedCategories)
     if (newSet.has(category)) {
       newSet.delete(category)
@@ -199,8 +222,18 @@ export default function MessagesPage() {
     setSelectedCategories(newSet)
   }
 
+  const toggleMessageType = (type: string) => {
+    const newSet = new Set(selectedMessageTypes)
+    if (newSet.has(type)) {
+      newSet.delete(type)
+    } else {
+      newSet.add(type)
+    }
+    setSelectedMessageTypes(newSet)
+  }
+
   // Get active filter count
-  const getActiveFilterCount = () => selectedSeverities.size + selectedStatuses.size + selectedCategories.size
+  const getActiveFilterCount = () => selectedSeverities.size + selectedStatuses.size + selectedCategories.size + selectedMessageTypes.size
 
   // Test channel state
   const [testingChannel, setTestingChannel] = useState<string | null>(null)
@@ -208,6 +241,136 @@ export default function MessagesPage() {
 
   // View channel dialog state
   const [viewChannel, setViewChannel] = useState<MessageChannel | null>(null)
+
+  // Recipients management dialog state
+  const [recipientsDialogChannel, setRecipientsDialogChannel] = useState<MessageChannel | null>(null)
+  const [recipients, setRecipients] = useState<string[]>([])
+  const [newRecipientEmail, setNewRecipientEmail] = useState('')
+  const [loadingRecipients, setLoadingRecipients] = useState(false)
+  const [addingRecipient, setAddingRecipient] = useState(false)
+  const [recipientError, setRecipientError] = useState<string | null>(null)
+
+  // Fetch recipients for a channel
+  const fetchRecipients = async (channelName: string) => {
+    setLoadingRecipients(true)
+    try {
+      const response = await fetch(getApiUrl(`/messages/channels/${encodeURIComponent(channelName)}/recipients`), {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
+        },
+      })
+      if (response.ok) {
+        const result = await response.json()
+        // Handle wrapped response format: { success: true, data: { recipients: [...] } }
+        const recipients = result.data?.recipients || result.recipients || []
+        setRecipients(recipients)
+      }
+    } catch (error) {
+      handleError(error, { operation: 'Fetch recipients' })
+    } finally {
+      setLoadingRecipients(false)
+    }
+  }
+
+  // Open recipients dialog
+  const handleManageRecipients = async (channel: MessageChannel) => {
+    setRecipientsDialogChannel(channel)
+    setNewRecipientEmail('')
+    await fetchRecipients(channel.name)
+  }
+
+  // Add recipient
+  const handleAddRecipient = async () => {
+    if (!recipientsDialogChannel || !newRecipientEmail.trim()) return
+
+    setAddingRecipient(true)
+    setRecipientError(null)
+    try {
+      const response = await fetch(
+        getApiUrl(`/messages/channels/${encodeURIComponent(recipientsDialogChannel.name)}/recipients`),
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email: newRecipientEmail.trim() }),
+        }
+      )
+      if (response.ok) {
+        const result = await response.json()
+        // Handle wrapped response format: { success: true, data: { recipients: [...] } }
+        const recipients = result.data?.recipients || result.recipients || []
+        setRecipients(recipients)
+        setNewRecipientEmail('')
+        toast({
+          title: t('success'),
+          description: t('messages.channels.recipientAdded', 'Recipient added successfully'),
+        })
+        fetchChannels() // Refresh channel list
+      } else {
+        const text = await response.text()
+        let errorMessage = t('messages.channels.addRecipientError', 'Failed to add recipient')
+        try {
+          if (text) {
+            const result = JSON.parse(text)
+            // Handle nested error format: { success: false, error: { message: "..." } }
+            errorMessage = result.error?.message || result.message || result.error || errorMessage
+          }
+        } catch {
+          // Ignore JSON parse errors
+        }
+        setRecipientError(errorMessage)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setRecipientError(message)
+    } finally {
+      setAddingRecipient(false)
+    }
+  }
+
+  // Remove recipient
+  const handleRemoveRecipient = async (email: string) => {
+    if (!recipientsDialogChannel) return
+
+    try {
+      const response = await fetch(
+        getApiUrl(`/messages/channels/${encodeURIComponent(recipientsDialogChannel.name)}/recipients/${encodeURIComponent(email)}`),
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
+          },
+        }
+      )
+      if (response.ok) {
+        const result = await response.json()
+        // Handle wrapped response format: { success: true, data: { recipients: [...] } }
+        const recipients = result.data?.recipients || result.recipients || []
+        setRecipients(recipients)
+        toast({
+          title: t('success'),
+          description: t('messages.channels.recipientRemoved', 'Recipient removed successfully'),
+        })
+        fetchChannels() // Refresh channel list
+      } else {
+        const text = await response.text()
+        let errorMessage = t('messages.channels.removeRecipientError', 'Failed to remove recipient')
+        try {
+          if (text) {
+            const result = JSON.parse(text)
+            errorMessage = result.message || result.error || errorMessage
+          }
+        } catch {
+          // Ignore JSON parse errors
+        }
+        throw new Error(errorMessage)
+      }
+    } catch (error) {
+      handleError(error, { operation: 'Remove recipient' })
+    }
+  }
 
   // Test a channel
   const handleTestChannel = async (channelName: string) => {
@@ -263,8 +426,18 @@ export default function MessagesPage() {
             : t('messages.channels.disableSuccess', 'Channel disabled')
         })
       } else {
-        const result = await response.json()
-        throw new Error(result.message || 'Failed to update channel')
+        // Try to parse error response, handle empty responses gracefully
+        let errorMessage = 'Failed to update channel'
+        try {
+          const text = await response.text()
+          if (text) {
+            const result = JSON.parse(text)
+            errorMessage = result.message || result.error || errorMessage
+          }
+        } catch {
+          // Ignore JSON parse errors
+        }
+        throw new Error(errorMessage)
       }
     } catch (error) {
       handleError(error, { operation: 'Toggle channel', showToast: true })
@@ -276,6 +449,46 @@ export default function MessagesPage() {
     const channel = channels.find(c => c.name === channelName)
     if (channel) {
       setViewChannel(channel)
+    }
+  }
+
+  // Delete channel
+  const handleDeleteChannel = async (channelName: string) => {
+    const confirmed = await confirm({
+      title: t('messages.channels.deleteChannel', 'Delete Channel'),
+      description: t('messages.channels.confirmDelete', 'Are you sure you want to delete the channel "{{name}}"?', { name: channelName }),
+      variant: 'destructive',
+    })
+    if (!confirmed) return
+
+    try {
+      const response = await fetch(getApiUrl(`/messages/channels/${encodeURIComponent(channelName)}`), {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
+        },
+      })
+      if (response.ok) {
+        toast({
+          title: t('success'),
+          description: t('messages.channels.deleteSuccess', 'Channel deleted successfully'),
+        })
+        fetchChannels()
+      } else {
+        const text = await response.text()
+        let errorMessage = t('messages.channels.deleteError', 'Failed to delete channel')
+        try {
+          if (text) {
+            const result = JSON.parse(text)
+            errorMessage = result.message || result.error || errorMessage
+          }
+        } catch {
+          // Ignore JSON parse errors
+        }
+        throw new Error(errorMessage)
+      }
+    } catch (error) {
+      handleError(error, { operation: 'Delete channel', showToast: true })
     }
   }
 
@@ -322,12 +535,21 @@ export default function MessagesPage() {
   const fetchMessages = useCallback(async () => {
     setLoading(true)
     try {
-      const response = await fetch(getApiUrl('/messages'), {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
-        },
-      })
-      const rawData: unknown = await response.json()
+      // Fetch both notifications and delivery logs in parallel
+      const [messagesResponse, deliveryLogsResponse] = await Promise.all([
+        fetch(getApiUrl('/messages'), {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
+          },
+        }),
+        fetch(getApiUrl('/messages/delivery-logs?hours=24'), {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
+          },
+        }).catch(() => null) // Gracefully handle if delivery logs endpoint is not available
+      ])
+
+      const rawData: unknown = await messagesResponse.json()
 
       // Handle different response formats from messages endpoint
       let messagesArray: RawNotificationMessage[] = []
@@ -350,7 +572,7 @@ export default function MessagesPage() {
       // Convert to NotificationMessage format
       let messages: NotificationMessage[] = messagesArray.map((msg: RawNotificationMessage) => ({
         id: msg.id || '',
-        category: (msg.category || 'alert') as MessageCategory,
+        category: msg.category || 'alert',
         severity: msg.severity || 'info',
         title: msg.title || '',
         message: msg.message || '',
@@ -360,7 +582,39 @@ export default function MessagesPage() {
         status: msg.status || 'active',
         tags: msg.tags || [],
         metadata: msg.metadata,
+        message_type: (msg.metadata?.message_type as MessageType) || 'notification',
       }))
+
+      // Fetch and process delivery logs
+      let allDeliveryLogs: DeliveryLog[] = []
+      if (deliveryLogsResponse && deliveryLogsResponse.ok) {
+        const logsData = await deliveryLogsResponse.json()
+        allDeliveryLogs = logsData.logs || logsData || []
+        setDeliveryLogs(allDeliveryLogs)
+
+        // Convert delivery logs to message format for display
+        const deliveryLogMessages: NotificationMessage[] = allDeliveryLogs.map((log: DeliveryLog) => ({
+          id: log.id,
+          category: 'data_push',
+          severity: log.status === 'success' ? 'info' : log.status === 'failed' ? 'critical' : 'warning',
+          title: `DataPush: ${log.channel_name}`,
+          message: log.error_message || log.payload_summary || 'Data pushed',
+          source: log.channel_name,
+          source_type: 'data_push',
+          timestamp: log.created_at,
+          status: log.status === 'success' ? 'resolved' : log.status === 'failed' ? 'active' : 'active',
+          tags: [],
+          metadata: { delivery_log: true, retry_count: log.retry_count },
+          message_type: 'data_push' as MessageType,
+        }))
+
+        // Merge messages with delivery logs
+        messages = [...messages, ...deliveryLogMessages]
+      }
+
+      // Extract unique categories from the data
+      const categories = [...new Set(messages.map(m => m.category))].sort()
+      setAvailableCategories(categories)
 
       // Apply filters using Sets
       if (selectedSeverities.size > 0) {
@@ -370,7 +624,14 @@ export default function MessagesPage() {
         messages = messages.filter((m: NotificationMessage) => selectedStatuses.has(m.status as MessageStatus))
       }
       if (selectedCategories.size > 0) {
-        messages = messages.filter((m: NotificationMessage) => selectedCategories.has(m.category as MessageCategory))
+        messages = messages.filter((m: NotificationMessage) => selectedCategories.has(m.category))
+      }
+      // Filter by message type
+      if (selectedMessageTypes.size > 0) {
+        messages = messages.filter((m: NotificationMessage) => {
+          const msgType = m.message_type || 'notification'
+          return selectedMessageTypes.has(msgType)
+        })
       }
 
       // Sort by timestamp descending (handle invalid timestamps)
@@ -390,7 +651,7 @@ export default function MessagesPage() {
     } finally {
       setLoading(false)
     }
-  }, [selectedSeverities, selectedStatuses, selectedCategories])
+  }, [selectedSeverities, selectedStatuses, selectedCategories, selectedMessageTypes])
 
   // Fetch channels
   const fetchChannels = useCallback(async () => {
@@ -584,17 +845,39 @@ export default function MessagesPage() {
         {/* Category Filter */}
         <div className="px-2 py-1.5">
           <p className="text-xs font-medium text-muted-foreground mb-1">{t('messages.category.label')}</p>
-          {(['alert', 'system', 'business'] as MessageCategory[]).map((cat) => (
+          {availableCategories.map((cat) => {
+            const config = getCategoryConfig(cat)
+            const Icon = config.icon
+            return (
+              <DropdownMenuCheckboxItem
+                key={cat}
+                checked={selectedCategories.has(cat)}
+                onCheckedChange={() => toggleCategory(cat)}
+              >
+                <div className="flex items-center gap-2">
+                  <Icon className="h-3.5 w-3.5" />
+                  {t(config.label)}
+                </div>
+              </DropdownMenuCheckboxItem>
+            )
+          })}
+        </div>
+
+        <DropdownMenuSeparator />
+
+        {/* Message Type Filter */}
+        <div className="px-2 py-1.5">
+          <p className="text-xs font-medium text-muted-foreground mb-1">{t('messages.type.label')}</p>
+          {(['notification', 'data_push'] as const).map((type) => (
             <DropdownMenuCheckboxItem
-              key={cat}
-              checked={selectedCategories.has(cat)}
-              onCheckedChange={() => toggleCategory(cat)}
+              key={type}
+              checked={selectedMessageTypes.has(type)}
+              onCheckedChange={() => toggleMessageType(type)}
             >
               <div className="flex items-center gap-2">
-                {cat === 'alert' && <AlertCircle className="h-3.5 w-3.5" />}
-                {cat === 'system' && <Bell className="h-3.5 w-3.5" />}
-                {cat === 'business' && <Megaphone className="h-3.5 w-3.5" />}
-                {t(`messages.category.${cat}`)}
+                {type === 'notification' && <Bell className="h-3.5 w-3.5 text-blue-500" />}
+                {type === 'data_push' && <Send className="h-3.5 w-3.5 text-purple-500" />}
+                {t(`messages.type.${type}`)}
               </div>
             </DropdownMenuCheckboxItem>
           ))}
@@ -672,20 +955,22 @@ export default function MessagesPage() {
                 </Badge>
               ))}
 
-              {Array.from(selectedCategories).map((cat) => (
-                <Badge
-                  key={`cat-${cat}`}
-                  variant="secondary"
-                  className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
-                  onClick={() => toggleCategory(cat)}
-                >
-                  {cat === 'alert' && <AlertCircle className="h-3 w-3" />}
-                  {cat === 'system' && <Bell className="h-3 w-3" />}
-                  {cat === 'business' && <Megaphone className="h-3 w-3" />}
-                  {t(`messages.category.${cat}`)}
-                  <X className="h-3 w-3 ml-1 text-muted-foreground" />
-                </Badge>
-              ))}
+              {Array.from(selectedCategories).map((cat) => {
+                const config = getCategoryConfig(cat)
+                const Icon = config.icon
+                return (
+                  <Badge
+                    key={`cat-${cat}`}
+                    variant="secondary"
+                    className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
+                    onClick={() => toggleCategory(cat)}
+                  >
+                    <Icon className="h-3 w-3" />
+                    {t(config.label)}
+                    <X className="h-3 w-3 ml-1 text-muted-foreground" />
+                  </Badge>
+                )
+              })}
 
               <Button
                 variant="ghost"
@@ -744,7 +1029,7 @@ export default function MessagesPage() {
               renderCell={(columnKey, rowData) => {
                 const message = rowData as unknown as NotificationMessage
                 const severityConfig = SEVERITY_CONFIG[message.severity] || SEVERITY_CONFIG.info
-                const categoryConfig = CATEGORY_CONFIG[message.category] || CATEGORY_CONFIG.system
+                const categoryConfig = getCategoryConfig(message.category)
                 const statusConfig = STATUS_CONFIG[message.status] || STATUS_CONFIG.active
                 const SeverityIcon = severityConfig.icon
                 const CategoryIcon = categoryConfig.icon
@@ -916,7 +1201,18 @@ export default function MessagesPage() {
                             </Button>
                           )}
                         </div>
-                        <div className="text-xs text-muted-foreground">{channel.channel_type}</div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>{channel.channel_type}</span>
+                          {channel.channel_type === 'email' && channel.recipients && channel.recipients.length > 0 && (
+                            <>
+                              <span>·</span>
+                              <span className="flex items-center gap-1">
+                                <Mail className="h-3 w-3" />
+                                {channel.recipients.length} {t('messages.channels.recipients', 'recipients')}
+                              </span>
+                            </>
+                          )}
+                        </div>
                         {testResult && (
                           <div className={`text-xs mt-1 ${testResult.success ? 'text-green-500' : 'text-red-500'}`}>
                             {testResult.success ? '✓ ' : '✗ '}
@@ -944,7 +1240,7 @@ export default function MessagesPage() {
             }}
             actions={[
               {
-                label: t('common.view'),
+                label: t('view'),
                 icon: <Eye className="h-4 w-4" />,
                 onClick: (rowData) => {
                   const channel = rowData as unknown as MessageChannel
@@ -952,7 +1248,19 @@ export default function MessagesPage() {
                 },
               },
               {
-                label: t('common.enable'),
+                label: t('messages.channels.manageRecipients', 'Manage Recipients'),
+                icon: <UserPlus className="h-4 w-4" />,
+                show: (rowData) => {
+                  const channel = rowData as unknown as MessageChannel
+                  return channel.channel_type === 'email'
+                },
+                onClick: (rowData) => {
+                  const channel = rowData as unknown as MessageChannel
+                  handleManageRecipients(channel)
+                },
+              },
+              {
+                label: t('enable'),
                 icon: <CheckCircle2 className="h-4 w-4" />,
                 show: (rowData) => {
                   const channel = rowData as unknown as MessageChannel
@@ -964,7 +1272,7 @@ export default function MessagesPage() {
                 },
               },
               {
-                label: t('common.disable'),
+                label: t('disable'),
                 icon: <X className="h-4 w-4" />,
                 show: (rowData) => {
                   const channel = rowData as unknown as MessageChannel
@@ -973,6 +1281,19 @@ export default function MessagesPage() {
                 onClick: (rowData) => {
                   const channel = rowData as unknown as MessageChannel
                   handleToggleEnabled(channel.name, false)
+                },
+              },
+              {
+                label: t('delete'),
+                icon: <Trash2 className="h-4 w-4" />,
+                variant: 'destructive',
+                show: (rowData) => {
+                  const channel = rowData as unknown as MessageChannel
+                  return channel.channel_type !== 'console' && channel.channel_type !== 'memory'
+                },
+                onClick: (rowData) => {
+                  const channel = rowData as unknown as MessageChannel
+                  handleDeleteChannel(channel.name)
                 },
               },
             ]}
@@ -1120,6 +1441,94 @@ export default function MessagesPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Recipients Management Dialog */}
+      <UnifiedFormDialog
+        open={!!recipientsDialogChannel}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRecipientsDialogChannel(null)
+            setRecipientError(null)
+            setNewRecipientEmail('')
+          }
+        }}
+        title={t('messages.channels.manageRecipients', 'Manage Recipients')}
+        description={recipientsDialogChannel?.name || ''}
+        icon={<Mail className="h-5 w-5" />}
+        width="sm"
+        loading={loadingRecipients}
+        submitError={recipientError}
+        showCancelButton={true}
+        cancelLabel={t('close')}
+        onSubmit={async () => {
+          // Dialog doesn't have a primary submit action - just close
+          setRecipientsDialogChannel(null)
+        }}
+        submitLabel={t('done', 'Done')}
+      >
+        <div className="space-y-4">
+          {/* Add new recipient */}
+          <FormField label={t('messages.channels.addRecipient', 'Add Recipient')}>
+            <div className="flex gap-2">
+              <Input
+                type="email"
+                placeholder={t('messages.channels.emailPlaceholder', 'email@example.com')}
+                value={newRecipientEmail}
+                onChange={(e) => {
+                  setNewRecipientEmail(e.target.value)
+                  if (recipientError) setRecipientError(null)
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddRecipient())}
+                disabled={addingRecipient}
+                className="flex-1"
+              />
+              <Button
+                onClick={handleAddRecipient}
+                disabled={addingRecipient || !newRecipientEmail.trim()}
+                size="default"
+              >
+                {addingRecipient ? t('adding', 'Adding...') : t('add')}
+              </Button>
+            </div>
+          </FormField>
+
+          {/* Recipients list */}
+          <div className="space-y-2">
+            <Label className="text-muted-foreground text-xs">
+              {t('messages.channels.currentRecipients', 'Current Recipients')} ({recipients.length})
+            </Label>
+            {loadingRecipients ? (
+              <div className="text-center py-4 text-muted-foreground">
+                {t('loading')}
+              </div>
+            ) : recipients.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground border border-dashed rounded-lg">
+                <Mail className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">{t('messages.channels.noRecipients', 'No recipients configured')}</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                {recipients.map((email) => (
+                  <div
+                    key={email}
+                    className="flex items-center justify-between bg-muted/50 rounded-lg px-3 py-2"
+                  >
+                    <span className="text-sm truncate flex-1">{email}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive shrink-0 ml-2"
+                      onClick={() => handleRemoveRecipient(email)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </UnifiedFormDialog>
     </>
   )
 }

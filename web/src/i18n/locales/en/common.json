@@ -63,6 +63,11 @@
       "system": "System",
       "business": "Business"
     },
+    "type": {
+      "label": "Message Type",
+      "notification": "Notification",
+      "data_push": "Data Push"
+    },
     "stats": {
       "total": "Total",
       "active": "Active",
