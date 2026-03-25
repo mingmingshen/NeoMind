@@ -7,11 +7,9 @@
 //! - Error handling
 //! - Stream types
 
-use neomind_core::extension::isolated::{
+use neomind_extension_sdk::{
     IpcMessage, IpcResponse, ErrorKind,
     StreamClientInfo, StreamDataChunk,
-};
-use neomind_core::extension::system::{
     ExtensionMetadata, ExtensionDescriptor,
 };
 use serde_json::json;
@@ -199,7 +197,7 @@ fn test_ipc_response_ready() {
     let metadata = ExtensionMetadata::new(
         "test.extension",
         "Test Extension",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     );
     let descriptor = ExtensionDescriptor::new(metadata);
 
@@ -280,7 +278,7 @@ fn test_ipc_response_metadata() {
     let metadata = ExtensionMetadata::new(
         "test.extension",
         "Test Extension",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     );
 
     let resp = IpcResponse::Metadata {

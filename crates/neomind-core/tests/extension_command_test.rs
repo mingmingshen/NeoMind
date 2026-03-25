@@ -71,7 +71,7 @@ impl Extension for ConfigurableExtension {
             ExtensionMetadata::new(
                 "configurable.extension",
                 "Configurable Extension",
-                semver::Version::new(1, 0, 0),
+                "1.0.0",
             )
         })
     }

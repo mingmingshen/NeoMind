@@ -79,7 +79,6 @@
   "confirmDeleteSelected": "确定要删除选中的 {{count}} 个设备吗？",
   "deletedCount": "已删除 {{count}} 个设备",
   "bulkDeleteFailed": "批量删除设备失败",
-  "localNetworkScan": "局域网扫描",
   "loading": "加载设备中...",
   "startUsing": "点击上方「添加设备」或「发现设备」来开始使用",
   "headers": {

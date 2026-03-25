@@ -2,7 +2,7 @@
 
 use neomind_core::llm::backend::{GenerationParams, LlmInput, LlmRuntime, ToolDefinition};
 use neomind_core::message::Message;
-use neomind_llm::{OllamaConfig, OllamaRuntime};
+use neomind_agent::{OllamaConfig, OllamaRuntime};
 use std::sync::Arc;
 
 #[tokio::test]

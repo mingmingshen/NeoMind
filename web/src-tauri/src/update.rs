@@ -51,7 +51,7 @@ pub struct UpdateProgress {
 /// This command checks the configured update endpoint for a new version
 /// and returns information about any available update.
 #[tauri::command]
-#[allow(unused_variables)]
+#[allow(unused_variables, unreachable_code)] // unreachable_code: early return in debug mode is intentional
 pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, String> {
     // In development mode, skip update checks to avoid network errors
     #[cfg(debug_assertions)]

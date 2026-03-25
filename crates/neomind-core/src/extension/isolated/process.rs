@@ -17,17 +17,16 @@
 
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use tokio::sync::Mutex;
 use tokio::sync::broadcast;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use super::in_flight::InFlightRequests;
-use super::ipc::{IpcFrame, IpcMessage, IpcResponse};
-use super::{IsolatedExtensionError, IsolatedResult};
+use super::{ErrorKind, IpcFrame, IpcMessage, IpcResponse, IsolatedExtensionError, IsolatedResult};
 use crate::extension::system::{ExtensionMetadata, ExtensionMetricValue};
 use serde_json::Value;
 
@@ -82,61 +81,7 @@ fn send_message_to_extension(
     }
 }
 
-/// Helper function to send a response to the extension process
-/// Used in the receiver thread for bidirectional communication
-#[allow(dead_code)]
-fn send_response_to_extension(
-    stdin: &Arc<Mutex<Option<BufWriter<std::process::ChildStdin>>>>,
-    extension_id: &str,
-    response: IpcResponse,
-) {
-    match response.to_bytes() {
-        Ok(bytes) => {
-            let frame = IpcFrame::new(bytes);
-            let encoded = frame.encode();
-
-            // Try to send - use try_lock to avoid blocking the receiver thread
-            if let Ok(mut stdin_guard) = stdin.try_lock() {
-                if let Some(stdin_writer) = stdin_guard.as_mut() {
-                    if let Err(e) = stdin_writer.write_all(&encoded) {
-                        warn!(
-                            extension_id = %extension_id,
-                            error = %e,
-                            "Failed to send response to extension"
-                        );
-                    } else if let Err(e) = stdin_writer.flush() {
-                        warn!(
-                            extension_id = %extension_id,
-                            error = %e,
-                            "Failed to flush response to extension"
-                        );
-                    } else {
-                        debug!(
-                            extension_id = %extension_id,
-                            "Response sent to extension"
-                        );
-                    }
-                }
-            } else {
-                warn!(
-                    extension_id = %extension_id,
-                    "Could not acquire stdin lock to send response"
-                );
-            }
-        }
-        Err(e) => {
-            warn!(
-                extension_id = %extension_id,
-                error = %e,
-                "Failed to serialize response"
-            );
-        }
-    }
-}
-
 // ✨ FIX: IPC 缓冲区池配置
-#[allow(dead_code)]
-const IPC_BUFFER_POOL_SIZE: usize = 4;  // Reduced from 8 to minimize memory footprint
 const IPC_MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024;  // 10MB 最大缓冲区
 
 // Tiered buffer pool configuration
@@ -216,14 +161,6 @@ impl ReusableBuffer {
     fn as_ref(&self) -> &[u8] {
         &self.data
     }
-
-    /// Convert into the underlying data (consumes the wrapper)
-    #[allow(dead_code)]
-    fn into_inner(mut self) -> Vec<u8> {
-        // Prevent the buffer from being returned to pool
-        self.data = Vec::new();
-        std::mem::take(&mut self.data)
-    }
 }
 
 impl Drop for ReusableBuffer {
@@ -293,21 +230,15 @@ impl Default for IsolatedExtensionConfig {
 
 /// 🔧 Phase 1: Detailed crash event information
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum CrashEvent {
     UnexpectedExit { exit_code: Option<i32>, signal: Option<i32> },
     IpcFailure { reason: String, stage: IpcFailureStage },
-    Timeout { operation: String, duration_secs: u64 },
 }
 
 /// 🔧 Phase 1: IPC failure stage categorization
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub enum IpcFailureStage {
     ReadLength,
-    ReadPayload,
-    ParseResponse,
-    ChannelClosed,
 }
 
 impl CrashEvent {
@@ -322,9 +253,6 @@ impl CrashEvent {
             }
             CrashEvent::IpcFailure { reason, stage } => {
                 format!("IPC failure during {:?}: {}", stage, reason)
-            }
-            CrashEvent::Timeout { operation, duration_secs } => {
-                format!("Operation '{}' timed out after {}s", operation, duration_secs)
             }
         }
     }
@@ -384,12 +312,6 @@ pub struct IsolatedExtension {
     descriptor: Mutex<Option<super::super::system::ExtensionDescriptor>>,
     /// Configuration
     config: IsolatedExtensionConfig,
-    #[allow(dead_code)]
-    /// Restart counter
-    restart_count: AtomicU64,
-    #[allow(dead_code)]
-    /// Last restart time
-    last_restart: Mutex<Option<Instant>>,
     /// 🔧 Phase 2: Process start time for health monitoring
     start_time: Mutex<Option<SystemTime>>,
     /// Running state (shared with background receiver thread)
@@ -404,7 +326,7 @@ pub struct IsolatedExtension {
     event_push_tx: Mutex<Option<tokio::sync::mpsc::Sender<(String, Value)>>>,
     /// Push output channel for receiving PushOutput messages from extension
     /// Uses std::sync::Mutex for thread safety in receiver thread
-    push_output_tx: Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<super::ipc::PushOutputData>>>>,
+    push_output_tx: Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<super::PushOutputData>>>>,
     /// ✨ FIX: Tiered IPC buffer pool for optimal memory management
     ipc_buffer_pool: Arc<TieredBufferPool>,
     /// ✨ FIX: Active stream sessions - used to notify clients when extension restarts
@@ -415,6 +337,10 @@ pub struct IsolatedExtension {
     death_tx: Arc<Mutex<Option<broadcast::Sender<()>>>>,
     /// Capability provider for handling InvokeCapability requests from extension
     capability_provider: Arc<std::sync::RwLock<Option<Arc<dyn super::super::context::ExtensionCapabilityProvider>>>>,
+    /// Crash loop detection: consecutive crash count
+    consecutive_crashes: AtomicU32,
+    /// Crash loop detection: timestamp of last crash
+    last_crash_time: Mutex<Option<Instant>>,
 }
 
 impl IsolatedExtension {
@@ -436,8 +362,6 @@ impl IsolatedExtension {
             shutdown_tx: Mutex::new(None),
             descriptor: Mutex::new(None),
             config,
-            restart_count: AtomicU64::new(0),
-            last_restart: Mutex::new(None),
             running: Arc::new(AtomicBool::new(false)),
             process_id: Mutex::new(None),
             active_requests: Arc::new(AtomicUsize::new(0)),
@@ -450,6 +374,9 @@ impl IsolatedExtension {
             death_tx: Arc::new(Mutex::new(None)),
             capability_provider: Arc::new(std::sync::RwLock::new(None)),
             start_time: Mutex::new(None),
+            // Crash loop detection
+            consecutive_crashes: AtomicU32::new(0),
+            last_crash_time: Mutex::new(None),
         }
     }
 
@@ -727,6 +654,8 @@ impl IsolatedExtension {
         match response {
             IpcResponse::Ready { descriptor } => {
                 *self.descriptor.lock().await = Some(descriptor);
+                // Record successful start for crash loop detection
+                self.record_successful_start().await;
                 debug!(extension_id = %self.extension_id, "Extension started successfully");
                 Ok(())
             }
@@ -945,7 +874,7 @@ impl IsolatedExtension {
                     );
 
                     // Extract push output data and forward to channel
-                    if let Some(push_data) = Option::<super::ipc::PushOutputData>::from(response) {
+                    if let Some(push_data) = Option::<super::PushOutputData>::from(response) {
                         if let Some(tx) = push_output_tx.lock().unwrap().as_ref() {
                             if let Err(e) = tx.send(push_data) {
                                 warn!(
@@ -1119,7 +1048,6 @@ impl IsolatedExtension {
         match response {
             IpcResponse::Success { data, .. } => Ok(data),
             IpcResponse::Error { error, kind, .. } => {
-                use super::ipc::ErrorKind;
                 match kind {
                     ErrorKind::CommandNotFound => Err(IsolatedExtensionError::IpcError(error)),
                     ErrorKind::Timeout => Err(IsolatedExtensionError::Timeout(
@@ -1210,8 +1138,8 @@ impl IsolatedExtension {
     }
 
     /// Execute multiple commands in a batch
-    pub async fn execute_batch(&self, commands: Vec<super::ipc_batch_types::BatchCommand>)
-        -> IsolatedResult<super::ipc_batch_types::BatchResultsVec>
+    pub async fn execute_batch(&self, commands: Vec<super::BatchCommand>)
+        -> IsolatedResult<super::BatchResultsVec>
     {
         if !self.running.load(Ordering::SeqCst) {
             return Err(IsolatedExtensionError::NotRunning);
@@ -1224,14 +1152,14 @@ impl IsolatedExtension {
         for cmd in commands {
             let cmd_start = Instant::now();
             let result = match self.execute_command(&cmd.command, &cmd.args).await {
-                Ok(data) => super::ipc_batch_types::BatchResult {
+                Ok(data) => super::BatchResult {
                     command: cmd.command.clone(),
                     success: true,
                     data: Some(data),
                     error: None,
                     elapsed_ms: cmd_start.elapsed().as_secs_f64() * 1000.0,
                 },
-                Err(e) => super::ipc_batch_types::BatchResult {
+                Err(e) => super::BatchResult {
                     command: cmd.command.clone(),
                     success: false,
                     data: None,
@@ -1244,15 +1172,15 @@ impl IsolatedExtension {
 
         let total_elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
 
-        Ok(super::ipc_batch_types::BatchResultsVec {
+        Ok(super::BatchResultsVec {
             results,
             total_elapsed_ms,
         })
     }
 
     /// Send batch request to extension process
-    pub async fn execute_batch_ipc(&self, commands: Vec<super::ipc_batch_types::BatchCommand>)
-        -> IsolatedResult<super::ipc_batch_types::BatchResultsVec>
+    pub async fn execute_batch_ipc(&self, commands: Vec<super::BatchCommand>)
+        -> IsolatedResult<super::BatchResultsVec>
     {
         if !self.running.load(Ordering::SeqCst) {
             return Err(IsolatedExtensionError::NotRunning);
@@ -1322,7 +1250,7 @@ impl IsolatedExtension {
 
         match response {
             IpcResponse::BatchResults { results, total_elapsed_ms, .. } => {
-                Ok(super::ipc_batch_types::BatchResultsVec {
+                Ok(super::BatchResultsVec {
                     results,
                     total_elapsed_ms,
                 })
@@ -1486,7 +1414,7 @@ impl IsolatedExtension {
         // Register session as active
         self.register_session(session_id).await;
 
-        let client_info = super::ipc::StreamClientInfo {
+        let client_info = super::StreamClientInfo {
             client_id: "host".to_string(),
             ip_addr: None,
             user_agent: None,
@@ -1518,7 +1446,7 @@ impl IsolatedExtension {
         // Check resources before processing
         self.check_resources().await?;
 
-        let stream_chunk = super::ipc::StreamDataChunk {
+        let stream_chunk = super::StreamDataChunk {
             sequence: chunk.sequence,
             data_type: chunk.data_type.mime_type(),
             data: chunk.data,
@@ -1719,7 +1647,7 @@ impl IsolatedExtension {
         // Check resources before processing
         self.check_resources().await?;
 
-        let stream_chunk = super::ipc::StreamDataChunk {
+        let stream_chunk = super::StreamDataChunk {
             sequence: chunk.sequence,
             data_type: chunk.data_type.mime_type(),
             data: chunk.data,
@@ -1947,7 +1875,7 @@ impl IsolatedExtension {
     /// The host should set this before starting a Push mode session.
     pub async fn set_push_output_channel(
         &self,
-        tx: tokio::sync::mpsc::UnboundedSender<super::ipc::PushOutputData>,
+        tx: tokio::sync::mpsc::UnboundedSender<super::PushOutputData>,
     ) {
         *self.push_output_tx.lock().unwrap() = Some(tx);
     }
@@ -1955,7 +1883,7 @@ impl IsolatedExtension {
     /// Get a clone of the push output channel sender
     pub async fn get_push_output_channel(
         &self,
-    ) -> Option<tokio::sync::mpsc::UnboundedSender<super::ipc::PushOutputData>> {
+    ) -> Option<tokio::sync::mpsc::UnboundedSender<super::PushOutputData>> {
         self.push_output_tx.lock().unwrap().clone()
     }
 
@@ -2144,6 +2072,9 @@ impl IsolatedExtension {
                             "Extension process exited unexpectedly"
                         );
                         self.kill_internal(&mut process_guard).await;
+                        drop(process_guard);
+                        // Record crash for crash loop detection
+                        self.record_crash().await;
                         return Err(IsolatedExtensionError::Crashed(
                             format!("Process exited with status: {:?}", status)
                         ));
@@ -2170,6 +2101,9 @@ impl IsolatedExtension {
                             "Extension process exited unexpectedly"
                         );
                         self.kill_internal(&mut *process_guard).await;
+                        drop(process_guard);
+                        // Record crash for crash loop detection
+                        self.record_crash().await;
                         return Err(IsolatedExtensionError::Crashed(
                             format!("Process exited with code: {:?}", status.code())
                         ));
@@ -2202,8 +2136,14 @@ impl IsolatedExtension {
                     self.kill_internal(&mut *process_guard).await;
                     drop(process_guard);
 
-                    // Attempt restart
+                    // Record crash for crash loop detection
+                    self.record_crash().await;
+
+                    // Attempt restart with crash loop detection
                     if self.config.restart_on_crash {
+                        if let Err(e) = self.should_allow_restart().await {
+                            return Err(e);
+                        }
                         return self.start().await;
                     }
                     return Err(IsolatedExtensionError::Crashed(
@@ -2243,8 +2183,14 @@ impl IsolatedExtension {
                     self.kill_internal(&mut process_guard).await;
                     drop(process_guard);
 
-                    // Attempt restart
+                    // Record crash for crash loop detection
+                    self.record_crash().await;
+
+                    // Attempt restart with crash loop detection
                     if self.config.restart_on_crash {
+                        if let Err(e) = self.should_allow_restart().await {
+                            return Err(e);
+                        }
                         return self.start().await;
                     }
                     return Err(IsolatedExtensionError::Crashed(
@@ -2345,6 +2291,77 @@ impl IsolatedExtension {
             )),
         }
     }
+
+    // ========================================================================
+    // Crash Loop Detection Methods
+    // ========================================================================
+
+    /// Check if restart should be allowed based on crash history
+    ///
+    /// Returns Ok(()) if restart is allowed, or Err if crash loop is detected.
+    /// A crash loop is detected when:
+    /// - Consecutive crashes >= max_restart_attempts
+    /// - AND last crash was within the cooldown period
+    pub async fn should_allow_restart(&self) -> IsolatedResult<()> {
+        let consecutive = self.consecutive_crashes.load(Ordering::SeqCst);
+        let last_crash = self.last_crash_time.lock().await;
+
+        if consecutive >= self.config.max_restart_attempts {
+            // Check if cooldown period has passed
+            if let Some(last_time) = *last_crash {
+                let cooldown = Duration::from_secs(self.config.restart_cooldown_secs * 10); // 10x cooldown for crash loop
+                if last_time.elapsed() < cooldown {
+                    warn!(
+                        extension_id = %self.extension_id,
+                        consecutive_crashes = consecutive,
+                        max_restart_attempts = self.config.max_restart_attempts,
+                        "Crash loop detected - too many crashes in cooldown period. Will not auto restart."
+                    );
+                    return Err(IsolatedExtensionError::Crashed(
+                        format!(
+                            "Crash loop detected: {} consecutive crashes within cooldown period. \
+                             Extension has stability issues. Will not restart.",
+                            consecutive
+                        )
+                    ));
+                } else {
+                    // Cooldown passed, reset counter and allow restart
+                    drop(last_crash);
+                    self.consecutive_crashes.store(0, Ordering::SeqCst);
+                    info!(
+                        extension_id = %self.extension_id,
+                        "Crash loop cooldown expired, resetting crash counter"
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Record a crash for crash loop detection
+    pub async fn record_crash(&self) {
+        let consecutive = self.consecutive_crashes.fetch_add(1, Ordering::SeqCst);
+        let mut last_crash = self.last_crash_time.lock().await;
+        *last_crash = Some(Instant::now());
+        warn!(
+            extension_id = %self.extension_id,
+            consecutive_crashes = consecutive + 1,
+            "Extension crash recorded for crash loop detection"
+        );
+    }
+
+    /// Record successful start - reset crash counter after stable period
+    pub async fn record_successful_start(&self) {
+        self.consecutive_crashes.store(0, Ordering::SeqCst);
+        let mut last_crash = self.last_crash_time.lock().await;
+        *last_crash = None;
+
+        info!(
+            extension_id = %self.extension_id,
+            "Extension started successfully, resetting crash loop counter"
+        );
+    }
 }
 
 impl Drop for IsolatedExtension {
@@ -2430,13 +2447,5 @@ mod tests {
         };
         assert!(event.description().contains("IPC failure during ReadLength"));
         assert!(event.description().contains("Broken pipe"));
-
-        // Test Timeout
-        let event = CrashEvent::Timeout {
-            operation: "execute_command".to_string(),
-            duration_secs: 30,
-        };
-        assert!(event.description().contains("execute_command"));
-        assert!(event.description().contains("30s"));
     }
 }

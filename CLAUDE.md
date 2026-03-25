@@ -24,21 +24,15 @@ npm run dev && npm run build
 NeoMind/
 ├── crates/           # Rust workspace
 │   ├── neomind-core/        # Core traits and types
-│   ├── neomind-llm/         # LLM backends (Ollama, OpenAI, etc.)
 │   ├── neomind-api/         # Web API server (Axum)
-│   ├── neomind-agent/       # AI Agent with tool calling
-│   ├── neomind-automation/  # Automation system
+│   ├── neomind-agent/       # AI Agent with tool calling and LLM backends
 │   ├── neomind-devices/     # Device management (MQTT)
 │   ├── neomind-storage/     # Storage (redb)
-│   ├── neomind-memory/      # LLM memory system
 │   ├── neomind-messages/    # Messaging system
-│   ├── neomind-tools/       # Function calling tools
-│   ├── neomind-commands/    # Command queue
 │   ├── neomind-rules/       # Rule engine
 │   ├── neomind-extension-sdk/     # Extension SDK
 │   ├── neomind-extension-runner/  # Extension process isolation
-│   ├── neomind-cli/         # CLI tools
-│   └── neomind-testing/     # Testing utilities
+│   └── neomind-cli/         # CLI tools
 ├── web/src/          # React frontend (components, pages, hooks, store, types)
 ├── docs/guides/      # User documentation (en/zh)
 └── data/             # Runtime databases (telemetry.redb, sessions.redb, etc.)
@@ -65,4 +59,4 @@ For detailed information, see:
 - **Agents**: `docs/guides/en/03-agent.md`
 - **Devices**: `docs/guides/en/04-devices.md`
 - **Storage**: `docs/guides/en/10-storage.md`
-- **Extensions**: `docs/guides/en/16-extension-dev.md`
+- **Extensions**: `docs/guides/en/extension-system.md`

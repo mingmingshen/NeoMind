@@ -1,26 +1,23 @@
 [workspace]
 members = [
     "crates/neomind-core",
-    "crates/neomind-llm",
     "crates/neomind-api",
     "crates/neomind-cli",
     "crates/neomind-devices",
     "crates/neomind-storage",
     "crates/neomind-rules",
     "crates/neomind-messages",
-    "crates/neomind-memory",
-    "crates/neomind-tools",
     "crates/neomind-agent",
-    "crates/neomind-commands",
-    "crates/neomind-automation",
     "crates/neomind-extension-sdk",
     "crates/neomind-extension-runner",
+    # Testing utilities (not part of main release)
+    "crates/neomind-core/tests/fixtures/smoke-extension",
 ]
 exclude = ["web"]
 resolver = "2"
 
 [workspace.package]
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 rust-version = "1.85"
 authors = ["NeoMind Contributors"]

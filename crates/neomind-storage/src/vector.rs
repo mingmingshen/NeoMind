@@ -181,8 +181,8 @@ pub enum SimilarityMetric {
 /// # Note
 /// This is a reserved structure for future HNSW index implementation.
 /// Currently, the index is built but not used for search (linear scan is used instead).
-#[derive(Debug, Clone)]
 #[allow(dead_code)]
+#[derive(Debug, Clone)]
 struct HnswNode {
     /// Document ID.
     id: String,

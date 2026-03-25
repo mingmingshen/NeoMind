@@ -184,28 +184,6 @@ pub struct SendCommandRequest {
     pub params: HashMap<String, serde_json::Value>,
 }
 
-/// Discovery request for scanning a host for devices.
-#[derive(Debug, Deserialize)]
-pub struct DiscoveryRequest {
-    /// Host to scan (IP address or hostname)
-    pub host: String,
-    /// Optional list of ports to scan (default: common ports)
-    pub ports: Option<Vec<u16>>,
-    /// Timeout per port in milliseconds (default: 500)
-    pub timeout_ms: Option<u64>,
-}
-
-/// Discovered device info for API responses.
-#[derive(Debug, Serialize)]
-pub struct DiscoveredDeviceDto {
-    pub id: String,
-    pub device_type: Option<String>,
-    pub host: String,
-    pub port: u16,
-    pub confidence: f32,
-    pub info: HashMap<String, String>,
-}
-
 /// Request body for MDL generation from sample data.
 #[derive(Debug, Deserialize)]
 pub struct GenerateMdlRequest {

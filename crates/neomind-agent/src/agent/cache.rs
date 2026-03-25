@@ -11,7 +11,7 @@
 //! - Hash-based cache key generation
 
 use crate::agent::ToolCall;
-use neomind_tools::ToolOutput;
+use crate::toolkit::ToolOutput;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant};

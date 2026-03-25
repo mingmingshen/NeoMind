@@ -8,24 +8,24 @@
 //! - Metadata parsing
 
 use neomind_core::extension::{
-    loader::NativeExtensionLoader,
+    loader::NativeExtensionMetadataLoader,
     system::{ExtensionError, ExtensionMetadata, ExtensionState, MetricDataType, MetricDefinition},
 };
 use std::path::PathBuf;
 
 #[test]
 fn test_loader_create() {
-    let loader = NativeExtensionLoader::new();
+    let loader = NativeExtensionMetadataLoader::new();
     // Should create without panic
     let _ = loader; // Use the variable to avoid unused warning
 }
 
-#[test]
-fn test_load_nonexistent_file() {
-    let loader = NativeExtensionLoader::new();
+#[tokio::test]
+async fn test_load_nonexistent_file() {
+    let loader = NativeExtensionMetadataLoader::new();
     let path = PathBuf::from("/nonexistent/path/to/extension.so");
 
-    let result = loader.load(&path);
+    let result = loader.load_metadata(&path).await;
 
     match result {
         Err(ExtensionError::NotFound(_)) => {
@@ -37,9 +37,9 @@ fn test_load_nonexistent_file() {
     }
 }
 
-#[test]
-fn test_load_invalid_extension_format() {
-    let loader = NativeExtensionLoader::new();
+#[tokio::test]
+async fn test_load_invalid_extension_format() {
+    let loader = NativeExtensionMetadataLoader::new();
 
     // Test with various invalid extensions
     let invalid_paths = vec![
@@ -55,7 +55,7 @@ fn test_load_invalid_extension_format() {
             continue; // Skip if file actually exists
         }
 
-        let result = loader.load(&path);
+        let result = loader.load_metadata(&path).await;
         // Should error (either NotFound or InvalidFormat)
         assert!(result.is_err(), "Expected error for path: {:?}", path);
     }
@@ -66,14 +66,12 @@ fn test_extension_metadata_builder() {
     let meta = ExtensionMetadata::new(
         "test.extension",
         "Test Extension",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     );
 
     assert_eq!(meta.id, "test.extension");
     assert_eq!(meta.name, "Test Extension");
-    assert_eq!(meta.version.major, 1);
-    assert_eq!(meta.version.minor, 0);
-    assert_eq!(meta.version.patch, 0);
+    assert_eq!(meta.version, "1.0.0");
 }
 
 #[test]
@@ -81,7 +79,7 @@ fn test_extension_metadata_with_description() {
     let meta = ExtensionMetadata::new(
         "test.extension",
         "Test Extension",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     )
     .with_description("A test extension for unit testing");
 
@@ -96,7 +94,7 @@ fn test_extension_metadata_with_author() {
     let meta = ExtensionMetadata::new(
         "test.extension",
         "Test Extension",
-        semver::Version::new(1, 0, 0),
+        "1.0.0",
     )
     .with_author("Test Author");
 
@@ -108,14 +106,14 @@ fn test_extension_metadata_chaining() {
     let meta = ExtensionMetadata::new(
         "test.extension",
         "Test Extension",
-        semver::Version::new(2, 1, 3),
+        "2.1.3",
     )
     .with_description("Test description")
     .with_author("Test Author");
 
     assert_eq!(meta.id, "test.extension");
     assert_eq!(meta.name, "Test Extension");
-    assert_eq!(meta.version, semver::Version::new(2, 1, 3));
+    assert_eq!(meta.version, "2.1.3");
     assert_eq!(meta.description, Some("Test description".to_string()));
     assert_eq!(meta.author, Some("Test Author".to_string()));
 }
@@ -272,14 +270,14 @@ fn test_extension_error_timeout() {
 fn test_extension_metadata_version_semver() {
     // Test various semver versions
     let versions = vec![
-        semver::Version::new(0, 1, 0),
-        semver::Version::new(1, 0, 0),
-        semver::Version::new(2, 3, 4),
-        semver::Version::new(10, 20, 30),
+        "0.1.0",
+        "1.0.0",
+        "2.3.4",
+        "10.20.30",
     ];
 
     for version in &versions {
-        let meta = ExtensionMetadata::new("test.extension", "Test", version.clone());
+        let meta = ExtensionMetadata::new("test.extension", "Test", *version);
         assert_eq!(meta.version, *version);
     }
 }
@@ -296,7 +294,7 @@ fn test_extension_metadata_id_validation() {
     ];
 
     for id in valid_ids {
-        let meta = ExtensionMetadata::new(id, "Test", semver::Version::new(1, 0, 0));
+        let meta = ExtensionMetadata::new(id, "Test", "1.0.0");
         assert_eq!(meta.id, id);
     }
 }
@@ -368,7 +366,7 @@ fn test_enum_metric_data_type() {
 
 #[test]
 fn test_extension_metadata_empty_optional_fields() {
-    let meta = ExtensionMetadata::new("test.ext", "Test", semver::Version::new(1, 0, 0));
+    let meta = ExtensionMetadata::new("test.ext", "Test", "1.0.0");
 
     // Optional fields should be None by default
     assert!(meta.description.is_none());
@@ -377,8 +375,8 @@ fn test_extension_metadata_empty_optional_fields() {
 
 #[test]
 fn test_loader_multiple_instances() {
-    let loader1 = NativeExtensionLoader::new();
-    let loader2 = NativeExtensionLoader::new();
+    let loader1 = NativeExtensionMetadataLoader::new();
+    let loader2 = NativeExtensionMetadataLoader::new();
 
     // Multiple loaders should be independent
     let _ = loader1;

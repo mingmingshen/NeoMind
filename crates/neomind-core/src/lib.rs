@@ -10,14 +10,9 @@ pub mod error;
 pub mod event;
 pub mod eventbus;
 pub mod extension;
-pub mod integration;
 pub mod llm;
 pub mod macros;
 pub mod message;
-pub mod priority_eventbus;
-// Plugin system has been migrated to Extension system
-// Use neomind_core::extension instead
-pub mod registry;
 pub mod session;
 pub mod storage;
 pub mod tools;
@@ -75,8 +70,8 @@ pub mod prelude {
     // Storage
     pub use crate::storage::{StorageBackend, StorageError, StorageFactory};
 
-    // Tools
-    pub use crate::tools::{DynTool, Parameter, Tool, ToolDefinition, ToolError, ToolOutput};
+    // Tools (core types only - Tool trait implementation is in neomind-agent)
+    pub use crate::tools::{ToolCategory, ToolError, ToolRelationships, UsageScenario};
 
     // Extension system V2 (device-standard compatible)
     pub use crate::extension::{
@@ -107,35 +102,5 @@ pub mod prelude {
     pub use crate::datasource::{
         AggregatedValue, DataPoint, DataSourceCatalog, DataSourceId, DataSourceInfo,
         DataSourceType, QueryError, QueryParams, QueryResult, UnifiedQueryService,
-    };
-
-    // Registry system
-    pub use crate::registry::{Registry, RegistryError};
-
-    // Integration system
-    pub use crate::integration::{
-        // Connector exports
-        connector::{
-            BaseConnector, ConnectionMetrics, Connector, ConnectorConfig, ConnectorError,
-            DynConnector, Result as ConnectorResult,
-        },
-        // Transformer exports
-        transformer::{
-            BaseTransformer, ConversionFunction, DynTransformer, EntityMapping, MappingConfig,
-            Result as TransformerResult, TransformType, TransformationContext, TransformationError,
-            Transformer, UnitConversion, ValueTransform,
-        },
-        DiscoveredInfo,
-        DynIntegration,
-        Integration,
-        IntegrationCommand,
-        IntegrationConfig,
-        IntegrationError,
-        IntegrationEvent,
-        IntegrationMetadata,
-        IntegrationResponse,
-        IntegrationState,
-        IntegrationType,
-        Result as IntegrationResult,
     };
 }

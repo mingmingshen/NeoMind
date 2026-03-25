@@ -74,7 +74,6 @@ macro_rules! newtype_wrapper {
 
             /// Get the inner value.
             #[inline]
-            #[allow(dead_code)]
             pub fn into_inner(self) -> $inner {
                 self.0
             }

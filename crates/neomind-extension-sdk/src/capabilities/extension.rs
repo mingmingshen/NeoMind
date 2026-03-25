@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 #[cfg(not(target_arch = "wasm32"))]
-use neomind_core::extension::context::*;
+use crate::host::*;
 
 #[cfg(target_arch = "wasm32")]
 use crate::wasm::{ExtensionContext, capabilities};

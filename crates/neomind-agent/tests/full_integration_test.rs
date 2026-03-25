@@ -14,8 +14,8 @@ use neomind_core::{
     message::{Content, Message, MessageRole},
     EventBus, LlmRuntime, MetricValue, NeoMindEvent,
 };
-use neomind_llm::backends::ollama::{OllamaConfig, OllamaRuntime};
-use neomind_messages::{channels::ConsoleChannel, MessageManager, MessageSeverity};
+use neomind_agent::{OllamaConfig, OllamaRuntime};
+use neomind_messages::{MessageManager, MessageSeverity};
 use neomind_storage::{
     AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
     DataPoint, LongTermMemory, ResourceType, ScheduleType, ShortTermMemory, TimeSeriesStore,
@@ -53,9 +53,8 @@ impl FullTestContext {
         // Create time series storage (memory-based for testing)
         let time_series = TimeSeriesStore::memory()?;
 
-        // Create message manager with console channel
+        // Create message manager
         let message_manager = Arc::new(MessageManager::new());
-        let _console_channel = Arc::new(ConsoleChannel::new("console".to_string()));
         // Note: MessageManager now initializes with default channels via register_default_channels
         message_manager.register_default_channels().await;
 

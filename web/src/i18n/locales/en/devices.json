@@ -79,7 +79,6 @@
   "confirmDeleteSelected": "Are you sure you want to delete {{count}} selected devices?",
   "deletedCount": "Deleted {{count}} devices",
   "bulkDeleteFailed": "Bulk delete devices failed",
-  "localNetworkScan": "Local Network Scan",
   "loading": "Loading devices...",
   "startUsing": "Click \"Add Device\" or \"Discover Devices\" to get started",
   "headers": {

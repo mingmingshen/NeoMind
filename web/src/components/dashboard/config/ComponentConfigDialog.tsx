@@ -1,10 +1,11 @@
 /**
  * ComponentConfigDialog Component
  *
- * Modern unified dialog for configuring dashboard components.
+ * Full-screen dialog for configuring dashboard components.
  * Layout:
- * - Desktop: Two-column (Preview + Config) with Dialog
- * - Mobile: Full-screen with Portal + scrollable tiled sections
+ * - Has DataSource: Left = Preview + Style/Display (vertical), Right = DataSource config
+ * - No DataSource: Left = Preview, Right = Style/Display config
+ * - Mobile: Full-screen with scrollable tiled sections
  *
  * Fully responsive with touch-friendly controls and safe area support.
  */
@@ -19,19 +20,19 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Field } from '@/components/ui/field'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import {
+  FullScreenDialog,
+  FullScreenDialogHeader,
+  FullScreenDialogContent,
+  FullScreenDialogFooter,
+} from '@/components/automation/dialog'
 import { ConfigRenderer } from './ConfigRenderer'
 import { ComponentPreview } from './ComponentPreview'
 import { UnifiedDataSourceConfig } from './UnifiedDataSourceConfig'
@@ -226,7 +227,6 @@ export function ComponentConfigDialog({
                   {/* Preview Card */}
                   <MobileConfigCard
                     title={t('componentConfig.preview')}
-                    
                     isExpanded={expandedSections.has('preview')}
                     onToggle={() => toggleSection('preview')}
                   >
@@ -246,10 +246,8 @@ export function ComponentConfigDialog({
                   {hasDataSource && (
                     <MobileConfigCard
                       title={t('componentConfig.dataSource')}
-                      
                       isExpanded={expandedSections.has('dataSource')}
                       onToggle={() => toggleSection('dataSource')}
-                      
                     >
                       {shouldShowDataTransform ? (
                         <div className="space-y-3">
@@ -311,7 +309,6 @@ export function ComponentConfigDialog({
                   {shouldShowDataTransform && !hasDataSource && (
                     <MobileConfigCard
                       title={t('componentConfig.transform')}
-                      
                       isExpanded={expandedSections.has('transform')}
                       onToggle={() => toggleSection('transform')}
                     >
@@ -327,7 +324,6 @@ export function ComponentConfigDialog({
                   {hasStyleConfig && (
                     <MobileConfigCard
                       title={t('componentConfig.style')}
-                      
                       isExpanded={expandedSections.has('style')}
                       onToggle={() => toggleSection('style')}
                     >
@@ -339,7 +335,6 @@ export function ComponentConfigDialog({
                   {hasDisplayConfig && (
                     <MobileConfigCard
                       title={t('componentConfig.display')}
-                      
                       isExpanded={expandedSections.has('display')}
                       onToggle={() => toggleSection('display')}
                     >
@@ -351,7 +346,6 @@ export function ComponentConfigDialog({
                   {!hasDataSource && !hasStyleConfig && !displaySections.length && allSections.length > 0 && (
                     <MobileConfigCard
                       title={t('componentConfig.configOptions')}
-                      
                       isExpanded={true}
                       onToggle={() => {}}
                     >
@@ -381,43 +375,28 @@ export function ComponentConfigDialog({
     )
   }
 
-  // For desktop/tablet: use original Dialog
+  // For desktop: use FullScreenDialog
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl p-0 sm:p-0 gap-0 flex flex-col">
-        {/* Header */}
-        <DialogHeader className="px-4 py-3 border-b shrink-0">
-          <div className="flex items-center gap-2.5">
-            <Settings className="h-4 w-4 text-muted-foreground" />
-            <div>
-              <DialogTitle className="text-sm font-medium">
-                {t('componentConfig.editComponent')}
-              </DialogTitle>
-              <p className="text-xs text-muted-foreground">
-                {componentType.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
-              </p>
-            </div>
-          </div>
-        </DialogHeader>
+    <FullScreenDialog open={open} onOpenChange={(open) => !open && onClose()}>
+      {/* Header */}
+      <FullScreenDialogHeader
+        icon={<Settings className="h-5 w-5" />}
+        iconBg="bg-primary/10 dark:bg-primary/20"
+        iconColor="text-primary"
+        title={t('componentConfig.editComponent')}
+        subtitle={componentType.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+        onClose={onClose}
+      />
 
-        {/* Content Area */}
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-          {/* Tablet (md-lg): Tab-based layout */}
-          <div className="flex-1 flex flex-col lg:hidden overflow-hidden">
-            <Tabs defaultValue="preview" className="flex-1 flex flex-col">
-              <TabsList className="grid w-full grid-cols-2 h-10 bg-muted/50 p-1 rounded-lg mx-3 mt-3">
-                <TabsTrigger value="preview" className="gap-1.5 rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                  <Eye className="h-3.5 w-3.5" />
-                  <span className="text-sm">{t('componentConfig.preview')}</span>
-                </TabsTrigger>
-                <TabsTrigger value="config" className="gap-1.5 rounded data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                  <Settings className="h-3.5 w-3.5" />
-                  <span className="text-sm">{t('componentConfig.config')}</span>
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="preview" className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 mt-2">
-                <div className="rounded-lg border bg-muted/20 p-3">
+      {/* Content Area */}
+      <FullScreenDialogContent className="!p-0">
+        <div className="h-full w-full flex">
+          {hasDataSource ? (
+            // Has data source: Left = Preview + Config (vertical), Right = DataSource
+            <>
+              {/* Left: Preview + Style/Display Config */}
+              <div className="flex-1 flex flex-col bg-background overflow-hidden border-r min-w-0">
+                <div className="shrink-0 border-b overflow-hidden">
                   <ComponentPreview
                     key={previewKey}
                     componentType={componentType}
@@ -425,182 +404,48 @@ export function ComponentConfigDialog({
                     dataSource={livePreviewDataSource}
                     title={title}
                     showHeader={true}
+                    maxContentHeight={200}
                   />
                 </div>
-              </TabsContent>
-
-              <TabsContent value="config" className="flex-1 min-h-0 overflow-y-auto flex flex-col">
-                {hasDataSource && (
-                  <div className="rounded-lg border bg-card overflow-hidden mx-3 mt-2 shrink-0">
-                    {shouldShowDataTransform ? (
-                      <>
-                        <div className="flex items-center gap-2 px-3 py-2.5 border-b bg-muted/30">
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => setMobileDataSourceTab('datasource')}
-                              className={`px-3 h-7 text-sm rounded-none transition-colors border-b-2 ${
-                                mobileDataSourceTab === 'datasource'
-                                  ? 'border-primary text-foreground'
-                                  : 'border-transparent text-muted-foreground hover:text-foreground'
-                              }`}
-                            >
-                              {t('componentConfig.dataSource')}
-                            </button>
-                            <button
-                              onClick={() => setMobileDataSourceTab('transform')}
-                              className={`px-3 h-7 text-sm rounded-none transition-colors border-b-2 ${
-                                mobileDataSourceTab === 'transform'
-                                  ? 'border-primary text-foreground'
-                                  : 'border-transparent text-muted-foreground hover:text-foreground'
-                              }`}
-                            >
-                              {t('componentConfig.transform')}
-                            </button>
-                          </div>
-                          {hasConfiguredDataSource && <CheckCircle2 className="h-3.5 w-3.5 text-green-500 ml-auto" />}
-                        </div>
-
-                        {mobileDataSourceTab === 'datasource' && (
-                          <div className="p-3">
-                            <UnifiedDataSourceConfig
-                              value={previewDataSource}
-                              onChange={handleDataSourceChange}
-                              allowedTypes={dataSourceProps?.allowedTypes}
-                              multiple={multiple}
-                              maxSources={maxSources}
-                            />
-                          </div>
-                        )}
-
-                        {mobileDataSourceTab === 'transform' && (
-                          <div className="p-3">
-                            <DataTransformConfig
-                              dataSource={previewDataSource}
-                              onChange={handleDataTransformChange}
-                              chartType={componentType.replace(/-chart$/, '') as any}
-                            />
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <div className="flex items-center gap-2 px-3 py-2.5 border-b bg-muted/30">
-                          <Settings className="h-4 w-4 text-primary" />
-                          <span className="text-sm font-semibold">{t('componentConfig.dataSourceConfig')}</span>
-                          {hasConfiguredDataSource && <CheckCircle2 className="h-4 w-4 text-green-500 ml-auto" />}
-                        </div>
-                        <div className="p-3">
-                          <UnifiedDataSourceConfig
-                            value={previewDataSource}
-                            onChange={handleDataSourceChange}
-                            allowedTypes={dataSourceProps?.allowedTypes}
-                            multiple={multiple}
-                            maxSources={maxSources}
-                          />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
 
                 {(hasStyleConfig || hasDisplayConfig) && (
-                  <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0 mx-3 mt-2 overflow-hidden">
-                    <TabsList className="w-auto justify-start bg-muted/50 p-1 rounded-lg h-10 shrink-0">
+                  <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0">
+                    <TabsList className="w-full justify-start bg-muted/50 p-1 px-3 h-10 shrink-0">
                       {hasStyleConfig && (
-                        <TabsTrigger value="style" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                        <TabsTrigger value="style" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded">
                           {t('componentConfig.style')}
                         </TabsTrigger>
                       )}
                       {hasDisplayConfig && (
-                        <TabsTrigger value="display" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                        <TabsTrigger value="display" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded">
                           {t('componentConfig.display')}
                         </TabsTrigger>
                       )}
                     </TabsList>
 
                     {hasStyleConfig && (
-                      <TabsContent value="style" className="flex-1 min-h-0 overflow-y-auto mt-3 data-[state=active]:flex data-[state=active]:flex-col">
+                      <TabsContent value="style" className="flex-1 min-h-0 overflow-y-auto p-3">
                         <ConfigRenderer sections={filteredStyleSections} />
                       </TabsContent>
                     )}
 
                     {hasDisplayConfig && (
-                      <TabsContent value="display" className="flex-1 min-h-0 overflow-y-auto mt-3 data-[state=active]:flex data-[state=active]:flex-col">
+                      <TabsContent value="display" className="flex-1 min-h-0 overflow-y-auto p-3">
                         <ConfigRenderer sections={finalDisplaySections} />
                       </TabsContent>
                     )}
                   </Tabs>
                 )}
 
-                {!hasDataSource && !hasStyleConfig && !displaySections.length && allSections.length > 0 && (
-                  <div className="rounded-lg border bg-card overflow-hidden mx-3 mt-2">
-                    <div className="flex items-center gap-2 px-3 py-2.5 border-b bg-muted/30">
-                      <Settings className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-sm font-medium">{t('componentConfig.configOptions')}</span>
-                    </div>
-                    <div className="p-3">
-                      <ConfigRenderer sections={allSections} />
-                    </div>
+                {!hasStyleConfig && !hasDisplayConfig && allSections.length > 0 && !hasDataSource && (
+                  <div className="flex-1 overflow-y-auto p-3">
+                    <ConfigRenderer sections={allSections} />
                   </div>
                 )}
-              </TabsContent>
-            </Tabs>
-          </div>
-
-          {/* Desktop (lg+): Two-column layout */}
-          <div className="hidden lg:flex flex-1 overflow-hidden">
-            {/* Left: Preview + Style/Display Config */}
-            <div className={cn(hasDataSource ? "w-1/2 border-r" : "w-full", "flex flex-col bg-background overflow-hidden")}>
-              <div className="shrink-0 border-b overflow-hidden">
-                <ComponentPreview
-                  key={previewKey}
-                  componentType={componentType}
-                  config={livePreviewConfig}
-                  dataSource={livePreviewDataSource}
-                  title={title}
-                  showHeader={true}
-                />
               </div>
 
-              {(hasStyleConfig || hasDisplayConfig) && (
-                <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0">
-                  <TabsList className="w-auto justify-start bg-muted/50 p-1 rounded-lg px-3 h-10 shrink-0">
-                    {hasStyleConfig && (
-                      <TabsTrigger value="style" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded">
-                        {t('componentConfig.style')}
-                      </TabsTrigger>
-                    )}
-                    {hasDisplayConfig && (
-                      <TabsTrigger value="display" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded">
-                        {t('componentConfig.display')}
-                      </TabsTrigger>
-                    )}
-                  </TabsList>
-
-                  {hasStyleConfig && (
-                    <TabsContent value="style" className="min-h-0 overflow-y-auto p-3">
-                      <ConfigRenderer sections={filteredStyleSections} />
-                    </TabsContent>
-                  )}
-
-                  {hasDisplayConfig && (
-                    <TabsContent value="display" className="min-h-0 overflow-y-auto p-3">
-                      <ConfigRenderer sections={finalDisplaySections} />
-                    </TabsContent>
-                  )}
-                </Tabs>
-              )}
-
-              {!hasStyleConfig && !hasDisplayConfig && allSections.length > 0 && !hasDataSource && (
-                <div className="flex-1 overflow-y-auto p-3">
-                  <ConfigRenderer sections={allSections} />
-                </div>
-              )}
-            </div>
-
-            {/* Right: Data Source + Transform Config */}
-            {hasDataSource && (
-              <div className="w-1/2 flex flex-col overflow-hidden bg-background">
+              {/* Right: Data Source + Transform Config */}
+              <div className="flex-1 flex flex-col overflow-hidden bg-background min-w-0">
                 <div className="flex-1 min-h-0 flex flex-col">
                   <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 border-b shrink-0">
                     <div className="flex gap-1">
@@ -657,21 +502,79 @@ export function ComponentConfigDialog({
                   )}
                 </div>
               </div>
-            )}
-          </div>
-        </div>
+            </>
+          ) : (
+            // No data source: Left = Preview, Right = Style/Display Config
+            <>
+              {/* Left: Preview only - top aligned */}
+              <div className="flex-1 flex flex-col bg-background overflow-hidden border-r min-w-0">
+                <div className="flex-1 flex items-start justify-center p-6 pt-6">
+                  <div className="w-full">
+                    <ComponentPreview
+                      key={previewKey}
+                      componentType={componentType}
+                      config={livePreviewConfig}
+                      dataSource={livePreviewDataSource}
+                      title={title}
+                      showHeader={true}
+                    />
+                  </div>
+                </div>
+              </div>
 
-        {/* Desktop Footer */}
-        <DialogFooter className="px-4 py-3 border-t bg-muted/30">
-          <Button variant="outline" size="sm" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button size="sm" onClick={onSave}>
-            {t('common.saveChanges')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+              {/* Right: Style/Display Config */}
+              <div className="flex-1 flex flex-col overflow-hidden bg-background min-w-0">
+                {(hasStyleConfig || hasDisplayConfig) && (
+                  <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0">
+                    <TabsList className="w-full justify-start bg-muted/50 px-4 h-12 shrink-0 border-b rounded-none">
+                      {hasStyleConfig && (
+                        <TabsTrigger value="style" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                          {t('componentConfig.style')}
+                        </TabsTrigger>
+                      )}
+                      {hasDisplayConfig && (
+                        <TabsTrigger value="display" className="data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
+                          {t('componentConfig.display')}
+                        </TabsTrigger>
+                      )}
+                    </TabsList>
+
+                    {hasStyleConfig && (
+                      <TabsContent value="style" className="flex-1 min-h-0 overflow-y-auto p-4">
+                        <ConfigRenderer sections={filteredStyleSections} />
+                      </TabsContent>
+                    )}
+
+                    {hasDisplayConfig && (
+                      <TabsContent value="display" className="flex-1 min-h-0 overflow-y-auto p-4">
+                        <ConfigRenderer sections={finalDisplaySections} />
+                      </TabsContent>
+                    )}
+                  </Tabs>
+                )}
+
+                {!hasStyleConfig && !hasDisplayConfig && allSections.length > 0 && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <ConfigRenderer sections={allSections} />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </FullScreenDialogContent>
+
+      {/* Footer */}
+      <FullScreenDialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          {t('common.cancel')}
+        </Button>
+        <Button onClick={onSave}>
+          <Sparkles className="h-4 w-4 mr-2" />
+          {t('common.saveChanges')}
+        </Button>
+      </FullScreenDialogFooter>
+    </FullScreenDialog>
   )
 }
 

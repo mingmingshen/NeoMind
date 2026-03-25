@@ -1,7 +1,7 @@
 //! Device type management.
 
-use neomind_automation::device_type_generator::{DeviceTypeGenerator, GenerationConfig};
-use neomind_automation::discovery::DeviceSample;
+use crate::automation::device_type_generator::{DeviceTypeGenerator, GenerationConfig};
+use crate::automation::discovery::DeviceSample;
 
 use axum::{
     extract::{Path, State},
@@ -13,8 +13,8 @@ use std::sync::Arc;
 
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_devices::registry::DeviceTypeTemplate;
-use neomind_llm::backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
-use neomind_llm::{instance_manager::get_instance_manager, OllamaConfig, OllamaRuntime};
+use neomind_agent::llm_backends::backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
+use neomind_agent::llm_backends::{instance_manager::get_instance_manager, OllamaConfig, OllamaRuntime};
 use neomind_storage::{LlmBackendInstance, LlmBackendType};
 
 use super::models::{

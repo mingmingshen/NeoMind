@@ -106,7 +106,7 @@ fn test_extension_context_config_custom() {
 async fn test_context_creation() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let capabilities = context.list_capabilities().await;
     assert!(capabilities.is_empty());
@@ -120,7 +120,7 @@ async fn test_context_with_config() {
         required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     // Context should be created successfully
     let _ = context;
@@ -134,7 +134,7 @@ async fn test_context_with_config() {
 async fn test_register_provider() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(TestProvider::new(
         "test-provider",
@@ -153,7 +153,7 @@ async fn test_register_provider() {
 async fn test_register_multiple_providers() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider1 = Arc::new(TestProvider::new(
         "provider-1",
@@ -175,7 +175,7 @@ async fn test_register_multiple_providers() {
 async fn test_register_provider_multiple_capabilities() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(TestProvider::new(
         "multi-provider",
@@ -205,7 +205,7 @@ async fn test_invoke_capability() {
         required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(TestProvider::new(
         "test-provider",
@@ -232,7 +232,7 @@ async fn test_invoke_capability() {
 async fn test_invoke_capability_not_registered() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let result = context
         .invoke_capability(
@@ -251,7 +251,7 @@ async fn test_invoke_capability_not_in_required() {
         required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(TestProvider::new(
         "test-provider",
@@ -288,7 +288,7 @@ async fn test_invoke_capability_not_in_required() {
 async fn test_has_capability() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(TestProvider::new(
         "test-provider",
@@ -307,7 +307,7 @@ async fn test_has_capability() {
 async fn test_list_capabilities() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(TestProvider::new(
         "test-provider",
@@ -499,7 +499,7 @@ fn test_capability_error_display() {
 async fn test_concurrent_capability_check() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = Arc::new(ExtensionContext::new(config, None, providers));
+    let context = Arc::new(ExtensionContext::new(config, providers));
 
     let provider = Arc::new(TestProvider::new(
         "test-provider",
@@ -533,7 +533,7 @@ async fn test_concurrent_invoke() {
         required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
-    let context = Arc::new(ExtensionContext::new(config, None, providers));
+    let context = Arc::new(ExtensionContext::new(config, providers));
 
     let provider = Arc::new(TestProvider::new(
         "test-provider",

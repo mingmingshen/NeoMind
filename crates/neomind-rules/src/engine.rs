@@ -17,7 +17,8 @@ use uuid::Uuid;
 
 use super::dependencies::DependencyManager;
 use super::device_integration::DeviceActionExecutor;
-use super::dsl::{ParsedRule, RuleAction, RuleCondition, RuleError};
+use super::dsl::{ParsedRule, RuleAction, RuleCondition};
+use super::error::RuleError;
 use super::extension_integration::{try_parse_extension_action, ExtensionActionExecutor};
 use super::store::RuleStore;
 
@@ -1064,7 +1065,7 @@ impl RuleEngine {
                 let message_manager = self.message_manager.read().await;
                 if let Some(manager) = message_manager.as_ref() {
                     let mut msg = Message::new(
-                        "alert".to_string(),
+                        "notification".to_string(),
                         sev,
                         title.clone(),
                         message.clone(),

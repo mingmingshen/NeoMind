@@ -49,7 +49,8 @@ impl EventDispatcher {
         // Get the extension's event subscriptions (async)
         let event_types: Vec<String> = {
             let ext_guard = extension.read().await;
-            ext_guard.event_subscriptions().iter().map(|s| s.to_string()).collect()
+            let subscriptions: &[&str] = ext_guard.event_subscriptions();
+            subscriptions.iter().map(|s| (*s).to_string()).collect()
         };
 
         // Store the extension

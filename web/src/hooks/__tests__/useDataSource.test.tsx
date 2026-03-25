@@ -1,6 +1,200 @@
 /// Tests for useDataSource hook
 import { describe, it, expect } from 'vitest'
 
+describe('Virtual Metric Exclusion', () => {
+  // Test the logic that prevents virtual metrics from interfering with real metrics
+  describe('Virtual metric detection', () => {
+    const TRANSFORM_NAMESPACES = ['transform.', 'virtual.', 'computed.', 'derived.', 'aggregated.']
+
+    const isVirtualMetric = (metricName: string): boolean => {
+      return TRANSFORM_NAMESPACES.some(ns => metricName.startsWith(ns))
+    }
+
+    it('should identify transform virtual metrics', () => {
+      expect(isVirtualMetric('transform.TH.status')).toBe(true)
+      expect(isVirtualMetric('transform.temperature')).toBe(true)
+      expect(isVirtualMetric('transform.device1.humidity')).toBe(true)
+    })
+
+    it('should identify other virtual metric namespaces', () => {
+      expect(isVirtualMetric('virtual.metric')).toBe(true)
+      expect(isVirtualMetric('computed.value')).toBe(true)
+      expect(isVirtualMetric('derived.result')).toBe(true)
+      expect(isVirtualMetric('aggregated.avg')).toBe(true)
+    })
+
+    it('should not identify real metrics as virtual', () => {
+      expect(isVirtualMetric('temperature')).toBe(false)
+      expect(isVirtualMetric('humidity')).toBe(false)
+      expect(isVirtualMetric('status')).toBe(false)
+      expect(isVirtualMetric('values.temperature')).toBe(false)
+    })
+
+    it('should not match metrics that merely contain namespace words', () => {
+      // A metric named "transformer" should NOT be considered virtual
+      expect(isVirtualMetric('transformer')).toBe(false)
+      // A metric named "virtualization" should NOT be considered virtual
+      expect(isVirtualMetric('virtualization')).toBe(false)
+    })
+  })
+
+  describe('Event metric matching', () => {
+    const TRANSFORM_NAMESPACES = ['transform.', 'virtual.', 'computed.', 'derived.', 'aggregated.']
+
+    const isVirtualMetric = (metricName: string): boolean => {
+      return TRANSFORM_NAMESPACES.some(ns => metricName.startsWith(ns))
+    }
+
+    // Simplified version of eventMetricMatches for testing
+    const eventMetricMatches = (eventMetric: string, widgetMetricId: string): boolean => {
+      if (!eventMetric || !widgetMetricId) return false
+      if (eventMetric === widgetMetricId) return true
+
+      // CRITICAL: If event is a virtual metric but widget is not (or vice versa), don't match
+      const eventIsVirtual = isVirtualMetric(eventMetric)
+      const widgetIsVirtual = isVirtualMetric(widgetMetricId)
+      if (eventIsVirtual !== widgetIsVirtual) {
+        return false
+      }
+
+      // Case 1: Event has nested path, widget is simple
+      if (eventMetric.endsWith('.' + widgetMetricId)) return true
+      if (eventMetric.endsWith('/' + widgetMetricId)) return true
+
+      // Case 2: Event is simple, widget has nested path
+      if (widgetMetricId.endsWith('.' + eventMetric)) return true
+      if (widgetMetricId.endsWith('/' + eventMetric)) return true
+
+      // Case 3: Both have nested paths - compare the last segment
+      const eventLastSegment = eventMetric.split('.').pop() || eventMetric.split('/').pop() || eventMetric
+      const widgetLastSegment = widgetMetricId.split('.').pop() || widgetMetricId.split('/').pop() || widgetMetricId
+      if (eventLastSegment === widgetLastSegment) return true
+
+      return false
+    }
+
+    it('should match identical real metrics', () => {
+      expect(eventMetricMatches('temperature', 'temperature')).toBe(true)
+      expect(eventMetricMatches('humidity', 'humidity')).toBe(true)
+    })
+
+    it('should match identical virtual metrics', () => {
+      expect(eventMetricMatches('transform.TH.status', 'transform.TH.status')).toBe(true)
+      expect(eventMetricMatches('virtual.metric', 'virtual.metric')).toBe(true)
+    })
+
+    it('should NOT match virtual metric event with real metric widget', () => {
+      // This is the key bug fix: transform.temperature should NOT match temperature
+      expect(eventMetricMatches('transform.temperature', 'temperature')).toBe(false)
+      expect(eventMetricMatches('transform.TH.status', 'status')).toBe(false)
+      expect(eventMetricMatches('virtual.temperature', 'temperature')).toBe(false)
+    })
+
+    it('should NOT match real metric event with virtual metric widget', () => {
+      // Reverse case: real metric should not match virtual widget
+      expect(eventMetricMatches('temperature', 'transform.temperature')).toBe(false)
+      expect(eventMetricMatches('status', 'transform.TH.status')).toBe(false)
+    })
+
+    it('should match nested paths for real metrics', () => {
+      expect(eventMetricMatches('values.image', 'image')).toBe(true)
+      expect(eventMetricMatches('image', 'values.image')).toBe(true)
+    })
+
+    it('should match nested paths for virtual metrics (same type)', () => {
+      // Both are virtual, so they should be allowed to match
+      expect(eventMetricMatches('transform.TH.image', 'transform.image')).toBe(true)
+    })
+  })
+
+  describe('Real metric isolation', () => {
+    // Test the logic that prevents real metrics from interfering with each other
+    // This tests the fix for the issue where temperature events would affect humidity widgets
+
+    const TRANSFORM_NAMESPACES = ['transform.', 'virtual.', 'computed.', 'derived.', 'aggregated.']
+
+    const isVirtualMetric = (metricName: string): boolean => {
+      return TRANSFORM_NAMESPACES.some(ns => metricName.startsWith(ns))
+    }
+
+    const eventMetricMatches = (eventMetric: string, widgetMetricId: string): boolean => {
+      if (!eventMetric || !widgetMetricId) return false
+      if (eventMetric === widgetMetricId) return true
+
+      // CRITICAL: If event is a virtual metric but widget is not (or vice versa), don't match
+      const eventIsVirtual = isVirtualMetric(eventMetric)
+      const widgetIsVirtual = isVirtualMetric(widgetMetricId)
+      if (eventIsVirtual !== widgetIsVirtual) {
+        return false
+      }
+
+      // Case 1: Event has nested path, widget is simple
+      if (eventMetric.endsWith('.' + widgetMetricId)) return true
+      if (eventMetric.endsWith('/' + widgetMetricId)) return true
+
+      // Case 2: Event is simple, widget has nested path
+      if (widgetMetricId.endsWith('.' + eventMetric)) return true
+      if (widgetMetricId.endsWith('/' + eventMetric)) return true
+
+      // Case 3: Both have nested paths - compare the last segment
+      const eventLastSegment = eventMetric.split('.').pop() || eventMetric.split('/').pop() || eventMetric
+      const widgetLastSegment = widgetMetricId.split('.').pop() || widgetMetricId.split('/').pop() || widgetMetricId
+      if (eventLastSegment === widgetLastSegment) return true
+
+      return false
+    }
+
+    // Test the value extraction logic that should ONLY extract when metric matches
+    const shouldExtractValue = (eventMetric: string, widgetMetricId: string): boolean => {
+      // This simulates the logic in useDataSource.ts
+      // Only extract value when:
+      // 1. The event's metric matches the widget's metric
+      // 2. OR there's no explicit metric in the event (legacy compatibility)
+      if (!eventMetric) {
+        return true // No explicit metric, allow extraction (legacy)
+      }
+      return eventMetricMatches(eventMetric, widgetMetricId)
+    }
+
+    it('should NOT extract temperature value for humidity widget', () => {
+      // The key bug: temperature event should NOT provide value to humidity widget
+      expect(shouldExtractValue('temperature', 'humidity')).toBe(false)
+      expect(shouldExtractValue('humidity', 'temperature')).toBe(false)
+    })
+
+    it('should allow extraction when event metric matches widget metric', () => {
+      expect(shouldExtractValue('temperature', 'temperature')).toBe(true)
+      expect(shouldExtractValue('humidity', 'humidity')).toBe(true)
+      expect(shouldExtractValue('status', 'status')).toBe(true)
+    })
+
+    it('should allow extraction when no explicit metric in event', () => {
+      // Legacy compatibility: events without explicit metric field
+      expect(shouldExtractValue('', 'temperature')).toBe(true)
+      expect(shouldExtractValue('', 'humidity')).toBe(true)
+    })
+
+    it('should NOT extract value when different real metrics on same device', () => {
+      // Different real metrics should NOT interfere
+      expect(shouldExtractValue('temperature', 'pressure')).toBe(false)
+      expect(shouldExtractValue('voltage', 'current')).toBe(false)
+      expect(shouldExtractValue('status', 'count')).toBe(false)
+    })
+
+    it('should NOT extract value when real metric event for virtual widget', () => {
+      // Real metric events should not affect virtual metric widgets
+      expect(shouldExtractValue('temperature', 'transform.temperature')).toBe(false)
+      expect(shouldExtractValue('status', 'virtual.status')).toBe(false)
+    })
+
+    it('should NOT extract value when virtual metric event for real widget', () => {
+      // Virtual metric events should not affect real metric widgets
+      expect(shouldExtractValue('transform.temperature', 'temperature')).toBe(false)
+      expect(shouldExtractValue('virtual.status', 'status')).toBe(false)
+    })
+  })
+})
+
 describe('useDataSource Hook', () => {
   describe('Data Source Interface', () => {
     it('should define UseDataSourceResult interface', () => {

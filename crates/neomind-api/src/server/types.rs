@@ -5,7 +5,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use neomind_agent::SessionManager;
-use neomind_commands::{CommandManager, CommandQueue, CommandStateStore};
 use neomind_core::{extension::ExtensionRegistry, EventBus};
 use neomind_devices::adapter::AdapterResult;
 use neomind_devices::{DeviceRegistry, DeviceService, TimeSeriesStorage};
@@ -16,11 +15,8 @@ use neomind_rules::{
 use neomind_storage::dashboards::DashboardStore;
 use neomind_storage::llm_backends::LlmBackendStore;
 
-use neomind_automation::{
-    intent::IntentAnalyzer, store::SharedAutomationStore, transform::TransformEngine,
-    AutoOnboardManager,
-};
-use neomind_memory::TieredMemory;
+use crate::automation::{store::SharedAutomationStore, transform::TransformEngine, AutoOnboardManager};
+use neomind_agent::memory::TieredMemory;
 use neomind_messages::MessageManager;
 
 use crate::auth::AuthState as ApiKeyAuthState;
@@ -46,7 +42,7 @@ pub const MAX_EXTENSION_UPLOAD_SIZE: usize = 100 * 1024 * 1024;
 /// Organized into logical sub-states for better maintainability.
 #[derive(Clone)]
 pub struct ServerState {
-    /// Core system services (EventBus, CommandManager, MessageManager)
+    /// Core system services (EventBus, MessageManager)
     pub core: CoreState,
 
     /// Device management (Registry, Service, Telemetry, Broker)
@@ -132,10 +128,6 @@ impl ServerState {
         self.automation.automation_store.clone()
     }
 
-    /// Get intent analyzer (backward compatibility).
-    pub fn intent_analyzer(&self) -> Option<Arc<IntentAnalyzer>> {
-        self.automation.intent_analyzer.clone()
-    }
 
     /// Get transform engine (backward compatibility).
     pub fn transform_engine(&self) -> Option<Arc<TransformEngine>> {
@@ -151,11 +143,6 @@ impl ServerState {
     /// Get event bus (backward compatibility).
     pub fn event_bus(&self) -> Option<Arc<EventBus>> {
         self.core.event_bus.clone()
-    }
-
-    /// Get command manager (backward compatibility).
-    pub fn command_manager(&self) -> Option<Arc<CommandManager>> {
-        self.core.command_manager.clone()
     }
 
     /// Get API key auth state (backward compatibility).
@@ -223,11 +210,6 @@ impl ServerState {
         // Create event bus FIRST (needed for adapters to publish events)
         let event_bus = Some(Arc::new(EventBus::new()));
 
-        // Create command manager
-        let command_queue = Arc::new(CommandQueue::new(1000));
-        let command_state = Arc::new(CommandStateStore::new(10000));
-        let command_manager = Some(Arc::new(CommandManager::new(command_queue, command_state)));
-
         // Create message manager with persistent storage
         let message_manager = match MessageManager::with_storage("data") {
             Ok(manager) => {
@@ -239,9 +221,11 @@ impl ServerState {
                 Arc::new(MessageManager::new())
             }
         };
+        // Load persisted channel configurations
+        message_manager.load_persisted_channels().await;
         message_manager.register_default_channels().await;
 
-        let core = CoreState::new(event_bus.clone(), command_manager, message_manager.clone());
+        let core = CoreState::new(event_bus.clone(), message_manager.clone());
 
         // ========== Build DEVICE STATE ==========
         // Create device registry with persistent storage
@@ -380,7 +364,7 @@ impl ServerState {
 
         // Wire rule engine to extension registry for extension command execution
         let extension_registry_adapter =
-            Arc::new(ExtensionRegistryAdapter::new(extensions.registry.clone()));
+            Arc::new(ExtensionRegistryAdapter::new(extensions.runtime.clone()));
         let extension_action_executor =
             Arc::new(ExtensionActionExecutor::new(extension_registry_adapter));
         rule_engine
@@ -473,7 +457,6 @@ impl ServerState {
             rule_engine,
             rule_store,
             automation_store,
-            None, // intent_analyzer - TODO: Initialize with LLM backend
             transform_engine,
             rule_history_store,
         );
@@ -591,15 +574,12 @@ impl ServerState {
 
         // ========== Build CORE STATE ==========
         let event_bus = Some(Arc::new(EventBus::new()));
-        let command_queue = Arc::new(CommandQueue::new(1000));
-        let command_state = Arc::new(CommandStateStore::new(10000));
-        let command_manager = Some(Arc::new(CommandManager::new(command_queue, command_state)));
 
         // In-memory message manager
         let message_manager = Arc::new(MessageManager::new());
         message_manager.register_default_channels().await;
 
-        let core = CoreState::new(event_bus.clone(), command_manager, message_manager.clone());
+        let core = CoreState::new(event_bus.clone(), message_manager.clone());
 
         // ========== Build DEVICE STATE ==========
         // In-memory device registry
@@ -653,7 +633,7 @@ impl ServerState {
             .await;
 
         let extension_registry_adapter =
-            Arc::new(ExtensionRegistryAdapter::new(extensions.registry.clone()));
+            Arc::new(ExtensionRegistryAdapter::new(extensions.runtime.clone()));
         let extension_action_executor =
             Arc::new(ExtensionActionExecutor::new(extension_registry_adapter));
         rule_engine
@@ -675,7 +655,6 @@ impl ServerState {
             rule_engine,
             None, // rule_store - skip for tests
             automation_store,
-            None, // intent_analyzer
             transform_engine,
             rule_history_store,
         );
@@ -1034,7 +1013,7 @@ impl ServerState {
 
     /// Initialize tool registry with real service connections.
     pub async fn init_tools(&self) {
-        use neomind_tools::ToolRegistryBuilder;
+        use neomind_agent::toolkit::ToolRegistryBuilder;
         use std::sync::Arc;
 
         // Build tool registry with real implementations that connect to actual services
@@ -1339,7 +1318,7 @@ impl ServerState {
                 } else {
                     // Create default LLM runtime
                     use neomind_core::llm::backend::LlmRuntime;
-                    use neomind_llm::backends::{OllamaConfig, OllamaRuntime};
+                    use neomind_agent::llm_backends::backends::{OllamaConfig, OllamaRuntime};
 
                     let config = OllamaConfig::new("qwen2.5:3b")
                         .with_endpoint("http://localhost:11434")
@@ -1407,7 +1386,7 @@ impl ServerState {
                         }
                     };
 
-                    let manager = Arc::new(neomind_automation::AutoOnboardManager::new(
+                    let manager = Arc::new(crate::automation::AutoOnboardManager::new(
                         llm,
                         event_bus.clone(),
                     ));
@@ -1593,7 +1572,7 @@ impl ServerState {
         {
             use neomind_agent::LlmBackend;
             use neomind_core::llm::backend::LlmRuntime;
-            use neomind_llm::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
+            use neomind_agent::llm_backends::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
 
             match backend {
                 LlmBackend::Ollama { endpoint, model , capabilities: _} => {

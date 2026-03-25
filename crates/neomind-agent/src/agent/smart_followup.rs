@@ -85,14 +85,8 @@ pub struct FollowUpAnalysis {
 }
 
 /// 可用设备信息（用于动态生成追问）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AvailableDevice {
-    pub id: String,
-    pub name: String,
-    pub location: String,
-    pub device_type: String,
-    pub capabilities: Vec<String>, // e.g., ["on_off", "brightness", "color_temp"]
-}
+/// Re-export of Device from smart_conversation module
+pub use crate::smart_conversation::Device as AvailableDevice;
 
 /// 智能追问管理器
 pub struct SmartFollowUpManager {

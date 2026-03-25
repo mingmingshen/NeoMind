@@ -9,7 +9,6 @@ import type {
   DeviceType,
   Alert,
   Message,
-  DiscoveredDevice,
   TelemetryDataResponse,
   TelemetrySummaryResponse,
   DeviceCurrentStateResponse,
@@ -57,8 +56,6 @@ export interface DeviceState {
   selectedDeviceId: string | null
   deviceDetails: Device | null
   deviceTypeDetails: DeviceType | null
-  discovering: boolean
-  discoveredDevices: DiscoveredDevice[]
   devicesLoading: boolean
   deviceTypesLoading: boolean
 

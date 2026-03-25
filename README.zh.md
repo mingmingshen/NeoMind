@@ -354,21 +354,15 @@ npm run tauri:build
 neomind/
 ├── crates/
 │   ├── neomind-core/          # 核心 traits 和类型定义
-│   ├── neomind-llm/           # LLM 运行时（Ollama/OpenAI/Anthropic）
 │   ├── neomind-api/           # Web API 服务器（Axum）
-│   ├── neomind-agent/         # AI 智能体与工具调用
-│   ├── neomind-automation/    # 统一自动化系统（规则 + 转换）
+│   ├── neomind-agent/         # AI 智能体与工具调用及 LLM 后端
 │   ├── neomind-devices/       # 设备管理（MQTT）
 │   ├── neomind-storage/       # 存储系统（redb）
-│   ├── neomind-memory/        # LLM 三层记忆
 │   ├── neomind-messages/      # 统一消息和通知
-│   ├── neomind-tools/         # 函数调用框架
-│   ├── neomind-commands/      # 命令队列（带重试）
 │   ├── neomind-rules/         # 自动化规则引擎
 │   ├── neomind-extension-sdk/ # 扩展开发 SDK
 │   ├── neomind-extension-runner/ # 扩展进程隔离运行器
-│   ├── neomind-cli/           # 命令行接口
-│   └── neomind-testing/       # 测试工具
+│   └── neomind-cli/           # 命令行接口
 ├── web/               # React 前端 + Tauri 桌面应用
 │   ├── src/           # TypeScript 源码
 │   └── src-tauri/     # 桌面应用 Rust 后端
@@ -687,9 +681,9 @@ cargo test
 
 # 运行特定 crate 的测试
 cargo test -p neomind-agent
-cargo test -p neomind-llm
 cargo test -p neomind-core
-cargo test -p neomind
+cargo test -p neomind-api
+cargo test -p neomind-storage
 
 # 检查编译（不构建）
 cargo check
@@ -710,7 +704,7 @@ cargo run -p neomind -- --config path/to/config.toml
 ## 文档
 
 - **[用户指南](CLAUDE.md)** - 开发和架构文档
-- **[扩展开发](docs/guides/16-extension-dev.md)** - 构建你的第一个扩展
+- **[扩展开发](docs/guides/zh/extension-system.md)** - 构建你的第一个扩展
 - **[模块指南](docs/guides/)** - 详细的模块文档
 
 ## 核心概念

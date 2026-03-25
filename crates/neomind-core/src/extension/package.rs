@@ -532,11 +532,10 @@ impl ExtensionPackage {
             );
             self.extract_file(&mut archive, &rel_path, &binary_file).await?;
 
-            // For WASM binaries, create a sidecar JSON file for the loader
-            if binary_file.extension().and_then(|e| e.to_str()) == Some("wasm") {
-                let sidecar_json = binary_file.with_extension("json");
-                self.create_wasm_sidecar_json(&sidecar_json).await?;
-            }
+            // Create sidecar JSON file for all extension types (WASM and native)
+            // This allows safe discovery without loading native libraries
+            let sidecar_json = binary_file.with_extension("json");
+            self.create_sidecar_json(&sidecar_json).await?;
 
             binary_file
         } else {
@@ -633,11 +632,10 @@ impl ExtensionPackage {
         let binary_file = ext_dir.join(&binary_rel_path);
         Self::extract_file_sync(&mut archive, &binary_rel_path, &binary_file)?;
 
-        // For WASM binaries, create a sidecar JSON file
-        if binary_file.extension().and_then(|e| e.to_str()) == Some("wasm") {
-            let sidecar_json = binary_file.with_extension("json");
-            Self::create_wasm_sidecar_json_sync(&manifest, &sidecar_json)?;
-        }
+        // Create sidecar JSON file for all extension types (WASM and native)
+        // This allows safe discovery without loading native libraries
+        let sidecar_json = binary_file.with_extension("json");
+        Self::create_sidecar_json_sync(&manifest, &sidecar_json)?;
 
         // Extract frontend directory if exists
         let frontend_dir = if manifest.frontend.is_some() {
@@ -754,7 +752,7 @@ impl ExtensionPackage {
     }
 
     /// Create a sidecar JSON file for WASM extensions (synchronous)
-    fn create_wasm_sidecar_json_sync(
+    fn create_sidecar_json_sync(
         manifest: &ExtensionPackageManifest,
         json_path: &Path,
     ) -> Result<(), PackageError> {
@@ -895,7 +893,7 @@ impl ExtensionPackage {
 
     /// Create a sidecar JSON file for WASM extensions
     /// This allows the WASM loader to find the metadata
-    async fn create_wasm_sidecar_json(&self, json_path: &Path) -> Result<(), PackageError> {
+    async fn create_sidecar_json(&self, json_path: &Path) -> Result<(), PackageError> {
         use serde_json::json;
 
         // Build metrics array if capabilities exist

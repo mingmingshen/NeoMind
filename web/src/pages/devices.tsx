@@ -23,11 +23,10 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { api } from "@/lib/api"
-import type { Device, DiscoveredDevice, DeviceType } from "@/types"
+import type { Device, DeviceType } from "@/types"
 import {
   DeviceList,
   DeviceDetail,
-  DiscoveryDialog,
   AddDeviceDialog,
   EditDeviceDialog,
   DeviceTypeList,
@@ -74,9 +73,6 @@ export function DevicesPage() {
   const fetchTelemetryData = useStore((state) => state.fetchTelemetryData)
   const fetchTelemetrySummary = useStore((state) => state.fetchTelemetrySummary)
   const fetchDeviceCurrentState = useStore((state) => state.fetchDeviceCurrentState)
-  const discoverDevices = useStore((state) => state.discoverDevices)
-  const discovering = useStore((state) => state.discovering)
-  const discoveredDevices = useStore((state) => state.discoveredDevices)
 
   // Pagination state
   const [devicePage, setDevicePage] = useState(1)
@@ -230,9 +226,6 @@ export function DevicesPage() {
       )
     }
   }, [devices, devicePage, devicesPerPage, isMobile])
-
-  // Dialog states
-  const [discoveryOpen, setDiscoveryOpen] = useState(false)
 
   // Device detail view state
   const [deviceDetailView, setDeviceDetailView] = useState<string | null>(null)
@@ -464,29 +457,6 @@ export function DevicesPage() {
     }
   }
 
-  const handleAddDiscoveredDevice = async (device: DiscoveredDevice) => {
-    if (!device.device_type) {
-      toast({ title: t('common:failed'), description: t('devices:unknownType'), variant: "destructive" })
-      return
-    }
-    // For discovered devices, use MQTT adapter with default topics
-    const success = await addDevice({
-      device_id: device.id,
-      name: device.id,
-      device_type: device.device_type,
-      adapter_type: 'mqtt',
-      connection_config: {
-        telemetry_topic: `device/${device.device_type}/${device.id}/uplink`,
-      }
-    })
-    if (success) {
-      setDiscoveryOpen(false)
-      toast({ title: t('common:success'), description: t('devices:add.successGeneric') })
-    } else {
-      toast({ title: t('common:failed'), description: t('devices:addDeviceFailed'), variant: "destructive" })
-    }
-  }
-
   const [addingDevice, setAddingDevice] = useState(false)
 
   // Device edit dialog states
@@ -713,11 +683,6 @@ export function DevicesPage() {
                         label: t('devices:addDevice'),
                         onClick: () => setAddDeviceDialogOpen(true),
                       },
-                      {
-                        label: t('devices:localNetworkScan'),
-                        variant: 'outline',
-                        onClick: () => setDiscoveryOpen(true),
-                      },
                     ]
                   : activeTab === 'types'
                   ? [
@@ -829,19 +794,6 @@ export function DevicesPage() {
                 onDelete={handleDeleteDevice}
                 onPageChange={setDevicePage}
                 onAddDevice={() => setAddDeviceDialogOpen(true)}
-                discoveryDialogOpen={discoveryOpen}
-                onDiscoveryOpenChange={setDiscoveryOpen}
-                discoveryDialog={
-                  <DiscoveryDialog
-                    open={discoveryOpen}
-                    onOpenChange={setDiscoveryOpen}
-                    discovering={discovering}
-                    discoveredDevices={discoveredDevices}
-                    deviceTypes={deviceTypes}
-                    onDiscover={discoverDevices}
-                    onAddDiscovered={handleAddDiscoveredDevice}
-                  />
-                }
                 addDeviceDialog={
                   <AddDeviceDialog
                     open={addDeviceDialogOpen}

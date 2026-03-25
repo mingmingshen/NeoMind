@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use neomind_automation::{store::SharedAutomationStore, Automation, TransformEngine};
+use crate::automation::{store::SharedAutomationStore, Automation, TransformEngine};
 use neomind_core::eventbus::EventBus;
 use neomind_core::{MetricValue, NeoMindEvent};
 use neomind_devices::DeviceRegistry;
@@ -76,6 +76,7 @@ pub struct TransformEventService {
     transform_engine: Arc<TransformEngine>,
     automation_store: Arc<SharedAutomationStore>,
     device_registry: Arc<DeviceRegistry>,
+    time_series_storage: Arc<neomind_devices::TimeSeriesStorage>,
     running: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -85,7 +86,7 @@ impl TransformEventService {
         event_bus: Arc<EventBus>,
         transform_engine: Arc<TransformEngine>,
         automation_store: Arc<SharedAutomationStore>,
-        _time_series_storage: Arc<neomind_devices::TimeSeriesStorage>,
+        time_series_storage: Arc<neomind_devices::TimeSeriesStorage>,
         device_registry: Arc<neomind_devices::DeviceRegistry>,
     ) -> Self {
         Self {
@@ -93,6 +94,7 @@ impl TransformEventService {
             transform_engine,
             automation_store,
             device_registry,
+            time_series_storage,
             running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
@@ -113,6 +115,7 @@ impl TransformEventService {
             let transform_engine = self.transform_engine.clone();
             let automation_store = self.automation_store.clone();
             let device_registry = self.device_registry.clone();
+            let time_series_storage = self.time_series_storage.clone();
 
             tokio::spawn(async move {
                 let mut rx = event_bus.filter().device_events();
@@ -211,6 +214,7 @@ impl TransformEventService {
                         let automation_store_clone = automation_store.clone();
                         let device_entry_clone = device_entry.clone();
                         let device_type_clone = device_type.clone();
+                        let time_series_storage_inner = time_series_storage.clone();
 
                         // Schedule a new debounce timer
                         let timer_handle = tokio::spawn(async move {
@@ -277,7 +281,7 @@ impl TransformEventService {
                                             "Transform processed device data (debounced)"
                                         );
 
-                                        // Publish transformed metrics back to event bus
+                                        // Publish transformed metrics back to event bus AND store to telemetry
                                         for transformed_metric in result.metrics {
                                             // Publish as DeviceMetric event so rules can also use them
                                             let _ = event_bus_clone
@@ -292,11 +296,33 @@ impl TransformEventService {
                                                 })
                                                 .await;
 
+                                            // Store to time series storage for historical queries
+                                            let data_point = neomind_devices::DataPoint {
+                                                timestamp: transformed_metric.timestamp,
+                                                value: neomind_devices::MetricValue::Float(transformed_metric.value),
+                                                quality: transformed_metric.quality,
+                                            };
+                                            if let Err(e) = time_series_storage_inner
+                                                .write(
+                                                    &transformed_metric.device_id,
+                                                    &transformed_metric.metric,
+                                                    data_point,
+                                                )
+                                                .await
+                                            {
+                                                tracing::warn!(
+                                                    device_id = %transformed_metric.device_id,
+                                                    metric = %transformed_metric.metric,
+                                                    error = %e,
+                                                    "Failed to store transformed metric to time series storage"
+                                                );
+                                            }
+
                                             tracing::trace!(
                                                 device_id = %transformed_metric.device_id,
                                                 metric = %transformed_metric.metric,
                                                 value = transformed_metric.value,
-                                                "Published transformed metric"
+                                                "Published and stored transformed metric"
                                             );
                                         }
                                     }

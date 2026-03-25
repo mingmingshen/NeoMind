@@ -18,8 +18,8 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use neomind_core::tools::ToolCategory;
-use neomind_tools::tool::{array_property, object_schema, string_property};
-use neomind_tools::{Tool, ToolDefinition, ToolOutput};
+use crate::toolkit::tool::{array_property, object_schema, string_property};
+use crate::toolkit::{Tool, ToolDefinition, ToolOutput};
 
 /// Ask User Tool - enables LLM to request information from users.
 ///
@@ -99,11 +99,11 @@ impl Tool for AskUserTool {
         )
     }
 
-    async fn execute(&self, args: Value) -> Result<ToolOutput, neomind_tools::ToolError> {
+    async fn execute(&self, args: Value) -> Result<ToolOutput, crate::toolkit::ToolError> {
         self.validate_args(&args)?;
 
         let question = args["question"].as_str().ok_or_else(|| {
-            neomind_tools::ToolError::InvalidArguments("question must be a string".to_string())
+            crate::toolkit::ToolError::InvalidArguments("question must be a string".to_string())
         })?;
 
         let options: Option<Vec<String>> = args["options"].as_array().map(|arr| {
@@ -268,11 +268,11 @@ Operations that require confirmation:
         )
     }
 
-    async fn execute(&self, args: Value) -> Result<ToolOutput, neomind_tools::ToolError> {
+    async fn execute(&self, args: Value) -> Result<ToolOutput, crate::toolkit::ToolError> {
         self.validate_args(&args)?;
 
         let action = args["action"].as_str().ok_or_else(|| {
-            neomind_tools::ToolError::InvalidArguments("action must be a string".to_string())
+            crate::toolkit::ToolError::InvalidArguments("action must be a string".to_string())
         })?;
 
         let description = args["description"].as_str();
@@ -365,11 +365,11 @@ impl Tool for ClarifyIntentTool {
         )
     }
 
-    async fn execute(&self, args: Value) -> Result<ToolOutput, neomind_tools::ToolError> {
+    async fn execute(&self, args: Value) -> Result<ToolOutput, crate::toolkit::ToolError> {
         self.validate_args(&args)?;
 
         let question = args["question"].as_str().ok_or_else(|| {
-            neomind_tools::ToolError::InvalidArguments("question must be a string".to_string())
+            crate::toolkit::ToolError::InvalidArguments("question must be a string".to_string())
         })?;
 
         let possible_intents: Option<Vec<String>> =

@@ -8,13 +8,10 @@
  * - Drag to reposition markers
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import {
   Trash2,
@@ -141,7 +138,6 @@ export function MapEditorDialog({
 
   const [bindings, setBindings] = useState<MapBinding[]>(initialBindings)
   const [selectedBinding, setSelectedBinding] = useState<string | null>(null)
-  const [addingMode, setAddingMode] = useState(false)
 
   // Lock body scroll on mobile
   useMobileBodyScrollLock(isMobile && open)
@@ -154,20 +150,17 @@ export function MapEditorDialog({
     if (open) {
       setBindings(initialBindings)
       setSelectedBinding(null)
-      setAddingMode(false)
     }
   }, [open, initialBindings])
 
   // Convert bindings to map markers for preview
   const convertToMarkers = useCallback((): MapMarker[] => {
-    // Get devices from store for metric values and names
     const storeDevices = devices
     const getDeviceName = (deviceId: string) => {
       const device = storeDevices.find(d => d.id === deviceId || d.device_id === deviceId)
       return device?.name || device?.device_id || deviceId
     }
 
-    // Helper to get device status
     const getDeviceStatus = (deviceId: string): 'online' | 'offline' | 'error' | 'warning' | undefined => {
       const device = storeDevices.find(d => d.id === deviceId || d.device_id === deviceId)
       if (!device) return undefined
@@ -184,10 +177,8 @@ export function MapEditorDialog({
         ? center.lng
         : binding.position.lng
 
-      // Get the device for this binding
       const device = ds?.deviceId ? storeDevices.find(d => d.id === ds.deviceId || d.device_id === ds.deviceId) : undefined
 
-      // Get metric value for metric bindings
       let metricValue: string | undefined = undefined
       if (binding.type === 'metric' && ds?.deviceId) {
         const metricKey = ds.metricId || ds.property
@@ -207,7 +198,6 @@ export function MapEditorDialog({
         longitude: lng,
         label: binding.name,
         markerType: binding.icon || binding.type,
-        // Use actual device status
         status: binding.type === 'device' ? getDeviceStatus(ds.deviceId) : undefined,
         metricValue: binding.type === 'metric' ? (metricValue || '-') : undefined,
         deviceId: ds?.deviceId,
@@ -241,11 +231,9 @@ export function MapEditorDialog({
     }
   }, [selectedBinding])
 
-  // Handle selecting a binding (auto-enter positioning mode)
+  // Handle selecting a binding
   const handleSelectBinding = useCallback((id: string) => {
     setSelectedBinding(id)
-    // Auto-enter adding mode when selecting
-    setAddingMode(true)
   }, [])
 
   // Handle save
@@ -254,7 +242,7 @@ export function MapEditorDialog({
     onOpenChange(false)
   }, [bindings, onSave, onOpenChange])
 
-  // Render binding item (shared between mobile and desktop)
+  // Render binding item
   const renderBindingItem = (binding: MapBinding) => {
     const config = typeConfig[binding.icon || binding.type]
     const Icon = config.icon
@@ -316,7 +304,7 @@ export function MapEditorDialog({
   if (isMobile) {
     return createPortal(
       open ? (
-        <div className="fixed inset-0 z-[100] bg-background animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[110] bg-background animate-in fade-in duration-200">
           <div className="flex h-full w-full flex-col">
             {/* Header */}
             <div
@@ -324,7 +312,7 @@ export function MapEditorDialog({
               style={{ paddingTop: `calc(1rem + ${insets.top}px)` }}
             >
               <div className="flex items-center gap-3 min-w-0 flex-1">
-                <MapIcon className="h-5 w-5 text-muted-foreground" />
+                <MapIcon className="h-5 w-5 text-primary shrink-0" />
                 <div className="min-w-0 flex-1">
                   <h1 className="text-base font-semibold truncate">
                     {t('mapDisplay.editorTitle')}
@@ -336,7 +324,7 @@ export function MapEditorDialog({
               </Button>
             </div>
 
-            {/* Map Preview - takes most space */}
+            {/* Map Preview */}
             <div className="flex-1 relative bg-muted/30">
               <div className="absolute inset-0">
                 <MapDisplay
@@ -353,9 +341,9 @@ export function MapEditorDialog({
               </div>
             </div>
 
-            {/* Bindings List - collapsible bottom panel */}
+            {/* Bindings List */}
             <div className="border-t bg-background shrink-0 max-h-[40vh] overflow-y-auto">
-              <div className="p-3 border-b bg-muted/30 sticky top-0">
+              <div className="px-4 py-2 border-b bg-muted/30 sticky top-0">
                 <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   {t('mapDisplay.boundItems')} ({bindings.length})
                 </div>
@@ -374,7 +362,7 @@ export function MapEditorDialog({
 
             {/* Footer */}
             <div
-              className="flex items-center justify-end gap-2 px-4 py-4 border-t bg-background shrink-0"
+              className="flex items-center justify-end gap-3 px-4 py-4 border-t bg-background shrink-0"
               style={{ paddingBottom: `calc(1rem + ${insets.bottom}px)` }}
             >
               <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -392,65 +380,102 @@ export function MapEditorDialog({
     )
   }
 
-  // Desktop: Traditional dialog
+  // Desktop: Traditional dialog (following AddDeviceDialog pattern)
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl h-[80vh] p-0 gap-0 flex flex-col">
-        <DialogHeader className="px-6 py-4 border-b">
-          <DialogTitle className="text-lg">{t('mapDisplay.editorTitle')}</DialogTitle>
-        </DialogHeader>
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 z-[109] bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => onOpenChange(false)}
+        />
+      )}
 
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left Panel - Bindings List */}
-          <div className="w-80 border-r bg-muted/20 flex flex-col">
-            <div className="p-3 border-b bg-muted/30">
-              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {t('mapDisplay.boundItems')} ({bindings.length})
+      {/* Dialog */}
+      {open && (
+        <div
+          className={cn(
+            'fixed left-1/2 top-1/2 z-[110]',
+            'grid w-full gap-0',
+            'bg-background shadow-lg',
+            'duration-200',
+            'animate-in fade-in zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-[48%]',
+            'rounded-lg sm:rounded-xl',
+            'max-h-[96vh] h-[90vh]',
+            'flex flex-col',
+            'max-w-5xl w-[90vw]',
+            '-translate-x-1/2 -translate-y-1/2'
+          )}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between gap-2 px-6 py-4 border-b shrink-0">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <MapIcon className="h-5 w-5 text-primary" />
+              <h2 className="text-lg font-semibold leading-none truncate">
+                {t('mapDisplay.editorTitle')}
+              </h2>
+            </div>
+            <button
+              onClick={() => onOpenChange(false)}
+              className="inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 flex overflow-hidden min-h-0">
+            {/* Left Panel - Bindings List */}
+            <div className="w-72 border-r bg-muted/20 flex flex-col shrink-0">
+              <div className="px-4 py-2 border-b bg-muted/30 shrink-0">
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  {t('mapDisplay.boundItems')} ({bindings.length})
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                {bindings.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <MapIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">{t('mapDisplay.noMarkers')}</p>
+                    <p className="text-xs mt-1">{t('mapDisplay.addDataSourceHint')}</p>
+                  </div>
+                ) : (
+                  bindings.map(renderBindingItem)
+                )}
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
-              {bindings.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <MapIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">{t('mapDisplay.noMarkers')}</p>
-                  <p className="text-xs mt-1">{t('mapDisplay.addDataSourceHint')}</p>
-                </div>
-              ) : (
-                bindings.map(renderBindingItem)
-              )}
+            {/* Right Panel - Map Preview */}
+            <div className="flex-1 relative bg-muted/30 min-w-0">
+              <div className="absolute inset-0">
+                <MapDisplay
+                  center={center}
+                  zoom={zoom}
+                  tileLayer={tileLayer}
+                  markers={mapMarkers}
+                  showControls={true}
+                  showFullscreen={false}
+                  interactive={true}
+                  onMapClick={handleMapClick}
+                  className="w-full h-full"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Right Panel - Map Preview */}
-          <div className="flex-1 relative bg-muted/30">
-            <div className="absolute inset-0">
-              <MapDisplay
-                center={center}
-                zoom={zoom}
-                tileLayer={tileLayer}
-                markers={mapMarkers}
-                showControls={true}
-                showFullscreen={false}
-                interactive={true}
-                onMapClick={handleMapClick}
-                className="w-full h-full"
-              />
-            </div>
-
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted/30">
+            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button size="sm" onClick={handleSave}>
+              <Check className="h-4 w-4 mr-1" />
+              {t('common.saveChanges')}
+            </Button>
           </div>
         </div>
-
-        <DialogFooter className="px-6 py-4 border-t bg-muted/20">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t('common.cancel')}
-          </Button>
-          <Button onClick={handleSave}>
-            <Check className="h-4 w-4 mr-1" />
-            {t('common.saveChanges')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      )}
+    </>
   )
 }

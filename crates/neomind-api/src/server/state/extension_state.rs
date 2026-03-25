@@ -10,18 +10,18 @@
 //! - Extension metrics are stored with "extension:" prefix for isolation
 //! - AI Agents can query both device and extension data from the same storage
 //!
-//! ## Process Isolation (V2)
+//! ## Process Isolation
 //!
-//! Extensions are loaded via `UnifiedExtensionService` which provides:
-//! - **Process isolation**: Extensions run in separate processes by default
+//! Extensions are loaded via `ExtensionRuntime`:
+//! - **Process isolation**: All extensions run in separate processes
 //! - **Crash safety**: Extension crashes don't affect the main NeoMind process
-//! - **Unified API**: Single interface for both isolated and in-process extensions
+//! - **Single-path host integration**: API/state/metrics talk to one runtime service
 
 use std::path::Path;
 use std::sync::Arc;
 
 use neomind_core::extension::registry::ExtensionRegistry;
-use neomind_core::extension::unified::{UnifiedExtensionConfig, UnifiedExtensionService};
+use neomind_core::extension::{ExtensionRuntime, ExtensionRuntimeConfig};
 
 // Import ExtensionStore for loading persisted extensions
 pub use neomind_storage::extensions::ExtensionStore;
@@ -126,15 +126,14 @@ impl ExtensionMetricsStorage {
 /// Extension management state.
 ///
 /// Fully decoupled from device system with independent storage.
-/// Uses UnifiedExtensionService for process-isolated extension loading.
+/// Uses ExtensionRuntime for process-isolated extension loading.
 #[derive(Clone)]
 pub struct ExtensionState {
-    /// Extension registry for managing dynamically loaded extensions
-    /// Note: This is kept for backward compatibility and direct access
+    /// Internal proxy registry for streaming support and host adapters.
     pub registry: Arc<ExtensionRegistry>,
 
-    /// Unified extension service with process isolation support
-    pub unified_service: Arc<UnifiedExtensionService>,
+    /// Single-path extension runtime.
+    pub runtime: Arc<ExtensionRuntime>,
 
     /// Extension metrics storage (separate from device telemetry)
     pub metrics_storage: Arc<ExtensionMetricsStorage>,
@@ -146,7 +145,7 @@ impl ExtensionState {
     /// This returns the EventDispatcher from the IsolatedExtensionManager,
     /// which is used to push events to subscribed extensions.
     pub fn get_event_dispatcher(&self) -> Option<Arc<neomind_core::extension::EventDispatcher>> {
-        Some(self.unified_service.get_event_dispatcher())
+        Some(self.runtime.get_event_dispatcher())
     }
 
     /// Set the capability provider for isolated extensions.
@@ -154,7 +153,7 @@ impl ExtensionState {
     /// This allows isolated extensions to invoke capabilities on the host process,
     /// such as writing virtual metrics to devices.
     pub async fn set_capability_provider(&self, provider: Arc<dyn neomind_core::extension::context::ExtensionCapabilityProvider>) {
-        self.unified_service.set_capability_provider(provider).await;
+        self.runtime.set_capability_provider(provider).await;
     }
 
     /// Create a new extension state with process isolation enabled by default.
@@ -162,16 +161,15 @@ impl ExtensionState {
         registry: Arc<ExtensionRegistry>,
         metrics_storage: Arc<ExtensionMetricsStorage>,
     ) -> Self {
-        // Create unified service with process isolation by default
-        let config = UnifiedExtensionConfig::default();
-        let unified_service = Arc::new(UnifiedExtensionService::new(
+        let config = ExtensionRuntimeConfig::default();
+        let runtime = Arc::new(ExtensionRuntime::new(
             Arc::clone(&registry),
             config,
         ));
 
         Self {
             registry,
-            unified_service,
+            runtime,
             metrics_storage,
         }
     }
@@ -180,16 +178,16 @@ impl ExtensionState {
     pub fn with_config(
         registry: Arc<ExtensionRegistry>,
         metrics_storage: Arc<ExtensionMetricsStorage>,
-        config: UnifiedExtensionConfig,
+        config: ExtensionRuntimeConfig,
     ) -> Self {
-        let unified_service = Arc::new(UnifiedExtensionService::new(
+        let runtime = Arc::new(ExtensionRuntime::new(
             Arc::clone(&registry),
             config,
         ));
 
         Self {
             registry,
-            unified_service,
+            runtime,
             metrics_storage,
         }
     }
@@ -209,16 +207,15 @@ impl ExtensionState {
             storage_path,
         ))?);
 
-        // Create unified service with process isolation by default
-        let config = UnifiedExtensionConfig::default();
-        let unified_service = Arc::new(UnifiedExtensionService::new(
+        let config = ExtensionRuntimeConfig::default();
+        let runtime = Arc::new(ExtensionRuntime::new(
             Arc::clone(&registry),
             config,
         ));
 
         Ok(Self {
             registry,
-            unified_service,
+            runtime,
             metrics_storage,
         })
     }
@@ -226,11 +223,11 @@ impl ExtensionState {
     /// Create a minimal extension state for testing.
     #[cfg(test)]
     pub async fn minimal() -> Self {
+        let registry = Arc::new(ExtensionRegistry::new());
+        let runtime = Arc::new(ExtensionRuntime::with_defaults(registry.clone()));
         Self {
-            registry: Arc::new(ExtensionRegistry::new()),
-            unified_service: Arc::new(UnifiedExtensionService::with_defaults(Arc::new(
-                ExtensionRegistry::new(),
-            ))),
+            registry,
+            runtime,
             metrics_storage: Arc::new(
                 ExtensionMetricsStorage::memory().expect("Failed to create memory storage"),
             ),
@@ -242,7 +239,7 @@ impl ExtensionState {
     /// This should be called AFTER the server is fully initialized in an async context.
     /// It loads all extensions marked with `auto_start=true` from the extension store.
     ///
-    /// Extensions are loaded via UnifiedExtensionService with process isolation by default.
+    /// Extensions are loaded via ExtensionRuntime with process isolation by default.
     pub async fn load_from_storage(&self) -> Result<usize, String> {
         // Open extension store
         let store = ExtensionStore::open("data/extensions.redb")
@@ -284,8 +281,7 @@ impl ExtensionState {
                 current, total, record.id
             );
 
-            // Use unified service for loading with process isolation
-            let load_result = self.unified_service.load(file_path).await;
+            let load_result = self.runtime.load(file_path).await;
 
             match load_result {
                 Ok(metadata) => {
@@ -293,7 +289,7 @@ impl ExtensionState {
                     if let Some(ref config) = record.config {
                         // Try to apply config via execute_command
                         if let Err(e) = self
-                            .unified_service
+                            .runtime
                             .execute_command(&metadata.id, "configure", config)
                             .await
                         {
@@ -310,15 +306,12 @@ impl ExtensionState {
                         }
                     }
 
-                    // Check if running in isolated mode
-                    let is_isolated = self.unified_service.is_isolated(&metadata.id).await;
-
                     tracing::info!(
                         extension_id = %metadata.id,
                         name = %record.name,
                         extension_type = %record.extension_type,
                         has_config = record.config.is_some(),
-                        is_isolated = is_isolated,
+                        is_isolated = true,
                         "Loaded extension from storage"
                     );
                     loaded_count += 1;
@@ -372,9 +365,15 @@ impl ExtensionState {
 
     /// Auto-discover and register extensions from default directories.
     ///
-    /// Extensions are loaded via UnifiedExtensionService with process isolation by default.
+    /// Extensions are loaded via ExtensionRuntime with process isolation by default.
+    ///
+    /// # Safety
+    ///
+    /// Discovery is safe - it only reads sidecar JSON metadata files and never
+    /// loads native libraries during discovery. Actual loading happens in the
+    /// isolated extension-runner process.
     pub async fn auto_discover_and_register(&self) -> Result<usize, String> {
-        // Discover extensions using the registry (scans filesystem)
+        // Discover extensions using the registry (scans filesystem, reads sidecar JSON only)
         let discovered = self.registry.discover().await;
 
         if discovered.is_empty() {
@@ -382,15 +381,35 @@ impl ExtensionState {
             return Ok(0);
         }
 
+        tracing::info!("Discovered {} potential extension(s)", discovered.len());
+
+        // Log discovered extensions for debugging
+        for (path, metadata) in &discovered {
+            tracing::info!(
+                extension_id = %metadata.id,
+                path = %path.display(),
+                "Found extension"
+            );
+        }
+
         // Open the store for checking uninstalled status and saving records
         let store = ExtensionStore::open("data/extensions.redb")
             .map_err(|e| format!("Failed to open extension store: {}", e))?;
 
         let mut registered_count = 0;
+        // Limit the number of extensions to load during auto-discovery to prevent resource exhaustion
+        let max_to_load = 3;
 
         for (path, metadata) in discovered {
-            // Check if already registered in memory (via unified service)
-            if self.unified_service.contains(&metadata.id).await {
+            if registered_count >= max_to_load {
+                tracing::info!(
+                    "Reached auto-discovery limit of {} extensions, skipping remaining",
+                    max_to_load
+                );
+                break;
+            }
+
+            if self.runtime.contains(&metadata.id).await {
                 continue;
             }
 
@@ -414,8 +433,18 @@ impl ExtensionState {
                 }
             }
 
-            // Load the extension using unified service (with process isolation)
-            match self.unified_service.load(&path).await {
+            // Rate limit extension loading to prevent resource exhaustion
+            if registered_count > 0 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            }
+
+            tracing::info!(
+                extension_id = %metadata.id,
+                path = %path.display(),
+                "Loading discovered extension"
+            );
+
+            match self.runtime.load(&path).await {
                 Ok(loaded_metadata) => {
                     // Save to storage with auto_start enabled (clear uninstalled flag if set)
                     let record = neomind_storage::ExtensionRecord::new(
@@ -433,12 +462,9 @@ impl ExtensionState {
                         tracing::warn!("Failed to save extension record: {}", e);
                     }
 
-                    // Check if running in isolated mode
-                    let is_isolated = self.unified_service.is_isolated(&loaded_metadata.id).await;
-
                     tracing::info!(
                         extension_id = %loaded_metadata.id,
-                        is_isolated = is_isolated,
+                        is_isolated = true,
                         "Auto-registered extension"
                     );
                     registered_count += 1;
@@ -449,6 +475,14 @@ impl ExtensionState {
                         error = %e,
                         "Failed to load discovered extension"
                     );
+                    // Record the error in the extension store
+                    if let Err(update_e) = store.update_error_status(&metadata.id, &e.to_string()) {
+                        tracing::warn!(
+                            extension_id = %metadata.id,
+                            error = %update_e,
+                            "Failed to update extension error status"
+                        );
+                    }
                 }
             }
         }
@@ -466,16 +500,14 @@ impl ExtensionState {
 // Adapter for neomind_rules ExtensionRegistry
 // ============================================================================
 
-/// Adapter that implements neomind_rules::ExtensionRegistry for ExtensionRegistry.
-///
-/// This bridges neomind_core's ExtensionRegistry to neomind_rules' ExtensionRegistry trait.
+/// Adapter that implements neomind_rules::ExtensionRegistry for ExtensionRuntime.
 pub struct ExtensionRegistryAdapter {
-    registry: Arc<ExtensionRegistry>,
+    runtime: Arc<ExtensionRuntime>,
 }
 
 impl ExtensionRegistryAdapter {
-    pub fn new(registry: Arc<ExtensionRegistry>) -> Self {
-        Self { registry }
+    pub fn new(runtime: Arc<ExtensionRuntime>) -> Self {
+        Self { runtime }
     }
 }
 
@@ -487,14 +519,14 @@ impl neomind_rules::extension_integration::ExtensionRegistry for ExtensionRegist
         command: &str,
         args: &serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        self.registry
+        self.runtime
             .execute_command(extension_id, command, args)
             .await
             .map_err(|e| e.to_string())
     }
 
     async fn has_extension(&self, extension_id: &str) -> bool {
-        self.registry.get(extension_id).await.is_some()
+        self.runtime.contains(extension_id).await
     }
 }
 

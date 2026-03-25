@@ -22,10 +22,10 @@ pub async fn create_router() -> Router {
 /// Create the application router with a specific state.
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
-        agents, auth as auth_handlers, auth_users, automations, basic, bulk, commands, config,
-        dashboards, devices, events, extensions, extension_stream, llm_backends, memory,
-        message_channels, messages, mqtt, rules, search, sessions, settings, setup, stats,
-        suggestions, test_data, tools, capabilities,
+        agents, auth as auth_handlers, auth_users, automations, basic, config,
+        dashboards, devices, events, extensions, extension_stream, llm_backends,
+        message_channels, messages, mqtt, rules, sessions, settings, setup, stats,
+        suggestions, capabilities,
     };
 
     // Public routes (no authentication required)
@@ -172,15 +172,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/extensions/:id/reload",
             post(extensions::reload_extension_handler),
         )
-        // Test data generation (public - for development)
-        .route(
-            "/api/test-data/alerts",
-            post(test_data::generate_test_alerts_handler),
-        )
-        .route(
-            "/api/test-data/all",
-            post(test_data::generate_test_data_handler),
-        )
         // Stats API (public - system stats for dashboard components)
         .route("/api/stats/system", get(stats::get_system_stats_handler))
         // Suggestions API (public - provides intelligent input suggestions)
@@ -301,32 +292,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             post(devices::get_devices_current_batch_handler),
         )
         .route(
-            "/api/devices/:id/state",
-            get(devices::get_device_state_handler),
-        )
-        .route(
-            "/api/devices/:id/health",
-            get(devices::get_device_health_handler),
-        )
-        .route(
-            "/api/devices/:id/refresh",
-            post(devices::refresh_device_handler),
-        )
-        .route(
             "/api/devices/:id/command/:command",
             post(devices::send_command_handler),
-        )
-        .route(
-            "/api/devices/:id/metrics/:metric",
-            get(devices::read_metric_handler),
-        )
-        .route(
-            "/api/devices/:id/metrics/:metric/data",
-            get(devices::query_metric_handler),
-        )
-        .route(
-            "/api/devices/:id/metrics/:metric/aggregate",
-            get(devices::aggregate_metric_handler),
         )
         .route(
             "/api/devices/:id/telemetry",
@@ -335,15 +302,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route(
             "/api/devices/:id/telemetry/summary",
             get(devices::get_device_telemetry_summary_handler),
-        )
-        // Virtual Metrics and Capability API
-        .route(
-            "/api/devices/:id/virtual-metrics",
-            post(capabilities::write_virtual_metric_handler),
-        )
-        .route(
-            "/api/devices/:id/aggregate",
-            get(capabilities::aggregate_metrics_handler),
         )
         .route(
             "/api/devices/:id/commands",
@@ -376,32 +334,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/device-types/cloud/import",
             post(devices::import_cloud_device_types_handler),
         )
-        // Device Discovery API
-        .route(
-            "/api/devices/discover",
-            post(devices::discover_devices_handler),
-        )
-        .route(
-            "/api/devices/discover/info",
-            get(devices::discovery_info_handler),
-        )
         // MDL Generation API
         .route(
             "/api/devices/generate-mdl",
             post(devices::generate_mdl_handler),
-        )
-        // Webhook API - devices can POST data to these endpoints
-        .route(
-            "/api/devices/webhook/:device_id",
-            post(devices::webhook_handler),
-        )
-        .route(
-            "/api/devices/webhook",
-            post(devices::webhook_generic_handler),
-        )
-        .route(
-            "/api/devices/:id/webhook-url",
-            get(devices::get_webhook_url_handler),
         )
         // Draft Devices API - auto-onboarding
         .route("/api/devices/drafts", get(devices::list_draft_devices))
@@ -513,8 +449,48 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             delete(message_channels::delete_channel_handler),
         )
         .route(
+            "/api/messages/channels/:name",
+            put(message_channels::update_channel_handler),
+        )
+        .route(
             "/api/messages/channels/:name/test",
             post(message_channels::test_channel_handler),
+        )
+        // Message Channel Recipients API
+        .route(
+            "/api/messages/channels/:name/recipients",
+            get(message_channels::list_recipients_handler),
+        )
+        .route(
+            "/api/messages/channels/:name/recipients",
+            post(message_channels::add_recipient_handler),
+        )
+        .route(
+            "/api/messages/channels/:name/recipients/:email",
+            delete(message_channels::remove_recipient_handler),
+        )
+        // Message Channel Filter API
+        .route(
+            "/api/messages/channels/:name/filter",
+            get(message_channels::get_channel_filter_handler),
+        )
+        .route(
+            "/api/messages/channels/:name/filter",
+            put(message_channels::update_channel_filter_handler),
+        )
+        // Message Channel Toggle Enabled
+        .route(
+            "/api/messages/channels/:name/enabled",
+            put(message_channels::toggle_enabled_handler),
+        )
+        // Delivery Log API
+        .route(
+            "/api/messages/delivery-logs",
+            get(message_channels::list_delivery_logs_handler),
+        )
+        .route(
+            "/api/messages/delivery-logs/stats",
+            get(message_channels::get_delivery_stats_handler),
         )
         // LLM Generation API (one-shot, no session)
         .route("/api/llm/generate", post(settings::llm_generate_handler))
@@ -647,74 +623,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/agents/:id/messages/:message_id",
             delete(agents::delete_user_message),
         )
-        // Memory API
-        .route("/api/memory/stats", get(memory::get_memory_stats_handler))
-        .route("/api/memory/query", get(memory::query_memory_handler))
-        .route(
-            "/api/memory/consolidate/:session_id",
-            post(memory::consolidate_memory_handler),
-        )
-        .route(
-            "/api/memory/short-term",
-            get(memory::get_short_term_handler),
-        )
-        .route(
-            "/api/memory/short-term",
-            post(memory::add_short_term_handler),
-        )
-        .route(
-            "/api/memory/short-term",
-            delete(memory::clear_short_term_handler),
-        )
-        .route(
-            "/api/memory/mid-term/:session_id",
-            get(memory::get_session_history_handler),
-        )
-        .route("/api/memory/mid-term", post(memory::add_mid_term_handler))
-        .route(
-            "/api/memory/mid-term/search",
-            get(memory::search_mid_term_handler),
-        )
-        .route(
-            "/api/memory/mid-term",
-            delete(memory::clear_mid_term_handler),
-        )
-        .route(
-            "/api/memory/long-term/search",
-            get(memory::search_knowledge_handler),
-        )
-        .route(
-            "/api/memory/long-term/category/:category",
-            get(memory::get_knowledge_by_category_handler),
-        )
-        .route(
-            "/api/memory/long-term/device/:device_id",
-            get(memory::get_device_knowledge_handler),
-        )
-        .route(
-            "/api/memory/long-term/popular",
-            get(memory::get_popular_knowledge_handler),
-        )
-        .route("/api/memory/long-term", post(memory::add_knowledge_handler))
-        .route(
-            "/api/memory/long-term",
-            delete(memory::clear_long_term_handler),
-        )
-        // Tools API
-        .route("/api/tools", get(tools::list_tools_handler))
-        .route(
-            "/api/tools/:name/schema",
-            get(tools::get_tool_schema_handler),
-        )
-        .route("/api/tools/metrics", get(tools::get_tool_metrics_handler))
-        .route(
-            "/api/tools/:name/execute",
-            post(tools::execute_tool_handler),
-        )
-        .route(
-            "/api/tools/format-for-llm",
-            get(tools::format_for_llm_handler),
-        )
         // MQTT Management API
         .route("/api/mqtt/status", get(mqtt::get_mqtt_status_handler))
         .route(
@@ -738,70 +646,15 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/brokers/:id", put(mqtt::update_broker_handler))
         .route("/api/brokers/:id", delete(mqtt::delete_broker_handler))
         .route("/api/brokers/:id/test", post(mqtt::test_broker_handler))
-        // Commands API
-        .route("/api/commands", get(commands::list_commands_handler))
-        .route("/api/commands/:id", get(commands::get_command_handler))
-        .route(
-            "/api/commands/:id/retry",
-            post(commands::retry_command_handler),
-        )
-        .route(
-            "/api/commands/:id/cancel",
-            post(commands::cancel_command_handler),
-        )
-        .route(
-            "/api/commands/stats",
-            get(commands::get_command_stats_handler),
-        )
-        .route(
-            "/api/commands/cleanup",
-            post(commands::cleanup_commands_handler),
-        )
         // Stats API (devices and rules require auth, system info is public)
         .route("/api/stats/devices", get(stats::get_device_stats_handler))
         .route("/api/stats/rules", get(stats::get_rule_stats_handler))
-        // Bulk Operations API
-        .route("/api/bulk/alerts", post(bulk::bulk_create_alerts_handler))
-        .route(
-            "/api/bulk/alerts/resolve",
-            post(bulk::bulk_resolve_alerts_handler),
-        )
-        .route(
-            "/api/bulk/alerts/acknowledge",
-            post(bulk::bulk_acknowledge_alerts_handler),
-        )
-        .route(
-            "/api/bulk/alerts/delete",
-            post(bulk::bulk_delete_alerts_handler),
-        )
-        .route(
-            "/api/bulk/sessions/delete",
-            post(bulk::bulk_delete_sessions_handler),
-        )
-        .route(
-            "/api/bulk/devices/delete",
-            post(bulk::bulk_delete_devices_handler),
-        )
-        .route(
-            "/api/bulk/devices/command",
-            post(bulk::bulk_device_command_handler),
-        )
-        .route(
-            "/api/bulk/device-types/delete",
-            post(bulk::bulk_delete_device_types_handler),
-        )
         // Config Import/Export API
         .route("/api/config/export", get(config::export_config_handler))
         .route("/api/config/import", post(config::import_config_handler))
         .route(
             "/api/config/validate",
             post(config::validate_config_handler),
-        )
-        // Global Search API
-        .route("/api/search", get(search::global_search_handler))
-        .route(
-            "/api/search/suggestions",
-            get(search::search_suggestions_handler),
         )
         // Dashboards API
         .route("/api/dashboards", get(dashboards::list_dashboards_handler))
@@ -897,11 +750,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/llm-backends/:id/activate",
             post(llm_backends::activate_backend_handler),
         )
-        // TODO: Implement refresh_capabilities_handler
-        // .route(
-        //     "/api/llm-backends/:id/refresh-capabilities",
-        //     post(llm_backends::refresh_capabilities_handler),
-        // )
         .route(
             "/api/llm-backends/:id/test",
             post(llm_backends::test_backend_handler),

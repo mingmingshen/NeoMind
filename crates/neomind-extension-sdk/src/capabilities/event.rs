@@ -3,9 +3,7 @@
 use serde_json::{json, Value};
 
 #[cfg(not(target_arch = "wasm32"))]
-use neomind_core::extension::context::*;
-#[cfg(not(target_arch = "wasm32"))]
-use neomind_core::event::NeoMindEvent;
+use crate::host::*;
 
 #[cfg(target_arch = "wasm32")]
 use crate::wasm::{ExtensionContext, EventSubscription, capabilities};
@@ -53,10 +51,16 @@ pub fn call_event_handler(event_type: &str, payload: &Value) {
 
 /// Publish an event
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn publish(context: &Context, event: NeoMindEvent) -> Result<Value, CapabilityError> {
-    let event_value = serde_json::to_value(&event).map_err(|e| e.to_string())?;
+pub async fn publish(
+    context: &Context,
+    event_type: &str,
+    payload: &Value,
+) -> Result<Value, CapabilityError> {
     context
-        .invoke_capability(ExtensionCapability::EventPublish, &json!({"event": event_value}))
+        .invoke_capability(
+            ExtensionCapability::EventPublish,
+            &json!({"event_type": event_type, "payload": payload}),
+        )
         .await
         .map_err(|e| e.to_string())
 }
@@ -78,7 +82,7 @@ pub fn publish(
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn subscribe(
     context: &Context,
-    subscription: neomind_core::extension::event_subscription::EventSubscription,
+    subscription: EventSubscription,
 ) -> Result<Value, CapabilityError> {
     let sub_value = serde_json::to_value(&subscription).map_err(|e| e.to_string())?;
     context

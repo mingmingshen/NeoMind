@@ -1,15 +1,19 @@
 //! Extension types and helpers for SDK
 //!
 //! This module provides types that work for both Native and WASM targets.
+//! The core IPC boundary types are defined in `ipc_types.rs` for stability.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// Re-export all IPC boundary types for convenience
+pub use crate::ipc_types::*;
+
 // ============================================================================
-// Extension Metadata (SDK-specific, works for both targets)
+// SDK-Specific Extensions (not in IPC boundary)
 // ============================================================================
 
-/// Extension metadata for SDK
+/// Extension metadata for SDK (SDK-specific fields)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SdkExtensionMetadata {
     /// Unique extension identifier
@@ -70,10 +74,10 @@ impl SdkExtensionMetadata {
 }
 
 // ============================================================================
-// Metric Types
+// Metric Types (SDK-specific wrappers)
 // ============================================================================
 
-/// Metric data types
+/// Metric data types (SDK-specific)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[derive(Default)]
@@ -90,8 +94,33 @@ pub enum SdkMetricDataType {
     },
 }
 
+impl From<SdkMetricDataType> for MetricDataType {
+    fn from(dt: SdkMetricDataType) -> Self {
+        match dt {
+            SdkMetricDataType::Float => MetricDataType::Float,
+            SdkMetricDataType::Integer => MetricDataType::Integer,
+            SdkMetricDataType::Boolean => MetricDataType::Boolean,
+            SdkMetricDataType::String => MetricDataType::String,
+            SdkMetricDataType::Binary => MetricDataType::Binary,
+            SdkMetricDataType::Enum { options } => MetricDataType::Enum { options },
+        }
+    }
+}
 
-/// Metric definition
+impl From<MetricDataType> for SdkMetricDataType {
+    fn from(dt: MetricDataType) -> Self {
+        match dt {
+            MetricDataType::Float => SdkMetricDataType::Float,
+            MetricDataType::Integer => SdkMetricDataType::Integer,
+            MetricDataType::Boolean => SdkMetricDataType::Boolean,
+            MetricDataType::String => SdkMetricDataType::String,
+            MetricDataType::Binary => SdkMetricDataType::Binary,
+            MetricDataType::Enum { options } => SdkMetricDataType::Enum { options },
+        }
+    }
+}
+
+/// Metric definition (SDK-specific)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SdkMetricDefinition {
     /// Metric name
@@ -153,7 +182,21 @@ impl SdkMetricDefinition {
     }
 }
 
-/// Metric value (enum for parameters)
+impl From<SdkMetricDefinition> for MetricDescriptor {
+    fn from(def: SdkMetricDefinition) -> Self {
+        Self {
+            name: def.name,
+            display_name: def.display_name,
+            data_type: def.data_type.into(),
+            unit: def.unit,
+            min: def.min,
+            max: def.max,
+            required: def.required,
+        }
+    }
+}
+
+/// Metric value (SDK-specific)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 #[derive(Default)]
@@ -167,6 +210,31 @@ pub enum SdkMetricValue {
     Null,
 }
 
+impl From<SdkMetricValue> for MetricValue {
+    fn from(v: SdkMetricValue) -> Self {
+        match v {
+            SdkMetricValue::Float(f) => MetricValue::Float(f),
+            SdkMetricValue::Integer(i) => MetricValue::Integer(i),
+            SdkMetricValue::Boolean(b) => MetricValue::Boolean(b),
+            SdkMetricValue::String(s) => MetricValue::String(s),
+            SdkMetricValue::Binary(b) => MetricValue::Binary(b),
+            SdkMetricValue::Null => MetricValue::Null,
+        }
+    }
+}
+
+impl From<MetricValue> for SdkMetricValue {
+    fn from(v: MetricValue) -> Self {
+        match v {
+            MetricValue::Float(f) => SdkMetricValue::Float(f),
+            MetricValue::Integer(i) => SdkMetricValue::Integer(i),
+            MetricValue::Boolean(b) => SdkMetricValue::Boolean(b),
+            MetricValue::String(s) => SdkMetricValue::String(s),
+            MetricValue::Binary(b) => SdkMetricValue::Binary(b),
+            MetricValue::Null => SdkMetricValue::Null,
+        }
+    }
+}
 
 impl From<f64> for SdkMetricValue {
     fn from(v: f64) -> Self { Self::Float(v) }
@@ -193,11 +261,10 @@ impl From<Vec<u8>> for SdkMetricValue {
 }
 
 // ============================================================================
-// Extension Metric Value (struct for produce_metrics)
+// Extension Metric Value (SDK-specific)
 // ============================================================================
 
-/// Extension metric value with name, value and timestamp
-/// This matches the Native ExtensionMetricValue structure
+/// Extension metric value with name, value and timestamp (SDK-specific)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SdkExtensionMetricValue {
     /// Metric name
@@ -216,9 +283,9 @@ impl SdkExtensionMetricValue {
             value,
             timestamp: {
                 #[cfg(not(target_arch = "wasm32"))]
-                { chrono::Utc::now().timestamp_millis() }
+                { crate::ipc_types::current_timestamp_ms() }
                 #[cfg(target_arch = "wasm32")]
-                { 0 } // WASM: use host-provided timestamp or 0
+                { 0 }
             },
         }
     }
@@ -233,11 +300,21 @@ impl SdkExtensionMetricValue {
     }
 }
 
+impl From<SdkExtensionMetricValue> for ExtensionMetricValue {
+    fn from(v: SdkExtensionMetricValue) -> Self {
+        Self {
+            name: v.name,
+            value: v.value.into(),
+            timestamp: v.timestamp,
+        }
+    }
+}
+
 // ============================================================================
-// Command Types
+// Command Types (SDK-specific)
 // ============================================================================
 
-/// Parameter definition for commands
+/// Parameter definition for commands (SDK-specific)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SdkParameterDefinition {
     /// Parameter name
@@ -310,7 +387,23 @@ impl SdkParameterDefinition {
     }
 }
 
-/// Command definition
+impl From<SdkParameterDefinition> for ParameterDefinition {
+    fn from(p: SdkParameterDefinition) -> Self {
+        Self {
+            name: p.name,
+            display_name: p.display_name,
+            description: p.description,
+            param_type: p.param_type.into(),
+            required: p.required,
+            default_value: p.default_value.map(|v| v.into()),
+            min: p.min,
+            max: p.max,
+            options: p.options,
+        }
+    }
+}
+
+/// Command definition (SDK-specific)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[derive(Default)]
 pub struct SdkCommandDefinition {
@@ -322,7 +415,7 @@ pub struct SdkCommandDefinition {
     /// Payload template
     #[serde(default)]
     pub payload_template: String,
-    /// Description (mapped to llm_hints for compatibility)
+    /// Description
     #[serde(default)]
     pub description: String,
     /// Parameters
@@ -355,7 +448,6 @@ pub struct SdkParameterGroup {
     pub parameters: Vec<String>,
 }
 
-
 impl SdkCommandDefinition {
     /// Create a new command definition
     pub fn new(name: impl Into<String>) -> Self {
@@ -384,11 +476,31 @@ impl SdkCommandDefinition {
     }
 }
 
+impl From<SdkCommandDefinition> for CommandDescriptor {
+    fn from(c: SdkCommandDefinition) -> Self {
+        Self {
+            name: c.name,
+            display_name: c.display_name,
+            description: c.description,
+            payload_template: c.payload_template,
+            parameters: c.parameters.into_iter().map(|p| p.into()).collect(),
+            fixed_values: c.fixed_values,
+            samples: c.samples,
+            parameter_groups: c.parameter_groups.into_iter().map(|g| ParameterGroup {
+                name: g.name,
+                display_name: g.display_name,
+                description: g.description,
+                parameters: g.parameters,
+            }).collect(),
+        }
+    }
+}
+
 // ============================================================================
-// Error Types
+// Error Types (SDK-specific)
 // ============================================================================
 
-/// Extension error type
+/// Extension error type (SDK-specific)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SdkExtensionError {
     /// Command not found
@@ -441,6 +553,25 @@ impl std::error::Error for SdkExtensionError {}
 impl From<serde_json::Error> for SdkExtensionError {
     fn from(e: serde_json::Error) -> Self {
         Self::InvalidFormat(e.to_string())
+    }
+}
+
+impl From<SdkExtensionError> for ExtensionError {
+    fn from(e: SdkExtensionError) -> Self {
+        match e {
+            SdkExtensionError::CommandNotFound(s) => ExtensionError::CommandNotFound(s),
+            SdkExtensionError::InvalidArguments(s) => ExtensionError::InvalidArguments(s),
+            SdkExtensionError::ExecutionFailed(s) => ExtensionError::ExecutionFailed(s),
+            SdkExtensionError::Timeout(s) => ExtensionError::Timeout(s),
+            SdkExtensionError::NotFound(s) => ExtensionError::NotFound(s),
+            SdkExtensionError::InvalidFormat(s) => ExtensionError::InvalidFormat(s),
+            SdkExtensionError::LoadFailed(s) => ExtensionError::LoadFailed(s),
+            SdkExtensionError::SecurityError(s) => ExtensionError::SecurityError(s),
+            SdkExtensionError::NotSupported(s) => ExtensionError::NotSupported(s),
+            SdkExtensionError::ConfigurationError(s) => ExtensionError::ConfigurationError(s),
+            SdkExtensionError::InternalError(s) => ExtensionError::InternalError(s),
+            SdkExtensionError::Other(s) => ExtensionError::Other(s),
+        }
     }
 }
 
@@ -786,36 +917,12 @@ impl<'a> ArgParser<'a> {
 // Extension Statistics (for WASM target)
 // ============================================================================
 
-/// Extension statistics for WASM target
-/// This is a simplified version that doesn't require chrono
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[allow(dead_code)]
-pub struct ExtensionStats {
-    /// Number of metrics produced
-    pub metrics_produced: u64,
-    /// Number of commands executed
-    pub commands_executed: u64,
-    /// Total execution time in milliseconds
-    pub total_execution_time_ms: u64,
-    /// Last execution timestamp (Unix timestamp in milliseconds)
-    pub last_execution_time_ms: Option<i64>,
-    /// Number of times the extension has been started
-    pub start_count: u64,
-    /// Number of times the extension has been stopped
-    pub stop_count: u64,
-    /// Number of errors
-    pub error_count: u64,
-    /// Last error message
-    pub last_error: Option<String>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_metric_data_type_serialization() {
-        // Test basic types
         let types = vec![
             (SdkMetricDataType::Float, r#""float""#),
             (SdkMetricDataType::Integer, r#""integer""#),
@@ -826,10 +933,10 @@ mod tests {
 
         for (dtype, expected) in types {
             let json = serde_json::to_string(&dtype).unwrap();
-            assert_eq!(json, expected, "Serialization mismatch for {:?}", dtype);
-            
+            assert_eq!(json, expected);
+
             let deserialized: SdkMetricDataType = serde_json::from_str(expected).unwrap();
-            assert_eq!(dtype, deserialized, "Deserialization mismatch for {:?}", dtype);
+            assert_eq!(dtype, deserialized);
         }
 
         // Test Enum type
@@ -837,8 +944,8 @@ mod tests {
             options: vec!["option1".to_string(), "option2".to_string()],
         };
         let json = serde_json::to_string(&enum_type).unwrap();
-        assert!(json.contains("enum"), "Enum type should serialize with 'enum' key");
-        assert!(json.contains("options"), "Enum type should contain 'options'");
+        assert!(json.contains("enum"));
+        assert!(json.contains("options"));
     }
 
     #[test]
@@ -856,7 +963,7 @@ mod tests {
         let json = serde_json::to_string(&metric).unwrap();
         assert!(json.contains("test_metric"));
         assert!(json.contains("float"));
-        
+
         let deserialized: SdkMetricDefinition = serde_json::from_str(&json).unwrap();
         assert_eq!(metric.name, deserialized.name);
         assert_eq!(metric.unit, deserialized.unit);
@@ -877,7 +984,7 @@ mod tests {
         let json = serde_json::to_string(&meta).unwrap();
         assert!(json.contains("test-ext"));
         assert!(json.contains("1.0.0"));
-        
+
         let deserialized: SdkExtensionMetadata = serde_json::from_str(&json).unwrap();
         assert_eq!(meta.id, deserialized.id);
         assert_eq!(meta.version, deserialized.version);
@@ -888,8 +995,23 @@ mod tests {
         let error = SdkExtensionError::InvalidArguments("test error".to_string());
         let json = serde_json::to_string(&error).unwrap();
         assert!(json.contains("InvalidArguments"));
-        
+
         // Test error display
         assert!(error.to_string().contains("test error"));
+    }
+
+    #[test]
+    fn test_type_conversions() {
+        // SdkMetricDataType <-> MetricDataType
+        let sdk_dt = SdkMetricDataType::Float;
+        let dt: MetricDataType = sdk_dt.clone().into();
+        assert!(matches!(dt, MetricDataType::Float));
+        let back: SdkMetricDataType = dt.into();
+        assert!(matches!(back, SdkMetricDataType::Float));
+
+        // SdkMetricValue <-> MetricValue
+        let sdk_v = SdkMetricValue::Integer(42);
+        let v: MetricValue = sdk_v.into();
+        assert!(matches!(v, MetricValue::Integer(42)));
     }
 }

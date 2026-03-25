@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use neomind_agent::session::SessionManager;
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::message::Message;
-use neomind_llm::{OllamaConfig, OllamaRuntime};
+use neomind_agent::{OllamaConfig, OllamaRuntime};
 
 // ============================================================================
 // Test Context
@@ -33,7 +33,6 @@ use neomind_llm::{OllamaConfig, OllamaRuntime};
 struct ToolCallingTestContext {
     pub session_manager: SessionManager,
     pub session_id: String,
-    #[allow(dead_code)]
     pub model_name: String,
 }
 

@@ -8,6 +8,16 @@ use super::super::{Error, Message, Result};
 #[cfg(feature = "email")]
 use super::MessageChannel;
 
+/// Escape HTML special characters to prevent XSS and display issues
+#[cfg(feature = "email")]
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
 /// Email channel for sending messages via SMTP.
 #[cfg(feature = "email")]
 #[derive(Debug, Clone)]
@@ -56,6 +66,16 @@ impl EmailChannel {
         self
     }
 
+    /// Set recipients (for updating after creation)
+    pub fn set_recipients_internal(&mut self, addresses: Vec<String>) {
+        self.to_addresses = addresses;
+    }
+
+    /// Get current recipients
+    pub fn get_recipients_internal(&self) -> &[String] {
+        &self.to_addresses
+    }
+
     pub fn without_tls(mut self) -> Self {
         self.use_tls = false;
         self
@@ -75,36 +95,139 @@ impl EmailChannel {
     }
 
     fn build_email_body(&self, message: &Message) -> String {
+        // Build payload section for DataPush messages
+        let payload_section = if message.message_type == super::super::MessageType::DataPush {
+            if let Some(payload) = &message.payload {
+                let payload_str = payload.to_string();
+                // Truncate if too long
+                let display_payload = if payload_str.len() > 2000 {
+                    format!("{}...\n\n<i>(Content truncated, total {} characters)</i>", &payload_str[..2000], payload_str.len())
+                } else {
+                    payload_str
+                };
+                format!(
+                    r#"<div class="payload">
+            <h3>📦 Push Data</h3>
+            <pre>{}</pre>
+        </div>"#,
+                    html_escape(&display_payload)
+                )
+            } else {
+                r#"<div class="payload">
+            <p><em>No data content</em></p>
+        </div>"#.to_string()
+            }
+        } else {
+            String::new()
+        };
+
+        // Build message content section
+        let message_content = if message.message.is_empty() && message.message_type == super::super::MessageType::DataPush {
+            "<em>(Data push message)</em>".to_string()
+        } else {
+            html_escape(&message.message)
+        };
+
+        // Severity colors using orange accent theme
+        let (severity_color, severity_bg, severity_border) = match message.severity {
+            super::super::MessageSeverity::Info => ("#28a745", "#e8f5e9", "#28a745"),
+            super::super::MessageSeverity::Warning => ("#e67e22", "#fff3e0", "#e67e22"),
+            super::super::MessageSeverity::Critical => ("#e74c3c", "#ffebee", "#e74c3c"),
+            super::super::MessageSeverity::Emergency => ("#c0392b", "#fce4ec", "#c0392b"),
+        };
+
+        // Message type badge
+        let (type_bg, type_text, type_label) = if message.message_type == super::super::MessageType::DataPush {
+            ("#e67e22", "#ffffff", "Data Push")
+        } else {
+            ("#3498db", "#ffffff", "Notification")
+        };
+
         format!(
             r#"<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body {{ font-family: Arial, sans-serif; }}
-        .message {{ padding: 20px; border-radius: 5px; }}
-        .severity-info {{ background-color: #d4edda; border-left: 4px solid #28a745; }}
-        .severity-warning {{ background-color: #fff3cd; border-left: 4px solid #ffc107; }}
-        .severity-critical {{ background-color: #f8d7da; border-left: 4px solid #dc3545; }}
-        .severity-emergency {{ background-color: #f5c6cb; border-left: 4px solid #bd2130; }}
-        .timestamp {{ color: #6c757d; font-size: 0.9em; }}
-        .source {{ font-weight: bold; }}
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ font-family: Arial, Helvetica, sans-serif; background-color: #f8f9fa; color: #333; line-height: 1.6; }}
+        .email-container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
+        .header {{ background-color: #1a1a1a; color: #ffffff; padding: 24px 32px; text-align: center; }}
+        .header h1 {{ font-size: 24px; font-weight: bold; margin-bottom: 4px; }}
+        .header p {{ font-size: 12px; color: #888; letter-spacing: 2px; text-transform: uppercase; }}
+        .content {{ padding: 32px; }}
+        .message-card {{ background-color: {}; border-left: 4px solid {}; border-radius: 6px; padding: 24px; margin-bottom: 24px; }}
+        .message-header {{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }}
+        .message-title {{ font-size: 20px; font-weight: bold; color: #1a1a1a; flex: 1; }}
+        .message-type-badge {{ display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; background-color: {}; color: {}; }}
+        .severity-badge {{ display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; background-color: {}; color: #ffffff; margin-left: 8px; }}
+        .meta-info {{ margin-bottom: 16px; }}
+        .meta-row {{ display: flex; margin-bottom: 8px; font-size: 14px; }}
+        .meta-label {{ color: #888; width: 80px; flex-shrink: 0; }}
+        .meta-value {{ color: #333; font-weight: 500; }}
+        .message-body {{ font-size: 15px; color: #555; line-height: 1.7; padding: 16px; background-color: #ffffff; border-radius: 4px; }}
+        .payload {{ margin-top: 20px; padding: 20px; background-color: #f8f9fa; border-radius: 6px; border: 1px solid #eee; }}
+        .payload h3 {{ margin: 0 0 12px 0; color: #e67e22; font-size: 16px; }}
+        .payload pre {{ white-space: pre-wrap; word-wrap: break-word; font-size: 13px; margin: 0; color: #555; font-family: 'Courier New', monospace; }}
+        .footer {{ background-color: #1a1a1a; color: #888; padding: 24px 32px; text-align: center; }}
+        .footer p {{ font-size: 13px; margin-bottom: 8px; }}
+        .footer a {{ color: #e67e22; text-decoration: none; }}
+        .divider {{ height: 1px; background-color: #eee; margin: 16px 0; }}
     </style>
 </head>
-<body>
-    <div class="message severity-{}">
-        <h2>{}</h2>
-        <p class="timestamp">时间: {}</p>
-        <p><strong>来源:</strong> <span class="source">{}</span></p>
-        <p><strong>消息:</strong> {}</p>
+<body style="background-color: #f8f9fa; padding: 20px;">
+    <div class="email-container">
+        <div class="header">
+            <h1>NeoMind</h1>
+            <p>Edge AI Platform</p>
+        </div>
+        <div class="content">
+            <div class="message-card">
+                <div class="message-header">
+                    <span class="message-title">{}</span>
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <span class="message-type-badge">{}</span>
+                    <span class="severity-badge" style="background-color: {};">{}</span>
+                </div>
+                <div class="meta-info">
+                    <div class="meta-row">
+                        <span class="meta-label">Time:</span>
+                        <span class="meta-value">{}</span>
+                    </div>
+                    <div class="meta-row">
+                        <span class="meta-label">Source:</span>
+                        <span class="meta-value">{}</span>
+                    </div>
+                </div>
+                <div class="divider"></div>
+                <div class="message-body">
+                    {}
+                </div>
+                {}
+            </div>
+        </div>
+        <div class="footer">
+            <p>This email was automatically sent by NeoMind Platform</p>
+            <p>© 2024 NeoMind Edge AI Platform. All rights reserved.</p>
+        </div>
     </div>
 </body>
 </html>"#,
-            message.severity.as_str(),
+            severity_bg,
+            severity_border,
+            type_bg,
+            type_text,
+            severity_color,
             message.title,
+            type_label,
+            severity_color,
+            message.severity.as_str(),
             message.timestamp.format("%Y-%m-%d %H:%M:%S"),
             message.source,
-            message.message
+            message_content,
+            payload_section
         )
     }
 }
@@ -176,9 +299,18 @@ impl MessageChannel for EmailChannel {
         tokio::task::spawn_blocking(move || {
             let creds =
                 lettre::transport::smtp::authentication::Credentials::new(username, password);
-            let relay = format!("{}:{}", smtp_server, smtp_port);
-            let mailer = lettre::SmtpTransport::relay(&relay)
+
+            use lettre::transport::smtp::client::Tls;
+            use lettre::transport::smtp::client::TlsParametersBuilder;
+
+            let tls_params = TlsParametersBuilder::new(smtp_server.clone())
+                .build()
+                .map_err(|e| Error::SendFailed(format!("Failed to build TLS params: {}", e)))?;
+
+            let mailer = lettre::SmtpTransport::relay(&smtp_server)
                 .map_err(|e| Error::SendFailed(format!("Invalid SMTP server: {}", e)))?
+                .port(smtp_port)
+                .tls(Tls::Required(tls_params))
                 .credentials(creds)
                 .build();
 
@@ -189,6 +321,14 @@ impl MessageChannel for EmailChannel {
         })
         .await
         .map_err(|e| Error::SendFailed(format!("Task join error: {}", e)))?
+    }
+
+    fn set_recipients(&mut self, recipients: Vec<String>) {
+        self.to_addresses = recipients;
+    }
+
+    fn get_recipients(&self) -> Vec<String> {
+        self.to_addresses.clone()
     }
 }
 
@@ -208,10 +348,19 @@ impl super::ChannelFactory for EmailChannelFactory {
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::InvalidConfiguration("Missing smtp_server".to_string()))?;
 
+        // Support both number and string types for smtp_port
         let smtp_port = config
             .get("smtp_port")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| Error::InvalidConfiguration("Missing smtp_port".to_string()))?
+            .and_then(|v| {
+                if let Some(n) = v.as_u64() {
+                    Some(n)
+                } else if let Some(s) = v.as_str() {
+                    s.parse::<u64>().ok()
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| Error::InvalidConfiguration("Missing or invalid smtp_port".to_string()))?
             as u16;
 
         let username = config

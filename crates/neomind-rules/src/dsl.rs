@@ -857,12 +857,6 @@ impl RuleDslParser {
         }
     }
 
-    /// Parse device.metric from a condition string (deprecated, use parse_source_metric).
-    #[allow(dead_code)]
-    fn parse_device_metric(input: &str) -> Result<(String, String), RuleError> {
-        Self::parse_source_metric(input)
-    }
-
     /// Parse simple condition like "device.metric > 50" or "EXTENSION ext.metric > 50".
     fn parse_simple_condition(
         input: &str,
@@ -1270,21 +1264,8 @@ impl RuleDslParser {
     }
 }
 
-/// Rule compilation error.
-#[derive(Debug, thiserror::Error)]
-pub enum RuleError {
-    #[error("Parse error: {0}")]
-    Parse(String),
-
-    #[error("Validation error: {0}")]
-    Validation(String),
-
-    #[error("Compilation error: {0}")]
-    Compilation(String),
-
-    #[error("Execution error: {0}")]
-    Execution(String),
-}
+// Use crate::error::RuleError instead of defining a duplicate here
+pub use crate::error::RuleError;
 
 #[cfg(test)]
 mod tests {

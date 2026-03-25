@@ -62,9 +62,15 @@ import type {
   CreateMessageRequest,
   BulkMessageRequest,
   CleanupMessagesRequest,
+  // Delivery Log Types
+  DeliveryLog,
+  DeliveryLogQueryParams,
+  DeliveryStats,
   MessageChannel,
   MessageChannelListResponse,
   CreateMessageChannelRequest,
+  MessageType,
+  ChannelFilter,
   DraftDevice,
   SuggestedDeviceType,
   // AI Agent Types
@@ -653,28 +659,22 @@ export const api = {
       body: JSON.stringify(request),
     }),
 
-  // Device Discovery
-  discoverDevices: (host: string, ports?: number[], timeoutMs?: number) =>
-    fetchAPI<{
-      devices: Array<{
-        id: string
-        device_type: string | null
-        host: string
-        port: number
-        confidence: number
-        info: Record<string, string>
-      }>
-      count: number
-      host: string
-    }>('/devices/discover', {
-      method: 'POST',
-      body: JSON.stringify({ host, ports, timeout_ms: timeoutMs }),
-    }),
-
   // Messages (replaces Alerts) - response format: { messages: NotificationMessage[], count: number }
   getMessages: () => fetchAPI<{ messages: NotificationMessage[]; count: number }>('/messages'),
   getMessage: (id: string) => fetchAPI<NotificationMessage>(`/messages/${id}`),
-  createMessage: (req: { category?: string; title: string; message: string; severity?: string; source?: string }) =>
+  createMessage: (req: {
+    category?: string
+    title: string
+    message: string
+    severity?: string
+    source?: string
+    source_type?: string
+    source_id?: string
+    tags?: string[]
+    message_type?: string
+    payload?: Record<string, unknown>
+    metadata?: Record<string, unknown>
+  }) =>
     fetchAPI<{ id: string; message: string; message_zh: string }>('/messages', {
       method: 'POST',
       body: JSON.stringify({
@@ -683,6 +683,12 @@ export const api = {
         message: req.message,
         severity: req.severity || 'info',
         source: req.source || 'api',
+        source_type: req.source_type,
+        source_id: req.source_id,
+        tags: req.tags,
+        message_type: req.message_type,
+        payload: req.payload,
+        metadata: req.metadata,
       }),
     }),
   acknowledgeMessage: (id: string) =>
@@ -719,11 +725,54 @@ export const api = {
       `/messages/channels/${encodeURIComponent(name)}`,
       { method: 'DELETE' }
     ),
+  updateMessageChannel: (name: string, config: Record<string, unknown>) =>
+    fetchAPI<{ message: string; message_zh: string; channel: AlertChannel }>(
+      `/messages/channels/${encodeURIComponent(name)}`,
+      { method: 'PUT', body: JSON.stringify({ config }) }
+    ),
   testMessageChannel: (name: string) =>
     fetchAPI<ChannelTestResult>(`/messages/channels/${encodeURIComponent(name)}/test`, {
       method: 'POST',
     }),
   getChannelStats: () => fetchAPI<ChannelStats>('/messages/channels/stats'),
+  // Channel Filter API
+  getChannelFilter: (name: string) =>
+    fetchAPI<ChannelFilter>(`/messages/channels/${encodeURIComponent(name)}/filter`),
+  updateChannelFilter: (name: string, filter: ChannelFilter) =>
+    fetchAPI<{ message: string; message_zh: string; channel: string; filter: ChannelFilter }>(
+      `/messages/channels/${encodeURIComponent(name)}/filter`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(filter),
+      }
+    ),
+  // Recipient management for email channels
+  listChannelRecipients: (name: string) =>
+    fetchAPI<{ channel: string; recipients: string[]; count: number }>(
+      `/messages/channels/${encodeURIComponent(name)}/recipients`
+    ),
+  addChannelRecipient: (name: string, email: string) =>
+    fetchAPI<{ message: string; message_zh: string; channel: string; recipients: string[] }>(
+      `/messages/channels/${encodeURIComponent(name)}/recipients`,
+      { method: 'POST', body: JSON.stringify({ email }) }
+    ),
+  removeChannelRecipient: (name: string, email: string) =>
+    fetchAPI<{ message: string; message_zh: string; channel: string; recipients: string[] }>(
+      `/messages/channels/${encodeURIComponent(name)}/recipients/${encodeURIComponent(email)}`,
+      { method: 'DELETE' }
+    ),
+  // Delivery Log API
+  getDeliveryLogs: (params?: DeliveryLogQueryParams) =>
+    fetchAPI<{ logs: DeliveryLog[]; count: number }>(
+      `/messages/delivery-logs${params ? `?${new URLSearchParams(
+        Object.entries(params).reduce((acc, [key, value]) => {
+          if (value !== undefined) acc[key] = String(value)
+          return acc
+        }, {} as Record<string, string>)
+      )}` : ''}`
+    ),
+  getDeliveryStats: () =>
+    fetchAPI<DeliveryStats>('/messages/delivery-logs/stats'),
   cleanupMessages: (req: { older_than_days: number }) =>
     fetchAPI<{ cleaned: number; message: string; message_zh: string }>('/messages/cleanup', {
       method: 'POST',

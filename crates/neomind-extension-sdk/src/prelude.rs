@@ -14,34 +14,39 @@ pub use async_trait::async_trait;
 // Re-export serde_json helpers
 pub use serde_json::{json, Value};
 
-// Re-export core types from neomind-core for native builds
+// Core types from host module (Native target)
 #[cfg(not(target_arch = "wasm32"))]
-pub use neomind_core::extension::system::{
-    Extension, ExtensionMetadata, ExtensionError,
-    ExtensionMetricValue, ParamMetricValue,
-    MetricDescriptor, ExtensionCommand, MetricDataType, ParameterDefinition,
-    CExtensionMetadata, ABI_VERSION, Result, PushOutputMessage,
+pub use crate::host::{
+    Extension, ExtensionCapability, CapabilityContext, CapabilityManifest,
+    ExtensionContext, ExtensionContextConfig, AvailableCapabilities,
+    StreamCapability, StreamSession, StreamMode, StreamDirection,
+    DataChunk, StreamResult, StreamError, SessionStats,
+    ClientInfo, FlowControl, StreamDataType,
 };
 
-#[cfg(not(target_arch = "wasm32"))]
-pub use neomind_core::extension::{
-    StreamCapability, StreamMode, StreamDirection, StreamDataType,
-    DataChunk, StreamResult, StreamSession, SessionStats, StreamError,
+// IPC types (stable ABI)
+pub use crate::ipc_types::{
+    ABI_VERSION, CExtensionMetadata, ExtensionError, ExtensionMetadata,
+    ExtensionMetricValue, MetricDataType, MetricDescriptor, ParamMetricValue,
+    ParameterDefinition, ExtensionDescriptor, ExtensionCommand,
+    ExtensionRuntimeState, ExtensionStats, Result, PushOutputMessage,
+    CommandDefinition, ValidationRule, ParameterGroup,
 };
 
-// SDK types (for both targets)
-pub use crate::extension::{
-    SdkExtensionMetadata, SdkMetricDefinition, SdkMetricDataType,
-    SdkMetricValue, SdkExtensionError, SdkResult,
-    SdkCommandDefinition, SdkParameterDefinition,
-    ArgParser,
+// SDK helper types (for backward compatibility)
+pub use crate::ipc_types::{
+    ExtensionMetadata as SdkExtensionMetadata,
+    MetricDescriptor as SdkMetricDefinition,
+    MetricDataType as SdkMetricDataType,
+    ParamMetricValue as SdkMetricValue,
+    ExtensionError as SdkExtensionError,
+    Result as SdkResult,
+    ExtensionCommand as SdkCommandDefinition,
+    ParameterDefinition as SdkParameterDefinition,
 };
 
 // Frontend types
-pub use crate::extension::{
-    FrontendManifest, FrontendComponent, FrontendComponentType,
-    FrontendManifestBuilder, ComponentSize, I18nConfig,
-};
+pub use crate::FrontendManifest;
 
 // Helper types
 pub use crate::{MetricBuilder, CommandBuilder};

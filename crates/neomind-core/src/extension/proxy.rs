@@ -52,7 +52,7 @@ impl IsolatedExtensionProxy {
                                 ExtensionMetadata::new(
                                     "unknown".to_string(),
                                     "Unknown Extension".to_string(),
-                                    semver::Version::new(0, 0, 0),
+                                    semver::Version::new(0, 0, 0).to_string(),
                                 ),
                                 Vec::new(),
                                 Vec::new(),
@@ -65,7 +65,7 @@ impl IsolatedExtensionProxy {
                     ExtensionMetadata::new(
                         "unknown".to_string(),
                         "Unknown Extension".to_string(),
-                        semver::Version::new(0, 0, 0),
+                        semver::Version::new(0, 0, 0).to_string(),
                     ),
                     Vec::new(),
                     Vec::new(),

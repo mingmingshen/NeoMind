@@ -19,8 +19,6 @@ pub struct SystemStats {
     pub rules: RuleStats,
     /// Alert statistics
     pub alerts: AlertStats,
-    /// Command statistics
-    pub commands: CommandStats,
     /// System info
     pub system: SystemInfo,
 }
@@ -60,19 +58,6 @@ pub struct AlertStats {
     pub by_severity: serde_json::Value,
     /// Alerts today
     pub alerts_today: usize,
-}
-
-/// Command statistics.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct CommandStats {
-    /// Total commands
-    pub total_commands: usize,
-    /// Pending commands
-    pub pending_commands: usize,
-    /// Failed commands
-    pub failed_commands: usize,
-    /// Success rate
-    pub success_rate: f32,
 }
 
 /// Workflow statistics (placeholder - workflow module removed).
@@ -238,47 +223,6 @@ pub async fn get_system_stats_handler(
         alerts_today: messages_today,
     };
 
-    // Get command stats
-    let command_stats = if let Some(manager) = &state.core.command_manager {
-        let state_stats = manager.state.stats().await;
-        let total_commands = state_stats.total_count;
-        let failed_commands = state_stats
-            .by_status
-            .iter()
-            .filter(|(s, _)| matches!(s, neomind_commands::command::CommandStatus::Failed))
-            .map(|(_, c)| *c)
-            .sum();
-        let success_rate = if total_commands > 0 {
-            (total_commands - failed_commands) as f32 / total_commands as f32 * 100.0
-        } else {
-            0.0
-        };
-        CommandStats {
-            total_commands,
-            pending_commands: state_stats
-                .by_status
-                .iter()
-                .filter(|(s, _)| {
-                    matches!(
-                        s,
-                        neomind_commands::command::CommandStatus::Pending
-                            | neomind_commands::command::CommandStatus::Queued
-                    )
-                })
-                .map(|(_, c)| *c)
-                .sum(),
-            failed_commands,
-            success_rate,
-        }
-    } else {
-        CommandStats {
-            total_commands: 0,
-            pending_commands: 0,
-            failed_commands: 0,
-            success_rate: 0.0,
-        }
-    };
-
     // System info
     let now = chrono::Utc::now().timestamp();
     let uptime = now - state.started_at;
@@ -328,7 +272,6 @@ pub async fn get_system_stats_handler(
         devices: device_stats,
         rules: rule_stats,
         alerts: alert_stats,
-        commands: command_stats,
         system: system_info.clone(),
     };
 
@@ -589,12 +532,6 @@ mod tests {
                 active_alerts: 1,
                 by_severity: json!({"critical": 1}),
                 alerts_today: 3,
-            },
-            commands: CommandStats {
-                total_commands: 100,
-                pending_commands: 5,
-                failed_commands: 2,
-                success_rate: 95.0,
             },
             system: SystemInfo {
                 version: "0.1.0".to_string(),

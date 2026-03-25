@@ -15,7 +15,7 @@
 //! - **Message Management**: Create, track, acknowledge, and resolve messages
 //! - **Categories**: Alert, System, Business
 //! - **Severity Levels**: Info, Warning, Critical, Emergency
-//! - **Notification Channels**: Console, Memory, Webhook, Email
+//! - **Notification Channels**: Webhook, Email (extensible)
 //! - **Plugin System**: Extensible channel architecture
 //!
 //! ## Example
@@ -41,20 +41,16 @@
 //! }
 //! ```
 
-pub mod category;
 pub mod channels;
+pub mod delivery_log;
 pub mod error;
 pub mod manager;
 pub mod message;
 
-pub use category::MessageCategory;
-pub use channels::{ChannelRegistry, ConsoleChannel, MemoryChannel, MessageChannel};
+pub use channels::{ChannelRegistry, MessageChannel};
 pub use error::{Error, Result};
 pub use manager::{MessageManager, MessageStats};
-pub use message::{Message, MessageId, MessageSeverity, MessageStatus};
-
-// Channel factory exports
-pub use channels::{ConsoleChannelFactory, MemoryChannelFactory};
+pub use message::{Message, MessageId, MessageSeverity, MessageStatus, MessageType};
 
 // Conditional exports for feature-gated channels
 #[cfg(feature = "webhook")]
@@ -68,6 +64,9 @@ pub use channels::{ChannelFactory, ChannelInfo, ChannelStats, ChannelTypeInfo, T
 
 // Re-export channel helper functions
 pub use channels::{get_channel_schema, list_channel_types};
+
+// Delivery log exports
+pub use delivery_log::{DeliveryLog, DeliveryLogId, DeliveryLogQuery, DeliveryStats, DeliveryStatus};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

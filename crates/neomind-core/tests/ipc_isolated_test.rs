@@ -334,7 +334,7 @@ fn test_isolated_manager_config() {
 
     assert!(config.isolated_by_default);
     assert!(config.force_isolated.is_empty());
-    assert!(config.force_in_process.is_empty());
+    assert!(config.force_isolated.is_empty());
     assert!(config.extension_config.restart_on_crash);
 }
 

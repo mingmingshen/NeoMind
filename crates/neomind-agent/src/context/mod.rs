@@ -12,9 +12,6 @@ mod resource_index;
 mod resource_resolver;
 mod state_provider;
 
-#[cfg(test)]
-mod mock_devices;
-
 pub use business_context::{BusinessContext, ContextRelevance, ContextScope};
 pub use device_registry::{DeviceAlias, DeviceCapability, DeviceLocation, DeviceRegistry};
 pub use dynamic_tools::DynamicToolGenerator;
@@ -32,9 +29,6 @@ pub use resource_resolver::{
     SuggestedAction,
 };
 pub use state_provider::{StateProvider, SystemResource, SystemSnapshot};
-
-#[cfg(test)]
-pub use mock_devices::{generate_large_scale_devices, generate_mock_devices, get_device_summary};
 
 use std::sync::Arc;
 use tokio::sync::RwLock;

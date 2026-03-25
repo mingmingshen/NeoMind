@@ -6,8 +6,8 @@
 use async_trait::async_trait;
 use serde_json::Value;
 
-use neomind_tools::tool::{object_schema, string_property};
-use neomind_tools::{Tool, ToolDefinition, ToolOutput};
+use crate::toolkit::tool::{object_schema, string_property};
+use crate::toolkit::{Tool, ToolDefinition, ToolOutput};
 
 /// Tool for searching available tools.
 ///
@@ -129,11 +129,11 @@ impl Tool for ToolSearchTool {
         )
     }
 
-    async fn execute(&self, args: Value) -> Result<ToolOutput, neomind_tools::ToolError> {
+    async fn execute(&self, args: Value) -> Result<ToolOutput, crate::toolkit::ToolError> {
         self.validate_args(&args)?;
 
         let keyword = args["keyword"].as_str().ok_or_else(|| {
-            neomind_tools::ToolError::InvalidArguments("keyword must be a string".to_string())
+            crate::toolkit::ToolError::InvalidArguments("keyword must be a string".to_string())
         })?;
 
         let category = args["category"].as_str();

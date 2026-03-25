@@ -1,7 +1,6 @@
 //! Notification channels for sending messages.
 
-pub mod console;
-pub mod memory;
+pub mod filter;
 
 #[cfg(feature = "webhook")]
 pub mod webhook;
@@ -9,16 +8,17 @@ pub mod webhook;
 #[cfg(feature = "email")]
 pub mod email;
 
+pub use filter::ChannelFilter;
+
 use async_trait::async_trait;
+use redb::ReadableTable;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::{Error, Message, Result};
-
-pub use console::{ConsoleChannel, ConsoleChannelFactory};
-pub use memory::{MemoryChannel, MemoryChannelFactory};
 
 #[cfg(feature = "webhook")]
 pub use webhook::{WebhookChannel, WebhookChannelFactory};
@@ -45,6 +45,14 @@ pub trait MessageChannel: Send + Sync {
     fn get_config(&self) -> Option<serde_json::Value> {
         None
     }
+
+    /// Set recipients for email channels (no-op for other channel types).
+    fn set_recipients(&mut self, _recipients: Vec<String>) {}
+
+    /// Get recipients for email channels (empty for other channel types).
+    fn get_recipients(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// Factory trait for creating message channels from configuration.
@@ -56,18 +64,185 @@ pub trait ChannelFactory: Send + Sync {
     fn create(&self, config: &serde_json::Value) -> Result<std::sync::Arc<dyn MessageChannel>>;
 }
 
+/// Persistent channel configuration for storage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredChannelConfig {
+    /// Channel name
+    pub name: String,
+    /// Channel type (webhook, email, etc.)
+    pub channel_type: String,
+    /// Channel configuration
+    pub config: serde_json::Value,
+    /// Whether the channel is enabled
+    pub enabled: bool,
+    /// Filter for message routing
+    #[serde(default)]
+    pub filter: ChannelFilter,
+}
+
 /// Channel registry for managing notification channels.
 pub struct ChannelRegistry {
     channels: RwLock<HashMap<String, Arc<dyn MessageChannel>>>,
     configs: RwLock<HashMap<String, serde_json::Value>>,
+    /// Persistent storage backend (redb)
+    storage: RwLock<Option<Arc<redb::Database>>>,
+    /// Override enabled states (for toggling without recreating channels)
+    enabled_states: RwLock<HashMap<String, bool>>,
+    /// Recipients per channel (for email channels)
+    recipients: RwLock<HashMap<String, Vec<String>>>,
 }
 
 impl ChannelRegistry {
+    /// Create a new in-memory channel registry (no persistence).
     pub fn new() -> Self {
         Self {
             channels: RwLock::new(HashMap::new()),
             configs: RwLock::new(HashMap::new()),
+            storage: RwLock::new(None),
+            enabled_states: RwLock::new(HashMap::new()),
+            recipients: RwLock::new(HashMap::new()),
         }
+    }
+
+    /// Create a channel registry with persistent storage.
+    pub fn with_storage<P: AsRef<Path>>(data_dir: P) -> Result<Self> {
+        let data_dir = data_dir.as_ref();
+        std::fs::create_dir_all(data_dir)
+            .map_err(|e| Error::Storage(format!("Failed to create data directory: {}", e)))?;
+
+        let db_path = data_dir.join("channels.redb");
+        let db = redb::Database::create(&db_path)
+            .map_err(|e| Error::Storage(format!("Failed to open channels database: {}", e)))?;
+
+        // Create tables
+        let write_txn = db
+            .begin_write()
+            .map_err(|e| Error::Storage(format!("Failed to begin write: {}", e)))?;
+        {
+            write_txn
+                .open_table(redb::TableDefinition::<&str, &str>::new("channels"))
+                .map_err(|e| Error::Storage(format!("Failed to open channels table: {}", e)))?;
+            write_txn
+                .open_table(redb::TableDefinition::<&str, &str>::new("recipients"))
+                .map_err(|e| Error::Storage(format!("Failed to open recipients table: {}", e)))?;
+        }
+        write_txn
+            .commit()
+            .map_err(|e| Error::Storage(format!("Failed to commit: {}", e)))?;
+
+        Ok(Self {
+            channels: RwLock::new(HashMap::new()),
+            configs: RwLock::new(HashMap::new()),
+            storage: RwLock::new(Some(Arc::new(db))),
+            enabled_states: RwLock::new(HashMap::new()),
+            recipients: RwLock::new(HashMap::new()),
+        })
+    }
+
+    /// Load persisted channel configurations.
+    /// Returns a list of stored channel configs that need to be recreated.
+    pub async fn load_persisted(&self) -> Vec<StoredChannelConfig> {
+        let storage = self.storage.read().await;
+        if let Some(db) = storage.as_ref() {
+            let read_txn = match db.begin_read() {
+                Ok(txn) => txn,
+                Err(e) => {
+                    tracing::warn!("Failed to read channels from storage: {}", e);
+                    return Vec::new();
+                }
+            };
+
+            let table = match read_txn.open_table(redb::TableDefinition::<&str, &str>::new("channels")) {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::warn!("Failed to open channels table: {}", e);
+                    return Vec::new();
+                }
+            };
+
+            let mut configs = Vec::new();
+            let iter = match table.iter() {
+                Ok(i) => i,
+                Err(e) => {
+                    tracing::warn!("Failed to iterate channels: {}", e);
+                    return Vec::new();
+                }
+            };
+
+            for result in iter {
+                let (_key, value) = match result {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::warn!("Failed to read channel entry: {}", e);
+                        continue;
+                    }
+                };
+                if let Ok(stored) = serde_json::from_str::<StoredChannelConfig>(value.value()) {
+                    // Also load into memory
+                    self.configs.write().await.insert(stored.name.clone(), stored.config.clone());
+                    configs.push(stored);
+                }
+            }
+
+            tracing::info!("Loaded {} persisted channel configurations", configs.len());
+            return configs;
+        }
+        Vec::new()
+    }
+
+    /// Save a channel configuration to persistent storage.
+    async fn save_channel(&self, stored: &StoredChannelConfig) -> Result<()> {
+        let storage = self.storage.read().await;
+        if let Some(db) = storage.as_ref() {
+            let json = serde_json::to_string(stored)
+                .map_err(|e| Error::Storage(format!("Failed to serialize channel config: {}", e)))?;
+
+            let write_txn = db
+                .begin_write()
+                .map_err(|e| Error::Storage(format!("Failed to begin write: {}", e)))?;
+
+            {
+                let mut table = write_txn
+                    .open_table(redb::TableDefinition::<&str, &str>::new("channels"))
+                    .map_err(|e| Error::Storage(format!("Failed to open channels table: {}", e)))?;
+                table
+                    .insert(stored.name.as_str(), json.as_str())
+                    .map_err(|e| Error::Storage(format!("Failed to save channel config: {}", e)))?;
+            }
+
+            write_txn
+                .commit()
+                .map_err(|e| Error::Storage(format!("Failed to commit: {}", e)))?;
+
+            tracing::debug!("Saved channel configuration: {}", stored.name);
+        }
+        Ok(())
+    }
+
+    /// Delete a channel configuration from persistent storage.
+    async fn delete_channel(&self, name: &str) -> Result<()> {
+        let storage = self.storage.read().await;
+        if let Some(db) = storage.as_ref() {
+            let write_txn = db
+                .begin_write()
+                .map_err(|e| Error::Storage(format!("Failed to begin write: {}", e)))?;
+
+            {
+                let mut table = write_txn
+                    .open_table(redb::TableDefinition::<&str, &str>::new("channels"))
+                    .map_err(|e| Error::Storage(format!("Failed to open channels table: {}", e)))?;
+                table
+                    .remove(name)
+                    .map_err(|e| Error::Storage(format!("Failed to delete channel config: {}", e)))?;
+            }
+
+            write_txn
+                .commit()
+                .map_err(|e| Error::Storage(format!("Failed to commit: {}", e)))?;
+
+            tracing::debug!("Deleted channel configuration: {}", name);
+        }
+        Ok(())
     }
 
     /// Register a channel instance.
@@ -76,24 +251,53 @@ impl ChannelRegistry {
         self.channels.write().await.insert(name, channel);
     }
 
-    /// Register a channel with its configuration.
+    /// Register a channel with its configuration (persists to storage).
     pub async fn register_with_config(
         &self,
         name: String,
         channel: Arc<dyn MessageChannel>,
         config: serde_json::Value,
     ) {
-        let mut channels = self.channels.write().await;
-        let mut configs = self.configs.write().await;
-        channels.insert(name.clone(), channel);
-        configs.insert(name, config);
+        let channel_type = channel.channel_type().to_string();
+        let enabled = channel.is_enabled();
+
+        // Save to memory
+        {
+            let mut channels = self.channels.write().await;
+            let mut configs = self.configs.write().await;
+            channels.insert(name.clone(), channel);
+            configs.insert(name.clone(), config.clone());
+        }
+
+        // Persist to storage
+        let stored = StoredChannelConfig {
+            name: name.clone(),
+            channel_type,
+            config,
+            enabled,
+            filter: ChannelFilter::default(),
+        };
+        if let Err(e) = self.save_channel(&stored).await {
+            tracing::warn!("Failed to persist channel config: {}", e);
+        }
     }
 
-    /// Unregister a channel by name.
+    /// Unregister a channel by name (also removes from persistent storage).
     pub async fn unregister(&self, name: &str) -> bool {
-        let mut channels = self.channels.write().await;
-        let mut configs = self.configs.write().await;
-        channels.remove(name).is_some() || configs.remove(name).is_some()
+        let removed = {
+            let mut channels = self.channels.write().await;
+            let mut configs = self.configs.write().await;
+            channels.remove(name).is_some() || configs.remove(name).is_some()
+        };
+
+        if removed {
+            // Remove from persistent storage
+            if let Err(e) = self.delete_channel(name).await {
+                tracing::warn!("Failed to delete channel from storage: {}", e);
+            }
+        }
+
+        removed
     }
 
     /// Get a channel by name.
@@ -120,11 +324,25 @@ impl ChannelRegistry {
     pub async fn get_info(&self, name: &str) -> Option<ChannelInfo> {
         let channels = self.channels.read().await;
         let configs = self.configs.read().await;
-        channels.get(name).map(|channel| ChannelInfo {
-            name: name.to_string(),
-            channel_type: channel.channel_type().to_string(),
-            enabled: channel.is_enabled(),
-            config: configs.get(name).cloned(),
+        let enabled_states = self.enabled_states.read().await;
+        let recipients = self.recipients.read().await;
+        channels.get(name).map(|channel| {
+            // Check if there's an override in enabled_states, otherwise use channel's internal state
+            let enabled = enabled_states.get(name).copied().unwrap_or_else(|| channel.is_enabled());
+            let channel_type = channel.channel_type().to_string();
+            // Include recipients for email channels
+            let channel_recipients = if channel_type == "email" {
+                recipients.get(name).cloned()
+            } else {
+                None
+            };
+            ChannelInfo {
+                name: name.to_string(),
+                channel_type,
+                enabled,
+                config: configs.get(name).cloned(),
+                recipients: channel_recipients,
+            }
         })
     }
 
@@ -132,16 +350,29 @@ impl ChannelRegistry {
     pub async fn list_info(&self) -> Vec<ChannelInfo> {
         let channels = self.channels.read().await;
         let configs = self.configs.read().await;
+        let enabled_states = self.enabled_states.read().await;
+        let recipients = self.recipients.read().await;
         channels
             .keys()
-            .map(|name| ChannelInfo {
-                name: name.clone(),
-                channel_type: channels
-                    .get(name)
+            .map(|name| {
+                let channel = channels.get(name);
+                let channel_type = channel
                     .map(|c| c.channel_type().to_string())
-                    .unwrap_or_default(),
-                enabled: channels.get(name).map(|c| c.is_enabled()).unwrap_or(false),
-                config: configs.get(name).cloned(),
+                    .unwrap_or_default();
+                // Include recipients for email channels
+                let channel_recipients = if channel_type == "email" {
+                    recipients.get(name).cloned()
+                } else {
+                    None
+                };
+                ChannelInfo {
+                    name: name.clone(),
+                    channel_type: channel_type.clone(),
+                    enabled: enabled_states.get(name).copied()
+                        .unwrap_or_else(|| channel.map(|c| c.is_enabled()).unwrap_or(false)),
+                    config: configs.get(name).cloned(),
+                    recipients: channel_recipients,
+                }
             })
             .collect()
     }
@@ -149,23 +380,63 @@ impl ChannelRegistry {
     /// Get channel statistics.
     pub async fn get_stats(&self) -> ChannelStats {
         let channels = self.channels.read().await;
+        let enabled_states = self.enabled_states.read().await;
         let mut by_type = HashMap::new();
-        let mut enabled = 0;
+        let mut enabled_count = 0;
 
-        for channel in channels.values() {
+        for (name, channel) in channels.iter() {
             let ct = channel.channel_type().to_string();
             *by_type.entry(ct).or_insert(0) += 1;
-            if channel.is_enabled() {
-                enabled += 1;
+            // Check override first, then channel's internal state
+            let is_enabled = enabled_states.get(name).copied().unwrap_or_else(|| channel.is_enabled());
+            if is_enabled {
+                enabled_count += 1;
             }
         }
 
         ChannelStats {
             total: channels.len(),
-            enabled,
-            disabled: channels.len() - enabled,
+            enabled: enabled_count,
+            disabled: channels.len() - enabled_count,
             by_type,
         }
+    }
+
+    /// Set the enabled state of a channel.
+    /// This updates both the in-memory state and persists to storage.
+    pub async fn set_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+        // Check if channel exists
+        {
+            let channels = self.channels.read().await;
+            if !channels.contains_key(name) {
+                return Err(Error::NotFound(format!("Channel not found: {}", name)));
+            }
+        }
+
+        // Update in-memory state
+        {
+            let mut enabled_states = self.enabled_states.write().await;
+            enabled_states.insert(name.to_string(), enabled);
+        }
+
+        // Update persistence
+        {
+            let configs = self.configs.read().await;
+            let channels = self.channels.read().await;
+            if let (Some(config), Some(channel)) = (configs.get(name), channels.get(name)) {
+                let stored = StoredChannelConfig {
+                    name: name.to_string(),
+                    channel_type: channel.channel_type().to_string(),
+                    config: config.clone(),
+                    enabled,
+                    filter: ChannelFilter::default(),
+                };
+                self.save_channel(&stored).await?;
+            }
+        }
+
+        tracing::info!("Channel '{}' enabled state set to: {}", name, enabled);
+        Ok(())
     }
 
     /// Test a channel by sending a test message.
@@ -197,6 +468,322 @@ impl ChannelRegistry {
             }),
         }
     }
+
+    // ========== Recipient Management (for Email Channels) ==========
+
+    /// Get recipients for a channel.
+    pub async fn get_recipients(&self, channel_name: &str) -> Vec<String> {
+        let recipients = self.recipients.read().await;
+        recipients.get(channel_name).cloned().unwrap_or_default()
+    }
+
+    /// Add a recipient to a channel.
+    pub async fn add_recipient(&self, channel_name: &str, email: &str) -> Result<()> {
+        // Check if channel exists and get its type
+        let channel_type = {
+            let channels = self.channels.read().await;
+            let channel = channels
+                .get(channel_name)
+                .ok_or_else(|| Error::NotFound(format!("Channel not found: {}", channel_name)))?;
+            channel.channel_type().to_string()
+        };
+
+        // Validate email format (basic check)
+        if !email.contains('@') || email.is_empty() {
+            return Err(Error::InvalidConfiguration("Invalid email address".to_string()));
+        }
+
+        // Add to memory
+        {
+            let mut recipients = self.recipients.write().await;
+            let channel_recipients = recipients.entry(channel_name.to_string()).or_default();
+            if channel_recipients.contains(&email.to_string()) {
+                return Err(Error::InvalidConfiguration("Recipient already exists".to_string()));
+            }
+            channel_recipients.push(email.to_string());
+        }
+
+        // Persist to storage
+        self.save_recipients(channel_name).await?;
+
+        // Update the channel with new recipients (recreate for email channels)
+        if channel_type == "email" {
+            self.recreate_email_channel(channel_name).await?;
+        }
+
+        tracing::info!("Added recipient '{}' to channel '{}'", email, channel_name);
+        Ok(())
+    }
+
+    /// Remove a recipient from a channel.
+    pub async fn remove_recipient(&self, channel_name: &str, email: &str) -> Result<()> {
+        // Check if channel exists and get its type
+        let channel_type = {
+            let channels = self.channels.read().await;
+            let channel = channels
+                .get(channel_name)
+                .ok_or_else(|| Error::NotFound(format!("Channel not found: {}", channel_name)))?;
+            channel.channel_type().to_string()
+        };
+
+        // Remove from memory
+        let removed = {
+            let mut recipients = self.recipients.write().await;
+            if let Some(channel_recipients) = recipients.get_mut(channel_name) {
+                let initial_len = channel_recipients.len();
+                channel_recipients.retain(|r| r != email);
+                channel_recipients.len() < initial_len
+            } else {
+                false
+            }
+        };
+
+        if !removed {
+            return Err(Error::NotFound(format!("Recipient not found: {}", email)));
+        }
+
+        // Persist to storage
+        self.save_recipients(channel_name).await?;
+
+        // Update the channel with new recipients (recreate for email channels)
+        if channel_type == "email" {
+            self.recreate_email_channel(channel_name).await?;
+        }
+
+        tracing::info!("Removed recipient '{}' from channel '{}'", email, channel_name);
+        Ok(())
+    }
+
+    /// Recreate an email channel with updated recipients.
+    async fn recreate_email_channel(&self, channel_name: &str) -> Result<()> {
+        let (config, enabled) = {
+            let channels = self.channels.read().await;
+            let configs = self.configs.read().await;
+            let enabled_states = self.enabled_states.read().await;
+
+            let channel = channels
+                .get(channel_name)
+                .ok_or_else(|| Error::NotFound(format!("Channel not found: {}", channel_name)))?;
+
+            let config = configs
+                .get(channel_name)
+                .cloned()
+                .ok_or_else(|| Error::InvalidConfiguration("Channel config not found".to_string()))?;
+
+            let enabled = enabled_states
+                .get(channel_name)
+                .copied()
+                .unwrap_or_else(|| channel.is_enabled());
+
+            (config, enabled)
+        };
+
+        // Get current recipients
+        let recipients = {
+            let recipients_map = self.recipients.read().await;
+            recipients_map.get(channel_name).cloned().unwrap_or_default()
+        };
+
+        // Build new config with recipients
+        let mut new_config = config.clone();
+        if let Some(obj) = new_config.as_object_mut() {
+            obj.insert("recipients".to_string(), serde_json::json!(recipients));
+            obj.insert("enabled".to_string(), serde_json::json!(enabled));
+            obj.insert("name".to_string(), serde_json::json!(channel_name));
+        }
+
+        // Create new channel using factory
+        #[cfg(feature = "email")]
+        {
+            let factory = EmailChannelFactory;
+            let new_channel = factory.create(&new_config)?;
+
+            // Replace the old channel
+            let mut channels = self.channels.write().await;
+            channels.insert(channel_name.to_string(), new_channel);
+        }
+
+        tracing::debug!("Recreated email channel '{}' with {} recipients", channel_name, recipients.len());
+        Ok(())
+    }
+
+    /// Save recipients for a channel to persistent storage.
+    async fn save_recipients(&self, channel_name: &str) -> Result<()> {
+        let storage = self.storage.read().await;
+        if let Some(db) = storage.as_ref() {
+            let recipients = self.recipients.read().await;
+            let channel_recipients = recipients.get(channel_name).cloned().unwrap_or_default();
+
+            let json = serde_json::to_string(&channel_recipients)
+                .map_err(|e| Error::Storage(format!("Failed to serialize recipients: {}", e)))?;
+
+            let write_txn = db
+                .begin_write()
+                .map_err(|e| Error::Storage(format!("Failed to begin write: {}", e)))?;
+
+            {
+                let mut table = write_txn
+                    .open_table(redb::TableDefinition::<&str, &str>::new("recipients"))
+                    .map_err(|e| Error::Storage(format!("Failed to open recipients table: {}", e)))?;
+                table
+                    .insert(channel_name, json.as_str())
+                    .map_err(|e| Error::Storage(format!("Failed to save recipients: {}", e)))?;
+            }
+
+            write_txn
+                .commit()
+                .map_err(|e| Error::Storage(format!("Failed to commit: {}", e)))?;
+        }
+        Ok(())
+    }
+
+    /// Load recipients for a channel from persistent storage.
+    pub async fn load_recipients(&self, channel_name: &str) {
+        let storage = self.storage.read().await;
+        if let Some(db) = storage.as_ref() {
+            let read_txn = match db.begin_read() {
+                Ok(txn) => txn,
+                Err(e) => {
+                    tracing::warn!("Failed to read recipients: {}", e);
+                    return;
+                }
+            };
+
+            let table = match read_txn.open_table(redb::TableDefinition::<&str, &str>::new("recipients")) {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::debug!("Recipients table not found or empty: {}", e);
+                    return;
+                }
+            };
+
+            if let Ok(Some(value)) = table.get(channel_name) {
+                if let Ok(loaded) = serde_json::from_str::<Vec<String>>(value.value()) {
+                    let mut recipients = self.recipients.write().await;
+                    recipients.insert(channel_name.to_string(), loaded);
+                    tracing::debug!("Loaded recipients for channel '{}'", channel_name);
+                }
+            }
+        }
+    }
+
+    /// Load all recipients from storage.
+    pub async fn load_all_recipients(&self) {
+        let storage = self.storage.read().await;
+        if let Some(db) = storage.as_ref() {
+            let read_txn = match db.begin_read() {
+                Ok(txn) => txn,
+                Err(e) => {
+                    tracing::warn!("Failed to read recipients: {}", e);
+                    return;
+                }
+            };
+
+            let table = match read_txn.open_table(redb::TableDefinition::<&str, &str>::new("recipients")) {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::debug!("Recipients table not found: {}", e);
+                    return;
+                }
+            };
+
+            let iter = match table.iter() {
+                Ok(i) => i,
+                Err(e) => {
+                    tracing::warn!("Failed to iterate recipients: {}", e);
+                    return;
+                }
+            };
+
+            let mut count = 0;
+            for result in iter {
+                if let Ok((key, value)) = result {
+                    if let Ok(loaded) = serde_json::from_str::<Vec<String>>(value.value()) {
+                        let mut recipients = self.recipients.write().await;
+                        recipients.insert(key.value().to_string(), loaded);
+                        count += 1;
+                    }
+                }
+            }
+
+            tracing::info!("Loaded recipients for {} channels", count);
+        }
+    }
+
+    // ========== Filter Management ==========
+
+    /// Get the filter for a channel (returns default filter if not found).
+    pub async fn get_filter(&self, channel_name: &str) -> ChannelFilter {
+        let storage = self.storage.read().await;
+        if let Some(db) = storage.as_ref() {
+            let read_txn = match db.begin_read() {
+                Ok(txn) => txn,
+                Err(e) => {
+                    tracing::debug!("Failed to read channel filter: {}", e);
+                    return ChannelFilter::default();
+                }
+            };
+
+            let table = match read_txn.open_table(redb::TableDefinition::<&str, &str>::new("channels")) {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::debug!("Channels table not found: {}", e);
+                    return ChannelFilter::default();
+                }
+            };
+
+            if let Ok(Some(value)) = table.get(channel_name) {
+                if let Ok(stored) = serde_json::from_str::<StoredChannelConfig>(value.value()) {
+                    return stored.filter;
+                }
+            }
+        }
+        ChannelFilter::default()
+    }
+
+    /// Set the filter for a channel.
+    pub async fn set_filter(&self, channel_name: &str, filter: ChannelFilter) -> Result<()> {
+        let storage = self.storage.read().await;
+        if let Some(db) = storage.as_ref() {
+            // Read existing config
+            let read_txn = db.begin_read()
+                .map_err(|e| Error::Storage(format!("Failed to begin read: {}", e)))?;
+
+            let table = read_txn.open_table(redb::TableDefinition::<&str, &str>::new("channels"))
+                .map_err(|e| Error::Storage(format!("Failed to open channels table: {}", e)))?;
+
+            let existing = table.get(channel_name)
+                .map_err(|e| Error::Storage(format!("Failed to read channel: {}", e)))?;
+
+            if let Some(value) = existing {
+                let mut stored: StoredChannelConfig = serde_json::from_str(value.value())
+                    .map_err(|e| Error::Storage(format!("Failed to deserialize channel config: {}", e)))?;
+
+                // Update filter
+                stored.filter = filter;
+
+                // Save updated config
+                let json = serde_json::to_string(&stored)
+                    .map_err(|e| Error::Storage(format!("Failed to serialize channel config: {}", e)))?;
+
+                let write_txn = db.begin_write()
+                    .map_err(|e| Error::Storage(format!("Failed to begin write: {}", e)))?;
+
+                {
+                    let mut table = write_txn.open_table(redb::TableDefinition::<&str, &str>::new("channels"))
+                        .map_err(|e| Error::Storage(format!("Failed to open channels table: {}", e)))?;
+                    table.insert(channel_name, json.as_str())
+                        .map_err(|e| Error::Storage(format!("Failed to save channel filter: {}", e)))?;
+                }
+
+                write_txn.commit()
+                    .map_err(|e| Error::Storage(format!("Failed to commit: {}", e)))?;
+
+                tracing::info!("Updated filter for channel '{}'", channel_name);
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Default for ChannelRegistry {
@@ -217,6 +804,9 @@ pub struct ChannelInfo {
     /// Channel configuration (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<serde_json::Value>,
+    /// Recipients for email channels (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recipients: Option<Vec<String>>,
 }
 
 /// Channel statistics.
@@ -260,24 +850,6 @@ pub struct ChannelTypeInfo {
 /// List all available channel types.
 pub fn list_channel_types() -> Vec<ChannelTypeInfo> {
     vec![
-        ChannelTypeInfo {
-            id: "console".to_string(),
-            name: "Console".to_string(),
-            name_zh: "控制台".to_string(),
-            description: "Print messages to the console output".to_string(),
-            description_zh: "将消息打印到控制台输出".to_string(),
-            icon: "terminal".to_string(),
-            category: "builtin".to_string(),
-        },
-        ChannelTypeInfo {
-            id: "memory".to_string(),
-            name: "Memory".to_string(),
-            name_zh: "内存".to_string(),
-            description: "Store messages in memory for testing".to_string(),
-            description_zh: "将消息存储在内存中用于测试".to_string(),
-            icon: "database".to_string(),
-            category: "builtin".to_string(),
-        },
         #[cfg(feature = "webhook")]
         ChannelTypeInfo {
             id: "webhook".to_string(),
@@ -304,19 +876,6 @@ pub fn list_channel_types() -> Vec<ChannelTypeInfo> {
 /// Get channel type configuration schema.
 pub fn get_channel_schema(channel_type: &str) -> Option<serde_json::Value> {
     match channel_type {
-        "console" => Some(serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "include_details": {"type": "boolean"}
-            }
-        })),
-        "memory" => Some(serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"}
-            }
-        })),
         #[cfg(feature = "webhook")]
         "webhook" => Some(serde_json::json!({
             "type": "object",
@@ -337,7 +896,6 @@ pub fn get_channel_schema(channel_type: &str) -> Option<serde_json::Value> {
                 "username": {"type": "string"},
                 "password": {"type": "string"},
                 "from_address": {"type": "string"},
-                "recipients": {"type": "array", "items": {"type": "string"}},
                 "use_tls": {"type": "boolean"}
             },
             "required": ["smtp_server", "smtp_port", "username", "password", "from_address"]
@@ -350,6 +908,40 @@ pub fn get_channel_schema(channel_type: &str) -> Option<serde_json::Value> {
 mod tests {
     use super::*;
 
+    /// Mock channel for testing purposes only.
+    struct MockChannel {
+        name: String,
+        enabled: bool,
+    }
+
+    impl MockChannel {
+        fn new(name: String) -> Self {
+            Self {
+                name,
+                enabled: true,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl MessageChannel for MockChannel {
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn channel_type(&self) -> &str {
+            "mock"
+        }
+
+        fn is_enabled(&self) -> bool {
+            self.enabled
+        }
+
+        async fn send(&self, _message: &Message) -> Result<()> {
+            Ok(())
+        }
+    }
+
     #[tokio::test]
     async fn test_registry_creation() {
         let registry = ChannelRegistry::new();
@@ -360,7 +952,7 @@ mod tests {
     #[tokio::test]
     async fn test_register_channel() {
         let registry = ChannelRegistry::new();
-        let channel = Arc::new(ConsoleChannel::new("test".to_string()));
+        let channel = Arc::new(MockChannel::new("test".to_string()));
 
         registry.register(channel).await;
 
@@ -371,7 +963,7 @@ mod tests {
     #[tokio::test]
     async fn test_unregister_channel() {
         let registry = ChannelRegistry::new();
-        let channel = Arc::new(ConsoleChannel::new("test".to_string()));
+        let channel = Arc::new(MockChannel::new("test".to_string()));
 
         registry.register(channel).await;
         assert_eq!(registry.len().await, 1);
@@ -386,10 +978,10 @@ mod tests {
         let registry = ChannelRegistry::new();
 
         registry
-            .register(Arc::new(ConsoleChannel::new("ch1".to_string())))
+            .register(Arc::new(MockChannel::new("ch1".to_string())))
             .await;
         registry
-            .register(Arc::new(ConsoleChannel::new("ch2".to_string())))
+            .register(Arc::new(MockChannel::new("ch2".to_string())))
             .await;
 
         let names = registry.list_names().await;
@@ -403,32 +995,50 @@ mod tests {
         let registry = ChannelRegistry::new();
 
         registry
-            .register(Arc::new(ConsoleChannel::new("ch1".to_string())))
+            .register(Arc::new(MockChannel::new("ch1".to_string())))
             .await;
         registry
-            .register(Arc::new(MemoryChannel::new("ch2".to_string())))
+            .register(Arc::new(MockChannel::new("ch2".to_string())))
             .await;
 
         let stats = registry.get_stats().await;
         assert_eq!(stats.total, 2);
         assert_eq!(stats.enabled, 2);
-        assert_eq!(stats.by_type.get("console"), Some(&1));
     }
 
     #[test]
     fn test_list_channel_types() {
         let types = list_channel_types();
-        assert!(!types.is_empty());
-        assert!(types.iter().any(|t| t.id == "console"));
-        assert!(types.iter().any(|t| t.id == "memory"));
+        // Only webhook and email should be available (when features enabled)
+        #[cfg(feature = "webhook")]
+        assert!(types.iter().any(|t| t.id == "webhook"));
+        #[cfg(feature = "email")]
+        assert!(types.iter().any(|t| t.id == "email"));
+        // console and memory should NOT be available
+        assert!(!types.iter().any(|t| t.id == "console"));
+        assert!(!types.iter().any(|t| t.id == "memory"));
     }
 
     #[test]
     fn test_get_channel_schema() {
-        let schema = get_channel_schema("console");
-        assert!(schema.is_some());
+        #[cfg(feature = "webhook")]
+        {
+            let schema = get_channel_schema("webhook");
+            assert!(schema.is_some());
+        }
+        #[cfg(feature = "email")]
+        {
+            let schema = get_channel_schema("email");
+            assert!(schema.is_some());
+        }
 
         let schema = get_channel_schema("invalid");
+        assert!(schema.is_none());
+
+        // console and memory should NOT have schemas
+        let schema = get_channel_schema("console");
+        assert!(schema.is_none());
+        let schema = get_channel_schema("memory");
         assert!(schema.is_none());
     }
 }

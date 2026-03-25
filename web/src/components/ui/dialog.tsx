@@ -103,14 +103,20 @@ const DialogContent = React.forwardRef<
   }
 
   // Desktop: centered dialog
+  // Extract z-index from className if provided, default to z-[60] (above TopNav z-50)
+  // Supports both z-[N] and z-N formats
+  const bracketMatch = className?.match(/z-\[(\d+)\]/)
+  const simpleMatch = className?.match(/z-(\d+)(?![\[\d])/) // Avoid matching z-[N] format
+  const zIndex = bracketMatch ? bracketMatch[1] : (simpleMatch ? simpleMatch[1] : '60')
+
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={`z-[${zIndex}]`} />
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          "fixed left-[50%] top-[50%] w-full max-w-lg translate-x-[-50%] translate-y-[-50%] border bg-background shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] rounded-lg sm:rounded-xl",
-          "z-50",
+          "fixed left-[50%] top-[50%] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 border bg-background shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] rounded-lg sm:rounded-xl",
+          `z-[${zIndex}]`,
           "m-0 p-4 sm:p-6",
           !className?.includes("max-h-") && "max-h-[calc(100vh-2rem)] sm:max-h-[85vh]",
           !className?.includes("overflow-") && "overflow-y-auto",

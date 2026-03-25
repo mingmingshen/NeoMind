@@ -8,10 +8,10 @@ repository = "https://github.com/camthink-ai/NeoMind"
 edition = "2021"
 
 [build-dependencies]
-tauri-build = { version = "2.0", features = [] }
+tauri-build = { version = "2.5", features = [] }
 
 [dependencies]
-tauri = { version = "2.0", features = ["tray-icon", "devtools", "image-png"] }
+tauri = { version = "2.10", features = ["tray-icon", "devtools", "image-png"] }
 tauri-plugin-shell = "2"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
@@ -26,11 +26,8 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 
 # Local workspace crates - relative to web/src-tauri/ directory
+# neomind-api pulls in all other required crates as dependencies
 edge-api = { path = "../../crates/neomind-api", package = "neomind-api", features = ["embedded-broker"] }
-edge-core = { path = "../../crates/neomind-core", package = "neomind-core" }
-edge-llm = { path = "../../crates/neomind-llm", package = "neomind-llm" }
-edge-agent = { path = "../../crates/neomind-agent", package = "neomind-agent" }
-edge-devices = { path = "../../crates/neomind-devices", package = "neomind-devices", features = ["embedded-broker"] }
 tauri-plugin-notification = "2"
 
 [features]

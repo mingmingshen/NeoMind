@@ -9,6 +9,7 @@
 //! - Automatic FFI export generation
 //! - Helper macros for common patterns
 //! - Type-safe metric and command definitions
+//! - Single-source IPC boundary types
 //!
 //! # Architecture (V2 - Process Isolation)
 //!
@@ -31,43 +32,15 @@
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
 //!
-//! # Benefits of Process Isolation
+//! # ABI Stability
 //!
-//! - **Crash Safety**: Extension crashes don't affect the main NeoMind process
-//! - **Memory Isolation**: Each extension has its own memory space
-//! - **Resource Limits**: CPU and memory can be limited per extension
-//! - **Independent Lifecycle**: Extensions can be restarted without affecting others
+//! The IPC boundary types in `ipc_types` are the stable protocol between
+//! extensions and the main process. Extensions compiled against older SDK
+//! versions will continue to work because:
 //!
-//! # Safety Guidelines for Extension Authors
-//!
-//! Although extensions run in isolated processes, following these guidelines
-//! ensures stable and reliable extensions:
-//!
-//! ## 1. Panic Handling
-//!
-//! - Avoid `unwrap()` or `expect()` in production code
-//! - Use `?` operator or proper error handling with `Result`
-//! - Use `unwrap_or()` or `unwrap_or_default()` for safe defaults
-//!
-//! ## 2. Async Runtime Considerations
-//!
-//! - The `produce_metrics()` method is SYNCHRONOUS - do NOT use async inside it
-//! - If you need async operations, cache results and return cached values
-//! - Do NOT spawn tokio tasks or use `.await` in `produce_metrics()`
-//! - The `execute_command()` method IS async and can use `.await`
-//!
-//! ## 3. Resource Management
-//!
-//! - Always clean up resources in `Drop` implementations
-//! - Use `Arc<Mutex<T>>` or `Arc<RwLock<T>>` for shared state
-//! - Avoid circular references that cause memory leaks
-//! - Release resources promptly when extension is unloaded
-//!
-//! ## 4. IPC Communication
-//!
-//! - Keep command payloads small and serializable
-//! - Avoid sending large binary data through commands
-//! - Use streaming APIs for large data transfers
+//! 1. Types are serialized as JSON over IPC
+//! 2. Only the JSON format matters, not the implementation
+//! 3. New fields use `#[serde(default)]` for forward compatibility
 //!
 //! # Quick Start
 //!
@@ -91,7 +64,7 @@
 //! #[async_trait]
 //! impl Extension for MyExtension {
 //!     fn metadata(&self) -> &ExtensionMetadata {
-//!         static META: ExtensionMetadata = ExtensionMetadata::new_static(
+//!         static META: ExtensionMetadata = ExtensionMetadata::new(
 //!             "my-extension",
 //!             "My Extension",
 //!             "1.0.0",
@@ -101,41 +74,22 @@
 //!
 //!     fn metrics(&self) -> Vec<MetricDescriptor> {
 //!         vec![
-//!             MetricDescriptor {
-//!                 name: "counter".to_string(),
-//!                 display_name: "Counter".to_string(),
-//!                 data_type: MetricDataType::Integer,
-//!                 unit: String::new(),
-//!                 min: None,
-//!                 max: None,
-//!                 required: false,
-//!             }
+//!             MetricDescriptor::new("counter", "Counter", MetricDataType::Integer)
+//!                 .with_unit("count")
 //!         ]
 //!     }
 //!
 //!     fn commands(&self) -> Vec<ExtensionCommand> {
 //!         vec![
-//!             ExtensionCommand {
-//!                 name: "increment".to_string(),
-//!                 display_name: "Increment".to_string(),
-//!                 payload_template: String::new(),
-//!                 parameters: vec![
-//!                     ParameterDefinition {
-//!                         name: "amount".to_string(),
-//!                         display_name: "Amount".to_string(),
-//!                         description: "Amount to add".to_string(),
-//!                         param_type: MetricDataType::Integer,
-//!                         required: false,
-//!                         default_value: Some(ParamMetricValue::Integer(1)),
-//!                         min: None,
-//!                         max: None,
-//!                         options: Vec::new(),
-//!                     }
-//!                 ],
-//!                 fixed_values: Default::default(),
-//!                 samples: Vec::new(),
-//!                 parameter_groups: Vec::new(),
-//!             }
+//!             CommandBuilder::new("increment")
+//!                 .display_name("Increment")
+//!                 .param(
+//!                     ParamBuilder::new("amount", MetricDataType::Integer)
+//!                         .display_name("Amount")
+//!                         .default(MetricValue::Integer(1))
+//!                         .build()
+//!                 )
+//!                 .build()
 //!         ]
 //!     }
 //!
@@ -151,14 +105,11 @@
 //!     }
 //!
 //!     fn produce_metrics(&self) -> Result<Vec<ExtensionMetricValue>> {
-//!         // IMPORTANT: This is a SYNCHRONOUS method
-//!         // Do NOT use .await or spawn tokio tasks here
 //!         Ok(vec![
-//!             ExtensionMetricValue {
-//!                 name: "counter".to_string(),
-//!                 value: ParamMetricValue::Integer(self.counter.load(std::sync::atomic::Ordering::SeqCst)),
-//!                 timestamp: chrono::Utc::now().timestamp_millis(),
-//!             }
+//!             ExtensionMetricValue::new(
+//!                 "counter",
+//!                 MetricValue::Integer(self.counter.load(std::sync::atomic::Ordering::SeqCst))
+//!             )
 //!         ])
 //!     }
 //! }
@@ -167,26 +118,74 @@
 //! neomind_export!(MyExtension);
 //! ```
 
-// Re-export core types from neomind-core for native builds
-#[cfg(not(target_arch = "wasm32"))]
-pub use neomind_core::extension::system::{
-    Extension, ExtensionMetadata, ExtensionError, ExtensionMetricValue,
-    MetricDescriptor, ExtensionCommand, MetricDataType, ParameterDefinition,
-    CExtensionMetadata, ABI_VERSION, Result, ParamMetricValue, CommandDefinition,
-    ExtensionStats,
+// ============================================================================
+// IPC Boundary Types (Stable - for IPC serialization)
+// ============================================================================
+
+mod ipc_types;
+
+/// Stable IPC boundary types for extension communication.
+pub mod ipc {
+    pub use crate::ipc_types::*;
+}
+
+// ============================================================================
+// Host API (Extension trait + capabilities + streaming)
+// ============================================================================
+
+mod host;
+
+// ============================================================================
+// Re-exports from ipc_types (Core Types)
+// ============================================================================
+
+pub use ipc_types::{
+    ABI_VERSION, CExtensionMetadata, CommandDefinition, CommandDescriptor,
+    ExtensionCommand, ExtensionDescriptor, ExtensionError, ExtensionMetadata,
+    ExtensionMetricValue, ExtensionRuntimeState, ExtensionStats, MetricDataType,
+    MetricDescriptor, MetricValue, ParamMetricValue,
+    ParameterDefinition, ParameterGroup, PushOutputMessage, Result, ValidationRule,
+    // IPC Protocol Types (for process isolation)
+    IpcMessage, IpcResponse, IpcFrame, ErrorKind,
+    BatchCommand, BatchResult, BatchResultsVec,
+    StreamClientInfo, StreamDataChunk, PushOutputData,
 };
 
+// Alias for backward compatibility
+pub type MetricDefinition = MetricDescriptor;
 
-// // Re-export serialization types for native builds
-// #[cfg(not(target_arch = "wasm32"))]
-// pub use neomind_core::extension::serialization::{
-//     ExtensionContextData, EventData,
-// };
+// ============================================================================
+// Re-exports from host (Extension trait + capabilities)
+// ============================================================================
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use neomind_core::extension::{
-    StreamCapability, StreamMode, StreamDirection, StreamDataType,
-    DataChunk, StreamResult, StreamSession, SessionStats,
+pub use host::Extension;
+
+pub use host::{
+    // Capability system
+    ExtensionCapability, CapabilityManifest, ExtensionCapabilityProvider,
+    ExtensionContext, ExtensionContextConfig, AvailableCapabilities,
+    CapabilityError, CapabilityContext,
+    set_native_capability_bridge,
+
+    // Streaming types
+    StreamDirection, StreamMode, StreamDataType, DataChunk,
+    StreamResult, StreamError, StreamCapability, StreamSession,
+    SessionStats, FlowControl, ClientInfo,
+
+    // Event system
+    EventFilter, EventSubscription,
+};
+
+/// Capability name constants - re-exported from host module
+pub mod capability_constants {
+    pub use crate::host::capabilities::*;
+}
+
+// Native-only FFI types
+#[cfg(not(target_arch = "wasm32"))]
+pub use host::{
+    NativeCapabilityFreeFn, NativeCapabilityInvokeFn,
 };
 
 // ============================================================================
@@ -209,9 +208,8 @@ mod wasm_types {
 
     pub type Result<T> = std::result::Result<T, crate::extension::SdkExtensionError>;
     pub const ABI_VERSION: u32 = 3;
-    
+
     /// Simplified StreamCapability for WASM
-    /// WASM extensions typically don't support streaming, so this is a stub
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     pub struct StreamCapability {
         pub direction: StreamDirection,
@@ -220,7 +218,7 @@ mod wasm_types {
         pub preferred_chunk_size: usize,
         pub max_concurrent_sessions: usize,
     }
-    
+
     impl Default for StreamCapability {
         fn default() -> Self {
             Self {
@@ -232,8 +230,8 @@ mod wasm_types {
             }
         }
     }
-    
-    /// Stream direction
+
+    /// Stream direction (WASM version)
     #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "lowercase")]
     pub enum StreamDirection {
@@ -242,8 +240,8 @@ mod wasm_types {
         Output,
         Duplex,
     }
-    
-    /// Stream mode
+
+    /// Stream mode (WASM version)
     #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
     #[serde(rename_all = "lowercase")]
     pub enum StreamMode {
@@ -265,11 +263,7 @@ mod wasm_extension {
     #[async_trait::async_trait]
     pub trait Extension: Send + Sync {
         fn metadata(&self) -> &ExtensionMetadata;
-        /// Returns metrics provided by this extension.
-        /// Returns Vec to avoid FFI pointer issues with static slices.
         fn metrics(&self) -> Vec<MetricDescriptor> { Vec::new() }
-        /// Returns commands provided by this extension.
-        /// Returns Vec to avoid FFI pointer issues with static slices.
         fn commands(&self) -> Vec<ExtensionCommand> { Vec::new() }
 
         async fn execute_command(
@@ -286,12 +280,10 @@ mod wasm_extension {
             Ok(true)
         }
 
-        /// Get extension statistics
         fn get_stats(&self) -> super::extension::ExtensionStats {
             super::extension::ExtensionStats::default()
         }
 
-        /// Stream capability - returns None for WASM extensions that don't support streaming
         fn stream_capability(&self) -> Option<StreamCapability> {
             None
         }
@@ -305,44 +297,39 @@ pub use wasm_extension::Extension;
 #[cfg(target_arch = "wasm32")]
 pub use pollster;
 
-// Capabilities module (NEW - 方案3: 混合方案)
+// ============================================================================
+// Utility Re-exports
+// ============================================================================
 
-// Re-export async_trait for convenience
 pub use async_trait::async_trait;
-
-// Re-export serde_json for convenience
 pub use serde_json::{json, Value};
 
-// Extension types (for both targets)
+// ============================================================================
+// Extension Types Module
+// ============================================================================
+
 mod extension;
 pub use extension::*;
 
-// Frontend types for extension components
 pub use extension::{
     FrontendManifest, FrontendComponent, FrontendComponentType,
     FrontendManifestBuilder, ComponentSize, I18nConfig,
 };
 
-// Extension statistics (re-exported from neomind-core for native builds)
+// ============================================================================
+// Additional Modules
+// ============================================================================
 
-// Prelude for convenient imports
 pub mod prelude;
-
-// Macros
 mod macros;
 
-// Native-specific module
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native;
 
-// WASM-specific module
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
-// Utility functions
 pub mod utils;
-
-// Capabilities module (unified for Native and WASM)
 pub mod capabilities;
 
 // ============================================================================
@@ -359,7 +346,7 @@ pub const SDK_ABI_VERSION: u32 = 3;
 pub const MIN_NEOMIND_VERSION: &str = "0.5.0";
 
 // ============================================================================
-// Helper Types
+// Builder Types
 // ============================================================================
 
 /// Helper type for building metric descriptors
@@ -369,7 +356,6 @@ pub struct MetricBuilder {
 }
 
 impl MetricBuilder {
-    /// Create a new metric builder
     pub fn new(name: impl Into<String>, display_name: impl Into<String>) -> Self {
         Self {
             metric: MetricDescriptor {
@@ -384,62 +370,51 @@ impl MetricBuilder {
         }
     }
 
-    /// Set the data type
     pub fn data_type(mut self, data_type: MetricDataType) -> Self {
         self.metric.data_type = data_type;
         self
     }
 
-    /// Set as float type
     pub fn float(self) -> Self {
         self.data_type(MetricDataType::Float)
     }
 
-    /// Set as integer type
     pub fn integer(self) -> Self {
         self.data_type(MetricDataType::Integer)
     }
 
-    /// Set as boolean type
     pub fn boolean(self) -> Self {
         self.data_type(MetricDataType::Boolean)
     }
 
-    /// Set as string type
     pub fn string(self) -> Self {
         self.data_type(MetricDataType::String)
     }
 
-    /// Set as enum type with options
     pub fn enum_type(self, options: Vec<String>) -> Self {
         self.data_type(MetricDataType::Enum { options })
     }
 
-    /// Set the unit
     pub fn unit(mut self, unit: impl Into<String>) -> Self {
         self.metric.unit = unit.into();
         self
     }
 
-    /// Set the min value
     pub fn min(mut self, min: f64) -> Self {
         self.metric.min = Some(min);
         self
     }
 
-    /// Set the max value
     pub fn max(mut self, max: f64) -> Self {
         self.metric.max = Some(max);
         self
     }
 
-    /// Set as required
     pub fn required(mut self) -> Self {
         self.metric.required = true;
         self
     }
 
-    /// Build the metric descriptor
     pub fn build(self) -> MetricDescriptor {
         self.metric
     }
@@ -452,53 +427,36 @@ pub struct CommandBuilder {
 }
 
 impl CommandBuilder {
-    /// Create a new command builder
     pub fn new(name: impl Into<String>) -> Self {
-        #[cfg(target_arch = "wasm32")]
-        {
-            Self {
-                command: ExtensionCommand {
-                    name: name.into(),
-                    display_name: String::new(),
-                    description: String::new(),
-                    payload_template: String::new(),
-                    parameters: Vec::new(),
-                    fixed_values: std::collections::HashMap::new(),
-                    samples: Vec::new(),
-                    parameter_groups: Vec::new(),
-                },
-            }
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            Self {
-                command: ExtensionCommand {
-                    name: name.into(),
-                    display_name: String::new(),
-                    description: String::new(),
-                    payload_template: String::new(),
-                    parameters: Vec::new(),
-                    fixed_values: std::collections::HashMap::new(),
-                    samples: Vec::new(),
-                    parameter_groups: Vec::new(),
-                },
-            }
+        Self {
+            command: ExtensionCommand {
+                name: name.into(),
+                display_name: String::new(),
+                description: String::new(),
+                payload_template: String::new(),
+                parameters: Vec::new(),
+                fixed_values: std::collections::HashMap::new(),
+                samples: Vec::new(),
+                parameter_groups: Vec::new(),
+            },
         }
     }
 
-    /// Set display name
     pub fn display_name(mut self, display_name: impl Into<String>) -> Self {
         self.command.display_name = display_name.into();
         self
     }
 
-    /// Add a parameter
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.command.description = description.into();
+        self
+    }
+
     pub fn param(mut self, param: ParameterDefinition) -> Self {
         self.command.parameters.push(param);
         self
     }
 
-    /// Add a simple required parameter
     pub fn param_simple(mut self, name: impl Into<String>, display_name: impl Into<String>, data_type: MetricDataType) -> Self {
         self.command.parameters.push(ParameterDefinition {
             name: name.into(),
@@ -514,7 +472,6 @@ impl CommandBuilder {
         self
     }
 
-    /// Add an optional parameter
     pub fn param_optional(mut self, name: impl Into<String>, display_name: impl Into<String>, data_type: MetricDataType) -> Self {
         self.command.parameters.push(ParameterDefinition {
             name: name.into(),
@@ -530,8 +487,7 @@ impl CommandBuilder {
         self
     }
 
-    /// Add a parameter with default value
-    pub fn param_with_default(mut self, name: impl Into<String>, display_name: impl Into<String>, data_type: MetricDataType, default: ParamMetricValue) -> Self {
+    pub fn param_with_default(mut self, name: impl Into<String>, display_name: impl Into<String>, data_type: MetricDataType, default: MetricValue) -> Self {
         self.command.parameters.push(ParameterDefinition {
             name: name.into(),
             display_name: display_name.into(),
@@ -546,21 +502,15 @@ impl CommandBuilder {
         self
     }
 
-    /// Add a sample payload
     pub fn sample(mut self, sample: serde_json::Value) -> Self {
         self.command.samples.push(sample);
         self
     }
 
-    /// Build the command definition
     pub fn build(self) -> ExtensionCommand {
         self.command
     }
 }
-
-// ============================================================================
-// Parameter Builder
-// ============================================================================
 
 /// Helper type for building parameter definitions
 #[derive(Debug, Clone)]
@@ -569,7 +519,6 @@ pub struct ParamBuilder {
 }
 
 impl ParamBuilder {
-    /// Create a new parameter builder
     pub fn new(name: impl Into<String>, data_type: MetricDataType) -> Self {
         Self {
             param: ParameterDefinition {
@@ -586,70 +535,61 @@ impl ParamBuilder {
         }
     }
 
-    /// Set display name
     pub fn display_name(mut self, display_name: impl Into<String>) -> Self {
         self.param.display_name = display_name.into();
         self
     }
 
-    /// Set description
     pub fn description(mut self, description: impl Into<String>) -> Self {
         self.param.description = description.into();
         self
     }
 
-    /// Set as optional
     pub fn optional(mut self) -> Self {
         self.param.required = false;
         self
     }
 
-    /// Set as required
     pub fn required(mut self) -> Self {
         self.param.required = true;
         self
     }
 
-    /// Set default value
-    pub fn default(mut self, value: ParamMetricValue) -> Self {
+    pub fn default(mut self, value: MetricValue) -> Self {
         self.param.default_value = Some(value);
         self.param.required = false;
         self
     }
 
-    /// Set min value
     pub fn min(mut self, min: f64) -> Self {
         self.param.min = Some(min);
         self
     }
 
-    /// Set max value
     pub fn max(mut self, max: f64) -> Self {
         self.param.max = Some(max);
         self
     }
 
-    /// Set options for enum type
     pub fn options(mut self, options: Vec<String>) -> Self {
         self.param.options = options;
         self
     }
 
-    /// Build the parameter definition
     pub fn build(self) -> ParameterDefinition {
         self.param
     }
 }
 
 // ============================================================================
-// Static Helpers
+// Static Helper Macros
 // ============================================================================
 
 /// Create a static ExtensionMetadata
 #[macro_export]
 macro_rules! static_metadata {
     ($id:literal, $name:literal, $version:literal) => {{
-        static META: $crate::ExtensionMetadata = $crate::ExtensionMetadata::new_static(
+        static META: $crate::ExtensionMetadata = $crate::ExtensionMetadata::new(
             $id,
             $name,
             $version,
@@ -682,47 +622,58 @@ macro_rules! static_commands {
 
 #[cfg(test)]
 mod tests {
-    
+    use super::*;
 
-    /// Test that SDK WASM capability names match Core capability names.
-    /// This test only runs in Native mode where we can access neomind-core.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn test_wasm_capability_names_sync_with_core() {
-        // Import Core's capability constants
-        use neomind_core::extension::context::capabilities as core_cap;
-        
-        // Import SDK WASM's capability constants
-        #[cfg(target_arch = "wasm32")]
-        use crate::wasm::context::capabilities as wasm_cap;
-        
-        // In native mode, we can't directly access wasm module, so we check the strings
-        // This test ensures the strings are correct
-        let _expected_names = [
-            ("DEVICE_METRICS_READ", "device_metrics_read"),
-            ("DEVICE_METRICS_WRITE", "device_metrics_write"),
-            ("DEVICE_CONTROL", "device_control"),
-            ("STORAGE_QUERY", "storage_query"),
-            ("EVENT_PUBLISH", "event_publish"),
-            ("EVENT_SUBSCRIBE", "event_subscribe"),
-            ("TELEMETRY_HISTORY", "telemetry_history"),
-            ("METRICS_AGGREGATE", "metrics_aggregate"),
-            ("EXTENSION_CALL", "extension_call"),
-            ("AGENT_TRIGGER", "agent_trigger"),
-            ("RULE_TRIGGER", "rule_trigger"),
-        ];
+    fn test_capability_constants() {
+        assert_eq!(capability_constants::DEVICE_METRICS_READ, "device_metrics_read");
+        assert_eq!(capability_constants::DEVICE_METRICS_WRITE, "device_metrics_write");
+        assert_eq!(capability_constants::DEVICE_CONTROL, "device_control");
+        assert_eq!(capability_constants::STORAGE_QUERY, "storage_query");
+        assert_eq!(capability_constants::EVENT_PUBLISH, "event_publish");
+        assert_eq!(capability_constants::EVENT_SUBSCRIBE, "event_subscribe");
+        assert_eq!(capability_constants::TELEMETRY_HISTORY, "telemetry_history");
+        assert_eq!(capability_constants::METRICS_AGGREGATE, "metrics_aggregate");
+        assert_eq!(capability_constants::EXTENSION_CALL, "extension_call");
+        assert_eq!(capability_constants::AGENT_TRIGGER, "agent_trigger");
+        assert_eq!(capability_constants::RULE_TRIGGER, "rule_trigger");
+    }
 
-        // Verify Core's constants match expected names
-        assert_eq!(core_cap::DEVICE_METRICS_READ, "device_metrics_read");
-        assert_eq!(core_cap::DEVICE_METRICS_WRITE, "device_metrics_write");
-        assert_eq!(core_cap::DEVICE_CONTROL, "device_control");
-        assert_eq!(core_cap::STORAGE_QUERY, "storage_query");
-        assert_eq!(core_cap::EVENT_PUBLISH, "event_publish");
-        assert_eq!(core_cap::EVENT_SUBSCRIBE, "event_subscribe");
-        assert_eq!(core_cap::TELEMETRY_HISTORY, "telemetry_history");
-        assert_eq!(core_cap::METRICS_AGGREGATE, "metrics_aggregate");
-        assert_eq!(core_cap::EXTENSION_CALL, "extension_call");
-        assert_eq!(core_cap::AGENT_TRIGGER, "agent_trigger");
-        assert_eq!(core_cap::RULE_TRIGGER, "rule_trigger");
+    #[test]
+    fn test_metric_builder() {
+        let metric = MetricBuilder::new("test", "Test Metric")
+            .float()
+            .unit("°C")
+            .min(-40.0)
+            .max(100.0)
+            .required()
+            .build();
+
+        assert_eq!(metric.name, "test");
+        assert_eq!(metric.display_name, "Test Metric");
+        assert_eq!(metric.data_type, MetricDataType::Float);
+        assert_eq!(metric.unit, "°C");
+        assert_eq!(metric.min, Some(-40.0));
+        assert_eq!(metric.max, Some(100.0));
+        assert!(metric.required);
+    }
+
+    #[test]
+    fn test_extension_metadata() {
+        let meta = ExtensionMetadata::new("test-ext", "Test Extension", "1.0.0")
+            .with_description("A test extension")
+            .with_author("Test Author");
+
+        assert_eq!(meta.id, "test-ext");
+        assert_eq!(meta.name, "Test Extension");
+        assert_eq!(meta.version, "1.0.0");
+        assert_eq!(meta.description, Some("A test extension".to_string()));
+        assert_eq!(meta.author, Some("Test Author".to_string()));
+    }
+
+    #[test]
+    fn test_abi_version() {
+        assert_eq!(ABI_VERSION, 3);
+        assert_eq!(SDK_ABI_VERSION, 3);
     }
 }

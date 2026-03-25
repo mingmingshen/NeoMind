@@ -44,18 +44,14 @@ pub struct IsolatedManagerConfig {
     pub isolated_by_default: bool,
     /// Extensions that should always run in isolated mode
     pub force_isolated: Vec<String>,
-    /// Extensions that should always run in-process
-    pub force_in_process: Vec<String>,
 }
 
 impl Default for IsolatedManagerConfig {
     fn default() -> Self {
         Self {
             extension_config: IsolatedExtensionConfig::default(),
-            // Default to isolated mode for safety
             isolated_by_default: true,
             force_isolated: Vec::new(),
-            force_in_process: Vec::new(),
         }
     }
 }
@@ -127,7 +123,6 @@ impl IsolatedExtensionManager {
             isolated_config: config.extension_config.clone(),
             use_isolated_by_default: config.isolated_by_default,
             force_isolated: config.force_isolated.clone(),
-            force_in_process: config.force_in_process.clone(),
         };
 
         // Create event dispatcher (simplified version)
@@ -564,7 +559,6 @@ mod tests {
         let config = IsolatedManagerConfig::default();
         assert!(config.isolated_by_default);
         assert!(config.force_isolated.is_empty());
-        assert!(config.force_in_process.is_empty());
     }
 
     #[test]

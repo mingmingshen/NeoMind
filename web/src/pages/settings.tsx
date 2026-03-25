@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
+import { useSearchParams } from "react-router-dom"
 import { useStore } from "@/store"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav } from "@/components/shared"
@@ -14,7 +15,12 @@ type SettingsTabValue = "llm" | "connections" | "alert-channels" | "preferences"
 
 export function SettingsPage() {
   const { t } = useTranslation(["common", "settings", "llm", "connections", "extensions"])
-  const [activeTab, setActiveTab] = useState<SettingsTabValue>("preferences")
+  const [searchParams] = useSearchParams()
+  const tabFromUrl = searchParams.get("tab") as SettingsTabValue | null
+  const [activeTab, setActiveTab] = useState<SettingsTabValue>(() => {
+    const validTabs: SettingsTabValue[] = ["llm", "connections", "alert-channels", "preferences", "about"]
+    return tabFromUrl && validTabs.includes(tabFromUrl) ? tabFromUrl : "preferences"
+  })
 
   // LLM Backend actions from store
   const createBackend = useStore((state) => state.createBackend)
@@ -61,7 +67,7 @@ export function SettingsPage() {
 
         {/* Alert Channels Tab */}
         <PageTabsContent value="alert-channels" activeTab={activeTab}>
-          <UnifiedAlertChannelsTab />
+          <UnifiedAlertChannelsTab hideFilterButton />
         </PageTabsContent>
 
         {/* Preferences Tab */}

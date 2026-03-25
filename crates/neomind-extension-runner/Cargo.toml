@@ -11,7 +11,7 @@ name = "neomind-extension-runner"
 path = "src/main.rs"
 
 [dependencies]
-neomind-core = { path = "../neomind-core" }
+# Only depends on SDK for ABI stability - no dependency on neomind-core
 neomind-extension-sdk = { path = "../neomind-extension-sdk" }
 tokio = { workspace = true }
 serde = { workspace = true }
@@ -24,6 +24,7 @@ tracing-subscriber = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
 semver = { workspace = true }
+libloading = "0.8"
 # WASM runtime (direct dependency)
 wasmtime = { version = "26", features = ["async", "component-model"] }
 wasmtime-wasi = { version = "26" }

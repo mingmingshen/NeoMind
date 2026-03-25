@@ -8,9 +8,10 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::channels::ChannelRegistry;
+use super::channels::{ChannelRegistry, ChannelFactory, ChannelFilter};
+use super::delivery_log::{DeliveryLog, DeliveryLogId, DeliveryLogQuery, DeliveryStats, DeliveryStatus};
 use super::error::{Error, Result};
-use super::{Message, MessageId, MessageSeverity, MessageStatus};
+use super::{Message, MessageId, MessageSeverity, MessageStatus, MessageType};
 
 /// Persistent message manager with storage backend.
 #[derive(Clone)]
@@ -26,6 +27,8 @@ pub struct MessageManager {
     /// Data directory for persistent storage (reserved for future use).
     #[allow(dead_code)]
     data_dir: Arc<RwLock<Option<String>>>,
+    /// Delivery log storage (in-memory with optional persistence)
+    delivery_logs: Arc<RwLock<HashMap<DeliveryLogId, DeliveryLog>>>,
 }
 
 impl MessageManager {
@@ -37,6 +40,7 @@ impl MessageManager {
             channels: Arc::new(RwLock::new(ChannelRegistry::new())),
             event_bus: Arc::new(RwLock::new(None)),
             data_dir: Arc::new(RwLock::new(None)),
+            delivery_logs: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -60,26 +64,154 @@ impl MessageManager {
 
         // Load existing messages into memory
         let mut messages = HashMap::new();
-        if let Ok(stored_msgs) = store.list() {
-            for stored_msg in stored_msgs {
-                if let Ok(id) = MessageId::from_string(&stored_msg.id) {
-                    let msg = Self::stored_to_message(stored_msg);
-                    messages.insert(id, msg);
+        match store.list() {
+            Ok(stored_msgs) => {
+                tracing::info!("Loading {} messages from storage", stored_msgs.len());
+                for stored_msg in stored_msgs {
+                    match MessageId::from_string(&stored_msg.id) {
+                        Ok(id) => {
+                            let msg = Self::stored_to_message(stored_msg);
+                            messages.insert(id, msg);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to parse message ID '{}': {}", stored_msg.id, e);
+                        }
+                    }
                 }
+                tracing::info!("Successfully loaded {} messages into memory", messages.len());
+            }
+            Err(e) => {
+                tracing::error!("Failed to load messages from storage: {}", e);
             }
         }
+
+        // Create persistent channel registry
+        let channels = ChannelRegistry::with_storage(data_dir)
+            .map_err(|e| Error::Storage(format!("Failed to create channel registry: {}", e)))?;
 
         Ok(Self {
             messages: Arc::new(RwLock::new(messages)),
             storage: Arc::new(RwLock::new(Some(store))),
-            channels: Arc::new(RwLock::new(ChannelRegistry::new())),
+            channels: Arc::new(RwLock::new(channels)),
             event_bus: Arc::new(RwLock::new(None)),
             data_dir: Arc::new(RwLock::new(Some(data_dir.to_string_lossy().to_string()))),
+            delivery_logs: Arc::new(RwLock::new(HashMap::new())),
         })
+    }
+
+    /// Load persisted channel configurations.
+    /// This should be called after creating the MessageManager to restore
+    /// previously saved channels.
+    pub async fn load_persisted_channels(&self) {
+        let channels = self.channels.read().await;
+        let configs = channels.load_persisted().await;
+        // Need to drop the read lock before acquiring write lock
+        drop(channels);
+
+        // First, load all recipients from storage
+        {
+            let registry = self.channels.read().await;
+            registry.load_all_recipients().await;
+        }
+
+        // Recreate and register channels from persisted configs
+        let mut loaded_count = 0;
+        for stored in configs {
+            // Add enabled state to config for factory
+            let mut config = stored.config.clone();
+            if let Some(obj) = config.as_object_mut() {
+                obj.insert("enabled".to_string(), serde_json::json!(stored.enabled));
+                obj.insert("name".to_string(), serde_json::json!(stored.name));
+            }
+
+            // Add recipients to config for email channels
+            if stored.channel_type == "email" {
+                let registry = self.channels.read().await;
+                let channel_recipients = registry.get_recipients(&stored.name).await;
+                drop(registry);
+                if !channel_recipients.is_empty() {
+                    if let Some(obj) = config.as_object_mut() {
+                        obj.insert("recipients".to_string(), serde_json::json!(channel_recipients));
+                    }
+                }
+            }
+
+            // Create channel using factory based on type
+            let channel_result = match stored.channel_type.as_str() {
+                #[cfg(feature = "webhook")]
+                "webhook" => {
+                    let factory = crate::WebhookChannelFactory;
+                    factory.create(&config).map(|c| Some(c))
+                }
+                #[cfg(feature = "email")]
+                "email" => {
+                    let factory = crate::EmailChannelFactory;
+                    factory.create(&config).map(|c| Some(c))
+                }
+                _ => {
+                    tracing::warn!("Unknown channel type: {}, skipping", stored.channel_type);
+                    Ok(None)
+                }
+            };
+
+            match channel_result {
+                Ok(Some(channel)) => {
+                    let registry = self.channels.write().await;
+                    registry.register_with_config(
+                        stored.name.clone(),
+                        channel,
+                        stored.config,
+                    ).await;
+                    // Set enabled state if different from default
+                    if !stored.enabled {
+                        let _ = registry.set_enabled(&stored.name, false).await;
+                    }
+                    // Restore filter configuration if not default
+                    if stored.filter != ChannelFilter::default() {
+                        if let Err(e) = registry.set_filter(&stored.name, stored.filter.clone()).await {
+                            tracing::warn!("Failed to restore filter for channel '{}': {}", stored.name, e);
+                        }
+                    }
+                    loaded_count += 1;
+                    tracing::info!(
+                        "Restored channel: {} (type: {}, enabled: {})",
+                        stored.name,
+                        stored.channel_type,
+                        stored.enabled
+                    );
+                }
+                Ok(None) => {
+                    // Unknown channel type, already logged
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to recreate channel '{}': {}",
+                        stored.name,
+                        e
+                    );
+                }
+            }
+        }
+
+        if loaded_count > 0 {
+            tracing::info!("Successfully restored {} persisted channels", loaded_count);
+        }
     }
 
     /// Convert StoredMessage to Message.
     fn stored_to_message(stored: neomind_storage::StoredMessage) -> Message {
+        let (message_type, source_id, payload) = if let Some(ref meta) = stored.metadata {
+            let mt = meta.get("message_type")
+                .and_then(|v| v.as_str())
+                .and_then(|s| MessageType::from_string(s))
+                .unwrap_or(MessageType::Notification);
+            let sid = meta.get("source_id").and_then(|v| v.as_str()).map(String::from);
+            let p = meta.get("payload").cloned();
+            (mt, sid, p)
+        } else {
+            (MessageType::Notification, None, None)
+        };
+
         Message {
             id: MessageId::from_string(&stored.id).unwrap_or_else(|_| MessageId::new()),
             category: stored.category,
@@ -94,6 +226,9 @@ impl MessageManager {
             status: MessageStatus::from_string(&stored.status).unwrap_or(MessageStatus::Active),
             metadata: stored.metadata,
             tags: stored.tags.unwrap_or_default(),
+            message_type,
+            source_id,
+            payload,
         }
     }
 
@@ -113,7 +248,21 @@ impl MessageManager {
             } else {
                 Some(msg.tags.clone())
             },
-            metadata: msg.metadata.clone(),
+            metadata: if msg.payload.is_some() || msg.source_id.is_some() || msg.message_type != MessageType::Notification {
+                let mut meta = msg.metadata.clone().unwrap_or(serde_json::json!({}));
+                if let Some(obj) = meta.as_object_mut() {
+                    obj.insert("message_type".to_string(), serde_json::json!(msg.message_type.as_str()));
+                    if let Some(sid) = &msg.source_id {
+                        obj.insert("source_id".to_string(), serde_json::json!(sid));
+                    }
+                    if let Some(p) = &msg.payload {
+                        obj.insert("payload".to_string(), p.clone());
+                    }
+                }
+                Some(meta)
+            } else {
+                msg.metadata.clone()
+            },
             timestamp: msg.timestamp.timestamp(),
             acknowledged_at: None,
             resolved_at: None,
@@ -131,23 +280,11 @@ impl MessageManager {
         self.channels.clone()
     }
 
-    /// Register default channels (console, memory).
+    /// Register default channels (currently none - users should create webhook/email channels manually).
     pub async fn register_default_channels(&self) {
-        let channels = self.channels.read().await;
-        channels
-            .register_with_config(
-                "console".to_string(),
-                std::sync::Arc::new(super::channels::ConsoleChannel::new("console".to_string())),
-                serde_json::json!({"include_details": true}),
-            )
-            .await;
-        channels
-            .register_with_config(
-                "memory".to_string(),
-                std::sync::Arc::new(super::channels::MemoryChannel::new("memory".to_string())),
-                serde_json::json!({}),
-            )
-            .await;
+        // No default channels registered.
+        // Users should create webhook/email channels through the API or UI.
+        tracing::info!("MessageManager initialized with no default channels");
     }
 
     /// Create and send a message.
@@ -155,14 +292,15 @@ impl MessageManager {
         let id = message.id.clone();
         let _is_active = message.is_active();
         let severity = message.severity;
+        let message_type = message.message_type;
 
-        // Store in memory
+        // Store in memory for all message types (Notification and DataPush)
         self.messages
             .write()
             .await
             .insert(id.clone(), message.clone());
 
-        // Persist to storage if available
+        // Persist to storage if available (for all message types)
         if let Some(store) = self.storage.read().await.as_ref() {
             let stored = Self::message_to_stored(&message);
             store
@@ -173,13 +311,57 @@ impl MessageManager {
         // Send through channels (don't fail if channels fail - message is already stored)
         let channels = self.channels.read().await;
         let channel_names = channels.list_names().await;
-        let mut send_results = Vec::new();
+        let mut send_results: Vec<(String, std::result::Result<(), String>)> = Vec::new();
 
         for channel_name in &channel_names {
             if let Some(channel) = channels.get(channel_name).await {
                 if channel.is_enabled() {
+                    // Apply filter before sending
+                    let filter = channels.get_filter(channel_name).await;
+                    if !filter.matches(&message) {
+                        tracing::debug!(
+                            "Channel '{}' filter rejected message '{}'",
+                            channel_name,
+                            message.title
+                        );
+                        continue;
+                    }
+
+                    tracing::info!("Sending message through channel '{}' (type: {})", channel_name, channel.channel_type());
+
+                    // Create delivery log entry for DataPush
+                    let delivery_log = if message_type == MessageType::DataPush {
+                        let payload_summary = message.payload
+                            .as_ref()
+                            .map(|p| {
+                                let s = p.to_string();
+                                // Truncate to 500 chars for display
+                                if s.len() > 500 {
+                                    format!("{}...", &s[..497])
+                                } else {
+                                    s
+                                }
+                            })
+                            .unwrap_or_default();
+                        Some(DeliveryLog::new(
+                            id.to_string(),
+                            channel_name.clone(),
+                            payload_summary,
+                        ))
+                    } else {
+                        None
+                    };
+
                     match channel.send(&message).await {
-                        Ok(()) => send_results.push((channel_name.clone(), Ok(()))),
+                        Ok(()) => {
+                            tracing::info!("Successfully sent message through channel '{}'", channel_name);
+                            send_results.push((channel_name.clone(), Ok(())));
+                            // Log successful delivery for DataPush
+                            if let Some(mut log) = delivery_log {
+                                log = log.with_status(DeliveryStatus::Success);
+                                self.delivery_logs.write().await.insert(log.id.clone(), log);
+                            }
+                        }
                         Err(e) => {
                             // Log channel failure but don't fail the entire operation
                             tracing::warn!(
@@ -187,7 +369,13 @@ impl MessageManager {
                                 channel_name,
                                 e
                             );
-                            send_results.push((channel_name.clone(), Err(e)));
+                            let error_msg = e.to_string();
+                            send_results.push((channel_name.clone(), Err(error_msg.clone())));
+                            // Log failed delivery for DataPush
+                            if let Some(mut log) = delivery_log {
+                                log = log.with_status(DeliveryStatus::Failed).with_error(error_msg);
+                                self.delivery_logs.write().await.insert(log.id.clone(), log);
+                            }
                         }
                     }
                 }
@@ -511,6 +699,101 @@ impl MessageManager {
         }
     }
 
+    // =========================================================================
+    // Delivery Log Methods
+    // =========================================================================
+
+    /// List delivery logs with optional filtering.
+    pub async fn list_delivery_logs(&self, query: DeliveryLogQuery) -> Vec<DeliveryLog> {
+        let logs = self.delivery_logs.read().await;
+
+        // Default values
+        let hours = query.hours.unwrap_or(24);
+        let limit = query.limit.unwrap_or(100);
+        let cutoff = chrono::Utc::now() - chrono::Duration::hours(hours);
+
+        let mut result: Vec<DeliveryLog> = logs
+            .values()
+            .filter(|log| {
+                // Filter by channel
+                if let Some(ref channel) = query.channel {
+                    if log.channel_name != *channel {
+                        return false;
+                    }
+                }
+
+                // Filter by status
+                if let Some(ref status) = query.status {
+                    if log.status.as_str() != *status {
+                        return false;
+                    }
+                }
+
+                // Filter by event_id
+                if let Some(ref event_id) = query.event_id {
+                    if log.event_id != *event_id {
+                        return false;
+                    }
+                }
+
+                // Filter by time
+                if log.created_at < cutoff {
+                    return false;
+                }
+
+                true
+            })
+            .cloned()
+            .collect();
+
+        // Sort by created_at descending (most recent first)
+        result.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        // Apply limit
+        result.truncate(limit);
+
+        result
+    }
+
+    /// Get a specific delivery log by ID.
+    pub async fn get_delivery_log(&self, id: &DeliveryLogId) -> Option<DeliveryLog> {
+        self.delivery_logs.read().await.get(id).cloned()
+    }
+
+    /// Get delivery log statistics.
+    pub async fn get_delivery_stats(&self) -> DeliveryStats {
+        let logs = self.delivery_logs.read().await;
+
+        let mut stats = DeliveryStats::default();
+        stats.total = logs.len();
+
+        for log in logs.values() {
+            match log.status {
+                DeliveryStatus::Pending => stats.pending += 1,
+                DeliveryStatus::Success => stats.success += 1,
+                DeliveryStatus::Failed => stats.failed += 1,
+                DeliveryStatus::Retrying => stats.retrying += 1,
+            }
+        }
+
+        stats
+    }
+
+    /// Cleanup old delivery logs (older than retention_days).
+    pub async fn cleanup_delivery_logs(&self, retention_days: i64) -> usize {
+        let mut logs = self.delivery_logs.write().await;
+        let initial_count = logs.len();
+
+        logs.retain(|_, log| !log.is_expired(retention_days));
+
+        initial_count - logs.len()
+    }
+
+    /// Clear all delivery logs.
+    pub async fn clear_delivery_logs(&self) {
+        self.delivery_logs.write().await.clear();
+    }
+
     /// Clear all messages (use with caution).
     pub async fn clear(&self) -> Result<()> {
         self.messages.write().await.clear();
@@ -811,5 +1094,25 @@ mod tests {
         assert!(rule.evaluate());
         let msg = rule.generate_message();
         assert_eq!(msg.title, "Generated");
+    }
+
+    #[tokio::test]
+    async fn test_message_filtering_by_source_type() {
+        use crate::channels::ChannelFilter;
+
+        let mut filter = ChannelFilter::default();
+        filter.source_types = vec!["device".to_string()];
+
+        let device_msg = Message::device(
+            MessageSeverity::Warning,
+            "Device Alert".to_string(),
+            "Test".to_string(),
+            "sensor_1".to_string(),
+        );
+
+        let system_msg = Message::system("System".to_string(), "Test".to_string());
+
+        assert!(filter.matches(&device_msg));
+        assert!(!filter.matches(&system_msg));
     }
 }

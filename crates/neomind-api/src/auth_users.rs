@@ -726,11 +726,8 @@ mod tests {
     use super::*;
 
     fn get_project_data_path(filename: &str) -> std::path::PathBuf {
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("data")
-            .join(filename)
+        // Use temp directory for test databases to avoid polluting the project
+        std::env::temp_dir().join(format!("neomind_test_{}_{}.redb", filename.replace(".redb", ""), std::process::id()))
     }
 
     fn cleanup_test_db(path: &std::path::Path) {

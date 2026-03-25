@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use neomind_agent::session::SessionManager;
-use neomind_llm::{OllamaConfig, OllamaRuntime};
+use neomind_agent::{OllamaConfig, OllamaRuntime};
 
 // ============================================================================
 // Test Cases - Aligned with actual available tools

@@ -5,8 +5,6 @@ pub mod auth;
 pub mod auth_users;
 pub mod automations;
 pub mod basic;
-pub mod bulk;
-pub mod commands;
 pub mod common;
 pub mod config;
 pub mod dashboards;
@@ -16,19 +14,15 @@ pub mod extensions;
 pub mod capabilities;
 pub mod extension_stream;
 pub mod llm_backends;
-pub mod memory;
 pub mod message_channels;
 pub mod messages;
 pub mod mqtt;
 pub mod rules;
-pub mod search;
 pub mod sessions;
 pub mod settings;
 pub mod setup;
 pub mod stats;
 pub mod suggestions;
-pub mod test_data;
-pub mod tools;
 pub mod ws;
 
 // Re-export ServerState so handlers can use it
@@ -38,8 +32,8 @@ pub use crate::server::ServerState;
 pub use basic::health_handler;
 pub use devices::{
     add_device_handler, aggregate_metric_handler, analyze_metric_timestamps_handler,
-    delete_device_handler, delete_device_type_handler, discover_devices_handler,
-    discovery_info_handler, generate_mdl_handler, get_device_command_history_handler,
+    delete_device_handler, delete_device_type_handler,
+    generate_mdl_handler, get_device_command_history_handler,
     get_device_handler, get_device_telemetry_handler, get_device_telemetry_summary_handler,
     get_device_type_handler, import_cloud_device_types_handler, list_cloud_device_types_handler,
     list_device_metrics_debug_handler, list_device_types_handler, list_devices_handler,
@@ -63,11 +57,6 @@ pub use sessions::{
     ws_chat_handler,
 };
 pub use settings::llm_generate_handler;
-// Commands API
-pub use commands::{
-    cancel_command_handler, cleanup_commands_handler, get_command_handler,
-    get_command_stats_handler, list_commands_handler, retry_command_handler,
-};
 // Stats API
 pub use stats::{get_device_stats_handler, get_rule_stats_handler, get_system_stats_handler};
 // Extensions API
@@ -110,7 +99,10 @@ pub use messages::{
 };
 // Message channels API
 pub use message_channels::{
-    create_channel_handler, delete_channel_handler, get_channel_handler, get_channel_stats_handler,
-    get_channel_type_schema_handler, list_channel_types_handler, list_channels_handler,
-    test_channel_handler,
+    create_channel_handler, delete_channel_handler, get_channel_filter_handler,
+    get_channel_handler, get_channel_stats_handler, get_channel_type_schema_handler,
+    get_delivery_stats_handler, list_channel_types_handler, list_channels_handler,
+    list_delivery_logs_handler, test_channel_handler, toggle_enabled_handler,
+    update_channel_filter_handler, add_recipient_handler, list_recipients_handler,
+    remove_recipient_handler, update_channel_handler,
 };

@@ -51,7 +51,7 @@ impl Extension for MockEventExtension {
             ExtensionMetadata::new(
                 "mock.event.extension",
                 "Mock Event Extension",
-                semver::Version::new(1, 0, 0),
+                "1.0.0",
             )
         })
     }

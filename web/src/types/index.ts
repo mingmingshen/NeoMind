@@ -208,8 +208,28 @@ export interface Alert {
 // New unified message/notification system
 
 export type MessageSeverity = 'info' | 'warning' | 'critical' | 'emergency'
+// Message Type - must match backend MessageType enum
+export type MessageType = 'notification' | 'data_push'
 export type MessageStatus = 'active' | 'acknowledged' | 'resolved' | 'archived'
-export type MessageCategory = 'alert' | 'system' | 'business'
+// Category is a flexible string - backend can provide any category value
+export type MessageCategory = string
+
+// Channel Filter - must match backend ChannelFilter struct
+export interface ChannelFilter {
+  message_types: MessageType[]
+  source_types: string[]
+  categories: string[]
+  min_severity: MessageSeverity | null
+  source_ids: string[]
+}
+
+// Known category values for reference (not exhaustive)
+export const KNOWN_CATEGORIES = {
+  alert: 'alert',
+  system: 'system',
+  business: 'business',
+  notification: 'notification',
+} as const
 
 /**
  * Message/Notification type - must match backend Message (crates/messages/src/message.rs)
@@ -226,6 +246,10 @@ export interface NotificationMessage {
   status: MessageStatus
   metadata?: Record<string, unknown>
   tags: string[]
+  // New fields
+  message_type?: MessageType
+  source_id?: string
+  payload?: Record<string, unknown>
 }
 
 /**
@@ -251,14 +275,30 @@ export interface MessageStats {
  * Create message request
  */
 export interface CreateMessageRequest {
-  category: MessageCategory
-  severity: MessageSeverity
+  category?: MessageCategory
+  severity?: MessageSeverity
   title: string
   message: string
   source?: string
   source_type?: string
   metadata?: Record<string, unknown>
   tags?: string[]
+  // New fields
+  message_type?: MessageType
+  source_id?: string
+  payload?: Record<string, unknown>
+}
+
+// Helper to get display label for MessageType
+export function getMessageTypeLabel(type: MessageType): string {
+  switch (type) {
+    case 'notification':
+      return '通知'
+    case 'data_push':
+      return '数据推送'
+    default:
+      return type
+  }
 }
 
 /**
@@ -273,6 +313,51 @@ export interface BulkMessageRequest {
  */
 export interface CleanupMessagesRequest {
   older_than_days: number
+}
+
+// ========== Delivery Log Types ==========
+
+/**
+ * Delivery status - must match backend DeliveryStatus enum
+ */
+export type DeliveryStatus = 'pending' | 'success' | 'failed' | 'retrying'
+
+/**
+ * Delivery log entry - must match backend DeliveryLog struct
+ */
+export interface DeliveryLog {
+  id: string
+  event_id: string
+  channel_name: string
+  status: DeliveryStatus
+  payload_summary: string
+  error_message?: string
+  retry_count: number
+  max_retries: number
+  created_at: string  // ISO 8601 string
+  updated_at: string  // ISO 8601 string
+}
+
+/**
+ * Delivery log query parameters
+ */
+export interface DeliveryLogQueryParams {
+  channel?: string
+  status?: string
+  event_id?: string
+  hours?: number
+  limit?: number
+}
+
+/**
+ * Delivery statistics - must match backend DeliveryStats struct
+ */
+export interface DeliveryStats {
+  total: number
+  pending: number
+  success: number
+  failed: number
+  retrying: number
 }
 
 // Message Channel Types (formerly AlertChannel for backward compatibility)
@@ -338,6 +423,7 @@ export interface MessageChannel {
   channel_type: 'console' | 'memory' | 'webhook' | 'email'
   enabled: boolean
   config?: Record<string, unknown>
+  recipients?: string[]  // For email channels
 }
 
 export interface MessageChannelListResponse {
@@ -579,16 +665,6 @@ export interface AddDeviceRequest {
 
 export interface SendCommandRequest {
   params: Record<string, unknown>
-}
-
-// Discovery Types
-export interface DiscoveredDevice {
-  id: string
-  device_type: string | null
-  host: string
-  port: number
-  confidence: number
-  info: Record<string, string>
 }
 
 // Device Telemetry Types

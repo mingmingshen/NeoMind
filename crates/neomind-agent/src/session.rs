@@ -15,7 +15,7 @@ use super::agent::{Agent, AgentConfig, AgentEvent, AgentMessage, LlmBackend};
 use super::error::{NeoMindError, Result};
 
 // Re-export instance manager for convenience
-pub use neomind_llm::instance_manager::{
+pub use crate::llm_backends::{
     get_instance_manager, BackendTypeDefinition, LlmBackendInstanceManager,
 };
 
@@ -207,7 +207,7 @@ pub struct SessionManager {
     /// Default LLM backend (configured for new sessions)
     default_llm_backend: Arc<RwLock<Option<LlmBackend>>>,
     /// Tool registry for all sessions
-    tool_registry: Arc<RwLock<Option<Arc<neomind_tools::ToolRegistry>>>>,
+    tool_registry: Arc<RwLock<Option<Arc<crate::toolkit::ToolRegistry>>>>,
     /// Session cleanup configuration
     cleanup_config: SessionCleanupConfig,
     /// Whether cleanup task is running
@@ -488,13 +488,28 @@ impl SessionManager {
     /// Configure LLM using a specific backend ID from the instance manager.
     /// Returns the LlmBackend for direct agent configuration.
     pub fn get_backend_by_id(backend_id: &str) -> Result<LlmBackend> {
+        tracing::debug!(backend_id = %backend_id, "get_backend_by_id called");
+
         let manager = get_instance_manager()
-            .map_err(|e| NeoMindError::Llm(format!("Failed to get instance manager: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to get instance manager");
+                NeoMindError::Llm(format!("Failed to get instance manager: {}", e))
+            })?;
 
         // Get the instance by ID using the public method
         let instance = manager
             .get_instance(backend_id)
-            .ok_or_else(|| NeoMindError::Llm(format!("Backend '{}' not found", backend_id)))?;
+            .ok_or_else(|| {
+                tracing::error!(backend_id = %backend_id, "Backend not found");
+                NeoMindError::Llm(format!("Backend '{}' not found", backend_id))
+            })?;
+
+        tracing::debug!(
+            backend_id = %backend_id,
+            model = %instance.model,
+            supports_multimodal = %instance.capabilities.supports_multimodal,
+            "Found backend instance"
+        );
 
         instance_to_llm_backend(&instance)
     }
@@ -506,13 +521,22 @@ impl SessionManager {
         session_id: &str,
         backend_id: &str,
     ) -> Result<()> {
+        tracing::debug!(session_id = %session_id, backend_id = %backend_id, "configure_agent_by_backend_id called");
+
         let backend = Self::get_backend_by_id(backend_id)?;
+
+        tracing::debug!(
+            session_id = %session_id,
+            backend_type = ?std::mem::discriminant(&backend),
+            "Got backend, configuring agent"
+        );
+
         let agent = self.get_session(session_id).await?;
         agent.configure_llm(backend).await
     }
 
     /// Set the tool registry for all new sessions.
-    pub async fn set_tool_registry(&self, registry: Arc<neomind_tools::ToolRegistry>) {
+    pub async fn set_tool_registry(&self, registry: Arc<crate::toolkit::ToolRegistry>) {
         *self.tool_registry.write().await = Some(registry);
     }
 
@@ -1029,9 +1053,12 @@ impl SessionManager {
     ) -> Result<super::agent::AgentResponse> {
         // If a specific backend is requested, configure the agent with it
         if let Some(backend) = backend_id {
-            let _ = self
-                .configure_agent_by_backend_id(session_id, backend)
-                .await;
+            self.configure_agent_by_backend_id(session_id, backend)
+                .await
+                .map_err(|e| {
+                    tracing::error!(backend_id = %backend, error = ?e, "Failed to configure agent with backend");
+                    e
+                })?;
         }
 
         // Check if images are provided and model supports vision
@@ -1059,9 +1086,12 @@ impl SessionManager {
     ) -> Result<Pin<Box<dyn Stream<Item = super::agent::AgentEvent> + Send>>> {
         // If a specific backend is requested, configure the agent with it
         if let Some(backend) = backend_id {
-            let _ = self
-                .configure_agent_by_backend_id(session_id, backend)
-                .await;
+            self.configure_agent_by_backend_id(session_id, backend)
+                .await
+                .map_err(|e| {
+                    tracing::error!(backend_id = %backend, error = ?e, "Failed to configure agent with backend");
+                    e
+                })?;
         }
 
         // Check if images are provided and model supports vision

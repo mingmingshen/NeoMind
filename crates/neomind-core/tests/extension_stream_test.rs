@@ -364,8 +364,8 @@ fn test_stream_result_as_json_wrong_type() {
         1.0,
     );
 
-    // Should return None for non-JSON type
-    assert!(result.as_json().is_none());
+    // Should return Err for non-JSON type
+    assert!(result.as_json().is_err());
 }
 
 #[test]
@@ -618,8 +618,8 @@ fn test_stream_session_new() {
 
     assert_eq!(session.id, "session-123");
     assert_eq!(session.extension_id, "ext-weather");
-    assert_eq!(session.client_info.client_id, "client-1");
-    assert!(session.created_at > 0);
+    assert_eq!(session.client_info.as_ref().unwrap().client_id, "client-1");
+    assert!(session.started_at > 0);
 }
 
 #[test]
@@ -856,7 +856,7 @@ fn test_session_lifecycle() {
     // Simulate streaming
     for i in 0..10 {
         let chunk = DataChunk::binary(i, vec![0u8; 1024]);
-        stats.record_input(chunk.data.len());
+        stats.record_input(chunk.data.len() as u64);
 
         let result = StreamResult::success(
             Some(chunk.sequence),
@@ -865,7 +865,7 @@ fn test_session_lifecycle() {
             StreamDataType::Binary,
             5.0,
         );
-        stats.record_output(result.data.len());
+        stats.record_output(result.data.len() as u64);
     }
 
     // Verify stats

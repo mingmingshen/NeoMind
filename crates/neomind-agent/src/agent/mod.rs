@@ -48,10 +48,10 @@ use super::llm::{ChatConfig, LlmInterface};
 use super::tools::mapper::map_tool_parameters;
 use crate::context::ResourceIndex;
 use neomind_core::{config::agent_env_vars, llm::backend::LlmRuntime, Message};
-use neomind_llm::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
+use crate::llm_backends::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
 
 // Type aliases to reduce complexity
-pub type SharedToolRegistry = Arc<neomind_tools::ToolRegistry>;
+pub type SharedToolRegistry = Arc<crate::toolkit::ToolRegistry>;
 pub type SharedLlmInterface = Arc<LlmInterface>;
 pub type SharedSessionState = Arc<RwLock<SessionState>>;
 pub type SharedResourceIndex = Arc<RwLock<ResourceIndex>>;
@@ -645,7 +645,7 @@ pub struct Agent {
     /// Session ID
     session_id: String,
     /// Tool registry
-    tools: Arc<neomind_tools::ToolRegistry>,
+    tools: Arc<crate::toolkit::ToolRegistry>,
     /// LLM interface
     llm_interface: Arc<LlmInterface>,
     /// Unified internal state (memory + session + llm_ready)
@@ -677,7 +677,7 @@ impl Agent {
     pub fn with_tools(
         config: AgentConfig,
         session_id: String,
-        tools: Arc<neomind_tools::ToolRegistry>,
+        tools: Arc<crate::toolkit::ToolRegistry>,
     ) -> Self {
         let session_id_clone = session_id.clone();
 
@@ -743,7 +743,7 @@ impl Agent {
     /// Tools should be configured externally through the session manager.
     pub fn new(config: AgentConfig, session_id: String) -> Self {
         // Build tool registry - start empty, tools will be added by session manager
-        let mut registry = neomind_tools::ToolRegistryBuilder::new().build();
+        let mut registry = crate::toolkit::ToolRegistryBuilder::new().build();
 
         // Add agent-specific tools
         use crate::tools::{AskUserTool, ClarifyIntentTool, ConfirmActionTool};
@@ -802,6 +802,7 @@ impl Agent {
             LlmBackend::Ollama { endpoint, model, capabilities } => {
                 tracing::info!(
                     endpoint = %endpoint, model = %model, timeout = ollama_timeout,
+                    capabilities = ?capabilities,
                     "Creating OllamaRuntime"
                 );
                 let config = OllamaConfig::new(&model)
@@ -809,17 +810,26 @@ impl Agent {
                     .with_timeout_secs(ollama_timeout);
                 let mut runtime =
                     OllamaRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
-                
+
                 // Set capabilities override if provided
                 if let Some(caps) = capabilities {
+                    tracing::debug!(
+                        multimodal = %caps.multimodal,
+                        thinking_display = %caps.thinking_display,
+                        function_calling = %caps.function_calling,
+                        max_context = %caps.max_context.unwrap_or(8192),
+                        "Applying capabilities override to OllamaRuntime"
+                    );
                     runtime = runtime.with_capabilities_override(
                         caps.multimodal,
                         caps.thinking_display,
                         caps.function_calling,
                         caps.max_context.unwrap_or(8192),
                     );
+                } else {
+                    tracing::warn!("No capabilities provided for OllamaRuntime, using default detection");
                 }
-                
+
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::Qwen {
@@ -838,7 +848,7 @@ impl Agent {
                     .with_timeout_secs(cloud_timeout)
                     .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
-                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::DeepSeek {
@@ -857,7 +867,7 @@ impl Agent {
                     .with_timeout_secs(cloud_timeout)
                     .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
-                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::GLM {
@@ -876,7 +886,7 @@ impl Agent {
                     .with_timeout_secs(cloud_timeout)
                     .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
-                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::MiniMax {
@@ -895,7 +905,7 @@ impl Agent {
                     .with_timeout_secs(cloud_timeout)
                     .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
-                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::Anthropic {
@@ -914,7 +924,7 @@ impl Agent {
                     .with_timeout_secs(cloud_timeout)
                     .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
-                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::Google {
@@ -933,7 +943,7 @@ impl Agent {
                     .with_timeout_secs(cloud_timeout)
                     .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
-                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::XAi {
@@ -952,7 +962,7 @@ impl Agent {
                     .with_timeout_secs(cloud_timeout)
                     .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
-                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::OpenAi {
@@ -971,7 +981,7 @@ impl Agent {
                     .with_timeout_secs(cloud_timeout)
                     .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
                 let runtime =
-                    CloudRuntime::new(config).map_err(|e| NeoMindError::llm(e.to_string()))?;
+                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
         };
@@ -1000,7 +1010,7 @@ impl Agent {
     /// Also dynamically updates the system prompt to include tool descriptions.
     pub async fn update_tool_definitions(&self) {
         use neomind_core::llm::backend::ToolDefinition as CoreToolDefinition;
-        use neomind_tools::simplified;
+        use crate::toolkit::simplified;
 
         // Use simplified tool definitions for LLM function calling
         let simplified_tools = simplified::get_simplified_tools();
@@ -1062,7 +1072,7 @@ impl Agent {
     /// This ensures the prompt always reflects the currently available tools.
     async fn generate_dynamic_system_prompt(
         &self,
-        simplified_tools: &[neomind_tools::simplified::LlmToolDefinition],
+        simplified_tools: &[crate::toolkit::simplified::LlmToolDefinition],
     ) -> String {
         // Generate base prompt (static parts: system_prompt + tools)
         let mut prompt = self.generate_base_prompt(simplified_tools);
@@ -1082,7 +1092,7 @@ impl Agent {
     /// This avoids rebuilding tool descriptions on every request.
     fn generate_base_prompt(
         &self,
-        simplified_tools: &[neomind_tools::simplified::LlmToolDefinition],
+        simplified_tools: &[crate::toolkit::simplified::LlmToolDefinition],
     ) -> String {
         let mut prompt = String::from(self.config.system_prompt.trim());
 
@@ -3125,7 +3135,7 @@ impl Drop for Agent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neomind_tools::{Result, Tool, ToolOutput};
+    use crate::toolkit::{Result, Tool, ToolOutput};
     use serde_json::json;
 
     /// Simple mock device_discover tool for testing
@@ -3206,7 +3216,7 @@ mod tests {
 
     /// Create a test agent with mock tools registered
     fn create_test_agent_with_mocks(session_id: String) -> Agent {
-        use neomind_tools::ToolRegistryBuilder;
+        use crate::toolkit::ToolRegistryBuilder;
 
         let mut registry = ToolRegistryBuilder::new().build();
 

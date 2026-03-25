@@ -1,7 +1,7 @@
-import { useForm } from 'react-hook-form'
+import { useForm, Controller, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -118,6 +118,7 @@ function buildZodSchema(schema: PluginConfigSchema): z.ZodType<Record<string, un
         }
         break
       case 'number':
+      case 'integer':
         // Build number schema with constraints first, then add string coercion
         let numSchema = z.number()
         if (prop.minimum !== undefined) {
@@ -261,6 +262,178 @@ function isFieldVisible(
   return true
 }
 
+/**
+ * Form field component - renders individual fields without causing parent re-renders
+ */
+interface FormFieldProps {
+  fieldName: string
+  prop: PluginConfigSchema['properties'][string]
+  schema: PluginConfigSchema
+  control: any
+  register: any
+  errors: Record<string, any>
+  setValue: (name: string, value: any) => void
+  t: (key: string, options?: any) => string
+}
+
+function FormField({
+  fieldName,
+  prop,
+  schema,
+  control,
+  register,
+  errors,
+  t
+}: FormFieldProps) {
+  const [secretVisible, setSecretVisible] = useState(false)
+
+  const displayName = getFieldDisplayName(fieldName, schema.ui_hints)
+  const helpText = getFieldHelpText(fieldName, schema.ui_hints, prop)
+  const isSecret = prop.secret
+  const error = errors[fieldName]
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={fieldName}>{displayName}</Label>
+
+      {prop.type === 'boolean' ? (
+        <Controller
+          name={fieldName}
+          control={control}
+          render={({ field }) => (
+            <div className="flex items-center space-x-2">
+              <Switch
+                id={fieldName}
+                checked={!!field.value}
+                onCheckedChange={field.onChange}
+              />
+              <span className="text-sm text-muted-foreground">
+                {field.value ? t('plugins:yes') : t('plugins:no')}
+              </span>
+            </div>
+          )}
+        />
+      ) : prop.enum && prop.enum.length > 0 ? (
+        <Controller
+          name={fieldName}
+          control={control}
+          render={({ field }) => (
+            <Select value={String(field.value || '')} onValueChange={field.onChange}>
+              <SelectTrigger id={fieldName}>
+                <SelectValue placeholder={t('plugins:selectPlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {prop.enum!.map((value) => (
+                  <SelectItem key={String(value)} value={String(value)}>
+                    {String(value)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
+      ) : prop.type === 'array' ? (
+        <Controller
+          name={fieldName}
+          control={control}
+          render={({ field }) => (
+            <Textarea
+              id={fieldName}
+              value={Array.isArray(field.value) ? (field.value as unknown[]).join('\n') : ''}
+              onChange={(e) => field.onChange(e.target.value.split('\n'))}
+              placeholder={
+                (fieldName === 'subscribe_topics' || fieldName === 'subscribeTopics')
+                  ? `ne301/+\nne301/+/upload/report\nsensor/+/data`
+                  : t('plugins:onePerLine')
+              }
+              rows={4}
+            />
+          )}
+        />
+      ) : prop.type === 'object' || (prop.type as any) === 'record' ? (
+        <Controller
+          name={fieldName}
+          control={control}
+          render={({ field }) => (
+            <Textarea
+              id={fieldName}
+              value={typeof field.value === 'object' ? JSON.stringify(field.value, null, 2) : String(field.value || '')}
+              onChange={(e) => {
+                try {
+                  const parsed = JSON.parse(e.target.value)
+                  field.onChange(parsed)
+                } catch {
+                  // Invalid JSON, keep as string for now
+                  field.onChange(e.target.value)
+                }
+              }}
+              placeholder={t('plugins:config.jsonPlaceholder')}
+              rows={4}
+              className="font-mono text-xs"
+            />
+          )}
+        />
+      ) : prop.type === 'number' || prop.type === 'integer' ? (
+        <Controller
+          name={fieldName}
+          control={control}
+          render={({ field }) => (
+            <Input
+              id={fieldName}
+              type="number"
+              inputMode="numeric"
+              value={field.value ?? ''}
+              onChange={(e) => {
+                const value = e.target.value
+                // Allow empty string or convert to number
+                if (value === '') {
+                  field.onChange('')
+                } else {
+                  const num = Number(value)
+                  field.onChange(isNaN(num) ? value : num)
+                }
+              }}
+              placeholder={schema.ui_hints?.placeholders?.[fieldName]}
+            />
+          )}
+        />
+      ) : (
+        <div className="relative">
+          <Input
+            id={fieldName}
+            type={isSecret && !secretVisible ? 'password' : 'text'}
+            placeholder={schema.ui_hints?.placeholders?.[fieldName]}
+            {...register(fieldName)}
+          />
+          {isSecret && (
+            <button
+              type="button"
+              onClick={() => setSecretVisible(!secretVisible)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {secretVisible ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
+      {helpText && (
+        <p className="text-xs text-muted-foreground">{helpText}</p>
+      )}
+
+      {error && (
+        <p className="text-xs text-destructive">
+          {error.message as string || t('plugins:fieldError')}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function ConfigFormBuilder({
   schema,
   initialValues,
@@ -286,41 +459,74 @@ export function ConfigFormBuilder({
     ...initialValues,
   }), [schemaDefaults, initialValues])
 
-  const { register, handleSubmit, watch, formState: { errors }, setValue } = useForm({
+  const { register, handleSubmit, control, formState: { errors } } = useForm({
     resolver: zodResolver(zodSchema as any),
     defaultValues,
   })
 
-  const watchedValues = watch()
-  const [visibleFields, setVisibleFields] = useState<Set<string>>(new Set(fieldOrder))
-  const [secretVisible, setSecretVisible] = useState<Record<string, boolean>>({})
+  // Get visibility-related fields only for re-render optimization
+  const visibilityFieldNames = useMemo(() => {
+    if (!schema.ui_hints?.visibility_rules?.length) return []
+    return schema.ui_hints.visibility_rules.map((r: { field: string }) => r.field)
+  }, [schema.ui_hints?.visibility_rules])
 
-  // Use ref to track previous values to prevent infinite loops
-  const prevValuesRef = useRef<string>('')
-  const watchedValuesStr = JSON.stringify(watchedValues)
+  // Use useWatch to only watch fields that affect visibility
+  // This prevents re-renders when other fields change
+  const watchedVisibilityValues = useWatch({
+    control,
+    name: visibilityFieldNames,
+  })
 
-  // Update visible fields when watched values change (only if actually different)
-  useEffect(() => {
-    if (prevValuesRef.current === watchedValuesStr) {
-      return
-    }
-    prevValuesRef.current = watchedValuesStr
+  // Build visibility values object from watched array
+  const visibilityValues = useMemo(() => {
+    if (!visibilityFieldNames.length) return {}
+    const values: Record<string, unknown> = {}
+    visibilityFieldNames.forEach((field: string, index: number) => {
+      values[field] = watchedVisibilityValues?.[index]
+    })
+    return values
+  }, [watchedVisibilityValues, visibilityFieldNames])
 
+  // Compute visible fields based on visibility values
+  const visibleFields = useMemo(() => {
     const newVisible = new Set<string>()
+    // If no visibility rules, all fields are visible
+    if (!schema.ui_hints?.visibility_rules?.length) {
+      for (const field of fieldOrder) {
+        newVisible.add(field)
+      }
+      return newVisible
+    }
+    // Otherwise, calculate visibility based on watched fields
     for (const field of fieldOrder) {
-      if (isFieldVisible(field, watchedValues, schema.ui_hints)) {
+      if (isFieldVisible(field, visibilityValues, schema.ui_hints)) {
         newVisible.add(field)
       }
     }
-    setVisibleFields(newVisible)
-  }, [watchedValuesStr, schema.ui_hints, fieldOrder])
+    return newVisible
+  }, [visibilityValues, schema.ui_hints, fieldOrder])
 
   const handleFormSubmit = async (values: Record<string, unknown>) => {
-    await onSubmit(values)
-  }
-
-  const toggleSecretVisibility = (fieldName: string) => {
-    setSecretVisible(prev => ({ ...prev, [fieldName]: !prev[fieldName] }))
+    // Convert string values to proper types based on schema
+    const convertedValues: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(values)) {
+      const prop = schema.properties[key]
+      if (prop) {
+        if ((prop.type === 'number' || prop.type === 'integer') && typeof value === 'string') {
+          // Convert string to number for numeric fields
+          const num = Number(value)
+          convertedValues[key] = isNaN(num) ? value : num
+        } else if (prop.type === 'boolean' && typeof value === 'string') {
+          // Convert string to boolean for boolean fields
+          convertedValues[key] = value === 'true'
+        } else {
+          convertedValues[key] = value
+        }
+      } else {
+        convertedValues[key] = value
+      }
+    }
+    await onSubmit(convertedValues)
   }
 
   return (
@@ -331,106 +537,18 @@ export function ConfigFormBuilder({
           const prop = schema.properties[fieldName]
           if (!prop) return null
 
-          const displayName = getFieldDisplayName(fieldName, schema.ui_hints)
-          const helpText = getFieldHelpText(fieldName, schema.ui_hints, prop)
-          const isSecret = prop.secret
-          const showSecret = secretVisible[fieldName] || false
-          const error = errors[fieldName]
-
           return (
-            <div key={fieldName} className="space-y-2">
-              <Label htmlFor={fieldName}>{displayName}</Label>
-
-              {prop.type === 'boolean' ? (
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id={fieldName}
-                    checked={!!watchedValues[fieldName]}
-                    onCheckedChange={(checked) => setValue(fieldName, checked)}
-                  />
-                  <span className="text-sm text-muted-foreground">
-                    {watchedValues[fieldName] ? t('plugins:yes') : t('plugins:no')}
-                  </span>
-                </div>
-              ) : prop.enum && prop.enum.length > 0 ? (
-                <Select
-                  value={String(watchedValues[fieldName] || '')}
-                  onValueChange={(value) => setValue(fieldName, value)}
-                >
-                  <SelectTrigger id={fieldName}>
-                    <SelectValue placeholder={t('plugins:selectPlaceholder')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {prop.enum.map((value) => (
-                      <SelectItem key={String(value)} value={String(value)}>
-                        {String(value)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : prop.type === 'array' ? (
-                <Textarea
-                  id={fieldName}
-                  value={Array.isArray(watchedValues[fieldName]) ? (watchedValues[fieldName] as unknown[]).join('\n') : ''}
-                  onChange={(e) => setValue(fieldName, e.target.value.split('\n'))}
-                  placeholder={
-                    (fieldName === 'subscribe_topics' || fieldName === 'subscribeTopics')
-                      ? `ne301/+\nne301/+/upload/report\nsensor/+/data`
-                      : t('plugins:onePerLine')
-                  }
-                  rows={4}
-                />
-              ) : prop.type === 'object' || (prop.type as any) === 'record' ? (
-                <Textarea
-                  id={fieldName}
-                  value={typeof watchedValues[fieldName] === 'object' ? JSON.stringify(watchedValues[fieldName], null, 2) : String(watchedValues[fieldName] || '')}
-                  onChange={(e) => {
-                    try {
-                      const parsed = JSON.parse(e.target.value)
-                      setValue(fieldName, parsed)
-                    } catch {
-                      // Invalid JSON, keep as string for now
-                      setValue(fieldName, e.target.value)
-                    }
-                  }}
-                  placeholder={t('plugins:config.jsonPlaceholder')}
-                  rows={4}
-                  className="font-mono text-xs"
-                />
-              ) : (
-                <div className="relative">
-                  <Input
-                    id={fieldName}
-                    type={isSecret && !showSecret ? 'password' : 'text'}
-                    placeholder={schema.ui_hints?.placeholders?.[fieldName]}
-                    {...register(fieldName as any)}
-                  />
-                  {isSecret && (
-                    <button
-                      type="button"
-                      onClick={() => toggleSecretVisibility(fieldName)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showSecret ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {helpText && (
-                <p className="text-xs text-muted-foreground">{helpText}</p>
-              )}
-
-              {error && (
-                <p className="text-xs text-destructive">
-                  {error.message as string || t('plugins:fieldError')}
-                </p>
-              )}
-            </div>
+            <FormField
+              key={fieldName}
+              fieldName={fieldName}
+              prop={prop}
+              schema={schema}
+              control={control}
+              register={register}
+              errors={errors}
+              setValue={() => {}}
+              t={t}
+            />
           )
         })}
 

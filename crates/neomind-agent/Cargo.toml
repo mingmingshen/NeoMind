@@ -7,12 +7,17 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-default = []
+default = ["ollama", "cloud"]
+ollama = []
+cloud = []
+openai = ["cloud"]
+anthropic = ["cloud"]
+google = ["cloud"]
+xai = ["cloud"]
+all = ["ollama", "cloud", "openai", "anthropic", "google", "xai"]
 
 [dependencies]
 neomind-core = { path = "../neomind-core" }
-neomind-llm = { path = "../neomind-llm", features = ["cloud"] }
-neomind-tools = { path = "../neomind-tools" }
 neomind-devices = { path = "../neomind-devices" }
 neomind-storage = { path = "../neomind-storage" }
 neomind-rules = { path = "../neomind-rules" }
@@ -27,16 +32,22 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = "0.1"
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
 async-stream = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true }
-base64 = "0.22"
+base64 = { workspace = true }
 # Cron scheduling libraries
 cron = "0.12"
-# Optional system info dependency
+
+# Memory system dependencies (merged from neomind-memory)
+reqwest = { workspace = true }
+lru = { workspace = true }
+dashmap = { workspace = true }
+anyhow = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

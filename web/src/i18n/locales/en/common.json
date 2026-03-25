@@ -12,7 +12,7 @@
   },
   "messages": {
     "title": "Messages",
-    "description": "Manage system notifications and alerts",
+    "description": "Manage notifications, alerts and data push",
     "tabs": {
       "messages": "Messages",
       "channels": "Channels"
@@ -38,7 +38,10 @@
       "category": "Category",
       "all": "All",
       "clear": "Clear",
-      "clearAll": "Clear All"
+      "clearAll": "Clear All",
+      "showing": "Showing {{count}} messages",
+      "allVisible": "All messages visible",
+      "activeCount": "{{count}} filters active"
     },
     "items": "items",
     "severity": {
@@ -59,14 +62,21 @@
     "category": {
       "label": "Category",
       "alert": "Alert",
+      "notification": "Notification",
       "system": "System",
       "business": "Business"
+    },
+    "type": {
+      "label": "Message Type",
+      "notification": "Notification",
+      "data_push": "Data Push"
     },
     "stats": {
       "total": "Total",
       "active": "Active",
       "byCategory": {
         "alert": "Alerts",
+        "notification": "Notifications",
         "system": "System",
         "business": "Business"
       },
@@ -91,18 +101,64 @@
       "enabled": "Enabled",
       "types": "Types",
       "error": "Failed to load channels",
+      "enableSuccess": "Channel enabled",
+      "disableSuccess": "Channel disabled",
+      "deleteChannel": "Delete Channel",
+      "confirmDelete": "Are you sure you want to delete the channel \"{{name}}\"?",
+      "deleteSuccess": "Channel deleted successfully",
+      "deleteError": "Failed to delete channel",
+      "manageRecipients": "Manage Recipients",
+      "recipients": "recipients",
+      "currentRecipients": "Current Recipients",
+      "noRecipients": "No recipients configured",
+      "recipientAdded": "Recipient added successfully",
+      "recipientRemoved": "Recipient removed successfully",
+      "addRecipientError": "Failed to add recipient",
+      "removeRecipientError": "Failed to remove recipient",
+      "emailPlaceholder": "email@example.com",
+      "channelDetails": "Channel Details",
+      "smtpServer": "SMTP Server",
+      "smtpPort": "SMTP Port",
+      "emailFrom": "From Address",
       "empty": {
         "title": "No Channels",
         "description": "Create a notification channel to send messages"
       },
       "webhookUrl": "Webhook URL",
+      "webhookUrlPlaceholder": "https://example.com/webhook",
       "webhookHeaders": "Headers (JSON)",
-      "smtpServer": "SMTP Server",
-      "smtpPort": "SMTP Port",
+      "headersPlaceholder": "{\"Authorization\": \"Bearer xxx\"}",
+      "webhookHint": "Visit",
+      "webhookHint2": "to get a free test URL",
+      "quickTestOptions": "Quick Test Options:",
+      "smtpServerPlaceholder": "smtp.example.com",
+      "portPlaceholder": "587",
       "emailUsername": "Username",
       "emailPassword": "Password",
-      "emailFrom": "From Address",
-      "emailTo": "To Address"
+      "optionalPlaceholder": "(optional)",
+      "emailFromPlaceholder": "noreply@example.com",
+      "emailTo": "To Address",
+      "yourEmailPlaceholder": "your@email.com",
+      "recipientsHint": "Add recipients after creating the channel by clicking \"Manage Recipients\"",
+      "channelNamePlaceholder": "My Channel",
+      "goToSettings": "Settings",
+      "filterConfig": "Message Filter Configuration",
+      "filterConfigDesc": "Configure which messages this channel should receive",
+      "messageTypes": "Message Types",
+      "notification": "Notification",
+      "dataPush": "Data Push",
+      "messageTypesHint": "Leave unchecked to accept all types",
+      "sourceTypes": "Source Types",
+      "sourceTypesHint": "Leave unchecked to accept all sources",
+      "categories": "Categories",
+      "minSeverity": "Minimum Severity",
+      "allSeverities": "All Levels",
+      "configureFilter": "Configure Filter",
+      "filterSaved": "Filter configuration saved",
+      "filterPreview": "Preview",
+      "filterAcceptAll": "Will accept all messages",
+      "filterWillMatch": "Will match: types={{types}}, sources={{sources}}",
+      "all": "All"
     },
     "confirmBulkDelete": "Delete Messages",
     "confirmBulkDeleteDesc": "Are you sure you want to delete {{count}} message(s)?",
@@ -132,7 +188,19 @@
       "hint": "Separate multiple tags with commas"
     },
     "sourceLabel": "Source",
-    "sourcePlaceholder": "e.g. api, system"
+    "sourcePlaceholder": "e.g. api, system",
+    "sourceId": {
+      "label": "Source ID",
+      "hint": "Unique identifier for filtering (e.g., device:001)"
+    },
+    "payload": {
+      "label": "Payload (JSON)",
+      "section": "Payload Data",
+      "sectionDesc": "Structured data for Data Push messages (JSON format)",
+      "invalidJson": "Invalid JSON format"
+    },
+    "timestamp": "Timestamp",
+    "metadata": "Metadata"
   },
   "connection": {
     "connected": "Connected",

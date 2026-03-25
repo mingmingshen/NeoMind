@@ -61,8 +61,6 @@ pub enum EncodingType {
 /// Token counter that can use different counting strategies.
 #[derive(Clone)]
 pub struct TokenCounter {
-    #[allow(dead_code)]
-    mode: CounterMode,
     /// The encoding type used for token counting.
     pub encoding: EncodingType,
     #[cfg(feature = "tiktoken")]
@@ -85,10 +83,9 @@ impl TokenCounter {
         };
 
         #[cfg(not(feature = "tiktoken"))]
-        let _ = encoding; // Unused without feature
+        let _ = mode; // Unused without feature
 
         Self {
-            mode,
             encoding,
             #[cfg(feature = "tiktoken")]
             tiktoken,

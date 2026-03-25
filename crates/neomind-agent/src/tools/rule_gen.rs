@@ -14,7 +14,7 @@ use neomind_rules::{
     dsl::{ParsedRule, RuleCondition, RuleDslParser, RuleError},
     RuleEngine, RuleId,
 };
-use neomind_tools::{
+use crate::toolkit::{
     error::Result as ToolResult,
     tool::{array_property, boolean_property, object_schema, string_property},
     Tool, ToolError, ToolOutput,

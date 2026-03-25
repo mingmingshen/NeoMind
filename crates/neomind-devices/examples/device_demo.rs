@@ -11,7 +11,7 @@ use std::sync::Arc;
 use neomind_core::EventBus;
 use neomind_devices::mdl_format::MetricDefinition;
 use neomind_devices::{
-    CommandDefinition, ConnectionConfig, DeviceConfig, DeviceDiscovery, DeviceRegistry,
+    CommandDefinition, ConnectionConfig, DeviceConfig, DeviceRegistry,
     DeviceService, DeviceTypeTemplate, MetricDataType,
 };
 
@@ -149,33 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Last Seen: {}", status.last_seen);
     println!();
 
-    // === Example 6: Device Discovery ===
-    println!("--- Example 6: Device Discovery ---");
-
-    let discovery = DeviceDiscovery::new();
-
-    // Scan for MQTT devices on common port
-    println!("Scanning for MQTT devices on localhost...");
-    match discovery
-        .scan_ports("localhost", vec![1883, 8883], 500)
-        .await
-    {
-        Ok(ports) => {
-            println!("Found {} open ports", ports.len());
-            for port in ports {
-                println!(
-                    "  - Port {}: {}",
-                    port,
-                    if port == 1883 { "MQTT" } else { "MQTTS" }
-                );
-            }
-        }
-        Err(e) => {
-            println!("Discovery error: {}", e);
-        }
-    }
-
-    // === Example 7: List Templates ===
+    // === Example 6: List Templates ===
     println!("\n--- Example 7: Available Device Types ---");
 
     let templates = device_service.list_templates().await;

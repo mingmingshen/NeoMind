@@ -1,7 +1,8 @@
-//! Native extension loader for .so/.dylib/.dll files.
+//! Native extension metadata loader for .so/.dylib/.dll files.
 //!
-//! This loader uses libloading to dynamically load extension libraries
-//! and call their FFI exports to create Extension instances.
+//! This loader is now limited to ABI validation, metadata extraction,
+//! and extension discovery. Native execution is handled by the
+//! extension-runner process via JSON bridge exports.
 //!
 //! # Safety Mechanisms
 //!
@@ -33,221 +34,17 @@
 
 use std::path::{Path, PathBuf};
 use std::panic;
-use std::sync::Arc;
-
-use crate::extension::system::{CExtensionMetadata, DynExtension, Extension, ABI_VERSION};
+use crate::extension::system::{CExtensionMetadata, ABI_VERSION};
 use crate::extension::types::{ExtensionError, ExtensionMetadata, Result};
-use tracing::{debug, warn};
+use tracing::warn;
 
-/// Loaded native extension with its library handle.
-///
-/// The `library` field keeps the dynamic library loaded in memory.
-/// The `extension` field contains the actual extension instance.
-///
-/// # Important
-///
-/// Both fields must be kept together. Dropping the library while the
-/// extension is still in use will cause undefined behavior.
-pub struct LoadedNativeExtension {
-    /// The underlying library (kept alive to prevent unloading).
-    /// Using Arc allows sharing the library handle if needed.
-    pub library: Arc<libloading::Library>,
-    /// The extension instance
-    pub extension: DynExtension,
-}
+/// Loader for native extension metadata and discovery.
+pub struct NativeExtensionMetadataLoader;
 
-impl LoadedNativeExtension {
-    /// Create a new loaded extension with library handle.
-    pub fn new(library: libloading::Library, extension: DynExtension) -> Self {
-        Self {
-            library: Arc::new(library),
-            extension,
-        }
-    }
-
-    /// Get a clone of the library Arc for separate storage.
-    pub fn library_arc(&self) -> Arc<libloading::Library> {
-        Arc::clone(&self.library)
-    }
-}
-
-/// Loader for native extensions (.so, .dylib, .dll).
-pub struct NativeExtensionLoader {
-    /// Loaded libraries (kept alive to prevent unloading)
-    _libraries: Vec<libloading::Library>,
-}
-
-impl NativeExtensionLoader {
-    /// Create a new native extension loader.
+impl NativeExtensionMetadataLoader {
+    /// Create a new native extension metadata loader.
     pub fn new() -> Self {
-        Self {
-            _libraries: Vec::new(),
-        }
-    }
-
-    /// Load an extension from a native library file.
-    ///
-    /// This performs the following steps:
-    /// 1. Loads the dylib using libloading
-    /// 2. Verifies ABI version
-    /// 3. Gets extension metadata via FFI
-    /// 4. Creates extension instance via FFI
-    /// 5. Returns the loaded extension
-    pub fn load(&self, path: &Path) -> Result<LoadedNativeExtension> {
-        self.load_with_config(path, None)
-    }
-
-    /// Load the extension with a configuration.
-    ///
-    /// The config is passed as JSON to the extension's create function.
-    ///
-    /// # Safety
-    ///
-    /// This function uses unsafe FFI calls to interact with the extension library.
-    /// All FFI calls are wrapped with panic handlers to prevent extension bugs
-    /// from crashing the main server.
-    pub fn load_with_config(
-        &self,
-        path: &Path,
-        config: Option<&serde_json::Value>,
-    ) -> Result<LoadedNativeExtension> {
-        // Validate file exists
-        if !path.exists() {
-            return Err(ExtensionError::NotFound(path.display().to_string()));
-        }
-
-        // Validate extension
-        let ext = path.extension().and_then(|e| e.to_str());
-        if !matches!(ext, Some("so") | Some("dylib") | Some("dll")) {
-            return Err(ExtensionError::InvalidFormat(
-                "Not a native library file".to_string(),
-            ));
-        }
-
-        debug!(path = %path.display(), "Loading native extension");
-
-        // Load the library
-        let library = unsafe { libloading::Library::new(path) }
-            .map_err(|e| ExtensionError::LoadFailed(format!("Failed to load library: {}", e)))?;
-
-        // Get ABI version with panic protection
-        let version = Self::safe_call_ffi("abi_version", || {
-            let abi_version: libloading::Symbol<unsafe extern "C" fn() -> u32> = unsafe {
-                library
-                    .get(b"neomind_extension_abi_version\0")
-                    .map_err(|e| ExtensionError::SymbolNotFound(format!("abi_version: {}", e)))?
-            };
-            Ok(unsafe { abi_version() })
-        })?;
-
-        if version != ABI_VERSION {
-            return Err(ExtensionError::IncompatibleVersion {
-                expected: ABI_VERSION,
-                got: version,
-            });
-        }
-
-        // Get extension metadata with panic protection
-        let c_meta = Self::safe_call_ffi("metadata", || {
-            let get_metadata: libloading::Symbol<unsafe extern "C" fn() -> CExtensionMetadata> = unsafe {
-                library
-                    .get(b"neomind_extension_metadata\0")
-                    .map_err(|e| ExtensionError::SymbolNotFound(format!("metadata: {}", e)))?
-            };
-            Ok(unsafe { get_metadata() })
-        })?;
-
-        // Convert C metadata to Rust metadata
-        let id = unsafe { std::ffi::CStr::from_ptr(c_meta.id) }
-            .to_string_lossy()
-            .to_string();
-        let name = unsafe { std::ffi::CStr::from_ptr(c_meta.name) }
-            .to_string_lossy()
-            .to_string();
-        let version_str = unsafe { std::ffi::CStr::from_ptr(c_meta.version) }
-            .to_string_lossy()
-            .to_string();
-
-        let description = if !c_meta.description.is_null() {
-            Some(
-                unsafe { std::ffi::CStr::from_ptr(c_meta.description) }
-                    .to_string_lossy()
-                    .to_string(),
-            )
-        } else {
-            None
-        };
-
-        let author = if !c_meta.author.is_null() {
-            Some(
-                unsafe { std::ffi::CStr::from_ptr(c_meta.author) }
-                    .to_string_lossy()
-                    .to_string(),
-            )
-        } else {
-            None
-        };
-
-        let version =
-            semver::Version::parse(&version_str).unwrap_or_else(|_| semver::Version::new(0, 1, 0));
-
-        let metadata = ExtensionMetadata {
-            id,
-            name,
-            version,
-            description,
-            author,
-            homepage: None,
-            license: None,
-            file_path: Some(path.to_path_buf()),
-            config_parameters: None,
-        };
-
-        // Create extension instance with panic protection
-        // Note: Extensions return tokio::sync::RwLock<Box<dyn Extension>>
-        let ext_ptr = Self::safe_call_ffi("create", || {
-            let create_ext: libloading::Symbol<
-                unsafe extern "C" fn(*const u8, usize) -> *mut tokio::sync::RwLock<Box<dyn Extension>>,
-            > = unsafe {
-                library
-                    .get(b"neomind_extension_create\0")
-                    .map_err(|e| ExtensionError::SymbolNotFound(format!("create: {}", e)))?
-            };
-
-            // Serialize config to JSON bytes
-            let default_config = serde_json::json!({});
-            let config_value = config.unwrap_or(&default_config);
-            let config_string =
-                serde_json::to_string(config_value).unwrap_or_else(|_| "{}".to_string());
-            let config_json = std::ffi::CString::new(config_string)
-                .unwrap_or_else(|_| std::ffi::CString::new("{}").unwrap());
-            let ptr = unsafe {
-                create_ext(
-                    config_json.as_ptr() as *const u8,
-                    config_json.as_bytes().len(),
-                )
-            };
-
-            if ptr.is_null() {
-                return Err(ExtensionError::LoadFailed(
-                    "Extension creation returned null".to_string(),
-                ));
-            }
-
-            Ok(ptr)
-        })?;
-
-        // Convert the raw pointer to Arc<RwLock<Box<dyn Extension>>>
-        let extension = unsafe {
-            // Take ownership of the pointer - this gives us Box<tokio::sync::RwLock<Box<dyn Extension>>>
-            let ext_box = Box::from_raw(ext_ptr);
-            // Move out of the Box and create Arc from the inner RwLock
-            Arc::new(*ext_box)
-        };
-
-        debug!(extension_id = %metadata.id, "Native extension loaded successfully");
-
-        Ok(LoadedNativeExtension::new(library, extension))
+        Self
     }
 
     /// Safely call an FFI function with panic protection.
@@ -303,14 +100,14 @@ impl NativeExtensionLoader {
         let library = unsafe { libloading::Library::new(path) }
             .map_err(|e| ExtensionError::LoadFailed(format!("Failed to load library: {}", e)))?;
 
-        // Get ABI version
-        let abi_version: libloading::Symbol<unsafe extern "C" fn() -> u32> = unsafe {
-            library
-                .get(b"neomind_extension_abi_version\0")
-                .map_err(|e| ExtensionError::SymbolNotFound(format!("abi_version: {}", e)))?
-        };
-
-        let version = unsafe { abi_version() };
+        let version = Self::safe_call_ffi("abi_version", || {
+            let abi_version: libloading::Symbol<unsafe extern "C" fn() -> u32> = unsafe {
+                library
+                    .get(b"neomind_extension_abi_version\0")
+                    .map_err(|e| ExtensionError::SymbolNotFound(format!("abi_version: {}", e)))?
+            };
+            Ok(unsafe { abi_version() })
+        })?;
         if version != ABI_VERSION {
             return Err(ExtensionError::IncompatibleVersion {
                 expected: ABI_VERSION,
@@ -318,14 +115,35 @@ impl NativeExtensionLoader {
             });
         }
 
-        // Get extension metadata
-        let get_metadata: libloading::Symbol<unsafe extern "C" fn() -> CExtensionMetadata> = unsafe {
-            library
-                .get(b"neomind_extension_metadata\0")
-                .map_err(|e| ExtensionError::SymbolNotFound(format!("metadata: {}", e)))?
-        };
+        // Step 2: Check for required JSON-bridge FFI symbols
+        // Old extensions (pre-0.6.0) use _create/_destroy interface which is incompatible
+        // and would crash when called with the new JSON-bridge protocol
+        let required_symbols = [
+            "neomind_extension_descriptor_json\0",
+            "neomind_extension_free_string\0",
+            "neomind_extension_execute_command_json\0",
+            "neomind_extension_produce_metrics_json\0",
+        ];
 
-        let c_meta = unsafe { get_metadata() };
+        for symbol_name in &required_symbols {
+            let symbol_result = unsafe { library.get::<unsafe extern "C" fn()>(symbol_name.as_bytes()) };
+            if symbol_result.is_err() {
+                return Err(ExtensionError::LoadFailed(format!(
+                    "Extension uses incompatible FFI interface (missing symbol: {}). \
+                     Extensions must be rebuilt with neomind-extension-sdk >= 0.6.0",
+                    symbol_name.trim_end_matches('\0')
+                )));
+            }
+        }
+
+        let c_meta = Self::safe_call_ffi("metadata", || {
+            let get_metadata: libloading::Symbol<unsafe extern "C" fn() -> CExtensionMetadata> = unsafe {
+                library
+                    .get(b"neomind_extension_metadata\0")
+                    .map_err(|e| ExtensionError::SymbolNotFound(format!("metadata: {}", e)))?
+            };
+            Ok(unsafe { get_metadata() })
+        })?;
 
         // Convert C metadata to Rust metadata
         let id = unsafe { std::ffi::CStr::from_ptr(c_meta.id) }
@@ -366,7 +184,7 @@ impl NativeExtensionLoader {
         Ok(ExtensionMetadata {
             id,
             name,
-            version,
+            version: version.to_string(),
             description,
             author,
             homepage: None,
@@ -381,6 +199,12 @@ impl NativeExtensionLoader {
     /// Supports two formats:
     /// 1. Legacy: Top-level binary files (e.g., `extension.dylib`)
     /// 2. .nep package format: Folders with `binaries/{platform}/extension.{ext}`
+    ///
+    /// # Safety
+    ///
+    /// This method NEVER loads native libraries during discovery to prevent crashes
+    /// from incompatible extensions. Instead, it reads sidecar JSON metadata files.
+    /// Extensions without sidecar JSON files are skipped with a warning.
     pub async fn discover(&self, dir: &Path) -> Vec<(PathBuf, ExtensionMetadata)> {
         let mut extensions = Vec::new();
 
@@ -408,15 +232,59 @@ impl NativeExtensionLoader {
             }
         }
 
-        // Load metadata for each extension
+        // Load metadata for each extension using sidecar JSON files only
+        // This is SAFE and never loads native libraries during discovery
         for path in extension_paths {
-            let loader = NativeExtensionLoader::new();
-            if let Ok(meta) = loader.load_metadata(&path).await {
-                extensions.push((path, meta));
+            match self.load_metadata_from_sidecar(&path) {
+                Ok(meta) => {
+                    tracing::info!(
+                        extension_id = %meta.id,
+                        path = %path.display(),
+                        "Discovered extension from sidecar JSON"
+                    );
+                    extensions.push((path, meta));
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "Extension missing sidecar JSON, skipping (use .nep package format for automatic metadata)"
+                    );
+                }
             }
         }
 
         extensions
+    }
+
+    /// Load metadata from sidecar JSON file (safe, no library loading).
+    ///
+    /// The sidecar JSON file should be named the same as the binary with .json extension.
+    /// For example: `extension.dylib` -> `extension.json`
+    ///
+    /// This is the SAFE way to get metadata without risking crashes from
+    /// incompatible native library initialization code.
+    fn load_metadata_from_sidecar(&self, binary_path: &Path) -> Result<ExtensionMetadata> {
+        let sidecar_path = binary_path.with_extension("json");
+
+        if !sidecar_path.exists() {
+            return Err(ExtensionError::LoadFailed(format!(
+                "No sidecar metadata file found at {}. Native extensions must have a sidecar JSON file for safe discovery.",
+                sidecar_path.display()
+            )));
+        }
+
+        let content = std::fs::read_to_string(&sidecar_path)
+            .map_err(|e| ExtensionError::LoadFailed(format!("Failed to read sidecar JSON: {}", e)))?;
+
+        let meta: ExtensionMetadata = serde_json::from_str(&content)
+            .map_err(|e| ExtensionError::LoadFailed(format!("Invalid sidecar JSON format: {}", e)))?;
+
+        // Update file_path to point to the actual binary
+        Ok(ExtensionMetadata {
+            file_path: Some(binary_path.to_path_buf()),
+            ..meta
+        })
     }
 
     /// Find binary file in .nep package folder structure.
@@ -469,7 +337,7 @@ impl NativeExtensionLoader {
     }
 }
 
-impl Default for NativeExtensionLoader {
+impl Default for NativeExtensionMetadataLoader {
     fn default() -> Self {
         Self::new()
     }
@@ -481,7 +349,6 @@ mod tests {
 
     #[test]
     fn test_loader_creation() {
-        let loader = NativeExtensionLoader::new();
-        assert!(loader._libraries.is_empty());
+        let _loader = NativeExtensionMetadataLoader::new();
     }
 }

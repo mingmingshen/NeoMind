@@ -11,7 +11,7 @@
 
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use neomind_core::{EventBus, MetricValue, NeoMindEvent};
-use neomind_llm::backends::ollama::{OllamaConfig, OllamaRuntime};
+use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_storage::{
     AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, LongTermMemory,
     ScheduleType, ShortTermMemory, WorkingMemory,

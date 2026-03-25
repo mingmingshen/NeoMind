@@ -88,7 +88,6 @@ enum ClientMessage {
 /// Message type to client
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[allow(dead_code)]
 enum ServerMessage {
     /// Stream capability
     Capability {
@@ -131,6 +130,7 @@ enum ServerMessage {
         stats: SessionStatsDto,
     },
     /// Heartbeat
+    #[allow(dead_code)]
     Heartbeat {
         timestamp: i64,
     },
@@ -204,108 +204,6 @@ impl From<&SessionStats> for SessionStatsDto {
             input_bytes: stats.input_bytes,
             output_bytes: stats.output_bytes,
             errors: stats.errors,
-        }
-    }
-}
-
-// ============================================================================
-// Session Manager
-// ============================================================================
-
-/// Active session data
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct ActiveSession {
-    id: String,
-    extension_id: String,
-    config: serde_json::Value,
-    client_info: ClientInfoMessage,
-    created_at: i64,
-    frame_count: Arc<std::sync::atomic::AtomicU64>,
-    stats: Arc<RwLock<SessionStats>>,
-}
-
-/// Session manager for tracking active stream sessions
-#[allow(dead_code)]
-struct SessionManager {
-    sessions: Arc<RwLock<HashMap<String, ActiveSession>>>,
-}
-#[allow(dead_code)]
-impl SessionManager {
-    fn new() -> Self {
-        Self {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
-
-    async fn create(
-        &self,
-        id: String,
-        extension_id: String,
-        config: serde_json::Value,
-        client_info: ClientInfoMessage,
-    ) -> Result<(), ActiveSession> {
-        let mut sessions = self.sessions.write().await;
-
-        if sessions.contains_key(&id) {
-            return Err(ActiveSession {
-                id: id.clone(),
-                extension_id,
-                config,
-                client_info,
-                created_at: 0,
-                frame_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-                stats: Arc::new(RwLock::new(SessionStats::default())),
-            });
-        }
-
-        let session = ActiveSession {
-            id: id.clone(),
-            extension_id,
-            config,
-            client_info,
-            created_at: chrono::Utc::now().timestamp_millis(),
-            frame_count: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            stats: Arc::new(RwLock::new(SessionStats::default())),
-        };
-
-        sessions.insert(id.clone(), session);
-        Ok(())
-    }
-
-    async fn get(&self, id: &str) -> Option<ActiveSession> {
-        let sessions = self.sessions.read().await;
-        sessions.get(id).cloned()
-    }
-
-    async fn remove(&self, id: &str) -> Option<ActiveSession> {
-        let mut sessions = self.sessions.write().await;
-        sessions.remove(id)
-    }
-
-    async fn count(&self) -> usize {
-        let sessions = self.sessions.read().await;
-        sessions.len()
-    }
-
-    /// Cleanup inactive sessions (older than timeout_ms)
-    async fn cleanup_inactive(&self, timeout_ms: i64) {
-        let mut to_remove = vec![];
-        let now = chrono::Utc::now().timestamp_millis();
-
-        {
-            let sessions = self.sessions.read().await;
-            for (id, session) in sessions.iter() {
-                let stats = session.stats.read().await;
-                if now - stats.last_activity > timeout_ms {
-                    to_remove.push(id.clone());
-                }
-            }
-        }
-
-        for id in to_remove {
-            tracing::info!("Cleaning up inactive session: {}", id);
-            self.remove(&id).await;
         }
     }
 }
@@ -418,29 +316,26 @@ async fn handle_stream_socket(
 ) {
     tracing::info!("Extension stream connection opened for: {}", extension_id);
 
-    // Get extension and safety manager
-    let registry = &state.extensions.registry;
-    let _unified_service = &state.extensions.unified_service;
-    let safety_manager = registry.safety_manager();
+    let safety_manager = state.extensions.registry.safety_manager();
 
-    // Try to get extension from registry first, then from isolated manager
-    let extension = match registry.get(&extension_id).await {
+    let extension = match state.extensions.runtime.get_extension(&extension_id).await {
         Some(ext) => {
-            tracing::debug!("Found extension {} in registry", extension_id);
+            tracing::debug!("Found extension proxy {}", extension_id);
             ext
         }
         None => {
-            // Check if it's in the unified service's isolated manager
-            tracing::debug!("Extension {} not in registry, checking isolated manager", extension_id);
-            
-            // For isolated extensions, we need to create a proxy that implements Extension trait
-            // and communicates via IPC for streaming operations
-            // This is a complex task - for now, return an error
             send_error(&mut socket, "EXTENSION_NOT_FOUND",
-                       format!("Extension '{}' not found in registry. Isolated extensions require streaming support via IPC.", extension_id)).await;
+                       format!("Extension '{}' not available for streaming", extension_id)).await;
             return;
         }
     };
+
+    let isolated_extension = state
+        .extensions
+        .runtime
+        .isolated_manager()
+        .get(&extension_id)
+        .await;
 
     // Check streaming capability
     let ext_read = extension.read().await;
@@ -549,7 +444,7 @@ async fn handle_stream_socket(
                                         }
                                         tracing::info!("Session {} initialized successfully", sid);
 
-                                        // For Push mode: setup output channel
+                                        // For Push mode: bridge runner PushOutput IPC into the websocket router.
                                         if cap.mode == StreamMode::Push {
                                             // Create channel for push outputs
                                             let (tx, rx) = mpsc::channel::<PushOutputMessage>(32);
@@ -558,11 +453,32 @@ async fn handle_stream_socket(
                                             // Register with router
                                             push_router.register(sid.clone(), tx).await;
 
-                                            // Set output sender on extension
-                                            let output_sender = Arc::new(
-                                                create_push_forwarder(sid.clone(), push_router.clone())
-                                            );
-                                            ext.set_output_sender(output_sender);
+                                            let Some(isolated) = isolated_extension.clone() else {
+                                                send_error(&mut socket, "PUSH_NOT_AVAILABLE",
+                                                           "Push mode requires isolated extension runtime".to_string()).await;
+                                                push_router.unregister(&sid).await;
+                                                push_rx = None;
+                                                continue;
+                                            };
+
+                                            let (push_tx, mut push_rx_ipc) = mpsc::unbounded_channel();
+                                            isolated.set_push_output_channel(push_tx).await;
+
+                                            let router = push_router.clone();
+                                            let session_id_for_task = sid.clone();
+                                            tokio::spawn(async move {
+                                                while let Some(output) = push_rx_ipc.recv().await {
+                                                    let _ = router.route(PushOutputMessage {
+                                                        session_id: output.session_id,
+                                                        sequence: output.sequence,
+                                                        data: output.data,
+                                                        data_type: output.data_type,
+                                                        timestamp: output.timestamp,
+                                                        metadata: output.metadata,
+                                                    }).await;
+                                                }
+                                                tracing::debug!("Push IPC forwarder stopped for session: {}", session_id_for_task);
+                                            });
 
                                             // Start pushing
                                             if let Err(e) = ext.start_push(&sid).await {
@@ -764,26 +680,6 @@ async fn handle_stream_socket(
     tracing::info!("Extension stream disconnected for: {}", extension_id);
 }
 
-/// Create a push forwarder that sends PushOutputMessage to the router
-fn create_push_forwarder(
-    session_id: String,
-    router: Arc<PushOutputRouter>,
-) -> mpsc::Sender<PushOutputMessage> {
-    let (tx, mut rx) = mpsc::channel::<PushOutputMessage>(64);
-
-    tokio::spawn(async move {
-        while let Some(output) = rx.recv().await {
-            // Ensure session_id matches
-            let mut output = output;
-            output.session_id = session_id.clone();
-            router.route(output).await;
-        }
-        tracing::debug!("Push forwarder stopped for session: {}", session_id);
-    });
-
-    tx
-}
-
 /// Parse binary frame: [sequence: u64 (8 bytes, big endian)][data...]
 fn parse_binary_frame(mut data: Vec<u8>) -> Option<(u64, Vec<u8>)> {
     if data.len() < 8 {
@@ -827,7 +723,7 @@ pub async fn get_stream_capability_handler(
     State(state): State<ServerState>,
     Path(extension_id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let extension = state.extensions.registry.get(&extension_id).await
+    let extension = state.extensions.runtime.get_extension(&extension_id).await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", extension_id)))?;
 
     let ext_read = extension.read().await;

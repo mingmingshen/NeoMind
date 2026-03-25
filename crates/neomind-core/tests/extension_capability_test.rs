@@ -110,7 +110,7 @@ impl ExtensionCapabilityProvider for MockCapabilityProvider {
 async fn test_register_single_provider() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(MockCapabilityProvider::new(
         "test-provider",
@@ -129,7 +129,7 @@ async fn test_register_single_provider() {
 async fn test_register_multiple_providers() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider1 = Arc::new(MockCapabilityProvider::new(
         "provider-1",
@@ -151,7 +151,7 @@ async fn test_register_multiple_providers() {
 async fn test_register_provider_multiple_capabilities() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(MockCapabilityProvider::new(
         "multi-provider",
@@ -181,7 +181,7 @@ async fn test_invoke_capability_success() {
         required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(MockCapabilityProvider::new(
         "test-provider",
@@ -212,7 +212,7 @@ async fn test_invoke_capability_multiple_times() {
         required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(MockCapabilityProvider::new(
         "test-provider",
@@ -249,7 +249,7 @@ async fn test_capability_allowed_when_required() {
         required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(MockCapabilityProvider::new(
         "test-provider",
@@ -277,7 +277,7 @@ async fn test_capability_denied_when_not_required() {
         required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(MockCapabilityProvider::new(
         "test-provider",
@@ -313,7 +313,7 @@ async fn test_capability_denied_when_no_provider() {
         required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     // No provider registered
     let result = context
@@ -337,7 +337,7 @@ async fn test_invalid_parameters_error() {
         required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(MockCapabilityProvider::new(
         "test-provider",
@@ -372,7 +372,7 @@ async fn test_capability_not_available_error() {
         required_capabilities: vec![ExtensionCapability::TelemetryHistory],
         ..Default::default()
     };
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     let provider = Arc::new(MockCapabilityProvider::new(
         "test-provider",
@@ -456,7 +456,7 @@ fn test_available_capabilities_get_provider() {
 async fn test_manual_provider_registration() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = ExtensionContext::new(config, None, providers);
+    let context = ExtensionContext::new(config, providers);
 
     // Manually register a mock provider
     let mock_provider = Arc::new(MockProvider);
@@ -570,7 +570,7 @@ async fn test_concurrent_capability_invocation() {
         required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
-    let context = Arc::new(ExtensionContext::new(config, None, providers));
+    let context = Arc::new(ExtensionContext::new(config, providers));
 
     let provider = Arc::new(MockCapabilityProvider::new(
         "test-provider",
@@ -608,7 +608,7 @@ async fn test_concurrent_capability_invocation() {
 async fn test_concurrent_capability_check() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig::default();
-    let context = Arc::new(ExtensionContext::new(config, None, providers));
+    let context = Arc::new(ExtensionContext::new(config, providers));
 
     let provider = Arc::new(MockCapabilityProvider::new(
         "test-provider",

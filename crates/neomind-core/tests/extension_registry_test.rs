@@ -67,7 +67,7 @@ impl Extension for MockExtension {
             ExtensionMetadata::new(
                 "mock.extension",
                 "Mock Extension",
-                semver::Version::new(1, 0, 0),
+                "1.0.0",
             )
         })
     }

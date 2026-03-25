@@ -27,7 +27,7 @@ docs/guides/
 │   ├── 12-commands.md     # Command queue module
 │   ├── 14-api.md         # REST API module
 │   ├── 15-web.md         # Frontend module
-│   └── 16-extension-dev.md # Extension development guide
+│   └── extension-system.md # Extension development guide
 └── zh/                    # Chinese documentation (中文)
     └── (same structure as en/)
 ```
@@ -52,7 +52,7 @@ docs/guides/
 | [Commands](en/12-commands.md) | 70% | Device command queue |
 | [API](en/14-api.md) | 90% | REST/WebSocket API, extension metrics |
 | [Web](en/15-web.md) | 80% | React frontend, Zustand state |
-| [Extension Dev](en/16-extension-dev.md) | New | Extension development tutorial |
+| [Extension Dev](en/extension-system.md) | New | Extension development tutorial |
 
 ### 中文 / Chinese
 
@@ -72,12 +72,12 @@ docs/guides/
 | [Commands](zh/12-commands.md) | 70% | 设备命令队列 |
 | [API](zh/14-api.md) | 90% | REST/WebSocket API、扩展指标 |
 | [Web](zh/15-web.md) | 80% | React前端、Zustand状态管理 |
-| [Extension Dev](zh/16-extension-dev.md) | 新增 | 扩展开发教程 |
+| [Extension Dev](zh/extension-system.md) | 新增 | 扩展开发教程 |
 
 ## Tech Stack
 
 ### Backend
-- **Language**: Rust 2024 Edition
+- **Language**: Rust 2021 Edition
 - **Runtime**: Tokio (async)
 - **Web Framework**: Axum 0.7
 - **Storage**: redb 2.1

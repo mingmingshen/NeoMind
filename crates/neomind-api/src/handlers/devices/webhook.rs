@@ -21,7 +21,7 @@ use crate::models::ErrorResponse;
 // Import DataPoint from neomind_devices (not neomind_storage)
 use neomind_devices::DataPoint;
 // Import automation types for transform processing
-use neomind_automation::Automation;
+use crate::automation::Automation;
 // Import auto-onboarding types
 
 /// Webhook data from device
@@ -98,7 +98,7 @@ pub async fn webhook_handler(
                 m.clone()
             } else {
                 // Create manager on first use
-                use neomind_llm::backends::{OllamaConfig, OllamaRuntime};
+                use neomind_agent::llm_backends::backends::{OllamaConfig, OllamaRuntime};
                 let llm = OllamaConfig::new("qwen2.5:3b")
                     .with_endpoint("http://localhost:11434")
                     .with_timeout_secs(120);
@@ -111,7 +111,7 @@ pub async fn webhook_handler(
                     .as_ref()
                     .ok_or_else(|| ErrorResponse::internal("EventBus not available"))?
                     .clone();
-                let mgr = neomind_automation::AutoOnboardManager::new(
+                let mgr = crate::automation::AutoOnboardManager::new(
                     Arc::new(runtime) as Arc<dyn neomind_core::llm::backend::LlmRuntime>,
                     event_bus,
                 );
@@ -432,7 +432,7 @@ pub async fn webhook_generic_handler(
                 m.clone()
             } else {
                 // Create manager on first use
-                use neomind_llm::backends::{OllamaConfig, OllamaRuntime};
+                use neomind_agent::llm_backends::backends::{OllamaConfig, OllamaRuntime};
                 let llm = OllamaConfig::new("qwen2.5:3b")
                     .with_endpoint("http://localhost:11434")
                     .with_timeout_secs(120);
@@ -445,7 +445,7 @@ pub async fn webhook_generic_handler(
                     .as_ref()
                     .ok_or_else(|| ErrorResponse::internal("EventBus not available"))?
                     .clone();
-                let mgr = neomind_automation::AutoOnboardManager::new(
+                let mgr = crate::automation::AutoOnboardManager::new(
                     Arc::new(runtime) as Arc<dyn neomind_core::llm::backend::LlmRuntime>,
                     event_bus,
                 );

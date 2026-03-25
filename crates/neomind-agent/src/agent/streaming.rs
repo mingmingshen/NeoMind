@@ -408,7 +408,7 @@ fn detect_repetition(recent_chunks: &[String], new_chunk: &str, threshold: usize
 
 /// Simple in-memory cache for tool results with TTL and size limit
 struct ToolResultCache {
-    entries: HashMap<String, (neomind_tools::ToolOutput, Instant)>,
+    entries: HashMap<String, (crate::toolkit::ToolOutput, Instant)>,
     ttl: Duration,
     max_entries: usize,
 }
@@ -422,7 +422,7 @@ impl ToolResultCache {
         }
     }
 
-    fn get(&self, key: &str) -> Option<neomind_tools::ToolOutput> {
+    fn get(&self, key: &str) -> Option<crate::toolkit::ToolOutput> {
         self.entries.get(key).and_then(|(result, timestamp)| {
             if timestamp.elapsed() < self.ttl {
                 Some(result.clone())
@@ -432,7 +432,7 @@ impl ToolResultCache {
         })
     }
 
-    fn insert(&mut self, key: String, value: neomind_tools::ToolOutput) {
+    fn insert(&mut self, key: String, value: crate::toolkit::ToolOutput) {
         // Enforce size limit - remove oldest entry if at capacity
         if self.entries.len() >= self.max_entries {
             // Remove the oldest entry (first key in iteration)
@@ -1205,7 +1205,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
 /// Result of a single tool execution with metadata
 struct ToolExecutionResult {
     _name: String,
-    result: std::result::Result<neomind_tools::ToolOutput, neomind_tools::ToolError>,
+    result: std::result::Result<crate::toolkit::ToolOutput, crate::toolkit::ToolError>,
 }
 
 /// Estimate token count for a string.
@@ -1480,7 +1480,7 @@ fn compact_tool_results_stream_with_config(
 pub async fn process_stream_events(
     llm_interface: Arc<LlmInterface>,
     internal_state: Arc<tokio::sync::RwLock<AgentInternalState>>,
-    tools: Arc<neomind_tools::ToolRegistry>,
+    tools: Arc<crate::toolkit::ToolRegistry>,
     user_message: &str,
 ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
     process_stream_events_with_safeguards(
@@ -1496,7 +1496,7 @@ pub async fn process_stream_events(
 pub async fn process_stream_events_with_safeguards(
     llm_interface: Arc<LlmInterface>,
     internal_state: Arc<tokio::sync::RwLock<AgentInternalState>>,
-    tools: Arc<neomind_tools::ToolRegistry>,
+    tools: Arc<crate::toolkit::ToolRegistry>,
     user_message: &str,
     safeguards: StreamSafeguards,
 ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
@@ -2651,7 +2651,7 @@ pub async fn process_stream_events_with_safeguards(
 pub async fn process_multimodal_stream_events(
     llm_interface: Arc<LlmInterface>,
     internal_state: Arc<tokio::sync::RwLock<AgentInternalState>>,
-    tools: Arc<neomind_tools::ToolRegistry>,
+    tools: Arc<crate::toolkit::ToolRegistry>,
     user_message: &str,
     images: Vec<String>, // Base64 data URLs (e.g., "data:image/png;base64,...")
 ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
@@ -2670,7 +2670,7 @@ pub async fn process_multimodal_stream_events(
 pub async fn process_multimodal_stream_events_with_safeguards(
     llm_interface: Arc<LlmInterface>,
     internal_state: Arc<tokio::sync::RwLock<AgentInternalState>>,
-    tools: Arc<neomind_tools::ToolRegistry>,
+    tools: Arc<crate::toolkit::ToolRegistry>,
     user_message: &str,
     images: Vec<String>,
     safeguards: StreamSafeguards,
@@ -3244,11 +3244,11 @@ fn is_complex_multi_step_intent_fallback(message: &str) -> bool {
 
 /// Execute a tool with retry logic for transient errors and caching.
 async fn execute_tool_with_retry(
-    tools: &neomind_tools::ToolRegistry,
+    tools: &crate::toolkit::ToolRegistry,
     cache: &Arc<RwLock<ToolResultCache>>,
     name: &str,
     arguments: serde_json::Value,
-) -> std::result::Result<neomind_tools::ToolOutput, neomind_tools::ToolError> {
+) -> std::result::Result<crate::toolkit::ToolOutput, crate::toolkit::ToolError> {
     // Check cache for read-only tools
     if is_tool_cacheable(name) {
         let cache_key = ToolResultCache::make_key(name, &arguments);
@@ -3293,11 +3293,11 @@ fn resolve_tool_name(simplified_name: &str) -> String {
 
 /// Inner retry logic without caching (for code reuse)
 async fn execute_with_retry_impl(
-    tools: &neomind_tools::ToolRegistry,
+    tools: &crate::toolkit::ToolRegistry,
     name: &str,
     arguments: serde_json::Value,
     max_retries: u32,
-) -> std::result::Result<neomind_tools::ToolOutput, neomind_tools::ToolError> {
+) -> std::result::Result<crate::toolkit::ToolOutput, crate::toolkit::ToolError> {
     // Map simplified tool name to real tool name
     let real_tool_name = resolve_tool_name(name);
 
@@ -3310,7 +3310,7 @@ async fn execute_with_retry_impl(
             tools.execute(&real_tool_name, arguments.clone()),
         )
         .await
-        .unwrap_or(Err(neomind_tools::ToolError::Execution(format!(
+        .unwrap_or(Err(crate::toolkit::ToolError::Execution(format!(
             "Tool '{}' timed out after {}s",
             name, TOOL_TIMEOUT_SECS
         ))));
@@ -3335,7 +3335,7 @@ async fn execute_with_retry_impl(
         }
     }
 
-    Err(neomind_tools::ToolError::Execution(
+    Err(crate::toolkit::ToolError::Execution(
         "Max retries exceeded".to_string(),
     ))
 }

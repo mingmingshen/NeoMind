@@ -8,15 +8,12 @@
  * - Drag to reposition items
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
 import {
@@ -157,6 +154,8 @@ export function LayerEditorDialog({
     if (open) {
       setBindings(initialBindings)
       setSelectedBinding(null)
+      setEditingTextBinding(null)
+      setEditingIconBinding(null)
     }
   }, [open, initialBindings])
 
@@ -571,7 +570,7 @@ export function LayerEditorDialog({
   if (isMobile) {
     return createPortal(
       open ? (
-        <div className="fixed inset-0 z-[100] bg-background animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[110] bg-background animate-in fade-in duration-200">
           <div className="flex h-full w-full flex-col">
             {/* Header */}
             <div
@@ -657,74 +656,112 @@ export function LayerEditorDialog({
     )
   }
 
-  // Desktop: Traditional dialog
+  // Desktop: Traditional dialog (following AddDeviceDialog pattern)
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl h-[80vh] p-0 gap-0 flex flex-col">
-        <DialogHeader className="px-6 py-4 border-b">
-          <DialogTitle className="text-lg">{t('customLayer.editorTitle')}</DialogTitle>
-        </DialogHeader>
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 z-[109] bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => onOpenChange(false)}
+        />
+      )}
 
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left Panel - Bindings List */}
-          <div className="w-80 border-r bg-muted/20 flex flex-col">
-            <div className="p-3 border-b bg-muted/30">
-              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {t('customLayer.boundItems')} ({bindings.length})
+      {/* Dialog */}
+      {open && (
+        <div
+          className={cn(
+            'fixed left-1/2 top-1/2 z-[110]',
+            'grid w-full gap-0',
+            'bg-background shadow-lg',
+            'duration-200',
+            'animate-in fade-in zoom-in-95 slide-in-from-left-1/2 slide-in-from-top-[48%]',
+            'rounded-lg sm:rounded-xl',
+            'max-h-[96vh] h-[90vh]',
+            'flex flex-col',
+            'max-w-5xl w-[90vw]',
+            '-translate-x-1/2 -translate-y-1/2'
+          )}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between gap-2 px-6 py-4 border-b shrink-0">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <Layers className="h-5 w-5 text-primary" />
+              <h2 className="text-lg font-semibold leading-none truncate">
+                {t('customLayer.editorTitle')}
+              </h2>
+            </div>
+            <button
+              onClick={() => onOpenChange(false)}
+              className="inline-flex items-center justify-center rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 flex overflow-hidden min-h-0">
+            {/* Left Panel - Bindings List */}
+            <div className="w-72 border-r bg-muted/20 flex flex-col shrink-0">
+              <div className="px-4 py-2 border-b bg-muted/30 shrink-0">
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  {t('customLayer.boundItems')} ({bindings.length})
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0">
+                {bindings.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">{t('customLayer.noItems')}</p>
+                    <p className="text-xs mt-1">{t('customLayer.addDataSourceHint')}</p>
+                  </div>
+                ) : (
+                  bindings.map(renderBindingItem)
+                )}
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
-              {bindings.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">{t('customLayer.noItems')}</p>
-                  <p className="text-xs mt-1">{t('customLayer.addDataSourceHint')}</p>
+            {/* Right Panel - Layer Preview */}
+            <div className="flex-1 relative bg-muted/30 min-w-0">
+              <div className="absolute inset-0 p-4">
+                <CustomLayer
+                  bindings={bindings}
+                  backgroundType={backgroundType}
+                  backgroundColor={backgroundColor}
+                  backgroundImage={backgroundImage}
+                  showControls={true}
+                  showFullscreen={false}
+                  interactive={true}
+                  editable={false}
+                  size="md"
+                  onItemsChange={handleItemsChange}
+                  onLayerClick={handleLayerClick}
+                  className="w-full h-full"
+                />
+              </div>
+
+              {/* Positioning mode indicator */}
+              {selectedBinding && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-primary text-primary-foreground rounded-full text-xs font-medium shadow-lg">
+                  {t('customLayer.clickToSetPosition')}
                 </div>
-              ) : (
-                bindings.map(renderBindingItem)
               )}
             </div>
           </div>
 
-          {/* Right Panel - Layer Preview */}
-          <div className="flex-1 relative bg-muted/30">
-            <div className="absolute inset-0 p-4">
-              <CustomLayer
-                bindings={bindings}
-                backgroundType={backgroundType}
-                backgroundColor={backgroundColor}
-                backgroundImage={backgroundImage}
-                showControls={true}
-                showFullscreen={true}
-                interactive={true}
-                editable={false}
-                size="md"
-                onItemsChange={handleItemsChange}
-                onLayerClick={handleLayerClick}
-                className="w-full h-full"
-              />
-            </div>
-
-            {/* Positioning mode indicator */}
-            {selectedBinding && (
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-primary text-primary-foreground rounded-full text-xs font-medium shadow-lg">
-                {t('customLayer.clickToSetPosition')}
-              </div>
-            )}
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t shrink-0 bg-muted/30">
+            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button size="sm" onClick={handleSave}>
+              <Check className="h-4 w-4 mr-1" />
+              {t('common.saveChanges')}
+            </Button>
           </div>
         </div>
-
-        <DialogFooter className="px-6 py-4 border-t bg-muted/20">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t('common.cancel')}
-          </Button>
-          <Button onClick={handleSave}>
-            <Check className="h-4 w-4 mr-1" />
-            {t('common.saveChanges')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      )}
+    </>
   )
 }

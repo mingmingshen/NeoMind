@@ -165,6 +165,118 @@ where
         {
             Ok(Some(MetricValue::Null))
         }
+
+        /// Handle tagged enum format like {"Boolean": true}, {"Integer": 42}, etc.
+        /// This is needed because the standard MetricValue serialization produces
+        /// tagged enums, but we also accept plain values for user convenience.
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::MapAccess<'de>,
+        {
+            // Get the first (and should be only) key-value pair
+            if let Some((key, value)) = map.next_entry::<String, serde_json::Value>()? {
+                match key.as_str() {
+                    "Boolean" => {
+                        match value {
+                            serde_json::Value::Bool(b) => Ok(Some(MetricValue::Boolean(b))),
+                            _ => Err(serde::de::Error::custom(format!(
+                                "Expected boolean for Boolean variant, got {:?}",
+                                value
+                            ))),
+                        }
+                    }
+                    "Integer" => {
+                        match value {
+                            serde_json::Value::Number(n) => {
+                                if let Some(i) = n.as_i64() {
+                                    Ok(Some(MetricValue::Integer(i)))
+                                } else {
+                                    Err(serde::de::Error::custom(format!(
+                                        "Expected integer for Integer variant, got {:?}",
+                                        n
+                                    )))
+                                }
+                            }
+                            _ => Err(serde::de::Error::custom(format!(
+                                "Expected number for Integer variant, got {:?}",
+                                value
+                            ))),
+                        }
+                    }
+                    "Float" => {
+                        match value {
+                            serde_json::Value::Number(n) => {
+                                if let Some(f) = n.as_f64() {
+                                    Ok(Some(MetricValue::Float(f)))
+                                } else {
+                                    Err(serde::de::Error::custom(format!(
+                                        "Expected float for Float variant, got {:?}",
+                                        n
+                                    )))
+                                }
+                            }
+                            _ => Err(serde::de::Error::custom(format!(
+                                "Expected number for Float variant, got {:?}",
+                                value
+                            ))),
+                        }
+                    }
+                    "String" => {
+                        match value {
+                            serde_json::Value::String(s) => Ok(Some(MetricValue::String(s))),
+                            _ => Err(serde::de::Error::custom(format!(
+                                "Expected string for String variant, got {:?}",
+                                value
+                            ))),
+                        }
+                    }
+                    "Array" => {
+                        match value {
+                            serde_json::Value::Array(arr) => {
+                                // Parse each element as MetricValue
+                                let mut vec = Vec::new();
+                                for elem in arr {
+                                    let mv = serde_json::from_value(elem.clone())
+                                        .map_err(serde::de::Error::custom)?;
+                                    vec.push(mv);
+                                }
+                                Ok(Some(MetricValue::Array(vec)))
+                            }
+                            _ => Err(serde::de::Error::custom(format!(
+                                "Expected array for Array variant, got {:?}",
+                                value
+                            ))),
+                        }
+                    }
+                    "Binary" => {
+                        match value {
+                            serde_json::Value::String(s) => {
+                                use base64::{engine::general_purpose::STANDARD, Engine as _};
+                                STANDARD
+                                    .decode(&s)
+                                    .map(|bytes| Some(MetricValue::Binary(bytes)))
+                                    .map_err(|e| serde::de::Error::custom(format!(
+                                        "Invalid base64 for Binary variant: {}",
+                                        e
+                                    )))
+                            }
+                            _ => Err(serde::de::Error::custom(format!(
+                                "Expected base64 string for Binary variant, got {:?}",
+                                value
+                            ))),
+                        }
+                    }
+                    "Null" => Ok(Some(MetricValue::Null)),
+                    _ => Err(serde::de::Error::custom(format!(
+                        "Unknown MetricValue variant: {}",
+                        key
+                    ))),
+                }
+            } else {
+                // Empty map, treat as null
+                Ok(Some(MetricValue::Null))
+            }
+        }
     }
 
     deserializer.deserialize_option(MetricValueVisitor)
@@ -1583,5 +1695,143 @@ mod tests {
         let result = registry.parse_metric_value(&metric, payload).unwrap();
 
         assert!(matches!(result, MetricValue::Float(23.5)));
+    }
+
+    #[test]
+    fn test_default_value_tagged_enum_format() {
+        // Test that tagged enum format (from serialization) is accepted
+        let json = r#"
+        {
+            "device_type": "test_device",
+            "name": "Test Device",
+            "downlink": {
+                "commands": [
+                    {
+                        "name": "set_value",
+                        "display_name": "Set Value",
+                        "description": "Set device value",
+                        "parameters": [
+                            {
+                                "name": "bool_param",
+                                "display_name": "Boolean",
+                                "data_type": "Boolean",
+                                "default_value": {"Boolean": true}
+                            },
+                            {
+                                "name": "int_param",
+                                "display_name": "Integer",
+                                "data_type": "Integer",
+                                "default_value": {"Integer": 42}
+                            },
+                            {
+                                "name": "float_param",
+                                "display_name": "Float",
+                                "data_type": "Float",
+                                "default_value": {"Float": 3.14}
+                            },
+                            {
+                                "name": "string_param",
+                                "display_name": "String",
+                                "data_type": "String",
+                                "default_value": {"String": "hello"}
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        "#;
+
+        let def: DeviceTypeDefinition = serde_json::from_str(json).unwrap();
+        assert_eq!(def.device_type, "test_device");
+        let cmd = &def.downlink.commands[0];
+        assert_eq!(cmd.parameters.len(), 4);
+
+        // Check that default values were parsed correctly
+        assert!(matches!(
+            &cmd.parameters[0].default_value,
+            Some(MetricValue::Boolean(true))
+        ));
+        assert!(matches!(
+            &cmd.parameters[1].default_value,
+            Some(MetricValue::Integer(42))
+        ));
+        assert!(matches!(
+            &cmd.parameters[2].default_value,
+            Some(MetricValue::Float(v)) if (*v - 3.14).abs() < 0.001
+        ));
+        assert!(matches!(
+            &cmd.parameters[3].default_value,
+            Some(MetricValue::String(s)) if s == "hello"
+        ));
+    }
+
+    #[test]
+    fn test_default_value_plain_format() {
+        // Test that plain value format (from user input) is accepted
+        let json = r#"
+        {
+            "device_type": "test_device",
+            "name": "Test Device",
+            "downlink": {
+                "commands": [
+                    {
+                        "name": "set_value",
+                        "display_name": "Set Value",
+                        "description": "Set device value",
+                        "parameters": [
+                            {
+                                "name": "bool_param",
+                                "display_name": "Boolean",
+                                "data_type": "Boolean",
+                                "default_value": true
+                            },
+                            {
+                                "name": "int_param",
+                                "display_name": "Integer",
+                                "data_type": "Integer",
+                                "default_value": 42
+                            },
+                            {
+                                "name": "float_param",
+                                "display_name": "Float",
+                                "data_type": "Float",
+                                "default_value": 3.14
+                            },
+                            {
+                                "name": "string_param",
+                                "display_name": "String",
+                                "data_type": "String",
+                                "default_value": "hello"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        "#;
+
+        let def: DeviceTypeDefinition = serde_json::from_str(json).unwrap();
+        assert_eq!(def.device_type, "test_device");
+        let cmd = &def.downlink.commands[0];
+        assert_eq!(cmd.parameters.len(), 4);
+
+        // Check that default values were parsed correctly
+        assert!(matches!(
+            &cmd.parameters[0].default_value,
+            Some(MetricValue::Boolean(true))
+        ));
+        assert!(matches!(
+            &cmd.parameters[1].default_value,
+            Some(MetricValue::Integer(42))
+        ));
+        assert!(matches!(
+            &cmd.parameters[2].default_value,
+            Some(MetricValue::Float(v)) if (*v - 3.14).abs() < 0.001
+        ));
+        assert!(matches!(
+            &cmd.parameters[3].default_value,
+            Some(MetricValue::String(s)) if s == "hello"
+        ));
     }
 }

@@ -25,7 +25,7 @@ use crate::error::NeoMindError;
 use crate::error::Result as AgentResult;
 
 /// Re-export the instance manager types for convenience
-pub use neomind_llm::instance_manager::{
+pub use crate::llm_backends::{
     get_instance_manager, BackendTypeDefinition, LlmBackendInstanceManager,
 };
 
@@ -391,9 +391,15 @@ impl LlmInterface {
         // This takes precedence over instance manager to support backendId selection
         let llm_guard = self.llm.read().await;
         if let Some(runtime) = llm_guard.as_ref() {
+            tracing::debug!(
+                model = %runtime.model_name(),
+                "get_runtime: using direct runtime from configure_llm"
+            );
             return Ok(Arc::clone(runtime));
         }
         drop(llm_guard);
+
+        tracing::debug!("get_runtime: no direct runtime, checking instance manager");
 
         // Fall back to instance manager if no direct runtime is set
         if self.uses_instance_manager() {
@@ -518,19 +524,33 @@ impl LlmInterface {
     pub async fn supports_multimodal(&self) -> bool {
         // First, try to query the runtime directly (most accurate - uses model name detection)
         if let Ok(runtime) = self.get_runtime().await {
-            return runtime.capabilities().multimodal;
+            let caps = runtime.capabilities();
+            tracing::debug!(
+                multimodal = %caps.multimodal,
+                model = %runtime.model_name(),
+                "supports_multimodal: checking runtime capabilities"
+            );
+            return caps.multimodal;
         }
+
+        tracing::debug!("supports_multimodal: no runtime available, checking instance manager");
 
         // Fall back to instance manager if runtime is not available
         if self.uses_instance_manager() {
             if let Some(manager) = &self.instance_manager {
                 if let Some(instance) = manager.get_active_instance() {
                     // Instance has capabilities with supports_multimodal (storage layer)
+                    tracing::debug!(
+                        supports_multimodal = %instance.capabilities.supports_multimodal,
+                        model = %instance.model,
+                        "supports_multimodal: using instance manager capabilities"
+                    );
                     return instance.capabilities.supports_multimodal;
                 }
             }
         }
 
+        tracing::warn!("supports_multimodal: no runtime or instance available, returning false");
         false
     }
 
@@ -715,7 +735,7 @@ impl LlmInterface {
             .push_str("Output in response: [{\"name\":\"tool_name\",\"arguments\":{\"param\":\"value\"}}]\n\n");
 
         // Add simplified tools
-        use neomind_tools::simplified;
+        use crate::toolkit::simplified;
         let simplified_tools = simplified::get_simplified_tools();
 
         prompt.push_str("## Available Tools\n\n");
@@ -889,9 +909,9 @@ impl LlmInterface {
     #[allow(dead_code)]
     fn filter_simplified_tools(
         &self,
-        tools: &[neomind_tools::simplified::LlmToolDefinition],
+        tools: &[crate::toolkit::simplified::LlmToolDefinition],
         intent: &crate::agent::staged::IntentResult,
-    ) -> Vec<neomind_tools::simplified::LlmToolDefinition> {
+    ) -> Vec<crate::toolkit::simplified::LlmToolDefinition> {
         let mut filtered = Vec::new();
 
         // Always include tools that match the intent category
