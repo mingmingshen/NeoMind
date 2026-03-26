@@ -5113,7 +5113,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         {/* Dashboard Grid */}
         <div className={cn(
           "flex-1 overflow-auto p-4 relative",
-          editMode && "pb-32"
+          editMode && "pb-48"
         )}>
           {/* Fullscreen exit button - floating */}
           {isFullscreen && (
