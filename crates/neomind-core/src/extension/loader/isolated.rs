@@ -49,7 +49,8 @@ impl Default for IsolatedLoaderConfig {
 
 /// Loader for isolated extensions
 pub struct IsolatedExtensionLoader {
-    /// Metadata loader for native extension binaries
+    /// Metadata loader for extension discovery (uses sidecar JSON, no dlopen)
+    #[allow(dead_code)]
     native_loader: NativeExtensionMetadataLoader,
     /// Configuration
     config: IsolatedLoaderConfig,
@@ -113,28 +114,127 @@ impl IsolatedExtensionLoader {
         })
     }
 
+    /// Load metadata from sidecar JSON file (e.g., extension.dylib.json)
+    fn load_metadata_from_sidecar(path: &Path) -> Option<ExtensionMetadata> {
+        let sidecar_path = path.with_extension("json");
+
+        if !sidecar_path.exists() {
+            return None;
+        }
+
+        let content = std::fs::read_to_string(&sidecar_path).ok()?;
+        let manifest: ExtensionManifest = serde_json::from_str(&content).ok()?;
+
+        let version = semver::Version::parse(&manifest.version)
+            .unwrap_or_else(|_| semver::Version::new(0, 1, 0));
+
+        tracing::debug!(
+            sidecar_path = %sidecar_path.display(),
+            extension_id = %manifest.id,
+            "Loaded metadata from sidecar JSON"
+        );
+
+        Some(ExtensionMetadata {
+            id: manifest.id,
+            name: manifest.name,
+            version: version.to_string(),
+            description: manifest.description,
+            author: manifest.author,
+            homepage: None,
+            license: None,
+            file_path: Some(path.to_path_buf()),
+            config_parameters: None,
+        })
+    }
+
+    /// Load metadata from extension.json in the binaries directory
+    /// This handles the .nep package format: binaries/{platform}/extension.json
+    fn load_metadata_from_extension_json(path: &Path) -> Option<ExtensionMetadata> {
+        // For binaries/{platform}/extension.dylib, look for binaries/{platform}/extension.json
+        let sidecar_path = path.with_extension("json");
+
+        if sidecar_path.exists() {
+            if let Some(meta) = Self::load_metadata_from_sidecar(path) {
+                return Some(meta);
+            }
+        }
+
+        // Also try looking for a JSON file in the parent binaries directory
+        // This handles legacy formats
+        let ext_dir = path.parent()?;
+        let parent_dir = ext_dir.parent()?; // Go up from darwin_aarch64 to binaries
+        let ext_json = parent_dir.join("extension.json");
+
+        if !ext_json.exists() {
+            return None;
+        }
+
+        let content = std::fs::read_to_string(&ext_json).ok()?;
+        let manifest: ExtensionManifest = serde_json::from_str(&content).ok()?;
+
+        let version = semver::Version::parse(&manifest.version)
+            .unwrap_or_else(|_| semver::Version::new(0, 1, 0));
+
+        tracing::debug!(
+            ext_json_path = %ext_json.display(),
+            extension_id = %manifest.id,
+            "Loaded metadata from extension.json"
+        );
+
+        Some(ExtensionMetadata {
+            id: manifest.id,
+            name: manifest.name,
+            version: version.to_string(),
+            description: manifest.description,
+            author: manifest.author,
+            homepage: None,
+            license: None,
+            file_path: Some(path.to_path_buf()),
+            config_parameters: None,
+        })
+    }
+
     /// Load an extension in isolated mode
     pub async fn load_isolated(&self, path: &Path) -> Result<Arc<IsolatedExtension>> {
-        // ALWAYS validate FFI interface first to prevent crashes with incompatible extensions
-        // This check is required even when using manifest.json for metadata
-        let _ = self.native_loader.load_metadata(path).await.map_err(|e| {
-            tracing::error!(
-                path = %path.display(),
-                error = %e,
-                "Extension FFI interface validation failed"
-            );
-            e
-        })?;
+        // IMPORTANT: We do NOT load the native library in the main process anymore.
+        // This prevents file handle leaks that cause "Code Signature Invalid" crashes
+        // when users uninstall and reinstall extensions.
+        //
+        // FFI validation is performed by the isolated extension-runner process at startup.
+        // If the extension is incompatible, the runner will fail to start and report an error.
+        //
+        // Load metadata from manifest.json or sidecar JSON files instead.
 
-        // Try to load metadata from manifest.json first (more reliable)
-        // Fall back to FFI metadata if manifest not found
+        // Try to load metadata from manifest.json first (installed .nep package format)
+        // Then try sidecar JSON (discovery format), finally try extension.json in binaries dir
         let metadata = if let Some(manifest_meta) = Self::load_metadata_from_manifest(path) {
-            tracing::debug!("Using manifest.json metadata for extension ID");
+            tracing::debug!(
+                path = %path.display(),
+                extension_id = %manifest_meta.id,
+                "Using manifest.json metadata"
+            );
             manifest_meta
+        } else if let Some(sidecar_meta) = Self::load_metadata_from_sidecar(path) {
+            tracing::debug!(
+                path = %path.display(),
+                extension_id = %sidecar_meta.id,
+                "Using sidecar JSON metadata"
+            );
+            sidecar_meta
+        } else if let Some(ext_json_meta) = Self::load_metadata_from_extension_json(path) {
+            tracing::debug!(
+                path = %path.display(),
+                extension_id = %ext_json_meta.id,
+                "Using extension.json metadata"
+            );
+            ext_json_meta
         } else {
-            tracing::debug!("manifest.json not found, using FFI metadata");
-            // Already validated above, so this won't fail again
-            self.native_loader.load_metadata(path).await?
+            return Err(ExtensionError::LoadFailed(format!(
+                "No metadata file found for extension at {}. \
+                 Expected one of: manifest.json, extension.json (sidecar), or binaries/*.json. \
+                 Extension packages should include these files.",
+                path.display()
+            )));
         };
 
         tracing::debug!(
@@ -160,8 +260,20 @@ impl IsolatedExtensionLoader {
 
     /// Load an extension (decides mode based on configuration)
     pub async fn load(&self, path: &Path) -> Result<LoadedExtension> {
-        // Extract metadata first to determine mode
-        let metadata = self.native_loader.load_metadata(path).await?;
+        // Extract metadata using safe JSON-based methods (no library loading)
+        let metadata = if let Some(manifest_meta) = Self::load_metadata_from_manifest(path) {
+            manifest_meta
+        } else if let Some(sidecar_meta) = Self::load_metadata_from_sidecar(path) {
+            sidecar_meta
+        } else if let Some(ext_json_meta) = Self::load_metadata_from_extension_json(path) {
+            ext_json_meta
+        } else {
+            return Err(ExtensionError::LoadFailed(format!(
+                "No metadata file found for extension at {}. \
+                 Expected one of: manifest.json, extension.json (sidecar), or binaries/*.json.",
+                path.display()
+            )));
+        };
 
         if self.should_use_isolated(&metadata.id) {
             let isolated = self.load_isolated(path).await?;
