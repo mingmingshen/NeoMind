@@ -3449,44 +3449,56 @@ pub async fn upload_extension_file_handler(
         .unwrap_or_else(|_| "data".to_string());
     let target_dir = PathBuf::from(data_dir).join("extensions");
 
-    // Parse and install the package in a single blocking task
-    // (ZIP operations involve dyn Read which is not Send)
+    // Step 1: Parse the package to get extension ID (validation only, no install yet)
+    // This allows us to check if the extension is registered BEFORE overwriting files
+    let body_bytes_for_validate = body_bytes.clone();
+    let (ext_id, version) = tokio::task::spawn_blocking(move || {
+        use neomind_core::extension::package::ExtensionPackage;
+        let package = ExtensionPackage::from_bytes(body_bytes_for_validate)
+            .map_err(|e| format!("Package parse error: {}", e))?;
+        Ok::<_, String>((package.manifest.id.clone(), package.manifest.version.clone()))
+    }).await
+        .map_err(|e| ErrorResponse::internal(format!("Task join error: {}", e)))?
+        .map_err(|e| ErrorResponse::internal(format!("Package validation failed: {}", e)))?;
+
+    tracing::info!(
+        extension_id = %ext_id,
+        version = %version,
+        "Package validated successfully"
+    );
+
+    // Step 2: Check if already registered and unload FIRST (before overwriting files)
+    // This is critical on macOS where overwriting a dylib that's in use can cause issues
+    let runtime = state.extensions.runtime.clone();
+    let is_registered = runtime.contains(&ext_id).await;
+
+    if is_registered {
+        tracing::info!("Extension {} already registered, unloading before update", ext_id);
+        runtime.unload(&ext_id).await
+            .map_err(|e| ErrorResponse::internal(format!("Failed to unload existing extension: {}", e)))?;
+        // Wait a moment for the process to fully terminate and release file handles
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    }
+
+    // Step 3: Now install the package (safe to overwrite files)
     let body_bytes_for_install = body_bytes.clone();
     let target_dir_clone = target_dir.clone();
     let install_result = tokio::task::spawn_blocking(move || {
         use neomind_core::extension::package::ExtensionPackage;
-        // First validate the package
-        let _package = ExtensionPackage::from_bytes(body_bytes_for_install.clone())?;
-        // Then install using the sync method
         ExtensionPackage::install_sync(&body_bytes_for_install, &target_dir_clone)
     }).await
         .map_err(|e| ErrorResponse::internal(format!("Task join error: {}", e)))?
         .map_err(|e| ErrorResponse::internal(format!("Installation failed: {}", e)))?;
 
-    let ext_id = install_result.extension_id.clone();
-    let version = install_result.version.clone();
-
     tracing::info!(
-        extension_id = %ext_id,
-        version = %version,
+        extension_id = %install_result.extension_id,
         binary_path = %install_result.binary_path.display(),
         frontend_dir = ?install_result.frontend_dir,
         components_count = install_result.components.len(),
         "Package installed successfully"
     );
 
-    // Check if already registered and unregister if needed
-    // Use unified service for consistent extension management
-    let runtime = state.extensions.runtime.clone();
-    let is_registered = runtime.contains(&ext_id).await;
-
-    if is_registered {
-        tracing::info!("Extension {} already registered, will replace", ext_id);
-        runtime.unload(&ext_id).await
-            .map_err(|e| ErrorResponse::internal(format!("Failed to unregister existing: {}", e)))?;
-    }
-
-    // Load and register the extension binary with process isolation
+    // Step 4: Load and register the extension binary with process isolation
     let metadata = runtime.load(&install_result.binary_path).await
         .map_err(|e| ErrorResponse::internal(format!("Failed to load extension binary: {}", e)))?;
 

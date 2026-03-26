@@ -86,39 +86,58 @@ export function DashboardGrid({
   // Track if the current layout change is from user interaction (drag/resize) vs responsive resize
   const isUserInteractionRef = useRef(false)
 
-  // Track the last layout we sent to parent to avoid echo effect
-  const lastSentLayoutRef = useRef<string>('')
+  // Track newly added component IDs that need position sync after layout adjustment
+  const pendingSyncComponentIdsRef = useRef<Set<string>>(new Set())
 
   // Sync parent layout positions when components prop changes
+  // Use ref to track previous component IDs to detect additions/removals without triggering re-renders
+  const prevComponentIdsRef = useRef<Set<string>>(new Set())
+
   useEffect(() => {
     if (!isDraggingRef.current) {
-      const newPositions: Record<string, { x: number; y: number; w: number; h: number }> = {}
-      let hasChanges = false
+      const currentIds = new Set(components.map(c => c.id))
+      const prevIds = prevComponentIdsRef.current
 
-      components.forEach(c => {
-        const existing = parentLayoutPositions[c.id]
-        if (!existing || existing.x !== c.position.x || existing.y !== c.position.y ||
-            existing.w !== c.position.w || existing.h !== c.position.h) {
+      // Check if component list actually changed (additions or removals)
+      const addedIds = [...currentIds].filter(id => !prevIds.has(id))
+      const hasRemovals = [...prevIds].some(id => !currentIds.has(id))
+
+      // Track newly added components for position sync
+      if (addedIds.length > 0) {
+        addedIds.forEach(id => pendingSyncComponentIdsRef.current.add(id))
+      }
+
+      // Only update if there are structural changes or position changes
+      if (addedIds.length > 0 || hasRemovals) {
+        // Rebuild positions from scratch for additions/removals
+        const newPositions: Record<string, { x: number; y: number; w: number; h: number }> = {}
+        components.forEach(c => {
           newPositions[c.id] = { x: c.position.x, y: c.position.y, w: c.position.w, h: c.position.h }
-          hasChanges = true
-        } else {
-          newPositions[c.id] = existing
-        }
-      })
-
-      // Check for removed components
-      const currentIds = new Set(Object.keys(newPositions))
-      Object.keys(parentLayoutPositions).forEach(id => {
-        if (!currentIds.has(id)) {
-          hasChanges = true
-        }
-      })
-
-      if (hasChanges) {
+        })
         setParentLayoutPositions(newPositions)
+        prevComponentIdsRef.current = currentIds
+      } else {
+        // Only update if positions actually changed (use functional update to avoid dependency)
+        setParentLayoutPositions(prev => {
+          let hasChanges = false
+          const newPositions: Record<string, { x: number; y: number; w: number; h: number }> = {}
+
+          components.forEach(c => {
+            const existing = prev[c.id]
+            if (!existing || existing.x !== c.position.x || existing.y !== c.position.y ||
+                existing.w !== c.position.w || existing.h !== c.position.h) {
+              newPositions[c.id] = { x: c.position.x, y: c.position.y, w: c.position.w, h: c.position.h }
+              hasChanges = true
+            } else {
+              newPositions[c.id] = existing
+            }
+          })
+
+          return hasChanges ? newPositions : prev
+        })
       }
     }
-  }, [components, parentLayoutPositions])
+  }, [components])
 
   // Debounced update for container width
   const updateWidth = useCallback(() => {
@@ -202,30 +221,92 @@ export function DashboardGrid({
 
   const layout = baseLayout
 
-  // Handle layout changes during drag/resize
-  // Update drag ref immediately to keep layouts in sync, notify parent on user interaction
+  // Memoize layouts object to prevent unnecessary re-renders of react-grid-layout
+  const layouts = useMemo(() => ({
+    lg: layout,
+    md: layout,
+    sm: layout,
+    xs: layout,
+  }), [layout])
+
+  // Track if we should enable transitions (disable during initial mount to prevent flicker)
+  const [transitionsEnabled, setTransitionsEnabled] = useState(false)
+
+  // Enable transitions after initial mount settles
+  useEffect(() => {
+    if (width > 0 && !transitionsEnabled) {
+      const timer = setTimeout(() => {
+        setTransitionsEnabled(true)
+      }, 300) // Wait for layout to settle
+      return () => clearTimeout(timer)
+    }
+  }, [width, transitionsEnabled])
+
+  // Handle layout changes from react-grid-layout
+  // This includes: drag, resize, collision detection, and compact
   const handleLayoutChange = useCallback((currentLayout: any, allLayouts?: any) => {
-    // Update drag ref IMMEDIATELY - this happens before any re-render
+    // Update drag ref IMMEDIATELY - this keeps internal positions in sync
     const newPositions: Record<string, { x: number; y: number; w: number; h: number }> = {}
     currentLayout.forEach((item: any) => {
       newPositions[item.i] = { x: item.x, y: item.y, w: item.w, h: item.h }
     })
     dragLayoutRef.current = newPositions
 
-    // Only force re-render and notify parent if this is a user-initiated change (drag/resize)
-    // Ignore automatic layout changes from responsive width changes
     if (isUserInteractionRef.current) {
-      // Force re-render to update layouts prop with new drag positions
+      // User is actively dragging/resizing - force re-render for smooth UI
       setDragKey(k => k + 1)
+    }
 
-      // Only notify parent during edit mode (user drag/resize)
-      if (onLayoutChange && editMode) {
-        onLayoutChange(currentLayout as readonly any[])
+    // Check if any newly added components had their positions adjusted by react-grid-layout
+    // This happens when collision detection or compact moves them to a different position
+    if (!isDraggingRef.current && editMode && onLayoutChange) {
+      const pendingIds = pendingSyncComponentIdsRef.current
+      if (pendingIds.size > 0) {
+        // Find components whose positions (x/y only) were adjusted
+        const adjustedIds: string[] = []
+
+        currentLayout.forEach((item: any) => {
+          if (!pendingIds.has(item.i)) return
+          const parentPos = parentLayoutPositions[item.i]
+          if (!parentPos) {
+            adjustedIds.push(item.i)
+            return
+          }
+          // Only check x/y position change, NOT size (w/h)
+          if (parentPos.x !== item.x || parentPos.y !== item.y) {
+            adjustedIds.push(item.i)
+          }
+        })
+
+        if (adjustedIds.length > 0) {
+          // Build layout to sync - preserve original w/h for newly added components
+          const adjustedIdsSet = new Set(adjustedIds)
+          const layoutToSync = currentLayout.map((item: any) => {
+            if (adjustedIdsSet.has(item.i)) {
+              const originalPos = parentLayoutPositions[item.i]
+              if (originalPos) {
+                // Sync new x/y but preserve original w/h
+                return {
+                  ...item,
+                  w: originalPos.w,
+                  h: originalPos.h,
+                }
+              }
+            }
+            return item
+          })
+
+          // Clear pending sync for these components AFTER building layoutToSync
+          adjustedIds.forEach(id => pendingIds.delete(id))
+
+          // Use queueMicrotask to break the synchronous update cycle
+          queueMicrotask(() => {
+            onLayoutChange(layoutToSync as readonly any[])
+          })
+        }
       }
     }
-    // Note: We still update dragLayoutRef even for responsive changes so components don't jump
-    // But we don't trigger re-renders or parent updates for responsive changes
-  }, [onLayoutChange, editMode])
+  }, [editMode, parentLayoutPositions, onLayoutChange])
 
   // Track drag start
   const handleDragStart = useCallback(() => {
@@ -273,8 +354,8 @@ export function DashboardGrid({
 
         /* Grid items - controlled by react-grid-layout, don't override */
         .react-grid-item {
-          /* Only add transition, let react-grid-layout handle position/size */
-          transition: transform 200ms ease;
+          /* Only add transition when settled, let react-grid-layout handle position/size */
+          ${transitionsEnabled ? 'transition: transform 200ms ease;' : 'transition: none;'}
         }
 
         /* Touch-friendly touch-action */
@@ -393,20 +474,15 @@ export function DashboardGrid({
           display: none;
         }
 
-        /* Smooth transitions when not editing */
+        /* Smooth transitions when not editing - only after initial mount settles */
         .react-grid-layout:not(.edit-mode) > .react-grid-item {
-          transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), width 200ms cubic-bezier(0.4, 0, 0.2, 1), height 200ms cubic-bezier(0.4, 0, 0.2, 1);
+          ${transitionsEnabled ? 'transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), width 200ms cubic-bezier(0.4, 0, 0.2, 1), height 200ms cubic-bezier(0.4, 0, 0.2, 1);' : 'transition: none;'}
         }
       `}</style>
       {width > 0 && (
         <ResponsiveGridLayout
           className={cn('dashboard-grid', editMode && 'edit-mode')}
-          layouts={{
-            lg: layout,
-            md: layout,
-            sm: layout,
-            xs: layout,
-          }}
+          layouts={layouts}
           breakpoints={breakpoints}
           cols={cols}
           width={width}

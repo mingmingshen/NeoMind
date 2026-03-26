@@ -114,6 +114,9 @@ pub struct IsolatedExtensionManager {
     capability_provider: AsyncRwLock<Option<Arc<dyn super::super::context::ExtensionCapabilityProvider>>>,
     /// Death notification channel for monitoring extension crashes
     death_channel: (broadcast::Sender<()>, AsyncRwLock<broadcast::Receiver<()>>),
+    /// Per-extension loading locks to prevent race conditions during concurrent loads
+    /// Maps extension ID to a mutex that must be held during loading
+    loading_locks: AsyncRwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl IsolatedExtensionManager {
@@ -140,6 +143,7 @@ impl IsolatedExtensionManager {
             event_dispatcher,
             capability_provider: AsyncRwLock::new(None),
             death_channel,
+            loading_locks: AsyncRwLock::new(HashMap::new()),
         }
     }
 
@@ -281,13 +285,106 @@ impl IsolatedExtensionManager {
         self.loader.should_use_isolated(extension_id)
     }
 
+    /// Read extension ID from manifest.json without spawning a process
+    ///
+    /// This is used to acquire a loading lock BEFORE spawning to prevent
+    /// race conditions where multiple concurrent loads could spawn duplicate processes.
+    fn read_extension_id_from_manifest(path: &Path) -> Option<String> {
+        // Try to find manifest.json in the extension directory
+        // For .nep packages: path is binaries/<platform>/extension.dylib, manifest is at root
+        // For legacy: path is extension.dylib, manifest is in same dir
+
+        // Try different possible locations for manifest.json
+        let possible_manifest_paths = vec![
+            // .nep format: go up 3 levels from extension binary
+            path.parent()?.parent()?.parent()?.join("manifest.json"),
+            // Legacy format: same directory as extension binary
+            path.parent()?.join("manifest.json"),
+        ];
+
+        for manifest_path in possible_manifest_paths {
+            if !manifest_path.exists() {
+                continue;
+            }
+
+            if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+                if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(id) = manifest.get("id").and_then(|v| v.as_str()) {
+                        tracing::debug!(
+                            manifest_path = %manifest_path.display(),
+                            extension_id = %id,
+                            "Read extension ID from manifest.json for loading lock"
+                        );
+                        return Some(id.to_string());
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     /// Load an extension in isolated mode
+    ///
+    /// This method uses a per-extension loading lock to prevent race conditions
+    /// where multiple concurrent requests could spawn duplicate extension processes.
     pub async fn load(&self, path: &Path) -> IsolatedResult<ExtensionMetadata> {
         tracing::debug!(
             path = %path.display(),
             "Loading extension in isolated mode"
         );
 
+        // 🔒 CRITICAL: Try to get extension ID from manifest BEFORE spawning
+        // This allows us to acquire a lock early and prevent duplicate spawns
+        let preloaded_id = Self::read_extension_id_from_manifest(path);
+
+        if let Some(ref id) = preloaded_id {
+            // Check if already loaded before acquiring lock (fast path)
+            if self.extensions.read().await.contains_key(id) {
+                tracing::debug!(
+                    extension_id = %id,
+                    "Extension already loaded (fast path check), returning existing metadata"
+                );
+                let info = self.info_cache.read().get(id).cloned();
+                if let Some(info) = info {
+                    return Ok(info.descriptor.metadata);
+                }
+            }
+
+            // Get or create a loading lock for this extension ID
+            let loading_lock = {
+                let mut locks = self.loading_locks.write().await;
+                locks.entry(id.clone()).or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))).clone()
+            };
+
+            // Acquire the loading lock - this will wait if another load is in progress
+            let _guard = loading_lock.lock().await;
+
+            // Double-check: extension might have been loaded while we waited for the lock
+            if self.extensions.read().await.contains_key(id) {
+                tracing::debug!(
+                    extension_id = %id,
+                    "Extension already loaded (loaded by concurrent request while waiting for lock), skipping duplicate load"
+                );
+                let info = self.info_cache.read().get(id).cloned();
+                return Ok(info.map(|i| i.descriptor.metadata).unwrap());
+            }
+
+            // Now safe to spawn - we hold the lock and extension is not loaded
+            return self.load_internal(path).await;
+        }
+
+        // Fallback: couldn't read ID from manifest, load directly (legacy behavior)
+        // This path doesn't have the same race condition protection but maintains compatibility
+        tracing::warn!(
+            path = %path.display(),
+            "Could not read extension ID from manifest.json, loading without pre-lock (may have race condition)"
+        );
+        self.load_internal(path).await
+    }
+
+    /// Internal load implementation - called after lock is acquired
+    async fn load_internal(&self, path: &Path) -> IsolatedResult<ExtensionMetadata> {
         let loaded = self.loader.load_isolated(path).await?;
 
         // Get the complete descriptor

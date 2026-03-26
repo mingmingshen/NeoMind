@@ -19,7 +19,10 @@ module.exports = {
       argsIgnorePattern: '^_',
       varsIgnorePattern: '^_'
     }],
-    'no-console': ['warn', { allow: ['warn', 'error'] }],
+    // Allow console.log in development, but warn in production
+    'no-console': process.env.NODE_ENV === 'production'
+      ? ['error', { allow: ['warn', 'error'] }]
+      : 'off',
     // Disable problematic rules
     'no-unexpected-multiline': 'off',
     'no-case-declarations': 'off',

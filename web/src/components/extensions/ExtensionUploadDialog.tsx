@@ -50,6 +50,13 @@ export function ExtensionUploadDialog({
 
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
+
+    // Reset file input immediately to allow selecting the same file again
+    // This fixes the issue where the dialog needs to be opened twice
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+
     if (!file) return
 
     // Check authentication status before upload
