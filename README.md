@@ -10,7 +10,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 
 [![Build Status](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml/badge.svg)](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.6.0](https://img.shields.io/badge/v-0.6.0-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
+[![Version: 0.6.2](https://img.shields.io/badge/v-0.6.2-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.85+-orange.svg)](https://www.rust-lang.org)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](https://github.com/camthink-ai/NeoMind/releases)
 
@@ -165,7 +165,7 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 **Install specific version:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.6.0 sh
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.6.2 sh
 ```
 
 **Custom installation:**
@@ -194,7 +194,7 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 ```bash
 # 1. Download binary (replace VERSION and PLATFORM)
 # PLATFORM: linux-amd64, linux-arm64, darwin-amd64, darwin-arm64
-wget https://github.com/camthink-ai/NeoMind/releases/download/v0.6.0/neomind-server-linux-amd64.tar.gz
+wget https://github.com/camthink-ai/NeoMind/releases/download/v0.6.2/neomind-server-linux-amd64.tar.gz
 
 # 2. Extract package (contains neomind + neomind-extension-runner)
 tar xzf neomind-server-linux-amd64.tar.gz
@@ -402,7 +402,7 @@ neomind/
 ├── crates/
 │   ├── neomind-core/          # Core traits and type definitions
 │   ├── neomind-api/           # Web API server (Axum)
-│   ├── neomind-agent/         # AI Agent with tool calling and LLM backends
+│   ├── neomind-agent/         # AI Agent with tool calling, LLM backends (includes merged LLM module)
 │   ├── neomind-devices/       # Device management (MQTT)
 │   ├── neomind-storage/       # Storage system (redb)
 │   ├── neomind-messages/      # Unified messaging and notification
@@ -515,17 +515,17 @@ View and filter system logs:
 # View all logs
 neomind logs
 
-# View logs for specific extension
-neomind logs --extension my-extension
-
-# Filter by log level (debug, info, warn, error)
-neomind logs --level error
+# Filter by log level (ERROR, WARN, INFO, DEBUG)
+neomind logs --level ERROR
 
 # Follow logs in real-time
 neomind logs --follow
 
 # Show last N lines
 neomind logs --tail 100
+
+# Show logs from the last duration
+neomind logs --since 1h
 ```
 
 #### Extension Management
@@ -535,6 +535,9 @@ Manage NeoMind extensions:
 ```bash
 # List installed extensions
 neomind extension list
+
+# Create a new extension scaffold
+neomind extension create my-extension
 
 # Install a .nep package
 neomind extension install my-extension-1.0.0.nep
@@ -557,14 +560,8 @@ Start and manage the NeoMind server:
 # Start server
 neomind serve
 
-# Start with custom configuration
-neomind serve --config /path/to/config.toml
-
 # Start on specific host/port
 neomind serve --host 0.0.0.0 --port 9375
-
-# Enable debug logging
-neomind serve --log-level debug
 ```
 
 ### Environment Variables
@@ -574,7 +571,6 @@ The CLI respects these environment variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `NEOMIND_SERVER_URL` | Server API URL | `http://localhost:9375` |
-| `NEOMIND_CONFIG` | Config file path | `~/.neomind/config.toml` |
 | `NEOMIND_LOG_LEVEL` | Log level | `info` |
 | `NEOMIND_DATA_DIR` | Data directory | `~/.neomind` |
 
