@@ -116,9 +116,10 @@ impl DeviceCapabilityProvider {
             MetricValue::String(value.to_string())
         };
 
+        // Create DataPoint with cloned value (we need the original for event publishing)
         let data_point = neomind_devices::telemetry::DataPoint {
             timestamp,
-            value: metric_value,
+            value: metric_value.clone(),
             quality: Some(1.0),
         };
 
@@ -126,6 +127,30 @@ impl DeviceCapabilityProvider {
             .write(device_id, metric, data_point)
             .await
             .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
+
+        // Publish DeviceMetric event to EventBus so frontend receives real-time updates
+        // This is essential for virtual metrics written by extensions to trigger UI updates
+        if let Some(event_bus) = self.services.get::<EventBus>(keys::EVENT_BUS) {
+            use neomind_core::event::MetricValue as EventMetricValue;
+
+            let event_value = match &metric_value {
+                MetricValue::Float(f) => EventMetricValue::Float(*f),
+                MetricValue::String(s) => EventMetricValue::String(s.clone()),
+                MetricValue::Boolean(b) => EventMetricValue::Boolean(*b),
+                MetricValue::Integer(i) => EventMetricValue::Integer(*i),
+                MetricValue::Array(arr) => EventMetricValue::Json(serde_json::to_value(arr).unwrap_or(serde_json::Value::Null)),
+                MetricValue::Binary(bin) => EventMetricValue::String(format!("{} bytes", bin.len())),
+                MetricValue::Null => EventMetricValue::String("null".to_string()),
+            };
+
+            event_bus.publish(neomind_core::NeoMindEvent::DeviceMetric {
+                device_id: device_id.to_string(),
+                metric: metric.to_string(),
+                value: event_value,
+                timestamp: timestamp / 1000, // Convert milliseconds to seconds
+                quality: Some(1.0),
+            }).await;
+        }
 
         Ok(json!({
             "success": true,
