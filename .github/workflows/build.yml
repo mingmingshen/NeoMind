@@ -89,6 +89,25 @@ jobs:
           path: web/dist/
           retention-days: 1
 
+      - name: Create frontend release package
+        if: contains(github.ref, 'refs/tags/')
+        run: |
+          # Extract version from tag (e.g., v0.6.2 -> 0.6.2)
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          cd web/dist
+          tar czvf ../../neomind-web-${VERSION}.tar.gz .
+          cd ../..
+          echo "✅ Frontend package created: neomind-web-${VERSION}.tar.gz"
+          ls -lh neomind-web-${VERSION}.tar.gz
+
+      - name: Upload frontend release artifact
+        if: contains(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: neomind-web
+          path: neomind-web-*.tar.gz
+          retention-days: 30
+
   # ========== 桌面应用构建（使用并行策略）==========
   build-desktop:
     name: Desktop (${{ matrix.platform }})
@@ -423,6 +442,7 @@ jobs:
             artifacts/neomind-server-linux-amd64/**/*.tar.gz
             artifacts/neomind-server-linux-arm64/**/*.tar.gz
             artifacts/neomind-server-darwin-arm64/**/*.tar.gz
+            artifacts/neomind-web/**/*.tar.gz
           draft: false
           prerelease: false
           generate_release_notes: true
