@@ -381,7 +381,7 @@ export function ImageDisplay({
 
   // Only use useDataSource when there's an actual data source
   const hasNormalizedDataSource = normalizedDataSource !== undefined
-  const { data, loading, error } = useDataSource(hasNormalizedDataSource ? normalizedDataSource : undefined, {
+  const { data, loading, error, lastUpdate: dataSourceLastUpdate } = useDataSource(hasNormalizedDataSource ? normalizedDataSource : undefined, {
     fallback: propSrc,
   })
 
@@ -438,21 +438,24 @@ export function ImageDisplay({
 
   const rawSrc = error ? propSrc : (extractImageValue(effectiveData) ?? propSrc ?? '')
 
-  // Track last update timestamp for cache-busting
-  const [lastUpdate, setLastUpdate] = useState(Date.now())
-  const lastUpdateRef = useRef(Date.now())
-  lastUpdateRef.current = lastUpdate
-
   // Normalize the image source (for metadata extraction)
   const normalizedImage = useMemo(() => normalizeImageUrl(rawSrc), [rawSrc])
   const baseSrc = normalizedImage?.src || rawSrc
 
-  // Update lastUpdate timestamp when rawSrc changes
+  // Use dataSourceLastUpdate for cache-busting when available
+  // This ensures the image refreshes when new data arrives from WebSocket/polling
+  // Also use a local timestamp when propSrc changes (for components without data source)
+  const [propSrcUpdateTime, setPropSrcUpdateTime] = useState(Date.now())
   useEffect(() => {
-    if (rawSrc && rawSrc !== propSrc) {
-      setLastUpdate(Date.now())
+    if (propSrc && !hasNormalizedDataSource) {
+      setPropSrcUpdateTime(Date.now())
     }
-  }, [rawSrc, propSrc])
+  }, [propSrc, hasNormalizedDataSource])
+
+  // Use the most recent update timestamp: either from data source or prop change
+  const cacheBustTimestamp = hasNormalizedDataSource
+    ? (dataSourceLastUpdate ?? propSrcUpdateTime)
+    : propSrcUpdateTime
 
   // For base64 images, add cache-busting parameter to force refresh
   // This ensures that when new data arrives, the image actually reloads
@@ -461,15 +464,14 @@ export function ImageDisplay({
 
     // Add cache-busting for base64 images and data URLs
     if (baseSrc.startsWith('data:') || baseSrc.startsWith('blob:')) {
-      // Use the last update timestamp as cache buster
-      const cacheBuster = lastUpdateRef.current
+      // Use the cache-bust timestamp from data source updates or prop changes
       // Append a fragment identifier with timestamp
       // The browser will treat it as a "different" URL
-      return `${baseSrc}#${cacheBuster}`
+      return `${baseSrc}#${cacheBustTimestamp}`
     }
 
     return baseSrc
-  }, [baseSrc, lastUpdate])
+  }, [baseSrc, cacheBustTimestamp])
 
   // Keep originalSrc without cache-buster for download/fullscreen
   const originalSrc = baseSrc
