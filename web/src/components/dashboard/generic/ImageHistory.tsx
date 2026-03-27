@@ -384,7 +384,7 @@ export function ImageHistory({
     return normalizeDataSourceForImages(dataSource, limit, timeRange)
   }, [dataSource, limit, timeRange])
 
-  const { data, loading } = useDataSource<ImageHistoryItem[] | string[]>(normalizedDataSource, {
+  const { data, loading, lastUpdate: dataSourceLastUpdate } = useDataSource<ImageHistoryItem[] | string[]>(normalizedDataSource, {
     fallback: propImages,
   })
 
@@ -438,12 +438,13 @@ export function ImageHistory({
   const dataUpdateCountRef = useRef(0)
   dataUpdateCountRef.current = dataUpdateCount
 
-  // Update data update count when images array changes
+  // Update data update count when images array changes OR when data source updates
+  // This ensures cache-busting works even when image content changes but length stays same
   useEffect(() => {
     if (images.length > 0) {
       setDataUpdateCount(c => c + 1)
     }
-  }, [images.length, dataKey])  // Trigger when images array or dataKey changes
+  }, [images.length, dataKey, dataSourceLastUpdate])  // Also trigger on data source lastUpdate
 
   const currentImage = images[currentIndex]
   const currentImageSrc = currentImage?.src
@@ -451,14 +452,17 @@ export function ImageHistory({
   const canNavigate = images.length > 1
 
   // Add cache-busting for base64/data URLs to force reload when data changes
+  // Use dataSourceLastUpdate when available for more reliable cache-busting
   const displayImageSrc = useMemo(() => {
     if (!currentImageSrc) return currentImageSrc
     // Add cache buster for data URLs (base64 images)
     if (currentImageSrc.startsWith('data:') || currentImageSrc.startsWith('blob:')) {
-      return `${currentImageSrc}#${dataUpdateCountRef.current}`
+      // Prefer dataSourceLastUpdate as it's more reliable for detecting data changes
+      const cacheBuster = dataSourceLastUpdate ?? dataUpdateCountRef.current
+      return `${currentImageSrc}#${cacheBuster}`
     }
     return currentImageSrc
-  }, [currentImageSrc, dataUpdateCount])
+  }, [currentImageSrc, dataUpdateCount, dataSourceLastUpdate])
 
   // Reset index and loading state only when actual images change (not just reordering)
   useEffect(() => {
