@@ -26,8 +26,8 @@ interface DynamicRegistryState {
   // All registered dynamic components by type
   components: Record<string, DashboardComponentDto>
 
-  // Extension index
-  extensions: Record<string, { extensionId: string; extensionName: string; componentTypes: string[] }>
+  // Extension index (includes globalNames for cleanup)
+  extensions: Record<string, { extensionId: string; extensionName: string; componentTypes: string[]; globalNames: Set<string> }>
 
   // Loaded module cache
   loadedModules: Record<string, unknown>
@@ -80,10 +80,15 @@ export class DynamicComponentRegistry {
         extensionId,
         extensionName,
         componentTypes: [],
+        globalNames: new Set(),
       }
     }
     if (!this.state.extensions[extensionId].componentTypes.includes(def.type)) {
       this.state.extensions[extensionId].componentTypes.push(def.type)
+    }
+    // Track global name for cleanup
+    if (def.global_name) {
+      this.state.extensions[extensionId].globalNames.add(def.global_name)
     }
   }
 
@@ -99,6 +104,19 @@ export class DynamicComponentRegistry {
       delete this.state.components[type]
       delete this.state.loadedModules[type]
       delete this.state.loadingPromises[type]
+    }
+
+    // Clear global variables for this extension
+    // This ensures fresh load when extension is reinstalled
+    if (extInfo.globalNames) {
+      for (const globalName of extInfo.globalNames) {
+        try {
+          delete (window as any)[globalName]
+          console.log(`[DynamicRegistry] Cleared global variable: ${globalName}`)
+        } catch (e) {
+          console.warn(`[DynamicRegistry] Failed to clear global ${globalName}:`, e)
+        }
+      }
     }
 
     // Remove extension index
@@ -455,11 +473,16 @@ export class DynamicComponentRegistry {
           extensionId: comp.extension_id,
           extensionName: comp.extension_id,
           componentTypes: [],
+          globalNames: new Set(),
         }
       }
       const extInfo = this.state.extensions[comp.extension_id]
       if (!extInfo.componentTypes.includes(comp.type)) {
         extInfo.componentTypes.push(comp.type)
+      }
+      // Track global name for cleanup
+      if (comp.global_name) {
+        extInfo.globalNames.add(comp.global_name)
       }
 
       if (!exists) {
@@ -474,6 +497,17 @@ export class DynamicComponentRegistry {
       // Check if any of its components still exist
       const hasComponents = extInfo.componentTypes.some(type => newTypes.has(type))
       if (!hasComponents) {
+        // Clear global variables before removing extension
+        if (extInfo.globalNames) {
+          for (const globalName of extInfo.globalNames) {
+            try {
+              delete (window as any)[globalName]
+              console.log(`[DynamicRegistry] Cleared global variable: ${globalName}`)
+            } catch (e) {
+              console.warn(`[DynamicRegistry] Failed to clear global ${globalName}:`, e)
+            }
+          }
+        }
         delete this.state.extensions[extId]
       }
     }
