@@ -9,7 +9,7 @@
 //! - **Linux/Windows**: Basic file existence and format checks
 
 use std::path::Path;
-use tracing::{warn, info, debug};
+use tracing::{warn, info};
 
 /// Validation error types
 #[derive(Debug, thiserror::Error)]
@@ -24,7 +24,7 @@ pub enum ValidationError {
     InvalidFormat(String),
 
     #[error("macOS LC_ID_DYLIB validation failed: {0}")]
-    InvalidDylibId(String),
+    InvalidDylibId(#[allow(dead_code)] String),
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
@@ -130,8 +130,6 @@ fn validate_macos_dylib(path: &Path) -> Result<(), ValidationError> {
         let lib_path = line.split('(').next()
             .map(|s| s.trim())
             .unwrap_or(line);
-
-        debug!("Found LC_ID_DYLIB entry: {}", lib_path);
 
         // Check if this is an absolute path that shouldn't be there
         if lib_path.starts_with('/') && !lib_path.starts_with("/usr/lib") && !lib_path.starts_with("/System") {

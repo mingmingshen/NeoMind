@@ -207,6 +207,7 @@ impl IsolatedExtensionLoader {
 
         // Try to load metadata from manifest.json first (installed .nep package format)
         // Then try sidecar JSON (discovery format), finally try extension.json in binaries dir
+        // Fallback to native loader for legacy/test extensions without JSON metadata
         let metadata = if let Some(manifest_meta) = Self::load_metadata_from_manifest(path) {
             tracing::debug!(
                 path = %path.display(),
@@ -229,12 +230,20 @@ impl IsolatedExtensionLoader {
             );
             ext_json_meta
         } else {
-            return Err(ExtensionError::LoadFailed(format!(
-                "No metadata file found for extension at {}. \
-                 Expected one of: manifest.json, extension.json (sidecar), or binaries/*.json. \
-                 Extension packages should include these files.",
-                path.display()
-            )));
+            // Fallback: use native loader for legacy/test extensions without JSON metadata
+            // This is needed for test fixtures and development scenarios
+            tracing::debug!(
+                path = %path.display(),
+                "No JSON metadata found, falling back to native loader (legacy/test mode)"
+            );
+            self.native_loader.load_metadata(path).await.map_err(|e| {
+                ExtensionError::LoadFailed(format!(
+                    "No metadata file found for extension at {} and native loader failed: {}. \
+                     Expected one of: manifest.json, extension.json (sidecar), or binaries/*.json.",
+                    path.display(),
+                    e
+                ))
+            })?
         };
 
         tracing::debug!(
@@ -260,7 +269,7 @@ impl IsolatedExtensionLoader {
 
     /// Load an extension (decides mode based on configuration)
     pub async fn load(&self, path: &Path) -> Result<LoadedExtension> {
-        // Extract metadata using safe JSON-based methods (no library loading)
+        // Extract metadata using safe JSON-based methods first, then fallback to native loader
         let metadata = if let Some(manifest_meta) = Self::load_metadata_from_manifest(path) {
             manifest_meta
         } else if let Some(sidecar_meta) = Self::load_metadata_from_sidecar(path) {
@@ -268,11 +277,14 @@ impl IsolatedExtensionLoader {
         } else if let Some(ext_json_meta) = Self::load_metadata_from_extension_json(path) {
             ext_json_meta
         } else {
-            return Err(ExtensionError::LoadFailed(format!(
-                "No metadata file found for extension at {}. \
-                 Expected one of: manifest.json, extension.json (sidecar), or binaries/*.json.",
-                path.display()
-            )));
+            // Fallback: use native loader for legacy/test extensions
+            self.native_loader.load_metadata(path).await.map_err(|e| {
+                ExtensionError::LoadFailed(format!(
+                    "No metadata file found for extension at {} and native loader failed: {}",
+                    path.display(),
+                    e
+                ))
+            })?
         };
 
         if self.should_use_isolated(&metadata.id) {
