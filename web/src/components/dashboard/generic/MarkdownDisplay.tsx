@@ -114,7 +114,8 @@ export function MarkdownDisplay({
 
   // Always call useDataSource - it will handle undefined dataSource internally
   // This ensures proper cleanup when dataSource is removed
-  const { data, loading, error } = useDataSource<string>(dataSource, {
+  // Use unknown type since data source can return string, JSON object, or array
+  const { data, loading, error } = useDataSource<unknown>(dataSource, {
     fallback: propContent,
   })
 
@@ -124,12 +125,37 @@ export function MarkdownDisplay({
   const content = useMemo(() => {
     // Only use data source when we have one and it's valid
     if (hasDataSource && !error && data !== undefined && data !== null) {
-      // Safely convert data to string, handling arrays and other types
+      // Handle string data directly
       if (typeof data === 'string') return data
+
+      // Handle arrays - check if it's an array of strings or objects
       if (Array.isArray(data)) {
+        if (data.length === 0) return ''
+
+        // Check if it's an array of strings
         const firstItem = data[0]
-        return typeof firstItem === 'string' ? firstItem : String(firstItem ?? '')
+        if (typeof firstItem === 'string') {
+          // Join array of strings with newlines
+          return data.join('\n')
+        }
+
+        // For array of objects, format as JSON code block
+        return '```json\n' + JSON.stringify(data, null, 2) + '\n```'
       }
+
+      // Handle objects (including JSON data) - format as markdown code block
+      if (typeof data === 'object') {
+        // Check if it's a simple object that should be rendered as JSON
+        try {
+          // Format as pretty-printed JSON in a code block
+          return '```json\n' + JSON.stringify(data, null, 2) + '\n```'
+        } catch {
+          // If JSON serialization fails, fall back to string
+          return String(data)
+        }
+      }
+
+      // Fallback for other types
       return String(data ?? '')
     }
     // No dataSource or error - use propContent directly
