@@ -307,43 +307,97 @@ export function toUnixTimestamp(date: Date): number {
 // ============================================================================
 
 /**
- * Common timezone options for selection
+ * Common timezone options for selection (IDs only)
  */
-export const COMMON_TIMEZONES = [
-  { id: "Asia/Shanghai", name: "中国 (UTC+8)" },
-  { id: "Asia/Tokyo", name: "日本 (UTC+9)" },
-  { id: "Asia/Seoul", name: "韩国 (UTC+9)" },
-  { id: "Asia/Singapore", name: "新加坡 (UTC+8)" },
-  { id: "Asia/Dubai", name: "迪拜 (UTC+4)" },
-  { id: "Europe/London", name: "伦敦 (UTC+0/+1)" },
-  { id: "Europe/Paris", name: "巴黎 (UTC+1/+2)" },
-  { id: "Europe/Berlin", name: "柏林 (UTC+1/+2)" },
-  { id: "Europe/Moscow", name: "莫斯科 (UTC+3)" },
-  { id: "America/New_York", name: "纽约 (UTC-5/-4)" },
-  { id: "America/Los_Angeles", name: "洛杉矶 (UTC-8/-7)" },
-  { id: "America/Chicago", name: "芝加哥 (UTC-6/-5)" },
-  { id: "America/Toronto", name: "多伦多 (UTC-5/-4)" },
-  { id: "America/Sao_Paulo", name: "圣保罗 (UTC-3/-2)" },
-  { id: "Australia/Sydney", name: "悉尼 (UTC+10/+11)" },
-  { id: "Pacific/Auckland", name: "奥克兰 (UTC+12/+13)" },
-  { id: "UTC", name: "UTC (UTC+0)" },
-]
+export const COMMON_TIMEZONE_IDS = [
+  "Asia/Shanghai",
+  "Asia/Tokyo",
+  "Asia/Seoul",
+  "Asia/Singapore",
+  "Asia/Hong_Kong",
+  "Asia/Dubai",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Europe/Moscow",
+  "America/New_York",
+  "America/Los_Angeles",
+  "America/Chicago",
+  "America/Toronto",
+  "America/Sao_Paulo",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+  "UTC",
+] as const
+
+export type CommonTimezoneId = (typeof COMMON_TIMEZONE_IDS)[number]
+
+/**
+ * Timezone info structure
+ */
+export interface TimezoneInfo {
+  id: string
+  name: string
+}
+
+/**
+ * Get timezone display name from i18n
+ * This function should be called with a translation function
+ * @param timezoneId - IANA timezone string
+ * @param t - Translation function from useTranslation
+ * @returns Localized timezone name
+ */
+export function getTimezoneDisplayName(
+  timezoneId: string,
+  t: (key: string) => string
+): string {
+  const key = `settings:timezones.${timezoneId.replace(/\//g, ".")}`
+  const translated = t(key)
+  // If translation not found, return the ID itself
+  if (translated === key || translated === `settings:timezones.${timezoneId}`) {
+    // Fallback to city name from ID
+    const city = timezoneId.split("/").pop() || timezoneId
+    return city.replace(/_/g, " ")
+  }
+  return translated
+}
+
+/**
+ * Get localized timezone list
+ * @param t - Translation function from useTranslation
+ * @returns Array of timezone info with localized names
+ */
+export function getLocalizedTimezones(t: (key: string) => string): TimezoneInfo[] {
+  return COMMON_TIMEZONE_IDS.map((id) => ({
+    id,
+    name: getTimezoneDisplayName(id, t),
+  }))
+}
 
 /**
  * Find a timezone by its ID or return the default
  * @param timezoneId - IANA timezone string
+ * @param t - Optional translation function for localized name
  * @returns Timezone object or default
  */
-export function findTimezone(timezoneId: string): {
+export function findTimezone(
+  timezoneId: string,
+  t?: (key: string) => string
+): {
   id: string
   name: string
 } {
-  return (
-    COMMON_TIMEZONES.find((tz) => tz.id === timezoneId) || {
-      id: "Asia/Shanghai",
-      name: "中国 (UTC+8)",
+  const exists = COMMON_TIMEZONE_IDS.includes(timezoneId as CommonTimezoneId)
+  if (exists) {
+    return {
+      id: timezoneId,
+      name: t ? getTimezoneDisplayName(timezoneId, t) : timezoneId,
     }
-  )
+  }
+  return {
+    id: "Asia/Shanghai",
+    name: t ? getTimezoneDisplayName("Asia/Shanghai", t) : "Asia/Shanghai",
+  }
 }
 
 /**

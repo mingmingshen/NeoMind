@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
+import { getLocalizedTimezones } from "@/lib/time"
 import { Bot, Languages, Lock, User, Shield, Check, ArrowRight, ArrowLeft, Server, ChevronRight, Globe } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -122,21 +123,6 @@ const llmProviders: LlmProviderInfo[] = [
   },
 ]
 
-const timezoneOptions = [
-  { id: 'Asia/Shanghai', name: '中国 (UTC+8)' },
-  { id: 'Asia/Tokyo', name: '日本 (UTC+9)' },
-  { id: 'Asia/Seoul', name: '韩国 (UTC+9)' },
-  { id: 'Asia/Singapore', name: '新加坡 (UTC+8)' },
-  { id: 'Europe/London', name: '伦敦 (UTC+0/+1)' },
-  { id: 'Europe/Paris', name: '巴黎 (UTC+1/+2)' },
-  { id: 'Europe/Berlin', name: '柏林 (UTC+1/+2)' },
-  { id: 'America/New_York', name: '纽约 (UTC-5/-4)' },
-  { id: 'America/Los_Angeles', name: '洛杉矶 (UTC-8/-7)' },
-  { id: 'America/Chicago', name: '芝加哥 (UTC-6/-5)' },
-  { id: 'Australia/Sydney', name: '悉尼 (UTC+10/+11)' },
-  { id: 'UTC', name: 'UTC (UTC+0)' },
-]
-
 // Error translation helper
 function translateError(error: string, t: (key: string, params?: Record<string, unknown>) => string): string {
   const lowerError = error.toLowerCase()
@@ -161,6 +147,8 @@ export function SetupPage() {
   const { login } = useStore()
   const { withErrorHandling } = useErrorHandler()
 
+  // Get localized timezone options
+  const timezoneOptions = getLocalizedTimezones(t)
   const [step, setStep] = useState<SetupStep>('welcome')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")

@@ -102,5 +102,28 @@
   "updating": "Updating Application",
   "update": "Update",
   "updateAvailableWithVersion": "Version {version} of NeoMind is available. Would you like to update now?",
-  "alreadyUpToDate": "You are already running the latest version of NeoMind."
+  "alreadyUpToDate": "You are already running the latest version of NeoMind.",
+  "timeFormat12h": "12-hour (12:00 PM)",
+  "timeFormat24h": "24-hour (14:00)",
+  "languageRegion": "Language & Region",
+  "timezones": {
+    "Asia/Shanghai": "Shanghai (UTC+8)",
+    "Asia/Tokyo": "Tokyo (UTC+9)",
+    "Asia/Seoul": "Seoul (UTC+9)",
+    "Asia/Singapore": "Singapore (UTC+8)",
+    "Asia/Hong_Kong": "Hong Kong (UTC+8)",
+    "Asia/Dubai": "Dubai (UTC+4)",
+    "Europe/London": "London (UTC+0/+1)",
+    "Europe/Paris": "Paris (UTC+1/+2)",
+    "Europe/Berlin": "Berlin (UTC+1/+2)",
+    "Europe/Moscow": "Moscow (UTC+3)",
+    "America/New_York": "New York (UTC-5/-4)",
+    "America/Los_Angeles": "Los Angeles (UTC-8/-7)",
+    "America/Chicago": "Chicago (UTC-6/-5)",
+    "America/Toronto": "Toronto (UTC-5/-4)",
+    "America/Sao_Paulo": "São Paulo (UTC-3/-2)",
+    "Australia/Sydney": "Sydney (UTC+10/+11)",
+    "Pacific/Auckland": "Auckland (UTC+12/+13)",
+    "UTC": "UTC (UTC+0)"
+  }
 }

@@ -22,7 +22,7 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { api } from "@/lib/api"
 import { useGlobalTimezone } from "@/hooks/useTimeFormat"
-import { COMMON_TIMEZONES } from "@/lib/time"
+import { getLocalizedTimezones } from "@/lib/time"
 
 type Language = "zh" | "en"
 type TimeFormat = "12h" | "24h"
@@ -115,9 +115,12 @@ export function PreferencesTab() {
   ]
 
   const timeFormatOptions = [
-    { value: "12h" as TimeFormat, label: "12小时制 (12:00 PM)" },
-    { value: "24h" as TimeFormat, label: "24小时制 (14:00)" },
+    { value: "12h" as TimeFormat, label: t("settings:timeFormat12h") },
+    { value: "24h" as TimeFormat, label: t("settings:timeFormat24h") },
   ]
+
+  // Get localized timezone list
+  const localizedTimezones = getLocalizedTimezones(t)
 
   return (
     <div className="space-y-6">
@@ -250,8 +253,8 @@ export function PreferencesTab() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(availableTimezones.length > 0 ? availableTimezones : COMMON_TIMEZONES).map(
-                      (tz) => (
+                    {(availableTimezones.length > 0 ? availableTimezones : localizedTimezones).map(
+                      (tz: { id: string; name: string }) => (
                         <SelectItem key={tz.id} value={tz.id}>
                           {tz.name}
                         </SelectItem>
