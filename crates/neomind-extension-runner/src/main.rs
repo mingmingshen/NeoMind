@@ -2532,23 +2532,18 @@ impl Runner {
 
             IpcMessage::EventPush { event_type, payload, timestamp: _ } => {
                 // Handle event push from host
-                info!(
+                debug!(
                     event_type = %event_type,
-                    payload_preview = %serde_json::to_string(&payload).unwrap_or_else(|_| "invalid".to_string()).chars().take(200).collect::<String>(),
                     "Received event push from host"
                 );
 
                 // Forward event pushes to the native JSON bridge when available.
                 if let Some(extension) = &self.extension {
-                    info!(
-                        event_type = %event_type,
-                        "Calling handle_event on extension"
-                    );
                     match extension.handle_event(&event_type, &payload) {
                         Ok(_) => {
-                            info!(
+                            trace!(
                                 event_type = %event_type,
-                                "Event handled successfully by extension"
+                                "Event handled by extension"
                             );
                         }
                         Err(e) => {
@@ -2560,7 +2555,6 @@ impl Runner {
                         }
                     }
                 } else {
-                    warn!("No extension loaded, cannot handle event");
                     // Call the SDK's event handler for native extensions (fallback)
                     neomind_extension_sdk::capabilities::event::call_event_handler(&event_type, &payload);
                 }
@@ -2568,10 +2562,6 @@ impl Runner {
                 // For WASM extensions, push events to global subscription queues
                 if self.extension_type == ExtensionType::Wasm {
                     get_global_event_state().push_event(&event_type, payload);
-                    trace!(
-                        event_type = %event_type,
-                        "Pushed event to WASM global event state"
-                    );
                 }
             }
 

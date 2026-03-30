@@ -11,7 +11,7 @@
 
 use serde_json::Value;
 use parking_lot::RwLock;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 
 use super::system::DynExtension;
 
@@ -137,14 +137,6 @@ impl EventDispatcher {
         let subscriptions = self.subscriptions.read().clone();
         let isolated_event_senders = self.isolated_event_senders.read().clone();
 
-        // Log all subscriptions for debugging (info level for visibility)
-        info!(
-            event_type = %event_type,
-            subscriptions_count = subscriptions.len(),
-            isolated_count = isolated_event_senders.len(),
-            "Dispatching event to extensions"
-        );
-
         // Find all extensions that have subscribed to this event type
         for (extension_id, event_types) in subscriptions.iter() {
             // Check if this extension should receive this event
@@ -170,31 +162,18 @@ impl EventDispatcher {
                 false
             });
 
-            info!(
-                extension_id = %extension_id,
-                event_types = ?event_types,
-                should_receive = should_receive,
-                "Checking extension subscription"
-            );
-
             if should_receive {
                 // IMPORTANT: Check isolated extensions FIRST
                 // Isolated extensions have priority over in-process proxies
                 // This ensures events go to the actual extension process, not the proxy
                 if let Some(sender) = isolated_event_senders.get(extension_id) {
-                    info!(
-                        extension_id = %extension_id,
-                        event_type = %event_type,
-                        "Pushing event to isolated extension via channel"
-                    );
-
                     // Send event to isolated extension via channel
                     match sender.send((event_type.to_string(), payload.clone())).await {
                         Ok(_) => {
-                            info!(
+                            trace!(
                                 extension_id = %extension_id,
                                 event_type = %event_type,
-                                "Event sent to isolated extension successfully"
+                                "Event sent to isolated extension"
                             );
                         }
                         Err(e) => {
@@ -215,7 +194,7 @@ impl EventDispatcher {
                 };
 
                 if let Some(extension) = extension_opt {
-                    info!(
+                    trace!(
                         extension_id = %extension_id,
                         event_type = %event_type,
                         "Dispatching event to in-process extension"

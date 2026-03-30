@@ -24,6 +24,7 @@ pub mod setup;
 pub mod stats;
 pub mod suggestions;
 pub mod ws;
+pub mod data;
 
 // Re-export ServerState so handlers can use it
 pub use crate::server::ServerState;
@@ -106,3 +107,5 @@ pub use message_channels::{
     update_channel_filter_handler, add_recipient_handler, list_recipients_handler,
     remove_recipient_handler, update_channel_handler,
 };
+// Unified Data API
+pub use data::list_all_data_sources_handler;

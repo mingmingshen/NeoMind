@@ -1,6 +1,7 @@
 {
   "dashboard": "Chat",
   "visual-dashboard": "Visual Dashboard",
+  "data": "Data Explorer",
   "devices": "Devices",
   "automation": "Automation",
   "agents": "AI Agents",

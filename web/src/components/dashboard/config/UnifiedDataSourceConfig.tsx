@@ -1040,7 +1040,7 @@ export function UnifiedDataSourceConfig({
                       {item.currentValue !== undefined && item.currentValue !== null && (
                         <>
                           <span className="text-muted-foreground/20">·</span>
-                          <span className="text-foreground/60">{t('dataSource.current')}: {formatValue(item.currentValue)}</span>
+                          <span className="text-foreground/60 truncate max-w-[120px] inline-block align-bottom overflow-hidden" title={formatValue(item.currentValue)}>{t('dataSource.current')}: {formatValue(item.currentValue)}</span>
                           {item.unit && item.unit !== '-' && (
                             <>
                               <span className="text-muted-foreground/20">·</span>
@@ -1971,8 +1971,8 @@ function MobileMetricsList({
                   {item.propertyName}
                 </code>
                 {item.currentValue !== undefined && item.currentValue !== null && (
-                  <div className="text-sm text-muted-foreground">
-                    {t('dataSource.current')}: <span className="text-foreground font-medium">{formatValue(item.currentValue)}</span>
+                  <div className="text-sm text-muted-foreground break-all">
+                    {t('dataSource.current')}: <span className="text-foreground font-medium" title={formatValue(item.currentValue)}>{formatValue(item.currentValue)}</span>
                     {item.unit && item.unit !== '-' && <span className="ml-1 text-muted-foreground/60">{item.unit}</span>}
                   </div>
                 )}

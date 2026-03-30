@@ -415,7 +415,7 @@ export function DeviceDetail({
                                 </Badge>
                               )}
                             </div>
-                            <div className="text-sm break-words leading-relaxed" title={typeof value === 'string' ? value : JSON.stringify(value)}>
+                            <div className="text-sm break-all leading-relaxed overflow-hidden line-clamp-3" title={typeof value === 'string' ? value : JSON.stringify(value)}>
                               {renderMetricValue(value, (src) => {
                                 setPreviewImageSrc(src)
                                 setImagePreviewOpen(true)

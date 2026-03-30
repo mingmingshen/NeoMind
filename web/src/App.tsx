@@ -19,6 +19,8 @@ const ChatPage = lazy(() => import('@/pages/chat').then(m => ({ default: m.ChatP
 const VisualDashboard = lazy(() =>
   import('@/pages/dashboard-components/VisualDashboard').then(m => ({ default: m.VisualDashboard }))
 )
+const DataExplorerPage = lazy(() => import('@/pages/data-explorer').then(m => ({ default: m.DataExplorerPage }))
+)
 const DevicesPage = lazy(() => import('@/pages/devices').then(m => ({ default: m.DevicesPage })))
 const AutomationPage = lazy(() => import('@/pages/automation').then(m => ({ default: m.AutomationPage })))
 const AgentsPage = lazy(() => import('@/pages/agents').then(m => ({ default: m.AgentsPage })))
@@ -420,6 +422,8 @@ function App() {
                       <Route path="/chat/:sessionId" element={<ChatPage />} />
                       <Route path="/visual-dashboard" element={<VisualDashboard />} />
                       <Route path="/visual-dashboard/:dashboardId" element={<VisualDashboard />} />
+                      {/* Data Explorer */}
+                      <Route path="/data" element={<DataExplorerPage />} />
                       {/* Devices with tab routes */}
                       <Route path="/devices" element={<DevicesPage />} />
                       <Route path="/devices/:id" element={<DevicesPage />} />

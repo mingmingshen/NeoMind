@@ -197,6 +197,7 @@ function transformTelemetryToImages(data: unknown): ImageHistoryItem[] {
   }
 
   // Sort by timestamp descending (newest first), items without timestamp go to the end
+  // This ensures slider position 0 = newest image, sliding right goes back in time
   result.sort((a, b) => {
     if (a.timestamp === undefined && b.timestamp === undefined) return 0
     if (a.timestamp === undefined) return 1
@@ -253,6 +254,7 @@ function normalizeImageData(data: unknown): ImageHistoryItem[] {
     }
 
     // Sort by timestamp descending (newest first), items without timestamp go to the end
+    // This ensures slider position 0 = newest image, sliding right goes back in time
     result.sort((a, b) => {
       if (a.timestamp === undefined && b.timestamp === undefined) return 0
       if (a.timestamp === undefined) return 1
@@ -418,11 +420,13 @@ export function ImageHistory({
   }, [data])
 
   // Transform data to images - handles telemetry raw points
+  // IMPORTANT: Depend on data directly (not dataKey) to ensure proper updates when content changes
+  // dataKey is based on the last item which may not change when new items are prepended
   const images = useMemo(() => {
     const normalized = normalizeImageData(data ?? propImages ?? [])
     const result = normalized.length > 0 ? normalized : transformTelemetryToImages(data ?? propImages ?? [])
     return result
-  }, [dataKey, propImages])
+  }, [data, propImages])
 
   // Track image SOURCES (not just indices) to detect real changes vs reordering
   const imageSourcesRef = useRef<string[]>([])

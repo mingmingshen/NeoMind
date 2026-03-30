@@ -297,6 +297,9 @@ impl TransformEventService {
                                                 .await;
 
                                             // Store to time series storage for historical queries
+                                            // Use storage_device_id() to get "transform:{transform_id}" format
+                                            // for proper querying from data explorer
+                                            let storage_device_id = transformed_metric.storage_device_id();
                                             let data_point = neomind_devices::DataPoint {
                                                 timestamp: transformed_metric.timestamp,
                                                 value: neomind_devices::MetricValue::Float(transformed_metric.value),
@@ -304,14 +307,14 @@ impl TransformEventService {
                                             };
                                             if let Err(e) = time_series_storage_inner
                                                 .write(
-                                                    &transformed_metric.device_id,
+                                                    &storage_device_id,
                                                     &transformed_metric.metric,
                                                     data_point,
                                                 )
                                                 .await
                                             {
                                                 tracing::warn!(
-                                                    device_id = %transformed_metric.device_id,
+                                                    device_id = %storage_device_id,
                                                     metric = %transformed_metric.metric,
                                                     error = %e,
                                                     "Failed to store transformed metric to time series storage"
@@ -319,7 +322,7 @@ impl TransformEventService {
                                             }
 
                                             tracing::trace!(
-                                                device_id = %transformed_metric.device_id,
+                                                device_id = %storage_device_id,
                                                 metric = %transformed_metric.metric,
                                                 value = transformed_metric.value,
                                                 "Published and stored transformed metric"

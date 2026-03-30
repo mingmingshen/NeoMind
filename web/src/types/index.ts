@@ -1247,6 +1247,38 @@ export interface TransformDataSourceInfo {
 }
 
 /**
+ * Unified data source info from the /api/data/sources endpoint
+ * Aggregates data sources from devices, extensions, and transforms
+ */
+export interface UnifiedDataSourceInfo {
+  /** Unique identifier: "{type}:{source}:{field}" */
+  id: string
+  /** Source type: "device" | "extension" | "transform" | "system" */
+  source_type: string
+  /** Source name (device_id, extension_id, transform_id, or "system") */
+  source_name: string
+    /** Display name of the source */
+  source_display_name: string
+  /** Field/metric name */
+  field: string
+  /** Display name of the field */
+  field_display_name: string
+
+  /** Data type */
+  data_type: string
+  /** Unit of measurement */
+  unit?: string
+  /** Human-readable description */
+  description?: string
+  /** Current value (if available) */
+  current_value?: unknown
+  /** Last update timestamp (Unix milliseconds) */
+  last_update?: number
+  /** Data quality score (0.0 - 1.0) */
+  quality?: number
+}
+
+/**
  * Unified query parameters
  */
 export interface ExtensionQueryParams {

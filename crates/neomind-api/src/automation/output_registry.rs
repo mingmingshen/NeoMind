@@ -300,6 +300,7 @@ mod tests {
         vec![
             TransformedMetric {
                 device_id: "sensor1".to_string(),
+                transform_id: None,
                 metric: "temperature_f".to_string(),
                 value: 72.5,
                 timestamp: 12345,
@@ -307,6 +308,7 @@ mod tests {
             },
             TransformedMetric {
                 device_id: "sensor1".to_string(),
+                transform_id: None,
                 metric: "humidity_pct".to_string(),
                 value: 65.0,
                 timestamp: 12345,

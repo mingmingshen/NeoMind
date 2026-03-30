@@ -25,6 +25,7 @@ import {
   BellRing,
   Bot,
   Check,
+  Database,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -53,7 +54,7 @@ import { ThemeToggle } from "./ThemeToggle"
 import { useState, useEffect, useRef, forwardRef } from "react"
 import { setTopNavHeight } from "@/hooks/useVisualViewport"
 
-type PageType = "dashboard" | "visual-dashboard" | "devices" | "automation" | "agents" | "messages" | "extensions" | "settings"
+type PageType = "dashboard" | "visual-dashboard" | "data" | "devices" | "automation" | "agents" | "messages" | "extensions" | "settings"
 
 interface NavItem {
   id: PageType
@@ -68,6 +69,7 @@ const navItems: NavItem[] = [
   { id: "visual-dashboard", path: "/visual-dashboard", labelKey: "nav.visual-dashboard", icon: LayoutDashboard },
   { id: "devices", path: "/devices", labelKey: "nav.devices", icon: Cpu },
   { id: "automation", path: "/automation", labelKey: "nav.automation", icon: Workflow },
+  { id: "data", path: "/data", labelKey: "nav.data", icon: Database },
   { id: "messages", path: "/messages", labelKey: "nav.messages", icon: Bell },
   { id: "extensions", path: "/extensions", labelKey: "nav.extensions", icon: Puzzle },
   { id: "settings", path: "/settings", labelKey: "nav.settings", icon: Settings },

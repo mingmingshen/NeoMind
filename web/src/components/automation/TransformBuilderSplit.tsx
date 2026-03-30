@@ -494,7 +494,11 @@ return ${resultParam}`
                     "flex items-center justify-between bg-background border rounded hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer group",
                     isMobile ? "px-4 py-3" : "px-2 py-1.5"
                   )}
-                  onClick={() => onInsertVariable?.(`input.${metric.name}`)}
+                  onClick={() => {
+                    // Add ?. for nested paths (e.g., "metadata.height" -> "metadata?.height")
+                    const safePath = metric.name.split('.').join('?.')
+                    onInsertVariable?.(`input.${safePath}`)
+                  }}
                 >
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <code className={cn(
@@ -635,7 +639,7 @@ return ${resultParam}`
                                 "flex items-center justify-between bg-background border rounded hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer group",
                                 isMobile ? "px-4 py-3" : "px-2 py-1.5"
                               )}
-                              onClick={() => onInsertVariable?.(`input.extensions.${extId}.${field.field}`)}
+                              onClick={() => onInsertVariable?.(`input.extensions?.${extId}?.${field.field}`)}
                             >
                               <div className="flex items-center gap-2 min-w-0 flex-1">
                                 <code className={cn(

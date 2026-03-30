@@ -23,7 +23,7 @@ pub async fn create_router() -> Router {
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
         agents, auth as auth_handlers, auth_users, automations, basic, config,
-        dashboards, devices, events, extensions, extension_stream, llm_backends,
+        dashboards, data, devices, events, extensions, extension_stream, llm_backends,
         message_channels, messages, mqtt, rules, sessions, settings, setup, stats,
         suggestions, capabilities,
     };
@@ -174,6 +174,11 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         )
         // Stats API (public - system stats for dashboard components)
         .route("/api/stats/system", get(stats::get_system_stats_handler))
+        // Unified Data Sources API (public - browse all data sources)
+        .route(
+            "/api/data/sources",
+            get(data::list_all_data_sources_handler),
+        )
         // Suggestions API (public - provides intelligent input suggestions)
         .route(
             "/api/suggestions",

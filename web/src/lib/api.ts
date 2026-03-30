@@ -96,6 +96,7 @@ import type {
   DashboardTemplateResponse,
   // Data Source Types
   TransformDataSourceInfo,
+  UnifiedDataSourceInfo,
 } from '@/types'
 import { notifyFromError, notifySuccess } from './notify'
 import { tokenManager as unifiedTokenManager } from './auth'
@@ -1473,6 +1474,13 @@ export const api = {
 
     return allSources
   },
+
+  /**
+   * Get unified data sources from the /api/data/sources endpoint
+   * Aggregates all data sources (devices, extensions, transforms) in a single call
+   */
+  listUnifiedDataSources: () =>
+    fetchAPI<UnifiedDataSourceInfo[]>('/data/sources'),
 
   // ========== Bulk Operations API ==========
   bulkCreateMessages: (messages: Array<{ title: string; message: string; severity?: string; category?: string }>) =>
