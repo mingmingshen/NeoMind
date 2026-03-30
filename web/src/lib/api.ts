@@ -109,14 +109,48 @@ export function isTauriEnv(): boolean {
   return typeof window !== 'undefined' && '__TAURI__' in window
 }
 
-/** Get API base URL based on environment */
+/**
+ * Get API base URL based on environment.
+ *
+ * Priority:
+ * 1. VITE_API_BASE_URL environment variable (for production cross-origin deployment)
+ * 2. Tauri: http://localhost:9375/api (direct connection to local backend)
+ * 3. Web: /api (relative path, relies on Vite proxy or reverse proxy)
+ *
+ * For production cross-origin deployment (frontend on app.com, backend on api.com):
+ * - Set VITE_API_BASE_URL=https://api.com/api in your .env file
+ * - Ensure CORS is configured on the backend
+ */
 export function getApiBase(): string {
-  return isTauriEnv() ? 'http://localhost:9375/api' : '/api'
+  // Check for explicit environment variable (highest priority)
+  const envApiBase = import.meta.env.VITE_API_BASE_URL
+  if (envApiBase) {
+    return envApiBase
+  }
+  // Tauri desktop: direct connection
+  if (isTauriEnv()) {
+    return 'http://localhost:9375/api'
+  }
+  // Web (dev/prod): use relative path, let proxy handle forwarding
+  return '/api'
 }
 
 /** Get server origin URL based on environment */
 export function getServerOrigin(): string {
-  return isTauriEnv() ? 'http://localhost:9375' : window.location.origin
+  if (isTauriEnv()) {
+    return 'http://localhost:9375'
+  }
+  // For cross-origin, extract origin from VITE_API_BASE_URL if set
+  const envApiBase = import.meta.env.VITE_API_BASE_URL
+  if (envApiBase) {
+    try {
+      const url = new URL(envApiBase)
+      return url.origin
+    } catch {
+      // Invalid URL, fall back to current origin
+    }
+  }
+  return window.location.origin
 }
 
 const API_BASE = getApiBase()
@@ -1240,11 +1274,12 @@ export const api = {
     }
     const base64Data = btoa(binary)
 
-    // For large file uploads in development, bypass Vite proxy and connect directly to backend
-    // This avoids EPIPE errors caused by the proxy's handling of large request bodies
+    // For large file uploads, use appropriate API base:
+    // - Tauri: Direct connection to localhost:9375
+    // - Web (dev/prod): Use relative path /api and let Vite proxy or reverse proxy handle forwarding
+    // This avoids CORS issues when accessing from LAN (e.g., http://192.168.x.x:5173)
     const isTauri = isTauriEnv()
-    const isDev = window.location.port === '5173'
-    const uploadApiBase = isTauri ? 'http://localhost:9375/api' : (isDev ? 'http://127.0.0.1:9375/api' : API_BASE)
+    const uploadApiBase = isTauri ? 'http://localhost:9375/api' : API_BASE
 
     // Get auth token
     const token = tokenManager.getToken()
