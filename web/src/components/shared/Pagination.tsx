@@ -1,4 +1,11 @@
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
@@ -168,17 +175,21 @@ export function Pagination({
         </Button>
 
         {showSizeChanger && onPageSizeChange && (
-          <select
-            value={pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            className="ml-2 h-8 rounded-md border border-input bg-background px-2 py-1 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+          <Select
+            value={String(pageSize)}
+            onValueChange={(value) => onPageSizeChange(Number(value))}
           >
-            {pageSizeOptions.map((size) => (
-              <option key={size} value={size}>
-                {t('pagination.perPage', { size })}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="ml-2 h-8 w-auto">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {pageSizeOptions.map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {t('pagination.perPage', { size })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
       </div>
     </div>

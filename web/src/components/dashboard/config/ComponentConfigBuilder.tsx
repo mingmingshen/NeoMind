@@ -6,6 +6,13 @@
  */
 
 import { useTranslation } from 'react-i18next'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
 import type {
   SizeOption,
@@ -812,33 +819,41 @@ export function createContentConfig(config: {
           {config.onVariantChange && (
             <div className="space-y-2">
               <label className="text-sm font-medium">Variant</label>
-              <select
+              <Select
                 value={config.variant ?? 'body'}
-                onChange={(e) => config.onVariantChange?.(e.target.value)}
-                className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                onValueChange={(value) => config.onVariantChange?.(value)}
               >
-                <option value="h1">Heading 1</option>
-                <option value="h2">Heading 2</option>
-                <option value="h3">Heading 3</option>
-                <option value="body">Body</option>
-                <option value="small">Small</option>
-                <option value="muted">Muted</option>
-              </select>
+                <SelectTrigger className="w-full h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="h1">Heading 1</SelectItem>
+                  <SelectItem value="h2">Heading 2</SelectItem>
+                  <SelectItem value="h3">Heading 3</SelectItem>
+                  <SelectItem value="body">Body</SelectItem>
+                  <SelectItem value="small">Small</SelectItem>
+                  <SelectItem value="muted">Muted</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           )}
           {config.onAlignChange && (
             <div className="space-y-2">
               <label className="text-sm font-medium">Alignment</label>
-              <select
+              <Select
                 value={config.align ?? 'left'}
-                onChange={(e) => config.onAlignChange?.(e.target.value)}
-                className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                onValueChange={(value) => config.onAlignChange?.(value)}
               >
-                <option value="left">Left</option>
-                <option value="center">Center</option>
-                <option value="right">Right</option>
-                <option value="justify">Justify</option>
-              </select>
+                <SelectTrigger className="w-full h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="left">Left</SelectItem>
+                  <SelectItem value="center">Center</SelectItem>
+                  <SelectItem value="right">Right</SelectItem>
+                  <SelectItem value="justify">Justify</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           )}
         </div>

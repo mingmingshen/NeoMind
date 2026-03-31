@@ -1559,19 +1559,22 @@ export function AgentEditorFullScreen({
                         isMobile ? "flex-col items-start gap-3" : ""
                       )}>
                         <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.basicInfo.fromDevice')}</span>
-                        <select
+                        <Select
                           value={eventConfig.deviceId || 'all'}
-                          onChange={(e) => setEventConfig({ ...eventConfig, deviceId: e.target.value })}
-                          className={cn(
-                            "rounded-lg border bg-background",
-                            isMobile ? "flex-1 h-11 px-4 text-base" : "flex-1 h-9 px-3 text-sm"
-                          )}
+                          onValueChange={(value) => setEventConfig({ ...eventConfig, deviceId: value })}
                         >
-                          <option value="all">{tAgent('creator.schedule.event.allDevices')}</option>
-                          {devices.map((d) => (
-                            <option key={d.id} value={d.id}>{d.name}</option>
-                          ))}
-                        </select>
+                          <SelectTrigger className={cn(
+                            isMobile ? "flex-1 h-11" : "flex-1 h-9"
+                          )}>
+                            <SelectValue placeholder={tAgent('creator.schedule.event.allDevices')} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">{tAgent('creator.schedule.event.allDevices')}</SelectItem>
+                            {devices.map((d) => (
+                              <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <p className={cn("text-muted-foreground", isMobile ? "text-xs" : "text-xs")}>
                           Agent will fetch data from Resources when device updates
                         </p>

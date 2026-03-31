@@ -3751,63 +3751,83 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
                       <Label>{t('visualDashboard.autoPlay')}</Label>
-                      <select
+                      <Select
                         value={String(config.autoplay ?? false)}
-                        onChange={(e) => updateConfig('autoplay')(e.target.value === 'true')}
-                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                        onValueChange={(value) => updateConfig('autoplay')(value === 'true')}
                       >
-                        <option value="false">{t('visualDashboard.off')}</option>
-                        <option value="true">{t('visualDashboard.on')}</option>
-                      </select>
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="false">{t('visualDashboard.off')}</SelectItem>
+                          <SelectItem value="true">{t('visualDashboard.on')}</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
                     <Field>
                       <Label>{t('visualDashboard.muted')}</Label>
-                      <select
+                      <Select
                         value={String(config.muted ?? true)}
-                        onChange={(e) => updateConfig('muted')(e.target.value === 'true')}
-                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                        onValueChange={(value) => updateConfig('muted')(value === 'true')}
                       >
-                        <option value="true">{t('visualDashboard.muted')}</option>
-                        <option value="false">{t('visualDashboard.unmuted')}</option>
-                      </select>
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">{t('visualDashboard.muted')}</SelectItem>
+                          <SelectItem value="false">{t('visualDashboard.unmuted')}</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
                       <Label>{t('visualDashboard.showControls')}</Label>
-                      <select
+                      <Select
                         value={String(config.controls ?? true)}
-                        onChange={(e) => updateConfig('controls')(e.target.value === 'true')}
-                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                        onValueChange={(value) => updateConfig('controls')(value === 'true')}
                       >
-                        <option value="true">{t('visualDashboard.showCard')}</option>
-                        <option value="false">{t('visualDashboard.hide')}</option>
-                      </select>
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">{t('visualDashboard.showCard')}</SelectItem>
+                          <SelectItem value="false">{t('visualDashboard.hide')}</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
                     <Field>
                       <Label>{t('visualDashboard.loop')}</Label>
-                      <select
+                      <Select
                         value={String(config.loop ?? false)}
-                        onChange={(e) => updateConfig('loop')(e.target.value === 'true')}
-                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                        onValueChange={(value) => updateConfig('loop')(value === 'true')}
                       >
-                        <option value="false">{t('visualDashboard.off')}</option>
-                        <option value="true">{t('visualDashboard.on')}</option>
-                      </select>
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="false">{t('visualDashboard.off')}</SelectItem>
+                          <SelectItem value="true">{t('visualDashboard.on')}</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
                   </div>
 
                   <Field>
                     <Label>{t('visualDashboard.fullscreenButton')}</Label>
-                    <select
+                    <Select
                       value={String(config.showFullscreen ?? true)}
-                      onChange={(e) => updateConfig('showFullscreen')(e.target.value === 'true')}
-                      className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                      onValueChange={(value) => updateConfig('showFullscreen')(value === 'true')}
                     >
-                      <option value="true">{t('visualDashboard.showCard')}</option>
-                      <option value="false">{t('visualDashboard.hide')}</option>
-                    </select>
+                      <SelectTrigger className="w-full h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="true">{t('visualDashboard.showCard')}</SelectItem>
+                        <SelectItem value="false">{t('visualDashboard.hide')}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </Field>
                 </div>
               ),
@@ -4060,50 +4080,66 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
                       <Label>{t('visualDashboard.showControlBar')}</Label>
-                      <select
+                      <Select
                         value={String(config.showControls ?? true)}
-                        onChange={(e) => updateConfig('showControls')(e.target.value === 'true')}
-                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                        onValueChange={(value) => updateConfig('showControls')(value === 'true')}
                       >
-                        <option value="true">{t('visualDashboard.showCard')}</option>
-                        <option value="false">{t('visualDashboard.hide')}</option>
-                      </select>
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">{t('visualDashboard.showCard')}</SelectItem>
+                          <SelectItem value="false">{t('visualDashboard.hide')}</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
                     <Field>
                       <Label>{t('visualDashboard.showLayerControl')}</Label>
-                      <select
+                      <Select
                         value={String(config.showLayers ?? true)}
-                        onChange={(e) => updateConfig('showLayers')(e.target.value === 'true')}
-                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                        onValueChange={(value) => updateConfig('showLayers')(value === 'true')}
                       >
-                        <option value="true">{t('visualDashboard.showCard')}</option>
-                        <option value="false">{t('visualDashboard.hide')}</option>
-                      </select>
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">{t('visualDashboard.showCard')}</SelectItem>
+                          <SelectItem value="false">{t('visualDashboard.hide')}</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
                       <Label>{t('visualDashboard.interactive')}</Label>
-                      <select
+                      <Select
                         value={String(config.interactive ?? true)}
-                        onChange={(e) => updateConfig('interactive')(e.target.value === 'true')}
-                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                        onValueChange={(value) => updateConfig('interactive')(value === 'true')}
                       >
-                        <option value="true">{t('visualDashboard.yes')}</option>
-                        <option value="false">{t('visualDashboard.no')}</option>
-                      </select>
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">{t('visualDashboard.yes')}</SelectItem>
+                          <SelectItem value="false">{t('visualDashboard.no')}</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
                     <Field>
                       <Label>{t('visualDashboard.fullscreenButton')}</Label>
-                      <select
+                      <Select
                         value={String(config.showFullscreen ?? true)}
-                        onChange={(e) => updateConfig('showFullscreen')(e.target.value === 'true')}
-                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                        onValueChange={(value) => updateConfig('showFullscreen')(value === 'true')}
                       >
-                        <option value="true">{t('visualDashboard.showCard')}</option>
-                        <option value="false">{t('visualDashboard.hide')}</option>
-                      </select>
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">{t('visualDashboard.showCard')}</SelectItem>
+                          <SelectItem value="false">{t('visualDashboard.hide')}</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
                   </div>
                 </div>
@@ -4545,25 +4581,33 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
                       <Label>{t('visualDashboard.showControlBar')}</Label>
-                      <select
+                      <Select
                         value={String(config.showControls ?? true)}
-                        onChange={(e) => updateConfig('showControls')(e.target.value === 'true')}
-                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                        onValueChange={(value) => updateConfig('showControls')(value === 'true')}
                       >
-                        <option value="true">{t('visualDashboard.showCard')}</option>
-                        <option value="false">{t('visualDashboard.hide')}</option>
-                      </select>
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">{t('visualDashboard.showCard')}</SelectItem>
+                          <SelectItem value="false">{t('visualDashboard.hide')}</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
                     <Field>
                       <Label>{t('visualDashboard.showFullscreenButton')}</Label>
-                      <select
+                      <Select
                         value={String(config.showFullscreen ?? true)}
-                        onChange={(e) => updateConfig('showFullscreen')(e.target.value === 'true')}
-                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                        onValueChange={(value) => updateConfig('showFullscreen')(value === 'true')}
                       >
-                        <option value="true">{t('visualDashboard.showCard')}</option>
-                        <option value="false">{t('visualDashboard.hide')}</option>
-                      </select>
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">{t('visualDashboard.showCard')}</SelectItem>
+                          <SelectItem value="false">{t('visualDashboard.hide')}</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
                   </div>
                 </div>
@@ -4865,17 +4909,21 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                           return (
                             <Field key={key}>
                               <Label>{fieldLabel}</Label>
-                              <select
+                              <Select
                                 value={propValue ?? propDef.default ?? propDef.enum[0]}
-                                onChange={(e) => handleChange(e.target.value)}
-                                className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
+                                onValueChange={(value) => handleChange(value)}
                               >
-                                {propDef.enum.map((enumValue: string, idx: number) => (
-                                  <option key={enumValue} value={enumValue}>
-                                    {enumLabels[idx]}
-                                  </option>
-                                ))}
-                              </select>
+                                <SelectTrigger className="w-full h-9">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {propDef.enum.map((enumValue: string, idx: number) => (
+                                    <SelectItem key={enumValue} value={enumValue}>
+                                      {enumLabels[idx]}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </Field>
                           )
                         }

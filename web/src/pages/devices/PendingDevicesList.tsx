@@ -18,6 +18,13 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Table,
   TableHeader,
   TableRow,
@@ -704,20 +711,24 @@ export function PendingDevicesList({
                             </TableCell>
                             <TableCell>
                               {isEditingMetrics ? (
-                                <select
+                                <Select
                                   value={metric.data_type}
-                                  onChange={(e) => {
+                                  onValueChange={(value) => {
                                     const updated = [...editingMetrics]
-                                    updated[idx].data_type = e.target.value
+                                    updated[idx].data_type = value
                                     setEditingMetrics(updated)
                                   }}
-                                  className="h-7 text-xs bg-background border rounded px-2"
                                 >
-                                  <option value="string">String</option>
-                                  <option value="integer">Integer</option>
-                                  <option value="float">Float</option>
-                                  <option value="boolean">Boolean</option>
-                                </select>
+                                  <SelectTrigger className="h-7 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="string">String</SelectItem>
+                                    <SelectItem value="integer">Integer</SelectItem>
+                                    <SelectItem value="float">Float</SelectItem>
+                                    <SelectItem value="boolean">Boolean</SelectItem>
+                                  </SelectContent>
+                                </Select>
                               ) : (
                                 <span className="text-xs capitalize">{metric.data_type || 'string'}</span>
                               )}
