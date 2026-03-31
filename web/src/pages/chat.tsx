@@ -285,6 +285,15 @@ export function ChatPage() {
     }
   }, [loadBackends, loadSessions])
 
+  // Refresh backends when window gains focus (e.g., returning from settings page)
+  useEffect(() => {
+    const handleFocus = () => {
+      loadBackends()
+    }
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [loadBackends])
+
   // Get sessions from store for navigation logic
   const sessions = useStore((state) => state.sessions)
 

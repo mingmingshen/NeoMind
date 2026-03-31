@@ -266,7 +266,26 @@ export function UnifiedLLMBackendsTab({
 
   // Handle delete instance
   const handleDelete = async (id: string) => {
-    await onDeleteBackend(id)
+    // Find instance name for confirmation
+    const instance = instances.find(i => i.id === id)
+    const instanceName = instance?.name || instance?.model || id
+
+    // Confirm deletion
+    if (!confirm(t('plugins:llm.confirmDelete', { name: instanceName, defaultValue: `确定要删除 "${instanceName}" 吗？` }))) {
+      return
+    }
+
+    const success = await onDeleteBackend(id)
+    if (success) {
+      // Update local state immediately
+      setInstances(prev => prev.filter(i => i.id !== id))
+      // Clear test result
+      setTestResults(prev => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+    }
   }
 
   // Handle test connection
