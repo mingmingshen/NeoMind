@@ -1331,9 +1331,11 @@ impl LlmRuntime for OllamaRuntime {
                                                 content_buffer.push_str(content);
 
                                                 // Detect if content is actually thinking (qwen3-vl puts thinking in content field)
-                                                // Skip this detection if we've exceeded thinking limit
+                                                // Skip this detection if we've exceeded thinking limit OR if model doesn't support thinking
+                                                // Non-thinking models should never have their content classified as thinking
                                                 if !detected_thinking_in_content
                                                     && !skip_remaining_thinking
+                                                    && should_send_thinking
                                                 {
                                                     // Check initial buffer for thinking patterns
                                                     let is_likely_thinking = content_buffer
