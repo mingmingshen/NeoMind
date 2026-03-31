@@ -278,10 +278,13 @@ jobs:
           retention-days: 90
           if-no-files-found: ignore
 
-  # ========== 服务器构建（优化）==========
+  # ========== 服务器构建（纯 API，无前端嵌入）==========
+  # 服务器与前端分离部署：
+  # - 服务器只提供 API 接口
+  # - 前端独立部署（nginx/CDN）
+  # - 通过反向代理或 CORS 实现通信
   build-server:
     name: Server (${{ matrix.os }}-${{ matrix.arch }})
-    needs: build-frontend
     strategy:
       fail-fast: false
       matrix:
@@ -304,25 +307,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: 'web/package-lock.json'
-
-      - name: Download frontend artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: web/dist/
-
-      - name: Prepare static assets for embedding
-        run: |
-          mkdir -p crates/neomind-api/static
-          cp -r web/dist/* crates/neomind-api/static/
-          echo "✅ Static assets embedded"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -358,20 +342,19 @@ jobs:
         if: matrix.os == 'linux' && steps.cache-cross.outputs.cache-hit != 'true'
         run: cargo install cross --git https://github.com/cross-rs/cross
 
-      # ========== 优化：使用更快的构建选项 ==========
+      # ========== 构建纯 API 服务器（无前端嵌入）==========
       - name: Build server and extension runner (Linux)
         if: matrix.os == 'linux'
         shell: bash
         run: |
-          # Build with proper error handling
           set -e
-          
-          # Build server binary
-          cross build --release -p neomind-cli --target ${{ matrix.target }} --features neomind-api/static
-          
+
+          # Build server binary (no static feature - pure API server)
+          cross build --release -p neomind-cli --target ${{ matrix.target }}
+
           # Build extension runner
           cross build --release -p neomind-extension-runner --target ${{ matrix.target }}
-          
+
           # Verify binaries exist
           ls -la target/${{ matrix.target }}/release/neomind target/${{ matrix.target }}/release/neomind-extension-runner
 
@@ -386,15 +369,14 @@ jobs:
         if: matrix.os == 'darwin'
         shell: bash
         run: |
-          # Build with proper error handling
           set -e
-          
-          # Build server binary
-          cargo build --release -p neomind-cli --target ${{ matrix.target }} --features neomind-api/static
-          
+
+          # Build server binary (no static feature - pure API server)
+          cargo build --release -p neomind-cli --target ${{ matrix.target }}
+
           # Build extension runner
           cargo build --release -p neomind-extension-runner --target ${{ matrix.target }}
-          
+
           # Verify binaries exist
           ls -la target/${{ matrix.target }}/release/neomind target/${{ matrix.target }}/release/neomind-extension-runner
 
@@ -412,7 +394,7 @@ jobs:
 
   # ========== Release job ==========
   release:
-    needs: [build-desktop, build-server]
+    needs: [build-frontend, build-desktop, build-server]
     runs-on: ubuntu-latest
     if: contains(github.ref, 'refs/tags/')
 
@@ -428,9 +410,73 @@ jobs:
       - name: Display structure of downloaded files
         run: ls -R artifacts
 
+      - name: Prepare release notes
+        id: notes
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          cat > release_notes.md << 'EOF'
+          # NeoMind ${{ github.ref_name }}
+
+          ## Downloads
+
+          ### Desktop Application (Recommended for Personal Use)
+          - **macOS**: Download `.dmg` file
+          - **Windows**: Download `.msi` installer or `.exe` portable
+          - **Linux**: Download `.AppImage` (universal) or `.deb` (Debian/Ubuntu)
+
+          ### Server Deployment (Frontend-Backend Separation)
+          1. **Backend Server**: Download `neomind-server-{os}-{arch}.tar.gz`
+             - Extract and run: `./neomind serve`
+             - Default port: 9375
+
+          2. **Frontend Static Files**: Download `neomind-web-{version}.tar.gz`
+             - Extract to web server directory
+             - Configure reverse proxy for `/api` to backend
+
+          ### Deployment Example
+
+          **Nginx Config** (same server):
+          ```nginx
+          server {
+              listen 80;
+              server_name your-domain.com;
+
+              # Frontend static files
+              root /var/www/neomind;
+              index index.html;
+
+              # SPA routing
+              location / {
+                  try_files $uri $uri/ /index.html;
+              }
+
+              # API reverse proxy
+              location /api {
+                  proxy_pass http://127.0.0.1:9375;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_read_timeout 86400;
+              }
+          }
+          ```
+
+          **Cross-Origin**: Build frontend with `VITE_API_BASE_URL=https://api.your-domain.com/api`
+
+          See `deploy/README.md` for full deployment guide.
+
+          ---
+
+          EOF
+
+          echo "release_notes_file=release_notes.md" >> $GITHUB_OUTPUT
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          body_path: release_notes.md
           files: |
             artifacts/**/*.dmg
             artifacts/**/*.msi
