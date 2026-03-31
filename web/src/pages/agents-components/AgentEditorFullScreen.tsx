@@ -1938,14 +1938,14 @@ function ResourceSelectionDialog({
       {/* Override overlay z-index */}
       <DialogPrimitive.Overlay className="z-[100] fixed inset-0 bg-black/80" />
       <DialogContent className="z-[100] sm:max-w-3xl sm:max-h-[80vh] flex flex-col p-0 gap-0 m-0">
-        <DialogHeader className="px-6 py-4 border-b">
+        <DialogHeader className="px-5 py-3 border-b">
           <DialogTitle>{tAgent('creator.resources.dialog.title')}</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
           {/* Recommendations */}
           {recommendations.length > 0 && (
-            <div className="px-6 py-3 border-b bg-primary/5 shrink-0">
+            <div className="px-5 py-3 border-b bg-primary/5 shrink-0">
               <div className="flex items-center gap-2 mb-2">
                 <Sparkles className="h-4 w-4 text-primary" />
                 <span className="text-sm font-medium">{tAgent('creator.resources.dialog.recommended')}</span>
@@ -1965,7 +1965,7 @@ function ResourceSelectionDialog({
           )}
 
           {/* Dual-pane layout */}
-          <div className="flex-1 flex gap-4 min-h-0 p-6 overflow-hidden">
+          <div className="flex-1 flex gap-4 min-h-0 p-4 overflow-hidden">
             {/* Available Resources */}
             <div className="flex-1 flex flex-col bg-muted/30 rounded-xl overflow-hidden">
               <div className="p-3 border-b bg-background/50">
@@ -2074,7 +2074,7 @@ function ResourceSelectionDialog({
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t flex justify-between items-center shrink-0">
+        <div className="px-5 py-3 border-t flex justify-between items-center shrink-0">
           <p className="text-sm text-muted-foreground">
             {tAgent('creator.resources.dialog.selectedCount', { count: selectedResources.length })}
           </p>
