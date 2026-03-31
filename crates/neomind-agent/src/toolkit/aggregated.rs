@@ -717,7 +717,7 @@ impl Tool for RuleTool {
     }
 
     fn description(&self) -> &str {
-        "规则管理工具。action: list(列出规则), get(详情), delete(删除), history(执行历史)"
+        "规则管理工具。action: list(列出规则), get(详情), create(创建规则), update(更新规则), delete(删除), history(执行历史)"
     }
 
     fn parameters(&self) -> Value {
@@ -725,10 +725,11 @@ impl Tool for RuleTool {
             serde_json::json!({
                 "action": {
                     "type": "string",
-                    "enum": ["list", "get", "delete", "history"],
+                    "enum": ["list", "get", "create", "update", "delete", "history"],
                     "description": "操作类型"
                 },
-                "rule_id": string_property("规则ID (get/delete必填)"),
+                "rule_id": string_property("规则ID (get/update/delete必填)"),
+                "dsl": string_property("规则DSL定义 (create/update必填)。格式: RULE \"名称\" WHEN 条件 DO 动作 END"),
                 "name_filter": string_property("按名称过滤 (list可选)"),
                 "limit": {
                     "type": "number",
@@ -759,6 +760,8 @@ impl Tool for RuleTool {
         match action {
             "list" => self.execute_list(&args).await,
             "get" => self.execute_get(&args).await,
+            "create" => self.execute_create(&args).await,
+            "update" => self.execute_update(&args).await,
             "delete" => self.execute_delete(&args).await,
             "history" => self.execute_history(&args).await,
             _ => Err(ToolError::InvalidArguments(format!(
@@ -842,6 +845,57 @@ impl RuleTool {
         })))
     }
 
+    async fn execute_create(&self, args: &Value) -> Result<ToolOutput> {
+        let dsl = args["dsl"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("dsl is required".into()))?;
+
+        let rule_id = self
+            .rule_engine
+            .add_rule_from_dsl(dsl)
+            .await
+            .map_err(|e| ToolError::Execution(format!("Failed to create rule: {}", e)))?;
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "id": rule_id.to_string(),
+            "status": "created",
+            "message": "规则创建成功"
+        })))
+    }
+
+    async fn execute_update(&self, args: &Value) -> Result<ToolOutput> {
+        let rule_id_str = args["rule_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("rule_id is required".into()))?;
+
+        let dsl = args["dsl"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("dsl is required".into()))?;
+
+        let rule_id = neomind_rules::RuleId::from_string(rule_id_str)
+            .map_err(|e| ToolError::InvalidArguments(format!("Invalid rule_id: {}", e)))?;
+
+        // First remove the old rule to clean up dependencies
+        self.rule_engine
+            .remove_rule(&rule_id)
+            .await
+            .map_err(|e| ToolError::Execution(format!("Failed to remove old rule: {}", e)))?;
+
+        // Parse and add the new rule
+        let new_rule_id = self
+            .rule_engine
+            .add_rule_from_dsl(dsl)
+            .await
+            .map_err(|e| ToolError::Execution(format!("Failed to create updated rule: {}", e)))?;
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "id": new_rule_id.to_string(),
+            "old_id": rule_id_str,
+            "status": "updated",
+            "message": "规则更新成功"
+        })))
+    }
+
     async fn execute_history(&self, args: &Value) -> Result<ToolOutput> {
         let storage = self
             .history_storage
@@ -903,6 +957,7 @@ pub enum AggregatedAlertSeverity {
 
 /// Aggregated alert tool.
 pub struct AlertTool {
+    message_manager: Option<Arc<neomind_messages::MessageManager>>,
     alerts: Arc<tokio::sync::RwLock<Vec<AggregatedAlertInfo>>>,
 }
 
@@ -910,6 +965,15 @@ impl AlertTool {
     /// Create a new alert tool.
     pub fn new() -> Self {
         Self {
+            message_manager: None,
+            alerts: Arc::new(tokio::sync::RwLock::new(Vec::new())),
+        }
+    }
+
+    /// Create with message manager for persistent storage.
+    pub fn with_message_manager(message_manager: Arc<neomind_messages::MessageManager>) -> Self {
+        Self {
+            message_manager: Some(message_manager),
             alerts: Arc::new(tokio::sync::RwLock::new(Vec::new())),
         }
     }
@@ -981,36 +1045,91 @@ impl Tool for AlertTool {
 
 impl AlertTool {
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
-        let alerts = self.alerts.read().await;
-
         let unacknowledged_only = args["unacknowledged_only"].as_bool().unwrap_or(false);
         let severity_filter = args["severity_filter"].as_str();
         let limit = args["limit"].as_u64().unwrap_or(50) as usize;
 
-        let filtered: Vec<Value> = alerts
-            .iter()
-            .filter(|a| {
-                if unacknowledged_only {
-                    !a.acknowledged
-                } else {
-                    true
-                }
-            })
-            .filter(|a| {
-                if let Some(sev) = severity_filter {
-                    format!("{:?}", a.severity).to_lowercase() == sev.to_lowercase()
-                } else {
-                    true
-                }
-            })
-            .take(limit)
-            .map(|a| serde_json::to_value(a).unwrap())
-            .collect();
+        // Use message_manager if available, otherwise use in-memory storage
+        if let Some(manager) = &self.message_manager {
+            use neomind_messages::{MessageSeverity, MessageType};
 
-        Ok(ToolOutput::success(serde_json::json!({
-            "count": filtered.len(),
-            "alerts": filtered
-        })))
+            let messages = manager.list_active_messages().await;
+
+            let filtered: Vec<Value> = messages
+                .into_iter()
+                .filter(|m| m.message_type == MessageType::Notification)
+                .filter(|m| {
+                    if unacknowledged_only {
+                        m.is_active()
+                    } else {
+                        true
+                    }
+                })
+                .filter(|m| {
+                    if let Some(sev) = severity_filter {
+                        let m_sev = match m.severity {
+                            MessageSeverity::Info => "info",
+                            MessageSeverity::Warning => "warning",
+                            MessageSeverity::Critical => "critical",
+                            MessageSeverity::Emergency => "emergency",
+                        };
+                        m_sev == sev
+                    } else {
+                        true
+                    }
+                })
+                .take(limit)
+                .map(|m| {
+                    let severity_str = match m.severity {
+                        MessageSeverity::Info => "info",
+                        MessageSeverity::Warning => "warning",
+                        MessageSeverity::Critical => "critical",
+                        MessageSeverity::Emergency => "emergency",
+                    };
+                    serde_json::json!({
+                        "id": m.id.to_string(),
+                        "title": m.title,
+                        "message": m.message,
+                        "severity": severity_str,
+                        "source": m.source_type,
+                        "acknowledged": !m.is_active(),
+                        "created_at": m.timestamp.timestamp()
+                    })
+                })
+                .collect();
+
+            Ok(ToolOutput::success(serde_json::json!({
+                "count": filtered.len(),
+                "alerts": filtered
+            })))
+        } else {
+            let alerts = self.alerts.read().await;
+
+            let filtered: Vec<Value> = alerts
+                .iter()
+                .filter(|a| {
+                    if unacknowledged_only {
+                        !a.acknowledged
+                    } else {
+                        true
+                    }
+                })
+                .filter(|a| {
+                    if let Some(sev) = severity_filter {
+                        format!("{:?}", a.severity).to_lowercase() == sev.to_lowercase()
+                    } else {
+                        true
+                    }
+                })
+                .take(limit)
+                .map(|a| serde_json::to_value(a).unwrap())
+                .collect();
+
+            Ok(ToolOutput::success(serde_json::json!({
+                "count": filtered.len(),
+                "alerts": filtered
+            })))
+        }
     }
 
     async fn execute_create(&self, args: &Value) -> Result<ToolOutput> {
@@ -1022,50 +1141,98 @@ impl AlertTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("message is required".into()))?;
 
-        let severity = match args["severity"].as_str().unwrap_or("warning") {
-            "info" => AggregatedAlertSeverity::Info,
-            "warning" => AggregatedAlertSeverity::Warning,
-            "error" => AggregatedAlertSeverity::Error,
-            "critical" => AggregatedAlertSeverity::Critical,
-            _ => AggregatedAlertSeverity::Warning,
-        };
+        let severity_str = args["severity"].as_str().unwrap_or("warning");
+        let source = args["source"].as_str().unwrap_or("system");
 
-        let alert = AggregatedAlertInfo {
-            id: uuid::Uuid::new_v4().to_string(),
-            title: title.to_string(),
-            message: message.to_string(),
-            severity,
-            source: args["source"].as_str().unwrap_or("system").to_string(),
-            acknowledged: false,
-            created_at: chrono::Utc::now().timestamp(),
-        };
+        // Use message_manager if available
+        if let Some(manager) = &self.message_manager {
+            use neomind_messages::{Message, MessageSeverity};
 
-        let id = alert.id.clone();
-        self.alerts.write().await.push(alert);
+            let severity = match severity_str {
+                "info" => MessageSeverity::Info,
+                "warning" => MessageSeverity::Warning,
+                "critical" => MessageSeverity::Critical,
+                "emergency" => MessageSeverity::Emergency,
+                _ => MessageSeverity::Warning,
+            };
 
-        Ok(ToolOutput::success(serde_json::json!({
-            "id": id,
-            "status": "created"
-        })))
+            let msg = Message::new(
+                "alert",
+                severity,
+                title.to_string(),
+                message.to_string(),
+                source.to_string(),
+            );
+
+            let msg = manager.create_message(msg).await
+                .map_err(|e| ToolError::Execution(e.to_string()))?;
+
+            Ok(ToolOutput::success(serde_json::json!({
+                "id": msg.id.to_string(),
+                "status": "created"
+            })))
+        } else {
+            let severity = match severity_str {
+                "info" => AggregatedAlertSeverity::Info,
+                "warning" => AggregatedAlertSeverity::Warning,
+                "error" => AggregatedAlertSeverity::Error,
+                "critical" => AggregatedAlertSeverity::Critical,
+                _ => AggregatedAlertSeverity::Warning,
+            };
+
+            let alert = AggregatedAlertInfo {
+                id: uuid::Uuid::new_v4().to_string(),
+                title: title.to_string(),
+                message: message.to_string(),
+                severity,
+                source: source.to_string(),
+                acknowledged: false,
+                created_at: chrono::Utc::now().timestamp(),
+            };
+
+            let id = alert.id.clone();
+            self.alerts.write().await.push(alert);
+
+            Ok(ToolOutput::success(serde_json::json!({
+                "id": id,
+                "status": "created"
+            })))
+        }
     }
 
     async fn execute_acknowledge(&self, args: &Value) -> Result<ToolOutput> {
-        let alert_id = args["alert_id"]
+        let alert_id_str = args["alert_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("alert_id is required".into()))?;
 
-        let mut alerts = self.alerts.write().await;
-        let alert = alerts
-            .iter_mut()
-            .find(|a| a.id == alert_id)
-            .ok_or_else(|| ToolError::Execution("Alert not found".into()))?;
+        // Use message_manager if available
+        if let Some(manager) = &self.message_manager {
+            use neomind_messages::MessageId;
 
-        alert.acknowledged = true;
+            let alert_id = MessageId::from_string(alert_id_str)
+                .map_err(|e| ToolError::InvalidArguments(format!("Invalid alert_id: {}", e)))?;
 
-        Ok(ToolOutput::success(serde_json::json!({
-            "id": alert_id,
-            "status": "acknowledged"
-        })))
+            manager.acknowledge(&alert_id).await
+                .map_err(|e| ToolError::Execution(e.to_string()))?;
+
+            Ok(ToolOutput::success(serde_json::json!({
+                "id": alert_id_str,
+                "status": "acknowledged"
+            })))
+        } else {
+            let mut alerts = self.alerts.write().await;
+            let alert = alerts
+                .iter_mut()
+                .find(|a| a.id == alert_id_str)
+                .ok_or_else(|| ToolError::Execution("Alert not found".into()))?;
+
+            alert.acknowledged = true;
+
+            Ok(ToolOutput::success(serde_json::json!({
+                "id": alert_id_str,
+                "status": "acknowledged"
+            })))
+        }
     }
 }
 
@@ -1080,6 +1247,7 @@ pub struct AggregatedToolsBuilder {
     agent_store: Option<Arc<neomind_storage::AgentStore>>,
     rule_engine: Option<Arc<neomind_rules::RuleEngine>>,
     rule_history: Option<Arc<neomind_rules::RuleHistoryStorage>>,
+    message_manager: Option<Arc<neomind_messages::MessageManager>>,
 }
 
 impl AggregatedToolsBuilder {
@@ -1091,6 +1259,7 @@ impl AggregatedToolsBuilder {
             agent_store: None,
             rule_engine: None,
             rule_history: None,
+            message_manager: None,
         }
     }
 
@@ -1127,6 +1296,12 @@ impl AggregatedToolsBuilder {
         self
     }
 
+    /// Set message manager for alert tool persistence.
+    pub fn with_message_manager(mut self, manager: Arc<neomind_messages::MessageManager>) -> Self {
+        self.message_manager = Some(manager);
+        self
+    }
+
     /// Build all aggregated tools as a vector of DynTool.
     pub fn build(self) -> Vec<Arc<dyn Tool>> {
         let mut tools: Vec<Arc<dyn Tool>> = Vec::new();
@@ -1158,7 +1333,12 @@ impl AggregatedToolsBuilder {
         }
 
         // Alert tool (always available)
-        tools.push(Arc::new(AlertTool::new()));
+        let alert_tool = if let Some(manager) = self.message_manager {
+            AlertTool::with_message_manager(manager)
+        } else {
+            AlertTool::new()
+        };
+        tools.push(Arc::new(alert_tool));
 
         tools
     }

@@ -1047,25 +1047,40 @@ impl ServerState {
 
         // Build tool registry with aggregated tools (action-based design for token efficiency)
         // This consolidates 34+ individual tools into 5 aggregated tools
-        let builder = ToolRegistryBuilder::new()
-            // Aggregated tools (replaces 20+ individual tool registrations)
-            .with_aggregated_tools(
+        let mut registry = ToolRegistryBuilder::new()
+            // Extension registry for scanning extension-provided tools
+            .with_extension_registry(self.extensions.registry.clone())
+            // Aggregated tools with full dependencies including message_manager
+            .with_aggregated_tools_full(
                 self.devices.service.clone(),
                 self.devices.telemetry.clone(),
                 self.agents.agent_store.clone(),
                 self.automation.rule_engine.clone(),
+                None, // rule_history
+                Some(self.core.message_manager.clone()), // message_manager for alert tool
             )
             // System help tool for onboarding (kept separate for discoverability)
-            .with_system_help_tool_named("NeoMind");
+            .with_system_help_tool_named("NeoMind")
+            // Scan extensions and register their tools
+            .with_extensions_scanned()
+            .await
+            .build();
 
-        let tool_registry = Arc::new(builder.build());
+        // Register API-level tools (require access to API-layer dependencies)
+        if let Some(automation_store) = &self.automation.automation_store {
+            use crate::server::tools::TransformTool;
+            registry.register(Arc::new(TransformTool::new((**automation_store).clone())));
+            tracing::debug!(category = "ai", "TransformTool registered");
+        }
+
+        let tool_registry = Arc::new(registry);
         self.agents
             .session_manager
             .set_tool_registry(tool_registry.clone())
             .await;
         tracing::info!(
             category = "ai",
-            "Tool registry initialized with {} aggregated tools (action-based design)",
+            "Tool registry initialized with {} tools (aggregated + extension + API tools)",
             tool_registry.len()
         );
     }

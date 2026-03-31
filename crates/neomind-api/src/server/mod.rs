@@ -9,12 +9,16 @@ pub mod install_service;
 pub mod middleware;
 pub mod router;
 pub mod state;
+pub mod tools;
 pub mod types;
 pub mod uninstall_service;
 
 // Re-export commonly used types
 pub use install_service::ExtensionInstallService;
 pub use uninstall_service::{ExtensionUninstallService, UninstallReport};
+
+// Re-export tools
+pub use tools::TransformTool;
 
 // Re-export commonly used types
 pub use middleware::rate_limit_middleware;
