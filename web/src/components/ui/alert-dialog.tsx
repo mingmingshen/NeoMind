@@ -7,9 +7,18 @@ const AlertDialog = AlertDialogPrimitive.Root
 
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger
 
-const AlertDialogPortal = (props: AlertDialogPrimitive.AlertDialogPortalProps) => (
-  <AlertDialogPrimitive.Portal {...props} container={getPortalRoot()} />
-)
+const AlertDialogPortal = (props: AlertDialogPrimitive.AlertDialogPortalProps) => {
+  // Get portal root at render time, not at module load time
+  const [container, setContainer] = React.useState<HTMLElement | null>(null)
+
+  React.useEffect(() => {
+    setContainer(getPortalRoot())
+  }, [])
+
+  return container ? (
+    <AlertDialogPrimitive.Portal {...props} container={container} />
+  ) : null
+}
 
 const AlertDialogOverlay = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Overlay>,

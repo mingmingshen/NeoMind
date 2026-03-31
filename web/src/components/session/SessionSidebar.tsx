@@ -25,6 +25,17 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { useToast } from "@/hooks/use-toast"
 
 interface SessionSidebarProps {
   /** Mobile drawer mode: open state */
@@ -48,6 +59,7 @@ export function SessionSidebar({
 }: SessionSidebarProps) {
   const { t } = useTranslation('common')
   const navigate = useNavigate()
+  const { toast } = useToast()
 
   const {
     sessions,
@@ -63,6 +75,8 @@ export function SessionSidebar({
   const [searchQuery, setSearchQuery] = useState("")
   const [isCreating, setIsCreating] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null)
 
@@ -144,17 +158,58 @@ export function SessionSidebar({
     }
   }
 
-  // Handle delete session
-  const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
+  // Handle delete session - show confirmation first
+  const handleDeleteClick = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation()
-    if (deletingId) return
-    
-    setDeletingId(sessionId)
+    setSessionToDelete(sessionId)
+    setDeleteDialogOpen(true)
+  }
+
+  // Confirm and execute delete
+  const handleConfirmDelete = async () => {
+    if (!sessionToDelete || deletingId) return
+
+    const wasCurrentSession = sessionToDelete === currentSessionId
+    setDeletingId(sessionToDelete)
+    setDeleteDialogOpen(false)
+
     try {
-      await deleteSession(sessionId)
+      await deleteSession(sessionToDelete)
+
+      // If we deleted the current session, navigate to the new current session
+      // deleteSession already switches the session in the store, so we need to
+      // get the new sessionId from the store and update the URL
+      if (wasCurrentSession) {
+        const { sessionId: newSessionId, sessions: updatedSessions } = useStore.getState()
+        if (newSessionId) {
+          navigate(`/chat/${newSessionId}`)
+        } else if (updatedSessions.length === 0) {
+          // No sessions left, go to welcome page
+          navigate('/chat')
+        }
+      }
+
+      toast({
+        title: t('session.sessionDeleted'),
+      })
+    } catch (error: any) {
+      // Show user-friendly error message
+      const errorMessage = error?.message || error?.error?.message || t('session.deleteFailed')
+      toast({
+        variant: "destructive",
+        title: t('error'),
+        description: errorMessage,
+      })
     } finally {
       setDeletingId(null)
+      setSessionToDelete(null)
     }
+  }
+
+  // Cancel delete
+  const handleCancelDelete = () => {
+    setDeleteDialogOpen(false)
+    setSessionToDelete(null)
   }
 
   // Get session title
@@ -330,7 +385,7 @@ export function SessionSidebar({
 
                         {/* Delete button */}
                         <button
-                          onClick={(e) => handleDeleteSession(e, session.sessionId)}
+                          onClick={(e) => handleDeleteClick(e, session.sessionId)}
                           disabled={isDeleting}
                           className={cn(
                             "absolute right-1 top-1/2 -translate-y-1/2",
@@ -373,14 +428,39 @@ export function SessionSidebar({
   // Desktop mode: fixed sidebar
   if (isDesktop) {
     return (
-      <div
-        className={cn(
-          "h-full bg-background/50 border-r border-border/50 flex flex-col transition-all duration-200",
-          collapsed ? "w-12" : "w-64"
-        )}
-      >
-        <SidebarContent />
-      </div>
+      <>
+        <div
+          className={cn(
+            "h-full bg-background/50 border-r border-border/50 flex flex-col transition-all duration-200",
+            collapsed ? "w-12" : "w-64"
+          )}
+        >
+          <SidebarContent />
+        </div>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('session.deleteTitle')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('session.deleteDescription')}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={handleCancelDelete}>
+                {t('cancel')}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {t('delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </>
     )
   }
 
@@ -406,6 +486,29 @@ export function SessionSidebar({
       >
         <SidebarContent />
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('session.deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('session.deleteDescription')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelDelete}>
+              {t('cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>,
     document.body
   )

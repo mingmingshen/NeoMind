@@ -2,49 +2,30 @@
 //!
 //! This crate provides function calling capabilities for the NeoMind platform.
 //!
-//! ## Tool Capabilities
+//! ## Tool Architecture
 //!
-//! - **Tool Trait**: Unified interface for tool implementation
-//! - **Device Tools**: Query, control, and manage IoT devices
-//! - **Rule Tools**: Create and manage automation rules
-//! - **Agent Tools**: AI agent management and execution
-//! - **System Tools**: System info, alerts, and data export
-//! - **Tool Registry**: Manage and execute tools
-//! - **Parallel Execution**: Execute multiple tools concurrently
-//! - **LLM Integration**: Format tool definitions for function calling
+//! The toolkit uses an **action-based aggregated design** for token efficiency:
+//!
+//! - **5 Aggregated Tools**: device, agent, agent_history, rule, alert
+//! - Each tool supports multiple actions (list, get, create, control, etc.)
+//! - Reduces tool definition token usage by ~60% vs individual tools
 //!
 //! ## Example
 //!
 //! ```rust,no_run
-//! use crate::toolkit::{ToolRegistry, ToolRegistryBuilder};
-//! use neomind_devices::{DeviceService, TimeSeriesStorage};
-//! use neomind_rules::RuleEngine;
+//! use neomind_agent::toolkit::{ToolRegistryBuilder, ToolRegistry};
 //! use std::sync::Arc;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let device_service = Arc::new(DeviceService::new());
-//!     let storage = Arc::new(TimeSeriesStorage::memory()?);
-//!     let rule_engine = Arc::new(RuleEngine::new());
-//!
-//!     // Create a registry with core_tools (preferred)
+//!     // Create a registry with aggregated tools
 //!     let registry = ToolRegistryBuilder::new()
-//!         .with_device_discover_tool_with_storage(device_service.clone(), storage.clone())
-//!         .with_device_query_tool_with_storage(device_service.clone(), storage.clone())
-//!         .with_core_device_control_tool_with_storage(device_service.clone(), storage.clone())
-//!         .with_create_rule_tool(rule_engine)
+//!         .with_system_help_tool_named("NeoMind")
 //!         .build();
 //!
 //!     // List available tools
 //!     println!("Available tools: {:?}", registry.list());
 //!
-//!     // Execute a tool
-//!     let result = registry.execute(
-//!         "device.query",
-//!         serde_json::json!({"device_id": "sensor_1", "metric": "temperature"})
-//!     ).await?;
-//!
-//!     println!("Result: {:?}", result);
 //!     Ok(())
 //! }
 //! ```
@@ -52,16 +33,12 @@
 use std::sync::Arc;
 
 pub mod aggregated;
-pub mod agent_tools;
-pub mod core_tools;
 pub mod error;
 pub mod extension_tools;
-pub mod real;
 pub mod registry;
 pub mod simplified;
 pub mod system_tools;
 pub mod tool;
-pub mod universal_tools;
 
 // Re-exports commonly used types
 pub use error::{NeoMindError, Result, ToolError};
@@ -84,48 +61,10 @@ pub use neomind_core::tools::{
 };
 
 // ============================================================================
-// Real Tools (Primary Exports)
-// ============================================================================
-/// Device tools (QueryDataTool and GetDeviceDataTool remain - core_tools may not fully replace them yet)
-pub use real::{GetDeviceDataTool, QueryDataTool, QueryRuleHistoryTool};
-
-/// Rule tools (CreateRuleTool, ListRulesTool, DeleteRuleTool - no core_tools equivalent yet)
-pub use real::{CreateRuleTool, DeleteRuleTool, ListRulesTool};
-
-// ============================================================================
-// Core Business-Scenario Tools
+// System Tools (Help/Onboarding)
 // ============================================================================
 
-/// Core business-scenario tools with device registry abstraction
-pub use core_tools::{
-    AnalysisResult, AnalysisType, BatchControlResult, CommandInfo as CoreCommandInfo,
-    ControlCommand, ControlResult, DataPoint as CoreDataPoint,
-    DeviceAnalyzeTool as CoreDeviceAnalyzeTool, DeviceCapabilities, DeviceControlTool,
-    DeviceDiscoverTool, DeviceFilter, DeviceGroup, DeviceInfo as CoreDeviceInfo, DeviceQueryTool,
-    DeviceRegistryAdapter, DeviceRegistryTrait, DiscoverySummary, ExtractedRuleDefinition,
-    MetricInfo as CoreMetricInfo, MetricQueryResult, MetricStatistics, ParameterInfo,
-    RealDeviceRegistryAdapter, RuleActionDef, RuleFromContextTool, TimeRange,
-};
-
-// ============================================================================
-// System Management Tools
-// ============================================================================
-
-pub use system_tools::{
-    AcknowledgeAlertTool, AlertInfo, AlertSeverity, CreateAlertTool, ExportToCsvTool,
-    ExportToJsonTool, GenerateReportTool, ListAlertsTool, ServiceRestartTool, SystemConfigTool,
-    SystemHelpTool, SystemInfoTool,
-};
-
-// ============================================================================
-// AI Agent Tools
-// ============================================================================
-
-pub use agent_tools::{
-    AgentMemoryTool, ControlAgentTool, CreateAgentTool, ExecuteAgentTool, GetAgentConversationTool,
-    GetAgentExecutionDetailTool, GetAgentExecutionsTool, GetAgentTool, ListAgentsTool,
-    UpdateAgentTool,
-};
+pub use system_tools::{SystemHelpTool, SystemInfoTool};
 
 // ============================================================================
 // Extension Tools
@@ -134,12 +73,6 @@ pub use agent_tools::{
 pub use extension_tools::{
     ExtensionFilter, ExtensionTool, ExtensionToolExecutor, ExtensionToolGenerator,
 };
-
-// ============================================================================
-// Universal Agent Tools (for AI Agent function calling mode)
-// ============================================================================
-
-pub use universal_tools::{ExecuteCommandTool, QueryMetricsTool, SendNotificationTool};
 
 // ============================================================================
 // Aggregated Tools (Action-based design for token efficiency)

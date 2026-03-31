@@ -6,8 +6,49 @@
  */
 
 import { create } from 'zustand'
-import { devtools, persist } from 'zustand/middleware'
+import { devtools, persist, createJSONStorage, type StateStorage } from 'zustand/middleware'
 import { onUnauthorized, tokenManager } from '@/lib/api'
+
+// ============================================================================
+// Storage Configuration
+// ============================================================================
+
+// Storage strategy: Do NOT persist messages to LocalStorage
+// Messages are already persisted in the backend database.
+// This prevents QuotaExceededError during long conversations.
+/**
+ * Custom storage that handles QuotaExceededError gracefully.
+ * When storage is full, it clears old data and retries.
+ */
+const baseStorage: StateStorage = {
+  getItem: (name: string): string | null => {
+    return localStorage.getItem(name)
+  },
+  setItem: (name: string, value: string): void => {
+    try {
+      localStorage.setItem(name, value)
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+        console.warn('[Storage] LocalStorage quota exceeded, clearing old data...')
+        // Clear the store and try again
+        localStorage.removeItem('neomind-store')
+        try {
+          localStorage.setItem(name, value)
+        } catch (retryError) {
+          console.error('[Storage] Failed to save even after clearing:', retryError)
+        }
+      } else {
+        throw error
+      }
+    }
+  },
+  removeItem: (name: string): void => {
+    localStorage.removeItem(name)
+  },
+}
+
+// Create JSON storage wrapper for Zustand
+const safeStorage = createJSONStorage(() => baseStorage)
 
 // Import all slices
 import { createAuthSlice } from './slices/authSlice'
@@ -70,9 +111,15 @@ export const useStore = create<NeoMindStore>()(
       }),
       {
         name: 'neomind-store',
+        storage: safeStorage,
         partialize: (state) => ({
-          messages: state.messages,
+          // NOTE: Do NOT persist messages to LocalStorage!
+          // Messages are already persisted in the backend database.
+          // This prevents QuotaExceededError during long conversations.
+          // When the user switches sessions, messages are loaded from the backend.
           sessionId: state.sessionId,
+          // Only persist essential UI state
+          sidebarOpen: state.sidebarOpen,
         }),
       }
     ),

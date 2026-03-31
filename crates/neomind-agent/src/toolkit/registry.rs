@@ -296,229 +296,6 @@ impl ToolRegistryBuilder {
     }
 
     // ============================================================================
-    // Device Tools
-    // ============================================================================
-
-    /// Add the query data tool.
-    /// With DeviceService, the tool can list all available metrics when metric is not specified.
-    pub fn with_query_data_tool(
-        self,
-        storage: Arc<neomind_devices::TimeSeriesStorage>,
-        service: Option<Arc<neomind_devices::DeviceService>>,
-    ) -> Self {
-        let tool = if let Some(svc) = service {
-            super::real::QueryDataTool::new(storage).with_device_service(svc)
-        } else {
-            super::real::QueryDataTool::new(storage)
-        };
-        self.with_tool(Arc::new(tool))
-    }
-
-    /// Add the control device tool.
-    pub fn with_control_device_tool(self, service: Arc<neomind_devices::DeviceService>) -> Self {
-        self.with_tool(Arc::new(
-            super::core_tools::DeviceControlTool::with_real_device_service(service),
-        ))
-    }
-
-    /// Add the list devices tool.
-    pub fn with_list_devices_tool(self, service: Arc<neomind_devices::DeviceService>) -> Self {
-        self.with_tool(Arc::new(
-            super::core_tools::DeviceDiscoverTool::with_real_device_service(service),
-        ))
-    }
-
-    /// Add the device analyze tool.
-    pub fn with_device_analyze_tool(
-        self,
-        service: Arc<neomind_devices::DeviceService>,
-        storage: Arc<neomind_devices::TimeSeriesStorage>,
-    ) -> Self {
-        self.with_tool(Arc::new(
-            super::core_tools::DeviceAnalyzeTool::with_real_device_service_and_storage(
-                service, storage,
-            ),
-        ))
-    }
-
-    /// Add the get device data tool (simplified interface for device status and latest data).
-    pub fn with_get_device_data_tool(
-        self,
-        service: Arc<neomind_devices::DeviceService>,
-        storage: Arc<neomind_devices::TimeSeriesStorage>,
-    ) -> Self {
-        self.with_tool(Arc::new(super::real::GetDeviceDataTool::new(
-            service, storage,
-        )))
-    }
-
-    // ============================================================================
-    // Rule Tools
-    // ============================================================================
-
-    /// Add the create rule tool.
-    pub fn with_create_rule_tool(self, engine: Arc<neomind_rules::RuleEngine>) -> Self {
-        self.with_tool(Arc::new(super::real::CreateRuleTool::new(engine)))
-    }
-
-    /// Add the list rules tool.
-    pub fn with_list_rules_tool(self, engine: Arc<neomind_rules::RuleEngine>) -> Self {
-        self.with_tool(Arc::new(super::real::ListRulesTool::new(engine)))
-    }
-
-    /// Add the delete rule tool.
-    pub fn with_delete_rule_tool(self, engine: Arc<neomind_rules::RuleEngine>) -> Self {
-        self.with_tool(Arc::new(super::real::DeleteRuleTool::new(engine)))
-    }
-
-    /// Add the query rule history tool.
-    pub fn with_query_rule_history_tool(
-        self,
-        history: Arc<neomind_rules::RuleHistoryStorage>,
-    ) -> Self {
-        self.with_tool(Arc::new(super::real::QueryRuleHistoryTool::new(history)))
-    }
-
-    // ============================================================================
-    // AI Agent Tools
-    // ============================================================================
-
-    /// Add the list agents tool.
-    pub fn with_list_agents_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::ListAgentsTool::new(
-            agent_store,
-        )))
-    }
-
-    /// Add the get agent tool.
-    pub fn with_get_agent_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::GetAgentTool::new(agent_store)))
-    }
-
-    /// Add the execute agent tool.
-    pub fn with_execute_agent_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::ExecuteAgentTool::new(
-            agent_store,
-        )))
-    }
-
-    /// Add the control agent tool.
-    pub fn with_control_agent_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::ControlAgentTool::new(
-            agent_store,
-        )))
-    }
-
-    /// Add the update agent tool.
-    pub fn with_update_agent_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::UpdateAgentTool::new(
-            agent_store,
-        )))
-    }
-    pub fn with_create_agent_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::CreateAgentTool::new(
-            agent_store,
-        )))
-    }
-
-    /// Add the create agent tool with device service for device resolution.
-    pub fn with_create_agent_tool_with_device_service(
-        self,
-        agent_store: Arc<neomind_storage::AgentStore>,
-        device_service: Arc<neomind_devices::DeviceService>,
-    ) -> Self {
-        let tool = super::agent_tools::CreateAgentTool::new(agent_store)
-            .with_device_service(device_service);
-        self.with_tool(Arc::new(tool))
-    }
-
-    /// Add the create agent tool with device service (optional).
-    pub fn with_create_agent_tool_with_device_service_optional(
-        self,
-        agent_store: Arc<neomind_storage::AgentStore>,
-        device_service: Option<Arc<neomind_devices::DeviceService>>,
-    ) -> Self {
-        let tool = if let Some(ds) = device_service {
-            super::agent_tools::CreateAgentTool::new(agent_store).with_device_service(ds)
-        } else {
-            super::agent_tools::CreateAgentTool::new(agent_store)
-        };
-        self.with_tool(Arc::new(tool))
-    }
-
-    /// Add the agent memory tool.
-    pub fn with_agent_memory_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::AgentMemoryTool::new(
-            agent_store,
-        )))
-    }
-
-    /// Add the get agent executions tool.
-    pub fn with_get_agent_executions_tool(
-        self,
-        agent_store: Arc<neomind_storage::AgentStore>,
-    ) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::GetAgentExecutionsTool::new(
-            agent_store,
-        )))
-    }
-
-    /// Add the get agent execution detail tool.
-    pub fn with_get_agent_execution_detail_tool(
-        self,
-        agent_store: Arc<neomind_storage::AgentStore>,
-    ) -> Self {
-        self.with_tool(Arc::new(
-            super::agent_tools::GetAgentExecutionDetailTool::new(agent_store),
-        ))
-    }
-
-    /// Add the get agent conversation tool.
-    pub fn with_get_agent_conversation_tool(
-        self,
-        agent_store: Arc<neomind_storage::AgentStore>,
-    ) -> Self {
-        self.with_tool(Arc::new(super::agent_tools::GetAgentConversationTool::new(
-            agent_store,
-        )))
-    }
-
-    /// Add all agent tools.
-    pub fn with_agent_tools(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        self.with_list_agents_tool(agent_store.clone())
-            .with_get_agent_tool(agent_store.clone())
-            .with_execute_agent_tool(agent_store.clone())
-            .with_control_agent_tool(agent_store.clone())
-            .with_create_agent_tool(agent_store.clone())
-            .with_update_agent_tool(agent_store.clone())
-            .with_agent_memory_tool(agent_store.clone())
-            .with_get_agent_executions_tool(agent_store.clone())
-            .with_get_agent_execution_detail_tool(agent_store.clone())
-            .with_get_agent_conversation_tool(agent_store)
-    }
-
-    /// Add all agent tools with device service for create_agent tool.
-    pub fn with_agent_tools_with_dependencies(
-        self,
-        agent_store: Arc<neomind_storage::AgentStore>,
-        device_service: Option<Arc<neomind_devices::DeviceService>>,
-    ) -> Self {
-        self.with_list_agents_tool(agent_store.clone())
-            .with_get_agent_tool(agent_store.clone())
-            .with_execute_agent_tool(agent_store.clone())
-            .with_control_agent_tool(agent_store.clone())
-            .with_create_agent_tool_with_device_service_optional(
-                agent_store.clone(),
-                device_service,
-            )
-            .with_update_agent_tool(agent_store.clone())
-            .with_agent_memory_tool(agent_store.clone())
-            .with_get_agent_executions_tool(agent_store.clone())
-            .with_get_agent_execution_detail_tool(agent_store.clone())
-            .with_get_agent_conversation_tool(agent_store)
-    }
-
-    // ============================================================================
     // System Tools
     // ============================================================================
 
@@ -535,84 +312,13 @@ impl ToolRegistryBuilder {
     }
 
     // ============================================================================
-    // Universal Agent Tools (for function calling mode)
-    // ============================================================================
-
-    /// Add universal tools for AI Agent function calling mode.
-    pub fn with_universal_tools(
-        self,
-        storage: Arc<neomind_devices::TimeSeriesStorage>,
-        device_service: Option<Arc<neomind_devices::DeviceService>>,
-        message_manager: Option<Arc<neomind_messages::MessageManager>>,
-        extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
-    ) -> Self {
-        let mut builder = self;
-
-        // QueryMetricsTool
-        let query_tool = if let Some(ds) = device_service.clone() {
-            super::universal_tools::QueryMetricsTool::new(storage.clone()).with_device_service(ds)
-        } else {
-            super::universal_tools::QueryMetricsTool::new(storage)
-        };
-        builder = builder.with_tool(Arc::new(query_tool));
-
-        // ExecuteCommandTool
-        let mut cmd_tool = super::universal_tools::ExecuteCommandTool::new();
-        if let Some(ds) = device_service {
-            cmd_tool = cmd_tool.with_device_service(ds);
-        }
-        if let Some(er) = extension_registry {
-            cmd_tool = cmd_tool.with_extension_registry(er);
-        }
-        builder = builder.with_tool(Arc::new(cmd_tool));
-
-        // SendNotificationTool
-        if let Some(mm) = message_manager {
-            builder = builder.with_tool(Arc::new(
-                super::universal_tools::SendNotificationTool::new(mm),
-            ));
-        }
-
-        builder
-    }
-
-    // ============================================================================
     // Aggregated Tools (Action-based design for token efficiency)
     // ============================================================================
 
-    /// Add aggregated tools that consolidate 34+ individual tools into 5 action-based tools.
-    ///
-    /// This reduces tool definition token usage by ~60% while maintaining the same functionality.
-    ///
-    /// # Arguments
-    /// * `device_service` - Device service for device operations
-    /// * `storage` - Time series storage for data queries
-    /// * `agent_store` - Agent store for agent management
-    /// * `rule_engine` - Rule engine for rule management
-    pub fn with_aggregated_tools(
-        mut self,
-        device_service: Arc<neomind_devices::DeviceService>,
-        storage: Arc<neomind_devices::TimeSeriesStorage>,
-        agent_store: Arc<neomind_storage::AgentStore>,
-        rule_engine: Arc<neomind_rules::RuleEngine>,
-    ) -> Self {
-        use super::aggregated::AggregatedToolsBuilder;
-
-        let tools = AggregatedToolsBuilder::new()
-            .with_device_service(device_service)
-            .with_time_series_storage(storage)
-            .with_agent_store(agent_store)
-            .with_rule_engine(rule_engine)
-            .build();
-
-        for tool in tools {
-            self.registry.register(tool);
-        }
-
-        self
-    }
-
     /// Add aggregated tools with optional message manager for alert tool.
+    ///
+    /// This consolidates 34+ individual tools into 5 action-based tools,
+    /// reducing tool definition token usage by ~60%.
     pub fn with_aggregated_tools_full(
         mut self,
         device_service: Arc<neomind_devices::DeviceService>,
@@ -620,7 +326,7 @@ impl ToolRegistryBuilder {
         agent_store: Arc<neomind_storage::AgentStore>,
         rule_engine: Arc<neomind_rules::RuleEngine>,
         rule_history: Option<Arc<neomind_rules::RuleHistoryStorage>>,
-        _message_manager: Option<Arc<neomind_messages::MessageManager>>,
+        message_manager: Option<Arc<neomind_messages::MessageManager>>,
     ) -> Self {
         use super::aggregated::AggregatedToolsBuilder;
 
@@ -634,14 +340,15 @@ impl ToolRegistryBuilder {
             builder = builder.with_rule_history(history);
         }
 
+        if let Some(manager) = message_manager {
+            builder = builder.with_message_manager(manager);
+        }
+
         let tools = builder.build();
 
         for tool in tools {
             self.registry.register(tool);
         }
-
-        // Note: AlertTool uses in-memory storage; message_manager not yet integrated
-        // TODO: Add AlertTool integration with MessageManager when available
 
         self
     }
