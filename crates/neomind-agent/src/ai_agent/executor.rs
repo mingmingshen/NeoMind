@@ -6085,25 +6085,6 @@ Respond in JSON format:
                 }
             }
 
-            // NEW: Send alert for alert-type decisions regardless of parsed_intent
-            // Check if this decision is an alert decision
-            let is_alert_decision = decision.decision_type.to_lowercase().contains("alert")
-                || decision.action.to_lowercase().contains("alert")
-                || decision.action.to_lowercase().contains("报警")
-                || decision.action.to_lowercase().contains("notify")
-                || decision.action.to_lowercase().contains("通知");
-
-            if is_alert_decision {
-                tracing::info!(
-                    agent_id = %agent.id,
-                    decision_type = %decision.decision_type,
-                    decision_action = %decision.action,
-                    "Alert-type decision detected, sending notification"
-                );
-                self.send_alert_for_decision(agent, decision, &mut notifications_sent)
-                    .await;
-            }
-
             // Execute specific actions based on decision.action
             if decision.action.to_lowercase().contains("execute_command")
                 || decision.action.to_lowercase().contains("command")
