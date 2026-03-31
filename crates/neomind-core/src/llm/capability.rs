@@ -228,23 +228,14 @@ impl CapabilityDetector {
             return true;
         }
 
-        // Ollama/Local Models
-        // mistral3, ministral - support vision
-        // gemma3 (but not gemma3n) - supports vision
-        // llava, bakllava, moondream, minigpt, cogvlm, internvl, yi-vl, pixtral
-        // minicpm-v, deepseek-vl
-        if model.contains("mistral3")
-            || model.contains("ministral")
-            || (model.contains("gemma3") && !model.contains("gemma3n"))
+        // Ollama/Local Models - Basic detection for common patterns
+        // NOTE: For accurate detection, use Ollama's /api/show endpoint
+        // which returns a "capabilities" array including "vision"
+        if model.contains("-vl")
+            || model.contains("_vl")
             || model.contains("llava")
-            || model.contains("bakllava")
             || model.contains("moondream")
-            || model.contains("minigpt")
-            || model.contains("cogvlm")
-            || model.contains("internvl")
-            || model.contains("yi-vl")
-            || model.contains("pixtral")
-            || model.contains("minicpm-v")
+            || model.contains("vision")
         {
             return true;
         }

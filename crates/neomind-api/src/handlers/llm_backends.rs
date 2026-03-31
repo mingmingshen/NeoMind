@@ -338,13 +338,40 @@ pub async fn create_backend_handler(
     // Generate unique ID
     let id = LlmBackendStore::generate_id(&req.backend_type);
 
-    // Use provided capabilities or get defaults for the backend type
-    let mut capabilities = req
-        .capabilities
-        .unwrap_or_else(|| get_default_capabilities(&backend_type));
-
-    // Adjust capabilities based on actual model name
-    adjust_capabilities_for_model(&req.model, &mut capabilities);
+    // Get capabilities: prefer API detection for Ollama, fallback to name-based
+    let capabilities = if matches!(backend_type, LlmBackendType::Ollama) {
+        // For Ollama, try to get capabilities from /api/show endpoint
+        let endpoint = req.endpoint.as_deref().unwrap_or("http://localhost:11434");
+        let show_url = format!("{}/api/show", endpoint);
+        match get_model_capabilities_from_show(&reqwest::Client::new(), &show_url, &req.model).await {
+            Ok(caps) => {
+                tracing::info!(
+                    model = %req.model,
+                    multimodal = caps.supports_multimodal,
+                    thinking = caps.supports_thinking,
+                    tools = caps.supports_tools,
+                    "Detected Ollama model capabilities via API"
+                );
+                caps
+            }
+            Err(e) => {
+                tracing::warn!(
+                    model = %req.model,
+                    error = %e,
+                    "Failed to get Ollama capabilities via API, using name-based detection"
+                );
+                // Fallback to name-based detection
+                let mut caps = req.capabilities.unwrap_or_else(|| get_default_capabilities(&backend_type));
+                adjust_capabilities_for_model(&req.model, &mut caps);
+                caps
+            }
+        }
+    } else {
+        // For non-Ollama backends, use provided capabilities or defaults with name-based adjustment
+        let mut caps = req.capabilities.unwrap_or_else(|| get_default_capabilities(&backend_type));
+        adjust_capabilities_for_model(&req.model, &mut caps);
+        caps
+    };
 
     let instance = LlmBackendInstance {
         id: id.clone(),
@@ -403,7 +430,33 @@ pub async fn update_backend_handler(
     if let Some(model) = req.model {
         instance.model = model.clone();
         // Re-detect capabilities when model changes
-        adjust_capabilities_for_model(&model, &mut instance.capabilities);
+        // For Ollama, try API detection first
+        if matches!(instance.backend_type, LlmBackendType::Ollama) {
+            let endpoint = instance.endpoint.as_deref().unwrap_or("http://localhost:11434");
+            let show_url = format!("{}/api/show", endpoint);
+            match get_model_capabilities_from_show(&reqwest::Client::new(), &show_url, &model).await {
+                Ok(caps) => {
+                    tracing::info!(
+                        model = %model,
+                        multimodal = caps.supports_multimodal,
+                        thinking = caps.supports_thinking,
+                        tools = caps.supports_tools,
+                        "Updated Ollama model capabilities via API"
+                    );
+                    instance.capabilities = caps;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        model = %model,
+                        error = %e,
+                        "Failed to get Ollama capabilities, using name-based detection"
+                    );
+                    adjust_capabilities_for_model(&model, &mut instance.capabilities);
+                }
+            }
+        } else {
+            adjust_capabilities_for_model(&model, &mut instance.capabilities);
+        }
     }
     if let Some(api_key) = req.api_key {
         instance.api_key = Some(api_key);
