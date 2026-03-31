@@ -86,6 +86,10 @@ impl Tool for DeviceTool {
                     "description": "控制参数 (control可选)"
                 },
                 "device_type": string_property("按类型过滤 (list可选)"),
+                "include_details": {
+                    "type": "boolean",
+                    "description": "是否包含设备指标和命令信息 (list可选, 默认true)"
+                },
                 "start_time": {
                     "type": "number",
                     "description": "开始时间戳 (query可选)"
@@ -128,28 +132,68 @@ impl Tool for DeviceTool {
 impl DeviceTool {
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
         let devices = self.device_service.list_devices().await;
+        let device_type_filter = args["device_type"].as_str();
+        let include_details = args["include_details"].as_bool().unwrap_or(true);
 
-        let filtered: Vec<Value> = devices
-            .iter()
-            .filter(|d| {
-                if let Some(dt) = args["device_type"].as_str() {
-                    d.device_type == dt
-                } else {
-                    true
+        let mut result = Vec::new();
+
+        for d in devices.iter() {
+            // Apply device_type filter
+            if let Some(dt) = device_type_filter {
+                if d.device_type != dt {
+                    continue;
                 }
-            })
-            .map(|d| {
-                serde_json::json!({
-                    "id": d.device_id,
-                    "name": d.name,
-                    "type": d.device_type,
-                    "adapter_type": d.adapter_type
-                })
-            })
-            .collect();
+            }
 
-        let limit = args["limit"].as_u64().unwrap_or(filtered.len() as u64) as usize;
-        let result: Vec<_> = filtered.into_iter().take(limit).collect();
+            let mut device_json = serde_json::json!({
+                "id": d.device_id,
+                "name": d.name,
+                "type": d.device_type,
+                "adapter_type": d.adapter_type
+            });
+
+            // Include metrics and commands from device type template for better understanding
+            if include_details {
+                if let Some(template) = self.device_service.get_template(&d.device_type).await {
+                    // Add metrics info (simplified for AI consumption)
+                    if !template.metrics.is_empty() {
+                        let metrics_info: Vec<Value> = template.metrics.iter().map(|m| {
+                            serde_json::json!({
+                                "name": m.name,
+                                "display_name": m.display_name,
+                                "unit": m.unit,
+                                "data_type": format!("{:?}", m.data_type)
+                            })
+                        }).collect();
+                        device_json["metrics"] = serde_json::json!(metrics_info);
+                    }
+
+                    // Add commands info (simplified for AI consumption)
+                    if !template.commands.is_empty() {
+                        let commands_info: Vec<Value> = template.commands.iter().map(|c| {
+                            serde_json::json!({
+                                "name": c.name,
+                                "display_name": c.display_name,
+                                "parameters": c.parameters.iter().map(|p| {
+                                    serde_json::json!({
+                                        "name": p.name,
+                                        "display_name": p.display_name,
+                                        "data_type": format!("{:?}", p.data_type),
+                                        "required": p.required
+                                    })
+                                }).collect::<Vec<_>>()
+                            })
+                        }).collect();
+                        device_json["commands"] = serde_json::json!(commands_info);
+                    }
+                }
+            }
+
+            result.push(device_json);
+        }
+
+        let limit = args["limit"].as_u64().unwrap_or(result.len() as u64) as usize;
+        let result: Vec<_> = result.into_iter().take(limit).collect();
 
         Ok(ToolOutput::success(serde_json::json!({
             "count": result.len(),
