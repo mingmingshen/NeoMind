@@ -19,9 +19,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use neomind_agent::agent::tool_parser::parse_tool_calls;
+use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::{GenerationParams, LlmInput, LlmRuntime, ToolDefinition};
 use neomind_core::message::Message;
-use neomind_agent::{OllamaConfig, OllamaRuntime};
 
 // ============================================================================
 // Test Cases & Expected Results

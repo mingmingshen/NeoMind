@@ -22,9 +22,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use neomind_agent::session::SessionManager;
+use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::message::Message;
-use neomind_agent::{OllamaConfig, OllamaRuntime};
 
 // ============================================================================
 // Test Context

@@ -10,14 +10,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use neomind_rules::{
-    dsl::{ComparisonOperator, RuleAction, RuleCondition},
-    CompiledRule, HistoryFilter, RuleEngine, RuleHistoryStorage, RuleId, RuleStatus,
-};
 use crate::toolkit::{
     error::Result as ToolResult,
     tool::{boolean_property, number_property, object_schema, string_property},
     Tool, ToolError, ToolOutput,
+};
+use neomind_rules::{
+    dsl::{ComparisonOperator, RuleAction, RuleCondition},
+    CompiledRule, HistoryFilter, RuleEngine, RuleHistoryStorage, RuleId, RuleStatus,
 };
 
 /// ListRules tool - queries all rules with filtering.
@@ -1187,7 +1187,7 @@ impl RuleStatistics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use neomind_rules::RuleDslParser;
 
     #[tokio::test]

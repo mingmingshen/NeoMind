@@ -17,9 +17,9 @@
 use async_trait::async_trait;
 use serde_json::Value;
 
-use neomind_core::tools::ToolCategory;
 use crate::toolkit::tool::{array_property, object_schema, string_property};
 use crate::toolkit::{Tool, ToolDefinition, ToolOutput};
+use neomind_core::tools::ToolCategory;
 
 /// Ask User Tool - enables LLM to request information from users.
 ///

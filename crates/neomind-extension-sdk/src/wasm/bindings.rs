@@ -65,11 +65,7 @@ extern "C" {
     ///
     /// # Returns
     /// Length of result on success, -1 on error or invalid subscription
-    pub fn host_event_poll(
-        subscription_id: i64,
-        result_ptr: *mut u8,
-        result_max_len: i32,
-    ) -> i32;
+    pub fn host_event_poll(subscription_id: i64, result_ptr: *mut u8, result_max_len: i32) -> i32;
 
     /// Unsubscribe from events
     ///
@@ -86,12 +82,7 @@ extern "C" {
     pub fn host_free(ptr: *const u8);
 
     /// Log a message (utility function)
-    pub fn host_log(
-        level_ptr: *const u8,
-        level_len: i32,
-        msg_ptr: *const u8,
-        msg_len: i32,
-    );
+    pub fn host_log(level_ptr: *const u8, level_len: i32, msg_ptr: *const u8, msg_len: i32);
 
     /// Get current timestamp from host
     ///

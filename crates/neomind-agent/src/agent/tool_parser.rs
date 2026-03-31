@@ -68,7 +68,8 @@ fn try_parse_json_array(text: &str) -> Option<Result<(String, Vec<ToolCall>)>> {
     // Check if it looks like tool calls
     if !json_str.contains("\"name\"")
         && !json_str.contains("\"tool\"")
-        && !json_str.contains("\"function\"") {
+        && !json_str.contains("\"function\"")
+    {
         return None;
     }
 
@@ -154,7 +155,10 @@ fn extract_tool_call_from_json(value: &Value) -> Option<ToolCall> {
             let mut args = serde_json::Map::new();
             if let Some(obj) = value.as_object() {
                 for (k, v) in obj {
-                    if !matches!(k.as_str(), "name" | "tool" | "function" | "arguments" | "params" | "parameters" | "id") {
+                    if !matches!(
+                        k.as_str(),
+                        "name" | "tool" | "function" | "arguments" | "params" | "parameters" | "id"
+                    ) {
                         args.insert(k.clone(), v.clone());
                     }
                 }
@@ -246,7 +250,9 @@ fn parse_invoke_element(invoke_section: &str) -> Option<ToolCall> {
                 // Content format: <parameter name="key">value</parameter>
                 let content_start = absolute_tag_end + 1;
                 if let Some(close_end) = invoke_section[content_start..].find("</parameter>") {
-                    let value = invoke_section[content_start..content_start + close_end].trim().to_string();
+                    let value = invoke_section[content_start..content_start + close_end]
+                        .trim()
+                        .to_string();
                     arguments.insert(param_name, Value::String(value));
                     search_start = content_start + close_end + "</parameter>".len();
                 } else {
@@ -325,7 +331,10 @@ pub fn remove_tool_calls_from_response(response: &str) -> String {
         if end > start {
             let json_str = &result[start..end];
             if let Ok(array) = serde_json::from_str::<Vec<Value>>(json_str) {
-                if array.iter().any(|v| v.get("name").is_some() || v.get("tool").is_some()) {
+                if array
+                    .iter()
+                    .any(|v| v.get("name").is_some() || v.get("tool").is_some())
+                {
                     result.replace_range(start..end, "");
                     continue;
                 }
@@ -383,7 +392,8 @@ mod tests {
 
     #[test]
     fn test_parse_json_array_with_id() {
-        let text = r#"[{"id": "call_abc123", "name": "list_devices", "arguments": {"type": "sensor"}}]"#;
+        let text =
+            r#"[{"id": "call_abc123", "name": "list_devices", "arguments": {"type": "sensor"}}]"#;
         let (content, calls) = parse_tool_calls(text).unwrap();
 
         assert!(content.is_empty());
@@ -406,7 +416,8 @@ mod tests {
 
     #[test]
     fn test_parse_json_object_with_id() {
-        let text = r#"{"id": "call_xyz", "name": "query_data", "arguments": {"device": "sensor1"}}"#;
+        let text =
+            r#"{"id": "call_xyz", "name": "query_data", "arguments": {"device": "sensor1"}}"#;
         let (_content, calls) = parse_tool_calls(text).unwrap();
 
         assert_eq!(calls.len(), 1);
@@ -415,7 +426,8 @@ mod tests {
 
     #[test]
     fn test_parse_multiple_tool_calls() {
-        let text = r#"[{"id": "call_1", "name": "list_devices"}, {"id": "call_2", "name": "list_rules"}]"#;
+        let text =
+            r#"[{"id": "call_1", "name": "list_devices"}, {"id": "call_2", "name": "list_rules"}]"#;
         let (_, calls) = parse_tool_calls(text).unwrap();
 
         assert_eq!(calls.len(), 2);

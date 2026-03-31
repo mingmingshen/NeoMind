@@ -9,12 +9,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::error::Result as ToolResult;
+use super::tool::ToolExample;
 use super::tool::{Tool, ToolDefinition, ToolOutput};
 use neomind_core::extension::registry::ExtensionRegistry;
 use neomind_core::extension::*;
 use neomind_core::extension::{DynExtension, ExtensionCommand};
 use neomind_core::tools::ToolCategory;
-use super::tool::ToolExample;
 
 /// Extension tool wrapper - exposes an extension command as a Tool.
 ///
@@ -219,13 +219,10 @@ impl Tool for ExtensionTool {
 
     async fn execute(&self, args: Value) -> ToolResult<ToolOutput> {
         // Execute with a 30-second timeout to avoid hanging the agent on slow extensions
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            async {
-                let ext = self.extension.read().await;
-                ext.execute_command(&self.command.name, &args).await
-            },
-        )
+        let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            let ext = self.extension.read().await;
+            ext.execute_command(&self.command.name, &args).await
+        })
         .await;
 
         match result {
@@ -437,10 +434,10 @@ impl ExtensionToolExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
+    use std::any::Any;
     use std::sync::Arc;
     use tokio::sync::RwLock;
-    use std::any::Any;
 
     // Mock extension for testing
     struct MockExtension {
@@ -483,12 +480,8 @@ mod tests {
     }
 
     fn create_mock_extension() -> DynExtension {
-        let metadata = ExtensionMetadata::new(
-            "test.extension",
-            "Test Extension",
-            "1.0.0",
-        )
-        .with_description("A test extension");
+        let metadata = ExtensionMetadata::new("test.extension", "Test Extension", "1.0.0")
+            .with_description("A test extension");
 
         let commands = vec![ExtensionCommand {
             name: "test_command".to_string(),

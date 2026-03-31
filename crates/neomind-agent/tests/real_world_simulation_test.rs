@@ -26,8 +26,8 @@
 #![allow(clippy::too_many_arguments)]
 
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
-use neomind_core::{EventBus, MetricValue, NeoMindEvent};
 use neomind_agent::{OllamaConfig, OllamaRuntime};
+use neomind_core::{EventBus, MetricValue, NeoMindEvent};
 use neomind_messages::{MessageManager, MessageSeverity};
 use neomind_storage::{
     AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
@@ -78,6 +78,7 @@ impl SimulationContext {
                 as Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>),
             llm_backend_store: None,
             extension_registry: None,
+            tool_registry: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -201,6 +202,7 @@ impl SimulationContext {
             context_window_size: 20, // 保留更多历史
             enable_tool_chaining: false,
             max_chain_depth: 3,
+            tool_config: None,
         };
 
         self.store.save_agent(&agent).await?;

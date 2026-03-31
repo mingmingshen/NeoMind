@@ -285,7 +285,8 @@ impl AuthState {
             .unwrap_or_else(|_| key.clone());
 
         // DashMap insert is lock-free
-        self.api_keys.insert(hash.clone(), (encrypted, info.clone()));
+        self.api_keys
+            .insert(hash.clone(), (encrypted, info.clone()));
 
         // Persist to database
         if let Err(e) = self.save_to_db(self.db_path) {

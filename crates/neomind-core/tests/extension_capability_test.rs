@@ -8,15 +8,14 @@
 //! - Multi-provider capability routing
 //! - Error handling for capability calls
 
-use neomind_core::extension::context::{
-    ExtensionContext, ExtensionContextConfig, ExtensionCapability,
-    ExtensionCapabilityProvider, CapabilityManifest, CapabilityError,
-    AvailableCapabilities,
-};
 use async_trait::async_trait;
+use neomind_core::extension::context::{
+    AvailableCapabilities, CapabilityError, CapabilityManifest, ExtensionCapability,
+    ExtensionCapabilityProvider, ExtensionContext, ExtensionContextConfig,
+};
 use serde_json::{json, Value};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 // ============================================================================
@@ -59,13 +58,17 @@ impl ExtensionCapabilityProvider for MockCapabilityProvider {
         capability: ExtensionCapability,
         params: &Value,
     ) -> Result<Value, CapabilityError> {
-        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.call_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         match capability {
             ExtensionCapability::DeviceMetricsRead => {
-                let device_id = params.get("device_id")
+                let device_id = params
+                    .get("device_id")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_id".to_string()))?;
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("Missing device_id".to_string())
+                    })?;
 
                 Ok(json!({
                     "device_id": device_id,
@@ -74,12 +77,18 @@ impl ExtensionCapabilityProvider for MockCapabilityProvider {
                 }))
             }
             ExtensionCapability::DeviceControl => {
-                let device_id = params.get("device_id")
+                let device_id = params
+                    .get("device_id")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_id".to_string()))?;
-                let command = params.get("command")
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("Missing device_id".to_string())
+                    })?;
+                let command = params
+                    .get("command")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters("Missing command".to_string()))?;
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("Missing command".to_string())
+                    })?;
 
                 Ok(json!({
                     "device_id": device_id,
@@ -88,9 +97,12 @@ impl ExtensionCapabilityProvider for MockCapabilityProvider {
                 }))
             }
             ExtensionCapability::EventPublish => {
-                let event_type = params.get("event_type")
+                let event_type = params
+                    .get("event_type")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters("Missing event_type".to_string()))?;
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("Missing event_type".to_string())
+                    })?;
 
                 Ok(json!({
                     "event_type": event_type,
@@ -140,8 +152,12 @@ async fn test_register_multiple_providers() {
         vec![ExtensionCapability::EventPublish],
     ));
 
-    context.register_provider("provider-1".to_string(), provider1).await;
-    context.register_provider("provider-2".to_string(), provider2).await;
+    context
+        .register_provider("provider-1".to_string(), provider1)
+        .await;
+    context
+        .register_provider("provider-2".to_string(), provider2)
+        .await;
 
     let capabilities = context.list_capabilities().await;
     assert_eq!(capabilities.len(), 2);
@@ -350,10 +366,7 @@ async fn test_invalid_parameters_error() {
 
     // Missing device_id
     let result = context
-        .invoke_capability(
-            ExtensionCapability::DeviceMetricsRead,
-            &json!({}),
-        )
+        .invoke_capability(ExtensionCapability::DeviceMetricsRead, &json!({}))
         .await;
 
     assert!(result.is_err());
@@ -385,10 +398,7 @@ async fn test_capability_not_available_error() {
 
     // TelemetryHistory is not supported by this provider
     let result = context
-        .invoke_capability(
-            ExtensionCapability::TelemetryHistory,
-            &json!({}),
-        )
+        .invoke_capability(ExtensionCapability::TelemetryHistory, &json!({}))
         .await;
 
     assert!(result.is_err());
@@ -460,7 +470,9 @@ async fn test_manual_provider_registration() {
 
     // Manually register a mock provider
     let mock_provider = Arc::new(MockProvider);
-    context.register_provider("mock".to_string(), mock_provider).await;
+    context
+        .register_provider("mock".to_string(), mock_provider)
+        .await;
 
     // Should have capabilities registered
     let capabilities = context.list_capabilities().await;
@@ -496,7 +508,10 @@ impl ExtensionCapabilityProvider for MockProvider {
 
 #[test]
 fn test_capability_name() {
-    assert_eq!(ExtensionCapability::DeviceMetricsRead.name(), "device_metrics_read");
+    assert_eq!(
+        ExtensionCapability::DeviceMetricsRead.name(),
+        "device_metrics_read"
+    );
     assert_eq!(ExtensionCapability::EventPublish.name(), "event_publish");
     assert_eq!(ExtensionCapability::AgentTrigger.name(), "agent_trigger");
 }
@@ -589,7 +604,8 @@ async fn test_concurrent_capability_invocation() {
             ctx.invoke_capability(
                 ExtensionCapability::DeviceMetricsRead,
                 &json!({"device_id": format!("device-{}", i)}),
-            ).await
+            )
+            .await
         });
         handles.push(handle);
     }
@@ -624,7 +640,8 @@ async fn test_concurrent_capability_check() {
     for _ in 0..10 {
         let ctx = context.clone();
         let handle = tokio::spawn(async move {
-            ctx.has_capability(&ExtensionCapability::DeviceMetricsRead).await
+            ctx.has_capability(&ExtensionCapability::DeviceMetricsRead)
+                .await
         });
         handles.push(handle);
     }

@@ -91,7 +91,8 @@ impl InFlightRequests {
     pub async fn register(&self) -> (RequestId, oneshot::Receiver<IpcResponse>) {
         let mut state = self.state.lock().await;
         let request_id = state.next_id.fetch_add(1, Ordering::Relaxed);
-        let (tx, rx): (oneshot::Sender<IpcResponse>, oneshot::Receiver<IpcResponse>) = oneshot::channel();
+        let (tx, rx): (oneshot::Sender<IpcResponse>, oneshot::Receiver<IpcResponse>) =
+            oneshot::channel();
 
         state.pending.insert(request_id, tx);
 
@@ -99,11 +100,9 @@ impl InFlightRequests {
     }
 
     /// Register a request with a specific ID (for initialization)
-    pub async fn register_with_id(
-        &self,
-        request_id: RequestId,
-    ) -> oneshot::Receiver<IpcResponse> {
-        let (tx, rx): (oneshot::Sender<IpcResponse>, oneshot::Receiver<IpcResponse>) = oneshot::channel();
+    pub async fn register_with_id(&self, request_id: RequestId) -> oneshot::Receiver<IpcResponse> {
+        let (tx, rx): (oneshot::Sender<IpcResponse>, oneshot::Receiver<IpcResponse>) =
+            oneshot::channel();
 
         let mut state = self.state.lock().await;
         state.pending.insert(request_id, tx);

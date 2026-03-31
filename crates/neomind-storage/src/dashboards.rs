@@ -331,7 +331,11 @@ impl DashboardStore {
     /// # Arguments
     /// * `limit` - Maximum number of dashboards to return (None = no limit)
     /// * `offset` - Number of dashboards to skip (None = start from beginning)
-    pub fn list_paginated(&self, limit: Option<usize>, offset: Option<usize>) -> Result<Vec<Dashboard>, Error> {
+    pub fn list_paginated(
+        &self,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Vec<Dashboard>, Error> {
         let read_txn = self.db.begin_read()?;
         let table = match read_txn.open_table(DASHBOARDS_TABLE) {
             Ok(t) => t,

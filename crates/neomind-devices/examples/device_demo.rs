@@ -11,8 +11,8 @@ use std::sync::Arc;
 use neomind_core::EventBus;
 use neomind_devices::mdl_format::MetricDefinition;
 use neomind_devices::{
-    CommandDefinition, ConnectionConfig, DeviceConfig, DeviceRegistry,
-    DeviceService, DeviceTypeTemplate, MetricDataType,
+    CommandDefinition, ConnectionConfig, DeviceConfig, DeviceRegistry, DeviceService,
+    DeviceTypeTemplate, MetricDataType,
 };
 
 #[tokio::main]

@@ -64,21 +64,14 @@ pub mod storage;
 pub use device::CapabilityError;
 
 // Re-export storage types
-pub use storage::{MetricValue, DeviceMetrics};
+pub use storage::{DeviceMetrics, MetricValue};
 
 // Re-export core types from host module (now self-contained)
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::host::{
-    capabilities as native_capabilities,
-    AvailableCapabilities,
-    CapabilityError as NativeCapabilityError,
-    CapabilityManifest,
-    EventFilter,
-    EventSubscription,
-    ExtensionCapability,
-    ExtensionCapabilityProvider,
-    ExtensionContext,
-    ExtensionContextConfig,
+    capabilities as native_capabilities, AvailableCapabilities,
+    CapabilityError as NativeCapabilityError, CapabilityManifest, EventFilter, EventSubscription,
+    ExtensionCapability, ExtensionCapabilityProvider, ExtensionContext, ExtensionContextConfig,
 };
 
 // Re-export CapabilityContext for extensions

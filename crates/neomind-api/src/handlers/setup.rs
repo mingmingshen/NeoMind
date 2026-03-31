@@ -16,7 +16,9 @@ fn is_valid_email(email: &str) -> bool {
     if let Some(at_pos) = email.find('@') {
         if at_pos > 0 && at_pos < email.len() - 1 {
             let after_at = &email[at_pos + 1..];
-            return after_at.contains('.') && !after_at.starts_with('.') && !after_at.ends_with('.');
+            return after_at.contains('.')
+                && !after_at.starts_with('.')
+                && !after_at.ends_with('.');
         }
     }
     false

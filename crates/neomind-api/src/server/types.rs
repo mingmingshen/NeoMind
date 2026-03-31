@@ -15,7 +15,9 @@ use neomind_rules::{
 use neomind_storage::dashboards::DashboardStore;
 use neomind_storage::llm_backends::LlmBackendStore;
 
-use crate::automation::{store::SharedAutomationStore, transform::TransformEngine, AutoOnboardManager};
+use crate::automation::{
+    store::SharedAutomationStore, transform::TransformEngine, AutoOnboardManager,
+};
 use neomind_agent::memory::TieredMemory;
 use neomind_messages::MessageManager;
 
@@ -127,7 +129,6 @@ impl ServerState {
     pub fn automation_store(&self) -> Option<Arc<SharedAutomationStore>> {
         self.automation.automation_store.clone()
     }
-
 
     /// Get transform engine (backward compatibility).
     pub fn transform_engine(&self) -> Option<Arc<TransformEngine>> {
@@ -329,16 +330,35 @@ impl ServerState {
             use neomind_core::extension::CapabilityServices;
 
             let services = CapabilityServices::new()
-                .with_service(neomind_core::extension::keys::DEVICE_SERVICE, devices.service.clone())
-                .with_service(neomind_core::extension::keys::TELEMETRY_STORAGE, devices.telemetry.clone())
-                .with_service(neomind_core::extension::keys::RULE_ENGINE, rule_engine.clone())
-                .with_service(neomind_core::extension::keys::EXTENSION_REGISTRY, extensions.registry.clone())
-                .with_service(neomind_core::extension::keys::EVENT_BUS, event_bus.clone().unwrap_or_else(|| Arc::new(neomind_core::EventBus::new())));
+                .with_service(
+                    neomind_core::extension::keys::DEVICE_SERVICE,
+                    devices.service.clone(),
+                )
+                .with_service(
+                    neomind_core::extension::keys::TELEMETRY_STORAGE,
+                    devices.telemetry.clone(),
+                )
+                .with_service(
+                    neomind_core::extension::keys::RULE_ENGINE,
+                    rule_engine.clone(),
+                )
+                .with_service(
+                    neomind_core::extension::keys::EXTENSION_REGISTRY,
+                    extensions.registry.clone(),
+                )
+                .with_service(
+                    neomind_core::extension::keys::EVENT_BUS,
+                    event_bus
+                        .clone()
+                        .unwrap_or_else(|| Arc::new(neomind_core::EventBus::new())),
+                );
 
             let event_dispatcher = extensions.get_event_dispatcher();
             let composite_provider = Arc::new(CompositeCapabilityProvider::with_all_providers(
                 services,
-                event_bus.clone().unwrap_or_else(|| Arc::new(neomind_core::EventBus::new())),
+                event_bus
+                    .clone()
+                    .unwrap_or_else(|| Arc::new(neomind_core::EventBus::new())),
                 event_dispatcher,
             ));
 
@@ -509,21 +529,22 @@ impl ServerState {
 
         let auto_onboard_manager = Arc::new(tokio::sync::RwLock::new(None));
 
-
         // ========== Detect and cache GPU info (once at startup) ==========
         let gpu_info = {
             use crate::handlers::stats::detect_gpus;
             let lock = Arc::new(std::sync::OnceLock::new());
             let gpus = detect_gpus();
             lock.set(gpus).ok();
-            tracing::info!("GPU information cached at startup: {} GPU(s) detected", lock.get().map(|g| g.len()).unwrap_or(0));
+            tracing::info!(
+                "GPU information cached at startup: {} GPU(s) detected",
+                lock.get().map(|g| g.len()).unwrap_or(0)
+            );
             lock
         };
         let dashboard_store = match DashboardStore::open("data/dashboards.redb") {
             Ok(store) => store,
             Err(_e) => {
-
-        // ========== Detect and cache GPU info (once at startup) ==========
+                // ========== Detect and cache GPU info (once at startup) ==========
                 DashboardStore::memory().unwrap_or_else(|e| {
                     tracing::error!(category = "storage", error = %e, "Failed to create in-memory dashboard store");
                     std::process::exit(1);
@@ -547,7 +568,9 @@ impl ServerState {
             agent_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rule_engine_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rule_engine_event_service: Arc::new(tokio::sync::Mutex::new(None)),
-            extension_event_subscription_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            extension_event_subscription_initialized: Arc::new(std::sync::atomic::AtomicBool::new(
+                false,
+            )),
             extension_event_subscription_service: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
@@ -706,7 +729,9 @@ impl ServerState {
             agent_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rule_engine_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rule_engine_event_service: Arc::new(tokio::sync::Mutex::new(None)),
-            extension_event_subscription_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            extension_event_subscription_initialized: Arc::new(std::sync::atomic::AtomicBool::new(
+                false,
+            )),
             extension_event_subscription_service: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
@@ -754,10 +779,11 @@ impl ServerState {
         //
         // This ensures all extension data is in the app data directory, avoiding
         // path inconsistencies between development and production modes.
-        let data_dir = std::env::var("NEOMIND_DATA_DIR")
-            .unwrap_or_else(|_| "data".to_string());
+        let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
         let install_dir = std::path::PathBuf::from(data_dir.clone()).join("extensions");
-        let nep_cache_dir = std::path::PathBuf::from(data_dir).join("extensions").join("packages");
+        let nep_cache_dir = std::path::PathBuf::from(data_dir)
+            .join("extensions")
+            .join("packages");
 
         tracing::info!(
             install_dir = %install_dir.display(),
@@ -801,7 +827,10 @@ impl ServerState {
     pub async fn init_llm(&self) {
         // First try to load from config file
         if let Some(backend) = crate::config::load_llm_config() {
-            self.agents.session_manager.set_default_llm_backend(backend).await;
+            self.agents
+                .session_manager
+                .set_default_llm_backend(backend)
+                .await;
             tracing::info!(
                 category = "ai",
                 "Configured default LLM backend successfully from config file"
@@ -1084,7 +1113,9 @@ impl ServerState {
         let event_dispatcher = match self.extensions.get_event_dispatcher() {
             Some(dispatcher) => dispatcher,
             None => {
-                tracing::warn!("Extension event subscription not started: event_dispatcher not available");
+                tracing::warn!(
+                    "Extension event subscription not started: event_dispatcher not available"
+                );
                 return;
             }
         };
@@ -1095,10 +1126,8 @@ impl ServerState {
         {
             let mut cached_service = self.extension_event_subscription_service.lock().await;
             if cached_service.is_none() {
-                let service = ExtensionEventSubscriptionService::new(
-                    (*event_bus).clone(),
-                    event_dispatcher,
-                );
+                let service =
+                    ExtensionEventSubscriptionService::new((*event_bus).clone(), event_dispatcher);
                 *cached_service = Some(service);
             }
         }
@@ -1317,8 +1346,8 @@ impl ServerState {
                     mgr.clone()
                 } else {
                     // Create default LLM runtime
-                    use neomind_core::llm::backend::LlmRuntime;
                     use neomind_agent::llm_backends::backends::{OllamaConfig, OllamaRuntime};
+                    use neomind_core::llm::backend::LlmRuntime;
 
                     let config = OllamaConfig::new("qwen2.5:3b")
                         .with_endpoint("http://localhost:11434")
@@ -1570,12 +1599,18 @@ impl ServerState {
         let llm_runtime = if let Ok(Some(backend)) =
             self.agents.session_manager.get_llm_backend().await
         {
+            use neomind_agent::llm_backends::{
+                CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime,
+            };
             use neomind_agent::LlmBackend;
             use neomind_core::llm::backend::LlmRuntime;
-            use neomind_agent::llm_backends::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
 
             match backend {
-                LlmBackend::Ollama { endpoint, model , capabilities: _} => {
+                LlmBackend::Ollama {
+                    endpoint,
+                    model,
+                    capabilities: _,
+                } => {
                     let timeout = std::env::var("OLLAMA_TIMEOUT_SECS")
                         .ok()
                         .and_then(|s| s.parse().ok())
@@ -1706,6 +1741,7 @@ impl ServerState {
             message_manager: Some(self.core.message_manager.clone()),
             llm_runtime,
             llm_backend_store,
+            tool_registry: None,
         };
 
         let manager = neomind_agent::ai_agent::AiAgentManager::new(executor_config)
@@ -1846,14 +1882,20 @@ impl ServerState {
     /// This creates a service container that can be used by extension
     /// capability providers to access real functionality.
     pub fn create_capability_services(&self) -> neomind_core::extension::CapabilityServices {
-        use neomind_core::extension::{CapabilityServices, keys};
+        use neomind_core::extension::{keys, CapabilityServices};
 
         CapabilityServices::new()
             .with_service(keys::DEVICE_SERVICE, self.devices.service.clone())
             .with_service(keys::TELEMETRY_STORAGE, self.devices.telemetry.clone())
             .with_service(keys::RULE_ENGINE, self.automation.rule_engine.clone())
             .with_service(keys::EXTENSION_REGISTRY, self.extensions.registry.clone())
-            .with_service(keys::EVENT_BUS, self.core.event_bus.clone().unwrap_or_else(|| Arc::new(neomind_core::EventBus::new())))
+            .with_service(
+                keys::EVENT_BUS,
+                self.core
+                    .event_bus
+                    .clone()
+                    .unwrap_or_else(|| Arc::new(neomind_core::EventBus::new())),
+            )
     }
 
     /// Initialize extension capability providers with real services.

@@ -56,7 +56,10 @@ where
             } else {
                 "Unknown panic in extension FFI".to_string()
             };
-            Err(E::from(format!("Extension panicked in {}: {}", fn_name, msg)))
+            Err(E::from(format!(
+                "Extension panicked in {}: {}",
+                fn_name, msg
+            )))
         }
     }
 }
@@ -146,9 +149,8 @@ mod tests {
 
     #[test]
     fn test_safe_ffi_call_error() {
-        let result: Result<i32, String> = safe_ffi_call("test_fn", || {
-            Err("test error".to_string())
-        });
+        let result: Result<i32, String> =
+            safe_ffi_call("test_fn", || Err("test error".to_string()));
         assert_eq!(result, Err("test error".to_string()));
     }
 
@@ -176,9 +178,7 @@ mod tests {
     #[test]
     fn test_safe_ffi_call_panic_unknown() {
         // Test with a panic that downcasts to neither &str nor String
-        let result: Result<i32, String> = safe_ffi_call("test_fn", || {
-            std::panic::panic_any(42i32)
-        });
+        let result: Result<i32, String> = safe_ffi_call("test_fn", || std::panic::panic_any(42i32));
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.contains("Unknown panic"));

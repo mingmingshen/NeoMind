@@ -1,7 +1,7 @@
 //! Command-line interface for NeoMind.
 
-use std::net::SocketAddr;
 use std::io::Read;
+use std::net::SocketAddr;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -90,7 +90,7 @@ enum Command {
 /// Extension subcommands.
 #[derive(Subcommand, Debug)]
 enum ExtensionCommand {
-   /// Validate a .nep extension package.
+    /// Validate a .nep extension package.
     Validate {
         /// Path to the .nep file.
         #[arg(required = true)]
@@ -199,7 +199,12 @@ async fn main() -> Result<()> {
         Command::Chat { session } => run_chat(session).await,
         Command::ListModels { endpoint } => list_models(endpoint).await,
         Command::Health => run_health().await,
-        Command::Logs { tail, follow, level, since } => run_logs(tail, follow, level, since).await,
+        Command::Logs {
+            tail,
+            follow,
+            level,
+            since,
+        } => run_logs(tail, follow, level, since).await,
         Command::Extension { extension_cmd } => run_extension_cmd(extension_cmd).await,
     }
 }
@@ -221,7 +226,11 @@ fn load_llm_backend_from_env() -> Result<LlmBackend> {
         let model = std::env::var(env_vars::LLM_MODEL)
             .unwrap_or_else(|_| models::OLLAMA_DEFAULT.to_string());
         eprintln!("Using Ollama: endpoint={}, model={}", endpoint, model);
-        return Ok(LlmBackend::Ollama { endpoint, model, capabilities: None });
+        return Ok(LlmBackend::Ollama {
+            endpoint,
+            model,
+            capabilities: None,
+        });
     }
 
     // Check for OpenAI
@@ -495,18 +504,16 @@ async fn run_server(host: String, port: u16) -> Result<()> {
 
 /// Run health check command.
 async fn run_health() -> Result<()> {
-    
-    
     println!("NeoMind System Health Check");
     println!("==========================\n");
-    
+
     // Check if server is running
     println!("🔍 Checking server status...");
     let check_url = "http://localhost:9375/api/health";
     match reqwest::get(check_url).await {
         Ok(resp) if resp.status().is_success() => {
             println!("  ✅ Server is running");
-            
+
             // Get detailed health status
             if let Ok(health_json) = resp.json::<serde_json::Value>().await {
                 if let Some(status) = health_json.get("status").and_then(|v| v.as_str()) {
@@ -522,14 +529,19 @@ async fn run_health() -> Result<()> {
             println!("  Hint: Start the server with 'neomind serve'");
         }
     }
-    
+
     println!();
-    
+
     // Check database files
     println!("🔍 Checking databases...");
     let data_dir = std::path::PathBuf::from("./data");
     if data_dir.exists() {
-        let db_files = ["telemetry.redb", "sessions.redb", "devices.redb", "extensions.redb"];
+        let db_files = [
+            "telemetry.redb",
+            "sessions.redb",
+            "devices.redb",
+            "extensions.redb",
+        ];
         for db in &db_files {
             let db_path = data_dir.join(db);
             if db_path.exists() {
@@ -543,9 +555,9 @@ async fn run_health() -> Result<()> {
     } else {
         println!("  ℹ️  Data directory not found (will be created on first use)");
     }
-    
+
     println!();
-    
+
     // Check LLM backend
     println!("🔍 Checking LLM backend...");
     if std::env::var("OLLAMA_ENDPOINT").is_ok() || std::env::var("OPENAI_API_KEY").is_ok() {
@@ -560,9 +572,9 @@ async fn run_health() -> Result<()> {
         println!("  ⚠️  No LLM backend configured");
         println!("  Hint: Set OLLAMA_ENDPOINT or OPENAI_API_KEY environment variable");
     }
-    
+
     println!();
-    
+
     // Check extensions directory
     println!("🔍 Checking extensions...");
     let extensions_dir = std::path::PathBuf::from("./extensions");
@@ -573,42 +585,48 @@ async fn run_health() -> Result<()> {
     } else {
         println!("  ℹ️  Extensions directory not found");
     }
-    
+
     println!();
     println!("Health check complete.");
-    
+
     Ok(())
 }
 
 /// Run logs command.
-async fn run_logs(tail: usize, follow: bool, level: Option<String>, _since: Option<String>) -> Result<()> {
-    use std::io::{BufRead, BufReader};
+async fn run_logs(
+    tail: usize,
+    follow: bool,
+    level: Option<String>,
+    _since: Option<String>,
+) -> Result<()> {
     use std::fs::File;
+    use std::io::{BufRead, BufReader};
     use std::path::Path;
-    
+
     // Find log file
     let log_paths = [
         "./neomind.log",
         "./data/neomind.log",
         "/var/log/neomind.log",
     ];
-    
-    let log_path = log_paths.iter()
+
+    let log_path = log_paths
+        .iter()
         .find(|p| Path::new(p).exists())
         .ok_or_else(|| anyhow::anyhow!("Log file not found. Searched in: {:?}", log_paths))?;
-    
+
     if follow {
         // Follow mode (like tail -f)
         println!("Following log file: {} (Ctrl+C to stop)\n", log_path);
-        
+
         let file = File::open(log_path)?;
         let _metadata = file.metadata()?;
         let mut reader = BufReader::new(file);
-        
+
         // Seek to end first
         use std::io::Seek;
         reader.seek(std::io::SeekFrom::End(0))?;
-        
+
         // Read new lines
         let mut line = String::new();
         loop {
@@ -624,7 +642,7 @@ async fn run_logs(tail: usize, follow: bool, level: Option<String>, _since: Opti
                     } else {
                         true
                     };
-                    
+
                     if should_print {
                         print!("{}", line);
                     }
@@ -641,7 +659,8 @@ async fn run_logs(tail: usize, follow: bool, level: Option<String>, _since: Opti
         let file = File::open(log_path)?;
         let reader = BufReader::new(file);
 
-        let lines: Vec<String> = reader.lines()
+        let lines: Vec<String> = reader
+            .lines()
             .map_while(Result::ok)
             .filter(|l| {
                 if let Some(ref lvl) = level {
@@ -651,43 +670,40 @@ async fn run_logs(tail: usize, follow: bool, level: Option<String>, _since: Opti
                 }
             })
             .collect();
-        
-        let start = if lines.len() > tail { lines.len() - tail } else { 0 };
-        
-        println!("Log file: {} (showing last {} lines)\n", log_path, 
-                 lines.len() - start);
-        
+
+        let start = if lines.len() > tail {
+            lines.len() - tail
+        } else {
+            0
+        };
+
+        println!(
+            "Log file: {} (showing last {} lines)\n",
+            log_path,
+            lines.len() - start
+        );
+
         for line in lines.iter().skip(start) {
             println!("{}", line);
         }
     }
-    
+
     Ok(())
 }
 
 /// Run extension management commands.
 async fn run_extension_cmd(cmd: ExtensionCommand) -> Result<()> {
     match cmd {
-        ExtensionCommand::Validate { path, verbose } => {
-            validate_nep_package(&path, verbose).await
-        }
-        
-        ExtensionCommand::List { verbose } => {
-            list_extensions(verbose).await
-        }
-        
-        ExtensionCommand::Info { id_or_path } => {
-            show_extension_info(&id_or_path).await
-        }
-        
-        ExtensionCommand::Install { package } => {
-            install_extension(&package).await
-        }
-        
-        ExtensionCommand::Uninstall { id } => {
-            uninstall_extension(&id).await
-        }
-        
+        ExtensionCommand::Validate { path, verbose } => validate_nep_package(&path, verbose).await,
+
+        ExtensionCommand::List { verbose } => list_extensions(verbose).await,
+
+        ExtensionCommand::Info { id_or_path } => show_extension_info(&id_or_path).await,
+
+        ExtensionCommand::Install { package } => install_extension(&package).await,
+
+        ExtensionCommand::Uninstall { id } => uninstall_extension(&id).await,
+
         ExtensionCommand::Create {
             name,
             extension_type,
@@ -703,76 +719,91 @@ async fn run_extension_cmd(cmd: ExtensionCommand) -> Result<()> {
 async fn validate_nep_package(path: &std::path::PathBuf, verbose: bool) -> Result<()> {
     use std::fs::File;
     use zip::ZipArchive;
-    
+
     if !path.exists() {
         anyhow::bail!("Extension package not found: {}", path.display());
     }
-    
+
     if path.extension().is_none_or(|e| e != "nep") {
-        anyhow::bail!("Invalid extension package. Expected .nep file, got: {}", 
-                      path.extension().unwrap_or_default().display());
+        anyhow::bail!(
+            "Invalid extension package. Expected .nep file, got: {}",
+            path.extension().unwrap_or_default().display()
+        );
     }
-    
+
     println!("Validating .nep package: {}", path.display());
     println!();
-    
+
     // Open the ZIP archive
     let file = File::open(path)?;
     let mut archive = ZipArchive::new(file)?;
-    
+
     // Check for manifest.json - collect names first to avoid borrow issues
-    let manifest_names: Vec<String> = archive.file_names()
+    let manifest_names: Vec<String> = archive
+        .file_names()
         .filter(|n| n.ends_with("manifest.json"))
         .map(|s| s.to_string())
         .collect();
-    
+
     if manifest_names.is_empty() {
         println!("❌ Validation FAILED");
         println!("   Missing manifest.json in package");
         std::process::exit(1);
     }
-    
+
     // Read and parse manifest
     let manifest_path = &manifest_names[0];
     let mut manifest_file = archive.by_name(manifest_path)?;
     let mut manifest_content = String::new();
     manifest_file.read_to_string(&mut manifest_content)?;
-    
+
     let manifest: serde_json::Value = serde_json::from_str(&manifest_content)
         .map_err(|e| anyhow::anyhow!("Failed to parse manifest.json: {}", e))?;
-    
+
     // Validate required fields
     let required_fields = ["id", "name", "version", "format_version"];
     let mut missing = Vec::new();
-    
+
     for field in &required_fields {
         if manifest.get(field).is_none() {
             missing.push(*field);
         }
     }
-    
+
     if !missing.is_empty() {
         println!("❌ Validation FAILED");
         println!("   Missing required fields: {}", missing.join(", "));
         std::process::exit(1);
     }
-    
+
     // Display package info
     println!("✅ Validation PASSED");
     println!();
-    println!("ID:              {}", manifest["id"].as_str().unwrap_or("unknown"));
-    println!("Name:            {}", manifest["name"].as_str().unwrap_or("unknown"));
-    println!("Version:         {}", manifest["version"].as_str().unwrap_or("unknown"));
-    println!("Format Version:  {}", manifest["format_version"].as_str().unwrap_or("unknown"));
-    
+    println!(
+        "ID:              {}",
+        manifest["id"].as_str().unwrap_or("unknown")
+    );
+    println!(
+        "Name:            {}",
+        manifest["name"].as_str().unwrap_or("unknown")
+    );
+    println!(
+        "Version:         {}",
+        manifest["version"].as_str().unwrap_or("unknown")
+    );
+    println!(
+        "Format Version:  {}",
+        manifest["format_version"].as_str().unwrap_or("unknown")
+    );
+
     if let Some(abi) = manifest.get("abi_version").and_then(|v| v.as_u64()) {
         println!("ABI Version:     {}", abi);
     }
-    
+
     if let Some(desc) = manifest.get("description").and_then(|v| v.as_str()) {
         println!("Description:     {}", desc);
     }
-    
+
     // List binaries
     if let Some(binaries) = manifest.get("binaries").and_then(|v| v.as_object()) {
         println!();
@@ -781,17 +812,17 @@ async fn validate_nep_package(path: &std::path::PathBuf, verbose: bool) -> Resul
             println!("  {}: {}", platform, path.as_str().unwrap_or("unknown"));
         }
     }
-    
+
     if verbose {
         // manifest_file is no longer used, drop it to release archive borrow
         drop(manifest_file);
-        
+
         println!();
         println!("--- Verbose Details ---");
         println!("Package size:    {} bytes", path.metadata()?.len());
         println!("Package path:    {}", path.display());
         println!("Files in package: {}", archive.len());
-        
+
         println!();
         println!("Package contents:");
         for i in 0..archive.len() {
@@ -799,43 +830,41 @@ async fn validate_nep_package(path: &std::path::PathBuf, verbose: bool) -> Resul
             println!("  {}", file.name());
         }
     }
-    
+
     Ok(())
 }
 
 /// List installed extensions.
 async fn list_extensions(verbose: bool) -> Result<()> {
     use std::fs;
-    
+
     let search_dirs = [
         std::path::PathBuf::from("./data/extensions"),
         std::path::PathBuf::from("./extensions"),
     ];
-    
+
     println!("Installed Extensions");
     println!("====================\\n");
-    
+
     let mut found_count = 0;
-    
+
     for search_dir in &search_dirs {
         if !search_dir.exists() {
             continue;
         }
-        
+
         let entries = fs::read_dir(search_dir)?;
-        
+
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
-            
+
             // Check for .nep files
             if path.extension().is_some_and(|e| e == "nep") {
-                let name = path.file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("?");
-                
+                let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
+
                 println!("📦 {}", name);
                 println!("   Path: {}", path.display());
-                
+
                 if verbose {
                     // Try to read manifest
                     if let Ok(manifest) = read_nep_manifest(&path) {
@@ -848,13 +877,13 @@ async fn list_extensions(verbose: bool) -> Result<()> {
                     }
                     println!("   Size: {} bytes", path.metadata()?.len());
                 }
-                
+
                 println!();
                 found_count += 1;
             }
         }
     }
-    
+
     if found_count == 0 {
         println!("No extensions found.");
         println!();
@@ -868,26 +897,26 @@ async fn list_extensions(verbose: bool) -> Result<()> {
     } else {
         println!("Total: {} extension(s)", found_count);
     }
-    
+
     Ok(())
 }
 
 /// Show extension information.
 async fn show_extension_info(id_or_path: &str) -> Result<()> {
     let path = std::path::PathBuf::from(id_or_path);
-    
+
     if path.exists() {
         // It's a file path, validate it
         validate_nep_package(&path, true).await?;
     } else {
         // It's an extension ID, search for it
         use std::fs;
-        
+
         let search_dirs = [
             std::path::PathBuf::from("./data/extensions"),
             std::path::PathBuf::from("./extensions"),
         ];
-        
+
         let mut found = None;
         'search: for search_dir in &search_dirs {
             if let Ok(entries) = fs::read_dir(search_dir) {
@@ -904,60 +933,60 @@ async fn show_extension_info(id_or_path: &str) -> Result<()> {
                 }
             }
         }
-        
+
         if let Some(found_path) = found {
             validate_nep_package(&found_path, true).await?;
         } else {
             anyhow::bail!("Extension not found: {}", id_or_path);
         }
     }
-    
+
     Ok(())
 }
 
 /// Install an extension from .nep package.
 async fn install_extension(package: &str) -> Result<()> {
     let source_path = std::path::PathBuf::from(package);
-    
+
     if !source_path.exists() {
         anyhow::bail!("Package file not found: {}", package);
     }
-    
+
     println!("Installing extension from: {}", package);
-    
+
     // Validate first
     validate_nep_package(&source_path, false).await?;
-    
+
     // Create target directory
     let target_dir = std::path::PathBuf::from("./data/extensions");
     std::fs::create_dir_all(&target_dir)?;
-    
+
     let target_path = target_dir.join(source_path.file_name().unwrap());
-    
+
     // Copy package
     std::fs::copy(&source_path, &target_path)?;
-    
+
     println!();
     println!("✅ Extension installed successfully!");
     println!("   Location: {}", target_path.display());
     println!();
     println!("Note: The extension will be loaded on next server restart.");
     println!("      Or use the Web UI to load it dynamically.");
-    
+
     Ok(())
 }
 
 /// Uninstall an extension.
 async fn uninstall_extension(id: &str) -> Result<()> {
     use std::fs;
-    
+
     let search_dirs = [
         std::path::PathBuf::from("./data/extensions"),
         std::path::PathBuf::from("./extensions"),
     ];
-    
+
     let mut found = Vec::new();
-    
+
     for search_dir in &search_dirs {
         if let Ok(entries) = fs::read_dir(search_dir) {
             for entry in entries.filter_map(|e| e.ok()) {
@@ -972,11 +1001,11 @@ async fn uninstall_extension(id: &str) -> Result<()> {
             }
         }
     }
-    
+
     if found.is_empty() {
         anyhow::bail!("Extension not found: {}", id);
     }
-    
+
     if found.len() > 1 {
         println!("Found multiple extensions matching '{}':", id);
         for (i, path) in found.iter().enumerate() {
@@ -984,27 +1013,27 @@ async fn uninstall_extension(id: &str) -> Result<()> {
         }
         anyhow::bail!("Please be more specific");
     }
-    
+
     let path = &found[0];
-    
+
     println!("Uninstalling extension: {}", path.display());
     println!("This will delete the extension package.");
     print!("Confirm? [y/N] ");
     use std::io::Write;
     std::io::stdout().flush()?;
-    
+
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
-    
+
     if !input.trim().to_lowercase().starts_with('y') {
         println!("Cancelled.");
         return Ok(());
     }
-    
+
     fs::remove_file(path)?;
-    
+
     println!("✅ Extension uninstalled successfully!");
-    
+
     Ok(())
 }
 
@@ -1012,16 +1041,17 @@ async fn uninstall_extension(id: &str) -> Result<()> {
 fn read_nep_manifest(path: &std::path::PathBuf) -> Result<serde_json::Value> {
     use std::fs::File;
     use zip::ZipArchive;
-    
+
     let file = File::open(path)?;
     let mut archive = ZipArchive::new(file)?;
-    
+
     // Collect file names first to avoid borrowing issues
-    let manifest_names: Vec<String> = archive.file_names()
+    let manifest_names: Vec<String> = archive
+        .file_names()
         .filter(|n| n.ends_with("manifest.json"))
         .map(|s| s.to_string())
         .collect();
-    
+
     if let Some(name) = manifest_names.into_iter().next() {
         let manifest_file = archive.by_name(&name)?;
         let mut content = String::new();
@@ -1030,13 +1060,16 @@ fn read_nep_manifest(path: &std::path::PathBuf) -> Result<serde_json::Value> {
         let manifest: serde_json::Value = serde_json::from_str(&content)?;
         return Ok(manifest);
     }
-    
+
     anyhow::bail!("No manifest.json found in package")
 }
 
-
 /// Create a new extension scaffold.
-fn create_extension_scaffold(name: &str, extension_type: &str, _output: Option<std::path::PathBuf>) -> Result<()> {
+fn create_extension_scaffold(
+    name: &str,
+    extension_type: &str,
+    _output: Option<std::path::PathBuf>,
+) -> Result<()> {
     let valid_types = [
         "tool",
         "llm_backend",
@@ -1069,4 +1102,3 @@ fn create_extension_scaffold(name: &str, extension_type: &str, _output: Option<s
 
     Ok(())
 }
-

@@ -11,18 +11,17 @@
 #![allow(dead_code)]
 #![allow(clippy::assertions_on_constants)]
 
-use neomind_core::extension::event_dispatcher::EventDispatcher;
-use neomind_core::extension::event_subscription::{EventSubscription, EventFilter};
-use neomind_core::extension::system::{
-    Extension, ExtensionMetadata, ExtensionCommand,
-    MetricDescriptor, Result,
-};
-use neomind_core::eventbus::EventBus;
-use neomind_core::event::NeoMindEvent;
 use async_trait::async_trait;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use neomind_core::event::NeoMindEvent;
+use neomind_core::eventbus::EventBus;
+use neomind_core::extension::event_dispatcher::EventDispatcher;
+use neomind_core::extension::event_subscription::{EventFilter, EventSubscription};
+use neomind_core::extension::system::{
+    Extension, ExtensionCommand, ExtensionMetadata, MetricDescriptor, Result,
+};
 use serde_json::json;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 // ============================================================================
 // Event Recording Extension
@@ -106,8 +105,7 @@ fn test_event_subscription_creation() {
 #[test]
 fn test_event_subscription_with_filters() {
     let filter = EventFilter::new().by_device_id("device-1");
-    let sub = EventSubscription::with_types(vec!["DeviceMetric".to_string()])
-        .with_filters(filter);
+    let sub = EventSubscription::with_types(vec!["DeviceMetric".to_string()]).with_filters(filter);
 
     assert!(sub.is_subscribed("DeviceMetric"));
 }
@@ -152,11 +150,12 @@ fn test_dispatcher_creation() {
 async fn test_dispatcher_register_in_process() {
     let dispatcher = EventDispatcher::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"]))
-            as Box<dyn Extension>
+        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"])) as Box<dyn Extension>,
     ));
 
-    dispatcher.register_in_process_extension("ext.1".to_string(), ext).await;
+    dispatcher
+        .register_in_process_extension("ext.1".to_string(), ext)
+        .await;
 
     let subscriptions = dispatcher.get_subscriptions();
     assert!(subscriptions.contains_key("ext.1"));
@@ -168,11 +167,7 @@ fn test_dispatcher_register_isolated() {
     let dispatcher = EventDispatcher::new();
     let (tx, _rx) = tokio::sync::mpsc::channel(100);
 
-    dispatcher.register_isolated_extension(
-        "isolated.1".to_string(),
-        vec!["Alert".to_string()],
-        tx,
-    );
+    dispatcher.register_isolated_extension("isolated.1".to_string(), vec!["Alert".to_string()], tx);
 
     let subscriptions = dispatcher.get_subscriptions();
     assert!(subscriptions.contains_key("isolated.1"));
@@ -183,11 +178,12 @@ fn test_dispatcher_register_isolated() {
 async fn test_dispatcher_unregister() {
     let dispatcher = EventDispatcher::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"]))
-            as Box<dyn Extension>
+        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"])) as Box<dyn Extension>,
     ));
 
-    dispatcher.register_in_process_extension("ext.1".to_string(), ext).await;
+    dispatcher
+        .register_in_process_extension("ext.1".to_string(), ext)
+        .await;
     assert!(dispatcher.get_subscriptions().contains_key("ext.1"));
 
     dispatcher.unregister_extension("ext.1");
@@ -202,13 +198,16 @@ async fn test_dispatcher_unregister() {
 async fn test_dispatch_exact_match() {
     let dispatcher = EventDispatcher::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"]))
-            as Box<dyn Extension>
+        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"])) as Box<dyn Extension>,
     ));
 
-    dispatcher.register_in_process_extension("ext.1".to_string(), ext).await;
+    dispatcher
+        .register_in_process_extension("ext.1".to_string(), ext)
+        .await;
 
-    dispatcher.dispatch_event("DeviceMetric", json!({"value": 42})).await;
+    dispatcher
+        .dispatch_event("DeviceMetric", json!({"value": 42}))
+        .await;
 
     // Event should be dispatched (verified by no panic)
 }
@@ -217,14 +216,17 @@ async fn test_dispatch_exact_match() {
 async fn test_dispatch_no_match() {
     let dispatcher = EventDispatcher::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"]))
-            as Box<dyn Extension>
+        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"])) as Box<dyn Extension>,
     ));
 
-    dispatcher.register_in_process_extension("ext.1".to_string(), ext).await;
+    dispatcher
+        .register_in_process_extension("ext.1".to_string(), ext)
+        .await;
 
     // Dispatch event that doesn't match subscription
-    dispatcher.dispatch_event("OtherEvent", json!({"value": 42})).await;
+    dispatcher
+        .dispatch_event("OtherEvent", json!({"value": 42}))
+        .await;
 
     // Should not panic, event not delivered
 }
@@ -233,15 +235,20 @@ async fn test_dispatch_no_match() {
 async fn test_dispatch_wildcard() {
     let dispatcher = EventDispatcher::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(EventRecordingExtension::new("ext.1", vec!["*"]))
-            as Box<dyn Extension>
+        Box::new(EventRecordingExtension::new("ext.1", vec!["*"])) as Box<dyn Extension>,
     ));
 
-    dispatcher.register_in_process_extension("ext.1".to_string(), ext).await;
+    dispatcher
+        .register_in_process_extension("ext.1".to_string(), ext)
+        .await;
 
     // Dispatch any event - should match wildcard
-    dispatcher.dispatch_event("AnyEvent", json!({"value": 1})).await;
-    dispatcher.dispatch_event("AnotherEvent", json!({"value": 2})).await;
+    dispatcher
+        .dispatch_event("AnyEvent", json!({"value": 1}))
+        .await;
+    dispatcher
+        .dispatch_event("AnotherEvent", json!({"value": 2}))
+        .await;
 
     // No panic is sufficient verification
 }
@@ -257,14 +264,20 @@ async fn test_multiple_extensions_same_event() {
     // Register multiple extensions for the same event
     for i in 0..3 {
         let ext = Arc::new(tokio::sync::RwLock::new(
-            Box::new(EventRecordingExtension::new(&format!("ext.{}", i), vec!["DeviceMetric"]))
-                as Box<dyn Extension>
+            Box::new(EventRecordingExtension::new(
+                &format!("ext.{}", i),
+                vec!["DeviceMetric"],
+            )) as Box<dyn Extension>,
         ));
-        dispatcher.register_in_process_extension(format!("ext.{}", i), ext).await;
+        dispatcher
+            .register_in_process_extension(format!("ext.{}", i), ext)
+            .await;
     }
 
     // Dispatch event
-    dispatcher.dispatch_event("DeviceMetric", json!({"value": 42})).await;
+    dispatcher
+        .dispatch_event("DeviceMetric", json!({"value": 42}))
+        .await;
 
     // All extensions should receive the event (verified by no panic)
 }
@@ -275,22 +288,28 @@ async fn test_multiple_extensions_different_events() {
 
     // Register extensions for different events
     let ext1 = Arc::new(tokio::sync::RwLock::new(
-        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"]))
-            as Box<dyn Extension>
+        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"])) as Box<dyn Extension>,
     ));
     let ext2 = Arc::new(tokio::sync::RwLock::new(
-        Box::new(EventRecordingExtension::new("ext.2", vec!["Alert"]))
-            as Box<dyn Extension>
+        Box::new(EventRecordingExtension::new("ext.2", vec!["Alert"])) as Box<dyn Extension>,
     ));
 
-    dispatcher.register_in_process_extension("ext.1".to_string(), ext1).await;
-    dispatcher.register_in_process_extension("ext.2".to_string(), ext2).await;
+    dispatcher
+        .register_in_process_extension("ext.1".to_string(), ext1)
+        .await;
+    dispatcher
+        .register_in_process_extension("ext.2".to_string(), ext2)
+        .await;
 
     // Dispatch DeviceMetric - only ext.1 should receive
-    dispatcher.dispatch_event("DeviceMetric", json!({"value": 1})).await;
+    dispatcher
+        .dispatch_event("DeviceMetric", json!({"value": 1}))
+        .await;
 
     // Dispatch Alert - only ext.2 should receive
-    dispatcher.dispatch_event("Alert", json!({"value": 2})).await;
+    dispatcher
+        .dispatch_event("Alert", json!({"value": 2}))
+        .await;
 
     // Test verifies dispatch doesn't panic
 }
@@ -339,13 +358,12 @@ async fn test_isolated_event_channel() {
     );
 
     // Dispatch event
-    dispatcher.dispatch_event("DeviceMetric", json!({"value": 42})).await;
+    dispatcher
+        .dispatch_event("DeviceMetric", json!({"value": 42}))
+        .await;
 
     // Receive event from channel
-    let received = tokio::time::timeout(
-        std::time::Duration::from_millis(100),
-        rx.recv()
-    ).await;
+    let received = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
 
     assert!(received.is_ok());
     let (event_type, payload) = received.unwrap().unwrap();
@@ -358,20 +376,15 @@ async fn test_isolated_event_channel_no_match() {
     let dispatcher = EventDispatcher::new();
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
 
-    dispatcher.register_isolated_extension(
-        "isolated.1".to_string(),
-        vec!["Alert".to_string()],
-        tx,
-    );
+    dispatcher.register_isolated_extension("isolated.1".to_string(), vec!["Alert".to_string()], tx);
 
     // Dispatch event that doesn't match subscription
-    dispatcher.dispatch_event("DeviceMetric", json!({"value": 42})).await;
+    dispatcher
+        .dispatch_event("DeviceMetric", json!({"value": 42}))
+        .await;
 
     // Should not receive event
-    let received = tokio::time::timeout(
-        std::time::Duration::from_millis(50),
-        rx.recv()
-    ).await;
+    let received = tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await;
 
     assert!(received.is_err()); // Timeout - no event received
 }
@@ -395,15 +408,18 @@ fn test_extension_event_subscription_service_creation() {
 async fn test_high_volume_events() {
     let dispatcher = EventDispatcher::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"]))
-            as Box<dyn Extension>
+        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"])) as Box<dyn Extension>,
     ));
 
-    dispatcher.register_in_process_extension("ext.1".to_string(), ext).await;
+    dispatcher
+        .register_in_process_extension("ext.1".to_string(), ext)
+        .await;
 
     // Dispatch many events
     for i in 0..100 {
-        dispatcher.dispatch_event("DeviceMetric", json!({"value": i})).await;
+        dispatcher
+            .dispatch_event("DeviceMetric", json!({"value": i}))
+            .await;
     }
 
     // Test verifies dispatch doesn't panic
@@ -417,11 +433,12 @@ async fn test_high_volume_events() {
 async fn test_empty_subscription_list() {
     let dispatcher = EventDispatcher::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(EventRecordingExtension::new("ext.1", vec![]))
-            as Box<dyn Extension>
+        Box::new(EventRecordingExtension::new("ext.1", vec![])) as Box<dyn Extension>,
     ));
 
-    dispatcher.register_in_process_extension("ext.1".to_string(), ext).await;
+    dispatcher
+        .register_in_process_extension("ext.1".to_string(), ext)
+        .await;
 
     // Extension should not be in subscriptions
     let subscriptions = dispatcher.get_subscriptions();
@@ -432,15 +449,18 @@ async fn test_empty_subscription_list() {
 async fn test_dispatch_after_unregister() {
     let dispatcher = EventDispatcher::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"]))
-            as Box<dyn Extension>
+        Box::new(EventRecordingExtension::new("ext.1", vec!["DeviceMetric"])) as Box<dyn Extension>,
     ));
 
-    dispatcher.register_in_process_extension("ext.1".to_string(), ext).await;
+    dispatcher
+        .register_in_process_extension("ext.1".to_string(), ext)
+        .await;
     dispatcher.unregister_extension("ext.1");
 
     // Dispatch event after unregister
-    dispatcher.dispatch_event("DeviceMetric", json!({"value": 42})).await;
+    dispatcher
+        .dispatch_event("DeviceMetric", json!({"value": 42}))
+        .await;
 
     // Test verifies dispatch doesn't panic
 }

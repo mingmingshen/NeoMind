@@ -9,7 +9,16 @@ fn main() {
     println!("{}", &prompt[0..800.min(prompt.len())]);
 
     println!("\n\n=== Checking for language policy ===");
-    println!("Contains 'CRITICAL LANGUAGE RULE': {}", prompt.contains("CRITICAL LANGUAGE RULE"));
-    println!("Contains 'HIGHEST PRIORITY': {}", prompt.contains("HIGHEST PRIORITY"));
-    println!("Contains 'EXACT SAME LANGUAGE': {}", prompt.contains("EXACT SAME LANGUAGE"));
+    println!(
+        "Contains 'CRITICAL LANGUAGE RULE': {}",
+        prompt.contains("CRITICAL LANGUAGE RULE")
+    );
+    println!(
+        "Contains 'HIGHEST PRIORITY': {}",
+        prompt.contains("HIGHEST PRIORITY")
+    );
+    println!(
+        "Contains 'EXACT SAME LANGUAGE': {}",
+        prompt.contains("EXACT SAME LANGUAGE")
+    );
 }

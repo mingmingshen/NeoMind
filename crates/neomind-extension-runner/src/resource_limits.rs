@@ -28,7 +28,7 @@
 //! ```
 
 use std::io;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Configuration for resource limits
 #[derive(Debug, Clone)]
@@ -52,14 +52,13 @@ pub struct ResourceLimitsConfig {
 impl Default for ResourceLimitsConfig {
     fn default() -> Self {
         Self {
-            memory_limit_mb: Some(512),  // 512MB default
-            memory_limit_hard_mb: None,  // 2x soft limit
+            memory_limit_mb: Some(512), // 512MB default
+            memory_limit_hard_mb: None, // 2x soft limit
             cpu_affinity: None,
-            nice_level: Some(10),        // Lower priority
+            nice_level: Some(10), // Lower priority
         }
     }
 }
-
 
 /// Set up resource limits for the current process
 ///
@@ -121,13 +120,12 @@ pub enum ResourceLimitError {
 
 #[cfg(unix)]
 fn setup_unix_limits(config: &ResourceLimitsConfig) -> Result<(), ResourceLimitError> {
-    use libc::{setrlimit, rlimit, RLIMIT_AS, RLIMIT_DATA, setpriority, PRIO_PROCESS};
+    use libc::{rlimit, setpriority, setrlimit, PRIO_PROCESS, RLIMIT_AS, RLIMIT_DATA};
 
     // 1. Set memory limit
     if let Some(soft_mb) = config.memory_limit_mb {
         let soft = soft_mb * 1024 * 1024;
-        let hard = config.memory_limit_hard_mb
-            .unwrap_or(soft_mb * 2) * 1024 * 1024;
+        let hard = config.memory_limit_hard_mb.unwrap_or(soft_mb * 2) * 1024 * 1024;
 
         info!(
             "Setting memory limit: soft={}MB, hard={}MB",
@@ -211,9 +209,7 @@ fn set_cpu_affinity_unix(cores: &[usize]) -> Result<(), ResourceLimitError> {
             }
         }
 
-        let result = unsafe {
-            sched_setaffinity(0, std::mem::size_of::<cpu_set_t>(), &cpuset)
-        };
+        let result = unsafe { sched_setaffinity(0, std::mem::size_of::<cpu_set_t>(), &cpuset) };
 
         if result != 0 {
             let err = io::Error::last_os_error();
@@ -266,7 +262,10 @@ fn setup_windows_limits(config: &ResourceLimitsConfig) -> Result<(), ResourceLim
                 info!("Process priority set to BELOW_NORMAL");
             } else {
                 let err = io::Error::last_os_error();
-                warn!("Failed to set process priority: {} (continuing anyway)", err);
+                warn!(
+                    "Failed to set process priority: {} (continuing anyway)",
+                    err
+                );
             }
         }
     }

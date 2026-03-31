@@ -9,8 +9,7 @@ use predicates::prelude::*;
 #[test]
 fn test_chat_command_exists() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("chat")
-        .arg("--help");
+    cmd.arg("chat").arg("--help");
 
     cmd.assert()
         .success()
@@ -22,9 +21,7 @@ fn test_chat_command_exists() {
 #[test]
 fn test_chat_session_flag() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("chat")
-        .arg("--session")
-        .arg("test-session-123");
+    cmd.arg("chat").arg("--session").arg("test-session-123");
 
     // Will fail due to no LLM backend, but arguments should parse
     cmd.assert().failure();
@@ -34,9 +31,7 @@ fn test_chat_session_flag() {
 #[test]
 fn test_chat_short_session_flag() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("chat")
-        .arg("-s")
-        .arg("my-session");
+    cmd.arg("chat").arg("-s").arg("my-session");
 
     cmd.assert().failure();
 }
@@ -55,8 +50,7 @@ fn test_chat_without_session() {
 #[test]
 fn test_chat_help_shows_session_option() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("chat")
-        .arg("--help");
+    cmd.arg("chat").arg("--help");
 
     cmd.assert()
         .success()

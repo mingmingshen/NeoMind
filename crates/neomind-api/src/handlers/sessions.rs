@@ -334,10 +334,12 @@ async fn process_stream_to_channel(
                         "type": "end",
                         "sessionId": session_id,
                     });
-                    let _ = tx.send(StreamEvent {
-                        json: end_json.to_string(),
-                        session_id: session_id.clone(),
-                    }).await;
+                    let _ = tx
+                        .send(StreamEvent {
+                            json: end_json.to_string(),
+                            session_id: session_id.clone(),
+                        })
+                        .await;
                 }
                 break;
             }
@@ -354,20 +356,24 @@ async fn process_stream_to_channel(
                     "message": "Stream timeout: response took too long",
                     "sessionId": session_id,
                 });
-                let _ = tx.send(StreamEvent {
-                    json: timeout_json.to_string(),
-                    session_id: session_id.clone(),
-                }).await;
+                let _ = tx
+                    .send(StreamEvent {
+                        json: timeout_json.to_string(),
+                        session_id: session_id.clone(),
+                    })
+                    .await;
                 // Send end event after timeout
                 if !end_event_sent {
                     let end_json = json!({
                         "type": "end",
                         "sessionId": session_id,
                     });
-                    let _ = tx.send(StreamEvent {
-                        json: end_json.to_string(),
-                        session_id: session_id.clone(),
-                    }).await;
+                    let _ = tx
+                        .send(StreamEvent {
+                            json: end_json.to_string(),
+                            session_id: session_id.clone(),
+                        })
+                        .await;
                 }
                 break;
             }
@@ -449,7 +455,11 @@ pub async fn list_sessions_handler(
     };
 
     // Use lightweight version to avoid loading message count/preview for every session
-    let all_sessions = state.agents.session_manager.list_sessions_with_info_light().await;
+    let all_sessions = state
+        .agents
+        .session_manager
+        .list_sessions_with_info_light()
+        .await;
     let total_count = all_sessions.len() as u32;
 
     // Calculate pagination

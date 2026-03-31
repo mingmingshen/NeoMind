@@ -7,12 +7,12 @@
 //! - Capability checking and listing
 
 use neomind_core::extension::context::{
-    ExtensionContext, ExtensionCapability, ExtensionCapabilityProvider,
-    CapabilityManifest, CapabilityError, AvailableCapabilities, ExtensionContextConfig,
+    AvailableCapabilities, CapabilityError, CapabilityManifest, ExtensionCapability,
+    ExtensionCapabilityProvider, ExtensionContext, ExtensionContextConfig,
 };
 use serde_json::{json, Value};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 // ============================================================================
@@ -67,45 +67,47 @@ impl ExtensionCapabilityProvider for MockDeviceProvider {
     ) -> Result<Value, CapabilityError> {
         match capability {
             ExtensionCapability::DeviceMetricsRead => {
-                let device_id = params.get("device_id")
+                let device_id = params
+                    .get("device_id")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters(
-                        "device_id required".to_string()
-                    ))?;
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("device_id required".to_string())
+                    })?;
 
                 let data = self.device_data.read().await;
                 data.get(device_id)
                     .map(|metrics| json!(metrics))
-                    .ok_or_else(|| CapabilityError::ProviderError(
-                        format!("Device {} not found", device_id)
-                    ))
+                    .ok_or_else(|| {
+                        CapabilityError::ProviderError(format!("Device {} not found", device_id))
+                    })
             }
 
             ExtensionCapability::DeviceMetricsWrite => {
-                let device_id = params.get("device_id")
+                let device_id = params
+                    .get("device_id")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters(
-                        "device_id required".to_string()
-                    ))?;
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("device_id required".to_string())
+                    })?;
 
-                let metric = params.get("metric")
+                let metric = params
+                    .get("metric")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters(
-                        "metric required".to_string()
-                    ))?;
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("metric required".to_string())
+                    })?;
 
-                let value = params.get("value")
-                    .cloned()
-                    .ok_or_else(|| CapabilityError::InvalidParameters(
-                        "value required".to_string()
-                    ))?;
+                let value = params.get("value").cloned().ok_or_else(|| {
+                    CapabilityError::InvalidParameters("value required".to_string())
+                })?;
 
                 let value_clone = value.clone();
 
                 // Store metric (in real implementation, would write to storage)
                 {
                     let mut data = self.device_data.write().await;
-                    let device_metrics = data.entry(device_id.to_string())
+                    let device_metrics = data
+                        .entry(device_id.to_string())
                         .or_insert_with(HashMap::new);
                     device_metrics.insert(metric.to_string(), value);
                 }
@@ -119,17 +121,19 @@ impl ExtensionCapabilityProvider for MockDeviceProvider {
             }
 
             ExtensionCapability::DeviceControl => {
-                let device_id = params.get("device_id")
+                let device_id = params
+                    .get("device_id")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters(
-                        "device_id required".to_string()
-                    ))?;
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("device_id required".to_string())
+                    })?;
 
-                let command = params.get("command")
+                let command = params
+                    .get("command")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters(
-                        "command required".to_string()
-                    ))?;
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("command required".to_string())
+                    })?;
 
                 Ok(json!({
                     "device_id": device_id,
@@ -187,11 +191,12 @@ impl ExtensionCapabilityProvider for MockEventProvider {
     ) -> Result<Value, CapabilityError> {
         match capability {
             ExtensionCapability::EventPublish => {
-                let event_type = params.get("event_type")
+                let event_type = params
+                    .get("event_type")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters(
-                        "event_type required".to_string()
-                    ))?;
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("event_type required".to_string())
+                    })?;
 
                 let data = params.get("data").cloned().unwrap_or(json!({}));
 
@@ -211,11 +216,12 @@ impl ExtensionCapabilityProvider for MockEventProvider {
             }
 
             ExtensionCapability::EventSubscribe => {
-                let event_type = params.get("event_type")
+                let event_type = params
+                    .get("event_type")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters(
-                        "event_type required".to_string()
-                    ))?;
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("event_type required".to_string())
+                    })?;
 
                 Ok(json!({
                     "event_type": event_type,
@@ -255,9 +261,15 @@ async fn test_provider_registration() {
     let capabilities = context.list_capabilities().await;
 
     assert_eq!(capabilities.len(), 3);
-    assert!(capabilities.iter().any(|(c, _, _)| c.name() == "device_metrics_read"));
-    assert!(capabilities.iter().any(|(c, _, _)| c.name() == "device_metrics_write"));
-    assert!(capabilities.iter().any(|(c, _, _)| c.name() == "device_control"));
+    assert!(capabilities
+        .iter()
+        .any(|(c, _, _)| c.name() == "device_metrics_read"));
+    assert!(capabilities
+        .iter()
+        .any(|(c, _, _)| c.name() == "device_metrics_write"));
+    assert!(capabilities
+        .iter()
+        .any(|(c, _, _)| c.name() == "device_control"));
 }
 
 #[tokio::test]
@@ -265,9 +277,7 @@ async fn test_capability_invocation() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
         extension_id: "test-extension".to_string(),
-        required_capabilities: vec![
-            ExtensionCapability::DeviceMetricsRead,
-        ],
+        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -397,9 +407,7 @@ async fn test_capability_control() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
         extension_id: "test-extension".to_string(),
-        required_capabilities: vec![
-            ExtensionCapability::DeviceControl,
-        ],
+        required_capabilities: vec![ExtensionCapability::DeviceControl],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -430,9 +438,7 @@ async fn test_event_publish() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
         extension_id: "test-extension".to_string(),
-        required_capabilities: vec![
-            ExtensionCapability::EventPublish,
-        ],
+        required_capabilities: vec![ExtensionCapability::EventPublish],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -470,9 +476,7 @@ async fn test_capability_error_handling() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
         extension_id: "test-extension".to_string(),
-        required_capabilities: vec![
-            ExtensionCapability::DeviceMetricsRead,
-        ],
+        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);

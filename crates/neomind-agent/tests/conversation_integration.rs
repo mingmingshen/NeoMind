@@ -5,9 +5,8 @@
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use neomind_core::EventBus;
 use neomind_storage::{
-    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
-    ConversationTurn, LongTermMemory,
-    ScheduleType, ShortTermMemory, WorkingMemory,
+    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, ConversationTurn,
+    LongTermMemory, ScheduleType, ShortTermMemory, WorkingMemory,
 };
 use std::sync::Arc;
 
@@ -33,6 +32,7 @@ impl TestContext {
             llm_runtime: None,
             llm_backend_store: None,
             extension_registry: None,
+            tool_registry: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -83,6 +83,7 @@ impl TestContext {
                 short_term: ShortTermMemory::default(),
                 long_term: LongTermMemory::default(),
             },
+            tool_config: None,
             error_message: None,
             priority: 128,
             conversation_history: vec![],
@@ -98,8 +99,7 @@ impl TestContext {
     }
 
     async fn load_agent(&self, agent_id: &str) -> anyhow::Result<AiAgent> {
-        self
-            .store
+        self.store
             .get_agent(agent_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("Agent not found"))
@@ -470,9 +470,7 @@ async fn test_agent_role_prompts() -> anyhow::Result<()> {
 async fn test_full_lifecycle() -> anyhow::Result<()> {
     let ctx = TestContext::new().await?;
 
-    println!(
-        "\n============================================================"
-    );
+    println!("\n============================================================");
     println!("=== 完整 Agent 对话生命周期测试 ===");
     println!("============================================================");
 
@@ -529,9 +527,7 @@ async fn test_full_lifecycle() -> anyhow::Result<()> {
         assert_eq!(history.len(), 3);
     }
 
-    println!(
-        "\n============================================================"
-    );
+    println!("\n============================================================");
     println!("✅ 完整生命周期测试全部通过！");
     println!("============================================================");
 

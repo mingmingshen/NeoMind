@@ -484,7 +484,9 @@ pub async fn activate_backend_handler(
     // Also update the SessionManager's LLM backend for existing sessions
     use neomind_agent::LlmBackend;
     /// Convert storage BackendCapabilities to core BackendCapabilities
-    fn convert_capabilities(storage_caps: &neomind_storage::BackendCapabilities) -> neomind_core::BackendCapabilities {
+    fn convert_capabilities(
+        storage_caps: &neomind_storage::BackendCapabilities,
+    ) -> neomind_core::BackendCapabilities {
         neomind_core::BackendCapabilities {
             streaming: storage_caps.supports_streaming,
             multimodal: storage_caps.supports_multimodal,
@@ -497,10 +499,10 @@ pub async fn activate_backend_handler(
             supports_audio: false,
         }
     }
-    
+
     // Convert capabilities from storage type to core type
     let capabilities = Some(convert_capabilities(&instance.capabilities));
-    
+
     let backend = match instance.backend_type {
         LlmBackendType::Ollama => {
             let endpoint = instance
@@ -508,7 +510,11 @@ pub async fn activate_backend_handler(
                 .clone()
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
             let model = instance.model.clone();
-            LlmBackend::Ollama { endpoint, model, capabilities }
+            LlmBackend::Ollama {
+                endpoint,
+                model,
+                capabilities,
+            }
         }
         LlmBackendType::OpenAi => {
             let api_key = instance.api_key.clone().unwrap_or_default();
@@ -1235,4 +1241,3 @@ fn adjust_capabilities_for_model(model_name: &str, capabilities: &mut BackendCap
     // Detect max context from model name
     capabilities.max_context = detect_model_context(model_name);
 }
-

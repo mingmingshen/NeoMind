@@ -2,6 +2,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
+use crate::llm_backends::{OllamaConfig, OllamaRuntime};
 use futures::future::join_all;
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::{
@@ -9,7 +10,6 @@ use neomind_core::{
     EventBus, MetricValue, NeoMindEvent,
 };
 use neomind_devices::DeviceService;
-use crate::llm_backends::{OllamaConfig, OllamaRuntime};
 
 #[cfg(feature = "cloud")]
 use crate::llm_backends::{CloudConfig, CloudRuntime};
@@ -43,8 +43,8 @@ use tokio::sync::RwLock;
 // Import DataSourceId for type-safe extension metric queries
 use neomind_core::datasource::DataSourceId;
 
-use crate::agent::types::LlmBackend;
 use crate::agent::semantic_mapper::SemanticToolMapper;
+use crate::agent::types::LlmBackend;
 use crate::error::{NeoMindError, Result as AgentResult};
 use crate::prompts::{CONVERSATION_CONTEXT_EN, CONVERSATION_CONTEXT_ZH};
 
@@ -186,9 +186,7 @@ fn json_value_to_string(value: &serde_json::Value) -> String {
 /// - "situation_analysis": "text description"
 /// - "situation_analysis": {"description": "...", "details": {...}}
 fn extract_string_field(obj: &serde_json::Map<String, serde_json::Value>, key: &str) -> String {
-    obj.get(key)
-        .map(json_value_to_string)
-        .unwrap_or_default()
+    obj.get(key).map(json_value_to_string).unwrap_or_default()
 }
 
 /// Sanitize JSON string by removing or escaping illegal control characters.
@@ -791,7 +789,9 @@ impl ChainState {
             context.push('\n');
         }
 
-        context.push_str("Based on the above execution results, determine if further operations are needed. ");
+        context.push_str(
+            "Based on the above execution results, determine if further operations are needed. ",
+        );
         context.push_str("If previous operations have completed the goal, or there are no more meaningful operations, please explain and end. ");
         context.push_str("If you need to continue, please clearly state what to do next.\n");
 
@@ -818,6 +818,8 @@ pub struct AgentExecutorConfig {
     pub llm_backend_store: Option<Arc<LlmBackendStore>>,
     /// Phase 3.3: Extension registry for dynamic tool loading
     pub extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
+    /// Tool registry for function calling mode
+    pub tool_registry: Option<Arc<crate::toolkit::ToolRegistry>>,
 }
 
 /// Context for agent execution.
@@ -874,6 +876,8 @@ pub struct AgentExecutor {
         Arc<RwLock<HashMap<String, Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>>>>,
     /// Phase 3.3: Extension registry for dynamic tool loading
     extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
+    /// Tool registry for function calling mode
+    tool_registry: Option<Arc<crate::toolkit::ToolRegistry>>,
 }
 
 /// Calculate relevance score for a conversation turn based on current context.
@@ -939,6 +943,62 @@ fn score_turn_relevance(
     score.clamp(0.0, 1.0)
 }
 
+/// Parse the LLM's final text response to extract situation_analysis, conclusion, and confidence.
+///
+/// Expects a JSON block like: ```json\n{"situation_analysis":"...","conclusion":"...","confidence":0.8}\n```
+/// Falls back to sensible defaults if parsing fails.
+fn parse_final_tool_response(text: &str) -> (String, String, f32) {
+    // Try to extract a JSON code block from the text
+    if let Some(json_str) = text
+        .split("```json")
+        .nth(1)
+        .and_then(|s| s.split("```").next())
+        .map(|s| s.trim())
+    {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
+            let situation_analysis = parsed
+                .get("situation_analysis")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let conclusion = parsed
+                .get("conclusion")
+                .and_then(|v| v.as_str())
+                .unwrap_or(text)
+                .to_string();
+            let confidence = parsed
+                .get("confidence")
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32)
+                .unwrap_or(0.7);
+            return (situation_analysis, conclusion, confidence);
+        }
+    }
+
+    // Try to parse the entire text as JSON (in case no code block wrapping)
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text.trim()) {
+        let situation_analysis = parsed
+            .get("situation_analysis")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let conclusion = parsed
+            .get("conclusion")
+            .and_then(|v| v.as_str())
+            .unwrap_or(text)
+            .to_string();
+        let confidence = parsed
+            .get("confidence")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32)
+            .unwrap_or(0.7);
+        return (situation_analysis, conclusion, confidence);
+    }
+
+    // Fallback: use the whole text as both analysis and conclusion
+    (text.to_string(), text.to_string(), 0.5)
+}
+
 impl AgentExecutor {
     /// Create a new agent executor.
     pub async fn new(config: AgentExecutorConfig) -> AgentResult<Self> {
@@ -952,13 +1012,14 @@ impl AgentExecutor {
             device_service: config.device_service.clone(),
             event_bus: config.event_bus.clone(),
             message_manager,
-            _config: config,
+            _config: config.clone(),
             llm_runtime,
             llm_backend_store,
             event_agents: Arc::new(RwLock::new(HashMap::new())),
             recent_executions: Arc::new(RwLock::new(HashMap::new())),
             llm_runtime_cache: Arc::new(RwLock::new(HashMap::new())),
             extension_registry,
+            tool_registry: config.tool_registry.clone(),
         })
     }
 
@@ -968,6 +1029,343 @@ impl AgentExecutor {
         llm: Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>,
     ) {
         self.llm_runtime = Some(llm);
+    }
+
+    /// Check whether tool mode should be used for this agent execution.
+    fn should_use_tools(&self, agent: &AiAgent, llm_runtime: &Arc<dyn LlmRuntime + Send + Sync>) -> bool {
+        let config_enabled = agent
+            .tool_config
+            .as_ref()
+            .map(|c| c.enabled)
+            .unwrap_or(false);
+        let llm_supports_tools = llm_runtime.capabilities().function_calling;
+        let registry_available = self.tool_registry.is_some();
+        config_enabled && llm_supports_tools && registry_available
+    }
+
+    /// Execute agent using tool/function-calling mode.
+    ///
+    /// In this mode, the LLM receives tool definitions and can make tool calls
+    /// that are parsed from its text response, executed, and the results fed back
+    /// for further reasoning.
+    async fn execute_with_tools(
+        &self,
+        agent: &AiAgent,
+        data_collected: &[DataCollected],
+        llm_runtime: Arc<dyn LlmRuntime + Send + Sync>,
+        execution_id: &str,
+    ) -> AgentResult<(DecisionProcess, neomind_storage::ExecutionResult)> {
+        use crate::agent::tool_parser::parse_tool_calls;
+        use neomind_core::llm::backend::{GenerationParams, LlmInput};
+
+        let registry = self.tool_registry.as_ref().ok_or_else(|| {
+            NeoMindError::Tool("Tool registry not available".to_string())
+        })?;
+
+        // Get tool definitions, applying allowed_tools filter if configured
+        let tool_defs_json = registry.definitions_json();
+        let tools_list = tool_defs_json
+            .get("tools")
+            .and_then(|t| t.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        let filtered_tools: Vec<neomind_core::llm::backend::ToolDefinition> = if let Some(ref config) = agent.tool_config {
+            if config.allowed_tools.is_empty() {
+                tools_list
+                    .iter()
+                    .filter_map(|t| {
+                        Some(neomind_core::llm::backend::ToolDefinition {
+                            name: t.get("name")?.as_str()?.to_string(),
+                            description: t.get("description")?.as_str()?.to_string(),
+                            parameters: t.get("parameters")?.clone(),
+                        })
+                    })
+                    .collect()
+            } else {
+                tools_list
+                    .iter()
+                    .filter(|t| {
+                        t.get("name")
+                            .and_then(|n| n.as_str())
+                            .map(|n| config.allowed_tools.contains(&n.to_string()))
+                            .unwrap_or(true)
+                    })
+                    .filter_map(|t| {
+                        Some(neomind_core::llm::backend::ToolDefinition {
+                            name: t.get("name")?.as_str()?.to_string(),
+                            description: t.get("description")?.as_str()?.to_string(),
+                            parameters: t.get("parameters")?.clone(),
+                        })
+                    })
+                    .collect()
+            }
+        } else {
+            tools_list
+                .iter()
+                .filter_map(|t| {
+                    Some(neomind_core::llm::backend::ToolDefinition {
+                        name: t.get("name")?.as_str()?.to_string(),
+                        description: t.get("description")?.as_str()?.to_string(),
+                        parameters: t.get("parameters")?.clone(),
+                    })
+                })
+                .collect()
+        };
+
+        // Build system prompt
+        let time_ctx = get_time_context();
+        let data_text: Vec<String> = data_collected
+            .iter()
+            .map(|d| {
+                format!(
+                    "**Source: {}**\n{}",
+                    d.source,
+                    serde_json::to_string_pretty(&d.values).unwrap_or_default()
+                )
+            })
+            .collect();
+
+        let resource_info = if agent.resources.is_empty() {
+            String::new()
+        } else {
+            let items: Vec<String> = agent
+                .resources
+                .iter()
+                .map(|r| format!("- {} ({})", r.name, r.resource_id))
+                .collect();
+            format!("\nRecommended resources to focus on:\n{}\n", items.join("\n"))
+        };
+
+        let system_prompt = format!(
+            "You are an intelligent IoT agent named '{}' monitoring edge devices.\n\
+             Current time: {}\n\
+             Your task: {}\n{}\
+             \n## Current Data\n{}\n\n\
+             You have access to tools for querying metrics, executing commands, and sending notifications. \
+             Use them as needed. When done, provide your analysis and conclusion as plain text WITHOUT tool calls.\n\n\
+             Output format for your final response (after tool calls, if any):\n\
+             ```json\n\
+             {{\n  \"situation_analysis\": \"...\",\n  \"conclusion\": \"...\",\n  \"confidence\": 0.8\n}}\n\
+             ```",
+            agent.name,
+            time_ctx,
+            agent.user_prompt,
+            resource_info,
+            data_text.join("\n\n"),
+        );
+
+        // Build messages
+        let mut messages = vec![
+            neomind_core::message::Message::new(
+                neomind_core::message::MessageRole::System,
+                neomind_core::message::Content::text(&system_prompt),
+            ),
+            neomind_core::message::Message::new(
+                neomind_core::message::MessageRole::User,
+                neomind_core::message::Content::text(
+                    "Analyze the current situation and take appropriate actions using the available tools.",
+                ),
+            ),
+        ];
+
+        // Tool execution loop (max 5 rounds)
+        let max_rounds = 5;
+        let mut all_tool_results: Vec<crate::toolkit::ToolResult> = Vec::new();
+        let mut final_text = String::new();
+        let mut step_num = 1u32;
+
+        for round in 0..max_rounds {
+            let input = LlmInput {
+                messages: messages.clone(),
+                params: GenerationParams {
+                    temperature: Some(0.7),
+                    max_tokens: Some(4000),
+                    ..Default::default()
+                },
+                model: None,
+                stream: false,
+                tools: Some(filtered_tools.clone()),
+            };
+
+            self.send_thinking(
+                &agent.id,
+                execution_id,
+                step_num,
+                &format!("Tool execution round {} - calling LLM", round + 1),
+            )
+            .await;
+            step_num += 1;
+
+            let output = llm_runtime
+                .generate(input)
+                .await
+                .map_err(|e| NeoMindError::Llm(format!("LLM generation failed: {}", e)))?;
+
+            // Parse tool calls from response text
+            let (remaining_text, tool_calls) = parse_tool_calls(&output.text)
+                .map_err(|e| NeoMindError::Llm(format!("Failed to parse tool calls: {}", e)))?;
+
+            if tool_calls.is_empty() {
+                final_text = remaining_text;
+                break;
+            }
+
+            tracing::info!(
+                agent_id = %agent.id,
+                round = round + 1,
+                tool_count = tool_calls.len(),
+                "Tool calls received"
+            );
+
+            self.send_thinking(
+                &agent.id,
+                execution_id,
+                step_num,
+                &format!(
+                    "Round {}: Executing {} tool(s): {}",
+                    round + 1,
+                    tool_calls.len(),
+                    tool_calls.iter().map(|tc| tc.name.as_str()).collect::<Vec<_>>().join(", ")
+                ),
+            )
+            .await;
+            step_num += 1;
+
+            // Add assistant message
+            messages.push(neomind_core::message::Message::new(
+                neomind_core::message::MessageRole::Assistant,
+                neomind_core::message::Content::text(&output.text),
+            ));
+
+            // Convert parsed tool calls to registry ToolCalls and execute
+            let registry_calls: Vec<crate::toolkit::registry::ToolCall> = tool_calls
+                .into_iter()
+                .map(|tc| crate::toolkit::registry::ToolCall {
+                    name: tc.name,
+                    args: tc.arguments,
+                    id: Some(tc.id),
+                })
+                .collect();
+            let results = registry.execute_parallel(registry_calls).await;
+
+            // Add results to conversation
+            for result in &results {
+                all_tool_results.push(result.clone());
+                let result_text = match &result.result {
+                    Ok(output) => serde_json::to_string_pretty(&output.data)
+                        .unwrap_or_else(|_| "Success".to_string()),
+                    Err(e) => format!("Error: {}", e),
+                };
+                messages.push(neomind_core::message::Message::new(
+                    neomind_core::message::MessageRole::User,
+                    neomind_core::message::Content::text(&format!(
+                        "Tool '{}' result:\n{}",
+                        result.name, result_text
+                    )),
+                ));
+            }
+        }
+
+        if final_text.is_empty() {
+            final_text = "Completed tool execution rounds.".to_string();
+        }
+
+        // Parse final response for situation_analysis, conclusion, confidence
+        let (situation_analysis, conclusion, confidence) = parse_final_tool_response(&final_text);
+
+        // Build DecisionProcess
+        let reasoning_steps: Vec<ReasoningStep> = all_tool_results
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let (desc, conf) = match &r.result {
+                    Ok(output) => (format!("Executed tool '{}'", r.name), if output.success { 0.9 } else { 0.3 }),
+                    Err(e) => (format!("Tool '{}' failed: {}", r.name, e), 0.2),
+                };
+                ReasoningStep {
+                    step_number: (i + 1) as u32,
+                    description: desc,
+                    step_type: "tool_call".to_string(),
+                    input: None,
+                    output: String::new(),
+                    confidence: conf,
+                }
+            })
+            .collect();
+
+        let decisions: Vec<Decision> = all_tool_results
+            .iter()
+            .map(|r| {
+                let (desc, action) = match &r.result {
+                    Ok(output) => (
+                        format!("Executed tool '{}'", r.name),
+                        output.data.to_string(),
+                    ),
+                    Err(e) => (format!("Tool '{}' failed", r.name), e.to_string()),
+                };
+                Decision {
+                    decision_type: "tool_execution".to_string(),
+                    description: desc,
+                    action,
+                    rationale: String::new(),
+                    expected_outcome: String::new(),
+                }
+            })
+            .collect();
+
+        let decision_process = DecisionProcess {
+            situation_analysis,
+            data_collected: data_collected.to_vec(),
+            reasoning_steps,
+            decisions,
+            conclusion,
+            confidence,
+        };
+
+        // Build ExecutionResult
+        let actions_executed: Vec<neomind_storage::ActionExecuted> = all_tool_results
+            .iter()
+            .map(|r| {
+                let success = r.result.is_ok();
+                neomind_storage::ActionExecuted {
+                    action_type: "tool_call".to_string(),
+                    description: format!("Execute tool '{}'", r.name),
+                    target: r.name.clone(),
+                    parameters: serde_json::Value::Null,
+                    success,
+                    result: if success {
+                        r.result.as_ref().ok().map(|o| o.data.to_string())
+                    } else {
+                        r.result.as_ref().err().map(|e| e.to_string())
+                    },
+                }
+            })
+            .collect();
+
+        let success_rate = if actions_executed.is_empty() {
+            1.0
+        } else {
+            actions_executed.iter().filter(|a| a.success).count() as f32
+                / actions_executed.len() as f32
+        };
+
+        let execution_result = neomind_storage::ExecutionResult {
+            actions_executed,
+            report: None,
+            notifications_sent: vec![],
+            summary: final_text.clone(),
+            success_rate,
+        };
+
+        tracing::info!(
+            agent_id = %agent.id,
+            tool_calls = all_tool_results.len(),
+            success_rate,
+            "Tool execution completed"
+        );
+
+        Ok((decision_process, execution_result))
     }
 
     /// Get the agent store.
@@ -1142,177 +1540,178 @@ impl AgentExecutor {
                         "LLM runtime cache miss, creating new runtime"
                     );
 
-                    let runtime: Result<Arc<dyn LlmRuntime + Send + Sync>, _> = match backend.backend_type {
-                        LlmBackendType::Ollama => {
-                            let endpoint = backend
-                                .endpoint
-                                .clone()
-                                .unwrap_or_else(|| "http://localhost:11434".to_string());
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("OLLAMA_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(120);
-                            
-                            // Create runtime with accurate capabilities from storage
-                            OllamaRuntime::new(
-                                OllamaConfig::new(&model)
-                                    .with_endpoint(&endpoint)
-                                    .with_timeout_secs(timeout),
-                            )
-                            .map(|runtime| {
-                                // Override capabilities with accurate detection from storage
-                                let runtime = runtime.with_capabilities_override(
-                                    backend.capabilities.supports_multimodal,
-                                    backend.capabilities.supports_thinking,
-                                    backend.capabilities.supports_tools,
-                                    backend.capabilities.max_context,
-                                );
-                                Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
-                            })
-                        }
-                        LlmBackendType::OpenAi => {
-                            let api_key = backend.api_key.clone().unwrap_or_default();
-                            let endpoint = backend
-                                .endpoint
-                                .clone()
-                                .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("OPENAI_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(60);
-                            CloudRuntime::new(
-                                CloudConfig::custom(&api_key, &endpoint)
-                                    .with_model(&model)
-                                    .with_timeout_secs(timeout),
-                            )
-                            .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
-                        }
-                        LlmBackendType::Anthropic => {
-                            let api_key = backend.api_key.clone().unwrap_or_default();
-                            let _endpoint = backend
-                                .endpoint
-                                .clone()
-                                .unwrap_or_else(|| "https://api.anthropic.com/v1".to_string());
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("ANTHROPIC_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(60);
-                            CloudRuntime::new(
-                                CloudConfig::anthropic(&api_key)
-                                    .with_model(&model)
-                                    .with_timeout_secs(timeout),
-                            )
-                            .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
-                        }
-                        LlmBackendType::Google => {
-                            let api_key = backend.api_key.clone().unwrap_or_default();
-                            let _endpoint = backend.endpoint.clone().unwrap_or_else(|| {
-                                "https://generativelanguage.googleapis.com/v1beta".to_string()
-                            });
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("GOOGLE_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(60);
-                            CloudRuntime::new(
-                                CloudConfig::google(&api_key)
-                                    .with_model(&model)
-                                    .with_timeout_secs(timeout),
-                            )
-                            .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
-                        }
-                        LlmBackendType::XAi => {
-                            let api_key = backend.api_key.clone().unwrap_or_default();
-                            let _endpoint = backend
-                                .endpoint
-                                .clone()
-                                .unwrap_or_else(|| "https://api.x.ai/v1".to_string());
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("XAI_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(60);
-                            CloudRuntime::new(
-                                CloudConfig::grok(&api_key)
-                                    .with_model(&model)
-                                    .with_timeout_secs(timeout),
-                            )
-                            .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
-                        }
-                        LlmBackendType::Qwen => {
-                            let api_key = backend.api_key.clone().unwrap_or_default();
-                            let endpoint = backend.endpoint.clone().unwrap_or_else(|| {
-                                "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string()
-                            });
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("QWEN_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(60);
-                            CloudRuntime::new(
-                                CloudConfig::custom(&api_key, &endpoint)
-                                    .with_model(&model)
-                                    .with_timeout_secs(timeout),
-                            )
-                            .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
-                        }
-                        LlmBackendType::DeepSeek => {
-                            let api_key = backend.api_key.clone().unwrap_or_default();
-                            let endpoint = backend
-                                .endpoint
-                                .clone()
-                                .unwrap_or_else(|| "https://api.deepseek.com".to_string());
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("DEEPSEEK_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(60);
-                            CloudRuntime::new(
-                                CloudConfig::custom(&api_key, &endpoint)
-                                    .with_model(&model)
-                                    .with_timeout_secs(timeout),
-                            )
-                            .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
-                        }
-                        LlmBackendType::GLM => {
-                            let api_key = backend.api_key.clone().unwrap_or_default();
-                            let endpoint = backend.endpoint.clone().unwrap_or_else(|| {
-                                "https://open.bigmodel.cn/api/paas/v4".to_string()
-                            });
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("GLM_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(60);
-                            CloudRuntime::new(
-                                CloudConfig::custom(&api_key, &endpoint)
-                                    .with_model(&model)
-                                    .with_timeout_secs(timeout),
-                            )
-                            .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
-                        }
-                        LlmBackendType::MiniMax => {
-                            let api_key = backend.api_key.clone().unwrap_or_default();
-                            let endpoint = backend
-                                .endpoint
-                                .clone()
-                                .unwrap_or_else(|| "https://api.minimax.chat/v1".to_string());
-                            let model = backend.model.clone();
-                            let timeout = std::env::var("MINIMAX_TIMEOUT_SECS")
-                                .ok()
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(60);
-                            CloudRuntime::new(
-                                CloudConfig::custom(&api_key, &endpoint)
-                                    .with_model(&model)
-                                    .with_timeout_secs(timeout),
-                            )
-                            .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
-                        }
-                    };
+                    let runtime: Result<Arc<dyn LlmRuntime + Send + Sync>, _> =
+                        match backend.backend_type {
+                            LlmBackendType::Ollama => {
+                                let endpoint = backend
+                                    .endpoint
+                                    .clone()
+                                    .unwrap_or_else(|| "http://localhost:11434".to_string());
+                                let model = backend.model.clone();
+                                let timeout = std::env::var("OLLAMA_TIMEOUT_SECS")
+                                    .ok()
+                                    .and_then(|s| s.parse().ok())
+                                    .unwrap_or(120);
+
+                                // Create runtime with accurate capabilities from storage
+                                OllamaRuntime::new(
+                                    OllamaConfig::new(&model)
+                                        .with_endpoint(&endpoint)
+                                        .with_timeout_secs(timeout),
+                                )
+                                .map(|runtime| {
+                                    // Override capabilities with accurate detection from storage
+                                    let runtime = runtime.with_capabilities_override(
+                                        backend.capabilities.supports_multimodal,
+                                        backend.capabilities.supports_thinking,
+                                        backend.capabilities.supports_tools,
+                                        backend.capabilities.max_context,
+                                    );
+                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
+                                })
+                            }
+                            LlmBackendType::OpenAi => {
+                                let api_key = backend.api_key.clone().unwrap_or_default();
+                                let endpoint = backend
+                                    .endpoint
+                                    .clone()
+                                    .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+                                let model = backend.model.clone();
+                                let timeout = std::env::var("OPENAI_TIMEOUT_SECS")
+                                    .ok()
+                                    .and_then(|s| s.parse().ok())
+                                    .unwrap_or(60);
+                                CloudRuntime::new(
+                                    CloudConfig::custom(&api_key, &endpoint)
+                                        .with_model(&model)
+                                        .with_timeout_secs(timeout),
+                                )
+                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                            }
+                            LlmBackendType::Anthropic => {
+                                let api_key = backend.api_key.clone().unwrap_or_default();
+                                let _endpoint = backend
+                                    .endpoint
+                                    .clone()
+                                    .unwrap_or_else(|| "https://api.anthropic.com/v1".to_string());
+                                let model = backend.model.clone();
+                                let timeout = std::env::var("ANTHROPIC_TIMEOUT_SECS")
+                                    .ok()
+                                    .and_then(|s| s.parse().ok())
+                                    .unwrap_or(60);
+                                CloudRuntime::new(
+                                    CloudConfig::anthropic(&api_key)
+                                        .with_model(&model)
+                                        .with_timeout_secs(timeout),
+                                )
+                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                            }
+                            LlmBackendType::Google => {
+                                let api_key = backend.api_key.clone().unwrap_or_default();
+                                let _endpoint = backend.endpoint.clone().unwrap_or_else(|| {
+                                    "https://generativelanguage.googleapis.com/v1beta".to_string()
+                                });
+                                let model = backend.model.clone();
+                                let timeout = std::env::var("GOOGLE_TIMEOUT_SECS")
+                                    .ok()
+                                    .and_then(|s| s.parse().ok())
+                                    .unwrap_or(60);
+                                CloudRuntime::new(
+                                    CloudConfig::google(&api_key)
+                                        .with_model(&model)
+                                        .with_timeout_secs(timeout),
+                                )
+                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                            }
+                            LlmBackendType::XAi => {
+                                let api_key = backend.api_key.clone().unwrap_or_default();
+                                let _endpoint = backend
+                                    .endpoint
+                                    .clone()
+                                    .unwrap_or_else(|| "https://api.x.ai/v1".to_string());
+                                let model = backend.model.clone();
+                                let timeout = std::env::var("XAI_TIMEOUT_SECS")
+                                    .ok()
+                                    .and_then(|s| s.parse().ok())
+                                    .unwrap_or(60);
+                                CloudRuntime::new(
+                                    CloudConfig::grok(&api_key)
+                                        .with_model(&model)
+                                        .with_timeout_secs(timeout),
+                                )
+                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                            }
+                            LlmBackendType::Qwen => {
+                                let api_key = backend.api_key.clone().unwrap_or_default();
+                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| {
+                                    "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string()
+                                });
+                                let model = backend.model.clone();
+                                let timeout = std::env::var("QWEN_TIMEOUT_SECS")
+                                    .ok()
+                                    .and_then(|s| s.parse().ok())
+                                    .unwrap_or(60);
+                                CloudRuntime::new(
+                                    CloudConfig::custom(&api_key, &endpoint)
+                                        .with_model(&model)
+                                        .with_timeout_secs(timeout),
+                                )
+                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                            }
+                            LlmBackendType::DeepSeek => {
+                                let api_key = backend.api_key.clone().unwrap_or_default();
+                                let endpoint = backend
+                                    .endpoint
+                                    .clone()
+                                    .unwrap_or_else(|| "https://api.deepseek.com".to_string());
+                                let model = backend.model.clone();
+                                let timeout = std::env::var("DEEPSEEK_TIMEOUT_SECS")
+                                    .ok()
+                                    .and_then(|s| s.parse().ok())
+                                    .unwrap_or(60);
+                                CloudRuntime::new(
+                                    CloudConfig::custom(&api_key, &endpoint)
+                                        .with_model(&model)
+                                        .with_timeout_secs(timeout),
+                                )
+                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                            }
+                            LlmBackendType::GLM => {
+                                let api_key = backend.api_key.clone().unwrap_or_default();
+                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| {
+                                    "https://open.bigmodel.cn/api/paas/v4".to_string()
+                                });
+                                let model = backend.model.clone();
+                                let timeout = std::env::var("GLM_TIMEOUT_SECS")
+                                    .ok()
+                                    .and_then(|s| s.parse().ok())
+                                    .unwrap_or(60);
+                                CloudRuntime::new(
+                                    CloudConfig::custom(&api_key, &endpoint)
+                                        .with_model(&model)
+                                        .with_timeout_secs(timeout),
+                                )
+                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                            }
+                            LlmBackendType::MiniMax => {
+                                let api_key = backend.api_key.clone().unwrap_or_default();
+                                let endpoint = backend
+                                    .endpoint
+                                    .clone()
+                                    .unwrap_or_else(|| "https://api.minimax.chat/v1".to_string());
+                                let model = backend.model.clone();
+                                let timeout = std::env::var("MINIMAX_TIMEOUT_SECS")
+                                    .ok()
+                                    .and_then(|s| s.parse().ok())
+                                    .unwrap_or(60);
+                                CloudRuntime::new(
+                                    CloudConfig::custom(&api_key, &endpoint)
+                                        .with_model(&model)
+                                        .with_timeout_secs(timeout),
+                                )
+                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                            }
+                        };
 
                     match runtime {
                         Ok(rt) => {
@@ -1594,6 +1993,7 @@ Respond in JSON format:
                             llm_runtime: executor_llm,
                             llm_backend_store: executor_llm_store,
                             extension_registry: None,
+                            tool_registry: None,
                         };
 
                         match AgentExecutor::new(executor_config).await {
@@ -4472,6 +4872,40 @@ Respond in JSON format:
                     agent_id = %agent.id,
                     "LLM runtime available, performing LLM-based analysis"
                 );
+
+                // Check if tool/function-calling mode should be used
+                if self.should_use_tools(agent, &llm) {
+                    tracing::info!(
+                        agent_id = %agent.id,
+                        "Tool mode enabled - using function calling"
+                    );
+                    match self
+                        .execute_with_tools(agent, data, llm.clone(), execution_id)
+                        .await
+                    {
+                        Ok((dp, _exec_result)) => {
+                            tracing::info!(
+                                agent_id = %agent.id,
+                                "Tool-based analysis completed successfully"
+                            );
+                            return Ok((
+                                dp.situation_analysis,
+                                dp.reasoning_steps,
+                                dp.decisions,
+                                dp.conclusion,
+                            ));
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                agent_id = %agent.id,
+                                error = %e,
+                                "Tool-based analysis failed, falling back to LLM analysis"
+                            );
+                        }
+                    }
+                }
+
+                // Standard LLM-based analysis
                 match self
                     .analyze_with_llm(llm, agent, data, parsed_intent, execution_id)
                     .await
@@ -4868,7 +5302,8 @@ Respond in JSON format:
         let detected_language = SemanticToolMapper::detect_language(&agent.user_prompt);
         let is_chinese = matches!(
             detected_language,
-            crate::agent::semantic_mapper::Language::Chinese | crate::agent::semantic_mapper::Language::Mixed
+            crate::agent::semantic_mapper::Language::Chinese
+                | crate::agent::semantic_mapper::Language::Mixed
         );
 
         let role_prompt = if is_chinese {
@@ -4898,12 +5333,12 @@ Respond in JSON format:
         let (output_format_header, user_instruction_header) = if is_chinese {
             (
                 "# 输出格式 - 仅输出JSON，不要输出其他任何文字",
-                "# 用户指令"
+                "# 用户指令",
             )
         } else {
             (
                 "# Output Format - Output ONLY valid JSON, no other text",
-                "# User Instruction"
+                "# User Instruction",
             )
         };
 
@@ -4934,7 +5369,11 @@ Respond in JSON format:
         // === CONTEXT MANAGEMENT ===
         // For image analysis, include minimal memory context
         let memory_context_for_msg = if !memory_context.is_empty() {
-            let history_header = if is_chinese { "# 历史参考" } else { "# Historical Reference" };
+            let history_header = if is_chinese {
+                "# 历史参考"
+            } else {
+                "# Historical Reference"
+            };
             format!("\n\n{}\n{}", history_header, memory_context)
         } else {
             String::new()
@@ -4943,9 +5382,17 @@ Respond in JSON format:
         // Build messages - multimodal if images present
         let messages = if has_valid_images {
             let (current_data_header, important_note, image_only_text) = if is_chinese {
-                ("## 当前数据", "重要：只输出JSON格式，不要有任何其他文字。", "仅有图像数据")
+                (
+                    "## 当前数据",
+                    "重要：只输出JSON格式，不要有任何其他文字。",
+                    "仅有图像数据",
+                )
             } else {
-                ("## Current Data", "Important: Output ONLY JSON format, no other text.", "Image data only")
+                (
+                    "## Current Data",
+                    "Important: Output ONLY JSON format, no other text.",
+                    "Image data only",
+                )
             };
 
             let mut parts = vec![ContentPart::text(format!(
@@ -4982,7 +5429,12 @@ Respond in JSON format:
         } else {
             // Text-only message
             let data_summary = if text_data_summary.is_empty() {
-                if is_chinese { "无数据" } else { "No data available" }.to_string()
+                if is_chinese {
+                    "无数据"
+                } else {
+                    "No data available"
+                }
+                .to_string()
             } else {
                 text_data_summary.join("\n")
             };
@@ -5186,19 +5638,14 @@ Respond in JSON format:
                             }
                         }
 
-                        Ok((
-                            situation_analysis,
-                            reasoning_steps,
-                            decisions,
-                            conclusion,
-                        ))
+                        Ok((situation_analysis, reasoning_steps, decisions, conclusion))
                     }
                     Err(parse_error) => {
                         // Convert error to string safely to avoid UTF-8 boundary panics
                         let error_str = parse_error.to_string();
                         // Truncate error message safely using char boundaries
                         let error_preview: String = error_str.chars().take(200).collect();
-                        
+
                         tracing::warn!(
                             error = %error_preview,
                             response_preview = %json_str.chars().take(500).collect::<String>(),
@@ -5238,7 +5685,9 @@ Respond in JSON format:
                                         .decisions
                                         .into_iter()
                                         .map(|decision| neomind_storage::Decision {
-                                            decision_type: decision.decision_type.unwrap_or_default(),
+                                            decision_type: decision
+                                                .decision_type
+                                                .unwrap_or_default(),
                                             description: decision.description.unwrap_or_default(),
                                             action: decision.action.unwrap_or_default(),
                                             rationale: decision.rationale.unwrap_or_default(),
@@ -5298,7 +5747,9 @@ Respond in JSON format:
                                         .decisions
                                         .into_iter()
                                         .map(|decision| neomind_storage::Decision {
-                                            decision_type: decision.decision_type.unwrap_or_default(),
+                                            decision_type: decision
+                                                .decision_type
+                                                .unwrap_or_default(),
                                             description: decision.description.unwrap_or_default(),
                                             action: decision.action.unwrap_or_default(),
                                             rationale: decision.rationale.unwrap_or_default(),
@@ -5333,7 +5784,8 @@ Respond in JSON format:
                         if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
                             if let Some(obj) = value.as_object() {
                                 // Use extract_string_field to handle both string and nested object types
-                                let situation_analysis = extract_string_field(obj, "situation_analysis");
+                                let situation_analysis =
+                                    extract_string_field(obj, "situation_analysis");
                                 let conclusion = extract_string_field(obj, "conclusion");
                                 let mut reasoning_steps = Vec::new();
                                 if let Some(arr) =
@@ -5791,10 +6243,7 @@ Respond in JSON format:
         // Try to parse as "device:command" (common format)
         if action.contains("device:") || action.contains("设备:") {
             // Extract device:command pattern using regex-like parsing
-            let parts: Vec<&str> = action
-                .split([':', '：'])
-                .map(|s| s.trim())
-                .collect();
+            let parts: Vec<&str> = action.split([':', '：']).map(|s| s.trim()).collect();
             if parts.len() >= 3 {
                 // Format: "device:xxx:command" or similar
                 let cmd_keyword_idx = parts
@@ -6551,7 +7000,8 @@ Respond in JSON format:
         let detected_language = SemanticToolMapper::detect_language(&agent.user_prompt);
         let is_chinese = matches!(
             detected_language,
-            crate::agent::semantic_mapper::Language::Chinese | crate::agent::semantic_mapper::Language::Mixed
+            crate::agent::semantic_mapper::Language::Chinese
+                | crate::agent::semantic_mapper::Language::Mixed
         );
 
         // 1. Generic system prompt with conversation context
@@ -6617,8 +7067,15 @@ Respond in JSON format:
 
         // 3. Add conversation summary if available
         if let Some(ref summary) = agent.conversation_summary {
-            let summary_header = if is_chinese { "## 历史对话摘要" } else { "## Conversation Summary" };
-            messages.push(Message::system(format!("{}\n\n{}", summary_header, summary)));
+            let summary_header = if is_chinese {
+                "## 历史对话摘要"
+            } else {
+                "## Conversation Summary"
+            };
+            messages.push(Message::system(format!(
+                "{}\n\n{}",
+                summary_header, summary
+            )));
         }
 
         // 4. Add recent conversation turns as context with intelligent filtering
@@ -6699,7 +7156,11 @@ Respond in JSON format:
                         .iter()
                         .map(|d| format!("- {}", d.description))
                         .collect();
-                    let decisions_label = if is_chinese { "历史决策" } else { "Historical Decisions" };
+                    let decisions_label = if is_chinese {
+                        "历史决策"
+                    } else {
+                        "Historical Decisions"
+                    };
                     messages.push(Message::system(format!(
                         "{}:\n{}",
                         decisions_label,
@@ -6733,15 +7194,46 @@ Respond in JSON format:
                 .join("\n")
         };
 
-        let (current_data_header, data_sources_label, trigger_label, trigger_type_text, analysis_request) = if is_chinese {
-            ("## 当前数据", "数据来源", "触发方式", if event_data.is_some() { "事件触发" } else { "定时/手动" }, "请分析当前情况并做出决策。")
+        let (
+            current_data_header,
+            data_sources_label,
+            trigger_label,
+            trigger_type_text,
+            analysis_request,
+        ) = if is_chinese {
+            (
+                "## 当前数据",
+                "数据来源",
+                "触发方式",
+                if event_data.is_some() {
+                    "事件触发"
+                } else {
+                    "定时/手动"
+                },
+                "请分析当前情况并做出决策。",
+            )
         } else {
-            ("## Current Data", "Data Sources", "Trigger", if event_data.is_some() { "Event-triggered" } else { "Scheduled/Manual" }, "Please analyze the current situation and make decisions.")
+            (
+                "## Current Data",
+                "Data Sources",
+                "Trigger",
+                if event_data.is_some() {
+                    "Event-triggered"
+                } else {
+                    "Scheduled/Manual"
+                },
+                "Please analyze the current situation and make decisions.",
+            )
         };
 
         let current_input = format!(
             "{}\n\n{}:\n{}\n\n{}: {}\n\n{}",
-            current_data_header, data_sources_label, data_text, trigger_label, trigger_type_text, analysis_request
+            current_data_header,
+            data_sources_label,
+            data_text,
+            trigger_label,
+            trigger_type_text,
+            analysis_request
         );
 
         messages.push(Message::user(current_input));

@@ -194,8 +194,7 @@ impl JsTransformExecutor {
                                 }
 
                                 // Find command quote
-                                if after_open[parse_pos..].find(['\'', '"']).is_some()
-                                {
+                                if after_open[parse_pos..].find(['\'', '"']).is_some() {
                                     let cmd_quote_char = after_open.chars().nth(parse_pos).unwrap();
                                     let cmd_start = parse_pos + 1;
                                     parse_pos = cmd_start;
@@ -222,9 +221,7 @@ impl JsTransformExecutor {
                                                 && after_open
                                                     .chars()
                                                     .nth(parse_pos)
-                                                    .is_some_and(|c| {
-                                                        c.is_whitespace() || c == ','
-                                                    })
+                                                    .is_some_and(|c| c.is_whitespace() || c == ',')
                                             {
                                                 parse_pos += 1;
                                             }
@@ -382,7 +379,8 @@ impl JsTransformExecutor {
             // Provide extensions.invoke() function that looks up pre-computed results
             let invoke_fn = boa_engine::NativeFunction::from_copy_closure(
                 |_this, args: &[JsValue], context: &mut Context<'_>| {
-                    let extension_id = args.first()
+                    let extension_id = args
+                        .first()
                         .and_then(|v| v.as_string())
                         .map(|s| s.to_std_string_escaped())
                         .unwrap_or_default();
@@ -549,8 +547,8 @@ impl JsTransformExecutor {
                     .parse::<f64>()
                     .unwrap_or_else(|_| s.chars().map(|c| c as u32 as f64).sum::<f64>() % 10000.0);
                 metrics.push(TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+                    device_id: device_id.to_string(),
+                    transform_id: None,
                     metric: output_prefix.to_string(),
                     value,
                     timestamp,
@@ -560,8 +558,8 @@ impl JsTransformExecutor {
 
             Value::Bool(b) => {
                 metrics.push(TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+                    device_id: device_id.to_string(),
+                    transform_id: None,
                     metric: output_prefix.to_string(),
                     value: if *b { 1.0 } else { 0.0 },
                     timestamp,
@@ -571,8 +569,8 @@ impl JsTransformExecutor {
 
             _ => {
                 metrics.push(TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+                    device_id: device_id.to_string(),
+                    transform_id: None,
                     metric: output_prefix.to_string(),
                     value: 0.0,
                     timestamp,
@@ -583,8 +581,8 @@ impl JsTransformExecutor {
 
         if metrics.is_empty() {
             metrics.push(TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+                device_id: device_id.to_string(),
+                transform_id: None,
                 metric: output_prefix.to_string(),
                 value: 0.0,
                 timestamp,
@@ -633,7 +631,10 @@ impl TransformedMetric {
     /// Create storage device ID for telemetry
     /// Format: "transform:{transform_id}" for proper querying from Data Explorer
     pub fn storage_device_id(&self) -> String {
-        format!("transform:{}", self.transform_id.as_deref().unwrap_or("unknown"))
+        format!(
+            "transform:{}",
+            self.transform_id.as_deref().unwrap_or("unknown")
+        )
     }
 }
 
@@ -1101,8 +1102,8 @@ impl TransformEngine {
                                 Ok(output_metrics
                                     .iter()
                                     .map(|m| TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+                                        device_id: device_id.to_string(),
+                                        transform_id: None,
                                         metric: m.clone(),
                                         value: Self::extract_metric_value(&result, m),
                                         timestamp,
@@ -1115,8 +1116,8 @@ impl TransformEngine {
                                 Ok(output_metrics
                                     .iter()
                                     .map(|m| TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+                                        device_id: device_id.to_string(),
+                                        transform_id: None,
                                         metric: m.clone(),
                                         value: 0.0,
                                         timestamp,
@@ -1130,8 +1131,8 @@ impl TransformEngine {
                         Ok(output_metrics
                             .iter()
                             .map(|m| TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+                                device_id: device_id.to_string(),
+                                transform_id: None,
                                 metric: m.clone(),
                                 value: 0.0,
                                 timestamp,
@@ -1144,8 +1145,8 @@ impl TransformEngine {
                     Ok(output_metrics
                         .iter()
                         .map(|m| TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+                            device_id: device_id.to_string(),
+                            transform_id: None,
                             metric: m.clone(),
                             value: 0.0,
                             timestamp,
@@ -1220,8 +1221,8 @@ impl TransformEngine {
                         TransformOperation::Custom { output_metrics, .. } => Ok(output_metrics
                             .iter()
                             .map(|m| TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+                                device_id: device_id.to_string(),
+                                transform_id: None,
                                 metric: m.clone(),
                                 value: 0.0,
                                 timestamp,
@@ -1393,8 +1394,8 @@ impl TransformEngine {
         })?;
 
         Ok(TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+            device_id: device_id.to_string(),
+            transform_id: None,
             metric: output.to_string(),
             value: float_value,
             timestamp,
@@ -1440,8 +1441,8 @@ impl TransformEngine {
             };
 
             metrics.push(TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+                device_id: device_id.to_string(),
+                transform_id: None,
                 metric: rendered_output,
                 value,
                 timestamp,
@@ -1502,8 +1503,8 @@ impl TransformEngine {
         };
 
         Ok(TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+            device_id: device_id.to_string(),
+            transform_id: None,
             metric: output.to_string(),
             value,
             timestamp,
@@ -1529,8 +1530,8 @@ impl TransformEngine {
             .unwrap_or_else(|_| rendered.trim().parse().unwrap_or(0.0));
 
         Ok(TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+            device_id: device_id.to_string(),
+            transform_id: None,
             metric: output.to_string(),
             value,
             timestamp,
@@ -1550,8 +1551,8 @@ impl TransformEngine {
         // Simplified: Pipeline is not fully implemented yet
         // Just return a placeholder metric
         Ok(vec![TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+            device_id: device_id.to_string(),
+            transform_id: None,
             metric: final_output.to_string(),
             value: 0.0,
             timestamp,
@@ -1584,8 +1585,8 @@ impl TransformEngine {
     ) -> Result<Vec<TransformedMetric>> {
         // Simplified: If is not fully implemented yet
         Ok(vec![TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+            device_id: device_id.to_string(),
+            transform_id: None,
             metric: output.to_string(),
             value: 0.0,
             timestamp,
@@ -1683,8 +1684,8 @@ impl TransformEngine {
         })?;
 
         Ok(TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+            device_id: device_id.to_string(),
+            transform_id: None,
             metric: output_metric.to_string(),
             value: float_value,
             timestamp,
@@ -1748,8 +1749,8 @@ impl TransformEngine {
         let result = self.compute_aggregation(&values, aggregation)?;
 
         Ok(TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+            device_id: device_id.to_string(),
+            transform_id: None,
             metric: output_metric.to_string(),
             value: result,
             timestamp,
@@ -1784,8 +1785,8 @@ impl TransformEngine {
         let timestamp = Utc::now().timestamp_millis();
 
         Ok(TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+            device_id: device_id.to_string(),
+            transform_id: None,
             metric: output_metric.to_string(),
             value: result,
             timestamp,
@@ -2112,8 +2113,8 @@ impl TransformEngine {
             let metric_name = format!("{}_{}", output_pattern, group_key);
 
             metrics.push(TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+                device_id: device_id.to_string(),
+                transform_id: None,
                 metric: metric_name,
                 value: aggregated,
                 timestamp,
@@ -2207,8 +2208,8 @@ impl TransformEngine {
             .unwrap_or_else(|| decoded.chars().map(|c| c as u32 as f64).sum::<f64>() % 10000.0);
 
         Ok(vec![TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+            device_id: device_id.to_string(),
+            transform_id: None,
             metric: output.to_string(),
             value,
             timestamp,
@@ -2240,7 +2241,9 @@ impl TransformEngine {
                 base64::engine::general_purpose::STANDARD.encode(to_encode)
             }
             crate::automation::types::DecodeFormat::Bytes => to_encode,
-            crate::automation::types::DecodeFormat::Url => urlencoding::encode(&to_encode).into_owned(),
+            crate::automation::types::DecodeFormat::Url => {
+                urlencoding::encode(&to_encode).into_owned()
+            }
             crate::automation::types::DecodeFormat::Csv => to_encode,
         };
 
@@ -2248,8 +2251,8 @@ impl TransformEngine {
         let value = encoded.chars().map(|c| c as u32 as f64).sum::<f64>() % 10000.0;
 
         Ok(vec![TransformedMetric {
-                        device_id: device_id.to_string(),
-                        transform_id: None,
+            device_id: device_id.to_string(),
+            transform_id: None,
             metric: output.to_string(),
             value,
             timestamp,
@@ -2328,8 +2331,8 @@ struct DataPoint {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::TransformScope;
+    use super::*;
     use serde_json::json;
 
     #[test]

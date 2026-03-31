@@ -8,9 +8,8 @@
 //! - Stream types
 
 use neomind_extension_sdk::{
-    IpcMessage, IpcResponse, ErrorKind,
-    StreamClientInfo, StreamDataChunk,
-    ExtensionMetadata, ExtensionDescriptor,
+    ErrorKind, ExtensionDescriptor, ExtensionMetadata, IpcMessage, IpcResponse, StreamClientInfo,
+    StreamDataChunk,
 };
 use serde_json::json;
 
@@ -74,7 +73,11 @@ fn test_ipc_message_execute_command() {
     let parsed: IpcMessage = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcMessage::ExecuteCommand { command, args, request_id } => {
+        IpcMessage::ExecuteCommand {
+            command,
+            args,
+            request_id,
+        } => {
             assert_eq!(command, "test_command");
             assert_eq!(args["param"], "value");
             assert_eq!(request_id, 1);
@@ -154,7 +157,9 @@ fn test_ipc_message_shutdown() {
 
 #[test]
 fn test_ipc_message_ping() {
-    let msg = IpcMessage::Ping { timestamp: 1234567890 };
+    let msg = IpcMessage::Ping {
+        timestamp: 1234567890,
+    };
 
     let json = serde_json::to_string(&msg).unwrap();
     let parsed: IpcMessage = serde_json::from_str(&json).unwrap();
@@ -179,7 +184,11 @@ fn test_ipc_message_event_push() {
     let parsed: IpcMessage = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcMessage::EventPush { event_type, payload, timestamp } => {
+        IpcMessage::EventPush {
+            event_type,
+            payload,
+            timestamp,
+        } => {
             assert_eq!(event_type, "DeviceMetric");
             assert_eq!(payload["temperature"], 25.5);
             assert_eq!(timestamp, 1234567890);
@@ -194,11 +203,7 @@ fn test_ipc_message_event_push() {
 
 #[test]
 fn test_ipc_response_ready() {
-    let metadata = ExtensionMetadata::new(
-        "test.extension",
-        "Test Extension",
-        "1.0.0",
-    );
+    let metadata = ExtensionMetadata::new("test.extension", "Test Extension", "1.0.0");
     let descriptor = ExtensionDescriptor::new(metadata);
 
     let resp = IpcResponse::Ready { descriptor };
@@ -245,7 +250,11 @@ fn test_ipc_response_error() {
     let parsed: IpcResponse = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcResponse::Error { request_id, error, kind } => {
+        IpcResponse::Error {
+            request_id,
+            error,
+            kind,
+        } => {
             assert_eq!(request_id, 1);
             assert_eq!(error, "Something went wrong");
             assert_eq!(kind, ErrorKind::ExecutionFailed);
@@ -265,7 +274,10 @@ fn test_ipc_response_health() {
     let parsed: IpcResponse = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcResponse::Health { request_id, healthy } => {
+        IpcResponse::Health {
+            request_id,
+            healthy,
+        } => {
             assert_eq!(request_id, 1);
             assert!(healthy);
         }
@@ -275,11 +287,7 @@ fn test_ipc_response_health() {
 
 #[test]
 fn test_ipc_response_metadata() {
-    let metadata = ExtensionMetadata::new(
-        "test.extension",
-        "Test Extension",
-        "1.0.0",
-    );
+    let metadata = ExtensionMetadata::new("test.extension", "Test Extension", "1.0.0");
 
     let resp = IpcResponse::Metadata {
         request_id: 1,
@@ -290,7 +298,10 @@ fn test_ipc_response_metadata() {
     let parsed: IpcResponse = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcResponse::Metadata { request_id, metadata } => {
+        IpcResponse::Metadata {
+            request_id,
+            metadata,
+        } => {
             assert_eq!(request_id, 1);
             assert_eq!(metadata.id, "test.extension");
         }
@@ -312,7 +323,13 @@ fn test_ipc_response_stats() {
     let parsed: IpcResponse = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcResponse::Stats { request_id, start_count, stop_count, error_count, last_error } => {
+        IpcResponse::Stats {
+            request_id,
+            start_count,
+            stop_count,
+            error_count,
+            last_error,
+        } => {
             assert_eq!(request_id, 1);
             assert_eq!(start_count, 5);
             assert_eq!(stop_count, 2);
@@ -325,7 +342,9 @@ fn test_ipc_response_stats() {
 
 #[test]
 fn test_ipc_response_pong() {
-    let resp = IpcResponse::Pong { timestamp: 1234567890 };
+    let resp = IpcResponse::Pong {
+        timestamp: 1234567890,
+    };
 
     let json = serde_json::to_string(&resp).unwrap();
     let parsed: IpcResponse = serde_json::from_str(&json).unwrap();
@@ -476,7 +495,12 @@ fn test_ipc_message_init_stream_session() {
     let parsed: IpcMessage = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcMessage::InitStreamSession { session_id, extension_id, config, client_info } => {
+        IpcMessage::InitStreamSession {
+            session_id,
+            extension_id,
+            config,
+            client_info,
+        } => {
             assert_eq!(session_id, "session-123");
             assert_eq!(extension_id, "test.extension");
             assert_eq!(config["mode"], "push");
@@ -515,7 +539,11 @@ fn test_ipc_response_stream_session_init() {
     let parsed: IpcResponse = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcResponse::StreamSessionInit { session_id, success, error } => {
+        IpcResponse::StreamSessionInit {
+            session_id,
+            success,
+            error,
+        } => {
             assert_eq!(session_id, "session-123");
             assert!(success);
             assert!(error.is_none());
@@ -556,7 +584,11 @@ fn test_ipc_response_stream_session_closed() {
     let parsed: IpcResponse = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcResponse::StreamSessionClosed { session_id, total_frames, duration_ms } => {
+        IpcResponse::StreamSessionClosed {
+            session_id,
+            total_frames,
+            duration_ms,
+        } => {
             assert_eq!(session_id, "session-123");
             assert_eq!(total_frames, 100);
             assert_eq!(duration_ms, 5000);
@@ -581,7 +613,11 @@ fn test_ipc_message_invoke_capability() {
     let parsed: IpcMessage = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcMessage::InvokeCapability { request_id, capability, params } => {
+        IpcMessage::InvokeCapability {
+            request_id,
+            capability,
+            params,
+        } => {
             assert_eq!(request_id, 1);
             assert_eq!(capability, "device_metrics_read");
             assert_eq!(params["device_id"], "device-1");
@@ -602,7 +638,11 @@ fn test_ipc_message_subscribe_events() {
     let parsed: IpcMessage = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcMessage::SubscribeEvents { request_id, event_types, filter } => {
+        IpcMessage::SubscribeEvents {
+            request_id,
+            event_types,
+            filter,
+        } => {
             assert_eq!(request_id, 1);
             assert_eq!(event_types.len(), 2);
             assert!(filter.is_some());
@@ -622,7 +662,10 @@ fn test_ipc_message_poll_events() {
     let parsed: IpcMessage = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcMessage::PollEvents { request_id, subscription_id } => {
+        IpcMessage::PollEvents {
+            request_id,
+            subscription_id,
+        } => {
             assert_eq!(request_id, 1);
             assert_eq!(subscription_id, "sub-123");
         }
@@ -657,7 +700,11 @@ fn test_full_message_roundtrip() {
 
     // Verify
     match parsed {
-        IpcMessage::ExecuteCommand { command, args, request_id } => {
+        IpcMessage::ExecuteCommand {
+            command,
+            args,
+            request_id,
+        } => {
             assert_eq!(command, "process_data");
             assert_eq!(request_id, 42);
             assert_eq!(args["input"], "test data");
@@ -711,7 +758,11 @@ fn test_error_response_roundtrip() {
     let parsed: IpcResponse = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcResponse::Error { request_id, error, kind } => {
+        IpcResponse::Error {
+            request_id,
+            error,
+            kind,
+        } => {
             assert_eq!(request_id, 42);
             assert_eq!(error, "Command failed");
             assert_eq!(kind, ErrorKind::ExecutionFailed);

@@ -65,7 +65,18 @@ impl std::fmt::Display for MessageType {
 }
 
 /// Message severity levels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub enum MessageSeverity {
     /// Informational - no action required
     #[default]
@@ -343,7 +354,13 @@ impl Message {
         source_type: String,
         source_id: String,
     ) -> Self {
-        let mut msg = Self::new(category, MessageSeverity::Info, title, String::new(), source_id.clone());
+        let mut msg = Self::new(
+            category,
+            MessageSeverity::Info,
+            title,
+            String::new(),
+            source_id.clone(),
+        );
         msg.message_type = MessageType::DataPush;
         msg.source_type = source_type;
         msg.source_id = Some(source_id);
@@ -560,8 +577,14 @@ mod tests {
 
     #[test]
     fn test_message_type_from_string() {
-        assert_eq!(MessageType::from_string("notification"), Some(MessageType::Notification));
-        assert_eq!(MessageType::from_string("data_push"), Some(MessageType::DataPush));
+        assert_eq!(
+            MessageType::from_string("notification"),
+            Some(MessageType::Notification)
+        );
+        assert_eq!(
+            MessageType::from_string("data_push"),
+            Some(MessageType::DataPush)
+        );
         assert_eq!(MessageType::from_string("invalid"), None);
     }
 

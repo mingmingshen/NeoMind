@@ -176,60 +176,52 @@ where
             // Get the first (and should be only) key-value pair
             if let Some((key, value)) = map.next_entry::<String, serde_json::Value>()? {
                 match key.as_str() {
-                    "Boolean" => {
-                        match value {
-                            serde_json::Value::Bool(b) => Ok(Some(MetricValue::Boolean(b))),
-                            _ => Err(serde::de::Error::custom(format!(
-                                "Expected boolean for Boolean variant, got {:?}",
-                                value
-                            ))),
-                        }
-                    }
-                    "Integer" => {
-                        match value {
-                            serde_json::Value::Number(n) => {
-                                if let Some(i) = n.as_i64() {
-                                    Ok(Some(MetricValue::Integer(i)))
-                                } else {
-                                    Err(serde::de::Error::custom(format!(
-                                        "Expected integer for Integer variant, got {:?}",
-                                        n
-                                    )))
-                                }
+                    "Boolean" => match value {
+                        serde_json::Value::Bool(b) => Ok(Some(MetricValue::Boolean(b))),
+                        _ => Err(serde::de::Error::custom(format!(
+                            "Expected boolean for Boolean variant, got {:?}",
+                            value
+                        ))),
+                    },
+                    "Integer" => match value {
+                        serde_json::Value::Number(n) => {
+                            if let Some(i) = n.as_i64() {
+                                Ok(Some(MetricValue::Integer(i)))
+                            } else {
+                                Err(serde::de::Error::custom(format!(
+                                    "Expected integer for Integer variant, got {:?}",
+                                    n
+                                )))
                             }
-                            _ => Err(serde::de::Error::custom(format!(
-                                "Expected number for Integer variant, got {:?}",
-                                value
-                            ))),
                         }
-                    }
-                    "Float" => {
-                        match value {
-                            serde_json::Value::Number(n) => {
-                                if let Some(f) = n.as_f64() {
-                                    Ok(Some(MetricValue::Float(f)))
-                                } else {
-                                    Err(serde::de::Error::custom(format!(
-                                        "Expected float for Float variant, got {:?}",
-                                        n
-                                    )))
-                                }
+                        _ => Err(serde::de::Error::custom(format!(
+                            "Expected number for Integer variant, got {:?}",
+                            value
+                        ))),
+                    },
+                    "Float" => match value {
+                        serde_json::Value::Number(n) => {
+                            if let Some(f) = n.as_f64() {
+                                Ok(Some(MetricValue::Float(f)))
+                            } else {
+                                Err(serde::de::Error::custom(format!(
+                                    "Expected float for Float variant, got {:?}",
+                                    n
+                                )))
                             }
-                            _ => Err(serde::de::Error::custom(format!(
-                                "Expected number for Float variant, got {:?}",
-                                value
-                            ))),
                         }
-                    }
-                    "String" => {
-                        match value {
-                            serde_json::Value::String(s) => Ok(Some(MetricValue::String(s))),
-                            _ => Err(serde::de::Error::custom(format!(
-                                "Expected string for String variant, got {:?}",
-                                value
-                            ))),
-                        }
-                    }
+                        _ => Err(serde::de::Error::custom(format!(
+                            "Expected number for Float variant, got {:?}",
+                            value
+                        ))),
+                    },
+                    "String" => match value {
+                        serde_json::Value::String(s) => Ok(Some(MetricValue::String(s))),
+                        _ => Err(serde::de::Error::custom(format!(
+                            "Expected string for String variant, got {:?}",
+                            value
+                        ))),
+                    },
                     "Array" => {
                         match value {
                             serde_json::Value::Array(arr) => {
@@ -248,24 +240,24 @@ where
                             ))),
                         }
                     }
-                    "Binary" => {
-                        match value {
-                            serde_json::Value::String(s) => {
-                                use base64::{engine::general_purpose::STANDARD, Engine as _};
-                                STANDARD
-                                    .decode(&s)
-                                    .map(|bytes| Some(MetricValue::Binary(bytes)))
-                                    .map_err(|e| serde::de::Error::custom(format!(
+                    "Binary" => match value {
+                        serde_json::Value::String(s) => {
+                            use base64::{engine::general_purpose::STANDARD, Engine as _};
+                            STANDARD
+                                .decode(&s)
+                                .map(|bytes| Some(MetricValue::Binary(bytes)))
+                                .map_err(|e| {
+                                    serde::de::Error::custom(format!(
                                         "Invalid base64 for Binary variant: {}",
                                         e
-                                    )))
-                            }
-                            _ => Err(serde::de::Error::custom(format!(
-                                "Expected base64 string for Binary variant, got {:?}",
-                                value
-                            ))),
+                                    ))
+                                })
                         }
-                    }
+                        _ => Err(serde::de::Error::custom(format!(
+                            "Expected base64 string for Binary variant, got {:?}",
+                            value
+                        ))),
+                    },
                     "Null" => Ok(Some(MetricValue::Null)),
                     _ => Err(serde::de::Error::custom(format!(
                         "Unknown MetricValue variant: {}",

@@ -40,8 +40,7 @@ fn test_cli_version() {
 #[test]
 fn test_verbose_flag_accepted() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("--verbose")
-        .arg("--help");
+    cmd.arg("--verbose").arg("--help");
 
     cmd.assert().success();
 }
@@ -50,9 +49,7 @@ fn test_verbose_flag_accepted() {
 #[test]
 fn test_model_flag_accepted() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("--model")
-        .arg("qwen3-vl:2b")
-        .arg("--help");
+    cmd.arg("--model").arg("qwen3-vl:2b").arg("--help");
 
     cmd.assert().success();
 }
@@ -63,7 +60,5 @@ fn test_no_subcommand_shows_error() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
 
     // Clap displays usage on stdout with exit code 2
-    cmd.assert()
-        .failure()
-        .code(2); // Clap's error code for missing required subcommand
+    cmd.assert().failure().code(2); // Clap's error code for missing required subcommand
 }

@@ -13,9 +13,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
+use crate::toolkit::{ToolError, ToolOutput, ToolRegistry};
 use neomind_core::event::NeoMindEvent;
 use neomind_core::eventbus::EventBus;
-use crate::toolkit::{ToolError, ToolOutput, ToolRegistry};
 
 /// Maximum number of tool execution records to keep in history.
 const MAX_HISTORY_SIZE: usize = 1000;

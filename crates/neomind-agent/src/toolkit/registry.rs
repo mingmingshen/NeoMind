@@ -534,6 +534,48 @@ impl ToolRegistryBuilder {
         )))
     }
 
+    // ============================================================================
+    // Universal Agent Tools (for function calling mode)
+    // ============================================================================
+
+    /// Add universal tools for AI Agent function calling mode.
+    pub fn with_universal_tools(
+        self,
+        storage: Arc<neomind_devices::TimeSeriesStorage>,
+        device_service: Option<Arc<neomind_devices::DeviceService>>,
+        message_manager: Option<Arc<neomind_messages::MessageManager>>,
+        extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
+    ) -> Self {
+        let mut builder = self;
+
+        // QueryMetricsTool
+        let query_tool = if let Some(ds) = device_service.clone() {
+            super::universal_tools::QueryMetricsTool::new(storage.clone()).with_device_service(ds)
+        } else {
+            super::universal_tools::QueryMetricsTool::new(storage)
+        };
+        builder = builder.with_tool(Arc::new(query_tool));
+
+        // ExecuteCommandTool
+        let mut cmd_tool = super::universal_tools::ExecuteCommandTool::new();
+        if let Some(ds) = device_service {
+            cmd_tool = cmd_tool.with_device_service(ds);
+        }
+        if let Some(er) = extension_registry {
+            cmd_tool = cmd_tool.with_extension_registry(er);
+        }
+        builder = builder.with_tool(Arc::new(cmd_tool));
+
+        // SendNotificationTool
+        if let Some(mm) = message_manager {
+            builder = builder.with_tool(Arc::new(
+                super::universal_tools::SendNotificationTool::new(mm),
+            ));
+        }
+
+        builder
+    }
+
     /// Build the registry.
     pub fn build(self) -> ToolRegistry {
         self.registry
@@ -692,10 +734,10 @@ pub fn format_for_llm(definitions: &[ToolDefinition]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::toolkit::ToolDefinition;
     use crate::toolkit::{Tool, ToolOutput};
     use async_trait::async_trait;
     use neomind_core::tools::{ToolCategory, ToolRelationships};
-    use crate::toolkit::ToolDefinition;
     use serde_json::Value;
 
     // Simple test tool for registry testing

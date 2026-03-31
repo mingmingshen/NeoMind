@@ -15,12 +15,12 @@ use serde_json::Value;
 
 use super::error::Result;
 use super::error::ToolError;
+use super::tool::ToolExample;
 use super::tool::{
     array_property, boolean_property, number_property, object_schema, string_property, Tool,
     ToolDefinition, ToolOutput,
 };
 use neomind_core::tools::{ToolCategory, ToolRelationships, UsageScenario};
-use super::tool::ToolExample;
 
 // ============================================================================
 // System Information Tools

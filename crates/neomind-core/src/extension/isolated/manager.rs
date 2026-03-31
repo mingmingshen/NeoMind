@@ -26,14 +26,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use tokio::sync::RwLock as AsyncRwLock;
 use tokio::sync::broadcast;
+use tokio::sync::RwLock as AsyncRwLock;
 
 use super::process::{IsolatedExtension, IsolatedExtensionConfig};
 use super::{IsolatedExtensionError, IsolatedResult};
+use crate::extension::event_dispatcher::EventDispatcher;
 use crate::extension::loader::{IsolatedExtensionLoader, IsolatedLoaderConfig};
 use crate::extension::system::{ExtensionMetadata, ExtensionMetricValue};
-use crate::extension::event_dispatcher::EventDispatcher;
 
 /// Configuration for the isolated extension manager
 #[derive(Debug, Clone)]
@@ -111,7 +111,8 @@ pub struct IsolatedExtensionManager {
     /// Event dispatcher for pushing events to extensions
     event_dispatcher: Arc<EventDispatcher>,
     /// Capability provider for handling capability requests from extensions
-    capability_provider: AsyncRwLock<Option<Arc<dyn super::super::context::ExtensionCapabilityProvider>>>,
+    capability_provider:
+        AsyncRwLock<Option<Arc<dyn super::super::context::ExtensionCapabilityProvider>>>,
     /// Death notification channel for monitoring extension crashes
     death_channel: (broadcast::Sender<()>, AsyncRwLock<broadcast::Receiver<()>>),
     /// Per-extension loading locks to prevent race conditions during concurrent loads
@@ -158,15 +159,15 @@ impl IsolatedExtensionManager {
     pub fn start_death_monitoring(self: Arc<Self>) {
         tokio::spawn(async move {
             let mut rx = self.death_channel.1.read().await.resubscribe();
-            
+
             tracing::info!("Extension death monitoring task started");
-            
+
             loop {
                 match rx.recv().await {
                     Ok(_) => {
                         // An extension died - check all extensions and restart dead ones
                         tracing::warn!("Received extension death notification, checking for dead extensions...");
-                        
+
                         let extensions = self.extensions.read().await;
                         let dead_extensions: Vec<String> = extensions
                             .iter()
@@ -174,21 +175,26 @@ impl IsolatedExtensionManager {
                             .map(|(id, _)| id.clone())
                             .collect();
                         drop(extensions);
-                        
+
                         for ext_id in dead_extensions {
                             // 🔧 Phase 1: Check restart policy before attempting restart
                             let should_restart = {
                                 let info_cache = self.info_cache.read();
-                                info_cache.get(&ext_id)
+                                info_cache
+                                    .get(&ext_id)
                                     .map(|info| {
                                         let config = &self.config.extension_config;
                                         let can_restart = config.restart_on_crash;
-                                        let within_limit = info.runtime.restart_count < config.max_restart_attempts as u64;
+                                        let within_limit = info.runtime.restart_count
+                                            < config.max_restart_attempts as u64;
 
                                         // Check cooldown period
-                                        let past_cooldown = if let Some(last_restart) = info.runtime.last_restart_at {
+                                        let past_cooldown = if let Some(last_restart) =
+                                            info.runtime.last_restart_at
+                                        {
                                             let now = chrono::Utc::now().timestamp();
-                                            (now - last_restart) >= config.restart_cooldown_secs as i64
+                                            (now - last_restart)
+                                                >= config.restart_cooldown_secs as i64
                                         } else {
                                             true
                                         };
@@ -209,20 +215,20 @@ impl IsolatedExtensionManager {
                             }
 
                             tracing::warn!(extension_id = %ext_id, "Extension died, attempting auto-restart...");
-                            
+
                             // Get the extension path from info cache
                             let path = {
                                 let info = self.info_cache.read();
                                 info.get(&ext_id).map(|info| info.path.clone())
                             };
-                            
+
                             if let Some(path) = path {
                                 // Remove the dead extension first
                                 {
                                     let mut extensions = self.extensions.write().await;
                                     extensions.remove(&ext_id);
                                 }
-                                
+
                                 // Reload the extension
                                 match self.load(&path).await {
                                     Ok(_) => {
@@ -230,13 +236,17 @@ impl IsolatedExtensionManager {
                                         {
                                             let mut info_cache = self.info_cache.write();
                                             if let Some(info) = info_cache.get_mut(&ext_id) {
-                                                info.runtime.last_restart_at = Some(chrono::Utc::now().timestamp());
+                                                info.runtime.last_restart_at =
+                                                    Some(chrono::Utc::now().timestamp());
                                                 info.runtime.restart_count += 1;
                                             }
                                         }
                                         let restart_count = {
                                             let info_cache = self.info_cache.read();
-                                            info_cache.get(&ext_id).map(|i| i.runtime.restart_count).unwrap_or(0)
+                                            info_cache
+                                                .get(&ext_id)
+                                                .map(|i| i.runtime.restart_count)
+                                                .unwrap_or(0)
                                         };
                                         tracing::info!(
                                             extension_id = %ext_id,
@@ -263,11 +273,13 @@ impl IsolatedExtensionManager {
         });
     }
 
-
     /// Set the capability provider for handling capability requests from extensions
-    pub async fn set_capability_provider(&self, provider: Arc<dyn super::super::context::ExtensionCapabilityProvider>) {
+    pub async fn set_capability_provider(
+        &self,
+        provider: Arc<dyn super::super::context::ExtensionCapabilityProvider>,
+    ) {
         *self.capability_provider.write().await = Some(provider.clone());
-        
+
         // Update all existing extensions
         let extensions = self.extensions.read().await;
         for (_, ext) in extensions.iter() {
@@ -354,7 +366,10 @@ impl IsolatedExtensionManager {
             // Get or create a loading lock for this extension ID
             let loading_lock = {
                 let mut locks = self.loading_locks.write().await;
-                locks.entry(id.clone()).or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))).clone()
+                locks
+                    .entry(id.clone())
+                    .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                    .clone()
             };
 
             // Acquire the loading lock - this will wait if another load is in progress
@@ -423,7 +438,8 @@ impl IsolatedExtensionManager {
 
         // Register extension with event dispatcher
         if let Some(channel) = event_push_channel {
-            self.event_dispatcher.register_isolated_extension(id.clone(), event_types, channel);
+            self.event_dispatcher
+                .register_isolated_extension(id.clone(), event_types, channel);
         } else {
             tracing::warn!(
                 extension_id = %id,
@@ -432,14 +448,19 @@ impl IsolatedExtensionManager {
         }
 
         // Store extension
-        self.extensions.write().await.insert(id.clone(), loaded.clone());
+        self.extensions
+            .write()
+            .await
+            .insert(id.clone(), loaded.clone());
 
         // Set capability provider if configured
         if let Some(provider) = self.capability_provider.read().await.as_ref() {
             loaded.set_capability_provider(provider.clone());
 
-        // Set up death notification for auto-restart
-        loaded.set_death_notification(self.death_channel.0.clone()).await;
+            // Set up death notification for auto-restart
+            loaded
+                .set_death_notification(self.death_channel.0.clone())
+                .await;
         }
 
         // Create runtime state
@@ -475,7 +496,7 @@ impl IsolatedExtensionManager {
             // ✅ FIX: Mark as stopping BEFORE calling stop()
             // This prevents death monitor from mistakenly treating this as a crash
             isolated.mark_stopping();
-            
+
             // Stop the extension process
             // Ignore NotRunning error - extension may have failed to start (e.g., missing .dylib)
             if let Err(e) = isolated.stop().await {
@@ -538,7 +559,10 @@ impl IsolatedExtensionManager {
     }
 
     /// Get statistics from an isolated extension
-    pub async fn get_stats(&self, id: &str) -> IsolatedResult<crate::extension::system::ExtensionStats> {
+    pub async fn get_stats(
+        &self,
+        id: &str,
+    ) -> IsolatedResult<crate::extension::system::ExtensionStats> {
         let extensions = self.extensions.read().await;
 
         let isolated = extensions.get(id).ok_or_else(|| {
@@ -661,8 +685,11 @@ mod tests {
     #[test]
     fn test_manager_creation() {
         let manager = IsolatedExtensionManager::with_defaults();
-        assert_eq!(tokio::runtime::Runtime::new().unwrap().block_on(async {
-            manager.count().await
-        }), 0);
+        assert_eq!(
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(async { manager.count().await }),
+            0
+        );
     }
 }

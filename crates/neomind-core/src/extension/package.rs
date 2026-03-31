@@ -30,10 +30,10 @@
 //!         └── icons/
 //! ```
 
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
-use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
 use serde::{Deserialize, Serialize};
@@ -455,12 +455,16 @@ impl ExtensionPackage {
 
         // Validate extension ID
         if manifest.id.is_empty() {
-            return Err(PackageError::InvalidManifest("Extension ID is required".to_string()));
+            return Err(PackageError::InvalidManifest(
+                "Extension ID is required".to_string(),
+            ));
         }
 
         // Validate version
         if manifest.version.is_empty() {
-            return Err(PackageError::InvalidManifest("Version is required".to_string()));
+            return Err(PackageError::InvalidManifest(
+                "Version is required".to_string(),
+            ));
         }
 
         Ok(())
@@ -478,9 +482,9 @@ impl ExtensionPackage {
         archive: &mut ZipArchive<R>,
         path: &str,
     ) -> Result<String, PackageError> {
-        let mut file = archive.by_name(path).map_err(|e| {
-            PackageError::MissingFile(format!("{}: {}", path, e))
-        })?;
+        let mut file = archive
+            .by_name(path)
+            .map_err(|e| PackageError::MissingFile(format!("{}: {}", path, e)))?;
 
         let mut content = String::new();
         file.read_to_string(&mut content)?;
@@ -523,14 +527,15 @@ impl ExtensionPackage {
 
         // Extract manifest.json
         let manifest_path = ext_dir.join("manifest.json");
-        self.extract_file(&mut archive, "manifest.json", &manifest_path).await?;
+        self.extract_file(&mut archive, "manifest.json", &manifest_path)
+            .await?;
 
         // Extract binary for current platform
         let binary_path = if let Some(rel_path) = self.get_binary_path() {
-            let binary_file = ext_dir.join(
-                PathBuf::from(&rel_path).file_name().unwrap_or_default()
-            );
-            self.extract_file(&mut archive, &rel_path, &binary_file).await?;
+            let binary_file =
+                ext_dir.join(PathBuf::from(&rel_path).file_name().unwrap_or_default());
+            self.extract_file(&mut archive, &rel_path, &binary_file)
+                .await?;
 
             // Create sidecar JSON file for all extension types (WASM and native)
             // This allows safe discovery without loading native libraries
@@ -550,7 +555,8 @@ impl ExtensionPackage {
         // Extract frontend directory if exists
         let frontend_dir = if self.manifest.frontend.is_some() {
             let frontend_path = ext_dir.join("frontend");
-            self.extract_directory(&mut archive, "frontend/", &frontend_path).await?;
+            self.extract_directory(&mut archive, "frontend/", &frontend_path)
+                .await?;
             Some(frontend_path)
         } else {
             None
@@ -558,7 +564,11 @@ impl ExtensionPackage {
 
         // ✨ Extract models directory if exists (AI model files)
         let models_path = ext_dir.join("models");
-        let models_dir = if self.extract_directory(&mut archive, "models/", &models_path).await.is_ok() {
+        let models_dir = if self
+            .extract_directory(&mut archive, "models/", &models_path)
+            .await
+            .is_ok()
+        {
             Some(models_path)
         } else {
             None
@@ -566,14 +576,21 @@ impl ExtensionPackage {
 
         // ✨ Extract resources directory if exists (configs, assets, etc.)
         let resources_path = ext_dir.join("resources");
-        let resources_dir = if self.extract_directory(&mut archive, "resources/", &resources_path).await.is_ok() {
+        let resources_dir = if self
+            .extract_directory(&mut archive, "resources/", &resources_path)
+            .await
+            .is_ok()
+        {
             Some(resources_path)
         } else {
             None
         };
 
         // Get component definitions
-        let components = self.manifest.frontend.as_ref()
+        let components = self
+            .manifest
+            .frontend
+            .as_ref()
             .map(|f| f.components.clone())
             .unwrap_or_default();
 
@@ -615,7 +632,9 @@ impl ExtensionPackage {
 
         // Get binary path for current platform
         let platform = detect_platform();
-        let binary_rel_path = manifest.binaries.get(&platform)
+        let binary_rel_path = manifest
+            .binaries
+            .get(&platform)
             .or_else(|| manifest.binaries.get("wasm"))
             .cloned()
             .ok_or_else(|| {
@@ -659,7 +678,9 @@ impl ExtensionPackage {
         Self::extract_directory_sync(&mut archive, "config/", &config_path)?;
 
         // Get component definitions
-        let components = manifest.frontend.as_ref()
+        let components = manifest
+            .frontend
+            .as_ref()
             .map(|f| f.components.clone())
             .unwrap_or_default();
 
@@ -699,9 +720,9 @@ impl ExtensionPackage {
         src_path: &str,
         dst_path: &Path,
     ) -> Result<(), PackageError> {
-        let mut file = archive.by_name(src_path).map_err(|e| {
-            PackageError::MissingFile(format!("{}: {}", src_path, e))
-        })?;
+        let mut file = archive
+            .by_name(src_path)
+            .map_err(|e| PackageError::MissingFile(format!("{}: {}", src_path, e)))?;
 
         let mut content = Vec::new();
         file.read_to_end(&mut content)?;
@@ -724,9 +745,9 @@ impl ExtensionPackage {
         std::fs::create_dir_all(dst_dir)?;
 
         for i in 0..archive.len() {
-            let mut file = archive.by_index(i).map_err(|e| {
-                PackageError::Zip(format!("Failed to access file {}: {}", i, e))
-            })?;
+            let mut file = archive
+                .by_index(i)
+                .map_err(|e| PackageError::Zip(format!("Failed to access file {}: {}", i, e)))?;
 
             let name = file.name().to_string();
 
@@ -759,19 +780,26 @@ impl ExtensionPackage {
         use serde_json::json;
 
         // Build metrics array if capabilities exist
-        let metrics = manifest.capabilities.as_ref().map(|cap| {
-            cap.metrics.iter().map(|m| {
-                json!({
-                    "name": m.name,
-                    "display_name": m.display_name,
-                    "data_type": m.data_type,
-                    "unit": m.unit,
-                    "min": m.min,
-                    "max": m.max,
-                    "required": false
-                })
-            }).collect::<Vec<_>>()
-        }).unwrap_or_default();
+        let metrics = manifest
+            .capabilities
+            .as_ref()
+            .map(|cap| {
+                cap.metrics
+                    .iter()
+                    .map(|m| {
+                        json!({
+                            "name": m.name,
+                            "display_name": m.display_name,
+                            "data_type": m.data_type,
+                            "unit": m.unit,
+                            "min": m.min,
+                            "max": m.max,
+                            "required": false
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
         // Build commands array if capabilities exist
         let commands = manifest.capabilities.as_ref().map(|cap| {
@@ -820,13 +848,16 @@ impl ExtensionPackage {
             "commands": commands
         });
 
-        let content = serde_json::to_string_pretty(&sidecar_data)
-            .map_err(|e| PackageError::InvalidManifest(format!("Failed to serialize sidecar JSON: {}", e)))?;
+        let content = serde_json::to_string_pretty(&sidecar_data).map_err(|e| {
+            PackageError::InvalidManifest(format!("Failed to serialize sidecar JSON: {}", e))
+        })?;
 
-        std::fs::write(json_path, content)
-            .map_err(|e| PackageError::Io(std::io::Error::other(
-                format!("Failed to write sidecar JSON: {}", e)
-            )))?;
+        std::fs::write(json_path, content).map_err(|e| {
+            PackageError::Io(std::io::Error::other(format!(
+                "Failed to write sidecar JSON: {}",
+                e
+            )))
+        })?;
 
         Ok(())
     }
@@ -838,9 +869,9 @@ impl ExtensionPackage {
         src_path: &str,
         dst_path: &Path,
     ) -> Result<(), PackageError> {
-        let mut file = archive.by_name(src_path).map_err(|e| {
-            PackageError::MissingFile(format!("{}: {}", src_path, e))
-        })?;
+        let mut file = archive
+            .by_name(src_path)
+            .map_err(|e| PackageError::MissingFile(format!("{}: {}", src_path, e)))?;
 
         let mut content = Vec::new();
         file.read_to_end(&mut content)?;
@@ -864,9 +895,9 @@ impl ExtensionPackage {
         tokio::fs::create_dir_all(dst_dir).await?;
 
         for i in 0..archive.len() {
-            let mut file = archive.by_index(i).map_err(|e| {
-                PackageError::Zip(format!("Failed to access file {}: {}", i, e))
-            })?;
+            let mut file = archive
+                .by_index(i)
+                .map_err(|e| PackageError::Zip(format!("Failed to access file {}: {}", i, e)))?;
 
             let name = file.name().to_string();
 
@@ -897,19 +928,27 @@ impl ExtensionPackage {
         use serde_json::json;
 
         // Build metrics array if capabilities exist
-        let metrics = self.manifest.capabilities.as_ref().map(|cap| {
-            cap.metrics.iter().map(|m| {
-                json!({
-                    "name": m.name,
-                    "display_name": m.display_name,
-                    "data_type": m.data_type,
-                    "unit": m.unit,
-                    "min": m.min,
-                    "max": m.max,
-                    "required": false
-                })
-            }).collect::<Vec<_>>()
-        }).unwrap_or_default();
+        let metrics = self
+            .manifest
+            .capabilities
+            .as_ref()
+            .map(|cap| {
+                cap.metrics
+                    .iter()
+                    .map(|m| {
+                        json!({
+                            "name": m.name,
+                            "display_name": m.display_name,
+                            "data_type": m.data_type,
+                            "unit": m.unit,
+                            "min": m.min,
+                            "max": m.max,
+                            "required": false
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
         // Build commands array if capabilities exist
         let commands = self.manifest.capabilities.as_ref().map(|cap| {
@@ -958,13 +997,16 @@ impl ExtensionPackage {
             "commands": commands
         });
 
-        let content = serde_json::to_string_pretty(&sidecar_data)
-            .map_err(|e| PackageError::InvalidManifest(format!("Failed to serialize sidecar JSON: {}", e)))?;
+        let content = serde_json::to_string_pretty(&sidecar_data).map_err(|e| {
+            PackageError::InvalidManifest(format!("Failed to serialize sidecar JSON: {}", e))
+        })?;
 
-        tokio::fs::write(json_path, content).await
-            .map_err(|e| PackageError::Io(std::io::Error::other(
-                format!("Failed to write sidecar JSON: {}", e)
-            )))?;
+        tokio::fs::write(json_path, content).await.map_err(|e| {
+            PackageError::Io(std::io::Error::other(format!(
+                "Failed to write sidecar JSON: {}",
+                e
+            )))
+        })?;
 
         Ok(())
     }
@@ -1094,8 +1136,8 @@ mod tests {
             "frontend": "frontend/"
         }"#;
 
-        let manifest: ExtensionPackageManifest = serde_json::from_str(json)
-            .expect("Failed to parse manifest with string frontend");
+        let manifest: ExtensionPackageManifest =
+            serde_json::from_str(json).expect("Failed to parse manifest with string frontend");
 
         assert_eq!(manifest.id, "test-extension");
         assert!(manifest.frontend.is_some());
@@ -1125,13 +1167,16 @@ mod tests {
             }
         }"#;
 
-        let manifest: ExtensionPackageManifest = serde_json::from_str(json)
-            .expect("Failed to parse manifest with struct frontend");
+        let manifest: ExtensionPackageManifest =
+            serde_json::from_str(json).expect("Failed to parse manifest with struct frontend");
 
         assert_eq!(manifest.id, "test-extension");
         assert!(manifest.frontend.is_some());
         assert_eq!(manifest.frontend.as_ref().unwrap().components.len(), 1);
-        assert_eq!(manifest.frontend.as_ref().unwrap().components[0].name, "Weather Card");
+        assert_eq!(
+            manifest.frontend.as_ref().unwrap().components[0].name,
+            "Weather Card"
+        );
     }
 
     #[test]
@@ -1145,8 +1190,8 @@ mod tests {
             "version": "1.0.0"
         }"#;
 
-        let manifest: ExtensionPackageManifest = serde_json::from_str(json)
-            .expect("Failed to parse manifest without frontend");
+        let manifest: ExtensionPackageManifest =
+            serde_json::from_str(json).expect("Failed to parse manifest without frontend");
 
         assert_eq!(manifest.id, "test-extension");
         assert!(manifest.frontend.is_none());

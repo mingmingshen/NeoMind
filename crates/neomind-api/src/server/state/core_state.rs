@@ -25,10 +25,7 @@ pub struct CoreState {
 
 impl CoreState {
     /// Create a new core state.
-    pub fn new(
-        event_bus: Option<Arc<EventBus>>,
-        message_manager: Arc<MessageManager>,
-    ) -> Self {
+    pub fn new(event_bus: Option<Arc<EventBus>>, message_manager: Arc<MessageManager>) -> Self {
         Self {
             event_bus,
             message_manager,

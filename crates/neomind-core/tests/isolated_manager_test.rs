@@ -10,7 +10,7 @@
 //! - Event dispatcher integration
 
 use neomind_core::extension::isolated::{
-    IsolatedExtensionManager, IsolatedManagerConfig, IsolatedExtensionConfig,
+    IsolatedExtensionConfig, IsolatedExtensionManager, IsolatedManagerConfig,
 };
 use neomind_core::extension::system::ExtensionDescriptor;
 
@@ -182,7 +182,10 @@ fn test_config_access() {
     let manager = IsolatedExtensionManager::new(config.clone());
     let retrieved_config = manager.config();
 
-    assert_eq!(retrieved_config.isolated_by_default, config.isolated_by_default);
+    assert_eq!(
+        retrieved_config.isolated_by_default,
+        config.isolated_by_default
+    );
     assert_eq!(retrieved_config.force_isolated, config.force_isolated);
 }
 
@@ -196,11 +199,7 @@ fn test_isolated_extension_info_metadata_accessor() {
     use neomind_core::extension::system::{ExtensionMetadata, ExtensionRuntimeState};
     use std::path::PathBuf;
 
-    let metadata = ExtensionMetadata::new(
-        "test.extension",
-        "Test Extension",
-        "1.0.0",
-    );
+    let metadata = ExtensionMetadata::new("test.extension", "Test Extension", "1.0.0");
 
     let descriptor = ExtensionDescriptor::new(metadata.clone());
 
@@ -223,14 +222,12 @@ fn test_isolated_extension_info_metadata_accessor() {
 #[test]
 fn test_isolated_extension_info_runtime_state() {
     use neomind_core::extension::isolated::IsolatedExtensionInfo;
-    use neomind_core::extension::system::{ExtensionMetadata, ExtensionDescriptor, ExtensionRuntimeState};
+    use neomind_core::extension::system::{
+        ExtensionDescriptor, ExtensionMetadata, ExtensionRuntimeState,
+    };
     use std::path::PathBuf;
 
-    let metadata = ExtensionMetadata::new(
-        "test.extension",
-        "Test Extension",
-        "1.0.0",
-    );
+    let metadata = ExtensionMetadata::new("test.extension", "Test Extension", "1.0.0");
 
     let descriptor = ExtensionDescriptor::new(metadata);
 
@@ -303,9 +300,7 @@ async fn test_concurrent_contains_check() {
 
     for i in 0..10 {
         let mgr = manager.clone();
-        let handle = tokio::spawn(async move {
-            mgr.contains(&format!("ext.{}", i)).await
-        });
+        let handle = tokio::spawn(async move { mgr.contains(&format!("ext.{}", i)).await });
         handles.push(handle);
     }
 
@@ -322,9 +317,7 @@ async fn test_concurrent_list() {
 
     for _ in 0..5 {
         let mgr = manager.clone();
-        let handle = tokio::spawn(async move {
-            mgr.list().await
-        });
+        let handle = tokio::spawn(async move { mgr.list().await });
         handles.push(handle);
     }
 

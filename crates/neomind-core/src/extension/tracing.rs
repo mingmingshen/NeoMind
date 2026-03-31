@@ -73,10 +73,7 @@ pub fn extension_unload_span(extension_id: &str) -> tracing::span::Span {
 }
 
 /// Create a tracing span for IPC communication
-pub fn ipc_communication_span(
-    extension_id: &str,
-    message_type: &str,
-) -> tracing::span::Span {
+pub fn ipc_communication_span(extension_id: &str, message_type: &str) -> tracing::span::Span {
     info_span!(
         "ipc_communication",
         extension_id = %extension_id,
@@ -308,4 +305,3 @@ pub fn inject_trace_context() -> std::collections::HashMap<String, String> {
 pub fn extract_trace_context(_map: &std::collections::HashMap<String, String>) -> Option<String> {
     None
 }
-

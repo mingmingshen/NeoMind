@@ -954,6 +954,7 @@ pub async fn create_agent(
         context_window_size: request.context_window_size.unwrap_or(10),
         enable_tool_chaining: request.enable_tool_chaining.unwrap_or(false),
         max_chain_depth: request.max_chain_depth.unwrap_or(3),
+        tool_config: None,
     };
 
     // Save to storage

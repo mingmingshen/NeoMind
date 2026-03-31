@@ -271,11 +271,7 @@ pub async fn list_automations_handler(
     let has_more = offset + limit < total;
 
     // Apply pagination
-    let paginated: Vec<_> = filtered
-        .into_iter()
-        .skip(offset)
-        .take(limit)
-        .collect();
+    let paginated: Vec<_> = filtered.into_iter().skip(offset).take(limit).collect();
 
     let count = paginated.len();
 
@@ -982,13 +978,15 @@ pub async fn process_data_handler(
                     // Publish as a device metric event
                     use neomind_core::NeoMindEvent;
                     if let Ok(_event_json) = serde_json::to_value(metric) {
-                        let _ = event_bus.publish(NeoMindEvent::DeviceMetric {
-                            device_id: metric.device_id.clone(),
-                            metric: metric.metric.clone(),
-                            value: neomind_core::MetricValue::Float(metric.value),
-                            timestamp: metric.timestamp,
-                            quality: metric.quality,
-                        }).await;
+                        let _ = event_bus
+                            .publish(NeoMindEvent::DeviceMetric {
+                                device_id: metric.device_id.clone(),
+                                metric: metric.metric.clone(),
+                                value: neomind_core::MetricValue::Float(metric.value),
+                                timestamp: metric.timestamp,
+                                quality: metric.quality,
+                            })
+                            .await;
                     }
                 }
             }
@@ -1269,8 +1267,6 @@ pub async fn test_transform_code_handler(
     State(state): State<ServerState>,
     Json(req): Json<TestTransformCodeRequest>,
 ) -> HandlerResult<Value> {
-    
-
     let Some(_transform_engine) = &state.automation.transform_engine else {
         return Err(ErrorResponse::service_unavailable(
             "Transform engine not available",

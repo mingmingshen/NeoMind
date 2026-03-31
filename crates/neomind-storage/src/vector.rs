@@ -144,7 +144,10 @@ impl VectorDocument {
     }
 
     /// Check if document matches metadata filter.
-    fn matches_filter(&self, filter: &std::collections::HashMap<String, serde_json::Value>) -> bool {
+    fn matches_filter(
+        &self,
+        filter: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> bool {
         for (key, expected_value) in filter {
             let key_str = key.as_str();
             let actual_value = match key_str {
@@ -217,7 +220,7 @@ impl VectorStore {
     /// Create a vector store with custom HNSW parameters.
     pub fn with_config(max_connections: usize, num_layers: usize) -> Self {
         Self {
-            documents: DashMap::with_capacity(256),  // Pre-allocate for typical use
+            documents: DashMap::with_capacity(256), // Pre-allocate for typical use
             graph_index: DashMap::with_capacity(256),
             max_connections,
             num_layers,
@@ -320,12 +323,12 @@ impl VectorStore {
             }
         }
 
-        let mut results: Vec<SearchResult> = Vec::with_capacity(64);  // Pre-allocate for typical results
+        let mut results: Vec<SearchResult> = Vec::with_capacity(64); // Pre-allocate for typical results
 
         // Iterate DashMap - lock-free
         for ref_item in self.documents.iter() {
             let doc = ref_item.value();
-            
+
             // Apply metadata filter if specified
             if let Some(ref filter) = options.metadata_filter {
                 if !doc.matches_filter(filter) {
@@ -468,7 +471,10 @@ impl VectorStore {
 
     /// List all document IDs.
     pub fn list_ids(&self) -> Vec<String> {
-        self.documents.iter().map(|ref_item| ref_item.key().clone()).collect()
+        self.documents
+            .iter()
+            .map(|ref_item| ref_item.key().clone())
+            .collect()
     }
 
     /// Get all categories.

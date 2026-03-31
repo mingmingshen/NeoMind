@@ -66,9 +66,8 @@ pub use tools::{
 
 // Re-export llm_backends types for backward compatibility (merged from neomind-llm crate)
 pub use llm_backends::{
-    get_instance_manager, BackendTypeDefinition, LlmBackendInstanceManager,
-    CloudConfig, CloudProvider, CloudRuntime,
-    OllamaConfig, OllamaRuntime,
+    get_instance_manager, BackendTypeDefinition, CloudConfig, CloudProvider, CloudRuntime,
+    LlmBackendInstanceManager, OllamaConfig, OllamaRuntime,
 };
 
 /// Version information
@@ -88,7 +87,7 @@ mod tests {
         // Create a temporary directory for the test
         let temp_dir = std::env::temp_dir();
         let test_path = temp_dir.join(format!("neomind_test_{}", uuid::Uuid::new_v4()));
-        
+
         let manager = SessionManager::with_path(test_path).unwrap();
 
         // Create a session

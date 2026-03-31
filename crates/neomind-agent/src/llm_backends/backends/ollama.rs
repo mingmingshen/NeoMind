@@ -988,12 +988,17 @@ impl LlmRuntime for OllamaRuntime {
                         if terminate_early {
                             tracing::warn!(
                                 "[ollama.rs] Early termination: {}",
-                                terminate_early_reason.as_deref().unwrap_or("unknown reason")
+                                terminate_early_reason
+                                    .as_deref()
+                                    .unwrap_or("unknown reason")
                             );
                             // Send error to client
-                            let _ = tx.send(Err(LlmError::Generation(
-                                terminate_early_reason.unwrap_or_else(|| "Stream terminated early".to_string())
-                            ))).await;
+                            let _ = tx
+                                .send(Err(LlmError::Generation(
+                                    terminate_early_reason
+                                        .unwrap_or_else(|| "Stream terminated early".to_string()),
+                                )))
+                                .await;
                             break;
                         }
 
@@ -1135,19 +1140,22 @@ impl LlmRuntime for OllamaRuntime {
                                                     tool_names.join(", ")
                                                 );
                                                 // Build JSON array to preserve tool IDs (OpenAI-compatible format)
-                                                let tool_calls_json: Vec<serde_json::Value> = ollama_chunk
-                                                    .message
-                                                    .tool_calls
-                                                    .iter()
-                                                    .map(|tc| {
-                                                        serde_json::json!({
-                                                            "id": tc.id,
-                                                            "name": tc.function.name,
-                                                            "arguments": tc.function.arguments
+                                                let tool_calls_json: Vec<serde_json::Value> =
+                                                    ollama_chunk
+                                                        .message
+                                                        .tool_calls
+                                                        .iter()
+                                                        .map(|tc| {
+                                                            serde_json::json!({
+                                                                "id": tc.id,
+                                                                "name": tc.function.name,
+                                                                "arguments": tc.function.arguments
+                                                            })
                                                         })
-                                                    })
-                                                    .collect();
-                                                let json_str = serde_json::to_string(&tool_calls_json).unwrap_or_default();
+                                                        .collect();
+                                                let json_str =
+                                                    serde_json::to_string(&tool_calls_json)
+                                                        .unwrap_or_default();
                                                 tracing::debug!(
                                                     "Ollama: converted tool_calls to JSON: {}",
                                                     json_str
@@ -1247,15 +1255,22 @@ impl LlmRuntime for OllamaRuntime {
 
                                                 // SAFETY CHECK 2: Thinking content repetition rate detection
                                                 // Detect if model is generating repetitive thinking content
-                                                if thinking_chars > 5000 && thinking_content_history.len() > 5000 {
+                                                if thinking_chars > 5000
+                                                    && thinking_content_history.len() > 5000
+                                                {
                                                     // Calculate repetition rate by checking unique vs total chars
                                                     let unique_chars = thinking_content_history
                                                         .chars()
                                                         .collect::<std::collections::HashSet<_>>()
                                                         .len();
-                                                    let repetition_rate = 1.0 - (unique_chars as f64 / thinking_content_history.len() as f64);
+                                                    let repetition_rate = 1.0
+                                                        - (unique_chars as f64
+                                                            / thinking_content_history.len()
+                                                                as f64);
 
-                                                    if repetition_rate > stream_config.max_thinking_repetition_rate {
+                                                    if repetition_rate
+                                                        > stream_config.max_thinking_repetition_rate
+                                                    {
                                                         tracing::error!(
                                                             "[ollama.rs] CRITICAL: High thinking repetition detected (rate: {:.2}%, threshold: {:.2}%). Model is stuck in loop. Terminating stream.",
                                                             repetition_rate * 100.0,
@@ -1461,11 +1476,12 @@ impl LlmRuntime for OllamaRuntime {
 
     fn capabilities(&self) -> BackendCapabilities {
         // Use override if available (from storage/API detection), otherwise detect from name
-        let caps = self.capabilities_override
+        let caps = self
+            .capabilities_override
             .as_ref()
             .cloned()
             .unwrap_or_else(|| detect_model_capabilities(&self.model));
-        
+
         let mut builder = BackendCapabilities::builder()
             .streaming()
             .max_context(caps.max_context);
@@ -1872,7 +1888,9 @@ impl OllamaShowResponse {
 
     /// Check if model has attention heads (indicates reasoning capability)
     fn has_attention_heads(&self) -> bool {
-        self.model_info.keys().any(|k| k.contains(".attention.head_count"))
+        self.model_info
+            .keys()
+            .any(|k| k.contains(".attention.head_count"))
     }
 }
 

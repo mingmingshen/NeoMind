@@ -84,7 +84,10 @@ pub async fn serve_asset(Path(path): Path<String>) -> impl IntoResponse {
 
             let mut headers = HeaderMap::new();
             headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(&mime).unwrap());
-            headers.insert(header::CACHE_CONTROL, HeaderValue::from_str(cache_control).unwrap());
+            headers.insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_str(cache_control).unwrap(),
+            );
 
             (headers, file.data.to_vec()).into_response()
         })

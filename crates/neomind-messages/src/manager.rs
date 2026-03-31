@@ -8,8 +8,10 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::channels::{ChannelRegistry, ChannelFactory, ChannelFilter};
-use super::delivery_log::{DeliveryLog, DeliveryLogId, DeliveryLogQuery, DeliveryStats, DeliveryStatus};
+use super::channels::{ChannelFactory, ChannelFilter, ChannelRegistry};
+use super::delivery_log::{
+    DeliveryLog, DeliveryLogId, DeliveryLogQuery, DeliveryStats, DeliveryStatus,
+};
 use super::error::{Error, Result};
 use super::{Message, MessageId, MessageSeverity, MessageStatus, MessageType};
 
@@ -57,10 +59,12 @@ impl MessageManager {
         // Construct the database file path
         let db_path = data_dir.join("messages.redb");
 
-        let store = Arc::new(
-            neomind_storage::MessageStore::open(&db_path)
-                .map_err(|e| Error::Storage(format!("Failed to open message store at {:?}: {}", db_path, e)))?,
-        );
+        let store = Arc::new(neomind_storage::MessageStore::open(&db_path).map_err(|e| {
+            Error::Storage(format!(
+                "Failed to open message store at {:?}: {}",
+                db_path, e
+            ))
+        })?);
 
         // Load existing messages into memory
         let mut messages = HashMap::new();
@@ -78,7 +82,10 @@ impl MessageManager {
                         }
                     }
                 }
-                tracing::info!("Successfully loaded {} messages into memory", messages.len());
+                tracing::info!(
+                    "Successfully loaded {} messages into memory",
+                    messages.len()
+                );
             }
             Err(e) => {
                 tracing::error!("Failed to load messages from storage: {}", e);
@@ -131,7 +138,10 @@ impl MessageManager {
                 drop(registry);
                 if !channel_recipients.is_empty() {
                     if let Some(obj) = config.as_object_mut() {
-                        obj.insert("recipients".to_string(), serde_json::json!(channel_recipients));
+                        obj.insert(
+                            "recipients".to_string(),
+                            serde_json::json!(channel_recipients),
+                        );
                     }
                 }
             }
@@ -157,19 +167,24 @@ impl MessageManager {
             match channel_result {
                 Ok(Some(channel)) => {
                     let registry = self.channels.write().await;
-                    registry.register_with_config(
-                        stored.name.clone(),
-                        channel,
-                        stored.config,
-                    ).await;
+                    registry
+                        .register_with_config(stored.name.clone(), channel, stored.config)
+                        .await;
                     // Set enabled state if different from default
                     if !stored.enabled {
                         let _ = registry.set_enabled(&stored.name, false).await;
                     }
                     // Restore filter configuration if not default
                     if stored.filter != ChannelFilter::default() {
-                        if let Err(e) = registry.set_filter(&stored.name, stored.filter.clone()).await {
-                            tracing::warn!("Failed to restore filter for channel '{}': {}", stored.name, e);
+                        if let Err(e) = registry
+                            .set_filter(&stored.name, stored.filter.clone())
+                            .await
+                        {
+                            tracing::warn!(
+                                "Failed to restore filter for channel '{}': {}",
+                                stored.name,
+                                e
+                            );
                         }
                     }
                     loaded_count += 1;
@@ -184,11 +199,7 @@ impl MessageManager {
                     // Unknown channel type, already logged
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "Failed to recreate channel '{}': {}",
-                        stored.name,
-                        e
-                    );
+                    tracing::warn!("Failed to recreate channel '{}': {}", stored.name, e);
                 }
             }
         }
@@ -201,11 +212,15 @@ impl MessageManager {
     /// Convert StoredMessage to Message.
     fn stored_to_message(stored: neomind_storage::StoredMessage) -> Message {
         let (message_type, source_id, payload) = if let Some(ref meta) = stored.metadata {
-            let mt = meta.get("message_type")
+            let mt = meta
+                .get("message_type")
                 .and_then(|v| v.as_str())
                 .and_then(|s| MessageType::from_string(s))
                 .unwrap_or(MessageType::Notification);
-            let sid = meta.get("source_id").and_then(|v| v.as_str()).map(String::from);
+            let sid = meta
+                .get("source_id")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let p = meta.get("payload").cloned();
             (mt, sid, p)
         } else {
@@ -248,10 +263,16 @@ impl MessageManager {
             } else {
                 Some(msg.tags.clone())
             },
-            metadata: if msg.payload.is_some() || msg.source_id.is_some() || msg.message_type != MessageType::Notification {
+            metadata: if msg.payload.is_some()
+                || msg.source_id.is_some()
+                || msg.message_type != MessageType::Notification
+            {
                 let mut meta = msg.metadata.clone().unwrap_or(serde_json::json!({}));
                 if let Some(obj) = meta.as_object_mut() {
-                    obj.insert("message_type".to_string(), serde_json::json!(msg.message_type.as_str()));
+                    obj.insert(
+                        "message_type".to_string(),
+                        serde_json::json!(msg.message_type.as_str()),
+                    );
                     if let Some(sid) = &msg.source_id {
                         obj.insert("source_id".to_string(), serde_json::json!(sid));
                     }
@@ -327,11 +348,16 @@ impl MessageManager {
                         continue;
                     }
 
-                    tracing::info!("Sending message through channel '{}' (type: {})", channel_name, channel.channel_type());
+                    tracing::info!(
+                        "Sending message through channel '{}' (type: {})",
+                        channel_name,
+                        channel.channel_type()
+                    );
 
                     // Create delivery log entry for DataPush
                     let delivery_log = if message_type == MessageType::DataPush {
-                        let payload_summary = message.payload
+                        let payload_summary = message
+                            .payload
                             .as_ref()
                             .map(|p| {
                                 let s = p.to_string();
@@ -354,7 +380,10 @@ impl MessageManager {
 
                     match channel.send(&message).await {
                         Ok(()) => {
-                            tracing::info!("Successfully sent message through channel '{}'", channel_name);
+                            tracing::info!(
+                                "Successfully sent message through channel '{}'",
+                                channel_name
+                            );
                             send_results.push((channel_name.clone(), Ok(())));
                             // Log successful delivery for DataPush
                             if let Some(mut log) = delivery_log {
@@ -373,7 +402,9 @@ impl MessageManager {
                             send_results.push((channel_name.clone(), Err(error_msg.clone())));
                             // Log failed delivery for DataPush
                             if let Some(mut log) = delivery_log {
-                                log = log.with_status(DeliveryStatus::Failed).with_error(error_msg);
+                                log = log
+                                    .with_status(DeliveryStatus::Failed)
+                                    .with_error(error_msg);
                                 self.delivery_logs.write().await.insert(log.id.clone(), log);
                             }
                         }

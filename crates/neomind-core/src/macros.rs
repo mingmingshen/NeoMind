@@ -179,7 +179,6 @@ macro_rules! __private_ident {
 
 #[cfg(test)]
 mod tests {
-    
 
     #[test]
     fn test_newtype_wrapper() {

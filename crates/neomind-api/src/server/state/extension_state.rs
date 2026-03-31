@@ -152,7 +152,10 @@ impl ExtensionState {
     ///
     /// This allows isolated extensions to invoke capabilities on the host process,
     /// such as writing virtual metrics to devices.
-    pub async fn set_capability_provider(&self, provider: Arc<dyn neomind_core::extension::context::ExtensionCapabilityProvider>) {
+    pub async fn set_capability_provider(
+        &self,
+        provider: Arc<dyn neomind_core::extension::context::ExtensionCapabilityProvider>,
+    ) {
         self.runtime.set_capability_provider(provider).await;
     }
 
@@ -162,10 +165,7 @@ impl ExtensionState {
         metrics_storage: Arc<ExtensionMetricsStorage>,
     ) -> Self {
         let config = ExtensionRuntimeConfig::default();
-        let runtime = Arc::new(ExtensionRuntime::new(
-            Arc::clone(&registry),
-            config,
-        ));
+        let runtime = Arc::new(ExtensionRuntime::new(Arc::clone(&registry), config));
 
         Self {
             registry,
@@ -180,10 +180,7 @@ impl ExtensionState {
         metrics_storage: Arc<ExtensionMetricsStorage>,
         config: ExtensionRuntimeConfig,
     ) -> Self {
-        let runtime = Arc::new(ExtensionRuntime::new(
-            Arc::clone(&registry),
-            config,
-        ));
+        let runtime = Arc::new(ExtensionRuntime::new(Arc::clone(&registry), config));
 
         Self {
             registry,
@@ -208,10 +205,7 @@ impl ExtensionState {
         ))?);
 
         let config = ExtensionRuntimeConfig::default();
-        let runtime = Arc::new(ExtensionRuntime::new(
-            Arc::clone(&registry),
-            config,
-        ));
+        let runtime = Arc::new(ExtensionRuntime::new(Arc::clone(&registry), config));
 
         Ok(Self {
             registry,
@@ -261,7 +255,6 @@ impl ExtensionState {
         let total = records.len();
         let mut current = 0;
 
-
         for record in records {
             let file_path = Path::new(&record.file_path);
 
@@ -274,12 +267,9 @@ impl ExtensionState {
                 );
                 continue;
             }
-            
+
             current += 1;
-            tracing::info!(
-                "Loading extension {}/{}: {}",
-                current, total, record.id
-            );
+            tracing::info!("Loading extension {}/{}: {}", current, total, record.id);
 
             let load_result = self.runtime.load(file_path).await;
 
@@ -324,7 +314,8 @@ impl ExtensionState {
                     );
                     // Record the error in the extension store
                     if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
-                        if let Err(update_e) = store.update_error_status(&record.id, &e.to_string()) {
+                        if let Err(update_e) = store.update_error_status(&record.id, &e.to_string())
+                        {
                             tracing::warn!(
                                 extension_id = %record.id,
                                 error = %update_e,
@@ -335,7 +326,7 @@ impl ExtensionState {
                 }
             }
         }
-        
+
         // Small delay between extensions to reduce memory pressure
         // This prevents OOM when loading multiple heavy extensions
         if current < total {

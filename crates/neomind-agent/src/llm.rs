@@ -727,9 +727,12 @@ impl LlmInterface {
 
         // Add tool calling instruction and format
         prompt.push_str("## IMPORTANT: You MUST call tools to execute operations\n");
-        prompt.push_str("1. Don't just say what you will do - directly output the tool call JSON!\n");
+        prompt
+            .push_str("1. Don't just say what you will do - directly output the tool call JSON!\n");
         prompt.push_str("2. NEVER claim operation success without calling tools!\n");
-        prompt.push_str("3. Only use the \"✓\" mark after the tool actually executes and returns success.\n\n");
+        prompt.push_str(
+            "3. Only use the \"✓\" mark after the tool actually executes and returns success.\n\n",
+        );
         prompt.push_str("## Tool Call Format\n");
         prompt
             .push_str("Output in response: [{\"name\":\"tool_name\",\"arguments\":{\"param\":\"value\"}}]\n\n");
@@ -779,7 +782,9 @@ impl LlmInterface {
         prompt.push_str("| \"What devices are there?\" | `list_devices()` |\n");
         prompt
             .push_str("| \"What's the temperature?\" | `query_data(device='device_id', metric='temperature')` |\n");
-        prompt.push_str("| \"Turn on the light\" | `control_device(device='device_id', action='on')` |\n");
+        prompt.push_str(
+            "| \"Turn on the light\" | `control_device(device='device_id', action='on')` |\n",
+        );
         prompt.push_str(
             "| \"Create a rule\" | `create_rule(name='rule_name', condition='condition', action='action')` |\n",
         );
@@ -848,10 +853,7 @@ impl LlmInterface {
         // Build enhanced time context
         let local_time_with_context = format!(
             "{} {} ({}{})",
-            date_str,
-            local_time,
-            time_period,
-            day_of_week
+            date_str, local_time, time_period, day_of_week
         );
 
         // Replace placeholders

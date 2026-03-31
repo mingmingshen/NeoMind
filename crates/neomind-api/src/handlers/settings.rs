@@ -36,7 +36,11 @@ pub async fn llm_generate_handler(
 
     // Convert LlmBackend to a Box<dyn LlmRuntime>
     let (llm_runtime, model_name): (Box<dyn LlmRuntime>, String) = match backend_config {
-        LlmBackend::Ollama { endpoint, model , capabilities: _} => {
+        LlmBackend::Ollama {
+            endpoint,
+            model,
+            capabilities: _,
+        } => {
             use neomind_agent::llm_backends::{OllamaConfig, OllamaRuntime};
             let config = OllamaConfig::new(&model).with_endpoint(&endpoint);
             let runtime = OllamaRuntime::new(config).map_err(|e| {

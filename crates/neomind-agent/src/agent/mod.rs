@@ -47,8 +47,8 @@ use super::error::Result;
 use super::llm::{ChatConfig, LlmInterface};
 use super::tools::mapper::map_tool_parameters;
 use crate::context::ResourceIndex;
-use neomind_core::{config::agent_env_vars, llm::backend::LlmRuntime, Message};
 use crate::llm_backends::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
+use neomind_core::{config::agent_env_vars, llm::backend::LlmRuntime, Message};
 
 // Type aliases to reduce complexity
 pub type SharedToolRegistry = Arc<crate::toolkit::ToolRegistry>;
@@ -261,7 +261,8 @@ pub fn compact_conversation(
 
         // Create a synthetic summary message
         let timestamp = messages
-            .first().map(|m| m.timestamp)
+            .first()
+            .map(|m| m.timestamp)
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
         compressed_older.push(AgentMessage {
@@ -293,18 +294,30 @@ fn summarize_assistant_message(msg: &AgentMessage) -> String {
     }
 
     // Check for common patterns and extract key info
-    if content.contains("成功") || content.contains("已完成") || content.contains("success") || content.contains("completed") {
+    if content.contains("成功")
+        || content.contains("已完成")
+        || content.contains("success")
+        || content.contains("completed")
+    {
         if let Some(tool_name) = &msg.tool_call_name {
             return format!("Executed {}", tool_name);
         }
         return "Operation completed".to_string();
     }
 
-    if content.contains("失败") || content.contains("错误") || content.contains("failed") || content.contains("error") {
+    if content.contains("失败")
+        || content.contains("错误")
+        || content.contains("failed")
+        || content.contains("error")
+    {
         return format!("Operation failed: {}", extract_first_phrase(content, 30));
     }
 
-    if content.contains("查询到") || content.contains("数据显示") || content.contains("found") || content.contains("data shows") {
+    if content.contains("查询到")
+        || content.contains("数据显示")
+        || content.contains("found")
+        || content.contains("data shows")
+    {
         return format!("Queried data: {}", extract_first_phrase(content, 30));
     }
 
@@ -799,7 +812,11 @@ impl Agent {
         );
 
         let (llm, model_name) = match backend {
-            LlmBackend::Ollama { endpoint, model, capabilities } => {
+            LlmBackend::Ollama {
+                endpoint,
+                model,
+                capabilities,
+            } => {
                 tracing::info!(
                     endpoint = %endpoint, model = %model, timeout = ollama_timeout,
                     capabilities = ?capabilities,
@@ -827,7 +844,9 @@ impl Agent {
                         caps.max_context.unwrap_or(8192),
                     );
                 } else {
-                    tracing::warn!("No capabilities provided for OllamaRuntime, using default detection");
+                    tracing::warn!(
+                        "No capabilities provided for OllamaRuntime, using default detection"
+                    );
                 }
 
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
@@ -846,9 +865,14 @@ impl Agent {
                 let config = CloudConfig::qwen(&api_key)
                     .with_model(&model)
                     .with_timeout_secs(cloud_timeout)
-                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
-                let runtime =
-                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
+                    .with_base_url_opt(if endpoint.is_empty() {
+                        None
+                    } else {
+                        Some(endpoint.clone())
+                    });
+                let runtime = CloudRuntime::new(config).map_err(
+                    |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
+                )?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::DeepSeek {
@@ -865,9 +889,14 @@ impl Agent {
                 let config = CloudConfig::deepseek(&api_key)
                     .with_model(&model)
                     .with_timeout_secs(cloud_timeout)
-                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
-                let runtime =
-                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
+                    .with_base_url_opt(if endpoint.is_empty() {
+                        None
+                    } else {
+                        Some(endpoint.clone())
+                    });
+                let runtime = CloudRuntime::new(config).map_err(
+                    |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
+                )?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::GLM {
@@ -884,9 +913,14 @@ impl Agent {
                 let config = CloudConfig::glm(&api_key)
                     .with_model(&model)
                     .with_timeout_secs(cloud_timeout)
-                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
-                let runtime =
-                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
+                    .with_base_url_opt(if endpoint.is_empty() {
+                        None
+                    } else {
+                        Some(endpoint.clone())
+                    });
+                let runtime = CloudRuntime::new(config).map_err(
+                    |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
+                )?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::MiniMax {
@@ -903,9 +937,14 @@ impl Agent {
                 let config = CloudConfig::minimax(&api_key)
                     .with_model(&model)
                     .with_timeout_secs(cloud_timeout)
-                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
-                let runtime =
-                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
+                    .with_base_url_opt(if endpoint.is_empty() {
+                        None
+                    } else {
+                        Some(endpoint.clone())
+                    });
+                let runtime = CloudRuntime::new(config).map_err(
+                    |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
+                )?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::Anthropic {
@@ -922,9 +961,14 @@ impl Agent {
                 let config = CloudConfig::anthropic(&api_key)
                     .with_model(&model)
                     .with_timeout_secs(cloud_timeout)
-                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
-                let runtime =
-                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
+                    .with_base_url_opt(if endpoint.is_empty() {
+                        None
+                    } else {
+                        Some(endpoint.clone())
+                    });
+                let runtime = CloudRuntime::new(config).map_err(
+                    |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
+                )?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::Google {
@@ -941,9 +985,14 @@ impl Agent {
                 let config = CloudConfig::google(&api_key)
                     .with_model(&model)
                     .with_timeout_secs(cloud_timeout)
-                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
-                let runtime =
-                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
+                    .with_base_url_opt(if endpoint.is_empty() {
+                        None
+                    } else {
+                        Some(endpoint.clone())
+                    });
+                let runtime = CloudRuntime::new(config).map_err(
+                    |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
+                )?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::XAi {
@@ -960,9 +1009,14 @@ impl Agent {
                 let config = CloudConfig::grok(&api_key)
                     .with_model(&model)
                     .with_timeout_secs(cloud_timeout)
-                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
-                let runtime =
-                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
+                    .with_base_url_opt(if endpoint.is_empty() {
+                        None
+                    } else {
+                        Some(endpoint.clone())
+                    });
+                let runtime = CloudRuntime::new(config).map_err(
+                    |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
+                )?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
             LlmBackend::OpenAi {
@@ -979,9 +1033,14 @@ impl Agent {
                 let config = CloudConfig::openai(&api_key)
                     .with_model(&model)
                     .with_timeout_secs(cloud_timeout)
-                    .with_base_url_opt(if endpoint.is_empty() { None } else { Some(endpoint.clone()) });
-                let runtime =
-                    CloudRuntime::new(config).map_err(|e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()))?;
+                    .with_base_url_opt(if endpoint.is_empty() {
+                        None
+                    } else {
+                        Some(endpoint.clone())
+                    });
+                let runtime = CloudRuntime::new(config).map_err(
+                    |e: neomind_core::llm::backend::LlmError| NeoMindError::llm(e.to_string()),
+                )?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
         };
@@ -1009,8 +1068,8 @@ impl Agent {
     /// Uses simplified tool definitions for better LLM understanding.
     /// Also dynamically updates the system prompt to include tool descriptions.
     pub async fn update_tool_definitions(&self) {
-        use neomind_core::llm::backend::ToolDefinition as CoreToolDefinition;
         use crate::toolkit::simplified;
+        use neomind_core::llm::backend::ToolDefinition as CoreToolDefinition;
 
         // Use simplified tool definitions for LLM function calling
         let simplified_tools = simplified::get_simplified_tools();
@@ -1278,7 +1337,9 @@ impl Agent {
 
         prompt.push_str("## Usage Guide\n");
         prompt.push_str("- Multiple tool calls can be executed in parallel for faster response\n");
-        prompt.push_str("- Device aliases and tool aliases are supported, system will auto-recognize\n");
+        prompt.push_str(
+            "- Device aliases and tool aliases are supported, system will auto-recognize\n",
+        );
 
         prompt
     }
@@ -2932,7 +2993,10 @@ END"#
                         );
 
                         // Don't retry on logical errors (like invalid input)
-                        return Ok(format!("Tool {} execution failed: {}", real_tool_name, error_msg));
+                        return Ok(format!(
+                            "Tool {} execution failed: {}",
+                            real_tool_name, error_msg
+                        ));
                     }
 
                     tracing::debug!(

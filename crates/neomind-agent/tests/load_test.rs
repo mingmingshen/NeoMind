@@ -10,8 +10,8 @@
 #![allow(dead_code)]
 
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
-use neomind_core::{EventBus, MetricValue, NeoMindEvent};
 use neomind_agent::{OllamaConfig, OllamaRuntime};
+use neomind_core::{EventBus, MetricValue, NeoMindEvent};
 use neomind_storage::{
     AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, LongTermMemory,
     ScheduleType, ShortTermMemory, WorkingMemory,
@@ -174,6 +174,7 @@ impl LoadTestContext {
             llm_runtime: llm_runtime.clone(),
             llm_backend_store: None,
             extension_registry: None,
+            tool_registry: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -226,6 +227,7 @@ impl LoadTestContext {
                 short_term: ShortTermMemory::default(),
                 long_term: LongTermMemory::default(),
             },
+            tool_config: None,
             error_message: None,
             priority: 128,
             conversation_history: vec![],
@@ -243,17 +245,21 @@ impl LoadTestContext {
     fn generate_devices(&mut self, count: usize) {
         self.devices.clear();
 
-        let locations = ["一号车间".to_string(),
+        let locations = [
+            "一号车间".to_string(),
             "二号车间".to_string(),
             "仓库A".to_string(),
             "仓库B".to_string(),
-            "办公楼".to_string()];
+            "办公楼".to_string(),
+        ];
 
-        let device_types = [("温度传感器", vec!["temperature"]),
+        let device_types = [
+            ("温度传感器", vec!["temperature"]),
             ("温湿度传感器", vec!["temperature", "humidity"]),
             ("环境传感器", vec!["temperature", "humidity", "pressure"]),
             ("能耗监控", vec!["power", "voltage", "current"]),
-            ("空气质量", vec!["aqi", "co2", "pm25"])];
+            ("空气质量", vec!["aqi", "co2", "pm25"]),
+        ];
 
         for i in 0..count {
             let location = &locations[i % locations.len()];

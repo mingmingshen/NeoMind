@@ -13,10 +13,7 @@ use neomind_messages::{
 
 #[tokio::test]
 async fn test_message_creation() {
-    let message = Message::system(
-        "Test Alert".to_string(),
-        "Test message".to_string(),
-    );
+    let message = Message::system("Test Alert".to_string(), "Test message".to_string());
 
     assert_eq!(message.title, "Test Alert");
     assert_eq!(message.severity, MessageSeverity::Info);
@@ -89,10 +86,7 @@ async fn test_message_status_transitions() {
 async fn test_message_manager_create() {
     let manager = MessageManager::new();
 
-    let message = Message::system(
-        "Test Alert".to_string(),
-        "Test message".to_string(),
-    );
+    let message = Message::system("Test Alert".to_string(), "Test message".to_string());
 
     let created = manager.create_message(message).await.unwrap();
     assert!(!created.id.to_string().is_empty());
@@ -197,15 +191,11 @@ async fn test_message_manager_filter_by_category() {
         .await
         .unwrap();
 
-    let system_alerts = manager
-        .list_messages_by_category("system")
-        .await;
+    let system_alerts = manager.list_messages_by_category("system").await;
     assert_eq!(system_alerts.len(), 1);
     assert_eq!(system_alerts[0].title, "System Alert");
 
-    let device_alerts = manager
-        .list_messages_by_category("alert")
-        .await;
+    let device_alerts = manager.list_messages_by_category("alert").await;
     assert_eq!(device_alerts.len(), 1);
     assert_eq!(device_alerts[0].title, "Device Alert");
 }
@@ -272,26 +262,17 @@ async fn test_message_manager_stats() {
 
     // Create multiple messages
     let msg1 = manager
-        .create_message(Message::system(
-            "Alert 0".to_string(),
-            "Test".to_string(),
-        ))
+        .create_message(Message::system("Alert 0".to_string(), "Test".to_string()))
         .await
         .unwrap();
 
     let msg2 = manager
-        .create_message(Message::system(
-            "Alert 1".to_string(),
-            "Test".to_string(),
-        ))
+        .create_message(Message::system("Alert 1".to_string(), "Test".to_string()))
         .await
         .unwrap();
 
     let msg3 = manager
-        .create_message(Message::system(
-            "Alert 2".to_string(),
-            "Test".to_string(),
-        ))
+        .create_message(Message::system("Alert 2".to_string(), "Test".to_string()))
         .await
         .unwrap();
 
@@ -366,26 +347,17 @@ async fn test_message_manager_bulk_operations() {
     let manager = MessageManager::new();
 
     let msg1 = manager
-        .create_message(Message::system(
-            "Alert 0".to_string(),
-            "Test".to_string(),
-        ))
+        .create_message(Message::system("Alert 0".to_string(), "Test".to_string()))
         .await
         .unwrap();
 
     let msg2 = manager
-        .create_message(Message::system(
-            "Alert 1".to_string(),
-            "Test".to_string(),
-        ))
+        .create_message(Message::system("Alert 1".to_string(), "Test".to_string()))
         .await
         .unwrap();
 
     let msg3 = manager
-        .create_message(Message::system(
-            "Alert 2".to_string(),
-            "Test".to_string(),
-        ))
+        .create_message(Message::system("Alert 2".to_string(), "Test".to_string()))
         .await
         .unwrap();
 
@@ -410,10 +382,7 @@ async fn test_message_manager_clear() {
 
     for i in 0..5 {
         manager
-            .create_message(Message::system(
-                format!("Alert {}", i),
-                "Test".to_string(),
-            ))
+            .create_message(Message::system(format!("Alert {}", i), "Test".to_string()))
             .await
             .unwrap();
     }
@@ -432,10 +401,7 @@ async fn test_message_manager_cleanup_old() {
     // Create some messages
     for i in 0..3 {
         manager
-            .create_message(Message::system(
-                format!("Alert {}", i),
-                "Test".to_string(),
-            ))
+            .create_message(Message::system(format!("Alert {}", i), "Test".to_string()))
             .await
             .unwrap();
     }
@@ -454,18 +420,12 @@ async fn test_message_manager_active_messages() {
     let manager = MessageManager::new();
 
     let msg1 = manager
-        .create_message(Message::system(
-            "Active 1".to_string(),
-            "Test".to_string(),
-        ))
+        .create_message(Message::system("Active 1".to_string(), "Test".to_string()))
         .await
         .unwrap();
 
     let msg2 = manager
-        .create_message(Message::system(
-            "Active 2".to_string(),
-            "Test".to_string(),
-        ))
+        .create_message(Message::system("Active 2".to_string(), "Test".to_string()))
         .await
         .unwrap();
 
@@ -479,10 +439,7 @@ async fn test_message_manager_active_messages() {
 
 #[tokio::test]
 async fn test_message_clone() {
-    let message = Message::system(
-        "Original".to_string(),
-        "Test".to_string(),
-    );
+    let message = Message::system("Original".to_string(), "Test".to_string());
 
     let cloned = message.clone();
 

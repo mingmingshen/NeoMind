@@ -10,8 +10,8 @@
 //! - Concurrent request handling
 
 use neomind_core::extension::isolated::{
-    IsolatedExtension, IsolatedExtensionConfig, IsolatedExtensionError,
-    IsolatedExtensionInfo, IsolatedManagerConfig,
+    IsolatedExtension, IsolatedExtensionConfig, IsolatedExtensionError, IsolatedExtensionInfo,
+    IsolatedManagerConfig,
 };
 use neomind_core::extension::system::{
     ExtensionDescriptor, ExtensionMetadata, ExtensionRuntimeState,
@@ -71,7 +71,10 @@ fn test_isolated_manager_config_custom() {
     let config = IsolatedManagerConfig {
         extension_config: IsolatedExtensionConfig::default(),
         isolated_by_default: false,
-        force_isolated: vec!["critical.extension".to_string(), "legacy.extension".to_string()],
+        force_isolated: vec![
+            "critical.extension".to_string(),
+            "legacy.extension".to_string(),
+        ],
     };
 
     assert!(!config.isolated_by_default);
@@ -264,11 +267,7 @@ fn test_extension_runtime_state_increment_restart() {
 
 #[test]
 fn test_extension_descriptor_new() {
-    let metadata = ExtensionMetadata::new(
-        "test.isolated",
-        "Test Isolated Extension",
-        "1.0.0",
-    );
+    let metadata = ExtensionMetadata::new("test.isolated", "Test Isolated Extension", "1.0.0");
 
     let descriptor = ExtensionDescriptor::new(metadata);
 
@@ -280,11 +279,7 @@ fn test_extension_descriptor_new() {
 
 #[test]
 fn test_extension_descriptor_has_config() {
-    let metadata = ExtensionMetadata::new(
-        "test.config",
-        "Test Config Extension",
-        "1.0.0",
-    );
+    let metadata = ExtensionMetadata::new("test.config", "Test Config Extension", "1.0.0");
 
     let descriptor = ExtensionDescriptor::new(metadata);
 
@@ -298,11 +293,7 @@ fn test_extension_descriptor_has_config() {
 
 #[test]
 fn test_isolated_extension_info_creation() {
-    let metadata = ExtensionMetadata::new(
-        "test.info",
-        "Test Info Extension",
-        "1.0.0",
-    );
+    let metadata = ExtensionMetadata::new("test.info", "Test Info Extension", "1.0.0");
 
     let descriptor = ExtensionDescriptor::new(metadata);
     let mut runtime = ExtensionRuntimeState::isolated();
@@ -321,11 +312,7 @@ fn test_isolated_extension_info_creation() {
 
 #[test]
 fn test_isolated_extension_info_stopped() {
-    let metadata = ExtensionMetadata::new(
-        "test.stopped",
-        "Test Stopped Extension",
-        "1.0.0",
-    );
+    let metadata = ExtensionMetadata::new("test.stopped", "Test Stopped Extension", "1.0.0");
 
     let descriptor = ExtensionDescriptor::new(metadata);
     let runtime = ExtensionRuntimeState::isolated(); // Not running by default
@@ -346,11 +333,7 @@ fn test_isolated_extension_info_stopped() {
 #[test]
 fn test_isolated_extension_creation() {
     let config = IsolatedExtensionConfig::default();
-    let isolated = IsolatedExtension::new(
-        "test.extension",
-        "/path/to/extension.wasm",
-        config,
-    );
+    let isolated = IsolatedExtension::new("test.extension", "/path/to/extension.wasm", config);
 
     // Should create without panic
     let _ = isolated;
@@ -369,11 +352,7 @@ fn test_isolated_extension_with_custom_config() {
         ..Default::default()
     };
 
-    let isolated = IsolatedExtension::new(
-        "custom.extension",
-        "/path/to/custom.wasm",
-        config,
-    );
+    let isolated = IsolatedExtension::new("custom.extension", "/path/to/custom.wasm", config);
 
     let _ = isolated;
 }
@@ -636,11 +615,7 @@ fn test_extension_path_handling() {
 
     for path in paths {
         let config = IsolatedExtensionConfig::default();
-        let isolated = IsolatedExtension::new(
-            "test.extension",
-            path,
-            config,
-        );
+        let isolated = IsolatedExtension::new("test.extension", path, config);
         let _ = isolated;
     }
 }

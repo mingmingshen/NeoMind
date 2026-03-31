@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use crate::host::*;
 
 #[cfg(target_arch = "wasm32")]
-use crate::wasm::{ExtensionContext, capabilities};
+use crate::wasm::{capabilities, ExtensionContext};
 
 pub type CapabilityError = String;
 
@@ -34,11 +34,7 @@ pub async fn trigger(
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn trigger(
-    context: &Context,
-    agent_id: &str,
-    input: &Value,
-) -> Result<Value, CapabilityError> {
+pub fn trigger(context: &Context, agent_id: &str, input: &Value) -> Result<Value, CapabilityError> {
     context.trigger_agent(agent_id, input)
 }
 
@@ -142,7 +138,10 @@ pub fn stop(context: &Context, agent_id: &str) -> Result<Value, CapabilityError>
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn list(context: &Context) -> Result<Value, CapabilityError> {
     context
-        .invoke_capability(ExtensionCapability::AgentTrigger, &json!({"action": "list"}))
+        .invoke_capability(
+            ExtensionCapability::AgentTrigger,
+            &json!({"action": "list"}),
+        )
         .await
         .map_err(|e| e.to_string())
 }

@@ -23,7 +23,9 @@ use neomind_storage::LlmBackendInstance;
 
 /// Convert an LlmBackendInstance to LlmBackend enum for agent configuration.
 /// Convert storage BackendCapabilities to core BackendCapabilities
-fn convert_capabilities(storage_caps: &neomind_storage::BackendCapabilities) -> neomind_core::BackendCapabilities {
+fn convert_capabilities(
+    storage_caps: &neomind_storage::BackendCapabilities,
+) -> neomind_core::BackendCapabilities {
     neomind_core::BackendCapabilities {
         streaming: storage_caps.supports_streaming,
         multimodal: storage_caps.supports_multimodal,
@@ -39,7 +41,7 @@ fn convert_capabilities(storage_caps: &neomind_storage::BackendCapabilities) -> 
 
 fn instance_to_llm_backend(instance: &LlmBackendInstance) -> Result<LlmBackend> {
     use neomind_storage::LlmBackendType;
-    
+
     // Convert capabilities from storage type to core type
     let capabilities = Some(convert_capabilities(&instance.capabilities));
 
@@ -490,19 +492,16 @@ impl SessionManager {
     pub fn get_backend_by_id(backend_id: &str) -> Result<LlmBackend> {
         tracing::debug!(backend_id = %backend_id, "get_backend_by_id called");
 
-        let manager = get_instance_manager()
-            .map_err(|e| {
-                tracing::error!(error = %e, "Failed to get instance manager");
-                NeoMindError::Llm(format!("Failed to get instance manager: {}", e))
-            })?;
+        let manager = get_instance_manager().map_err(|e| {
+            tracing::error!(error = %e, "Failed to get instance manager");
+            NeoMindError::Llm(format!("Failed to get instance manager: {}", e))
+        })?;
 
         // Get the instance by ID using the public method
-        let instance = manager
-            .get_instance(backend_id)
-            .ok_or_else(|| {
-                tracing::error!(backend_id = %backend_id, "Backend not found");
-                NeoMindError::Llm(format!("Backend '{}' not found", backend_id))
-            })?;
+        let instance = manager.get_instance(backend_id).ok_or_else(|| {
+            tracing::error!(backend_id = %backend_id, "Backend not found");
+            NeoMindError::Llm(format!("Backend '{}' not found", backend_id))
+        })?;
 
         tracing::debug!(
             backend_id = %backend_id,
@@ -538,6 +537,11 @@ impl SessionManager {
     /// Set the tool registry for all new sessions.
     pub async fn set_tool_registry(&self, registry: Arc<crate::toolkit::ToolRegistry>) {
         *self.tool_registry.write().await = Some(registry);
+    }
+
+    /// Get a clone of the tool registry (if set).
+    pub async fn get_tool_registry(&self) -> Option<Arc<crate::toolkit::ToolRegistry>> {
+        self.tool_registry.read().await.clone()
     }
 
     /// P0.3: Get the session store for direct access (for pending stream state management).

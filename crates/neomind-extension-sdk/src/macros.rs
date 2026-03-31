@@ -703,7 +703,7 @@ macro_rules! neomind_export_with_constructor {
                 // WASM extensions should keep execute_command simple (no heavy async)
                 let ext = get_extension();
                 let future = <$extension_type as $crate::Extension>::execute_command(ext, command, &args);
-                
+
                 // Use $crate::pollster::block_on for WASM
                 let result = $crate::pollster::block_on(future);
 
@@ -1094,21 +1094,41 @@ macro_rules! neomind_extension {
 /// Helper macro to convert type name to MetricDataType
 #[macro_export]
 macro_rules! neomind_extension_metric_type {
-    (Float) => { $crate::MetricDataType::Float };
-    (Integer) => { $crate::MetricDataType::Integer };
-    (Boolean) => { $crate::MetricDataType::Boolean };
-    (String) => { $crate::MetricDataType::String };
-    (Binary) => { $crate::MetricDataType::Binary };
+    (Float) => {
+        $crate::MetricDataType::Float
+    };
+    (Integer) => {
+        $crate::MetricDataType::Integer
+    };
+    (Boolean) => {
+        $crate::MetricDataType::Boolean
+    };
+    (String) => {
+        $crate::MetricDataType::String
+    };
+    (Binary) => {
+        $crate::MetricDataType::Binary
+    };
 }
 
 /// Helper macro to convert type name to MetricDataType for parameters
 #[macro_export]
 macro_rules! neomind_extension_param_type {
-    (Float) => { $crate::MetricDataType::Float };
-    (Integer) => { $crate::MetricDataType::Integer };
-    (Boolean) => { $crate::MetricDataType::Boolean };
-    (String) => { $crate::MetricDataType::String };
-    (Binary) => { $crate::MetricDataType::Binary };
+    (Float) => {
+        $crate::MetricDataType::Float
+    };
+    (Integer) => {
+        $crate::MetricDataType::Integer
+    };
+    (Boolean) => {
+        $crate::MetricDataType::Boolean
+    };
+    (String) => {
+        $crate::MetricDataType::String
+    };
+    (Binary) => {
+        $crate::MetricDataType::Binary
+    };
 }
 
 /// Simplified extension definition with minimal boilerplate

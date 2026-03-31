@@ -10,14 +10,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use neomind_rules::{
-    dsl::{ParsedRule, RuleCondition, RuleDslParser, RuleError},
-    RuleEngine, RuleId,
-};
 use crate::toolkit::{
     error::Result as ToolResult,
     tool::{array_property, boolean_property, object_schema, string_property},
     Tool, ToolError, ToolOutput,
+};
+use neomind_rules::{
+    dsl::{ParsedRule, RuleCondition, RuleDslParser, RuleError},
+    RuleEngine, RuleId,
 };
 
 /// GenerateRuleDsl tool - converts natural language to rule DSL.

@@ -56,10 +56,7 @@ pub struct ExtensionEventSubscriptionService {
 
 impl ExtensionEventSubscriptionService {
     /// Create a new extension event subscription service.
-    pub fn new(
-        event_bus: Arc<EventBus>,
-        event_dispatcher: Arc<EventDispatcher>,
-    ) -> Self {
+    pub fn new(event_bus: Arc<EventBus>, event_dispatcher: Arc<EventDispatcher>) -> Self {
         Self {
             event_bus,
             event_dispatcher,
@@ -114,7 +111,8 @@ impl ExtensionEventSubscriptionService {
 
     /// Stop the service.
     pub fn stop(&self) {
-        self.running.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Handle an event from EventBus and dispatch to subscribed extensions.
@@ -253,7 +251,8 @@ mod tests {
             quality: Some(0.95),
         };
 
-        let (event_type, payload) = ExtensionEventSubscriptionService::convert_to_extension_format(&event);
+        let (event_type, payload) =
+            ExtensionEventSubscriptionService::convert_to_extension_format(&event);
 
         assert_eq!(event_type, "DeviceMetric");
         assert_eq!(payload["event_type"], "DeviceMetric");
@@ -270,7 +269,8 @@ mod tests {
             data: serde_json::json!({"key": "value"}),
         };
 
-        let (event_type, payload) = ExtensionEventSubscriptionService::convert_to_extension_format(&event);
+        let (event_type, payload) =
+            ExtensionEventSubscriptionService::convert_to_extension_format(&event);
 
         assert_eq!(event_type, "my_custom_event");
         assert_eq!(payload["event_type"], "my_custom_event");
@@ -287,7 +287,8 @@ mod tests {
             timestamp: 1234567890,
         };
 
-        let (event_type, payload) = ExtensionEventSubscriptionService::convert_to_extension_format(&event);
+        let (event_type, payload) =
+            ExtensionEventSubscriptionService::convert_to_extension_format(&event);
 
         assert_eq!(event_type, "AgentExecutionStarted");
         assert_eq!(payload["event_type"], "AgentExecutionStarted");

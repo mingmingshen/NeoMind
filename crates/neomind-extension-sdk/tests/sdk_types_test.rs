@@ -32,21 +32,23 @@ fn test_sdk_metadata_with_description() {
     let meta = SdkExtensionMetadata::new("test.extension", "Test", "1.0.0")
         .with_description("A test extension for unit testing");
 
-    assert_eq!(meta.description, Some("A test extension for unit testing".to_string()));
+    assert_eq!(
+        meta.description,
+        Some("A test extension for unit testing".to_string())
+    );
 }
 
 #[test]
 fn test_sdk_metadata_with_author() {
-    let meta = SdkExtensionMetadata::new("test.extension", "Test", "1.0.0")
-        .with_author("Test Author");
+    let meta =
+        SdkExtensionMetadata::new("test.extension", "Test", "1.0.0").with_author("Test Author");
 
     assert_eq!(meta.author, Some("Test Author".to_string()));
 }
 
 #[test]
 fn test_sdk_metadata_with_type() {
-    let meta = SdkExtensionMetadata::new("test.extension", "Test", "1.0.0")
-        .with_type("wasm");
+    let meta = SdkExtensionMetadata::new("test.extension", "Test", "1.0.0").with_type("wasm");
 
     assert_eq!(meta.extension_type, "wasm");
 }
@@ -99,11 +101,7 @@ fn test_metric_data_type_serialization() {
 
 #[test]
 fn test_metric_definition_creation() {
-    let metric = SdkMetricDefinition::new(
-        "temperature",
-        "Temperature",
-        SdkMetricDataType::Float,
-    );
+    let metric = SdkMetricDefinition::new("temperature", "Temperature", SdkMetricDataType::Float);
 
     assert_eq!(metric.name, "temperature");
     assert_eq!(metric.display_name, "Temperature");
@@ -116,8 +114,8 @@ fn test_metric_definition_creation() {
 
 #[test]
 fn test_metric_definition_with_unit() {
-    let metric = SdkMetricDefinition::new("temp", "Temperature", SdkMetricDataType::Float)
-        .with_unit("°C");
+    let metric =
+        SdkMetricDefinition::new("temp", "Temperature", SdkMetricDataType::Float).with_unit("°C");
 
     assert_eq!(metric.unit, "°C");
 }
@@ -262,8 +260,7 @@ fn test_parameter_definition_with_description() {
 
 #[test]
 fn test_parameter_definition_optional() {
-    let param = SdkParameterDefinition::new("amount", SdkMetricDataType::Integer)
-        .optional();
+    let param = SdkParameterDefinition::new("amount", SdkMetricDataType::Integer).optional();
 
     assert!(!param.required);
 }
@@ -295,8 +292,7 @@ fn test_command_definition_creation() {
 
 #[test]
 fn test_command_definition_with_description() {
-    let cmd = SdkCommandDefinition::new("execute")
-        .with_description("Execute a command");
+    let cmd = SdkCommandDefinition::new("execute").with_description("Execute a command");
 
     assert_eq!(cmd.description, "Execute a command");
 }
@@ -304,8 +300,14 @@ fn test_command_definition_with_description() {
 #[test]
 fn test_command_definition_with_parameters() {
     let cmd = SdkCommandDefinition::new("execute")
-        .param(SdkParameterDefinition::new("target", SdkMetricDataType::String))
-        .param(SdkParameterDefinition::new("timeout", SdkMetricDataType::Integer));
+        .param(SdkParameterDefinition::new(
+            "target",
+            SdkMetricDataType::String,
+        ))
+        .param(SdkParameterDefinition::new(
+            "timeout",
+            SdkMetricDataType::Integer,
+        ));
 
     assert_eq!(cmd.parameters.len(), 2);
 }
@@ -411,7 +413,7 @@ fn test_extension_error_other() {
 fn test_extension_error_from_serde_json() {
     let json_err = serde_json::from_str::<serde_json::Value>("invalid json");
     let sdk_err: SdkExtensionError = json_err.unwrap_err().into();
-    
+
     assert!(matches!(sdk_err, SdkExtensionError::InvalidFormat(_)));
 }
 
@@ -421,8 +423,7 @@ fn test_extension_error_from_serde_json() {
 
 #[test]
 fn test_frontend_manifest_creation() {
-    let manifest = FrontendManifestBuilder::new("test.extension", "1.0.0")
-        .build();
+    let manifest = FrontendManifestBuilder::new("test.extension", "1.0.0").build();
 
     assert_eq!(manifest.id, "test.extension");
     assert_eq!(manifest.version, "1.0.0");
@@ -456,7 +457,10 @@ fn test_frontend_manifest_with_card() {
 
     assert_eq!(manifest.components.len(), 1);
     assert_eq!(manifest.components[0].name, "status-card");
-    assert_eq!(manifest.components[0].component_type, FrontendComponentType::Card);
+    assert_eq!(
+        manifest.components[0].component_type,
+        FrontendComponentType::Card
+    );
 }
 
 #[test]
@@ -466,7 +470,10 @@ fn test_frontend_manifest_with_widget() {
         .build();
 
     assert_eq!(manifest.components.len(), 1);
-    assert_eq!(manifest.components[0].component_type, FrontendComponentType::Widget);
+    assert_eq!(
+        manifest.components[0].component_type,
+        FrontendComponentType::Widget
+    );
 }
 
 #[test]
@@ -476,7 +483,10 @@ fn test_frontend_manifest_with_panel() {
         .build();
 
     assert_eq!(manifest.components.len(), 1);
-    assert_eq!(manifest.components[0].component_type, FrontendComponentType::Panel);
+    assert_eq!(
+        manifest.components[0].component_type,
+        FrontendComponentType::Panel
+    );
 }
 
 #[test]
@@ -505,7 +515,10 @@ fn test_frontend_manifest_with_dependency() {
         .build();
 
     assert_eq!(manifest.dependencies.len(), 2);
-    assert_eq!(manifest.dependencies.get("react"), Some(&"^18.0.0".to_string()));
+    assert_eq!(
+        manifest.dependencies.get("react"),
+        Some(&"^18.0.0".to_string())
+    );
 }
 
 #[test]
@@ -708,27 +721,21 @@ fn test_metric_builder() {
 
 #[test]
 fn test_metric_builder_integer() {
-    let metric = MetricBuilder::new("count", "Count")
-        .integer()
-        .build();
+    let metric = MetricBuilder::new("count", "Count").integer().build();
 
     assert_eq!(metric.data_type, MetricDataType::Integer);
 }
 
 #[test]
 fn test_metric_builder_boolean() {
-    let metric = MetricBuilder::new("enabled", "Enabled")
-        .boolean()
-        .build();
+    let metric = MetricBuilder::new("enabled", "Enabled").boolean().build();
 
     assert_eq!(metric.data_type, MetricDataType::Boolean);
 }
 
 #[test]
 fn test_metric_builder_string() {
-    let metric = MetricBuilder::new("name", "Name")
-        .string()
-        .build();
+    let metric = MetricBuilder::new("name", "Name").string().build();
 
     assert_eq!(metric.data_type, MetricDataType::String);
 }

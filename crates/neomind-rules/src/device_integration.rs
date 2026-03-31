@@ -5,8 +5,8 @@
 //! Also supports extension command execution.
 
 use crate::dsl::RuleAction;
-use crate::error::RuleError;
 use crate::engine::{CompiledRule, RuleExecutionResult, RuleId, ValueProvider};
+use crate::error::RuleError;
 use crate::extension_integration::ExtensionRegistry;
 use neomind_core::{
     datasource::DataSourceId, EventBus, MetricValue as CoreMetricValue, NeoMindEvent,

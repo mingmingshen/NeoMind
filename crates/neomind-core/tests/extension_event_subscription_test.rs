@@ -23,7 +23,7 @@ use neomind_core::{
 use serde_json::json;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
-use tokio::sync::{mpsc};
+use tokio::sync::mpsc;
 
 // ============================================================================
 // Test Extensions
@@ -57,11 +57,7 @@ impl Extension for DeviceEventExtension {
     fn metadata(&self) -> &ExtensionMetadata {
         static META: std::sync::OnceLock<ExtensionMetadata> = std::sync::OnceLock::new();
         META.get_or_init(|| {
-            ExtensionMetadata::new(
-                "device-event-test",
-                "Device Event Test",
-                "1.0.0"
-            )
+            ExtensionMetadata::new("device-event-test", "Device Event Test", "1.0.0")
         })
     }
 
@@ -89,7 +85,11 @@ impl Extension for DeviceEventExtension {
         &["DeviceMetric", "DeviceOnline", "DeviceOffline"]
     }
 
-    fn handle_event(&self, event_type: &str, payload: &serde_json::Value) -> Result<(), ExtensionError> {
+    fn handle_event(
+        &self,
+        event_type: &str,
+        payload: &serde_json::Value,
+    ) -> Result<(), ExtensionError> {
         self.event_count.fetch_add(1, Ordering::SeqCst);
         let mut guard = self.last_event.write().unwrap();
         *guard = Some(payload.clone());
@@ -133,13 +133,7 @@ impl AllEventsExtension {
 impl Extension for AllEventsExtension {
     fn metadata(&self) -> &ExtensionMetadata {
         static META: std::sync::OnceLock<ExtensionMetadata> = std::sync::OnceLock::new();
-        META.get_or_init(|| {
-            ExtensionMetadata::new(
-                "all-events-test",
-                "All Events Test",
-                "1.0.0"
-            )
-        })
+        META.get_or_init(|| ExtensionMetadata::new("all-events-test", "All Events Test", "1.0.0"))
     }
 
     fn metrics(&self) -> Vec<neomind_core::extension::system::MetricDescriptor> {
@@ -166,7 +160,11 @@ impl Extension for AllEventsExtension {
         &["all"]
     }
 
-    fn handle_event(&self, event_type: &str, _payload: &serde_json::Value) -> Result<(), ExtensionError> {
+    fn handle_event(
+        &self,
+        event_type: &str,
+        _payload: &serde_json::Value,
+    ) -> Result<(), ExtensionError> {
         self.event_count.fetch_add(1, Ordering::SeqCst);
         let mut guard = self.received_events.write().unwrap();
         guard.push(event_type.to_string());
@@ -204,11 +202,7 @@ impl Extension for PrefixMatchExtension {
     fn metadata(&self) -> &ExtensionMetadata {
         static META: std::sync::OnceLock<ExtensionMetadata> = std::sync::OnceLock::new();
         META.get_or_init(|| {
-            ExtensionMetadata::new(
-                "prefix-match-test",
-                "Prefix Match Test",
-                "1.0.0"
-            )
+            ExtensionMetadata::new("prefix-match-test", "Prefix Match Test", "1.0.0")
         })
     }
 
@@ -236,7 +230,11 @@ impl Extension for PrefixMatchExtension {
         &["Agent", "Device"]
     }
 
-    fn handle_event(&self, event_type: &str, _payload: &serde_json::Value) -> Result<(), ExtensionError> {
+    fn handle_event(
+        &self,
+        event_type: &str,
+        _payload: &serde_json::Value,
+    ) -> Result<(), ExtensionError> {
         self.event_count.fetch_add(1, Ordering::SeqCst);
         tracing::debug!(event_type = %event_type, "PrefixMatchExtension received event");
         Ok(())
@@ -254,13 +252,7 @@ struct NoEventsExtension;
 impl Extension for NoEventsExtension {
     fn metadata(&self) -> &ExtensionMetadata {
         static META: std::sync::OnceLock<ExtensionMetadata> = std::sync::OnceLock::new();
-        META.get_or_init(|| {
-            ExtensionMetadata::new(
-                "no-events-test",
-                "No Events Test",
-                "1.0.0"
-            )
-        })
+        META.get_or_init(|| ExtensionMetadata::new("no-events-test", "No Events Test", "1.0.0"))
     }
 
     fn metrics(&self) -> Vec<neomind_core::extension::system::MetricDescriptor> {
@@ -313,15 +305,20 @@ async fn test_extension_event_subscription_service_start_stop() {
 async fn test_extension_event_subscription_exact_match() {
     let event_bus = Arc::new(EventBus::new());
     let event_dispatcher = Arc::new(EventDispatcher::new());
-    let service = ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
+    let service =
+        ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
 
     // Register extension
-    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(DeviceEventExtension::new())));
-    event_dispatcher.register_in_process_extension("device-ext".to_string(), extension.clone()).await;
+    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(
+        DeviceEventExtension::new(),
+    )));
+    event_dispatcher
+        .register_in_process_extension("device-ext".to_string(), extension.clone())
+        .await;
 
     // Start service
     service.start();
-    
+
     // Wait for service to be ready
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
@@ -341,7 +338,11 @@ async fn test_extension_event_subscription_exact_match() {
 
     // Check that extension received the event
     let ext_guard = extension.read().await;
-    let ext_ref = ext_guard.as_ref().as_any().downcast_ref::<DeviceEventExtension>().unwrap();
+    let ext_ref = ext_guard
+        .as_ref()
+        .as_any()
+        .downcast_ref::<DeviceEventExtension>()
+        .unwrap();
     assert_eq!(ext_ref.get_event_count(), 1);
 
     let last_event = ext_ref.get_last_event().await;
@@ -356,11 +357,16 @@ async fn test_extension_event_subscription_exact_match() {
 async fn test_extension_event_subscription_wildcard() {
     let event_bus = Arc::new(EventBus::new());
     let event_dispatcher = Arc::new(EventDispatcher::new());
-    let service = ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
+    let service =
+        ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
 
     // Register extension that subscribes to all events
-    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(AllEventsExtension::new())));
-    event_dispatcher.register_in_process_extension("all-events-ext".to_string(), extension.clone()).await;
+    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(
+        AllEventsExtension::new(),
+    )));
+    event_dispatcher
+        .register_in_process_extension("all-events-ext".to_string(), extension.clone())
+        .await;
 
     // Start service
     service.start();
@@ -399,7 +405,11 @@ async fn test_extension_event_subscription_wildcard() {
 
     // Check that extension received all events
     let ext_guard = extension.read().await;
-    let ext_ref = ext_guard.as_ref().as_any().downcast_ref::<AllEventsExtension>().unwrap();
+    let ext_ref = ext_guard
+        .as_ref()
+        .as_any()
+        .downcast_ref::<AllEventsExtension>()
+        .unwrap();
     assert_eq!(ext_ref.get_event_count(), 3);
 
     let received_events = ext_ref.get_received_events().await;
@@ -412,11 +422,16 @@ async fn test_extension_event_subscription_wildcard() {
 async fn test_extension_event_subscription_prefix_match() {
     let event_bus = Arc::new(EventBus::new());
     let event_dispatcher = Arc::new(EventDispatcher::new());
-    let service = ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
+    let service =
+        ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
 
     // Register extension with prefix subscriptions
-    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(PrefixMatchExtension::new())));
-    event_dispatcher.register_in_process_extension("prefix-ext".to_string(), extension.clone()).await;
+    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(
+        PrefixMatchExtension::new(),
+    )));
+    event_dispatcher
+        .register_in_process_extension("prefix-ext".to_string(), extension.clone())
+        .await;
 
     // Start service
     service.start();
@@ -478,7 +493,11 @@ async fn test_extension_event_subscription_prefix_match() {
 
     // Check that extension received only matching events
     let ext_guard = extension.read().await;
-    let ext_ref = ext_guard.as_ref().as_any().downcast_ref::<PrefixMatchExtension>().unwrap();
+    let ext_ref = ext_guard
+        .as_ref()
+        .as_any()
+        .downcast_ref::<PrefixMatchExtension>()
+        .unwrap();
     assert_eq!(ext_ref.get_event_count(), 4); // 2 Device + 2 Agent events
 }
 
@@ -486,11 +505,14 @@ async fn test_extension_event_subscription_prefix_match() {
 async fn test_extension_event_subscription_no_events() {
     let event_bus = Arc::new(EventBus::new());
     let event_dispatcher = Arc::new(EventDispatcher::new());
-    let service = ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
+    let service =
+        ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
 
     // Register extension that subscribes to no events
     let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(NoEventsExtension)));
-    event_dispatcher.register_in_process_extension("no-events-ext".to_string(), extension.clone()).await;
+    event_dispatcher
+        .register_in_process_extension("no-events-ext".to_string(), extension.clone())
+        .await;
 
     // Start service
     service.start();
@@ -515,14 +537,23 @@ async fn test_extension_event_subscription_no_events() {
 async fn test_extension_event_subscription_multiple_extensions() {
     let event_bus = Arc::new(EventBus::new());
     let event_dispatcher = Arc::new(EventDispatcher::new());
-    let service = ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
+    let service =
+        ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
 
     // Register multiple extensions
-    let device_ext: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(DeviceEventExtension::new())));
-    let all_ext: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(AllEventsExtension::new())));
+    let device_ext: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(
+        DeviceEventExtension::new(),
+    )));
+    let all_ext: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(
+        AllEventsExtension::new(),
+    )));
 
-    event_dispatcher.register_in_process_extension("device-ext".to_string(), device_ext.clone()).await;
-    event_dispatcher.register_in_process_extension("all-events-ext".to_string(), all_ext.clone()).await;
+    event_dispatcher
+        .register_in_process_extension("device-ext".to_string(), device_ext.clone())
+        .await;
+    event_dispatcher
+        .register_in_process_extension("all-events-ext".to_string(), all_ext.clone())
+        .await;
 
     // Start service
     service.start();
@@ -554,12 +585,20 @@ async fn test_extension_event_subscription_multiple_extensions() {
 
     // Check device extension received only device event
     let device_guard = device_ext.read().await;
-    let device_ref = device_guard.as_ref().as_any().downcast_ref::<DeviceEventExtension>().unwrap();
+    let device_ref = device_guard
+        .as_ref()
+        .as_any()
+        .downcast_ref::<DeviceEventExtension>()
+        .unwrap();
     assert_eq!(device_ref.get_event_count(), 1);
 
     // Check all-events extension received both events
     let all_guard = all_ext.read().await;
-    let all_ref = all_guard.as_ref().as_any().downcast_ref::<AllEventsExtension>().unwrap();
+    let all_ref = all_guard
+        .as_ref()
+        .as_any()
+        .downcast_ref::<AllEventsExtension>()
+        .unwrap();
     assert_eq!(all_ref.get_event_count(), 2);
 }
 
@@ -567,7 +606,8 @@ async fn test_extension_event_subscription_multiple_extensions() {
 async fn test_extension_event_subscription_isolated_extension() {
     let event_bus = Arc::new(EventBus::new());
     let event_dispatcher = Arc::new(EventDispatcher::new());
-    let service = ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
+    let service =
+        ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
 
     // Create event channel for isolated extension
     let (event_tx, mut event_rx) = mpsc::channel::<(String, serde_json::Value)>(100);
@@ -575,13 +615,16 @@ async fn test_extension_event_subscription_isolated_extension() {
     // Register isolated extension
     event_dispatcher.register_isolated_extension(
         "isolated-ext".to_string(),
-        vec!["DeviceMetric".to_string(), "AgentExecutionStarted".to_string()],
+        vec![
+            "DeviceMetric".to_string(),
+            "AgentExecutionStarted".to_string(),
+        ],
         event_tx,
     );
 
     // Start service
     service.start();
-    
+
     // Wait for service to be ready
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
@@ -611,11 +654,16 @@ async fn test_extension_event_subscription_isolated_extension() {
 async fn test_extension_event_subscription_automatic_conversion() {
     let event_bus = Arc::new(EventBus::new());
     let event_dispatcher = Arc::new(EventDispatcher::new());
-    let service = ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
+    let service =
+        ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
 
     // Register extension that subscribes to all events
-    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(AllEventsExtension::new())));
-    event_dispatcher.register_in_process_extension("auto-conv-ext".to_string(), extension.clone()).await;
+    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(
+        AllEventsExtension::new(),
+    )));
+    event_dispatcher
+        .register_in_process_extension("auto-conv-ext".to_string(), extension.clone())
+        .await;
 
     // Start service
     service.start();
@@ -700,7 +748,11 @@ async fn test_extension_event_subscription_automatic_conversion() {
 
     // Check that extension received all events
     let ext_guard = extension.read().await;
-    let ext_ref = ext_guard.as_ref().as_any().downcast_ref::<AllEventsExtension>().unwrap();
+    let ext_ref = ext_guard
+        .as_ref()
+        .as_any()
+        .downcast_ref::<AllEventsExtension>()
+        .unwrap();
     assert_eq!(ext_ref.get_event_count(), 10);
 
     let received_events = ext_ref.get_received_events().await;
@@ -720,11 +772,16 @@ async fn test_extension_event_subscription_automatic_conversion() {
 async fn test_extension_event_subscription_event_format() {
     let event_bus = Arc::new(EventBus::new());
     let event_dispatcher = Arc::new(EventDispatcher::new());
-    let service = ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
+    let service =
+        ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
 
     // Register extension
-    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(DeviceEventExtension::new())));
-    event_dispatcher.register_in_process_extension("format-ext".to_string(), extension.clone()).await;
+    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(
+        DeviceEventExtension::new(),
+    )));
+    event_dispatcher
+        .register_in_process_extension("format-ext".to_string(), extension.clone())
+        .await;
 
     // Start service
     service.start();
@@ -745,7 +802,11 @@ async fn test_extension_event_subscription_event_format() {
 
     // Check event format
     let ext_guard = extension.read().await;
-    let ext_ref = ext_guard.as_ref().as_any().downcast_ref::<DeviceEventExtension>().unwrap();
+    let ext_ref = ext_guard
+        .as_ref()
+        .as_any()
+        .downcast_ref::<DeviceEventExtension>()
+        .unwrap();
     let last_event = ext_ref.get_last_event().await;
     assert!(last_event.is_some());
 
@@ -762,18 +823,27 @@ async fn test_extension_event_subscription_event_format() {
     assert_eq!(payload["value"], serde_json::json!(25.5));
     // Quality is a float, so we need to compare with tolerance
     let quality = payload["quality"].as_f64().unwrap();
-    assert!((quality - 0.95).abs() < 0.01, "Quality mismatch: {} vs 0.95", quality);
+    assert!(
+        (quality - 0.95).abs() < 0.01,
+        "Quality mismatch: {} vs 0.95",
+        quality
+    );
 }
 
 #[tokio::test]
 async fn test_extension_event_subscription_unregister() {
     let event_bus = Arc::new(EventBus::new());
     let event_dispatcher = Arc::new(EventDispatcher::new());
-    let service = ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
+    let service =
+        ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
 
     // Register extension
-    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(DeviceEventExtension::new())));
-    event_dispatcher.register_in_process_extension("unregister-ext".to_string(), extension.clone()).await;
+    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(
+        DeviceEventExtension::new(),
+    )));
+    event_dispatcher
+        .register_in_process_extension("unregister-ext".to_string(), extension.clone())
+        .await;
 
     // Start service
     service.start();
@@ -794,7 +864,11 @@ async fn test_extension_event_subscription_unregister() {
 
     // Check extension received event
     let ext_guard = extension.read().await;
-    let ext_ref = ext_guard.as_ref().as_any().downcast_ref::<DeviceEventExtension>().unwrap();
+    let ext_ref = ext_guard
+        .as_ref()
+        .as_any()
+        .downcast_ref::<DeviceEventExtension>()
+        .unwrap();
     assert_eq!(ext_ref.get_event_count(), 1);
 
     // Unregister extension
@@ -816,7 +890,11 @@ async fn test_extension_event_subscription_unregister() {
 
     // Extension should not have received the second event
     let ext_guard = extension.read().await;
-    let ext_ref = ext_guard.as_ref().as_any().downcast_ref::<DeviceEventExtension>().unwrap();
+    let ext_ref = ext_guard
+        .as_ref()
+        .as_any()
+        .downcast_ref::<DeviceEventExtension>()
+        .unwrap();
     assert_eq!(ext_ref.get_event_count(), 1); // Still 1, not 2
 }
 
@@ -825,11 +903,19 @@ async fn test_extension_event_subscription_get_subscriptions() {
     let event_dispatcher = Arc::new(EventDispatcher::new());
 
     // Register extensions
-    let device_ext: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(DeviceEventExtension::new())));
-    let all_ext: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(AllEventsExtension::new())));
+    let device_ext: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(
+        DeviceEventExtension::new(),
+    )));
+    let all_ext: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(
+        AllEventsExtension::new(),
+    )));
 
-    event_dispatcher.register_in_process_extension("device-ext".to_string(), device_ext).await;
-    event_dispatcher.register_in_process_extension("all-events-ext".to_string(), all_ext).await;
+    event_dispatcher
+        .register_in_process_extension("device-ext".to_string(), device_ext)
+        .await;
+    event_dispatcher
+        .register_in_process_extension("all-events-ext".to_string(), all_ext)
+        .await;
 
     // Get subscriptions
     let subscriptions = event_dispatcher.get_subscriptions();
@@ -853,7 +939,8 @@ async fn test_extension_event_subscription_get_subscriptions() {
 async fn test_extension_event_subscription_error_handling() {
     let event_bus = Arc::new(EventBus::new());
     let event_dispatcher = Arc::new(EventDispatcher::new());
-    let service = ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
+    let service =
+        ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
 
     // Create extension that returns error
     struct ErrorExtension;
@@ -861,13 +948,7 @@ async fn test_extension_event_subscription_error_handling() {
     impl Extension for ErrorExtension {
         fn metadata(&self) -> &ExtensionMetadata {
             static META: std::sync::OnceLock<ExtensionMetadata> = std::sync::OnceLock::new();
-            META.get_or_init(|| {
-                ExtensionMetadata::new(
-                    "error-ext",
-                    "Error Extension",
-                    "1.0.0"
-                )
-            })
+            META.get_or_init(|| ExtensionMetadata::new("error-ext", "Error Extension", "1.0.0"))
         }
 
         fn metrics(&self) -> Vec<neomind_core::extension::system::MetricDescriptor> {
@@ -894,7 +975,11 @@ async fn test_extension_event_subscription_error_handling() {
             &["DeviceMetric"]
         }
 
-        fn handle_event(&self, _event_type: &str, _payload: &serde_json::Value) -> Result<(), ExtensionError> {
+        fn handle_event(
+            &self,
+            _event_type: &str,
+            _payload: &serde_json::Value,
+        ) -> Result<(), ExtensionError> {
             Err(ExtensionError::ExecutionFailed("Test error".to_string()))
         }
 
@@ -905,7 +990,9 @@ async fn test_extension_event_subscription_error_handling() {
 
     // Register extension
     let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(ErrorExtension)));
-    event_dispatcher.register_in_process_extension("error-ext".to_string(), extension).await;
+    event_dispatcher
+        .register_in_process_extension("error-ext".to_string(), extension)
+        .await;
 
     // Start service
     service.start();
@@ -931,7 +1018,8 @@ async fn test_extension_event_subscription_error_handling() {
 async fn test_extension_event_subscription_custom_event() {
     let event_bus = Arc::new(EventBus::new());
     let event_dispatcher = Arc::new(EventDispatcher::new());
-    let service = ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
+    let service =
+        ExtensionEventSubscriptionService::new(event_bus.clone(), event_dispatcher.clone());
 
     // Register extension that subscribes to custom event
     struct CustomEventExtension {
@@ -955,11 +1043,7 @@ async fn test_extension_event_subscription_custom_event() {
         fn metadata(&self) -> &ExtensionMetadata {
             static META: std::sync::OnceLock<ExtensionMetadata> = std::sync::OnceLock::new();
             META.get_or_init(|| {
-                ExtensionMetadata::new(
-                    "custom-event-ext",
-                    "Custom Event Extension",
-                    "1.0.0"
-                )
+                ExtensionMetadata::new("custom-event-ext", "Custom Event Extension", "1.0.0")
             })
         }
 
@@ -987,7 +1071,11 @@ async fn test_extension_event_subscription_custom_event() {
             &["my_custom_event"]
         }
 
-        fn handle_event(&self, event_type: &str, payload: &serde_json::Value) -> Result<(), ExtensionError> {
+        fn handle_event(
+            &self,
+            event_type: &str,
+            payload: &serde_json::Value,
+        ) -> Result<(), ExtensionError> {
             if event_type == "my_custom_event" {
                 let mut guard = self.received_custom.write().unwrap();
                 *guard = true;
@@ -1002,8 +1090,12 @@ async fn test_extension_event_subscription_custom_event() {
         }
     }
 
-    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(CustomEventExtension::new())));
-    event_dispatcher.register_in_process_extension("custom-ext".to_string(), extension.clone()).await;
+    let extension: DynExtension = Arc::new(tokio::sync::RwLock::new(Box::new(
+        CustomEventExtension::new(),
+    )));
+    event_dispatcher
+        .register_in_process_extension("custom-ext".to_string(), extension.clone())
+        .await;
 
     // Start service
     service.start();
@@ -1021,6 +1113,10 @@ async fn test_extension_event_subscription_custom_event() {
 
     // Check that extension received custom event
     let ext_guard = extension.read().await;
-    let ext_ref = ext_guard.as_ref().as_any().downcast_ref::<CustomEventExtension>().unwrap();
+    let ext_ref = ext_guard
+        .as_ref()
+        .as_any()
+        .downcast_ref::<CustomEventExtension>()
+        .unwrap();
     assert!(ext_ref.received_custom());
 }

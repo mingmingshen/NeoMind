@@ -82,10 +82,7 @@ pub async fn list_all_data_sources_handler(
 }
 
 /// Fetch latest telemetry values for all collected data sources.
-async fn populate_latest_values(
-    state: &ServerState,
-    sources: &mut Vec<UnifiedDataSourceInfo>,
-) {
+async fn populate_latest_values(state: &ServerState, sources: &mut Vec<UnifiedDataSourceInfo>) {
     let telemetry = &state.devices.telemetry;
 
     for source in sources.iter_mut() {
@@ -117,17 +114,18 @@ async fn populate_latest_values(
 
 /// Collect data sources from all registered devices.
 /// Includes both template-defined metrics and virtual metrics from telemetry storage.
-async fn collect_device_sources(
-    state: &ServerState,
-    sources: &mut Vec<UnifiedDataSourceInfo>,
-) {
+async fn collect_device_sources(state: &ServerState, sources: &mut Vec<UnifiedDataSourceInfo>) {
     let devices = state.devices.service.list_devices().await;
 
     for device in devices {
         let mut known_metrics: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         // 1. Add template-defined metrics
-        let template = state.devices.registry.get_template(&device.device_type).await;
+        let template = state
+            .devices
+            .registry
+            .get_template(&device.device_type)
+            .await;
 
         if let Some(template) = template {
             for metric in &template.metrics {
@@ -163,7 +161,12 @@ async fn collect_device_sources(
         }
 
         // 2. Add virtual metrics from telemetry storage (metrics not in template)
-        if let Ok(telemetry_metrics) = state.devices.telemetry.list_metrics(&device.device_id).await {
+        if let Ok(telemetry_metrics) = state
+            .devices
+            .telemetry
+            .list_metrics(&device.device_id)
+            .await
+        {
             for metric_name in telemetry_metrics {
                 if known_metrics.contains(&metric_name) {
                     continue; // Already added from template
@@ -191,10 +194,7 @@ async fn collect_device_sources(
 }
 
 /// Collect data sources from all registered extensions.
-async fn collect_extension_sources(
-    state: &ServerState,
-    sources: &mut Vec<UnifiedDataSourceInfo>,
-) {
+async fn collect_extension_sources(state: &ServerState, sources: &mut Vec<UnifiedDataSourceInfo>) {
     // Get all registered extensions
     let extensions = state.extensions.runtime.list().await;
 
@@ -232,10 +232,7 @@ async fn collect_extension_sources(
 }
 
 /// Collect data sources from all registered transforms.
-async fn collect_transform_sources(
-    state: &ServerState,
-    sources: &mut Vec<UnifiedDataSourceInfo>,
-) {
+async fn collect_transform_sources(state: &ServerState, sources: &mut Vec<UnifiedDataSourceInfo>) {
     let Some(transform_engine) = &state.automation.transform_engine else {
         return;
     };

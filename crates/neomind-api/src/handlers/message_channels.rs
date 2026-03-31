@@ -18,8 +18,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use neomind_messages::{ChannelFactory, ChannelInfo, ChannelStats, MessageChannel};
 use neomind_messages::channels::ChannelFilter;
+use neomind_messages::{ChannelFactory, ChannelInfo, ChannelStats, MessageChannel};
 
 #[cfg(feature = "webhook")]
 use neomind_messages::WebhookChannelFactory;
@@ -309,10 +309,7 @@ pub async fn update_channel_handler(
 
     // Get updated info
     let registry_guard = registry.read().await;
-    let info = registry_guard
-        .get_info(&name)
-        .await
-        .expect("Just updated");
+    let info = registry_guard.get_info(&name).await.expect("Just updated");
 
     ok(json!({
         "message": "Channel updated successfully",
@@ -498,7 +495,10 @@ pub async fn update_channel_filter_handler(
 
     // Check if channel exists
     if registry_guard.get(&name).await.is_none() {
-        return Err(ErrorResponse::not_found(&format!("Channel not found: {}", name)));
+        return Err(ErrorResponse::not_found(&format!(
+            "Channel not found: {}",
+            name
+        )));
     }
 
     // Build ChannelFilter
@@ -521,7 +521,9 @@ pub async fn update_channel_filter_handler(
     filter.source_ids = req.source_ids;
 
     // Save filter
-    registry_guard.set_filter(&name, filter.clone()).await
+    registry_guard
+        .set_filter(&name, filter.clone())
+        .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!({
@@ -599,15 +601,36 @@ pub fn message_channels_router() -> axum::Router<ServerState> {
         .route("/messages/channels/:name", get(get_channel_handler))
         .route("/messages/channels/:name", delete(delete_channel_handler))
         .route("/messages/channels/:name/test", post(test_channel_handler))
-        .route("/messages/channels/:name/enabled", put(toggle_enabled_handler))
+        .route(
+            "/messages/channels/:name/enabled",
+            put(toggle_enabled_handler),
+        )
         // Recipient management (for email channels)
-        .route("/messages/channels/:name/recipients", get(list_recipients_handler))
-        .route("/messages/channels/:name/recipients", post(add_recipient_handler))
-        .route("/messages/channels/:name/recipients/:email", delete(remove_recipient_handler))
+        .route(
+            "/messages/channels/:name/recipients",
+            get(list_recipients_handler),
+        )
+        .route(
+            "/messages/channels/:name/recipients",
+            post(add_recipient_handler),
+        )
+        .route(
+            "/messages/channels/:name/recipients/:email",
+            delete(remove_recipient_handler),
+        )
         // Filter management
-        .route("/messages/channels/:name/filter", get(get_channel_filter_handler))
-        .route("/messages/channels/:name/filter", put(update_channel_filter_handler))
+        .route(
+            "/messages/channels/:name/filter",
+            get(get_channel_filter_handler),
+        )
+        .route(
+            "/messages/channels/:name/filter",
+            put(update_channel_filter_handler),
+        )
         // Delivery log management
         .route("/messages/delivery-logs", get(list_delivery_logs_handler))
-        .route("/messages/delivery-logs/stats", get(get_delivery_stats_handler))
+        .route(
+            "/messages/delivery-logs/stats",
+            get(get_delivery_stats_handler),
+        )
 }

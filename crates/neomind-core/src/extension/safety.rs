@@ -523,10 +523,7 @@ where
 /// Execute a fallible closure with panic protection.
 ///
 /// This version handles closures that return Result.
-pub fn with_panic_protection_fallible<T, E, F>(
-    context: &str,
-    f: F,
-) -> std::result::Result<T, E>
+pub fn with_panic_protection_fallible<T, E, F>(context: &str, f: F) -> std::result::Result<T, E>
 where
     F: FnOnce() -> std::result::Result<T, E> + std::panic::UnwindSafe,
     E: From<String>,

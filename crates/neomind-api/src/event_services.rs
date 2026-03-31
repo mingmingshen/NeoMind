@@ -299,10 +299,13 @@ impl TransformEventService {
                                             // Store to time series storage for historical queries
                                             // Use storage_device_id() to get "transform:{transform_id}" format
                                             // for proper querying from data explorer
-                                            let storage_device_id = transformed_metric.storage_device_id();
+                                            let storage_device_id =
+                                                transformed_metric.storage_device_id();
                                             let data_point = neomind_devices::DataPoint {
                                                 timestamp: transformed_metric.timestamp,
-                                                value: neomind_devices::MetricValue::Float(transformed_metric.value),
+                                                value: neomind_devices::MetricValue::Float(
+                                                    transformed_metric.value,
+                                                ),
                                                 quality: transformed_metric.quality,
                                             };
                                             if let Err(e) = time_series_storage_inner

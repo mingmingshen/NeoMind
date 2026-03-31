@@ -213,8 +213,14 @@ mod tests {
 
     #[test]
     fn test_delivery_status() {
-        assert_eq!(DeliveryStatus::from_string("success"), Some(DeliveryStatus::Success));
-        assert_eq!(DeliveryStatus::from_string("failed"), Some(DeliveryStatus::Failed));
+        assert_eq!(
+            DeliveryStatus::from_string("success"),
+            Some(DeliveryStatus::Success)
+        );
+        assert_eq!(
+            DeliveryStatus::from_string("failed"),
+            Some(DeliveryStatus::Failed)
+        );
         assert_eq!(DeliveryStatus::from_string("invalid"), None);
     }
 
@@ -239,7 +245,8 @@ mod tests {
             "event_123".to_string(),
             "webhook_1".to_string(),
             String::new(),
-        ).with_status(DeliveryStatus::Success);
+        )
+        .with_status(DeliveryStatus::Success);
 
         assert_eq!(log.status, DeliveryStatus::Success);
         assert!(!log.can_retry()); // Success means no retry needed
@@ -298,7 +305,8 @@ mod tests {
             "event_123".to_string(),
             "webhook_1".to_string(),
             r#"{"data":42}"#.to_string(),
-        ).with_status(DeliveryStatus::Success);
+        )
+        .with_status(DeliveryStatus::Success);
 
         let json = serde_json::to_string(&log).unwrap();
         assert!(json.contains("event_123"));

@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use tracing::{info, error};
+use tracing::{error, info};
 
 use neomind_core::extension::package::ExtensionPackage;
 
@@ -67,17 +67,21 @@ impl ExtensionInstallService {
     ) -> Result<neomind_core::extension::package::InstallResult, Box<dyn std::error::Error>> {
         info!(
             "Installing extension from byte stream{}",
-            source_url.map(|u| format!(" (from {})", u)).unwrap_or_default()
+            source_url
+                .map(|u| format!(" (from {})", u))
+                .unwrap_or_default()
         );
 
         // Save to temporary file
-        let temp_nep = self.nep_cache_dir.join(format!("temp_{}.nep", uuid::Uuid::new_v4()));
-        
+        let temp_nep = self
+            .nep_cache_dir
+            .join(format!("temp_{}.nep", uuid::Uuid::new_v4()));
+
         // Ensure cache directory exists
         if let Some(parent) = temp_nep.parent() {
             fs::create_dir_all(parent).await?;
         }
-        
+
         fs::write(&temp_nep, bytes).await?;
 
         // Use unified installation flow
@@ -91,7 +95,10 @@ impl ExtensionInstallService {
 
     /// Scan /extensions/ directory and auto-install all .nep packages
     pub async fn sync_nep_cache(&self) -> Result<SyncReport, Box<dyn std::error::Error>> {
-        info!("Scanning {} for .nep packages", self.nep_cache_dir.display());
+        info!(
+            "Scanning {} for .nep packages",
+            self.nep_cache_dir.display()
+        );
 
         if !self.nep_cache_dir.exists() {
             return Ok(SyncReport::default());
@@ -138,7 +145,7 @@ impl ExtensionInstallService {
         new_version: &str,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let ext_dir = self.install_dir.join(ext_id);
-        
+
         if !ext_dir.exists() {
             return Ok(true); // New installation
         }
@@ -152,7 +159,10 @@ impl ExtensionInstallService {
         let manifest: serde_json::Value = serde_json::from_str(&manifest_content)?;
 
         if let Some(current) = manifest.get("version").and_then(|v| v.as_str()) {
-            match (current.parse::<semver::Version>(), new_version.parse::<semver::Version>()) {
+            match (
+                current.parse::<semver::Version>(),
+                new_version.parse::<semver::Version>(),
+            ) {
                 (Ok(cur), Ok(new)) => return Ok(cur < new),
                 _ => return Ok(current != new_version),
             }
@@ -190,7 +200,7 @@ impl ExtensionInstallService {
         let version = &package.manifest.version;
 
         let ext_dir = self.install_dir.join(ext_id);
-        
+
         if !ext_dir.exists() {
             return Ok(ProcessAction::Installed);
         }

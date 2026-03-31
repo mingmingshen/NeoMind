@@ -1909,6 +1909,11 @@ export interface AiAgentDetail extends AiAgent {
   enable_tool_chaining?: boolean
   max_chain_depth?: number
   priority?: number
+  /** Tool configuration for function calling mode */
+  tool_config?: {
+    enabled: boolean
+    allowed_tools?: string[]
+  }
 }
 
 /**
@@ -2177,6 +2182,11 @@ export interface CreateAgentRequest {
   priority?: number
   /** Context window size in tokens (default: 8192) */
   context_window_size?: number
+  /** Tool configuration for function calling mode */
+  tool_config?: {
+    enabled: boolean
+    allowed_tools?: string[]
+  }
 }
 
 /**

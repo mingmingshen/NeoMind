@@ -8,11 +8,11 @@
 
 #![allow(dead_code)]
 
-use neomind_core::extension::context::{
-    ExtensionCapabilityProvider, CapabilityManifest, CapabilityError, ExtensionCapability,
-};
-use neomind_core::eventbus::EventBus;
 use async_trait::async_trait;
+use neomind_core::eventbus::EventBus;
+use neomind_core::extension::context::{
+    CapabilityError, CapabilityManifest, ExtensionCapability, ExtensionCapabilityProvider,
+};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -43,19 +43,19 @@ impl ExtensionCapabilityProvider for MockDeviceCapabilityProvider {
         params: &serde_json::Value,
     ) -> Result<serde_json::Value, CapabilityError> {
         match capability {
-            ExtensionCapability::DeviceMetricsRead => {
-                Ok(json!({
-                    "device_id": params["device_id"],
-                    "metrics": {
-                        "cpu": 45.2,
-                        "memory": 1024,
-                        "temperature": 65.0
-                    }
-                }))
-            }
+            ExtensionCapability::DeviceMetricsRead => Ok(json!({
+                "device_id": params["device_id"],
+                "metrics": {
+                    "cpu": 45.2,
+                    "memory": 1024,
+                    "temperature": 65.0
+                }
+            })),
             ExtensionCapability::DeviceControl => {
                 if params["action"].is_null() {
-                    return Err(CapabilityError::InvalidParameters("Missing action".to_string()));
+                    return Err(CapabilityError::InvalidParameters(
+                        "Missing action".to_string(),
+                    ));
                 }
                 Ok(json!({"success": true, "action": params["action"]}))
             }
@@ -141,9 +141,7 @@ impl ExtensionCapabilityProvider for MockTelemetryCapabilityProvider {
                     ]
                 }))
             }
-            ExtensionCapability::StorageQuery => {
-                Ok(json!({"results": [], "count": 0}))
-            }
+            ExtensionCapability::StorageQuery => Ok(json!({"results": [], "count": 0})),
             _ => Err(CapabilityError::NotAvailable(capability)),
         }
     }
@@ -207,8 +205,9 @@ impl ExtensionCapabilityProvider for MockRuleCapabilityProvider {
                 if params["action"].as_str() == Some("list") {
                     return Ok(json!({"rules": ["rule-1", "rule-2"]}));
                 }
-                let rule_id = params["rule_id"].as_str()
-                    .ok_or_else(|| CapabilityError::InvalidParameters("Missing rule_id".to_string()))?;
+                let rule_id = params["rule_id"].as_str().ok_or_else(|| {
+                    CapabilityError::InvalidParameters("Missing rule_id".to_string())
+                })?;
                 Ok(json!({
                     "triggered": true,
                     "rule_id": rule_id,
@@ -241,10 +240,12 @@ impl ExtensionCapabilityProvider for MockExtensionCallCapabilityProvider {
     ) -> Result<serde_json::Value, CapabilityError> {
         match capability {
             ExtensionCapability::ExtensionCall => {
-                let extension_id = params["extension_id"].as_str()
-                    .ok_or_else(|| CapabilityError::InvalidParameters("Missing extension_id".to_string()))?;
-                let command = params["command"].as_str()
-                    .ok_or_else(|| CapabilityError::InvalidParameters("Missing command".to_string()))?;
+                let extension_id = params["extension_id"].as_str().ok_or_else(|| {
+                    CapabilityError::InvalidParameters("Missing extension_id".to_string())
+                })?;
+                let command = params["command"].as_str().ok_or_else(|| {
+                    CapabilityError::InvalidParameters("Missing command".to_string())
+                })?;
                 Ok(json!({
                     "success": true,
                     "extension_id": extension_id,
@@ -267,8 +268,12 @@ async fn test_device_provider_manifest() {
     let manifest = provider.capability_manifest();
 
     assert_eq!(manifest.capabilities.len(), 2);
-    assert!(manifest.capabilities.contains(&ExtensionCapability::DeviceMetricsRead));
-    assert!(manifest.capabilities.contains(&ExtensionCapability::DeviceControl));
+    assert!(manifest
+        .capabilities
+        .contains(&ExtensionCapability::DeviceMetricsRead));
+    assert!(manifest
+        .capabilities
+        .contains(&ExtensionCapability::DeviceControl));
 }
 
 #[tokio::test]
@@ -310,10 +315,7 @@ async fn test_device_control_missing_action() {
     let provider = MockDeviceCapabilityProvider;
 
     let result = provider
-        .invoke_capability(
-            ExtensionCapability::DeviceControl,
-            &json!({}),
-        )
+        .invoke_capability(ExtensionCapability::DeviceControl, &json!({}))
         .await;
 
     assert!(result.is_err());
@@ -330,8 +332,12 @@ async fn test_event_provider_manifest() {
     let manifest = provider.capability_manifest();
 
     assert_eq!(manifest.capabilities.len(), 2);
-    assert!(manifest.capabilities.contains(&ExtensionCapability::EventPublish));
-    assert!(manifest.capabilities.contains(&ExtensionCapability::EventSubscribe));
+    assert!(manifest
+        .capabilities
+        .contains(&ExtensionCapability::EventPublish));
+    assert!(manifest
+        .capabilities
+        .contains(&ExtensionCapability::EventSubscribe));
 }
 
 #[tokio::test]
@@ -379,8 +385,12 @@ async fn test_telemetry_provider_manifest() {
     let manifest = provider.capability_manifest();
 
     assert_eq!(manifest.capabilities.len(), 2);
-    assert!(manifest.capabilities.contains(&ExtensionCapability::TelemetryHistory));
-    assert!(manifest.capabilities.contains(&ExtensionCapability::StorageQuery));
+    assert!(manifest
+        .capabilities
+        .contains(&ExtensionCapability::TelemetryHistory));
+    assert!(manifest
+        .capabilities
+        .contains(&ExtensionCapability::StorageQuery));
 }
 
 #[tokio::test]
@@ -426,7 +436,9 @@ async fn test_agent_provider_manifest() {
     let manifest = provider.capability_manifest();
 
     assert_eq!(manifest.capabilities.len(), 1);
-    assert!(manifest.capabilities.contains(&ExtensionCapability::AgentTrigger));
+    assert!(manifest
+        .capabilities
+        .contains(&ExtensionCapability::AgentTrigger));
 }
 
 #[tokio::test]
@@ -459,7 +471,9 @@ async fn test_rule_provider_manifest() {
     let manifest = provider.capability_manifest();
 
     assert_eq!(manifest.capabilities.len(), 1);
-    assert!(manifest.capabilities.contains(&ExtensionCapability::RuleTrigger));
+    assert!(manifest
+        .capabilities
+        .contains(&ExtensionCapability::RuleTrigger));
 }
 
 #[tokio::test]
@@ -501,10 +515,7 @@ async fn test_rule_list() {
     let provider = MockRuleCapabilityProvider;
 
     let result = provider
-        .invoke_capability(
-            ExtensionCapability::RuleTrigger,
-            &json!({"action": "list"}),
-        )
+        .invoke_capability(ExtensionCapability::RuleTrigger, &json!({"action": "list"}))
         .await;
 
     assert!(result.is_ok());
@@ -522,7 +533,9 @@ async fn test_extension_call_provider_manifest() {
     let manifest = provider.capability_manifest();
 
     assert_eq!(manifest.capabilities.len(), 1);
-    assert!(manifest.capabilities.contains(&ExtensionCapability::ExtensionCall));
+    assert!(manifest
+        .capabilities
+        .contains(&ExtensionCapability::ExtensionCall));
 }
 
 #[tokio::test]
@@ -645,8 +658,14 @@ fn test_capability_error_display() {
 
 #[test]
 fn test_extension_capability_equality() {
-    assert_eq!(ExtensionCapability::DeviceMetricsRead, ExtensionCapability::DeviceMetricsRead);
-    assert_ne!(ExtensionCapability::DeviceMetricsRead, ExtensionCapability::DeviceControl);
+    assert_eq!(
+        ExtensionCapability::DeviceMetricsRead,
+        ExtensionCapability::DeviceMetricsRead
+    );
+    assert_ne!(
+        ExtensionCapability::DeviceMetricsRead,
+        ExtensionCapability::DeviceControl
+    );
 }
 
 #[test]
@@ -665,7 +684,10 @@ fn test_extension_capability_debug() {
 
 #[test]
 fn test_extension_capability_name() {
-    assert_eq!(ExtensionCapability::DeviceMetricsRead.name(), "device_metrics_read");
+    assert_eq!(
+        ExtensionCapability::DeviceMetricsRead.name(),
+        "device_metrics_read"
+    );
     assert_eq!(ExtensionCapability::EventPublish.name(), "event_publish");
     assert_eq!(ExtensionCapability::AgentTrigger.name(), "agent_trigger");
 }

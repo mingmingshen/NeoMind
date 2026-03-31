@@ -10,12 +10,12 @@ use crate::automation::discovery::auto_onboard::AutoOnboardConfig;
 use crate::automation::discovery::types::DataType;
 use crate::automation::SemanticType;
 use crate::automation::{AutoOnboardManager, DiscoveredMetric};
+use neomind_agent::llm_backends::backends::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_devices::{
     ConnectionConfig, DeviceConfig, DeviceTypeMode, DeviceTypeTemplate,
     MdlMetricDefinition as MetricDefinition,
 };
-use neomind_agent::llm_backends::backends::{OllamaConfig, OllamaRuntime};
 
 use crate::handlers::common::{ok, HandlerResult};
 use crate::models::ErrorResponse;

@@ -29,7 +29,15 @@ static TRANSFORM_NAMESPACES: OnceLock<[&str; 5]> = OnceLock::new();
 
 /// Get the transform namespaces array.
 fn get_transform_namespaces() -> &'static [&'static str; 5] {
-    TRANSFORM_NAMESPACES.get_or_init(|| ["transform.", "virtual.", "computed.", "derived.", "aggregated."])
+    TRANSFORM_NAMESPACES.get_or_init(|| {
+        [
+            "transform.",
+            "virtual.",
+            "computed.",
+            "derived.",
+            "aggregated.",
+        ]
+    })
 }
 
 /// Convert AdapterConnectionStatus to MdlConnectionStatus
@@ -159,12 +167,11 @@ pub async fn list_devices_handler(
             // Device has never been seen - return None to show as "-" in UI
             None
         } else {
-            chrono::DateTime::from_timestamp(last_seen_ts, 0)
-                .map(|dt| dt.to_rfc3339())
+            chrono::DateTime::from_timestamp(last_seen_ts, 0).map(|dt| dt.to_rfc3339())
         };
 
-        let last_seen_dt = chrono::DateTime::from_timestamp(last_seen_ts, 0)
-            .unwrap_or_else(chrono::Utc::now);
+        let last_seen_dt =
+            chrono::DateTime::from_timestamp(last_seen_ts, 0).unwrap_or_else(chrono::Utc::now);
         let instance = config_to_device_instance(&config, status, last_seen_dt);
 
         // Get template info for metric/command counts
@@ -255,9 +262,7 @@ pub async fn get_device_handler(
     let last_seen = if device_status.last_seen == 0 {
         None
     } else {
-        chrono::DateTime::from_timestamp(device_status.last_seen, 0)
-            .map(|dt| dt.to_rfc3339())
-            
+        chrono::DateTime::from_timestamp(device_status.last_seen, 0).map(|dt| dt.to_rfc3339())
     };
     let last_seen_dt = chrono::DateTime::from_timestamp(device_status.last_seen, 0)
         .unwrap_or_else(chrono::Utc::now);
@@ -318,9 +323,7 @@ pub async fn get_device_current_handler(
     let last_seen = if device_status.last_seen == 0 {
         None
     } else {
-        chrono::DateTime::from_timestamp(device_status.last_seen, 0)
-            .map(|dt| dt.to_rfc3339())
-            
+        chrono::DateTime::from_timestamp(device_status.last_seen, 0).map(|dt| dt.to_rfc3339())
     };
     let last_seen_dt = chrono::DateTime::from_timestamp(device_status.last_seen, 0)
         .unwrap_or_else(chrono::Utc::now);

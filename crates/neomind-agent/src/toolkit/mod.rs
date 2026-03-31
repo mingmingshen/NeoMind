@@ -51,6 +51,7 @@
 
 use std::sync::Arc;
 
+pub mod aggregated;
 pub mod agent_tools;
 pub mod core_tools;
 pub mod error;
@@ -60,6 +61,7 @@ pub mod registry;
 pub mod simplified;
 pub mod system_tools;
 pub mod tool;
+pub mod universal_tools;
 
 // Re-exports commonly used types
 pub use error::{NeoMindError, Result, ToolError};
@@ -96,41 +98,13 @@ pub use real::{CreateRuleTool, DeleteRuleTool, ListRulesTool};
 
 /// Core business-scenario tools with device registry abstraction
 pub use core_tools::{
-    AnalysisResult,
-    // Analysis types
-    AnalysisType,
-    BatchControlResult,
-    CommandInfo as CoreCommandInfo,
-    // Control types
-    ControlCommand,
-    ControlResult,
-    DataPoint as CoreDataPoint,
-    DeviceAnalyzeTool as CoreDeviceAnalyzeTool,
-    DeviceCapabilities,
-    DeviceControlTool,
-    // Device tools
-    DeviceDiscoverTool,
-    DeviceFilter,
-    DeviceGroup,
-    // Types
-    DeviceInfo as CoreDeviceInfo,
-    DeviceQueryTool,
-    DeviceRegistryAdapter,
-    // Registry trait and adapters
-    DeviceRegistryTrait,
-    DiscoverySummary,
-    // Rule types
-    ExtractedRuleDefinition,
-    MetricInfo as CoreMetricInfo,
-    MetricQueryResult,
-    MetricStatistics,
-    ParameterInfo,
-    RealDeviceRegistryAdapter,
-    RuleActionDef,
-    // Rule tools
-    RuleFromContextTool,
-    // Query types
-    TimeRange,
+    AnalysisResult, AnalysisType, BatchControlResult, CommandInfo as CoreCommandInfo,
+    ControlCommand, ControlResult, DataPoint as CoreDataPoint,
+    DeviceAnalyzeTool as CoreDeviceAnalyzeTool, DeviceCapabilities, DeviceControlTool,
+    DeviceDiscoverTool, DeviceFilter, DeviceGroup, DeviceInfo as CoreDeviceInfo, DeviceQueryTool,
+    DeviceRegistryAdapter, DeviceRegistryTrait, DiscoverySummary, ExtractedRuleDefinition,
+    MetricInfo as CoreMetricInfo, MetricQueryResult, MetricStatistics, ParameterInfo,
+    RealDeviceRegistryAdapter, RuleActionDef, RuleFromContextTool, TimeRange,
 };
 
 // ============================================================================
@@ -138,21 +112,9 @@ pub use core_tools::{
 // ============================================================================
 
 pub use system_tools::{
-    AcknowledgeAlertTool,
-    AlertInfo,
-    AlertSeverity,
-    // Alert tools
-    CreateAlertTool,
-    // Export tools
-    ExportToCsvTool,
-    ExportToJsonTool,
-    GenerateReportTool,
-    ListAlertsTool,
-    ServiceRestartTool,
-    SystemConfigTool,
-    SystemHelpTool,
-    // System tools
-    SystemInfoTool,
+    AcknowledgeAlertTool, AlertInfo, AlertSeverity, CreateAlertTool, ExportToCsvTool,
+    ExportToJsonTool, GenerateReportTool, ListAlertsTool, ServiceRestartTool, SystemConfigTool,
+    SystemHelpTool, SystemInfoTool,
 };
 
 // ============================================================================
@@ -160,9 +122,9 @@ pub use system_tools::{
 // ============================================================================
 
 pub use agent_tools::{
-    UpdateAgentTool,
     AgentMemoryTool, ControlAgentTool, CreateAgentTool, ExecuteAgentTool, GetAgentConversationTool,
     GetAgentExecutionDetailTool, GetAgentExecutionsTool, GetAgentTool, ListAgentsTool,
+    UpdateAgentTool,
 };
 
 // ============================================================================
@@ -173,8 +135,20 @@ pub use extension_tools::{
     ExtensionFilter, ExtensionTool, ExtensionToolExecutor, ExtensionToolGenerator,
 };
 
-// Note: ExtensionRegistry is now defined in neomind_core::extension
-// and is re-exported from neomind_core directly
+// ============================================================================
+// Universal Agent Tools (for AI Agent function calling mode)
+// ============================================================================
+
+pub use universal_tools::{ExecuteCommandTool, QueryMetricsTool, SendNotificationTool};
+
+// ============================================================================
+// Aggregated Tools (Action-based design for token efficiency)
+// ============================================================================
+
+pub use aggregated::{
+    AggregatedAlertInfo, AggregatedAlertSeverity, AggregatedToolsBuilder, AgentHistoryTool,
+    AgentTool, AlertTool, DeviceTool, RuleTool,
+};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

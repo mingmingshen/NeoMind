@@ -171,14 +171,16 @@ impl ExtensionRuntime {
 
     /// Get extension info.
     pub async fn get_info(&self, id: &str) -> Option<ExtensionRuntimeInfo> {
-        self.isolated_manager.get_info(id).map(|info| ExtensionRuntimeInfo {
-            metadata: info.descriptor.metadata,
-            is_isolated: true,
-            is_running: info.runtime.is_running,
-            path: Some(info.path),
-            metrics: info.descriptor.metrics,
-            commands: info.descriptor.commands,
-        })
+        self.isolated_manager
+            .get_info(id)
+            .map(|info| ExtensionRuntimeInfo {
+                metadata: info.descriptor.metadata,
+                is_isolated: true,
+                is_running: info.runtime.is_running,
+                path: Some(info.path),
+                metrics: info.descriptor.metrics,
+                commands: info.descriptor.commands,
+            })
     }
 
     /// List all loaded extensions.
@@ -236,7 +238,9 @@ impl ExtensionRuntime {
         &self,
         provider: Arc<dyn super::context::ExtensionCapabilityProvider>,
     ) {
-        self.isolated_manager.set_capability_provider(provider).await;
+        self.isolated_manager
+            .set_capability_provider(provider)
+            .await;
     }
 
     /// Get a proxy extension for streaming operations.

@@ -9,10 +9,10 @@ use serde_json::json;
 use crate::handlers::common::{ok, HandlerResult};
 use crate::models::error::ErrorResponse;
 use crate::server::ServerState;
+use neomind_core::event::{MetricValue as CoreMetricValue, NeoMindEvent};
 use neomind_core::extension::context::ExtensionCapability as CoreExtensionCapability;
-use neomind_core::event::{NeoMindEvent, MetricValue as CoreMetricValue};
-use neomind_devices::telemetry::DataPoint;
 use neomind_devices::mdl::MetricValue as DeviceMetricValue;
+use neomind_devices::telemetry::DataPoint;
 
 /// Capability information for API responses
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -175,26 +175,40 @@ pub async fn write_virtual_metric_handler(
     };
 
     // Write to time series storage
-    match time_series_storage.write(&device_id, &req.metric, data_point).await {
+    match time_series_storage
+        .write(&device_id, &req.metric, data_point)
+        .await
+    {
         Ok(_) => {
-            tracing::debug!("Virtual metric written successfully: {} = {}", req.metric, req.value);
+            tracing::debug!(
+                "Virtual metric written successfully: {} = {}",
+                req.metric,
+                req.value
+            );
         }
         Err(e) => {
             tracing::error!("Failed to write virtual metric: {}", e);
-            return Err(ErrorResponse::internal(format!("Failed to write virtual metric: {}", e)));
+            return Err(ErrorResponse::internal(format!(
+                "Failed to write virtual metric: {}",
+                e
+            )));
         }
     }
 
     // Publish event with CoreMetricValue (use Json variant to preserve original value)
     if let Some(event_bus) = state.core.event_bus.as_ref() {
-        let _ = event_bus.publish(NeoMindEvent::ExtensionOutput {
-            extension_id: req.extension_id.unwrap_or_else(|| "capability-system".to_string()),
-            output_name: req.metric.clone(),
-            value: CoreMetricValue::Json(req.value.clone()),
-            timestamp,
-            labels: None,
-            quality: Some(1.0),
-        }).await;
+        let _ = event_bus
+            .publish(NeoMindEvent::ExtensionOutput {
+                extension_id: req
+                    .extension_id
+                    .unwrap_or_else(|| "capability-system".to_string()),
+                output_name: req.metric.clone(),
+                value: CoreMetricValue::Json(req.value.clone()),
+                timestamp,
+                labels: None,
+                quality: Some(1.0),
+            })
+            .await;
     }
 
     // Return success response
@@ -235,15 +249,18 @@ pub async fn aggregate_metrics_handler(
     let end = _query.end.unwrap_or(now.timestamp()); // Now in seconds
 
     // Aggregate metrics using time series storage
-    match time_series_storage.aggregate(
-        &device_id,
-        &_query.metric,
-        start,
-        end,
-    ).await {
+    match time_series_storage
+        .aggregate(&device_id, &_query.metric, start, end)
+        .await
+    {
         Ok(result) => {
-            tracing::debug!("Metrics aggregated: min={:?}, max={:?}, avg={:?}, sum={:?}, count={}",
-                result.min, result.max, result.avg, result.sum, result.count
+            tracing::debug!(
+                "Metrics aggregated: min={:?}, max={:?}, avg={:?}, sum={:?}, count={}",
+                result.min,
+                result.max,
+                result.avg,
+                result.sum,
+                result.count
             );
 
             // Return aggregated data
@@ -265,7 +282,10 @@ pub async fn aggregate_metrics_handler(
         }
         Err(e) => {
             tracing::error!("Failed to aggregate metrics: {}", e);
-            Err(ErrorResponse::internal(format!("Failed to aggregate metrics: {}", e)))
+            Err(ErrorResponse::internal(format!(
+                "Failed to aggregate metrics: {}",
+                e
+            )))
         }
     }
 }

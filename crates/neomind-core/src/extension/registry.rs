@@ -9,10 +9,10 @@
 //! Note: Real extension execution is handled by the isolated runner/runtime.
 //! This registry now only stores host-side proxy objects for streaming support.
 
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use parking_lot::RwLock;
 
 use crate::event::NeoMindEvent;
 use crate::eventbus::EventBus;
@@ -126,9 +126,7 @@ impl ExtensionRegistry {
             .insert(id.clone(), extension.clone());
 
         // Register with safety manager for circuit breaking and panic tracking
-        self.safety_manager
-            .register_extension(id.clone())
-            .await;
+        self.safety_manager.register_extension(id.clone()).await;
 
         // Store info
         let stats = ExtensionStats {
@@ -136,19 +134,17 @@ impl ExtensionRegistry {
             ..Default::default()
         };
 
-        self.info_cache
-            .write()
-            .insert(
-                id.clone(),
-                ExtensionInfo {
-                    metadata,
-                    state: ExtensionState::Running,
-                    stats,
-                    loaded_at: Some(chrono::Utc::now()),
-                    metrics,
-                    commands,
-                },
-            );
+        self.info_cache.write().insert(
+            id.clone(),
+            ExtensionInfo {
+                metadata,
+                state: ExtensionState::Running,
+                stats,
+                loaded_at: Some(chrono::Utc::now()),
+                metrics,
+                commands,
+            },
+        );
 
         // Register with event dispatcher for event subscriptions
         // This allows in-process extensions to receive events via handle_event()
@@ -159,7 +155,9 @@ impl ExtensionRegistry {
             let id_clone = id.clone();
             tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(async {
-                    dispatcher.register_in_process_extension(id_clone, extension_clone).await;
+                    dispatcher
+                        .register_in_process_extension(id_clone, extension_clone)
+                        .await;
                 });
             });
         }
@@ -260,7 +258,10 @@ impl ExtensionRegistry {
 
     /// Get extension statistics.
     /// This calls the extension's `get_stats()` method and returns the statistics.
-    pub async fn get_stats(&self, id: &str) -> std::result::Result<super::system::ExtensionStats, ExtensionError> {
+    pub async fn get_stats(
+        &self,
+        id: &str,
+    ) -> std::result::Result<super::system::ExtensionStats, ExtensionError> {
         if let Some(ext) = self.get(id).await {
             let ext = ext.read().await;
             // Call get_stats with panic handling
@@ -271,11 +272,16 @@ impl ExtensionRegistry {
                         extension_id = %id,
                         "[ExtensionRegistry] Extension panicked while getting stats"
                     );
-                    Err(ExtensionError::ExecutionFailed("Extension panicked while getting stats".to_string()))
+                    Err(ExtensionError::ExecutionFailed(
+                        "Extension panicked while getting stats".to_string(),
+                    ))
                 }
             }
         } else {
-            Err(ExtensionError::NotFound(format!("Extension {} not found", id)))
+            Err(ExtensionError::NotFound(format!(
+                "Extension {} not found",
+                id
+            )))
         }
     }
 
@@ -388,13 +394,11 @@ impl ExtensionRegistry {
         let start_time = std::time::Instant::now();
 
         // Execute with timeout protection (30 seconds)
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            async {
-                let ext_guard = ext_clone.read().await;
-                ext_guard.execute_command(command, args).await
-            }
-        ).await;
+        let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            let ext_guard = ext_clone.read().await;
+            ext_guard.execute_command(command, args).await
+        })
+        .await;
 
         // Calculate execution time
         let execution_time_ms = start_time.elapsed().as_millis() as u64;

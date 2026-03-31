@@ -9,8 +9,7 @@ use predicates::prelude::*;
 #[test]
 fn test_list_models_command_exists() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("list-models")
-        .arg("--help");
+    cmd.arg("list-models").arg("--help");
 
     cmd.assert()
         .success()
@@ -35,8 +34,7 @@ fn test_list_models_custom_endpoint() {
 #[test]
 fn test_list_models_default_endpoint_in_help() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("list-models")
-        .arg("--help");
+    cmd.arg("list-models").arg("--help");
 
     cmd.assert()
         .success()

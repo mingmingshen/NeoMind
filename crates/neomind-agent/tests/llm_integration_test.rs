@@ -6,9 +6,9 @@
 #![allow(dead_code)]
 
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
+use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::EventBus;
-use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_storage::{
     AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, LongTermMemory,
     ScheduleType, ShortTermMemory, WorkingMemory,
@@ -47,6 +47,7 @@ impl LlmTestContext {
             llm_runtime: Some(llm_runtime.clone()),
             llm_backend_store: None,
             extension_registry: None,
+            tool_registry: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -103,6 +104,7 @@ impl LlmTestContext {
             user_messages: vec![],
             conversation_summary: None,
             context_window_size: 5,
+            tool_config: None,
             error_message: None,
             enable_tool_chaining: false,
             max_chain_depth: 3,

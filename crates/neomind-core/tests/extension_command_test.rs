@@ -11,18 +11,17 @@
 
 #![allow(dead_code)]
 
-use neomind_core::extension::*;
+use async_trait::async_trait;
 use neomind_core::extension::registry::ExtensionRegistry;
 use neomind_core::extension::system::{
-    Extension, ExtensionMetadata, ExtensionError,
-    ExtensionMetricValue, MetricDescriptor, ExtensionCommand,
-    MetricDataType, ParameterDefinition, ParamMetricValue, ExtensionStats,
+    Extension, ExtensionCommand, ExtensionError, ExtensionMetadata, ExtensionMetricValue,
+    ExtensionStats, MetricDataType, MetricDescriptor, ParamMetricValue, ParameterDefinition,
 };
-use async_trait::async_trait;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use neomind_core::extension::*;
 use serde_json::json;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 // ============================================================================
 // Test Extension with Configurable Behavior
@@ -68,11 +67,7 @@ impl Extension for ConfigurableExtension {
     fn metadata(&self) -> &ExtensionMetadata {
         static META: std::sync::OnceLock<ExtensionMetadata> = std::sync::OnceLock::new();
         META.get_or_init(|| {
-            ExtensionMetadata::new(
-                "configurable.extension",
-                "Configurable Extension",
-                "1.0.0",
-            )
+            ExtensionMetadata::new("configurable.extension", "Configurable Extension", "1.0.0")
         })
     }
 
@@ -87,19 +82,17 @@ impl Extension for ConfigurableExtension {
                 display_name: "Execute".to_string(),
                 description: "Execute a command".to_string(),
                 payload_template: "{}".to_string(),
-                parameters: vec![
-                    ParameterDefinition {
-                        name: "value".to_string(),
-                        display_name: "Value".to_string(),
-                        description: "Input value".to_string(),
-                        param_type: MetricDataType::Integer,
-                        required: false,
-                        default_value: Some(ParamMetricValue::Integer(0)),
-                        min: None,
-                        max: None,
-                        options: vec![],
-                    }
-                ],
+                parameters: vec![ParameterDefinition {
+                    name: "value".to_string(),
+                    display_name: "Value".to_string(),
+                    description: "Input value".to_string(),
+                    param_type: MetricDataType::Integer,
+                    required: false,
+                    default_value: Some(ParamMetricValue::Integer(0)),
+                    min: None,
+                    max: None,
+                    options: vec![],
+                }],
                 fixed_values: Default::default(),
                 samples: vec![],
                 parameter_groups: vec![],
@@ -116,27 +109,25 @@ impl Extension for ConfigurableExtension {
             },
             ExtensionCommand {
                 name: "validate".to_string(),
-                    display_name: "Validate".to_string(),
-                    description: "Validate input parameters".to_string(),
-                    payload_template: "{}".to_string(),
-                    parameters: vec![
-                        ParameterDefinition {
-                            name: "required_field".to_string(),
-                            display_name: "Required Field".to_string(),
-                            description: "A required field".to_string(),
-                            param_type: MetricDataType::String,
-                            required: true,
-                            default_value: None,
-                            min: None,
-                            max: None,
-                            options: vec![],
-                        }
-                    ],
-                    fixed_values: Default::default(),
-                    samples: vec![],
-                    parameter_groups: vec![],
-                },
-            ]
+                display_name: "Validate".to_string(),
+                description: "Validate input parameters".to_string(),
+                payload_template: "{}".to_string(),
+                parameters: vec![ParameterDefinition {
+                    name: "required_field".to_string(),
+                    display_name: "Required Field".to_string(),
+                    description: "A required field".to_string(),
+                    param_type: MetricDataType::String,
+                    required: true,
+                    default_value: None,
+                    min: None,
+                    max: None,
+                    options: vec![],
+                }],
+                fixed_values: Default::default(),
+                samples: vec![],
+                parameter_groups: vec![],
+            },
+        ]
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -160,14 +151,20 @@ impl Extension for ConfigurableExtension {
         if *self.should_fail.lock().unwrap() {
             let failure_type = self.failure_type.lock().unwrap().clone();
             return match failure_type.as_deref() {
-                Some("execution") => Err(ExtensionError::ExecutionFailed("Configured failure".to_string())),
-                Some("invalid_args") => Err(ExtensionError::InvalidArguments("Invalid arguments".to_string())),
+                Some("execution") => Err(ExtensionError::ExecutionFailed(
+                    "Configured failure".to_string(),
+                )),
+                Some("invalid_args") => Err(ExtensionError::InvalidArguments(
+                    "Invalid arguments".to_string(),
+                )),
                 Some("timeout") => {
                     // Simulate a very long operation
                     tokio::time::sleep(Duration::from_secs(60)).await;
                     Ok(json!({}))
                 }
-                _ => Err(ExtensionError::ExecutionFailed("Unknown failure".to_string())),
+                _ => Err(ExtensionError::ExecutionFailed(
+                    "Unknown failure".to_string(),
+                )),
             };
         }
 
@@ -185,7 +182,9 @@ impl Extension for ConfigurableExtension {
                 let required = args.get("required_field").and_then(|v| v.as_str());
                 match required {
                     Some(value) => Ok(json!({ "valid": true, "value": value })),
-                    None => Err(ExtensionError::InvalidArguments("Missing required_field".to_string())),
+                    None => Err(ExtensionError::InvalidArguments(
+                        "Missing required_field".to_string(),
+                    )),
                 }
             }
             _ => Err(ExtensionError::CommandNotFound(command.to_string())),
@@ -193,13 +192,11 @@ impl Extension for ConfigurableExtension {
     }
 
     fn produce_metrics(&self) -> Result<Vec<ExtensionMetricValue>> {
-        Ok(vec![
-            ExtensionMetricValue {
-                name: "execution_count".to_string(),
-                value: ParamMetricValue::Integer(self.execution_count.load(Ordering::SeqCst) as i64),
-                timestamp: chrono::Utc::now().timestamp_millis(),
-            }
-        ])
+        Ok(vec![ExtensionMetricValue {
+            name: "execution_count".to_string(),
+            value: ParamMetricValue::Integer(self.execution_count.load(Ordering::SeqCst) as i64),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+        }])
     }
 
     async fn health_check(&self) -> Result<bool> {
@@ -222,11 +219,13 @@ impl Extension for ConfigurableExtension {
 async fn test_command_execution_success() {
     let registry = ExtensionRegistry::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test"))
-            as Box<dyn Extension>
+        Box::new(ConfigurableExtension::new("cmd.test")) as Box<dyn Extension>,
     ));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     let result = registry
         .execute_command("cmd.test", "execute", &json!({"value": 21}))
@@ -241,11 +240,13 @@ async fn test_command_execution_success() {
 async fn test_command_execution_with_default_params() {
     let registry = ExtensionRegistry::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test"))
-            as Box<dyn Extension>
+        Box::new(ConfigurableExtension::new("cmd.test")) as Box<dyn Extension>,
     ));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     let result = registry
         .execute_command("cmd.test", "execute", &json!({}))
@@ -260,11 +261,13 @@ async fn test_command_execution_with_default_params() {
 async fn test_command_execution_multiple_times() {
     let registry = ExtensionRegistry::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test"))
-            as Box<dyn Extension>
+        Box::new(ConfigurableExtension::new("cmd.test")) as Box<dyn Extension>,
     ));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     for i in 1..=5 {
         let result = registry
@@ -285,11 +288,13 @@ async fn test_command_execution_multiple_times() {
 async fn test_command_not_found_error() {
     let registry = ExtensionRegistry::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test"))
-            as Box<dyn Extension>
+        Box::new(ConfigurableExtension::new("cmd.test")) as Box<dyn Extension>,
     ));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     let result = registry
         .execute_command("cmd.test", "nonexistent_command", &json!({}))
@@ -325,11 +330,13 @@ async fn test_extension_not_found_error() {
 async fn test_invalid_arguments_error() {
     let registry = ExtensionRegistry::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test"))
-            as Box<dyn Extension>
+        Box::new(ConfigurableExtension::new("cmd.test")) as Box<dyn Extension>,
     ));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     // Call validate without required field
     let result = registry
@@ -348,12 +355,14 @@ async fn test_invalid_arguments_error() {
 #[tokio::test]
 async fn test_execution_failed_error() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test").with_failure("execution"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(
+        ConfigurableExtension::new("cmd.test").with_failure("execution"),
+    ) as Box<dyn Extension>));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     let result = registry
         .execute_command("cmd.test", "execute", &json!({}))
@@ -377,10 +386,13 @@ async fn test_command_timeout() {
     let registry = ExtensionRegistry::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
         Box::new(ConfigurableExtension::new("cmd.test").with_delay(35000)) // 35 seconds, exceeds 30s timeout
-            as Box<dyn Extension>
+            as Box<dyn Extension>,
     ));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     let result = registry
         .execute_command("cmd.test", "execute", &json!({}))
@@ -400,12 +412,14 @@ async fn test_command_timeout() {
 #[tokio::test]
 async fn test_safety_manager_blocks_after_failures() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test").with_failure("execution"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(
+        ConfigurableExtension::new("cmd.test").with_failure("execution"),
+    ) as Box<dyn Extension>));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     // Execute multiple failing commands
     for _ in 0..10 {
@@ -432,11 +446,13 @@ async fn test_safety_manager_blocks_after_failures() {
 async fn test_concurrent_command_execution() {
     let registry = Arc::new(ExtensionRegistry::new());
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test"))
-            as Box<dyn Extension>
+        Box::new(ConfigurableExtension::new("cmd.test")) as Box<dyn Extension>,
     ));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     let mut handles = vec![];
 
@@ -465,16 +481,20 @@ async fn test_concurrent_mixed_success_failure() {
 
     // Register two extensions - one succeeds, one fails
     let success_ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("success.ext"))
-            as Box<dyn Extension>
+        Box::new(ConfigurableExtension::new("success.ext")) as Box<dyn Extension>,
     ));
-    let fail_ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("fail.ext").with_failure("execution"))
-            as Box<dyn Extension>
-    ));
+    let fail_ext = Arc::new(tokio::sync::RwLock::new(Box::new(
+        ConfigurableExtension::new("fail.ext").with_failure("execution"),
+    ) as Box<dyn Extension>));
 
-    registry.register("success.ext".to_string(), success_ext).await.unwrap();
-    registry.register("fail.ext".to_string(), fail_ext).await.unwrap();
+    registry
+        .register("success.ext".to_string(), success_ext)
+        .await
+        .unwrap();
+    registry
+        .register("fail.ext".to_string(), fail_ext)
+        .await
+        .unwrap();
 
     let mut handles = vec![];
 
@@ -520,11 +540,13 @@ async fn test_concurrent_mixed_success_failure() {
 async fn test_execution_updates_statistics() {
     let registry = ExtensionRegistry::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test"))
-            as Box<dyn Extension>
+        Box::new(ConfigurableExtension::new("cmd.test")) as Box<dyn Extension>,
     ));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     // Execute some commands
     for i in 0..5 {
@@ -543,12 +565,14 @@ async fn test_execution_updates_statistics() {
 #[tokio::test]
 async fn test_error_updates_error_statistics() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test").with_failure("execution"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(
+        ConfigurableExtension::new("cmd.test").with_failure("execution"),
+    ) as Box<dyn Extension>));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     // Execute failing commands
     for _ in 0..3 {
@@ -570,12 +594,14 @@ async fn test_error_updates_error_statistics() {
 #[tokio::test]
 async fn test_error_message_propagation() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test").with_failure("invalid_args"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(
+        ConfigurableExtension::new("cmd.test").with_failure("invalid_args"),
+    ) as Box<dyn Extension>));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     let result = registry
         .execute_command("cmd.test", "execute", &json!({}))
@@ -595,15 +621,15 @@ async fn test_error_message_propagation() {
 async fn test_empty_command_name() {
     let registry = ExtensionRegistry::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test"))
-            as Box<dyn Extension>
+        Box::new(ConfigurableExtension::new("cmd.test")) as Box<dyn Extension>,
     ));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
-    let result = registry
-        .execute_command("cmd.test", "", &json!({}))
-        .await;
+    let result = registry.execute_command("cmd.test", "", &json!({})).await;
 
     assert!(result.is_err());
 }
@@ -612,11 +638,13 @@ async fn test_empty_command_name() {
 async fn test_null_arguments() {
     let registry = ExtensionRegistry::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test"))
-            as Box<dyn Extension>
+        Box::new(ConfigurableExtension::new("cmd.test")) as Box<dyn Extension>,
     ));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     let result = registry
         .execute_command("cmd.test", "execute", &serde_json::Value::Null)
@@ -630,16 +658,22 @@ async fn test_null_arguments() {
 async fn test_large_arguments() {
     let registry = ExtensionRegistry::new();
     let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(ConfigurableExtension::new("cmd.test"))
-            as Box<dyn Extension>
+        Box::new(ConfigurableExtension::new("cmd.test")) as Box<dyn Extension>,
     ));
 
-    registry.register("cmd.test".to_string(), ext).await.unwrap();
+    registry
+        .register("cmd.test".to_string(), ext)
+        .await
+        .unwrap();
 
     // Create a large JSON object
     let large_data: Vec<i32> = (0..10000).collect();
     let result = registry
-        .execute_command("cmd.test", "execute", &json!({"value": 1, "large_data": large_data}))
+        .execute_command(
+            "cmd.test",
+            "execute",
+            &json!({"value": 1, "large_data": large_data}),
+        )
         .await;
 
     assert!(result.is_ok());

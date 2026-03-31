@@ -727,7 +727,11 @@ mod tests {
 
     fn get_project_data_path(filename: &str) -> std::path::PathBuf {
         // Use temp directory for test databases to avoid polluting the project
-        std::env::temp_dir().join(format!("neomind_test_{}_{}.redb", filename.replace(".redb", ""), std::process::id()))
+        std::env::temp_dir().join(format!(
+            "neomind_test_{}_{}.redb",
+            filename.replace(".redb", ""),
+            std::process::id()
+        ))
     }
 
     fn cleanup_test_db(path: &std::path::Path) {
@@ -740,7 +744,10 @@ mod tests {
         cleanup_test_db(&db_path);
         let jwt_secret = std::env::var("NEOMIND_JWT_SECRET")
             .unwrap_or_else(|_| "test_secret_key_12345678".to_string());
-        (AuthUserState::with_config(db_path.display().to_string(), jwt_secret), db_path)
+        (
+            AuthUserState::with_config(db_path.display().to_string(), jwt_secret),
+            db_path,
+        )
     }
 
     #[tokio::test]

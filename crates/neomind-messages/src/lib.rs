@@ -66,7 +66,9 @@ pub use channels::{ChannelFactory, ChannelInfo, ChannelStats, ChannelTypeInfo, T
 pub use channels::{get_channel_schema, list_channel_types};
 
 // Delivery log exports
-pub use delivery_log::{DeliveryLog, DeliveryLogId, DeliveryLogQuery, DeliveryStats, DeliveryStatus};
+pub use delivery_log::{
+    DeliveryLog, DeliveryLogId, DeliveryLogQuery, DeliveryStats, DeliveryStatus,
+};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

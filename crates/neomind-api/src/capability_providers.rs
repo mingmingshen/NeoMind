@@ -9,17 +9,17 @@
 //! `Arc<dyn Any>` references. Services are downcast to their concrete types
 //! when needed, avoiding the need for separate trait definitions.
 
-use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 use neomind_core::extension::{
-    ExtensionCapabilityProvider, CapabilityManifest, CapabilityError,
-    ExtensionCapability, CapabilityServices, keys,
+    keys, CapabilityError, CapabilityManifest, CapabilityServices, ExtensionCapability,
+    ExtensionCapabilityProvider,
 };
+use neomind_core::EventBus;
 use neomind_devices::{DeviceService, TimeSeriesStorage};
 use neomind_rules::{RuleEngine, RuleId};
-use neomind_core::EventBus;
 
 // ============================================================================
 // Device Capability Provider
@@ -36,22 +36,28 @@ impl DeviceCapabilityProvider {
     }
 
     async fn handle_metrics_read(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let device_id = params.get("device_id")
+        let device_id = params
+            .get("device_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_id".to_string()))?;
 
-        let device_service: Arc<DeviceService> = self.services
+        let device_service: Arc<DeviceService> = self
+            .services
             .get::<DeviceService>(keys::DEVICE_SERVICE)
-            .ok_or(CapabilityError::NotAvailable(ExtensionCapability::DeviceMetricsRead))?;
-
-        let telemetry_storage: Arc<TimeSeriesStorage> = self.services
-            .get::<TimeSeriesStorage>(keys::TELEMETRY_STORAGE)
-            .ok_or(CapabilityError::NotAvailable(ExtensionCapability::DeviceMetricsRead))?;
-
-        let device = device_service.get_device(device_id).await
-            .ok_or_else(|| CapabilityError::InvalidParameters(
-                format!("Device '{}' not found", device_id)
+            .ok_or(CapabilityError::NotAvailable(
+                ExtensionCapability::DeviceMetricsRead,
             ))?;
+
+        let telemetry_storage: Arc<TimeSeriesStorage> = self
+            .services
+            .get::<TimeSeriesStorage>(keys::TELEMETRY_STORAGE)
+            .ok_or(CapabilityError::NotAvailable(
+                ExtensionCapability::DeviceMetricsRead,
+            ))?;
+
+        let device = device_service.get_device(device_id).await.ok_or_else(|| {
+            CapabilityError::InvalidParameters(format!("Device '{}' not found", device_id))
+        })?;
 
         let health = device_service.get_device_health().await;
         let device_health = health.get(device_id);
@@ -59,15 +65,17 @@ impl DeviceCapabilityProvider {
         let mut metrics = serde_json::Map::new();
         if let Some(template) = device_service.get_template(&device.device_type).await {
             for metric_def in &template.metrics {
-                if let Ok(Some(latest)) = telemetry_storage
-                    .latest(device_id, &metric_def.name)
-                    .await
+                if let Ok(Some(latest)) =
+                    telemetry_storage.latest(device_id, &metric_def.name).await
                 {
-                    metrics.insert(metric_def.name.clone(), json!({
-                        "value": latest.value,
-                        "timestamp": latest.timestamp,
-                        "quality": latest.quality,
-                    }));
+                    metrics.insert(
+                        metric_def.name.clone(),
+                        json!({
+                            "value": latest.value,
+                            "timestamp": latest.timestamp,
+                            "quality": latest.quality,
+                        }),
+                    );
                 }
             }
         }
@@ -84,26 +92,33 @@ impl DeviceCapabilityProvider {
     }
 
     async fn handle_metrics_write(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let device_id = params.get("device_id")
+        let device_id = params
+            .get("device_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_id".to_string()))?;
 
-        let metric = params.get("metric")
+        let metric = params
+            .get("metric")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing metric".to_string()))?;
 
-        let value = params.get("value")
+        let value = params
+            .get("value")
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing value".to_string()))?;
 
         // Optional timestamp parameter (milliseconds since epoch)
         // If not provided, use current time
-        let timestamp = params.get("timestamp")
+        let timestamp = params
+            .get("timestamp")
             .and_then(|v| v.as_i64())
             .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
 
-        let telemetry_storage: Arc<TimeSeriesStorage> = self.services
+        let telemetry_storage: Arc<TimeSeriesStorage> = self
+            .services
             .get::<TimeSeriesStorage>(keys::TELEMETRY_STORAGE)
-            .ok_or(CapabilityError::NotAvailable(ExtensionCapability::DeviceMetricsWrite))?;
+            .ok_or(CapabilityError::NotAvailable(
+                ExtensionCapability::DeviceMetricsWrite,
+            ))?;
 
         use neomind_devices::mdl::MetricValue;
         let metric_value = if value.is_number() {
@@ -138,18 +153,24 @@ impl DeviceCapabilityProvider {
                 MetricValue::String(s) => EventMetricValue::String(s.clone()),
                 MetricValue::Boolean(b) => EventMetricValue::Boolean(*b),
                 MetricValue::Integer(i) => EventMetricValue::Integer(*i),
-                MetricValue::Array(arr) => EventMetricValue::Json(serde_json::to_value(arr).unwrap_or(serde_json::Value::Null)),
-                MetricValue::Binary(bin) => EventMetricValue::String(format!("{} bytes", bin.len())),
+                MetricValue::Array(arr) => EventMetricValue::Json(
+                    serde_json::to_value(arr).unwrap_or(serde_json::Value::Null),
+                ),
+                MetricValue::Binary(bin) => {
+                    EventMetricValue::String(format!("{} bytes", bin.len()))
+                }
                 MetricValue::Null => EventMetricValue::String("null".to_string()),
             };
 
-            event_bus.publish(neomind_core::NeoMindEvent::DeviceMetric {
-                device_id: device_id.to_string(),
-                metric: metric.to_string(),
-                value: event_value,
-                timestamp: timestamp / 1000, // Convert milliseconds to seconds
-                quality: Some(1.0),
-            }).await;
+            event_bus
+                .publish(neomind_core::NeoMindEvent::DeviceMetric {
+                    device_id: device_id.to_string(),
+                    metric: metric.to_string(),
+                    value: event_value,
+                    timestamp: timestamp / 1000, // Convert milliseconds to seconds
+                    quality: Some(1.0),
+                })
+                .await;
         }
 
         Ok(json!({
@@ -162,22 +183,28 @@ impl DeviceCapabilityProvider {
     }
 
     async fn handle_device_control(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let device_id = params.get("device_id")
+        let device_id = params
+            .get("device_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_id".to_string()))?;
 
-        let command = params.get("command")
+        let command = params
+            .get("command")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing command".to_string()))?;
 
         let cmd_params = params.get("params").cloned().unwrap_or(json!({}));
 
-        let device_service: Arc<DeviceService> = self.services
+        let device_service: Arc<DeviceService> = self
+            .services
             .get::<DeviceService>(keys::DEVICE_SERVICE)
-            .ok_or(CapabilityError::NotAvailable(ExtensionCapability::DeviceControl))?;
+            .ok_or(CapabilityError::NotAvailable(
+                ExtensionCapability::DeviceControl,
+            ))?;
 
         let params_map: std::collections::HashMap<String, Value> = if cmd_params.is_object() {
-            cmd_params.as_object()
+            cmd_params
+                .as_object()
                 .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
                 .unwrap_or_default()
         } else {
@@ -187,12 +214,14 @@ impl DeviceCapabilityProvider {
         device_service
             .send_command(device_id, command, params_map)
             .await
-            .map(|result| json!({
-                "success": true,
-                "device_id": device_id,
-                "command": command,
-                "result": result,
-            }))
+            .map(|result| {
+                json!({
+                    "success": true,
+                    "device_id": device_id,
+                    "command": command,
+                    "result": result,
+                })
+            })
             .map_err(|e| CapabilityError::ProviderError(e.to_string()))
     }
 }
@@ -233,7 +262,8 @@ impl ExtensionCapabilityProvider for DeviceCapabilityProvider {
 /// Provider for event-related capabilities
 pub struct EventCapabilityProvider {
     event_bus: Arc<EventBus>,
-    subscriptions: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<String, EventSubscriptionInfo>>>,
+    subscriptions:
+        std::sync::Arc<std::sync::RwLock<std::collections::HashMap<String, EventSubscriptionInfo>>>,
     /// Event dispatcher for registering dynamic subscriptions
     event_dispatcher: Option<std::sync::Arc<neomind_core::extension::EventDispatcher>>,
 }
@@ -251,7 +281,9 @@ impl EventCapabilityProvider {
     pub fn new(event_bus: Arc<EventBus>) -> Self {
         Self {
             event_bus,
-            subscriptions: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+            subscriptions: std::sync::Arc::new(std::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
             event_dispatcher: None,
         }
     }
@@ -263,22 +295,26 @@ impl EventCapabilityProvider {
     ) -> Self {
         Self {
             event_bus,
-            subscriptions: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+            subscriptions: std::sync::Arc::new(std::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
             event_dispatcher: Some(event_dispatcher),
         }
     }
 
     fn handle_event_publish(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let event_type = params.get("event_type")
+        let event_type = params
+            .get("event_type")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing event_type".to_string()))?;
 
         let payload = params.get("payload").cloned().unwrap_or(json!({}));
 
-        self.event_bus.publish_sync(neomind_core::event::NeoMindEvent::Custom {
-            event_type: event_type.to_string(),
-            data: payload,
-        });
+        self.event_bus
+            .publish_sync(neomind_core::event::NeoMindEvent::Custom {
+                event_type: event_type.to_string(),
+                data: payload,
+            });
 
         Ok(json!({
             "success": true,
@@ -287,14 +323,21 @@ impl EventCapabilityProvider {
     }
 
     fn handle_event_subscribe(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let subscription = params.get("subscription")
-            .ok_or_else(|| CapabilityError::InvalidParameters("Missing subscription".to_string()))?;
+        let subscription = params.get("subscription").ok_or_else(|| {
+            CapabilityError::InvalidParameters("Missing subscription".to_string())
+        })?;
 
-        let extension_id = subscription.get("extension_id")
+        let extension_id = subscription
+            .get("extension_id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| CapabilityError::InvalidParameters("Missing extension_id in subscription".to_string()))?;
+            .ok_or_else(|| {
+                CapabilityError::InvalidParameters(
+                    "Missing extension_id in subscription".to_string(),
+                )
+            })?;
 
-        let event_types: Vec<String> = subscription.get("event_types")
+        let event_types: Vec<String> = subscription
+            .get("event_types")
             .and_then(|v| v.as_array())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing event_types".to_string()))?
             .iter()
@@ -303,7 +346,9 @@ impl EventCapabilityProvider {
             .collect();
 
         if event_types.is_empty() {
-            return Err(CapabilityError::InvalidParameters("No event types specified".to_string()));
+            return Err(CapabilityError::InvalidParameters(
+                "No event types specified".to_string(),
+            ));
         }
 
         let subscription_id = uuid::Uuid::new_v4().to_string();
@@ -316,14 +361,17 @@ impl EventCapabilityProvider {
         };
 
         // Store subscription info
-        self.subscriptions.write().unwrap().insert(subscription_id.clone(), subscription_info);
+        self.subscriptions
+            .write()
+            .unwrap()
+            .insert(subscription_id.clone(), subscription_info);
 
         // Register with EventDispatcher if available
         // This enables dynamic event subscription at runtime
         if let Some(dispatcher) = &self.event_dispatcher {
             // Create a channel for receiving events (for isolated extensions)
             let (tx, _rx) = tokio::sync::mpsc::channel(100);
-            
+
             // Register the subscription with the dispatcher
             // Note: For in-process extensions, they should use event_subscriptions() method
             // This dynamic subscription is mainly for isolated/WASM extensions
@@ -349,9 +397,12 @@ impl EventCapabilityProvider {
     }
 
     fn handle_event_unsubscribe(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let subscription_id = params.get("subscription_id")
+        let subscription_id = params
+            .get("subscription_id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| CapabilityError::InvalidParameters("Missing subscription_id".to_string()))?;
+            .ok_or_else(|| {
+                CapabilityError::InvalidParameters("Missing subscription_id".to_string())
+            })?;
 
         self.subscriptions.write().unwrap().remove(subscription_id);
 
@@ -362,7 +413,12 @@ impl EventCapabilityProvider {
     }
 
     pub fn get_subscriptions(&self) -> Vec<EventSubscriptionInfo> {
-        self.subscriptions.read().unwrap().values().cloned().collect()
+        self.subscriptions
+            .read()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub fn remove_extension_subscriptions(&self, extension_id: &str) {
@@ -393,11 +449,17 @@ impl ExtensionCapabilityProvider for EventCapabilityProvider {
         match capability {
             ExtensionCapability::EventPublish => self.handle_event_publish(params),
             ExtensionCapability::EventSubscribe => {
-                let action = params.get("action").and_then(|v| v.as_str()).unwrap_or("subscribe");
+                let action = params
+                    .get("action")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("subscribe");
                 match action {
                     "subscribe" => self.handle_event_subscribe(params),
                     "unsubscribe" => self.handle_event_unsubscribe(params),
-                    _ => Err(CapabilityError::InvalidParameters(format!("Unknown action: {}", action))),
+                    _ => Err(CapabilityError::InvalidParameters(format!(
+                        "Unknown action: {}",
+                        action
+                    ))),
                 }
             }
             _ => Err(CapabilityError::NotAvailable(capability)),
@@ -420,32 +482,45 @@ impl TelemetryCapabilityProvider {
     }
 
     async fn handle_telemetry_history(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let device_id = params.get("device_id")
+        let device_id = params
+            .get("device_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_id".to_string()))?;
 
-        let metric = params.get("metric")
+        let metric = params
+            .get("metric")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing metric".to_string()))?;
 
         let now = chrono::Utc::now().timestamp_millis();
-        let start = params.get("start").and_then(|v| v.as_i64()).unwrap_or(now - 24 * 60 * 60 * 1000);
+        let start = params
+            .get("start")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(now - 24 * 60 * 60 * 1000);
         let end = params.get("end").and_then(|v| v.as_i64()).unwrap_or(now);
 
-        let telemetry_storage: Arc<TimeSeriesStorage> = self.services
+        let telemetry_storage: Arc<TimeSeriesStorage> = self
+            .services
             .get::<TimeSeriesStorage>(keys::TELEMETRY_STORAGE)
-            .ok_or(CapabilityError::NotAvailable(ExtensionCapability::TelemetryHistory))?;
+            .ok_or(CapabilityError::NotAvailable(
+                ExtensionCapability::TelemetryHistory,
+            ))?;
 
         let points = telemetry_storage
             .query(device_id, metric, start, end)
             .await
             .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
 
-        let data: Vec<Value> = points.iter().map(|p| json!({
-            "timestamp": p.timestamp,
-            "value": p.value,
-            "quality": p.quality,
-        })).collect();
+        let data: Vec<Value> = points
+            .iter()
+            .map(|p| {
+                json!({
+                    "timestamp": p.timestamp,
+                    "value": p.value,
+                    "quality": p.quality,
+                })
+            })
+            .collect();
 
         Ok(json!({
             "device_id": device_id,
@@ -458,23 +533,34 @@ impl TelemetryCapabilityProvider {
     }
 
     async fn handle_metrics_aggregate(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let device_id = params.get("device_id")
+        let device_id = params
+            .get("device_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_id".to_string()))?;
 
-        let metric = params.get("metric")
+        let metric = params
+            .get("metric")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing metric".to_string()))?;
 
-        let aggregation = params.get("aggregation").and_then(|v| v.as_str()).unwrap_or("avg");
+        let aggregation = params
+            .get("aggregation")
+            .and_then(|v| v.as_str())
+            .unwrap_or("avg");
 
         let now = chrono::Utc::now().timestamp_millis();
-        let start = params.get("start").and_then(|v| v.as_i64()).unwrap_or(now - 24 * 60 * 60 * 1000);
+        let start = params
+            .get("start")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(now - 24 * 60 * 60 * 1000);
         let end = params.get("end").and_then(|v| v.as_i64()).unwrap_or(now);
 
-        let telemetry_storage: Arc<TimeSeriesStorage> = self.services
+        let telemetry_storage: Arc<TimeSeriesStorage> = self
+            .services
             .get::<TimeSeriesStorage>(keys::TELEMETRY_STORAGE)
-            .ok_or(CapabilityError::NotAvailable(ExtensionCapability::MetricsAggregate))?;
+            .ok_or(CapabilityError::NotAvailable(
+                ExtensionCapability::MetricsAggregate,
+            ))?;
 
         let aggregated = telemetry_storage
             .aggregate(device_id, metric, start, end)
@@ -544,21 +630,22 @@ impl RuleCapabilityProvider {
     }
 
     async fn handle_rule_trigger(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let rule_id = params.get("rule_id")
+        let rule_id = params
+            .get("rule_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing rule_id".to_string()))?;
 
-        let rule_engine: Arc<RuleEngine> = self.services
-            .get::<RuleEngine>(keys::RULE_ENGINE)
-            .ok_or(CapabilityError::NotAvailable(ExtensionCapability::RuleTrigger))?;
+        let rule_engine: Arc<RuleEngine> =
+            self.services.get::<RuleEngine>(keys::RULE_ENGINE).ok_or(
+                CapabilityError::NotAvailable(ExtensionCapability::RuleTrigger),
+            )?;
 
         let rule_id = RuleId::from_string(rule_id)
             .map_err(|e| CapabilityError::InvalidParameters(format!("Invalid rule ID: {}", e)))?;
 
-        let rule = rule_engine.get_rule(&rule_id).await
-            .ok_or_else(|| CapabilityError::InvalidParameters(
-                format!("Rule '{}' not found", rule_id)
-            ))?;
+        let rule = rule_engine.get_rule(&rule_id).await.ok_or_else(|| {
+            CapabilityError::InvalidParameters(format!("Rule '{}' not found", rule_id))
+        })?;
 
         let result = rule_engine.execute_rule(&rule_id).await;
 
@@ -573,21 +660,22 @@ impl RuleCapabilityProvider {
     }
 
     async fn handle_rule_status(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let rule_id = params.get("rule_id")
+        let rule_id = params
+            .get("rule_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing rule_id".to_string()))?;
 
-        let rule_engine: Arc<RuleEngine> = self.services
-            .get::<RuleEngine>(keys::RULE_ENGINE)
-            .ok_or(CapabilityError::NotAvailable(ExtensionCapability::RuleTrigger))?;
+        let rule_engine: Arc<RuleEngine> =
+            self.services.get::<RuleEngine>(keys::RULE_ENGINE).ok_or(
+                CapabilityError::NotAvailable(ExtensionCapability::RuleTrigger),
+            )?;
 
         let rule_id = RuleId::from_string(rule_id)
             .map_err(|e| CapabilityError::InvalidParameters(format!("Invalid rule ID: {}", e)))?;
 
-        let rule = rule_engine.get_rule(&rule_id).await
-            .ok_or_else(|| CapabilityError::InvalidParameters(
-                format!("Rule '{}' not found", rule_id)
-            ))?;
+        let rule = rule_engine.get_rule(&rule_id).await.ok_or_else(|| {
+            CapabilityError::InvalidParameters(format!("Rule '{}' not found", rule_id))
+        })?;
 
         Ok(json!({
             "rule_id": rule_id.to_string(),
@@ -599,18 +687,24 @@ impl RuleCapabilityProvider {
     }
 
     async fn handle_rule_list(&self) -> Result<Value, CapabilityError> {
-        let rule_engine: Arc<RuleEngine> = self.services
-            .get::<RuleEngine>(keys::RULE_ENGINE)
-            .ok_or(CapabilityError::NotAvailable(ExtensionCapability::RuleTrigger))?;
+        let rule_engine: Arc<RuleEngine> =
+            self.services.get::<RuleEngine>(keys::RULE_ENGINE).ok_or(
+                CapabilityError::NotAvailable(ExtensionCapability::RuleTrigger),
+            )?;
 
         let rules = rule_engine.list_rules().await;
 
-        let rule_list: Vec<Value> = rules.iter().map(|r| json!({
-            "id": r.id.to_string(),
-            "name": r.name,
-            "status": format!("{:?}", r.status),
-            "trigger_count": r.state.trigger_count,
-        })).collect();
+        let rule_list: Vec<Value> = rules
+            .iter()
+            .map(|r| {
+                json!({
+                    "id": r.id.to_string(),
+                    "name": r.name,
+                    "status": format!("{:?}", r.status),
+                    "trigger_count": r.state.trigger_count,
+                })
+            })
+            .collect();
 
         Ok(json!({
             "rules": rule_list,
@@ -641,7 +735,10 @@ impl ExtensionCapabilityProvider for RuleCapabilityProvider {
                     match action {
                         "status" => self.handle_rule_status(params).await,
                         "list" => self.handle_rule_list().await,
-                        _ => Err(CapabilityError::InvalidParameters(format!("Unknown action: {}", action))),
+                        _ => Err(CapabilityError::InvalidParameters(format!(
+                            "Unknown action: {}",
+                            action
+                        ))),
                     }
                 } else {
                     self.handle_rule_trigger(params).await
@@ -667,11 +764,15 @@ impl ExtensionCallCapabilityProvider {
     }
 
     async fn handle_extension_call(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let extension_id = params.get("extension_id")
+        let extension_id = params
+            .get("extension_id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| CapabilityError::InvalidParameters("Missing extension_id".to_string()))?;
+            .ok_or_else(|| {
+                CapabilityError::InvalidParameters("Missing extension_id".to_string())
+            })?;
 
-        let command = params.get("command")
+        let command = params
+            .get("command")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing command".to_string()))?;
 
@@ -679,9 +780,12 @@ impl ExtensionCallCapabilityProvider {
 
         use neomind_core::extension::ExtensionRegistry;
 
-        let registry: Arc<ExtensionRegistry> = self.services
+        let registry: Arc<ExtensionRegistry> = self
+            .services
             .get::<ExtensionRegistry>(keys::EXTENSION_REGISTRY)
-            .ok_or(CapabilityError::NotAvailable(ExtensionCapability::ExtensionCall))?;
+            .ok_or(CapabilityError::NotAvailable(
+                ExtensionCapability::ExtensionCall,
+            ))?;
 
         registry
             .execute_command(extension_id, command, &args)
@@ -728,29 +832,37 @@ impl StorageCapabilityProvider {
     }
 
     async fn handle_storage_query(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let query = params.get("query")
+        let query = params
+            .get("query")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing query".to_string()))?;
 
         let query_params = params.get("params").cloned().unwrap_or(json!({}));
 
-        let telemetry_storage: Arc<TimeSeriesStorage> = self.services
+        let telemetry_storage: Arc<TimeSeriesStorage> = self
+            .services
             .get::<TimeSeriesStorage>(keys::TELEMETRY_STORAGE)
-            .ok_or(CapabilityError::NotAvailable(ExtensionCapability::StorageQuery))?;
+            .ok_or(CapabilityError::NotAvailable(
+                ExtensionCapability::StorageQuery,
+            ))?;
 
         // Parse query type
         match query {
             "latest" => {
-                let device_id = query_params.get("device_id")
+                let device_id = query_params
+                    .get("device_id")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_id".to_string()))?;
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("Missing device_id".to_string())
+                    })?;
 
-                let metric = query_params.get("metric")
-                    .and_then(|v| v.as_str());
+                let metric = query_params.get("metric").and_then(|v| v.as_str());
 
                 if let Some(metric_name) = metric {
                     // Query single metric
-                    let result = telemetry_storage.latest(device_id, metric_name).await
+                    let result = telemetry_storage
+                        .latest(device_id, metric_name)
+                        .await
                         .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
 
                     match result {
@@ -771,27 +883,34 @@ impl StorageCapabilityProvider {
                     }
                 } else {
                     // Query all metrics for device
-                    let device_service: Arc<DeviceService> = self.services
+                    let device_service: Arc<DeviceService> = self
+                        .services
                         .get::<DeviceService>(keys::DEVICE_SERVICE)
-                        .ok_or(CapabilityError::NotAvailable(ExtensionCapability::StorageQuery))?;
-
-                    let device = device_service.get_device(device_id).await
-                        .ok_or_else(|| CapabilityError::InvalidParameters(
-                            format!("Device '{}' not found", device_id)
+                        .ok_or(CapabilityError::NotAvailable(
+                            ExtensionCapability::StorageQuery,
                         ))?;
+
+                    let device = device_service.get_device(device_id).await.ok_or_else(|| {
+                        CapabilityError::InvalidParameters(format!(
+                            "Device '{}' not found",
+                            device_id
+                        ))
+                    })?;
 
                     let mut metrics = serde_json::Map::new();
                     if let Some(template) = device_service.get_template(&device.device_type).await {
                         for metric_def in &template.metrics {
-                            if let Ok(Some(latest)) = telemetry_storage
-                                .latest(device_id, &metric_def.name)
-                                .await
+                            if let Ok(Some(latest)) =
+                                telemetry_storage.latest(device_id, &metric_def.name).await
                             {
-                                metrics.insert(metric_def.name.clone(), json!({
-                                    "value": latest.value,
-                                    "timestamp": latest.timestamp,
-                                    "quality": latest.quality,
-                                }));
+                                metrics.insert(
+                                    metric_def.name.clone(),
+                                    json!({
+                                        "value": latest.value,
+                                        "timestamp": latest.timestamp,
+                                        "quality": latest.quality,
+                                    }),
+                                );
                             }
                         }
                     }
@@ -804,23 +923,33 @@ impl StorageCapabilityProvider {
                 }
             }
             "range" => {
-                let device_id = query_params.get("device_id")
+                let device_id = query_params
+                    .get("device_id")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_id".to_string()))?;
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("Missing device_id".to_string())
+                    })?;
 
-                let metric = query_params.get("metric")
+                let metric = query_params
+                    .get("metric")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| CapabilityError::InvalidParameters("Missing metric".to_string()))?;
+                    .ok_or_else(|| {
+                        CapabilityError::InvalidParameters("Missing metric".to_string())
+                    })?;
 
-                let start = query_params.get("start")
+                let start = query_params
+                    .get("start")
                     .and_then(|v| v.as_i64())
                     .unwrap_or(chrono::Utc::now().timestamp_millis() - 3600000); // Default: 1 hour ago
 
-                let end = query_params.get("end")
+                let end = query_params
+                    .get("end")
                     .and_then(|v| v.as_i64())
                     .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
 
-                let results = telemetry_storage.query(device_id, metric, start, end).await
+                let results = telemetry_storage
+                    .query(device_id, metric, start, end)
+                    .await
                     .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
 
                 Ok(json!({
@@ -837,7 +966,10 @@ impl StorageCapabilityProvider {
                     })).collect::<Vec<_>>(),
                 }))
             }
-            _ => Err(CapabilityError::InvalidParameters(format!("Unknown query type: {}", query))),
+            _ => Err(CapabilityError::InvalidParameters(format!(
+                "Unknown query type: {}",
+                query
+            ))),
         }
     }
 }
@@ -883,36 +1015,33 @@ impl AgentCapabilityProvider {
     }
 
     async fn handle_agent_trigger(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let agent_id = params.get("agent_id")
+        let agent_id = params
+            .get("agent_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing agent_id".to_string()))?;
 
         let _input = params.get("input").cloned().unwrap_or(json!({}));
 
         // Try to get the agent manager
-        let agent_manager: Option<std::sync::Arc<AiAgentManager>> = self.services
-            .get::<AiAgentManager>(keys::AGENT_MANAGER);
+        let agent_manager: Option<std::sync::Arc<AiAgentManager>> =
+            self.services.get::<AiAgentManager>(keys::AGENT_MANAGER);
 
         if let Some(manager) = agent_manager {
             // Execute the agent using the real agent manager
             match manager.execute_agent_now(agent_id).await {
-                Ok(summary) => {
-                    Ok(json!({
-                        "success": true,
-                        "agent_id": agent_id,
-                        "execution_id": summary.execution_id,
-                        "status": format!("{:?}", summary.status),
-                        "duration_ms": summary.duration_ms,
-                        "summary": summary.summary,
-                    }))
-                }
-                Err(e) => {
-                    Ok(json!({
-                        "success": false,
-                        "agent_id": agent_id,
-                        "error": e.to_string(),
-                    }))
-                }
+                Ok(summary) => Ok(json!({
+                    "success": true,
+                    "agent_id": agent_id,
+                    "execution_id": summary.execution_id,
+                    "status": format!("{:?}", summary.status),
+                    "duration_ms": summary.duration_ms,
+                    "summary": summary.summary,
+                })),
+                Err(e) => Ok(json!({
+                    "success": false,
+                    "agent_id": agent_id,
+                    "error": e.to_string(),
+                })),
             }
         } else {
             // Fallback when agent manager is not available
@@ -928,39 +1057,33 @@ impl AgentCapabilityProvider {
         let agent_id = params.get("agent_id").and_then(|v| v.as_str());
 
         // Try to get the agent store
-        let agent_store: Option<std::sync::Arc<AgentStore>> = self.services
-            .get::<AgentStore>(keys::AGENT_STORE);
+        let agent_store: Option<std::sync::Arc<AgentStore>> =
+            self.services.get::<AgentStore>(keys::AGENT_STORE);
 
-        let agent_manager: Option<std::sync::Arc<AiAgentManager>> = self.services
-            .get::<AiAgentManager>(keys::AGENT_MANAGER);
+        let agent_manager: Option<std::sync::Arc<AiAgentManager>> =
+            self.services.get::<AiAgentManager>(keys::AGENT_MANAGER);
 
         if let Some(id) = agent_id {
             // Get specific agent status
             if let Some(store) = &agent_store {
                 match store.get_agent(id).await {
-                    Ok(Some(agent)) => {
-                        Ok(json!({
-                            "success": true,
-                            "agent_id": id,
-                            "name": agent.name,
-                            "status": format!("{:?}", agent.status),
-                            "description": agent.description,
-                        }))
-                    }
-                    Ok(None) => {
-                        Ok(json!({
-                            "success": false,
-                            "agent_id": id,
-                            "error": "Agent not found",
-                        }))
-                    }
-                    Err(e) => {
-                        Ok(json!({
-                            "success": false,
-                            "agent_id": id,
-                            "error": e.to_string(),
-                        }))
-                    }
+                    Ok(Some(agent)) => Ok(json!({
+                        "success": true,
+                        "agent_id": id,
+                        "name": agent.name,
+                        "status": format!("{:?}", agent.status),
+                        "description": agent.description,
+                    })),
+                    Ok(None) => Ok(json!({
+                        "success": false,
+                        "agent_id": id,
+                        "error": "Agent not found",
+                    })),
+                    Err(e) => Ok(json!({
+                        "success": false,
+                        "agent_id": id,
+                        "error": e.to_string(),
+                    })),
                 }
             } else {
                 Ok(json!({
@@ -972,13 +1095,21 @@ impl AgentCapabilityProvider {
         } else {
             // List all agents
             if let Some(manager) = &agent_manager {
-                match manager.list_agents(neomind_storage::AgentFilter::default()).await {
+                match manager
+                    .list_agents(neomind_storage::AgentFilter::default())
+                    .await
+                {
                     Ok(agents) => {
-                        let agent_list: Vec<Value> = agents.iter().map(|a| json!({
-                            "id": a.id,
-                            "name": a.name,
-                            "status": format!("{:?}", a.status),
-                        })).collect();
+                        let agent_list: Vec<Value> = agents
+                            .iter()
+                            .map(|a| {
+                                json!({
+                                    "id": a.id,
+                                    "name": a.name,
+                                    "status": format!("{:?}", a.status),
+                                })
+                            })
+                            .collect();
 
                         Ok(json!({
                             "success": true,
@@ -986,21 +1117,27 @@ impl AgentCapabilityProvider {
                             "count": agent_list.len(),
                         }))
                     }
-                    Err(e) => {
-                        Ok(json!({
-                            "success": false,
-                            "error": e.to_string(),
-                        }))
-                    }
+                    Err(e) => Ok(json!({
+                        "success": false,
+                        "error": e.to_string(),
+                    })),
                 }
             } else if let Some(store) = &agent_store {
-                match store.query_agents(neomind_storage::AgentFilter::default()).await {
+                match store
+                    .query_agents(neomind_storage::AgentFilter::default())
+                    .await
+                {
                     Ok(agents) => {
-                        let agent_list: Vec<Value> = agents.iter().map(|a| json!({
-                            "id": a.id,
-                            "name": a.name,
-                            "status": format!("{:?}", a.status),
-                        })).collect();
+                        let agent_list: Vec<Value> = agents
+                            .iter()
+                            .map(|a| {
+                                json!({
+                                    "id": a.id,
+                                    "name": a.name,
+                                    "status": format!("{:?}", a.status),
+                                })
+                            })
+                            .collect();
 
                         Ok(json!({
                             "success": true,
@@ -1008,12 +1145,10 @@ impl AgentCapabilityProvider {
                             "count": agent_list.len(),
                         }))
                     }
-                    Err(e) => {
-                        Ok(json!({
-                            "success": false,
-                            "error": e.to_string(),
-                        }))
-                    }
+                    Err(e) => Ok(json!({
+                        "success": false,
+                        "error": e.to_string(),
+                    })),
                 }
             } else {
                 Ok(json!({
@@ -1078,30 +1213,46 @@ pub async fn register_builtin_providers_with_dispatcher(
     event_dispatcher: Option<std::sync::Arc<neomind_core::extension::EventDispatcher>>,
 ) {
     let device_provider = Arc::new(DeviceCapabilityProvider::new(services.clone()));
-    context.register_provider("neomind-api::device".to_string(), device_provider).await;
+    context
+        .register_provider("neomind-api::device".to_string(), device_provider)
+        .await;
 
     // Use with_dispatcher if event_dispatcher is provided for dynamic subscription support
     let event_provider = if let Some(dispatcher) = event_dispatcher {
-        Arc::new(EventCapabilityProvider::with_dispatcher(event_bus, dispatcher))
+        Arc::new(EventCapabilityProvider::with_dispatcher(
+            event_bus, dispatcher,
+        ))
     } else {
         Arc::new(EventCapabilityProvider::new(event_bus))
     };
-    context.register_provider("neomind-api::event".to_string(), event_provider).await;
+    context
+        .register_provider("neomind-api::event".to_string(), event_provider)
+        .await;
 
     let telemetry_provider = Arc::new(TelemetryCapabilityProvider::new(services.clone()));
-    context.register_provider("neomind-api::telemetry".to_string(), telemetry_provider).await;
+    context
+        .register_provider("neomind-api::telemetry".to_string(), telemetry_provider)
+        .await;
 
     let rule_provider = Arc::new(RuleCapabilityProvider::new(services.clone()));
-    context.register_provider("neomind-api::rule".to_string(), rule_provider).await;
+    context
+        .register_provider("neomind-api::rule".to_string(), rule_provider)
+        .await;
 
     let extension_provider = Arc::new(ExtensionCallCapabilityProvider::new(services.clone()));
-    context.register_provider("neomind-api::extension".to_string(), extension_provider).await;
+    context
+        .register_provider("neomind-api::extension".to_string(), extension_provider)
+        .await;
 
     let storage_provider = Arc::new(StorageCapabilityProvider::new(services.clone()));
-    context.register_provider("neomind-api::storage".to_string(), storage_provider).await;
+    context
+        .register_provider("neomind-api::storage".to_string(), storage_provider)
+        .await;
 
     let agent_provider = Arc::new(AgentCapabilityProvider::new(services));
-    context.register_provider("neomind-api::agent".to_string(), agent_provider).await;
+    context
+        .register_provider("neomind-api::agent".to_string(), agent_provider)
+        .await;
 
     tracing::info!("Registered all built-in capability providers (7 providers, 11 capabilities)");
 }
@@ -1135,7 +1286,11 @@ impl CompositeCapabilityProvider {
     }
 
     /// Add a provider for a specific package
-    pub fn with_provider(mut self, package_name: String, provider: Arc<dyn ExtensionCapabilityProvider>) -> Self {
+    pub fn with_provider(
+        mut self,
+        package_name: String,
+        provider: Arc<dyn ExtensionCapabilityProvider>,
+    ) -> Self {
         self.providers.insert(package_name, provider);
         self
     }
@@ -1149,29 +1304,45 @@ impl CompositeCapabilityProvider {
         let mut composite = Self::new();
 
         let device_provider = Arc::new(DeviceCapabilityProvider::new(services.clone()));
-        composite.providers.insert("neomind-api::device".to_string(), device_provider);
+        composite
+            .providers
+            .insert("neomind-api::device".to_string(), device_provider);
 
         let event_provider = if let Some(dispatcher) = event_dispatcher {
-            Arc::new(EventCapabilityProvider::with_dispatcher(event_bus, dispatcher))
+            Arc::new(EventCapabilityProvider::with_dispatcher(
+                event_bus, dispatcher,
+            ))
         } else {
             Arc::new(EventCapabilityProvider::new(event_bus))
         };
-        composite.providers.insert("neomind-api::event".to_string(), event_provider);
+        composite
+            .providers
+            .insert("neomind-api::event".to_string(), event_provider);
 
         let telemetry_provider = Arc::new(TelemetryCapabilityProvider::new(services.clone()));
-        composite.providers.insert("neomind-api::telemetry".to_string(), telemetry_provider);
+        composite
+            .providers
+            .insert("neomind-api::telemetry".to_string(), telemetry_provider);
 
         let rule_provider = Arc::new(RuleCapabilityProvider::new(services.clone()));
-        composite.providers.insert("neomind-api::rule".to_string(), rule_provider);
+        composite
+            .providers
+            .insert("neomind-api::rule".to_string(), rule_provider);
 
         let extension_provider = Arc::new(ExtensionCallCapabilityProvider::new(services.clone()));
-        composite.providers.insert("neomind-api::extension".to_string(), extension_provider);
+        composite
+            .providers
+            .insert("neomind-api::extension".to_string(), extension_provider);
 
         let storage_provider = Arc::new(StorageCapabilityProvider::new(services.clone()));
-        composite.providers.insert("neomind-api::storage".to_string(), storage_provider);
+        composite
+            .providers
+            .insert("neomind-api::storage".to_string(), storage_provider);
 
         let agent_provider = Arc::new(AgentCapabilityProvider::new(services));
-        composite.providers.insert("neomind-api::agent".to_string(), agent_provider);
+        composite
+            .providers
+            .insert("neomind-api::agent".to_string(), agent_provider);
 
         composite
     }
@@ -1218,11 +1389,13 @@ fn capability_to_provider(capability: &ExtensionCapability) -> &'static str {
         | ExtensionCapability::DeviceMetricsWrite
         | ExtensionCapability::DeviceControl => "neomind-api::device",
 
-        ExtensionCapability::EventPublish
-        | ExtensionCapability::EventSubscribe => "neomind-api::event",
+        ExtensionCapability::EventPublish | ExtensionCapability::EventSubscribe => {
+            "neomind-api::event"
+        }
 
-        ExtensionCapability::TelemetryHistory
-        | ExtensionCapability::MetricsAggregate => "neomind-api::telemetry",
+        ExtensionCapability::TelemetryHistory | ExtensionCapability::MetricsAggregate => {
+            "neomind-api::telemetry"
+        }
 
         ExtensionCapability::RuleTrigger => "neomind-api::rule",
 

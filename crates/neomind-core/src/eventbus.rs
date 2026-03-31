@@ -99,11 +99,7 @@ impl EventBus {
     /// Publish an event with a custom source (synchronous version).
     ///
     /// This version can be called from any context, including non-async contexts.
-    pub fn publish_with_source_sync(
-        &self,
-        event: NeoMindEvent,
-        source: impl Into<String>,
-    ) -> bool {
+    pub fn publish_with_source_sync(&self, event: NeoMindEvent, source: impl Into<String>) -> bool {
         let metadata = EventMetadata::new(source);
         self.publish_with_metadata_sync(event, metadata)
     }
@@ -120,11 +116,7 @@ impl EventBus {
     /// Publish an event with custom metadata (synchronous version).
     ///
     /// This version can be called from any context, including non-async contexts.
-    pub fn publish_with_metadata_sync(
-        &self,
-        event: NeoMindEvent,
-        metadata: EventMetadata,
-    ) -> bool {
+    pub fn publish_with_metadata_sync(&self, event: NeoMindEvent, metadata: EventMetadata) -> bool {
         self.tx.send((event, metadata)).is_ok()
     }
 
@@ -136,7 +128,8 @@ impl EventBus {
         &self,
         event: NeoMindEvent,
     ) -> Result<bool, EventBusError> {
-        self.publish_with_backpressure_and_source(event, "system").await
+        self.publish_with_backpressure_and_source(event, "system")
+            .await
     }
 
     /// Publish with backpressure and custom source.

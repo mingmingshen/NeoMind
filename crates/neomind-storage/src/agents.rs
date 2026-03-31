@@ -83,8 +83,21 @@ pub struct AiAgent {
     /// Maximum chain depth (prevents infinite loops)
     #[serde(default = "default_max_chain_depth")]
     pub max_chain_depth: usize,
+    /// Tool configuration for function calling mode
+    #[serde(default)]
+    pub tool_config: Option<AgentToolConfig>,
     /// Error message (if status is error)
     pub error_message: Option<String>,
+}
+
+/// Tool configuration for AI Agent function calling mode.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentToolConfig {
+    /// Whether tool mode is enabled
+    pub enabled: bool,
+    /// Allowed tool names (empty = all available tools)
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
 }
 
 /// Default value for context window size.
@@ -1837,6 +1850,7 @@ mod tests {
             context_window_size: 10,
             enable_tool_chaining: false,
             max_chain_depth: 3,
+            tool_config: None,
             error_message: None,
         };
 
@@ -1878,6 +1892,7 @@ mod tests {
             context_window_size: 10,
             enable_tool_chaining: false,
             max_chain_depth: 3,
+            tool_config: None,
             error_message: None,
         };
 
@@ -1952,6 +1967,7 @@ mod tests {
             context_window_size: 10,
             enable_tool_chaining: false,
             max_chain_depth: 3,
+            tool_config: None,
             error_message: None,
         };
 
@@ -2016,6 +2032,7 @@ mod tests {
             context_window_size: 10,
             enable_tool_chaining: false,
             max_chain_depth: 3,
+            tool_config: None,
             error_message: None,
         };
 

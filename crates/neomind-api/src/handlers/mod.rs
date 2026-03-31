@@ -5,14 +5,15 @@ pub mod auth;
 pub mod auth_users;
 pub mod automations;
 pub mod basic;
+pub mod capabilities;
 pub mod common;
 pub mod config;
 pub mod dashboards;
+pub mod data;
 pub mod devices;
 pub mod events;
-pub mod extensions;
-pub mod capabilities;
 pub mod extension_stream;
+pub mod extensions;
 pub mod llm_backends;
 pub mod message_channels;
 pub mod messages;
@@ -23,8 +24,8 @@ pub mod settings;
 pub mod setup;
 pub mod stats;
 pub mod suggestions;
+pub mod tools;
 pub mod ws;
-pub mod data;
 
 // Re-export ServerState so handlers can use it
 pub use crate::server::ServerState;
@@ -33,10 +34,10 @@ pub use crate::server::ServerState;
 pub use basic::health_handler;
 pub use devices::{
     add_device_handler, aggregate_metric_handler, analyze_metric_timestamps_handler,
-    delete_device_handler, delete_device_type_handler,
-    generate_mdl_handler, get_device_command_history_handler,
-    get_device_handler, get_device_telemetry_handler, get_device_telemetry_summary_handler,
-    get_device_type_handler, import_cloud_device_types_handler, list_cloud_device_types_handler,
+    delete_device_handler, delete_device_type_handler, generate_mdl_handler,
+    get_device_command_history_handler, get_device_handler, get_device_telemetry_handler,
+    get_device_telemetry_summary_handler, get_device_type_handler,
+    import_cloud_device_types_handler, list_cloud_device_types_handler,
     list_device_metrics_debug_handler, list_device_types_handler, list_devices_handler,
     query_metric_handler, read_metric_handler, register_device_type_handler, send_command_handler,
     validate_device_type_handler,
@@ -74,8 +75,8 @@ pub use extensions::{
     register_extension_handler,
     start_extension_handler,
     stop_extension_handler,
-    unregister_extension_handler,
     uninstall_extension_handler,
+    unregister_extension_handler,
     upload_extension_file_handler,
 };
 // LLM Backends API
@@ -100,12 +101,14 @@ pub use messages::{
 };
 // Message channels API
 pub use message_channels::{
-    create_channel_handler, delete_channel_handler, get_channel_filter_handler,
-    get_channel_handler, get_channel_stats_handler, get_channel_type_schema_handler,
-    get_delivery_stats_handler, list_channel_types_handler, list_channels_handler,
-    list_delivery_logs_handler, test_channel_handler, toggle_enabled_handler,
-    update_channel_filter_handler, add_recipient_handler, list_recipients_handler,
-    remove_recipient_handler, update_channel_handler,
+    add_recipient_handler, create_channel_handler, delete_channel_handler,
+    get_channel_filter_handler, get_channel_handler, get_channel_stats_handler,
+    get_channel_type_schema_handler, get_delivery_stats_handler, list_channel_types_handler,
+    list_channels_handler, list_delivery_logs_handler, list_recipients_handler,
+    remove_recipient_handler, test_channel_handler, toggle_enabled_handler,
+    update_channel_filter_handler, update_channel_handler,
 };
 // Unified Data API
 pub use data::list_all_data_sources_handler;
+// Tools API
+pub use tools::{get_tool_handler, list_tools_handler};

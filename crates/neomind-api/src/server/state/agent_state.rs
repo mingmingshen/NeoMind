@@ -9,8 +9,8 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use neomind_agent::SessionManager;
 use neomind_agent::memory::TieredMemory;
+use neomind_agent::SessionManager;
 use neomind_storage::AgentStore;
 
 /// AI Agent manager type alias.

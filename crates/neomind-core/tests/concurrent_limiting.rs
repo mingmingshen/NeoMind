@@ -2,12 +2,10 @@
 //!
 //! Tests for the concurrent request limiting functionality
 
+use neomind_core::extension::isolated::{IsolatedExtensionConfig, IsolatedExtensionError};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use neomind_core::extension::isolated::{
-    IsolatedExtensionConfig, IsolatedExtensionError,
-};
 
 /// Test that max_concurrent_requests default is reasonable
 #[test]
@@ -16,7 +14,10 @@ fn test_default_concurrent_limit() {
     assert!(config.max_concurrent_requests > 0);
     assert!(config.max_concurrent_requests <= 1000); // Sanity check
 
-    println!("Default concurrent request limit: {}", config.max_concurrent_requests);
+    println!(
+        "Default concurrent request limit: {}",
+        config.max_concurrent_requests
+    );
     assert_eq!(config.max_concurrent_requests, 100);
 }
 
@@ -74,14 +75,17 @@ async fn test_concurrent_counter() {
     assert_eq!(success_count, limit);
     assert_eq!(counter.load(Ordering::SeqCst), 0);
 
-    println!("Successful requests: {} out of 10 (limit: {})", success_count, limit);
+    println!(
+        "Successful requests: {} out of 10 (limit: {})",
+        success_count, limit
+    );
 }
 
 /// Test scopeguard cleanup
 #[tokio::test]
 async fn test_scopeguard_cleanup() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use scopeguard::guard;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     let counter = Arc::new(AtomicUsize::new(0));
 
@@ -192,7 +196,10 @@ async fn test_concurrent_batch_operations() {
     }
 
     let success = *success_count.read().await;
-    println!("Successful batches: {} out of {} (limit: {})", success, batch_count, limit);
+    println!(
+        "Successful batches: {} out of {} (limit: {})",
+        success, batch_count, limit
+    );
 
     // All batches should complete eventually (semaphore queues requests)
     assert_eq!(success, batch_count);

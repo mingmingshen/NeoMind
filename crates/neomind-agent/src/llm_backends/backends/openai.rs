@@ -465,7 +465,9 @@ impl LlmRuntime for CloudRuntime {
             frequency_penalty: input.params.frequency_penalty,
             presence_penalty: input.params.presence_penalty,
             stream: false,
-            tools: input.tools.map(|tools| tools.into_iter().map(OpenAiTool::from).collect()),
+            tools: input
+                .tools
+                .map(|tools| tools.into_iter().map(OpenAiTool::from).collect()),
         };
 
         // Create rate limit key based on provider and API key hash
@@ -519,10 +521,7 @@ impl LlmRuntime for CloudRuntime {
         // Handle native tool calls from OpenAI - preserve JSON format to keep tool ID
         if let Some(ref tool_calls) = choice.message.tool_calls {
             if !tool_calls.is_empty() {
-                tracing::debug!(
-                    "OpenAI: received {} native tool calls",
-                    tool_calls.len()
-                );
+                tracing::debug!("OpenAI: received {} native tool calls", tool_calls.len());
                 // Build JSON array to preserve tool IDs (OpenAI-compatible format)
                 let tool_calls_json: Vec<serde_json::Value> = tool_calls
                     .iter()
@@ -615,7 +614,9 @@ impl LlmRuntime for CloudRuntime {
             frequency_penalty: input.params.frequency_penalty,
             presence_penalty: input.params.presence_penalty,
             stream: true,
-            tools: input.tools.map(|tools| tools.into_iter().map(OpenAiTool::from).collect()),
+            tools: input
+                .tools
+                .map(|tools| tools.into_iter().map(OpenAiTool::from).collect()),
         };
 
         tokio::spawn(async move {
@@ -659,7 +660,10 @@ impl LlmRuntime for CloudRuntime {
                     let mut stream = response.bytes_stream();
                     let mut buffer = Vec::new();
                     // Accumulate tool calls across chunks
-                    let mut accumulated_tool_calls: std::collections::HashMap<u32, AccumulatedToolCall> = std::collections::HashMap::new();
+                    let mut accumulated_tool_calls: std::collections::HashMap<
+                        u32,
+                        AccumulatedToolCall,
+                    > = std::collections::HashMap::new();
 
                     while let Some(chunk_result) = stream.next().await {
                         match chunk_result {
@@ -670,10 +674,13 @@ impl LlmRuntime for CloudRuntime {
                                 let mut search_start = 0;
                                 loop {
                                     // Find newline in remaining buffer
-                                    if let Some(nl_pos) = buffer[search_start..].iter().position(|&b| b == b'\n') {
+                                    if let Some(nl_pos) =
+                                        buffer[search_start..].iter().position(|&b| b == b'\n')
+                                    {
                                         let line_end = search_start + nl_pos;
                                         let line_bytes = &buffer[..line_end];
-                                        let line = String::from_utf8_lossy(line_bytes).trim().to_string();
+                                        let line =
+                                            String::from_utf8_lossy(line_bytes).trim().to_string();
 
                                         // Remove processed line from buffer
                                         buffer = buffer[line_end + 1..].to_vec();
@@ -685,19 +692,25 @@ impl LlmRuntime for CloudRuntime {
                                         if line == "data: [DONE]" {
                                             // Flush any accumulated tool calls
                                             if !accumulated_tool_calls.is_empty() {
-                                                let tool_calls_json: Vec<serde_json::Value> = accumulated_tool_calls
-                                                    .values()
-                                                    .map(|tc| {
-                                                        let args: serde_json::Value = serde_json::from_str(&tc.arguments)
-                                                            .unwrap_or_else(|_| serde_json::json!({}));
-                                                        serde_json::json!({
-                                                            "id": tc.id,
-                                                            "name": tc.name,
-                                                            "arguments": args
+                                                let tool_calls_json: Vec<serde_json::Value> =
+                                                    accumulated_tool_calls
+                                                        .values()
+                                                        .map(|tc| {
+                                                            let args: serde_json::Value =
+                                                                serde_json::from_str(&tc.arguments)
+                                                                    .unwrap_or_else(|_| {
+                                                                        serde_json::json!({})
+                                                                    });
+                                                            serde_json::json!({
+                                                                "id": tc.id,
+                                                                "name": tc.name,
+                                                                "arguments": args
+                                                            })
                                                         })
-                                                    })
-                                                    .collect();
-                                                let json_str = serde_json::to_string(&tool_calls_json).unwrap_or_default();
+                                                        .collect();
+                                                let json_str =
+                                                    serde_json::to_string(&tool_calls_json)
+                                                        .unwrap_or_default();
                                                 let _ = tx.send(Ok((json_str, false))).await;
                                             }
                                             let _ = tx.send(Ok((String::new(), false))).await;
@@ -709,20 +722,27 @@ impl LlmRuntime for CloudRuntime {
                                             {
                                                 if let Some(choice) = evt.choices.first() {
                                                     // Handle content
-                                                    if let Some(ref content) = choice.delta.content {
+                                                    if let Some(ref content) = choice.delta.content
+                                                    {
                                                         if !content.is_empty() {
-                                                            let _ = tx.send(Ok((content.clone(), false))).await;
+                                                            let _ = tx
+                                                                .send(Ok((content.clone(), false)))
+                                                                .await;
                                                         }
                                                     }
 
                                                     // Handle tool calls (incremental)
-                                                    if let Some(ref tool_calls) = choice.delta.tool_calls {
+                                                    if let Some(ref tool_calls) =
+                                                        choice.delta.tool_calls
+                                                    {
                                                         for tc in tool_calls {
-                                                            let entry = accumulated_tool_calls.entry(tc.index).or_insert(AccumulatedToolCall {
-                                                                id: None,
-                                                                name: None,
-                                                                arguments: String::new(),
-                                                            });
+                                                            let entry = accumulated_tool_calls
+                                                                .entry(tc.index)
+                                                                .or_insert(AccumulatedToolCall {
+                                                                    id: None,
+                                                                    name: None,
+                                                                    arguments: String::new(),
+                                                                });
 
                                                             // Update ID if present
                                                             if let Some(ref id) = tc.id {
@@ -734,7 +754,9 @@ impl LlmRuntime for CloudRuntime {
                                                                 if let Some(ref name) = func.name {
                                                                     entry.name = Some(name.clone());
                                                                 }
-                                                                if let Some(ref args) = func.arguments {
+                                                                if let Some(ref args) =
+                                                                    func.arguments
+                                                                {
                                                                     entry.arguments.push_str(args);
                                                                 }
                                                             }
@@ -742,24 +764,36 @@ impl LlmRuntime for CloudRuntime {
                                                     }
 
                                                     // Check for finish reason - flush tool calls
-                                                    if choice.finish_reason.as_deref() == Some("tool_calls")
-                                                        && !accumulated_tool_calls.is_empty() {
-                                                            let tool_calls_json: Vec<serde_json::Value> = accumulated_tool_calls
-                                                                .values()
-                                                                .map(|tc| {
-                                                                    let args: serde_json::Value = serde_json::from_str(&tc.arguments)
-                                                                        .unwrap_or_else(|_| serde_json::json!({}));
-                                                                    serde_json::json!({
-                                                                        "id": tc.id,
-                                                                        "name": tc.name,
-                                                                        "arguments": args
-                                                                    })
+                                                    if choice.finish_reason.as_deref()
+                                                        == Some("tool_calls")
+                                                        && !accumulated_tool_calls.is_empty()
+                                                    {
+                                                        let tool_calls_json: Vec<
+                                                            serde_json::Value,
+                                                        > = accumulated_tool_calls
+                                                            .values()
+                                                            .map(|tc| {
+                                                                let args: serde_json::Value =
+                                                                    serde_json::from_str(
+                                                                        &tc.arguments,
+                                                                    )
+                                                                    .unwrap_or_else(|_| {
+                                                                        serde_json::json!({})
+                                                                    });
+                                                                serde_json::json!({
+                                                                    "id": tc.id,
+                                                                    "name": tc.name,
+                                                                    "arguments": args
                                                                 })
-                                                                .collect();
-                                                            let json_str = serde_json::to_string(&tool_calls_json).unwrap_or_default();
-                                                            let _ = tx.send(Ok((json_str, false))).await;
-                                                            accumulated_tool_calls.clear();
-                                                        }
+                                                            })
+                                                            .collect();
+                                                        let json_str =
+                                                            serde_json::to_string(&tool_calls_json)
+                                                                .unwrap_or_default();
+                                                        let _ =
+                                                            tx.send(Ok((json_str, false))).await;
+                                                        accumulated_tool_calls.clear();
+                                                    }
                                                 }
                                             }
                                         }
@@ -1105,7 +1139,8 @@ fn is_vision_model(provider: &CloudProvider, model_name: &str) -> bool {
                 || name_lower.contains("gpt-4-vision")
                 || name_lower.contains("gpt-4.1") // gpt-4.1 models
                 || (name_lower.starts_with("gpt-4") && name_lower.contains("vision"))
-                || (name_lower.starts_with("o1") && !name_lower.contains("o1-preview")) // o1 and o1-mini support vision
+                || (name_lower.starts_with("o1") && !name_lower.contains("o1-preview"))
+            // o1 and o1-mini support vision
         }
         CloudProvider::Anthropic => {
             // All Claude 3 and later models support vision
@@ -1228,8 +1263,14 @@ mod tests {
         assert!(is_vision_model(&CloudProvider::OpenAI, "gpt-4o"));
         assert!(is_vision_model(&CloudProvider::OpenAI, "gpt-4o-mini"));
         assert!(is_vision_model(&CloudProvider::OpenAI, "gpt-4-turbo"));
-        assert!(is_vision_model(&CloudProvider::OpenAI, "gpt-4-vision-preview"));
-        assert!(is_vision_model(&CloudProvider::OpenAI, "gpt-4-1106-vision-preview"));
+        assert!(is_vision_model(
+            &CloudProvider::OpenAI,
+            "gpt-4-vision-preview"
+        ));
+        assert!(is_vision_model(
+            &CloudProvider::OpenAI,
+            "gpt-4-1106-vision-preview"
+        ));
         assert!(is_vision_model(&CloudProvider::OpenAI, "o1"));
         assert!(is_vision_model(&CloudProvider::OpenAI, "o1-mini"));
 
@@ -1244,14 +1285,26 @@ mod tests {
     fn test_is_vision_model_anthropic() {
         // Anthropic vision models (all Claude 3+)
         assert!(is_vision_model(&CloudProvider::Anthropic, "claude-3-opus"));
-        assert!(is_vision_model(&CloudProvider::Anthropic, "claude-3-sonnet"));
+        assert!(is_vision_model(
+            &CloudProvider::Anthropic,
+            "claude-3-sonnet"
+        ));
         assert!(is_vision_model(&CloudProvider::Anthropic, "claude-3-haiku"));
-        assert!(is_vision_model(&CloudProvider::Anthropic, "claude-3-5-sonnet"));
-        assert!(is_vision_model(&CloudProvider::Anthropic, "claude-3.5-sonnet"));
+        assert!(is_vision_model(
+            &CloudProvider::Anthropic,
+            "claude-3-5-sonnet"
+        ));
+        assert!(is_vision_model(
+            &CloudProvider::Anthropic,
+            "claude-3.5-sonnet"
+        ));
 
         // Anthropic non-vision models
         assert!(!is_vision_model(&CloudProvider::Anthropic, "claude-2"));
-        assert!(!is_vision_model(&CloudProvider::Anthropic, "claude-instant"));
+        assert!(!is_vision_model(
+            &CloudProvider::Anthropic,
+            "claude-instant"
+        ));
     }
 
     #[test]

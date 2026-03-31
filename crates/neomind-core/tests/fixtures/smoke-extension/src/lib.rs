@@ -1,10 +1,10 @@
 use async_trait::async_trait;
+use neomind_extension_sdk::capabilities::CapabilityContext;
 use neomind_extension_sdk::{
     neomind_export, Extension, ExtensionCommand, ExtensionError, ExtensionMetadata,
-    ExtensionMetricValue, MetricDataType, MetricDescriptor, ParamMetricValue,
-    ParameterDefinition, Result,
+    ExtensionMetricValue, MetricDataType, MetricDescriptor, ParamMetricValue, ParameterDefinition,
+    Result,
 };
-use neomind_extension_sdk::capabilities::CapabilityContext;
 use serde_json::json;
 use std::sync::Mutex;
 
@@ -42,63 +42,67 @@ impl Extension for NativeCapabilitySmokeExtension {
     }
 
     fn commands(&self) -> Vec<ExtensionCommand> {
-        vec![ExtensionCommand {
-            name: "write_virtual_metric".to_string(),
-            display_name: "Write Virtual Metric".to_string(),
-            description: "Writes a virtual metric through native capability IPC".to_string(),
-            payload_template: String::new(),
-            parameters: vec![
-                ParameterDefinition {
-                    name: "device_id".to_string(),
-                    display_name: "Device ID".to_string(),
-                    description: String::new(),
-                    param_type: MetricDataType::String,
-                    required: true,
-                    default_value: None,
-                    min: None,
-                    max: None,
-                    options: Vec::new(),
-                },
-                ParameterDefinition {
-                    name: "metric".to_string(),
-                    display_name: "Metric".to_string(),
-                    description: String::new(),
-                    param_type: MetricDataType::String,
-                    required: true,
-                    default_value: None,
-                    min: None,
-                    max: None,
-                    options: Vec::new(),
-                },
-                ParameterDefinition {
-                    name: "value".to_string(),
-                    display_name: "Value".to_string(),
-                    description: String::new(),
-                    param_type: MetricDataType::String,
-                    required: true,
-                    default_value: None,
-                    min: None,
-                    max: None,
-                    options: Vec::new(),
-                },
-            ],
-            fixed_values: std::collections::HashMap::new(),
-            samples: vec![json!({
-                "device_id": "device-1",
-                "metric": "virtual.test.status",
-                "value": "ok",
-            })],
-            parameter_groups: Vec::new(),
-        }, ExtensionCommand {
-            name: "get_last_event_result".to_string(),
-            display_name: "Get Last Event Result".to_string(),
-            description: "Returns the last capability response produced from handle_event".to_string(),
-            payload_template: String::new(),
-            parameters: Vec::new(),
-            fixed_values: std::collections::HashMap::new(),
-            samples: vec![json!({})],
-            parameter_groups: Vec::new(),
-        }]
+        vec![
+            ExtensionCommand {
+                name: "write_virtual_metric".to_string(),
+                display_name: "Write Virtual Metric".to_string(),
+                description: "Writes a virtual metric through native capability IPC".to_string(),
+                payload_template: String::new(),
+                parameters: vec![
+                    ParameterDefinition {
+                        name: "device_id".to_string(),
+                        display_name: "Device ID".to_string(),
+                        description: String::new(),
+                        param_type: MetricDataType::String,
+                        required: true,
+                        default_value: None,
+                        min: None,
+                        max: None,
+                        options: Vec::new(),
+                    },
+                    ParameterDefinition {
+                        name: "metric".to_string(),
+                        display_name: "Metric".to_string(),
+                        description: String::new(),
+                        param_type: MetricDataType::String,
+                        required: true,
+                        default_value: None,
+                        min: None,
+                        max: None,
+                        options: Vec::new(),
+                    },
+                    ParameterDefinition {
+                        name: "value".to_string(),
+                        display_name: "Value".to_string(),
+                        description: String::new(),
+                        param_type: MetricDataType::String,
+                        required: true,
+                        default_value: None,
+                        min: None,
+                        max: None,
+                        options: Vec::new(),
+                    },
+                ],
+                fixed_values: std::collections::HashMap::new(),
+                samples: vec![json!({
+                    "device_id": "device-1",
+                    "metric": "virtual.test.status",
+                    "value": "ok",
+                })],
+                parameter_groups: Vec::new(),
+            },
+            ExtensionCommand {
+                name: "get_last_event_result".to_string(),
+                display_name: "Get Last Event Result".to_string(),
+                description: "Returns the last capability response produced from handle_event"
+                    .to_string(),
+                payload_template: String::new(),
+                parameters: Vec::new(),
+                fixed_values: std::collections::HashMap::new(),
+                samples: vec![json!({})],
+                parameter_groups: Vec::new(),
+            },
+        ]
     }
 
     fn metrics(&self) -> Vec<MetricDescriptor> {
@@ -123,11 +127,15 @@ impl Extension for NativeCapabilitySmokeExtension {
                 let device_id = args
                     .get("device_id")
                     .and_then(|value| value.as_str())
-                    .ok_or_else(|| ExtensionError::InvalidArguments("missing device_id".to_string()))?;
+                    .ok_or_else(|| {
+                        ExtensionError::InvalidArguments("missing device_id".to_string())
+                    })?;
                 let metric = args
                     .get("metric")
                     .and_then(|value| value.as_str())
-                    .ok_or_else(|| ExtensionError::InvalidArguments("missing metric".to_string()))?;
+                    .ok_or_else(|| {
+                        ExtensionError::InvalidArguments("missing metric".to_string())
+                    })?;
                 let value = args
                     .get("value")
                     .cloned()

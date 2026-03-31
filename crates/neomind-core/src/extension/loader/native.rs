@@ -32,10 +32,10 @@
 //! - Extensions should handle errors gracefully using `Result` types
 //! - Extensions should avoid using `unwrap()` or `expect()` in FFI boundary
 
-use std::path::{Path, PathBuf};
-use std::panic;
 use crate::extension::system::{CExtensionMetadata, ABI_VERSION};
 use crate::extension::types::{ExtensionError, ExtensionMetadata, Result};
+use std::panic;
+use std::path::{Path, PathBuf};
 use tracing::warn;
 
 /// Loader for native extension metadata and discovery.
@@ -126,7 +126,8 @@ impl NativeExtensionMetadataLoader {
         ];
 
         for symbol_name in &required_symbols {
-            let symbol_result = unsafe { library.get::<unsafe extern "C" fn()>(symbol_name.as_bytes()) };
+            let symbol_result =
+                unsafe { library.get::<unsafe extern "C" fn()>(symbol_name.as_bytes()) };
             if symbol_result.is_err() {
                 return Err(ExtensionError::LoadFailed(format!(
                     "Extension uses incompatible FFI interface (missing symbol: {}). \
@@ -274,11 +275,13 @@ impl NativeExtensionMetadataLoader {
             )));
         }
 
-        let content = std::fs::read_to_string(&sidecar_path)
-            .map_err(|e| ExtensionError::LoadFailed(format!("Failed to read sidecar JSON: {}", e)))?;
+        let content = std::fs::read_to_string(&sidecar_path).map_err(|e| {
+            ExtensionError::LoadFailed(format!("Failed to read sidecar JSON: {}", e))
+        })?;
 
-        let meta: ExtensionMetadata = serde_json::from_str(&content)
-            .map_err(|e| ExtensionError::LoadFailed(format!("Invalid sidecar JSON format: {}", e)))?;
+        let meta: ExtensionMetadata = serde_json::from_str(&content).map_err(|e| {
+            ExtensionError::LoadFailed(format!("Invalid sidecar JSON format: {}", e))
+        })?;
 
         // Update file_path to point to the actual binary
         Ok(ExtensionMetadata {

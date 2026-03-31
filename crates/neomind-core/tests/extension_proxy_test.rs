@@ -9,13 +9,13 @@
 //! - Session management proxying
 
 use neomind_core::extension::isolated::IsolatedExtensionError;
-use neomind_core::extension::system::{
-    Extension, ExtensionError, ExtensionMetadata, ExtensionDescriptor,
-    ExtensionCommand, MetricDescriptor,
-};
 use neomind_core::extension::stream::{
-    StreamCapability, StreamDirection, StreamMode, StreamSession,
-    ClientInfo, DataChunk, StreamDataType, FlowControl,
+    ClientInfo, DataChunk, FlowControl, StreamCapability, StreamDataType, StreamDirection,
+    StreamMode, StreamSession,
+};
+use neomind_core::extension::system::{
+    Extension, ExtensionCommand, ExtensionDescriptor, ExtensionError, ExtensionMetadata,
+    MetricDescriptor,
 };
 use serde_json::json;
 
@@ -58,11 +58,7 @@ fn test_isolated_extension_error_types() {
 
 #[test]
 fn test_extension_descriptor_creation() {
-    let metadata = ExtensionMetadata::new(
-        "test.extension",
-        "Test Extension",
-        "1.0.0",
-    );
+    let metadata = ExtensionMetadata::new("test.extension", "Test Extension", "1.0.0");
 
     let descriptor = ExtensionDescriptor::new(metadata.clone());
 
@@ -74,42 +70,31 @@ fn test_extension_descriptor_creation() {
 
 #[test]
 fn test_extension_descriptor_with_capabilities() {
-    let metadata = ExtensionMetadata::new(
-        "test.extension",
-        "Test Extension",
-        "1.0.0",
-    );
+    let metadata = ExtensionMetadata::new("test.extension", "Test Extension", "1.0.0");
 
-    let commands = vec![
-        ExtensionCommand {
-            name: "test_command".to_string(),
-            display_name: "Test Command".to_string(),
-            description: "A test command".to_string(),
-            payload_template: "{}".to_string(),
-            parameters: vec![],
-            fixed_values: Default::default(),
-            samples: vec![],
-            parameter_groups: vec![],
-        },
-    ];
+    let commands = vec![ExtensionCommand {
+        name: "test_command".to_string(),
+        display_name: "Test Command".to_string(),
+        description: "A test command".to_string(),
+        payload_template: "{}".to_string(),
+        parameters: vec![],
+        fixed_values: Default::default(),
+        samples: vec![],
+        parameter_groups: vec![],
+    }];
 
-    let metrics = vec![
-        MetricDescriptor {
-            name: "test_metric".to_string(),
-            display_name: "Test Metric".to_string(),
-            data_type: neomind_core::extension::system::MetricDataType::Integer,
-            unit: "count".to_string(),
-            min: None,
-            max: None,
-            required: false,
-        },
-    ];
+    let metrics = vec![MetricDescriptor {
+        name: "test_metric".to_string(),
+        display_name: "Test Metric".to_string(),
+        data_type: neomind_core::extension::system::MetricDataType::Integer,
+        unit: "count".to_string(),
+        min: None,
+        max: None,
+        required: false,
+    }];
 
-    let descriptor = ExtensionDescriptor::with_capabilities(
-        metadata,
-        commands.clone(),
-        metrics.clone(),
-    );
+    let descriptor =
+        ExtensionDescriptor::with_capabilities(metadata, commands.clone(), metrics.clone());
 
     assert_eq!(descriptor.commands.len(), 1);
     assert_eq!(descriptor.metrics.len(), 1);
@@ -218,7 +203,10 @@ fn test_stream_session_creation() {
 
     assert_eq!(session.id, "session-123");
     assert_eq!(session.extension_id, "test-extension");
-    assert_eq!(session.client_info.as_ref().unwrap().client_id, "test-client");
+    assert_eq!(
+        session.client_info.as_ref().unwrap().client_id,
+        "test-client"
+    );
     assert!(session.started_at > 0);
 }
 
@@ -228,8 +216,8 @@ fn test_stream_session_creation() {
 
 #[test]
 fn test_data_chunk_for_streaming() {
-    let chunk = DataChunk::binary(1, vec![0x01, 0x02, 0x03])
-        .with_metadata(json!({"source": "camera"}));
+    let chunk =
+        DataChunk::binary(1, vec![0x01, 0x02, 0x03]).with_metadata(json!({"source": "camera"}));
 
     assert_eq!(chunk.sequence, 1);
     assert_eq!(chunk.data, vec![0x01, 0x02, 0x03]);
@@ -252,13 +240,9 @@ fn test_data_chunk_image_for_streaming() {
 
 #[test]
 fn test_extension_metadata_for_proxy() {
-    let metadata = ExtensionMetadata::new(
-        "proxy.test",
-        "Proxy Test Extension",
-        "2.0.0",
-    )
-    .with_description("A test extension for proxy testing")
-    .with_author("Test Author");
+    let metadata = ExtensionMetadata::new("proxy.test", "Proxy Test Extension", "2.0.0")
+        .with_description("A test extension for proxy testing")
+        .with_author("Test Author");
 
     assert_eq!(metadata.id, "proxy.test");
     assert_eq!(metadata.name, "Proxy Test Extension");
@@ -275,7 +259,7 @@ fn test_extension_metadata_for_proxy() {
 fn test_proxy_error_chain() {
     // Test that errors can be created and have proper messages
     let isolated_err = IsolatedExtensionError::IpcError("Connection lost".to_string());
-    
+
     // Verify the error message is preserved
     let err_string = isolated_err.to_string();
     assert!(err_string.contains("Connection lost") || err_string.contains("IPC"));
@@ -283,11 +267,7 @@ fn test_proxy_error_chain() {
 
 #[test]
 fn test_descriptor_with_stream_capability() {
-    let metadata = ExtensionMetadata::new(
-        "stream.test",
-        "Stream Test",
-        "1.0.0",
-    );
+    let metadata = ExtensionMetadata::new("stream.test", "Stream Test", "1.0.0");
 
     let descriptor = ExtensionDescriptor::new(metadata);
 
@@ -346,10 +326,7 @@ fn test_stream_capability_validation() {
     let cap = StreamCapability {
         direction: StreamDirection::Bidirectional,
         mode: StreamMode::Stateful,
-        supported_data_types: vec![
-            StreamDataType::Binary,
-            StreamDataType::Json,
-        ],
+        supported_data_types: vec![StreamDataType::Binary, StreamDataType::Json],
         max_chunk_size: 1024 * 1024,
         preferred_chunk_size: 64 * 1024,
         max_concurrent_sessions: 5,
@@ -420,11 +397,7 @@ struct MockProxyExtension {
 impl MockProxyExtension {
     fn new() -> Self {
         Self {
-            metadata: ExtensionMetadata::new(
-                "mock.proxy",
-                "Mock Proxy Extension",
-                "1.0.0",
-            ),
+            metadata: ExtensionMetadata::new("mock.proxy", "Mock Proxy Extension", "1.0.0"),
             commands: vec![],
             metrics: vec![],
         }
@@ -473,7 +446,10 @@ async fn test_mock_extension_via_trait() {
     let result = ext.execute_command("ping", &json!({})).await.unwrap();
     assert_eq!(result["pong"], true);
 
-    let result = ext.execute_command("echo", &json!({"message": "hello"})).await.unwrap();
+    let result = ext
+        .execute_command("echo", &json!({"message": "hello"}))
+        .await
+        .unwrap();
     assert_eq!(result["echo"]["message"], "hello");
 }
 

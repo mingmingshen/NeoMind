@@ -450,9 +450,7 @@ mod tests {
             fn metadata(&self) -> &ExtensionMetadata {
                 use std::sync::OnceLock;
                 static META: OnceLock<ExtensionMetadata> = OnceLock::new();
-                META.get_or_init(|| {
-                    ExtensionMetadata::new("test-ext", "Test", "1.0.0")
-                })
+                META.get_or_init(|| ExtensionMetadata::new("test-ext", "Test", "1.0.0"))
             }
 
             fn metrics(&self) -> Vec<MetricDefinition> {

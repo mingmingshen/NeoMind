@@ -22,10 +22,10 @@ pub async fn create_router() -> Router {
 /// Create the application router with a specific state.
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
-        agents, auth as auth_handlers, auth_users, automations, basic, config,
-        dashboards, data, devices, events, extensions, extension_stream, llm_backends,
-        message_channels, messages, mqtt, rules, sessions, settings, setup, stats,
-        suggestions, capabilities,
+        agents, auth as auth_handlers, auth_users, automations, basic, capabilities, config,
+        dashboards, data, devices, events, extension_stream, extensions, llm_backends,
+        message_channels, messages, mqtt, rules, sessions, settings, setup, stats, suggestions,
+        tools,
     };
 
     // Public routes (no authentication required)
@@ -124,11 +124,13 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/capabilities/:name",
             get(capabilities::get_capability_handler),
         )
+        // Tools API (public - read-only metadata about available tools)
+        .route("/api/tools", get(tools::list_tools_handler))
+        .route("/api/tools/:name", get(tools::get_tool_handler))
         // Extension-specific routes ( :id must come after specific paths)
         .route(
             "/api/extensions/:id",
-            get(extensions::get_extension_handler)
-            .delete(extensions::unregister_extension_handler),
+            get(extensions::get_extension_handler).delete(extensions::unregister_extension_handler),
         )
         .route(
             "/api/extensions/:id/health",
@@ -837,9 +839,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         ));
 
     // Combine all routes - extension_upload_routes has its own larger limit
-    let router = router
-        .merge(limited_routes)
-        .merge(extension_upload_routes);
+    let router = router.merge(limited_routes).merge(extension_upload_routes);
 
     // Static file routes - serve embedded frontend assets
     let static_routes = Router::new()

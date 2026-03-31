@@ -231,12 +231,8 @@ impl IntentAnalyzer {
         let commands = self.commands.read().await;
 
         // Estimate: assume ~10% of items will match
-        let estimated_entities = (device_ids.len()
-            + metrics.len()
-            + device_types.len()
-            + commands.len())
-            / 10
-            + 1;
+        let estimated_entities =
+            (device_ids.len() + metrics.len() + device_types.len() + commands.len()) / 10 + 1;
         let mut entities = Vec::with_capacity(estimated_entities.min(50));
 
         // Find device IDs

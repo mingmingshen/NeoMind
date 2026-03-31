@@ -63,11 +63,7 @@ impl ExtensionContext {
     /// ```ignore
     /// let result = ctx.invoke_capability("device_metrics_read", json!({"device_id": "sensor-1"}))?;
     /// ```
-    pub fn invoke_capability(
-        &self,
-        capability: &str,
-        params: &Value,
-    ) -> Result<Value, String> {
+    pub fn invoke_capability(&self, capability: &str, params: &Value) -> Result<Value, String> {
         // Check permission (optional, host also checks)
         if !self.required_capabilities.contains(&capability.to_string()) {
             // Still allow the call, host will deny if not permitted
@@ -106,7 +102,12 @@ impl ExtensionContext {
     }
 
     /// Send device command
-    pub fn device_command(&self, device_id: &str, command: &str, params: &Value) -> Result<Value, String> {
+    pub fn device_command(
+        &self,
+        device_id: &str,
+        command: &str,
+        params: &Value,
+    ) -> Result<Value, String> {
         self.invoke_capability(
             capabilities::DEVICE_CONTROL,
             &serde_json::json!({
@@ -282,8 +283,12 @@ mod tests {
 
         assert_eq!(ctx.extension_id(), "test-ext");
         assert_eq!(ctx.required_capabilities.len(), 2);
-        assert!(ctx.required_capabilities.contains(&capabilities::DEVICE_METRICS_READ.to_string()));
-        assert!(ctx.required_capabilities.contains(&capabilities::DEVICE_CONTROL.to_string()));
+        assert!(ctx
+            .required_capabilities
+            .contains(&capabilities::DEVICE_METRICS_READ.to_string()));
+        assert!(ctx
+            .required_capabilities
+            .contains(&capabilities::DEVICE_CONTROL.to_string()));
     }
 
     #[test]

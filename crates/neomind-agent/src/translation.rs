@@ -8,8 +8,7 @@ use neomind_devices::mdl_format::DeviceTypeDefinition;
 use neomind_rules::dsl::{ComparisonOperator, ParsedRule, RuleAction, RuleCondition};
 
 /// Supported languages for translation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Language {
     /// Chinese (Simplified)
     Chinese,
@@ -17,7 +16,6 @@ pub enum Language {
     #[default]
     English,
 }
-
 
 impl Language {
     /// Get language code.
@@ -171,9 +169,8 @@ impl MdlTranslator {
 
     fn list_capabilities(device: &DeviceTypeDefinition, language: Language) -> Vec<String> {
         // Pre-allocate with estimated capacity to reduce reallocations
-        let estimated_caps = device.categories.len()
-            + device.uplink.metrics.len()
-            + device.downlink.commands.len();
+        let estimated_caps =
+            device.categories.len() + device.uplink.metrics.len() + device.downlink.commands.len();
         let mut caps = Vec::with_capacity(estimated_caps);
 
         match language {
@@ -1023,9 +1020,8 @@ pub enum ConversionError {
 mod tests {
     use super::*;
     use neomind_devices::mdl_format::MetricDefinition;
-    
+
     use neomind_rules::dsl::RuleDslParser;
-    
 
     #[test]
     fn test_language_code() {

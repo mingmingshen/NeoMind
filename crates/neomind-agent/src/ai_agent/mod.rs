@@ -159,6 +159,7 @@ impl AiAgentManager {
             context_window_size: Default::default(),
             enable_tool_chaining: false, // Default disabled for backward compatibility
             max_chain_depth: 3,          // Default max depth
+            tool_config: None,
         };
 
         // Save agent to storage

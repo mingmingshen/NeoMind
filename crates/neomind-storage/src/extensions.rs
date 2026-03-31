@@ -158,7 +158,10 @@ impl ExtensionRecord {
         if let Some(frontend_path) = frontend_path {
             let mut config = self.config.unwrap_or_else(|| serde_json::json!({}));
             if let Some(obj) = config.as_object_mut() {
-                obj.insert("frontend_path".to_string(), serde_json::Value::String(frontend_path));
+                obj.insert(
+                    "frontend_path".to_string(),
+                    serde_json::Value::String(frontend_path),
+                );
             }
             self.config = Some(config);
         }
@@ -331,15 +334,15 @@ impl ExtensionStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(EXTENSIONS_TABLE)?;
-            let mut record: ExtensionRecord = serde_json::from_slice(
-                table.get(id)?.unwrap().value()
-            ).map_err(|e| Error::Serialization(e.to_string()))?;
+            let mut record: ExtensionRecord =
+                serde_json::from_slice(table.get(id)?.unwrap().value())
+                    .map_err(|e| Error::Serialization(e.to_string()))?;
             record.last_error = Some(error.to_string());
             record.last_error_at = Some(Utc::now().timestamp());
             record.health_status = "error".to_string();
             record.touch();
-            let value = serde_json::to_vec(&record)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(&record).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert(id, value.as_slice())?;
         }
         write_txn.commit()?;
@@ -359,9 +362,9 @@ impl ExtensionStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(EXTENSIONS_TABLE)?;
-            let mut record: ExtensionRecord = serde_json::from_slice(
-                table.get(id)?.unwrap().value()
-            ).map_err(|e| Error::Serialization(e.to_string()))?;
+            let mut record: ExtensionRecord =
+                serde_json::from_slice(table.get(id)?.unwrap().value())
+                    .map_err(|e| Error::Serialization(e.to_string()))?;
             record.health_status = status.to_string();
             if status == "ok" {
                 // Clear error if status is ok
@@ -369,8 +372,8 @@ impl ExtensionStore {
                 record.last_error_at = None;
             }
             record.touch();
-            let value = serde_json::to_vec(&record)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(&record).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert(id, value.as_slice())?;
         }
         write_txn.commit()?;

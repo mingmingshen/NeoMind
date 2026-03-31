@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use crate::host::*;
 
 #[cfg(target_arch = "wasm32")]
-use crate::wasm::{ExtensionContext, capabilities};
+use crate::wasm::{capabilities, ExtensionContext};
 
 /// Capability error type
 pub type CapabilityError = String;
@@ -31,10 +31,7 @@ pub enum QueryType {
     /// Query latest value(s)
     Latest,
     /// Query range of values
-    Range {
-        start: i64,
-        end: i64,
-    },
+    Range { start: i64, end: i64 },
 }
 
 // ============================================================================
@@ -62,10 +59,17 @@ pub async fn get_latest(
         .await
         .map_err(|e| e.to_string())?;
 
-    if result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if result
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         Ok(Some(MetricValue {
             value: result.get("value").cloned().unwrap_or(json!(null)),
-            timestamp: result.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0),
+            timestamp: result
+                .get("timestamp")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0),
             quality: result.get("quality").and_then(|v| v.as_f64()),
         }))
     } else {
@@ -90,10 +94,17 @@ pub fn get_latest(
         }),
     )?;
 
-    if result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if result
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         Ok(Some(MetricValue {
             value: result.get("value").cloned().unwrap_or(json!(null)),
-            timestamp: result.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0),
+            timestamp: result
+                .get("timestamp")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0),
             quality: result.get("quality").and_then(|v| v.as_f64()),
         }))
     } else {
@@ -124,17 +135,20 @@ pub async fn get_all_latest(
         .await
         .map_err(|e| e.to_string())?;
 
-    let metrics = result.get("metrics")
+    let metrics = result
+        .get("metrics")
         .and_then(|v| v.as_object())
         .map(|obj| {
-            obj.iter().map(|(k, v)| {
-                let value = MetricValue {
-                    value: v.get("value").cloned().unwrap_or(json!(null)),
-                    timestamp: v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0),
-                    quality: v.get("quality").and_then(|q| q.as_f64()),
-                };
-                (k.clone(), value)
-            }).collect()
+            obj.iter()
+                .map(|(k, v)| {
+                    let value = MetricValue {
+                        value: v.get("value").cloned().unwrap_or(json!(null)),
+                        timestamp: v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0),
+                        quality: v.get("quality").and_then(|q| q.as_f64()),
+                    };
+                    (k.clone(), value)
+                })
+                .collect()
         })
         .unwrap_or_default();
 
@@ -159,17 +173,20 @@ pub fn get_all_latest(
         }),
     )?;
 
-    let metrics = result.get("metrics")
+    let metrics = result
+        .get("metrics")
         .and_then(|v| v.as_object())
         .map(|obj| {
-            obj.iter().map(|(k, v)| {
-                let value = MetricValue {
-                    value: v.get("value").cloned().unwrap_or(json!(null)),
-                    timestamp: v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0),
-                    quality: v.get("quality").and_then(|q| q.as_f64()),
-                };
-                (k.clone(), value)
-            }).collect()
+            obj.iter()
+                .map(|(k, v)| {
+                    let value = MetricValue {
+                        value: v.get("value").cloned().unwrap_or(json!(null)),
+                        timestamp: v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0),
+                        quality: v.get("quality").and_then(|q| q.as_f64()),
+                    };
+                    (k.clone(), value)
+                })
+                .collect()
         })
         .unwrap_or_default();
 
@@ -208,14 +225,17 @@ pub async fn get_range(
         .await
         .map_err(|e| e.to_string())?;
 
-    let data = result.get("data")
+    let data = result
+        .get("data")
         .and_then(|v| v.as_array())
         .map(|arr| {
-            arr.iter().map(|d| MetricValue {
-                value: d.get("value").cloned().unwrap_or(json!(null)),
-                timestamp: d.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0),
-                quality: d.get("quality").and_then(|q| q.as_f64()),
-            }).collect()
+            arr.iter()
+                .map(|d| MetricValue {
+                    value: d.get("value").cloned().unwrap_or(json!(null)),
+                    timestamp: d.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0),
+                    quality: d.get("quality").and_then(|q| q.as_f64()),
+                })
+                .collect()
         })
         .unwrap_or_default();
 
@@ -243,14 +263,17 @@ pub fn get_range(
         }),
     )?;
 
-    let data = result.get("data")
+    let data = result
+        .get("data")
         .and_then(|v| v.as_array())
         .map(|arr| {
-            arr.iter().map(|d| MetricValue {
-                value: d.get("value").cloned().unwrap_or(json!(null)),
-                timestamp: d.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0),
-                quality: d.get("quality").and_then(|q| q.as_f64()),
-            }).collect()
+            arr.iter()
+                .map(|d| MetricValue {
+                    value: d.get("value").cloned().unwrap_or(json!(null)),
+                    timestamp: d.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0),
+                    quality: d.get("quality").and_then(|q| q.as_f64()),
+                })
+                .collect()
         })
         .unwrap_or_default();
 
@@ -339,11 +362,14 @@ mod tests {
     #[test]
     fn test_device_metrics() {
         let mut metrics = std::collections::HashMap::new();
-        metrics.insert("temperature".to_string(), MetricValue {
-            value: json!(25.5),
-            timestamp: 1000,
-            quality: Some(1.0),
-        });
+        metrics.insert(
+            "temperature".to_string(),
+            MetricValue {
+                value: json!(25.5),
+                timestamp: 1000,
+                quality: Some(1.0),
+            },
+        );
 
         let dm = DeviceMetrics {
             device_id: "sensor-001".to_string(),

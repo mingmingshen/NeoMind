@@ -222,10 +222,10 @@ impl DeviceStateStore {
     pub fn with_memory() -> Self {
         Self {
             storage: UnifiedStorage::with_memory(),
-            cache: Arc::new(RwLock::new(HashMap::with_capacity(256))),  // Pre-allocate cache
-            type_index: Arc::new(RwLock::new(HashMap::with_capacity(32))),  // Pre-allocate for typical device types
-            online_index: Arc::new(RwLock::new(HashMap::with_capacity(2))),  // Only 2 states: online/offline
-            cache_ttl: Duration::from_secs(300), // 5 minutes
+            cache: Arc::new(RwLock::new(HashMap::with_capacity(256))), // Pre-allocate cache
+            type_index: Arc::new(RwLock::new(HashMap::with_capacity(32))), // Pre-allocate for typical device types
+            online_index: Arc::new(RwLock::new(HashMap::with_capacity(2))), // Only 2 states: online/offline
+            cache_ttl: Duration::from_secs(300),                            // 5 minutes
             max_cache_size: 1000,
         }
     }

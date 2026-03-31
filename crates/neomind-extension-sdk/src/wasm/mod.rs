@@ -52,7 +52,7 @@ pub mod types;
 
 // Re-export main types
 pub use bindings::{invoke_capability_raw, log, timestamp_ms};
-pub use context::{capabilities, ExtensionContext, EventSubscription};
+pub use context::{capabilities, EventSubscription, ExtensionContext};
 pub use types::*;
 
 /// Result buffer offset for WASM memory layout (64KB)
@@ -338,7 +338,11 @@ mod tests {
     #[test]
     fn test_result_offset_alignment() {
         // Verify result offset is properly aligned
-        assert_eq!(RESULT_OFFSET % 8, 0, "Result offset should be 8-byte aligned");
+        assert_eq!(
+            RESULT_OFFSET % 8,
+            0,
+            "Result offset should be 8-byte aligned"
+        );
         assert_eq!(INPUT_OFFSET % 8, 0, "Input offset should be 8-byte aligned");
     }
 

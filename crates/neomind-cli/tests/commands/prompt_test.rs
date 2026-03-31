@@ -21,8 +21,7 @@ fn test_prompt_requires_argument() {
 #[test]
 fn test_prompt_accepts_message() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("prompt")
-        .arg("Hello, world!");
+    cmd.arg("prompt").arg("Hello, world!");
 
     // Will fail due to no LLM backend, but arguments should parse
     cmd.assert().failure();
@@ -44,10 +43,7 @@ fn test_prompt_max_tokens_flag() {
 #[test]
 fn test_prompt_temperature_flag() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("prompt")
-        .arg("test")
-        .arg("-t")
-        .arg("0.5");
+    cmd.arg("prompt").arg("test").arg("-t").arg("0.5");
 
     cmd.assert().failure();
 }
@@ -80,8 +76,7 @@ fn test_prompt_invalid_max_tokens() {
 #[test]
 fn test_prompt_help_shows_options() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("prompt")
-        .arg("--help");
+    cmd.arg("prompt").arg("--help");
 
     cmd.assert()
         .success()

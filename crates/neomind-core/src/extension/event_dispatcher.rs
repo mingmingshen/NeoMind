@@ -9,8 +9,8 @@
 //! 3. When events are published, EventDispatcher calls `handle_event()` on subscribed extensions
 //! 4. For isolated extensions, events are pushed via IPC to the extension process
 
-use serde_json::Value;
 use parking_lot::RwLock;
+use serde_json::Value;
 use tracing::{debug, error, info, trace};
 
 use super::system::DynExtension;
@@ -22,7 +22,8 @@ pub struct EventDispatcher {
     /// Registered in-process extensions: extension_id -> extension
     in_process_extensions: RwLock<std::collections::HashMap<String, DynExtension>>,
     /// Event push channels for isolated extensions: extension_id -> sender
-    isolated_event_senders: RwLock<std::collections::HashMap<String, tokio::sync::mpsc::Sender<(String, Value)>>>,
+    isolated_event_senders:
+        RwLock<std::collections::HashMap<String, tokio::sync::mpsc::Sender<(String, Value)>>>,
 }
 
 impl Default for EventDispatcher {
@@ -45,7 +46,11 @@ impl EventDispatcher {
     ///
     /// This method is called when an in-process extension is loaded. It automatically
     /// registers the extension's event subscriptions declared via `event_subscriptions()`.
-    pub async fn register_in_process_extension(&self, extension_id: String, extension: DynExtension) {
+    pub async fn register_in_process_extension(
+        &self,
+        extension_id: String,
+        extension: DynExtension,
+    ) {
         // Get the extension's event subscriptions (async)
         let event_types: Vec<String> = {
             let ext_guard = extension.read().await;
@@ -54,11 +59,15 @@ impl EventDispatcher {
         };
 
         // Store the extension
-        self.in_process_extensions.write().insert(extension_id.clone(), extension.clone());
+        self.in_process_extensions
+            .write()
+            .insert(extension_id.clone(), extension.clone());
 
         // Store the subscriptions
         if !event_types.is_empty() {
-            self.subscriptions.write().insert(extension_id.clone(), event_types.clone());
+            self.subscriptions
+                .write()
+                .insert(extension_id.clone(), event_types.clone());
             info!(
                 extension_id = %extension_id,
                 event_types = ?event_types,
@@ -83,11 +92,15 @@ impl EventDispatcher {
         event_sender: tokio::sync::mpsc::Sender<(String, Value)>,
     ) {
         // Store the event push channel
-        self.isolated_event_senders.write().insert(extension_id.clone(), event_sender);
+        self.isolated_event_senders
+            .write()
+            .insert(extension_id.clone(), event_sender);
 
         // Store the subscriptions
         if !event_types.is_empty() {
-            self.subscriptions.write().insert(extension_id.clone(), event_types.clone());
+            self.subscriptions
+                .write()
+                .insert(extension_id.clone(), event_types.clone());
             info!(
                 extension_id = %extension_id,
                 event_types = ?event_types,

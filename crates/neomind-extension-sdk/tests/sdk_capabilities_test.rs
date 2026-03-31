@@ -121,8 +121,8 @@ fn test_sdk_metric_definition_status() {
 
 #[test]
 fn test_sdk_metric_definition_serialization() {
-    let metric = SdkMetricDefinition::new("power", "Power", SdkMetricDataType::Boolean)
-        .with_required(true);
+    let metric =
+        SdkMetricDefinition::new("power", "Power", SdkMetricDataType::Boolean).with_required(true);
 
     let json = serde_json::to_string(&metric).unwrap();
     let parsed: SdkMetricDefinition = serde_json::from_str(&json).unwrap();
@@ -295,30 +295,60 @@ fn test_sdk_command_definition_serialization() {
 #[test]
 fn test_sdk_error_display() {
     let errors = vec![
-        (SdkExtensionError::CommandNotFound("test".into()), "Command not found"),
-        (SdkExtensionError::InvalidArguments("bad args".into()), "Invalid arguments"),
-        (SdkExtensionError::ExecutionFailed("crash".into()), "Execution failed"),
+        (
+            SdkExtensionError::CommandNotFound("test".into()),
+            "Command not found",
+        ),
+        (
+            SdkExtensionError::InvalidArguments("bad args".into()),
+            "Invalid arguments",
+        ),
+        (
+            SdkExtensionError::ExecutionFailed("crash".into()),
+            "Execution failed",
+        ),
         (SdkExtensionError::Timeout("30s".into()), "Timeout"),
         (SdkExtensionError::NotFound("device".into()), "Not found"),
-        (SdkExtensionError::InvalidFormat("json".into()), "Invalid format"),
+        (
+            SdkExtensionError::InvalidFormat("json".into()),
+            "Invalid format",
+        ),
         (SdkExtensionError::LoadFailed("lib".into()), "Load failed"),
-        (SdkExtensionError::SecurityError("denied".into()), "Security error"),
-        (SdkExtensionError::NotSupported("wasm".into()), "Not supported"),
-        (SdkExtensionError::ConfigurationError("bad config".into()), "Configuration error"),
-        (SdkExtensionError::InternalError("panic".into()), "Internal error"),
+        (
+            SdkExtensionError::SecurityError("denied".into()),
+            "Security error",
+        ),
+        (
+            SdkExtensionError::NotSupported("wasm".into()),
+            "Not supported",
+        ),
+        (
+            SdkExtensionError::ConfigurationError("bad config".into()),
+            "Configuration error",
+        ),
+        (
+            SdkExtensionError::InternalError("panic".into()),
+            "Internal error",
+        ),
         (SdkExtensionError::Other("custom".into()), "Error"),
     ];
 
     for (err, expected) in errors {
         let msg = err.to_string();
-        assert!(msg.contains(expected), "Expected '{}' in '{}'", expected, msg);
+        assert!(
+            msg.contains(expected),
+            "Expected '{}' in '{}'",
+            expected,
+            msg
+        );
     }
 }
 
 #[test]
 fn test_sdk_error_from_serde_json() {
     let bad_json = "not valid json {";
-    let result: std::result::Result<serde_json::Value, serde_json::Error> = serde_json::from_str(bad_json);
+    let result: std::result::Result<serde_json::Value, serde_json::Error> =
+        serde_json::from_str(bad_json);
     let err: SdkExtensionError = result.unwrap_err().into();
 
     assert!(matches!(err, SdkExtensionError::InvalidFormat(_)));
@@ -342,7 +372,10 @@ fn test_frontend_manifest_builder() {
     assert_eq!(manifest.id, "com.example.extension");
     assert_eq!(manifest.version, "1.0.0");
     assert_eq!(manifest.entrypoint, "dist/index.js");
-    assert_eq!(manifest.style_entrypoint, Some("dist/styles.css".to_string()));
+    assert_eq!(
+        manifest.style_entrypoint,
+        Some("dist/styles.css".to_string())
+    );
     assert_eq!(manifest.components.len(), 3);
     assert_eq!(manifest.dependencies.len(), 1);
 }
@@ -488,8 +521,14 @@ fn test_sdk_parameter_group() {
 #[test]
 fn test_command_with_parameter_groups() {
     let cmd = SdkCommandDefinition::new("configure")
-        .param(SdkParameterDefinition::new("timeout", SdkMetricDataType::Integer))
-        .param(SdkParameterDefinition::new("retries", SdkMetricDataType::Integer));
+        .param(SdkParameterDefinition::new(
+            "timeout",
+            SdkMetricDataType::Integer,
+        ))
+        .param(SdkParameterDefinition::new(
+            "retries",
+            SdkMetricDataType::Integer,
+        ));
 
     let json = serde_json::to_string(&cmd).unwrap();
     let parsed: SdkCommandDefinition = serde_json::from_str(&json).unwrap();

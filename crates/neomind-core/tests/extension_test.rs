@@ -186,13 +186,9 @@ fn test_extension_command_serialization() {
 
 #[test]
 fn test_extension_metadata_builder() {
-    let meta = ExtensionMetadata::new(
-        "neomind.weather.live",
-        "Live Weather Provider",
-        "1.0.0",
-    )
-    .with_description("Provides real-time weather data")
-    .with_author("NeoMind Team");
+    let meta = ExtensionMetadata::new("neomind.weather.live", "Live Weather Provider", "1.0.0")
+        .with_description("Provides real-time weather data")
+        .with_author("NeoMind Team");
 
     assert_eq!(meta.id, "neomind.weather.live");
     assert_eq!(meta.name, "Live Weather Provider");

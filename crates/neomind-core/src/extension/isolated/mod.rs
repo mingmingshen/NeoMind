@@ -5,16 +5,15 @@
 //! cannot crash the main NeoMind process.
 
 mod in_flight;
-mod ipc_local;  // Local IPC implementation (uses SDK types)
+mod ipc_local; // Local IPC implementation (uses SDK types)
 mod manager;
 mod process;
 
 pub use in_flight::{InFlightError, InFlightRequests, RequestId};
 // Re-export IPC protocol types from SDK (via system module)
 pub use super::system::{
-    ErrorKind, IpcFrame, IpcMessage, IpcResponse,
-    BatchCommand, BatchResult, BatchResultsVec,
-    StreamDataChunk, StreamClientInfo, PushOutputData,
+    BatchCommand, BatchResult, BatchResultsVec, ErrorKind, IpcFrame, IpcMessage, IpcResponse,
+    PushOutputData, StreamClientInfo, StreamDataChunk,
 };
 pub use manager::{IsolatedExtensionInfo, IsolatedExtensionManager, IsolatedManagerConfig};
 pub use process::{IsolatedExtension, IsolatedExtensionConfig};

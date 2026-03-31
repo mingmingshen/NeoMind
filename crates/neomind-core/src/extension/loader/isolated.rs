@@ -253,11 +253,8 @@ impl IsolatedExtensionLoader {
         );
 
         // Create isolated extension wrapper
-        let isolated = IsolatedExtension::new(
-            &metadata.id,
-            path,
-            self.config.isolated_config.clone(),
-        );
+        let isolated =
+            IsolatedExtension::new(&metadata.id, path, self.config.isolated_config.clone());
 
         // Start the extension process
         isolated.start().await.map_err(|e| {
@@ -344,48 +341,42 @@ impl LoadedExtension {
         args: &serde_json::Value,
     ) -> std::result::Result<serde_json::Value, ExtensionError> {
         match self {
-            Self::Isolated(isolated) => {
-                isolated
-                    .execute_command(command, args)
-                    .await
-                    .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))
-            }
+            Self::Isolated(isolated) => isolated
+                .execute_command(command, args)
+                .await
+                .map_err(|e| ExtensionError::ExecutionFailed(e.to_string())),
         }
     }
 
     /// Produce metrics
-    pub async fn produce_metrics(&self) -> std::result::Result<Vec<ExtensionMetricValue>, ExtensionError> {
+    pub async fn produce_metrics(
+        &self,
+    ) -> std::result::Result<Vec<ExtensionMetricValue>, ExtensionError> {
         match self {
-            Self::Isolated(isolated) => {
-                isolated
-                    .produce_metrics()
-                    .await
-                    .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))
-            }
+            Self::Isolated(isolated) => isolated
+                .produce_metrics()
+                .await
+                .map_err(|e| ExtensionError::ExecutionFailed(e.to_string())),
         }
     }
 
     /// Health check
     pub async fn health_check(&self) -> std::result::Result<bool, ExtensionError> {
         match self {
-            Self::Isolated(isolated) => {
-                isolated
-                    .health_check()
-                    .await
-                    .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))
-            }
+            Self::Isolated(isolated) => isolated
+                .health_check()
+                .await
+                .map_err(|e| ExtensionError::ExecutionFailed(e.to_string())),
         }
     }
 
     /// Stop the extension (only meaningful for isolated extensions)
     pub async fn stop(&self) -> std::result::Result<(), ExtensionError> {
         match self {
-            Self::Isolated(isolated) => {
-                isolated
-                    .stop()
-                    .await
-                    .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))
-            }
+            Self::Isolated(isolated) => isolated
+                .stop()
+                .await
+                .map_err(|e| ExtensionError::ExecutionFailed(e.to_string())),
         }
     }
 

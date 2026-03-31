@@ -13,8 +13,8 @@ use neomind_storage::{
     BackendCapabilities, ConnectionTestResult, LlmBackendInstance, LlmBackendStore, LlmBackendType,
 };
 
-use super::backends::ollama::{OllamaConfig, OllamaRuntime};
 use super::backends::create_backend;
+use super::backends::ollama::{OllamaConfig, OllamaRuntime};
 
 /// Detect model capabilities from model name (for Ollama instances)
 fn detect_ollama_capabilities(model_name: &str) -> BackendCapabilities {
@@ -116,11 +116,7 @@ impl LlmBackendInstanceManager {
     /// Get the active backend instance
     pub fn get_active_instance(&self) -> Option<LlmBackendInstance> {
         let active_id = self.active_id.lock().ok()?.clone();
-        active_id.and_then(|id| {
-            self.instances
-                .get(&id)
-                .map(|item| item.value().clone())
-        })
+        active_id.and_then(|id| self.instances.get(&id).map(|item| item.value().clone()))
     }
 
     /// Get the active runtime (with caching)
@@ -147,10 +143,7 @@ impl LlmBackendInstanceManager {
         }
 
         // Get instance configuration - DashMap read is lock-free
-        let instance = self
-            .instances
-            .get(id)
-            .map(|item| item.value().clone());
+        let instance = self.instances.get(id).map(|item| item.value().clone());
 
         let instance = instance
             .ok_or_else(|| LlmError::BackendUnavailable(format!("Backend instance {}", id)))?;
@@ -170,36 +163,42 @@ impl LlmBackendInstanceManager {
         instance: &LlmBackendInstance,
     ) -> Result<Arc<dyn LlmRuntime>, LlmError> {
         // Build config based on backend type
-        let runtime: Arc<dyn LlmRuntime> = if matches!(instance.backend_type, LlmBackendType::Ollama) {
-            // For Ollama, create runtime with capabilities override
-            let config = OllamaConfig::new(&instance.model)
-                .with_endpoint(instance.endpoint.as_deref().unwrap_or("http://localhost:11434"))
-                .with_timeout_secs(180);
-            
-            let ollama_runtime = OllamaRuntime::new(config)
-                .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?;
-            
-            // Apply capabilities override from storage (detected via /api/show)
-            let caps = &instance.capabilities;
-            let ollama_runtime = ollama_runtime.with_capabilities_override(
-                caps.supports_multimodal,
-                caps.supports_thinking,
-                caps.supports_tools,
-                caps.max_context,
-            );
-            
-            Arc::new(ollama_runtime) as Arc<dyn LlmRuntime>
-        } else {
-            // For cloud backends, use the generic create_backend
-            let config = serde_json::json!({
-                "base_url": instance.endpoint,
-                "model": instance.model,
-                "api_key": instance.api_key,
-            });
-            
-            create_backend(instance.backend_name(), &config)
-                .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?
-        };
+        let runtime: Arc<dyn LlmRuntime> =
+            if matches!(instance.backend_type, LlmBackendType::Ollama) {
+                // For Ollama, create runtime with capabilities override
+                let config = OllamaConfig::new(&instance.model)
+                    .with_endpoint(
+                        instance
+                            .endpoint
+                            .as_deref()
+                            .unwrap_or("http://localhost:11434"),
+                    )
+                    .with_timeout_secs(180);
+
+                let ollama_runtime = OllamaRuntime::new(config)
+                    .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?;
+
+                // Apply capabilities override from storage (detected via /api/show)
+                let caps = &instance.capabilities;
+                let ollama_runtime = ollama_runtime.with_capabilities_override(
+                    caps.supports_multimodal,
+                    caps.supports_thinking,
+                    caps.supports_tools,
+                    caps.max_context,
+                );
+
+                Arc::new(ollama_runtime) as Arc<dyn LlmRuntime>
+            } else {
+                // For cloud backends, use the generic create_backend
+                let config = serde_json::json!({
+                    "base_url": instance.endpoint,
+                    "model": instance.model,
+                    "api_key": instance.api_key,
+                });
+
+                create_backend(instance.backend_name(), &config)
+                    .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?
+            };
 
         Ok(runtime)
     }
@@ -223,9 +222,10 @@ impl LlmBackendInstanceManager {
             .map_err(|e| LlmError::InvalidInput(e.to_string()))?;
 
         // Update in-memory state
-        let mut active_id = self.active_id.lock().map_err(|_| {
-            LlmError::InvalidInput("Failed to acquire active_id lock".to_string())
-        })?;
+        let mut active_id = self
+            .active_id
+            .lock()
+            .map_err(|_| LlmError::InvalidInput("Failed to acquire active_id lock".to_string()))?;
         *active_id = Some(id.to_string());
 
         Ok(())
@@ -318,13 +318,15 @@ impl LlmBackendInstanceManager {
                         let latency = start.elapsed().as_millis() as u64;
 
                         // Cache health result - DashMap insert is lock-free
-                        self.health_cache.insert(id.to_string(), (true, Instant::now()));
+                        self.health_cache
+                            .insert(id.to_string(), (true, Instant::now()));
 
                         Ok(ConnectionTestResult::success(latency))
                     }
                     Err(e) => {
                         // Cache health result
-                        self.health_cache.insert(id.to_string(), (false, Instant::now()));
+                        self.health_cache
+                            .insert(id.to_string(), (false, Instant::now()));
 
                         Ok(ConnectionTestResult::failed(e.to_string()))
                     }
@@ -332,7 +334,8 @@ impl LlmBackendInstanceManager {
             }
             Err(e) => {
                 // Cache health result
-                self.health_cache.insert(id.to_string(), (false, Instant::now()));
+                self.health_cache
+                    .insert(id.to_string(), (false, Instant::now()));
 
                 Ok(ConnectionTestResult::failed(e.to_string()))
             }
@@ -360,9 +363,10 @@ impl LlmBackendInstanceManager {
         }
 
         // Update active_id
-        let mut self_active_id = self.active_id.lock().map_err(|_| {
-            LlmError::InvalidInput("Failed to acquire active_id lock".to_string())
-        })?;
+        let mut self_active_id = self
+            .active_id
+            .lock()
+            .map_err(|_| LlmError::InvalidInput("Failed to acquire active_id lock".to_string()))?;
         *self_active_id = active_id;
 
         Ok(())

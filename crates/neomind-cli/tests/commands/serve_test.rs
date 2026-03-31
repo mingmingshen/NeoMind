@@ -11,8 +11,7 @@ use std::str::FromStr;
 #[test]
 fn test_serve_default_values() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("serve")
-        .arg("--help");
+    cmd.arg("serve").arg("--help");
 
     cmd.assert()
         .success()
@@ -52,9 +51,7 @@ fn test_serve_custom_host() {
 #[test]
 fn test_serve_invalid_port_rejected() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("serve")
-        .arg("--port")
-        .arg("invalid");
+    cmd.arg("serve").arg("--port").arg("invalid");
 
     cmd.assert().failure();
 }
@@ -63,9 +60,7 @@ fn test_serve_invalid_port_rejected() {
 #[test]
 fn test_serve_port_out_of_range() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("serve")
-        .arg("--port")
-        .arg("99999");
+    cmd.arg("serve").arg("--port").arg("99999");
 
     cmd.assert().failure();
 }
@@ -74,19 +69,11 @@ fn test_serve_port_out_of_range() {
 #[test]
 fn test_address_parsing() {
     // Valid IP addresses (localhost requires DNS lookup, skip for unit test)
-    let valid_addrs = [
-        "127.0.0.1:9375",
-        "0.0.0.0:8080",
-        "192.168.1.1:9000",
-    ];
+    let valid_addrs = ["127.0.0.1:9375", "0.0.0.0:8080", "192.168.1.1:9000"];
 
     for addr_str in valid_addrs {
         let result = SocketAddr::from_str(addr_str);
-        assert!(
-            result.is_ok(),
-            "Expected valid address: {}",
-            addr_str
-        );
+        assert!(result.is_ok(), "Expected valid address: {}", addr_str);
     }
 }
 

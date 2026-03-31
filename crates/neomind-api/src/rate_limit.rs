@@ -68,7 +68,7 @@ impl RateLimiter {
     }
 
     /// Check if a request should be allowed for the given client key.
-    /// 
+    ///
     /// This method is now synchronous (no async) because DashMap operations
     /// are lock-free and don't require awaiting. This reduces async overhead
     /// by ~200ns per call.
@@ -77,12 +77,13 @@ impl RateLimiter {
         let window_start = now - self.config.per_duration;
 
         // DashMap entry API - acquires lock only on this specific bucket
-        let mut entry = self.clients.entry(client_key.to_string()).or_insert_with(|| {
-            ClientState {
+        let mut entry = self
+            .clients
+            .entry(client_key.to_string())
+            .or_insert_with(|| ClientState {
                 history: Vec::new(),
                 last_warning: None,
-            }
-        });
+            });
 
         let state = entry.value_mut();
 

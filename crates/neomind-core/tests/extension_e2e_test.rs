@@ -9,22 +9,22 @@
 
 #![allow(dead_code)]
 
-use neomind_core::extension::registry::ExtensionRegistry;
-use neomind_core::extension::ExtensionRuntime;
-use neomind_core::extension::context::{
-    ExtensionContext, ExtensionContextConfig, ExtensionCapability,
-};
-use neomind_core::extension::system::{
-    Extension, ExtensionMetadata, ExtensionError, ExtensionState,
-    ExtensionMetricValue, MetricDescriptor, ExtensionCommand,
-    MetricDataType, ParameterDefinition, ParamMetricValue, ExtensionStats, Result,
-};
 use async_trait::async_trait;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
-use std::collections::HashMap;
-use tokio::sync::RwLock;
+use neomind_core::extension::context::{
+    ExtensionCapability, ExtensionContext, ExtensionContextConfig,
+};
+use neomind_core::extension::registry::ExtensionRegistry;
+use neomind_core::extension::system::{
+    Extension, ExtensionCommand, ExtensionError, ExtensionMetadata, ExtensionMetricValue,
+    ExtensionState, ExtensionStats, MetricDataType, MetricDescriptor, ParamMetricValue,
+    ParameterDefinition, Result,
+};
+use neomind_core::extension::ExtensionRuntime;
 use serde_json::json;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 // ============================================================================
 // Complete Weather Extension (Real-world Example)
@@ -65,41 +65,76 @@ impl Extension for WeatherExtension {
 
     fn metrics(&self) -> Vec<MetricDescriptor> {
         static METRICS: std::sync::OnceLock<Vec<MetricDescriptor>> = std::sync::OnceLock::new();
-        METRICS.get_or_init(|| {
-            vec![
-                MetricDescriptor {
-                    name: "api_calls".to_string(),
-                    display_name: "API Calls".to_string(),
-                    data_type: MetricDataType::Integer,
-                    unit: "count".to_string(),
-                    min: None,
-                    max: None,
-                    required: false,
-                },
-                MetricDescriptor {
-                    name: "cache_hits".to_string(),
-                    display_name: "Cache Hits".to_string(),
-                    data_type: MetricDataType::Integer,
-                    unit: "count".to_string(),
-                    min: None,
-                    max: None,
-                    required: false,
-                },
-            ]
-        }).clone()
+        METRICS
+            .get_or_init(|| {
+                vec![
+                    MetricDescriptor {
+                        name: "api_calls".to_string(),
+                        display_name: "API Calls".to_string(),
+                        data_type: MetricDataType::Integer,
+                        unit: "count".to_string(),
+                        min: None,
+                        max: None,
+                        required: false,
+                    },
+                    MetricDescriptor {
+                        name: "cache_hits".to_string(),
+                        display_name: "Cache Hits".to_string(),
+                        data_type: MetricDataType::Integer,
+                        unit: "count".to_string(),
+                        min: None,
+                        max: None,
+                        required: false,
+                    },
+                ]
+            })
+            .clone()
     }
 
     fn commands(&self) -> Vec<ExtensionCommand> {
         static COMMANDS: std::sync::OnceLock<Vec<ExtensionCommand>> = std::sync::OnceLock::new();
-        COMMANDS.get_or_init(|| {
-            vec![
-                ExtensionCommand {
-                    name: "get_forecast".to_string(),
-                    display_name: "Get Forecast".to_string(),
-                    description: "Get weather forecast for a specific city".to_string(),
-                    payload_template: r#"{"city": "{{city}}"}"#.to_string(),
-                    parameters: vec![
-                        ParameterDefinition {
+        COMMANDS
+            .get_or_init(|| {
+                vec![
+                    ExtensionCommand {
+                        name: "get_forecast".to_string(),
+                        display_name: "Get Forecast".to_string(),
+                        description: "Get weather forecast for a specific city".to_string(),
+                        payload_template: r#"{"city": "{{city}}"}"#.to_string(),
+                        parameters: vec![
+                            ParameterDefinition {
+                                name: "city".to_string(),
+                                display_name: "City".to_string(),
+                                description: "City name".to_string(),
+                                param_type: MetricDataType::String,
+                                required: true,
+                                default_value: None,
+                                min: None,
+                                max: None,
+                                options: vec![],
+                            },
+                            ParameterDefinition {
+                                name: "days".to_string(),
+                                display_name: "Days".to_string(),
+                                description: "Number of forecast days".to_string(),
+                                param_type: MetricDataType::Integer,
+                                required: false,
+                                default_value: Some(ParamMetricValue::Integer(3)),
+                                min: Some(1.0),
+                                max: Some(7.0),
+                                options: vec![],
+                            },
+                        ],
+                        fixed_values: Default::default(),
+                        samples: vec![json!({"city": "Beijing", "days": 3})],
+                        parameter_groups: vec![],
+                    },
+                    ExtensionCommand {
+                        name: "get_current".to_string(),
+                        display_name: "Get Current Weather".to_string(),
+                        description: "Get current weather conditions".to_string(),
+                        payload_template: r#"{"city": "{{city}}"}"#.to_string(),
+                        parameters: vec![ParameterDefinition {
                             name: "city".to_string(),
                             display_name: "City".to_string(),
                             description: "City name".to_string(),
@@ -109,47 +144,14 @@ impl Extension for WeatherExtension {
                             min: None,
                             max: None,
                             options: vec![],
-                        },
-                        ParameterDefinition {
-                            name: "days".to_string(),
-                            display_name: "Days".to_string(),
-                            description: "Number of forecast days".to_string(),
-                            param_type: MetricDataType::Integer,
-                            required: false,
-                            default_value: Some(ParamMetricValue::Integer(3)),
-                            min: Some(1.0),
-                            max: Some(7.0),
-                            options: vec![],
-                        },
-                    ],
-                    fixed_values: Default::default(),
-                    samples: vec![json!({"city": "Beijing", "days": 3})],
-                    parameter_groups: vec![],
-                },
-                ExtensionCommand {
-                    name: "get_current".to_string(),
-                    display_name: "Get Current Weather".to_string(),
-                    description: "Get current weather conditions".to_string(),
-                    payload_template: r#"{"city": "{{city}}"}"#.to_string(),
-                    parameters: vec![
-                        ParameterDefinition {
-                            name: "city".to_string(),
-                            display_name: "City".to_string(),
-                            description: "City name".to_string(),
-                            param_type: MetricDataType::String,
-                            required: true,
-                            default_value: None,
-                            min: None,
-                            max: None,
-                            options: vec![],
-                        },
-                    ],
-                    fixed_values: Default::default(),
-                    samples: vec![json!({"city": "Shanghai"})],
-                    parameter_groups: vec![],
-                },
-            ]
-        }).clone()
+                        }],
+                        fixed_values: Default::default(),
+                        samples: vec![json!({"city": "Shanghai"})],
+                        parameter_groups: vec![],
+                    },
+                ]
+            })
+            .clone()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -168,13 +170,11 @@ impl Extension for WeatherExtension {
     ) -> Result<serde_json::Value> {
         match command {
             "get_forecast" => {
-                let city = args.get("city")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| ExtensionError::InvalidArguments("Missing city parameter".to_string()))?;
+                let city = args.get("city").and_then(|v| v.as_str()).ok_or_else(|| {
+                    ExtensionError::InvalidArguments("Missing city parameter".to_string())
+                })?;
 
-                let days = args.get("days")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(3);
+                let days = args.get("days").and_then(|v| v.as_i64()).unwrap_or(3);
 
                 self.api_calls.fetch_add(1, Ordering::SeqCst);
 
@@ -197,9 +197,9 @@ impl Extension for WeatherExtension {
                 }))
             }
             "get_current" => {
-                let city = args.get("city")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| ExtensionError::InvalidArguments("Missing city parameter".to_string()))?;
+                let city = args.get("city").and_then(|v| v.as_str()).ok_or_else(|| {
+                    ExtensionError::InvalidArguments("Missing city parameter".to_string())
+                })?;
 
                 self.api_calls.fetch_add(1, Ordering::SeqCst);
 
@@ -219,11 +219,7 @@ impl Extension for WeatherExtension {
         }
     }
 
-    fn handle_event(
-        &self,
-        event_type: &str,
-        payload: &serde_json::Value,
-    ) -> Result<()> {
+    fn handle_event(&self, event_type: &str, payload: &serde_json::Value) -> Result<()> {
         match event_type {
             "DeviceMetric" => {
                 // React to device metric events
@@ -310,44 +306,49 @@ impl Extension for SensorExtension {
 
     fn commands(&self) -> Vec<ExtensionCommand> {
         static COMMANDS: std::sync::OnceLock<Vec<ExtensionCommand>> = std::sync::OnceLock::new();
-        COMMANDS.get_or_init(|| {
-            vec![
-                ExtensionCommand {
-                    name: "read_all".to_string(),
-                    display_name: "Read All Sensors".to_string(),
-                    description: "Read all environmental sensors".to_string(),
-                    payload_template: "{}".to_string(),
-                    parameters: vec![],
-                    fixed_values: Default::default(),
-                    samples: vec![],
-                    parameter_groups: vec![],
-                },
-                ExtensionCommand {
-                    name: "read_sensor".to_string(),
-                    display_name: "Read Sensor".to_string(),
-                    description: "Read a specific environmental sensor".to_string(),
-                    payload_template: r#"{"sensor": "{{sensor}}"}"#.to_string(),
-                    parameters: vec![
-                        ParameterDefinition {
+        COMMANDS
+            .get_or_init(|| {
+                vec![
+                    ExtensionCommand {
+                        name: "read_all".to_string(),
+                        display_name: "Read All Sensors".to_string(),
+                        description: "Read all environmental sensors".to_string(),
+                        payload_template: "{}".to_string(),
+                        parameters: vec![],
+                        fixed_values: Default::default(),
+                        samples: vec![],
+                        parameter_groups: vec![],
+                    },
+                    ExtensionCommand {
+                        name: "read_sensor".to_string(),
+                        display_name: "Read Sensor".to_string(),
+                        description: "Read a specific environmental sensor".to_string(),
+                        payload_template: r#"{"sensor": "{{sensor}}"}"#.to_string(),
+                        parameters: vec![ParameterDefinition {
                             name: "sensor".to_string(),
                             display_name: "Sensor".to_string(),
-                            description: "Sensor name (temperature, humidity, pressure)".to_string(),
+                            description: "Sensor name (temperature, humidity, pressure)"
+                                .to_string(),
                             param_type: MetricDataType::Enum {
-                                options: vec!["temperature".to_string(), "humidity".to_string(), "pressure".to_string()],
+                                options: vec![
+                                    "temperature".to_string(),
+                                    "humidity".to_string(),
+                                    "pressure".to_string(),
+                                ],
                             },
                             required: true,
                             default_value: None,
                             min: None,
                             max: None,
                             options: vec![],
-                        },
-                    ],
-                    fixed_values: Default::default(),
-                    samples: vec![json!({"sensor": "temperature"})],
-                    parameter_groups: vec![],
-                },
-            ]
-        }).clone()
+                        }],
+                        fixed_values: Default::default(),
+                        samples: vec![json!({"sensor": "temperature"})],
+                        parameter_groups: vec![],
+                    },
+                ]
+            })
+            .clone()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -372,13 +373,14 @@ impl Extension for SensorExtension {
                 }))
             }
             "read_sensor" => {
-                let sensor = args.get("sensor")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| ExtensionError::InvalidArguments("Missing sensor parameter".to_string()))?;
+                let sensor = args.get("sensor").and_then(|v| v.as_str()).ok_or_else(|| {
+                    ExtensionError::InvalidArguments("Missing sensor parameter".to_string())
+                })?;
 
                 let readings = self.readings.lock().unwrap();
-                let value = readings.get(sensor)
-                    .ok_or_else(|| ExtensionError::InvalidArguments(format!("Unknown sensor: {}", sensor)))?;
+                let value = readings.get(sensor).ok_or_else(|| {
+                    ExtensionError::InvalidArguments(format!("Unknown sensor: {}", sensor))
+                })?;
 
                 Ok(json!({
                     "sensor": sensor,
@@ -486,15 +488,23 @@ async fn test_complete_weather_extension_workflow() {
     assert!(result["temperature"].is_number());
 
     // Get metrics
-    let metrics = registry.get_current_metrics("neomind.weather.forecast").await;
+    let metrics = registry
+        .get_current_metrics("neomind.weather.forecast")
+        .await;
     assert!(!metrics.is_empty());
 
     // Health check
-    let health = registry.health_check("neomind.weather.forecast").await.unwrap();
+    let health = registry
+        .health_check("neomind.weather.forecast")
+        .await
+        .unwrap();
     assert!(health);
 
     // Unregister
-    registry.unregister("neomind.weather.forecast").await.unwrap();
+    registry
+        .unregister("neomind.weather.forecast")
+        .await
+        .unwrap();
     assert!(!registry.contains("neomind.weather.forecast").await);
 }
 
@@ -536,7 +546,9 @@ async fn test_complete_sensor_extension_workflow() {
     assert_eq!(result["unit"], "°C");
 
     // Get metrics
-    let metrics = registry.get_current_metrics("neomind.sensor.environment").await;
+    let metrics = registry
+        .get_current_metrics("neomind.sensor.environment")
+        .await;
     assert_eq!(metrics.len(), 3);
 }
 
@@ -571,7 +583,11 @@ async fn test_multi_extension_coordination() {
 
     // Execute commands on both
     let weather_result = registry
-        .execute_command("neomind.weather.forecast", "get_current", &json!({"city": "Beijing"}))
+        .execute_command(
+            "neomind.weather.forecast",
+            "get_current",
+            &json!({"city": "Beijing"}),
+        )
         .await
         .unwrap();
 
@@ -617,14 +633,13 @@ impl neomind_core::extension::context::ExtensionCapabilityProvider for MockCapab
         &self,
         capability: ExtensionCapability,
         params: &serde_json::Value,
-    ) -> std::result::Result<serde_json::Value, neomind_core::extension::context::CapabilityError> {
+    ) -> std::result::Result<serde_json::Value, neomind_core::extension::context::CapabilityError>
+    {
         match capability {
-            ExtensionCapability::DeviceMetricsRead => {
-                Ok(json!({
-                    "device_id": params["device_id"],
-                    "metrics": {"cpu": 45.2, "memory": 1024}
-                }))
-            }
+            ExtensionCapability::DeviceMetricsRead => Ok(json!({
+                "device_id": params["device_id"],
+                "metrics": {"cpu": 45.2, "memory": 1024}
+            })),
             ExtensionCapability::EventPublish => {
                 Ok(json!({"published": true, "topic": params["topic"]}))
             }
@@ -654,8 +669,16 @@ async fn test_extension_with_capabilities() {
         .await;
 
     // Verify capabilities are available
-    assert!(context.has_capability(&ExtensionCapability::DeviceMetricsRead).await);
-    assert!(context.has_capability(&ExtensionCapability::EventPublish).await);
+    assert!(
+        context
+            .has_capability(&ExtensionCapability::DeviceMetricsRead)
+            .await
+    );
+    assert!(
+        context
+            .has_capability(&ExtensionCapability::EventPublish)
+            .await
+    );
 
     // Invoke capabilities
     let result = context
@@ -756,9 +779,9 @@ async fn test_concurrent_multi_extension_operations() {
         for _ in 0..20 {
             let reg = registry.clone();
             let ext_id = format!("sensor.{}", i);
-            let handle: tokio::task::JoinHandle<Result<serde_json::Value>> = tokio::spawn(async move {
-                reg.execute_command(&ext_id, "read_all", &json!({})).await
-            });
+            let handle: tokio::task::JoinHandle<Result<serde_json::Value>> = tokio::spawn(
+                async move { reg.execute_command(&ext_id, "read_all", &json!({})).await },
+            );
             handles.push(handle);
         }
     }

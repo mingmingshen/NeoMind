@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use crate::host::*;
 
 #[cfg(target_arch = "wasm32")]
-use crate::wasm::{ExtensionContext, EventSubscription, capabilities};
+use crate::wasm::{capabilities, EventSubscription, ExtensionContext};
 
 pub type CapabilityError = String;
 
@@ -86,7 +86,10 @@ pub async fn subscribe(
 ) -> Result<Value, CapabilityError> {
     let sub_value = serde_json::to_value(&subscription).map_err(|e| e.to_string())?;
     context
-        .invoke_capability(ExtensionCapability::EventSubscribe, &json!({"subscription": sub_value}))
+        .invoke_capability(
+            ExtensionCapability::EventSubscribe,
+            &json!({"subscription": sub_value}),
+        )
         .await
         .map_err(|e| e.to_string())
 }
@@ -153,7 +156,7 @@ pub fn list_subscriptions(_context: &Context) -> Result<Value, CapabilityError> 
 
 #[cfg(test)]
 mod tests {
-    
+
     use serde_json::json;
 
     #[test]

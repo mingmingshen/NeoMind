@@ -4,16 +4,16 @@
 //! and implements the Extension trait, allowing isolated extensions
 //! to be used in contexts that require DynExtension (like streaming).
 
-use std::sync::Arc;
 use async_trait::async_trait;
+use std::sync::Arc;
 
 use crate::extension::isolated::{IsolatedExtension, IsolatedExtensionError};
-use crate::extension::system::{
-    Extension, ExtensionDescriptor, ExtensionError, ExtensionMetadata, ExtensionMetricValue,
-    ExtensionCommand, MetricDescriptor, Result,
-};
 use crate::extension::stream::{
-    StreamCapability, StreamSession, DataChunk, StreamResult, SessionStats,
+    DataChunk, SessionStats, StreamCapability, StreamResult, StreamSession,
+};
+use crate::extension::system::{
+    Extension, ExtensionCommand, ExtensionDescriptor, ExtensionError, ExtensionMetadata,
+    ExtensionMetricValue, MetricDescriptor, Result,
 };
 use crate::extension::types;
 
@@ -41,26 +41,24 @@ impl IsolatedExtensionProxy {
         let (metadata, commands, metrics, stream_capability) = tokio::task::block_in_place(|| {
             let rt = tokio::runtime::Handle::try_current();
             match rt {
-                Ok(rt) => {
-                    rt.block_on(async {
-                        let desc = isolated.descriptor().await;
-                        let cap = isolated.stream_capability().await.ok().flatten();
-                        
-                        match desc {
-                            Some(d) => (d.metadata, d.commands, d.metrics, cap),
-                            None => (
-                                ExtensionMetadata::new(
-                                    "unknown".to_string(),
-                                    "Unknown Extension".to_string(),
-                                    semver::Version::new(0, 0, 0).to_string(),
-                                ),
-                                Vec::new(),
-                                Vec::new(),
-                                cap,
+                Ok(rt) => rt.block_on(async {
+                    let desc = isolated.descriptor().await;
+                    let cap = isolated.stream_capability().await.ok().flatten();
+
+                    match desc {
+                        Some(d) => (d.metadata, d.commands, d.metrics, cap),
+                        None => (
+                            ExtensionMetadata::new(
+                                "unknown".to_string(),
+                                "Unknown Extension".to_string(),
+                                semver::Version::new(0, 0, 0).to_string(),
                             ),
-                        }
-                    })
-                }
+                            Vec::new(),
+                            Vec::new(),
+                            cap,
+                        ),
+                    }
+                }),
                 Err(_) => (
                     ExtensionMetadata::new(
                         "unknown".to_string(),
@@ -84,18 +82,19 @@ impl IsolatedExtensionProxy {
     }
 
     /// Create with full descriptor
-    pub fn with_descriptor(isolated: Arc<IsolatedExtension>, descriptor: ExtensionDescriptor) -> Self {
+    pub fn with_descriptor(
+        isolated: Arc<IsolatedExtension>,
+        descriptor: ExtensionDescriptor,
+    ) -> Self {
         let metadata = descriptor.metadata.clone();
         let commands = descriptor.commands.clone();
         let metrics = descriptor.metrics.clone();
-        
+
         // Get stream capability using block_in_place
         let stream_capability = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::try_current()
-                .ok()
-                .and_then(|rt| rt.block_on(async {
-                    isolated.stream_capability().await.ok().flatten()
-                }))
+            tokio::runtime::Handle::try_current().ok().and_then(|rt| {
+                rt.block_on(async { isolated.stream_capability().await.ok().flatten() })
+            })
         });
 
         Self {
@@ -115,13 +114,25 @@ impl IsolatedExtensionProxy {
             IsolatedExtensionError::Crashed(msg) => ExtensionError::ExecutionFailed(msg),
             IsolatedExtensionError::Timeout(ms) => ExtensionError::Timeout(format!("{}ms", ms)),
             IsolatedExtensionError::InvalidResponse(msg) => ExtensionError::ExecutionFailed(msg),
-            IsolatedExtensionError::NotInitialized => ExtensionError::ExecutionFailed("Extension not initialized".to_string()),
-            IsolatedExtensionError::AlreadyRunning => ExtensionError::ExecutionFailed("Extension already running".to_string()),
-            IsolatedExtensionError::NotRunning => ExtensionError::ExecutionFailed("Extension not running".to_string()),
-            IsolatedExtensionError::TooManyRequests(limit) => ExtensionError::ExecutionFailed(format!("Too many concurrent requests (limit: {})", limit)),
+            IsolatedExtensionError::NotInitialized => {
+                ExtensionError::ExecutionFailed("Extension not initialized".to_string())
+            }
+            IsolatedExtensionError::AlreadyRunning => {
+                ExtensionError::ExecutionFailed("Extension already running".to_string())
+            }
+            IsolatedExtensionError::NotRunning => {
+                ExtensionError::ExecutionFailed("Extension not running".to_string())
+            }
+            IsolatedExtensionError::TooManyRequests(limit) => ExtensionError::ExecutionFailed(
+                format!("Too many concurrent requests (limit: {})", limit),
+            ),
             IsolatedExtensionError::LoadError(msg) => ExtensionError::LoadFailed(msg),
-            IsolatedExtensionError::UnexpectedResponse => ExtensionError::ExecutionFailed("Unexpected response type".to_string()),
-            IsolatedExtensionError::ChannelClosed => ExtensionError::ExecutionFailed("Response channel closed".to_string()),
+            IsolatedExtensionError::UnexpectedResponse => {
+                ExtensionError::ExecutionFailed("Unexpected response type".to_string())
+            }
+            IsolatedExtensionError::ChannelClosed => {
+                ExtensionError::ExecutionFailed("Response channel closed".to_string())
+            }
             IsolatedExtensionError::ExtensionError(msg) => ExtensionError::ExecutionFailed(msg),
             IsolatedExtensionError::ExecutionFailed(msg) => ExtensionError::ExecutionFailed(msg),
         }
@@ -142,7 +153,11 @@ impl Extension for IsolatedExtensionProxy {
         self.cached_metrics.clone()
     }
 
-    async fn execute_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value> {
+    async fn execute_command(
+        &self,
+        command: &str,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value> {
         self.isolated
             .execute_command(command, args)
             .await
@@ -154,7 +169,7 @@ impl Extension for IsolatedExtensionProxy {
         tokio::task::block_in_place(|| {
             let rt = tokio::runtime::Handle::try_current()
                 .map_err(|_| ExtensionError::ExecutionFailed("No tokio runtime".to_string()))?;
-            
+
             rt.block_on(async {
                 self.isolated
                     .produce_metrics()
@@ -183,7 +198,11 @@ impl Extension for IsolatedExtensionProxy {
             .map_err(Self::convert_error)
     }
 
-    async fn process_session_chunk(&self, session_id: &str, chunk: DataChunk) -> Result<StreamResult> {
+    async fn process_session_chunk(
+        &self,
+        session_id: &str,
+        chunk: DataChunk,
+    ) -> Result<StreamResult> {
         self.isolated
             .process_session_chunk(session_id, chunk)
             .await

@@ -480,7 +480,9 @@ impl HttpAdapter {
             // Sleep before next check
             // Use dynamic sleep duration based on next task timing
             // Minimum 100ms, maximum 10 seconds
-            let sleep_duration = next_sleep_duration.max(Duration::from_millis(100)).min(Duration::from_secs(10));
+            let sleep_duration = next_sleep_duration
+                .max(Duration::from_millis(100))
+                .min(Duration::from_secs(10));
             tokio::time::sleep(sleep_duration).await;
         }
     }

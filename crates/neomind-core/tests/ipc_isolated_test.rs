@@ -10,16 +10,15 @@
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
+use neomind_core::eventbus::EventBus;
 use neomind_core::extension::context::{
-    ExtensionCapability,
-    ExtensionCapabilityProvider, CapabilityManifest, CapabilityError,
+    CapabilityError, CapabilityManifest, ExtensionCapability, ExtensionCapabilityProvider,
 };
 use neomind_core::extension::isolated::{
-    IsolatedExtensionManager, IsolatedManagerConfig, IpcMessage, IpcResponse,
-    ErrorKind, StreamDataChunk, BatchCommand, BatchResult,
+    BatchCommand, BatchResult, ErrorKind, IpcMessage, IpcResponse, IsolatedExtensionManager,
+    IsolatedManagerConfig, StreamDataChunk,
 };
-use neomind_core::eventbus::EventBus;
-use async_trait::async_trait;
 use serde_json::{json, Value};
 
 // ============================================================================
@@ -52,7 +51,8 @@ fn create_test_provider() -> Arc<dyn ExtensionCapabilityProvider> {
         ) -> Result<Value, CapabilityError> {
             match capability {
                 ExtensionCapability::DeviceMetricsRead => {
-                    let device_id = params.get("device_id")
+                    let device_id = params
+                        .get("device_id")
                         .and_then(|v| v.as_str())
                         .unwrap_or("default");
                     Ok(json!({
@@ -61,9 +61,7 @@ fn create_test_provider() -> Arc<dyn ExtensionCapabilityProvider> {
                         "humidity": 65.0,
                     }))
                 }
-                ExtensionCapability::DeviceMetricsWrite => {
-                    Ok(json!({ "success": true }))
-                }
+                ExtensionCapability::DeviceMetricsWrite => Ok(json!({ "success": true })),
                 ExtensionCapability::EventPublish => {
                     Ok(json!({ "success": true, "published": true }))
                 }
@@ -130,7 +128,11 @@ fn test_capability_request_response() {
     let decoded = IpcResponse::from_bytes(&bytes).expect("Failed to deserialize");
 
     match decoded {
-        IpcResponse::CapabilityRequest { request_id, capability, params } => {
+        IpcResponse::CapabilityRequest {
+            request_id,
+            capability,
+            params,
+        } => {
             assert_eq!(request_id, 456);
             assert_eq!(capability, "device_metrics_read");
             assert!(params.get("device_id").unwrap().as_str().unwrap() == "sensor-001");
@@ -149,7 +151,11 @@ fn test_capability_request_response() {
     let decoded = IpcResponse::from_bytes(&bytes).expect("Failed to deserialize");
 
     match decoded {
-        IpcResponse::CapabilityResult { request_id, result, error } => {
+        IpcResponse::CapabilityResult {
+            request_id,
+            result,
+            error,
+        } => {
             assert_eq!(request_id, 456);
             assert!(result.get("temperature").unwrap().as_f64().unwrap() == 25.5);
             assert!(error.is_none());
@@ -204,10 +210,20 @@ fn test_streaming_ipc_messages() {
     let decoded = IpcResponse::from_bytes(&bytes).expect("Failed to deserialize");
 
     match decoded {
-        IpcResponse::ChunkResult { request_id, processing_ms, metadata, .. } => {
+        IpcResponse::ChunkResult {
+            request_id,
+            processing_ms,
+            metadata,
+            ..
+        } => {
             assert_eq!(request_id, 1);
             assert!((processing_ms - 15.5).abs() < 0.01);
-            assert!(metadata.unwrap().get("detected").unwrap().as_bool().unwrap());
+            assert!(metadata
+                .unwrap()
+                .get("detected")
+                .unwrap()
+                .as_bool()
+                .unwrap());
         }
         _ => panic!("Wrong response type"),
     }
@@ -225,7 +241,10 @@ fn test_push_mode_ipc_messages() {
     let decoded = IpcMessage::from_bytes(&bytes).expect("Failed to deserialize");
 
     match decoded {
-        IpcMessage::StartPush { request_id, session_id } => {
+        IpcMessage::StartPush {
+            request_id,
+            session_id,
+        } => {
             assert_eq!(request_id, 1);
             assert_eq!(session_id, "session-001");
         }
@@ -244,7 +263,12 @@ fn test_push_mode_ipc_messages() {
     let decoded = IpcResponse::from_bytes(&bytes).expect("Failed to deserialize");
 
     match decoded {
-        IpcResponse::PushStarted { request_id, session_id, success, error } => {
+        IpcResponse::PushStarted {
+            request_id,
+            session_id,
+            success,
+            error,
+        } => {
             assert_eq!(request_id, 1);
             assert_eq!(session_id, "session-001");
             assert!(success);
@@ -267,7 +291,12 @@ fn test_push_mode_ipc_messages() {
     let decoded = IpcResponse::from_bytes(&bytes).expect("Failed to deserialize");
 
     match decoded {
-        IpcResponse::PushOutput { session_id, sequence, data_type, .. } => {
+        IpcResponse::PushOutput {
+            session_id,
+            sequence,
+            data_type,
+            ..
+        } => {
             assert_eq!(session_id, "session-001");
             assert_eq!(sequence, 1);
             assert_eq!(data_type, "video/h264");
@@ -297,7 +326,11 @@ fn test_event_ipc_messages() {
     let decoded = IpcMessage::from_bytes(&bytes).expect("Failed to deserialize");
 
     match decoded {
-        IpcMessage::EventPush { event_type, payload, .. } => {
+        IpcMessage::EventPush {
+            event_type,
+            payload,
+            ..
+        } => {
             assert_eq!(event_type, "DeviceMetric");
             assert!(payload.get("device_id").unwrap().as_str().unwrap() == "sensor-001");
         }
@@ -315,7 +348,11 @@ fn test_event_ipc_messages() {
     let decoded = IpcMessage::from_bytes(&bytes).expect("Failed to deserialize");
 
     match decoded {
-        IpcMessage::SubscribeEvents { request_id, event_types, filter } => {
+        IpcMessage::SubscribeEvents {
+            request_id,
+            event_types,
+            filter,
+        } => {
             assert_eq!(request_id, 1);
             assert_eq!(event_types.len(), 2);
             assert!(filter.is_some());
@@ -388,7 +425,11 @@ fn test_ipc_error_responses() {
     let decoded = IpcResponse::from_bytes(&bytes).expect("Failed to deserialize");
 
     match decoded {
-        IpcResponse::Error { request_id, error, kind } => {
+        IpcResponse::Error {
+            request_id,
+            error,
+            kind,
+        } => {
             assert_eq!(request_id, 1);
             assert_eq!(error, "Command not found");
             assert_eq!(kind, ErrorKind::NotFound);
@@ -407,7 +448,11 @@ fn test_ipc_error_responses() {
     let decoded = IpcResponse::from_bytes(&bytes).expect("Failed to deserialize");
 
     match decoded {
-        IpcResponse::StreamError { session_id, code, message } => {
+        IpcResponse::StreamError {
+            session_id,
+            code,
+            message,
+        } => {
             assert_eq!(session_id, "session-001");
             assert_eq!(code, "PROCESSING_ERROR");
             assert_eq!(message, "Failed to process frame");
@@ -441,7 +486,10 @@ fn test_batch_ipc_messages() {
     let decoded = IpcMessage::from_bytes(&bytes).expect("Failed to deserialize");
 
     match decoded {
-        IpcMessage::ExecuteBatch { commands, request_id } => {
+        IpcMessage::ExecuteBatch {
+            commands,
+            request_id,
+        } => {
             assert_eq!(request_id, 1);
             assert_eq!(commands.len(), 2);
         }
@@ -474,7 +522,11 @@ fn test_batch_ipc_messages() {
     let decoded = IpcResponse::from_bytes(&bytes).expect("Failed to deserialize");
 
     match decoded {
-        IpcResponse::BatchResults { request_id, results, total_elapsed_ms } => {
+        IpcResponse::BatchResults {
+            request_id,
+            results,
+            total_elapsed_ms,
+        } => {
             assert_eq!(request_id, 1);
             assert_eq!(results.len(), 2);
             assert!((total_elapsed_ms - 25.5).abs() < 0.01);

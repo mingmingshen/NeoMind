@@ -152,13 +152,14 @@ impl ChannelRegistry {
                 }
             };
 
-            let table = match read_txn.open_table(redb::TableDefinition::<&str, &str>::new("channels")) {
-                Ok(t) => t,
-                Err(e) => {
-                    tracing::warn!("Failed to open channels table: {}", e);
-                    return Vec::new();
-                }
-            };
+            let table =
+                match read_txn.open_table(redb::TableDefinition::<&str, &str>::new("channels")) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        tracing::warn!("Failed to open channels table: {}", e);
+                        return Vec::new();
+                    }
+                };
 
             let mut configs = Vec::new();
             let iter = match table.iter() {
@@ -179,7 +180,10 @@ impl ChannelRegistry {
                 };
                 if let Ok(stored) = serde_json::from_str::<StoredChannelConfig>(value.value()) {
                     // Also load into memory
-                    self.configs.write().await.insert(stored.name.clone(), stored.config.clone());
+                    self.configs
+                        .write()
+                        .await
+                        .insert(stored.name.clone(), stored.config.clone());
                     configs.push(stored);
                 }
             }
@@ -194,8 +198,9 @@ impl ChannelRegistry {
     async fn save_channel(&self, stored: &StoredChannelConfig) -> Result<()> {
         let storage = self.storage.read().await;
         if let Some(db) = storage.as_ref() {
-            let json = serde_json::to_string(stored)
-                .map_err(|e| Error::Storage(format!("Failed to serialize channel config: {}", e)))?;
+            let json = serde_json::to_string(stored).map_err(|e| {
+                Error::Storage(format!("Failed to serialize channel config: {}", e))
+            })?;
 
             let write_txn = db
                 .begin_write()
@@ -231,9 +236,9 @@ impl ChannelRegistry {
                 let mut table = write_txn
                     .open_table(redb::TableDefinition::<&str, &str>::new("channels"))
                     .map_err(|e| Error::Storage(format!("Failed to open channels table: {}", e)))?;
-                table
-                    .remove(name)
-                    .map_err(|e| Error::Storage(format!("Failed to delete channel config: {}", e)))?;
+                table.remove(name).map_err(|e| {
+                    Error::Storage(format!("Failed to delete channel config: {}", e))
+                })?;
             }
 
             write_txn
@@ -328,7 +333,10 @@ impl ChannelRegistry {
         let recipients = self.recipients.read().await;
         channels.get(name).map(|channel| {
             // Check if there's an override in enabled_states, otherwise use channel's internal state
-            let enabled = enabled_states.get(name).copied().unwrap_or_else(|| channel.is_enabled());
+            let enabled = enabled_states
+                .get(name)
+                .copied()
+                .unwrap_or_else(|| channel.is_enabled());
             let channel_type = channel.channel_type().to_string();
             // Include recipients for email channels
             let channel_recipients = if channel_type == "email" {
@@ -368,7 +376,9 @@ impl ChannelRegistry {
                 ChannelInfo {
                     name: name.clone(),
                     channel_type: channel_type.clone(),
-                    enabled: enabled_states.get(name).copied()
+                    enabled: enabled_states
+                        .get(name)
+                        .copied()
                         .unwrap_or_else(|| channel.map(|c| c.is_enabled()).unwrap_or(false)),
                     config: configs.get(name).cloned(),
                     recipients: channel_recipients,
@@ -388,7 +398,10 @@ impl ChannelRegistry {
             let ct = channel.channel_type().to_string();
             *by_type.entry(ct).or_insert(0) += 1;
             // Check override first, then channel's internal state
-            let is_enabled = enabled_states.get(name).copied().unwrap_or_else(|| channel.is_enabled());
+            let is_enabled = enabled_states
+                .get(name)
+                .copied()
+                .unwrap_or_else(|| channel.is_enabled());
             if is_enabled {
                 enabled_count += 1;
             }
@@ -490,7 +503,9 @@ impl ChannelRegistry {
 
         // Validate email format (basic check)
         if !email.contains('@') || email.is_empty() {
-            return Err(Error::InvalidConfiguration("Invalid email address".to_string()));
+            return Err(Error::InvalidConfiguration(
+                "Invalid email address".to_string(),
+            ));
         }
 
         // Add to memory
@@ -498,7 +513,9 @@ impl ChannelRegistry {
             let mut recipients = self.recipients.write().await;
             let channel_recipients = recipients.entry(channel_name.to_string()).or_default();
             if channel_recipients.contains(&email.to_string()) {
-                return Err(Error::InvalidConfiguration("Recipient already exists".to_string()));
+                return Err(Error::InvalidConfiguration(
+                    "Recipient already exists".to_string(),
+                ));
             }
             channel_recipients.push(email.to_string());
         }
@@ -550,7 +567,11 @@ impl ChannelRegistry {
             self.recreate_email_channel(channel_name).await?;
         }
 
-        tracing::info!("Removed recipient '{}' from channel '{}'", email, channel_name);
+        tracing::info!(
+            "Removed recipient '{}' from channel '{}'",
+            email,
+            channel_name
+        );
         Ok(())
     }
 
@@ -565,10 +586,9 @@ impl ChannelRegistry {
                 .get(channel_name)
                 .ok_or_else(|| Error::NotFound(format!("Channel not found: {}", channel_name)))?;
 
-            let config = configs
-                .get(channel_name)
-                .cloned()
-                .ok_or_else(|| Error::InvalidConfiguration("Channel config not found".to_string()))?;
+            let config = configs.get(channel_name).cloned().ok_or_else(|| {
+                Error::InvalidConfiguration("Channel config not found".to_string())
+            })?;
 
             let enabled = enabled_states
                 .get(channel_name)
@@ -581,7 +601,10 @@ impl ChannelRegistry {
         // Get current recipients
         let recipients = {
             let recipients_map = self.recipients.read().await;
-            recipients_map.get(channel_name).cloned().unwrap_or_default()
+            recipients_map
+                .get(channel_name)
+                .cloned()
+                .unwrap_or_default()
         };
 
         // Build new config with recipients
@@ -603,7 +626,11 @@ impl ChannelRegistry {
             channels.insert(channel_name.to_string(), new_channel);
         }
 
-        tracing::debug!("Recreated email channel '{}' with {} recipients", channel_name, recipients.len());
+        tracing::debug!(
+            "Recreated email channel '{}' with {} recipients",
+            channel_name,
+            recipients.len()
+        );
         Ok(())
     }
 
@@ -624,7 +651,9 @@ impl ChannelRegistry {
             {
                 let mut table = write_txn
                     .open_table(redb::TableDefinition::<&str, &str>::new("recipients"))
-                    .map_err(|e| Error::Storage(format!("Failed to open recipients table: {}", e)))?;
+                    .map_err(|e| {
+                        Error::Storage(format!("Failed to open recipients table: {}", e))
+                    })?;
                 table
                     .insert(channel_name, json.as_str())
                     .map_err(|e| Error::Storage(format!("Failed to save recipients: {}", e)))?;
@@ -649,13 +678,14 @@ impl ChannelRegistry {
                 }
             };
 
-            let table = match read_txn.open_table(redb::TableDefinition::<&str, &str>::new("recipients")) {
-                Ok(t) => t,
-                Err(e) => {
-                    tracing::debug!("Recipients table not found or empty: {}", e);
-                    return;
-                }
-            };
+            let table =
+                match read_txn.open_table(redb::TableDefinition::<&str, &str>::new("recipients")) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        tracing::debug!("Recipients table not found or empty: {}", e);
+                        return;
+                    }
+                };
 
             if let Ok(Some(value)) = table.get(channel_name) {
                 if let Ok(loaded) = serde_json::from_str::<Vec<String>>(value.value()) {
@@ -679,13 +709,14 @@ impl ChannelRegistry {
                 }
             };
 
-            let table = match read_txn.open_table(redb::TableDefinition::<&str, &str>::new("recipients")) {
-                Ok(t) => t,
-                Err(e) => {
-                    tracing::debug!("Recipients table not found: {}", e);
-                    return;
-                }
-            };
+            let table =
+                match read_txn.open_table(redb::TableDefinition::<&str, &str>::new("recipients")) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        tracing::debug!("Recipients table not found: {}", e);
+                        return;
+                    }
+                };
 
             let iter = match table.iter() {
                 Ok(i) => i,
@@ -724,13 +755,14 @@ impl ChannelRegistry {
                 }
             };
 
-            let table = match read_txn.open_table(redb::TableDefinition::<&str, &str>::new("channels")) {
-                Ok(t) => t,
-                Err(e) => {
-                    tracing::debug!("Channels table not found: {}", e);
-                    return ChannelFilter::default();
-                }
-            };
+            let table =
+                match read_txn.open_table(redb::TableDefinition::<&str, &str>::new("channels")) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        tracing::debug!("Channels table not found: {}", e);
+                        return ChannelFilter::default();
+                    }
+                };
 
             if let Ok(Some(value)) = table.get(channel_name) {
                 if let Ok(stored) = serde_json::from_str::<StoredChannelConfig>(value.value()) {
@@ -746,37 +778,49 @@ impl ChannelRegistry {
         let storage = self.storage.read().await;
         if let Some(db) = storage.as_ref() {
             // Read existing config
-            let read_txn = db.begin_read()
+            let read_txn = db
+                .begin_read()
                 .map_err(|e| Error::Storage(format!("Failed to begin read: {}", e)))?;
 
-            let table = read_txn.open_table(redb::TableDefinition::<&str, &str>::new("channels"))
+            let table = read_txn
+                .open_table(redb::TableDefinition::<&str, &str>::new("channels"))
                 .map_err(|e| Error::Storage(format!("Failed to open channels table: {}", e)))?;
 
-            let existing = table.get(channel_name)
+            let existing = table
+                .get(channel_name)
                 .map_err(|e| Error::Storage(format!("Failed to read channel: {}", e)))?;
 
             if let Some(value) = existing {
-                let mut stored: StoredChannelConfig = serde_json::from_str(value.value())
-                    .map_err(|e| Error::Storage(format!("Failed to deserialize channel config: {}", e)))?;
+                let mut stored: StoredChannelConfig =
+                    serde_json::from_str(value.value()).map_err(|e| {
+                        Error::Storage(format!("Failed to deserialize channel config: {}", e))
+                    })?;
 
                 // Update filter
                 stored.filter = filter;
 
                 // Save updated config
-                let json = serde_json::to_string(&stored)
-                    .map_err(|e| Error::Storage(format!("Failed to serialize channel config: {}", e)))?;
+                let json = serde_json::to_string(&stored).map_err(|e| {
+                    Error::Storage(format!("Failed to serialize channel config: {}", e))
+                })?;
 
-                let write_txn = db.begin_write()
+                let write_txn = db
+                    .begin_write()
                     .map_err(|e| Error::Storage(format!("Failed to begin write: {}", e)))?;
 
                 {
-                    let mut table = write_txn.open_table(redb::TableDefinition::<&str, &str>::new("channels"))
-                        .map_err(|e| Error::Storage(format!("Failed to open channels table: {}", e)))?;
-                    table.insert(channel_name, json.as_str())
-                        .map_err(|e| Error::Storage(format!("Failed to save channel filter: {}", e)))?;
+                    let mut table = write_txn
+                        .open_table(redb::TableDefinition::<&str, &str>::new("channels"))
+                        .map_err(|e| {
+                            Error::Storage(format!("Failed to open channels table: {}", e))
+                        })?;
+                    table.insert(channel_name, json.as_str()).map_err(|e| {
+                        Error::Storage(format!("Failed to save channel filter: {}", e))
+                    })?;
                 }
 
-                write_txn.commit()
+                write_txn
+                    .commit()
                     .map_err(|e| Error::Storage(format!("Failed to commit: {}", e)))?;
 
                 tracing::info!("Updated filter for channel '{}'", channel_name);

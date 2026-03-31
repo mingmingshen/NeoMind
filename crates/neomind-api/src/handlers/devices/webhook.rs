@@ -576,8 +576,6 @@ mod tests {
 
     #[test]
     fn test_convert_json_to_metric_value() {
-        
-
         let int_val = serde_json::json!(42);
         let result = convert_json_to_metric_value(&int_val);
         assert!(result.as_i64() == Some(42));

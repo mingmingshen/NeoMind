@@ -11,10 +11,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
+use neomind_agent::llm_backends::backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
+use neomind_agent::llm_backends::{
+    instance_manager::get_instance_manager, OllamaConfig, OllamaRuntime,
+};
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_devices::registry::DeviceTypeTemplate;
-use neomind_agent::llm_backends::backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
-use neomind_agent::llm_backends::{instance_manager::get_instance_manager, OllamaConfig, OllamaRuntime};
 use neomind_storage::{LlmBackendInstance, LlmBackendType};
 
 use super::models::{
@@ -697,10 +699,7 @@ pub async fn list_cloud_device_types_handler(
     State(_state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
     // Use raw.githubusercontent.com to avoid GitHub API rate limits
-    let index_url = format!(
-        "{}/{}/types/index.json",
-        CLOUD_BASE_URL, CLOUD_BRANCH
-    );
+    let index_url = format!("{}/{}/types/index.json", CLOUD_BASE_URL, CLOUD_BRANCH);
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))

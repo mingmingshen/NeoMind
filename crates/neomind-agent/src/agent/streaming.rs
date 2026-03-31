@@ -297,10 +297,11 @@ fn detect_json_tool_calls(buffer: &str) -> Option<(usize, String, String)> {
         let has_valid_tool_call = arr.iter().any(|item| {
             if let Some(obj) = item.as_object() {
                 // Check if "name", "tool", or "function" field exists and is a valid string
-                let name_value = obj.get("name")
+                let name_value = obj
+                    .get("name")
                     .or_else(|| obj.get("tool"))
                     .or_else(|| obj.get("function"));
-                
+
                 if let Some(name) = name_value {
                     if let Some(name_str) = name.as_str() {
                         // Ensure the name is a simple string (not a JSON string containing nested JSON)
@@ -312,7 +313,7 @@ fn detect_json_tool_calls(buffer: &str) -> Option<(usize, String, String)> {
             }
             false
         });
-        
+
         if !has_valid_tool_call {
             return None;
         }
@@ -506,15 +507,15 @@ const NON_CACHEABLE_TOOLS: &[&str] = &[
 /// - AutoGen: `reflect_on_tool_use=False` returns tool results directly
 /// - LangChain: `return_direct=True` stops agent loop after tool execution
 const SIMPLE_QUERY_TOOLS: &[&str] = &[
-    "device_discover",  // Device discovery - returns device list
-    "list_devices",     // List all devices
-    "list_rules",       // List automation rules
-    "list_agents",      // List AI agents
-    "list_scenarios",   // List scenarios
-    "list_workflows",   // List workflows
-    "query_rule_history",  // Query rule execution history
+    "device_discover",       // Device discovery - returns device list
+    "list_devices",          // List all devices
+    "list_rules",            // List automation rules
+    "list_agents",           // List AI agents
+    "list_scenarios",        // List scenarios
+    "list_workflows",        // List workflows
+    "query_rule_history",    // Query rule execution history
     "query_workflow_status", // Get workflow status
-    "get_device_metrics",   // Get device metrics/data
+    "get_device_metrics",    // Get device metrics/data
 ];
 
 fn is_tool_cacheable(name: &str) -> bool {
@@ -556,7 +557,10 @@ fn build_phase2_prompt_with_tool_results(
 
     // 检查是否有错误结果
     let has_errors = tool_call_results.iter().any(|(_, result)| {
-        result.contains("failed") || result.contains("error") || result.contains("失败") || result.contains("错误")
+        result.contains("failed")
+            || result.contains("error")
+            || result.contains("失败")
+            || result.contains("错误")
     });
 
     let mut block = if tool_count > 1 {
@@ -565,7 +569,9 @@ fn build_phase2_prompt_with_tool_results(
             tool_count
         )
     } else {
-        String::from("\n\n[Tool Execution Results - You MUST analyze and provide a complete response]\n")
+        String::from(
+            "\n\n[Tool Execution Results - You MUST analyze and provide a complete response]\n",
+        )
     };
 
     // Add mandatory response instruction
@@ -581,7 +587,9 @@ fn build_phase2_prompt_with_tool_results(
         block.push_str("2. If the user has provided enough information, it's a DSL format issue. You should tell the user \"I understand, let me regenerate\" and then inform them the rule was created successfully\n");
         block.push_str("3. Only ask follow-up questions when the user is actually missing key information, and ask everything at once\n");
         block.push_str("4. Don't show technical error messages to the user\n");
-        block.push_str("5. Respond in a friendly manner, don't mechanically repeat the question list\n\n");
+        block.push_str(
+            "5. Respond in a friendly manner, don't mechanically repeat the question list\n\n",
+        );
     }
 
     for (name, result) in tool_call_results {
@@ -694,26 +702,30 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                         let offline = summary.get("offline").and_then(|o| o.as_u64()).unwrap_or(0);
 
                         response.push_str(&format!("📊 Device Overview ({} total)\n\n", total));
-                        response.push_str(&format!("- Online: {} | Offline: {}\n\n", online, offline));
+                        response
+                            .push_str(&format!("- Online: {} | Offline: {}\n\n", online, offline));
 
-                            // Show device types
-                            if let Some(by_type) = summary.get("by_type").and_then(|b| b.as_object()) {
+                        // Show device types
+                        if let Some(by_type) = summary.get("by_type").and_then(|b| b.as_object()) {
                             response.push_str("**By Type**:\n");
-                                    for (device_type, count) in by_type.iter() {
-                                        if let Some(count) = count.as_u64() {
+                            for (device_type, count) in by_type.iter() {
+                                if let Some(count) = count.as_u64() {
                                     response
                                         .push_str(&format!("- {}: {} units\n", device_type, count));
-                                        }
-                                    }
-                                    response.push('\n');
                                 }
                             }
+                            response.push('\n');
+                        }
+                    }
 
-                            // List devices (handle both direct array and truncated nested structure)
-                            if let Some(devices) = extract_array(&json_value, "devices") {
+                    // List devices (handle both direct array and truncated nested structure)
+                    if let Some(devices) = extract_array(&json_value, "devices") {
                         response.push_str("**Device List**:\n\n");
                         for device in devices {
-                                        let id = device.get("id").and_then(|i| i.as_str()).unwrap_or("unknown");
+                            let id = device
+                                .get("id")
+                                .and_then(|i| i.as_str())
+                                .unwrap_or("unknown");
                             let name = device
                                 .get("name")
                                 .and_then(|n| n.as_str())
@@ -727,7 +739,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                 .and_then(|s| s.as_str())
                                 .unwrap_or("unknown");
 
-                                        response.push_str(&format!(
+                            response.push_str(&format!(
                                 "- **{}** ({}) - {} - {}\n",
                                 name, id, device_type, status
                             ));
@@ -766,9 +778,13 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 "list_rules" => {
                     // Format rule list (handle both direct array and truncated nested structure)
                     if let Some(rules) = extract_array(&json_value, "rules") {
-                        response.push_str(&format!("## Automation Rules ({} total)\n\n", rules.len()));
+                        response
+                            .push_str(&format!("## Automation Rules ({} total)\n\n", rules.len()));
                         for rule in rules {
-                            let name = rule.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+                            let name = rule
+                                .get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("unknown");
                             let enabled = rule
                                 .get("enabled")
                                 .and_then(|e| e.as_bool())
@@ -789,7 +805,8 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 "list_scenarios" => {
                     // Handle both direct array and truncated nested structure
                     if let Some(scenarios) = extract_array(&json_value, "scenarios") {
-                        response.push_str(&format!("## Scenario List ({} total)\n\n", scenarios.len()));
+                        response
+                            .push_str(&format!("## Scenario List ({} total)\n\n", scenarios.len()));
                         for scenario in scenarios {
                             let name = scenario
                                 .get("name")
@@ -824,8 +841,10 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 "query_rule_history" => {
                     // Handle both direct array and truncated nested structure
                     if let Some(history) = extract_array(&json_value, "history") {
-                        response
-                            .push_str(&format!("## Rule Execution History ({} entries)\n\n", history.len()));
+                        response.push_str(&format!(
+                            "## Rule Execution History ({} entries)\n\n",
+                            history.len()
+                        ));
                         for (i, entry) in history.iter().enumerate().take(10) {
                             // Limit to 10 entries
                             let name = entry
@@ -953,7 +972,10 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                     if let Some(dt) = DateTime::from_timestamp(ts, 0) {
                                         let time_ago = (Utc::now() - dt).num_seconds();
                                         if time_ago < 3600 {
-                                            response.push_str(&format!("  _{} seconds ago_\n", time_ago));
+                                            response.push_str(&format!(
+                                                "  _{} seconds ago_\n",
+                                                time_ago
+                                            ));
                                         } else if time_ago < 86400 {
                                             response.push_str(&format!(
                                                 "  _{} minutes ago_\n",
@@ -1000,9 +1022,15 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                             response.push_str("🤖 **AI Agent List**\n\n");
                             response.push_str("🔍 No AI Agents configured in the system.");
                         } else {
-                            response.push_str(&format!("🤖 **AI Agent List** ({} total)\n\n", agents.len()));
+                            response.push_str(&format!(
+                                "🤖 **AI Agent List** ({} total)\n\n",
+                                agents.len()
+                            ));
                             for agent in agents {
-                                let name = agent.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+                                let name = agent
+                                    .get("name")
+                                    .and_then(|n| n.as_str())
+                                    .unwrap_or("unknown");
                                 let id = agent.get("id").and_then(|i| i.as_str()).unwrap_or("");
                                 let status = agent
                                     .get("status")
@@ -1039,8 +1067,10 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                     _ => "🔴",
                                 };
 
-                                response
-                                    .push_str(&format!("- {} **{}** ({})\n", status_icon, name, status));
+                                response.push_str(&format!(
+                                    "- {} **{}** ({})\n",
+                                    status_icon, name, status
+                                ));
 
                                 // Add ID for reference
                                 if !id.is_empty() && id.len() < 30 {
@@ -1052,7 +1082,8 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                     response.push_str(&format!(
                                         "  Executions: {}, Last: {}\n",
                                         exec_count_str,
-                                        if last_exec == "Not executed" || last_exec.contains("null") {
+                                        if last_exec == "Not executed" || last_exec.contains("null")
+                                        {
                                             "N/A"
                                         } else {
                                             last_exec
@@ -1061,7 +1092,9 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                 }
 
                                 // Add description if available
-                                if let Some(desc) = agent.get("description").and_then(|d| d.as_str()) {
+                                if let Some(desc) =
+                                    agent.get("description").and_then(|d| d.as_str())
+                                {
                                     if !desc.is_empty() && desc != "null" {
                                         response.push_str(&format!("  Description: {}\n", desc));
                                     }
@@ -1133,7 +1166,8 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 }
                 "create_rule" => {
                     if let Some(rule_id) = json_value.get("rule_id").and_then(|r| r.as_str()) {
-                        response.push_str(&format!("✓ Rule created successfully (ID: {})\n", rule_id));
+                        response
+                            .push_str(&format!("✓ Rule created successfully (ID: {})\n", rule_id));
                     } else {
                         response.push_str("✓ Rule created successfully.\n");
                     }
@@ -1142,14 +1176,20 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                     if let Some(execution_id) =
                         json_value.get("execution_id").and_then(|e| e.as_str())
                     {
-                        response.push_str(&format!("✓ Workflow triggered (Execution ID: {})\n", execution_id));
+                        response.push_str(&format!(
+                            "✓ Workflow triggered (Execution ID: {})\n",
+                            execution_id
+                        ));
                     } else {
                         response.push_str("✓ Workflow triggered.\n");
                     }
                 }
                 "create_agent" => {
                     if let Some(agent_id) = json_value.get("agent_id").and_then(|a| a.as_str()) {
-                        response.push_str(&format!("✓ Agent created successfully (ID: {})\n", agent_id));
+                        response.push_str(&format!(
+                            "✓ Agent created successfully (ID: {})\n",
+                            agent_id
+                        ));
                     } else if let Some(id) = json_value.get("id").and_then(|i| i.as_str()) {
                         response.push_str(&format!("✓ Agent created successfully (ID: {})\n", id));
                     } else {
@@ -1160,7 +1200,10 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                     if let Some(execution_id) =
                         json_value.get("execution_id").and_then(|e| e.as_str())
                     {
-                        response.push_str(&format!("✓ Agent execution triggered (ID: {})\n", execution_id));
+                        response.push_str(&format!(
+                            "✓ Agent execution triggered (ID: {})\n",
+                            execution_id
+                        ));
                     } else if let Some(result) = json_value.get("result").and_then(|r| r.as_str()) {
                         response.push_str(&format!("✓ Agent execution completed: {}\n", result));
                     } else {
@@ -1682,9 +1725,10 @@ pub async fn process_stream_events_with_safeguards(
     // Check for simple greeting patterns (disable thinking for these)
     let is_simple_greeting = {
         let lower = user_message.to_lowercase();
-        lower.len() < 20 && (
-            // English greetings
-            lower.starts_with("hello")
+        lower.len() < 20
+            && (
+                // English greetings
+                lower.starts_with("hello")
             || lower.starts_with("hi ")
             || lower.starts_with("hi,")
             || lower == "hi"
@@ -1703,7 +1747,7 @@ pub async fn process_stream_events_with_safeguards(
             || lower.starts_with("晚上好")
             || lower.starts_with("谢谢")
             || lower.contains("怎么样")
-        )
+            )
     };
 
     // Check for complex analysis keywords (enable thinking for these)
@@ -1728,7 +1772,7 @@ pub async fn process_stream_events_with_safeguards(
     // Decision logic: DEFAULT to NO thinking
     let use_thinking = !is_simple_greeting  // Never think for greetings
         && !has_tool_keywords               // No thinking before tool calls
-        && needs_deep_analysis;             // Only think for complex analysis
+        && needs_deep_analysis; // Only think for complex analysis
 
     tracing::info!(
         "Thinking control: use_thinking={}, is_simple_greeting={}, has_tool_keywords={}, needs_deep_analysis={}",
@@ -2237,7 +2281,7 @@ pub async fn process_stream_events_with_safeguards(
                                 AgentMessage::assistant(&partial_content)
                             };
                             internal_state.write().await.push_message(partial_msg);
-                            tracing::info!("Saved partial response on error: {} chars content, {} chars thinking", 
+                            tracing::info!("Saved partial response on error: {} chars content, {} chars thinking",
                                 partial_content.len(), thinking_content.len());
                         }
                         break;

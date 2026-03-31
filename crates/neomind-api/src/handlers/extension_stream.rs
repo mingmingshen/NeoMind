@@ -43,24 +43,23 @@
 //! 6. On disconnect, server calls `extension.stop_push()` and cleans up
 
 use axum::{
-    extract::{
-        Path, State, WebSocketUpgrade,
-    },
     extract::ws::{Message as WsMessage, WebSocket},
+    extract::{Path, State, WebSocketUpgrade},
     response::IntoResponse,
 };
+use base64::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
-use base64::prelude::*;
 
-use crate::handlers::common::{HandlerResult, ok};
+use crate::handlers::common::{ok, HandlerResult};
 use crate::models::error::ErrorResponse;
 use crate::server::ServerState;
 use neomind_core::extension::{
-    DataChunk, StreamCapability, StreamDataType, StreamDirection, StreamError, StreamMode, StreamSession, SessionStats, PushOutputMessage,
+    DataChunk, PushOutputMessage, SessionStats, StreamCapability, StreamDataType, StreamDirection,
+    StreamError, StreamMode, StreamSession,
 };
 
 // ============================================================================
@@ -74,15 +73,11 @@ enum ClientMessage {
     /// Initial handshake
     Hello,
     /// Initialize session (stateful mode)
-    Init {
-        config: Option<serde_json::Value>,
-    },
+    Init { config: Option<serde_json::Value> },
     /// Close connection/session
     Close,
     /// Flow control acknowledgment
-    Ack {
-        sequence: u64,
-    },
+    Ack { sequence: u64 },
 }
 
 /// Message type to client
@@ -90,9 +85,7 @@ enum ClientMessage {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ServerMessage {
     /// Stream capability
-    Capability {
-        capability: StreamCapabilityDto,
-    },
+    Capability { capability: StreamCapabilityDto },
     /// Session created (stateful mode)
     SessionCreated {
         session_id: String,
@@ -102,7 +95,7 @@ enum ServerMessage {
     Result {
         input_sequence: Option<u64>,
         output_sequence: u64,
-        data: String,  // base64 encoded
+        data: String, // base64 encoded
         data_type: String,
         processing_ms: f32,
         metadata: Option<serde_json::Value>,
@@ -111,7 +104,7 @@ enum ServerMessage {
     PushOutput {
         session_id: String,
         sequence: u64,
-        data: String,  // base64 encoded
+        data: String, // base64 encoded
         data_type: String,
         timestamp: i64,
         metadata: Option<serde_json::Value>,
@@ -131,9 +124,7 @@ enum ServerMessage {
     },
     /// Heartbeat
     #[allow(dead_code)]
-    Heartbeat {
-        timestamp: i64,
-    },
+    Heartbeat { timestamp: i64 },
 }
 
 /// DTO for stream capability
@@ -161,7 +152,9 @@ impl From<&StreamCapability> for StreamCapabilityDto {
                 StreamMode::Stateful => "stateful".to_string(),
                 StreamMode::Push => "push".to_string(),
             },
-            supported_data_types: cap.supported_data_types.iter()
+            supported_data_types: cap
+                .supported_data_types
+                .iter()
                 .map(|dt| dt.mime_type())
                 .collect(),
             max_chunk_size: cap.max_chunk_size,
@@ -232,21 +225,33 @@ impl PushOutputRouter {
 
     /// Register a sender for a session
     pub async fn register(&self, session_id: String, sender: mpsc::Sender<PushOutputMessage>) {
-        let mut senders: tokio::sync::RwLockWriteGuard<'_, HashMap<String, mpsc::Sender<PushOutputMessage>>> = self.senders.write().await;
+        let mut senders: tokio::sync::RwLockWriteGuard<
+            '_,
+            HashMap<String, mpsc::Sender<PushOutputMessage>>,
+        > = self.senders.write().await;
         senders.insert(session_id.clone(), sender);
         tracing::debug!("Registered push output sender for session: {}", session_id);
     }
 
     /// Unregister a session
     pub async fn unregister(&self, session_id: &str) {
-        let mut senders: tokio::sync::RwLockWriteGuard<'_, HashMap<String, mpsc::Sender<PushOutputMessage>>> = self.senders.write().await;
+        let mut senders: tokio::sync::RwLockWriteGuard<
+            '_,
+            HashMap<String, mpsc::Sender<PushOutputMessage>>,
+        > = self.senders.write().await;
         senders.remove(session_id);
-        tracing::debug!("Unregistered push output sender for session: {}", session_id);
+        tracing::debug!(
+            "Unregistered push output sender for session: {}",
+            session_id
+        );
     }
 
     /// Route a push output message to the appropriate session
     pub async fn route(&self, output: PushOutputMessage) -> bool {
-        let senders: tokio::sync::RwLockReadGuard<'_, HashMap<String, mpsc::Sender<PushOutputMessage>>> = self.senders.read().await;
+        let senders: tokio::sync::RwLockReadGuard<
+            '_,
+            HashMap<String, mpsc::Sender<PushOutputMessage>>,
+        > = self.senders.read().await;
         if let Some(sender) = senders.get(&output.session_id) {
             match sender.send(output).await {
                 Ok(_) => true,
@@ -263,7 +268,10 @@ impl PushOutputRouter {
 
     /// Get the count of active sessions
     pub async fn session_count(&self) -> usize {
-        let senders: tokio::sync::RwLockReadGuard<'_, HashMap<String, mpsc::Sender<PushOutputMessage>>> = self.senders.read().await;
+        let senders: tokio::sync::RwLockReadGuard<
+            '_,
+            HashMap<String, mpsc::Sender<PushOutputMessage>>,
+        > = self.senders.read().await;
         senders.len()
     }
 }
@@ -309,11 +317,7 @@ pub async fn extension_stream_ws(
     ws.on_upgrade(move |socket| handle_stream_socket(socket, extension_id, state))
 }
 
-async fn handle_stream_socket(
-    mut socket: WebSocket,
-    extension_id: String,
-    state: ServerState,
-) {
+async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state: ServerState) {
     tracing::info!("Extension stream connection opened for: {}", extension_id);
 
     let safety_manager = state.extensions.registry.safety_manager();
@@ -324,8 +328,12 @@ async fn handle_stream_socket(
             ext
         }
         None => {
-            send_error(&mut socket, "EXTENSION_NOT_FOUND",
-                       format!("Extension '{}' not available for streaming", extension_id)).await;
+            send_error(
+                &mut socket,
+                "EXTENSION_NOT_FOUND",
+                format!("Extension '{}' not available for streaming", extension_id),
+            )
+            .await;
             return;
         }
     };
@@ -345,8 +353,12 @@ async fn handle_stream_socket(
     let cap = match capability {
         Some(c) => c,
         None => {
-            send_error(&mut socket, "NOT_SUPPORTED",
-                       "Extension does not support streaming".to_string()).await;
+            send_error(
+                &mut socket,
+                "NOT_SUPPORTED",
+                "Extension does not support streaming".to_string(),
+            )
+            .await;
             return;
         }
     };
@@ -355,7 +367,11 @@ async fn handle_stream_socket(
     let msg = ServerMessage::Capability {
         capability: StreamCapabilityDto::from(&cap),
     };
-    tracing::info!("Sending capability: mode={:?}, direction={:?}", cap.mode, cap.direction);
+    tracing::info!(
+        "Sending capability: mode={:?}, direction={:?}",
+        cap.mode,
+        cap.direction
+    );
     send_message(&mut socket, &msg).await;
 
     // Track session if stateful
@@ -435,11 +451,19 @@ async fn handle_stream_socket(
 
                                         // Initialize in extension
                                         let ext = extension.read().await;
-                                        tracing::info!("Initializing session {} for extension {}", sid, extension_id);
+                                        tracing::info!(
+                                            "Initializing session {} for extension {}",
+                                            sid,
+                                            extension_id
+                                        );
                                         if let Err(e) = ext.init_session(&session).await {
                                             tracing::error!("Failed to init session: {}", e);
-                                            send_error(&mut socket, "SESSION_INIT_FAILED",
-                                                       format!("Failed to init session: {}", e)).await;
+                                            send_error(
+                                                &mut socket,
+                                                "SESSION_INIT_FAILED",
+                                                format!("Failed to init session: {}", e),
+                                            )
+                                            .await;
                                             continue;
                                         }
                                         tracing::info!("Session {} initialized successfully", sid);
@@ -454,36 +478,51 @@ async fn handle_stream_socket(
                                             push_router.register(sid.clone(), tx).await;
 
                                             let Some(isolated) = isolated_extension.clone() else {
-                                                send_error(&mut socket, "PUSH_NOT_AVAILABLE",
-                                                           "Push mode requires isolated extension runtime".to_string()).await;
+                                                send_error(
+                                                    &mut socket,
+                                                    "PUSH_NOT_AVAILABLE",
+                                                    "Push mode requires isolated extension runtime"
+                                                        .to_string(),
+                                                )
+                                                .await;
                                                 push_router.unregister(&sid).await;
                                                 push_rx = None;
                                                 continue;
                                             };
 
-                                            let (push_tx, mut push_rx_ipc) = mpsc::unbounded_channel();
+                                            let (push_tx, mut push_rx_ipc) =
+                                                mpsc::unbounded_channel();
                                             isolated.set_push_output_channel(push_tx).await;
 
                                             let router = push_router.clone();
                                             let session_id_for_task = sid.clone();
                                             tokio::spawn(async move {
                                                 while let Some(output) = push_rx_ipc.recv().await {
-                                                    let _ = router.route(PushOutputMessage {
-                                                        session_id: output.session_id,
-                                                        sequence: output.sequence,
-                                                        data: output.data,
-                                                        data_type: output.data_type,
-                                                        timestamp: output.timestamp,
-                                                        metadata: output.metadata,
-                                                    }).await;
+                                                    let _ = router
+                                                        .route(PushOutputMessage {
+                                                            session_id: output.session_id,
+                                                            sequence: output.sequence,
+                                                            data: output.data,
+                                                            data_type: output.data_type,
+                                                            timestamp: output.timestamp,
+                                                            metadata: output.metadata,
+                                                        })
+                                                        .await;
                                                 }
-                                                tracing::debug!("Push IPC forwarder stopped for session: {}", session_id_for_task);
+                                                tracing::debug!(
+                                                    "Push IPC forwarder stopped for session: {}",
+                                                    session_id_for_task
+                                                );
                                             });
 
                                             // Start pushing
                                             if let Err(e) = ext.start_push(&sid).await {
-                                                send_error(&mut socket, "PUSH_START_FAILED",
-                                                           format!("Failed to start push: {}", e)).await;
+                                                send_error(
+                                                    &mut socket,
+                                                    "PUSH_START_FAILED",
+                                                    format!("Failed to start push: {}", e),
+                                                )
+                                                .await;
                                                 push_router.unregister(&sid).await;
                                                 push_rx = None;
                                                 continue;
@@ -496,16 +535,28 @@ async fn handle_stream_socket(
                                         session_id = Some(sid.clone());
 
                                         // Send session created
-                                        send_message(&mut socket, &ServerMessage::SessionCreated {
-                                            session_id: sid.clone(),
-                                            server_time: chrono::Utc::now().timestamp_millis(),
-                                        }).await;
+                                        send_message(
+                                            &mut socket,
+                                            &ServerMessage::SessionCreated {
+                                                session_id: sid.clone(),
+                                                server_time: chrono::Utc::now().timestamp_millis(),
+                                            },
+                                        )
+                                        .await;
 
-                                        tracing::info!("Session created: {} for extension: {} (mode: {:?})",
-                                                       sid, extension_id, cap.mode);
+                                        tracing::info!(
+                                            "Session created: {} for extension: {} (mode: {:?})",
+                                            sid,
+                                            extension_id,
+                                            cap.mode
+                                        );
                                     } else {
-                                        send_error(&mut socket, "INVALID_MODE",
-                                                   "Cannot init session in stateless mode".to_string()).await;
+                                        send_error(
+                                            &mut socket,
+                                            "INVALID_MODE",
+                                            "Cannot init session in stateless mode".to_string(),
+                                        )
+                                        .await;
                                     }
                                 }
                                 ClientMessage::Close => {
@@ -524,8 +575,12 @@ async fn handle_stream_socket(
                         let (sequence, chunk_data) = match parse_binary_frame(data) {
                             Some((s, d)) => (s, d),
                             None => {
-                                send_error(&mut socket, "INVALID_FRAME",
-                                           "Invalid binary frame format".to_string()).await;
+                                send_error(
+                                    &mut socket,
+                                    "INVALID_FRAME",
+                                    "Invalid binary frame format".to_string(),
+                                )
+                                .await;
                                 continue;
                             }
                         };
@@ -591,18 +646,26 @@ async fn handle_stream_socket(
                                 // Record success with safety manager
                                 safety_manager.record_success(&extension_id).await;
                                 output_sequence = output_sequence.wrapping_add(1);
-                                send_message(&mut socket, &ServerMessage::Result {
-                                    input_sequence: stream_result.input_sequence,
-                                    output_sequence: stream_result.output_sequence,
-                                    data: BASE64_STANDARD.encode(&stream_result.data),
-                                    data_type: stream_result.data_type.mime_type(),
-                                    processing_ms,
-                                    metadata: stream_result.metadata,
-                                }).await;
+                                send_message(
+                                    &mut socket,
+                                    &ServerMessage::Result {
+                                        input_sequence: stream_result.input_sequence,
+                                        output_sequence: stream_result.output_sequence,
+                                        data: BASE64_STANDARD.encode(&stream_result.data),
+                                        data_type: stream_result.data_type.mime_type(),
+                                        processing_ms,
+                                        metadata: stream_result.metadata,
+                                    },
+                                )
+                                .await;
 
                                 // Check for error in result
                                 if let Some(err) = stream_result.error {
-                                    tracing::warn!("Stream processing error: {} - {}", err.code, err.message);
+                                    tracing::warn!(
+                                        "Stream processing error: {} - {}",
+                                        err.code,
+                                        err.message
+                                    );
                                 }
                             }
                             Ok(Err(e)) => {
@@ -668,12 +731,17 @@ async fn handle_stream_socket(
 
         let ext = extension.read().await;
         if let Ok(stats) = ext.close_session(&sid).await {
-            send_message(&mut socket, &ServerMessage::SessionClosed {
-                session_id: sid.clone(),
-                total_frames: stats.input_chunks,
-                duration_ms: (chrono::Utc::now().timestamp_millis() - stats.last_activity) as u64,
-                stats: SessionStatsDto::from(&stats),
-            }).await;
+            send_message(
+                &mut socket,
+                &ServerMessage::SessionClosed {
+                    session_id: sid.clone(),
+                    total_frames: stats.input_chunks,
+                    duration_ms: (chrono::Utc::now().timestamp_millis() - stats.last_activity)
+                        as u64,
+                    stats: SessionStatsDto::from(&stats),
+                },
+            )
+            .await;
         }
     }
 
@@ -723,7 +791,11 @@ pub async fn get_stream_capability_handler(
     State(state): State<ServerState>,
     Path(extension_id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let extension = state.extensions.runtime.get_extension(&extension_id).await
+    let extension = state
+        .extensions
+        .runtime
+        .get_extension(&extension_id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", extension_id)))?;
 
     let ext_read = extension.read().await;
@@ -734,12 +806,10 @@ pub async fn get_stream_capability_handler(
             let cap_dto = StreamCapabilityDto::from(&cap);
             ok(serde_json::to_value(cap_dto).unwrap())
         }
-        None => {
-            ok(serde_json::json!({
-                "error": "NOT_SUPPORTED",
-                "message": "Extension does not support streaming"
-            }))
-        }
+        None => ok(serde_json::json!({
+            "error": "NOT_SUPPORTED",
+            "message": "Extension does not support streaming"
+        })),
     }
 }
 
@@ -778,8 +848,12 @@ mod tests {
             direction: StreamDirection::Upload,
             mode: StreamMode::Stateless,
             supported_data_types: vec![
-                StreamDataType::Image { format: "jpeg".into() },
-                StreamDataType::Image { format: "png".into() },
+                StreamDataType::Image {
+                    format: "jpeg".into(),
+                },
+                StreamDataType::Image {
+                    format: "png".into(),
+                },
             ],
             max_chunk_size: 1024 * 1024,
             preferred_chunk_size: 64 * 1024,

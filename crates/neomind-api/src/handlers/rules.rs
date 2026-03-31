@@ -917,19 +917,17 @@ pub async fn get_resources_handler(
 
     // Get all devices with their templates
     let all_devices = state.devices.service.list_devices().await;
-    
+
     // ✅ 优化：收集唯一的 device_type，批量获取并预转换模板
     // 这样可以避免在循环中重复调用 get_template() 和重复转换
     use std::collections::{HashMap, HashSet};
-    
-    let unique_types: HashSet<_> = all_devices
-        .iter()
-        .map(|d| &d.device_type)
-        .collect();
-    
+
+    let unique_types: HashSet<_> = all_devices.iter().map(|d| &d.device_type).collect();
+
     // 预转换所有模板为 (metrics, commands) 对
-    let mut template_data_map: HashMap<String, (Vec<MetricInfo>, Vec<CommandInfo>)> = HashMap::new();
-    
+    let mut template_data_map: HashMap<String, (Vec<MetricInfo>, Vec<CommandInfo>)> =
+        HashMap::new();
+
     for device_type in unique_types {
         if let Some(tpl) = state.devices.service.get_template(device_type).await {
             // 预转换 metrics
@@ -948,7 +946,7 @@ pub async fn get_resources_handler(
                     max_value: m.max,
                 })
                 .collect();
-    
+
             // 预转换 commands
             let commands: Vec<CommandInfo> = tpl
                 .commands
@@ -967,17 +965,18 @@ pub async fn get_resources_handler(
                             name: p.name,
                             param_type: format!("{:?}", p.data_type),
                             required: true,
-                            default_value: p.default_value
+                            default_value: p
+                                .default_value
                                 .and_then(|v| serde_json::to_value(v).ok()),
                         })
                         .collect(),
                 })
                 .collect();
-    
+
             template_data_map.insert(device_type.clone(), (metrics, commands));
         }
     }
-    
+
     // 现在循环中直接查找预转换的数据
     for device in all_devices {
         // ✅ 从预转换的缓存中获取数据（避免重复转换）

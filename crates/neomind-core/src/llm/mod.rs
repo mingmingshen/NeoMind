@@ -15,7 +15,8 @@ pub use backend::{
     LlmInput, LlmOutput, LlmRuntime, StreamChunk, TokenUsage,
 };
 pub use capability::{
-    detect_vision_capability, get_max_context, model_supports, CapabilityDetectionResult, CapabilityDetector,
+    detect_vision_capability, get_max_context, model_supports, CapabilityDetectionResult,
+    CapabilityDetector,
 };
 pub use compaction::{
     compact_messages, estimate_tokens, CompactionConfig, CompactionResult, MessagePriority,

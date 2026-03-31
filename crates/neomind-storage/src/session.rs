@@ -724,8 +724,9 @@ impl SessionStore {
         let write_txn = self.db.begin_write()?;
         {
             // Use open_table which creates the table if it doesn't exist
-            let mut table = write_txn.open_table(PENDING_STREAM_TABLE)
-                .map_err(|e| Error::Storage(format!("Failed to open pending_streams table: {}", e)))?;
+            let mut table = write_txn.open_table(PENDING_STREAM_TABLE).map_err(|e| {
+                Error::Storage(format!("Failed to open pending_streams table: {}", e))
+            })?;
             table.insert(state.session_id.as_str(), serialized)?;
         }
         write_txn.commit()?;

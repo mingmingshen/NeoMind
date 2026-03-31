@@ -140,15 +140,37 @@ mod host;
 // ============================================================================
 
 pub use ipc_types::{
-    ABI_VERSION, CExtensionMetadata, CommandDefinition, CommandDescriptor,
-    ExtensionCommand, ExtensionDescriptor, ExtensionError, ExtensionMetadata,
-    ExtensionMetricValue, ExtensionRuntimeState, ExtensionStats, MetricDataType,
-    MetricDescriptor, MetricValue, ParamMetricValue,
-    ParameterDefinition, ParameterGroup, PushOutputMessage, Result, ValidationRule,
+    BatchCommand,
+    BatchResult,
+    BatchResultsVec,
+    CExtensionMetadata,
+    CommandDefinition,
+    CommandDescriptor,
+    ErrorKind,
+    ExtensionCommand,
+    ExtensionDescriptor,
+    ExtensionError,
+    ExtensionMetadata,
+    ExtensionMetricValue,
+    ExtensionRuntimeState,
+    ExtensionStats,
+    IpcFrame,
     // IPC Protocol Types (for process isolation)
-    IpcMessage, IpcResponse, IpcFrame, ErrorKind,
-    BatchCommand, BatchResult, BatchResultsVec,
-    StreamClientInfo, StreamDataChunk, PushOutputData,
+    IpcMessage,
+    IpcResponse,
+    MetricDataType,
+    MetricDescriptor,
+    MetricValue,
+    ParamMetricValue,
+    ParameterDefinition,
+    ParameterGroup,
+    PushOutputData,
+    PushOutputMessage,
+    Result,
+    StreamClientInfo,
+    StreamDataChunk,
+    ValidationRule,
+    ABI_VERSION,
 };
 
 // Alias for backward compatibility
@@ -162,19 +184,33 @@ pub type MetricDefinition = MetricDescriptor;
 pub use host::Extension;
 
 pub use host::{
-    // Capability system
-    ExtensionCapability, CapabilityManifest, ExtensionCapabilityProvider,
-    ExtensionContext, ExtensionContextConfig, AvailableCapabilities,
-    CapabilityError, CapabilityContext,
     set_native_capability_bridge,
 
-    // Streaming types
-    StreamDirection, StreamMode, StreamDataType, DataChunk,
-    StreamResult, StreamError, StreamCapability, StreamSession,
-    SessionStats, FlowControl, ClientInfo,
+    AvailableCapabilities,
+    CapabilityContext,
+    CapabilityError,
+    CapabilityManifest,
+    ClientInfo,
 
+    DataChunk,
     // Event system
-    EventFilter, EventSubscription,
+    EventFilter,
+    EventSubscription,
+    // Capability system
+    ExtensionCapability,
+    ExtensionCapabilityProvider,
+    ExtensionContext,
+    ExtensionContextConfig,
+    FlowControl,
+    SessionStats,
+    StreamCapability,
+    StreamDataType,
+    // Streaming types
+    StreamDirection,
+    StreamError,
+    StreamMode,
+    StreamResult,
+    StreamSession,
 };
 
 /// Capability name constants - re-exported from host module
@@ -184,9 +220,7 @@ pub mod capability_constants {
 
 // Native-only FFI types
 #[cfg(not(target_arch = "wasm32"))]
-pub use host::{
-    NativeCapabilityFreeFn, NativeCapabilityInvokeFn,
-};
+pub use host::{NativeCapabilityFreeFn, NativeCapabilityInvokeFn};
 
 // ============================================================================
 // WASM-specific Types and Extension Trait
@@ -195,14 +229,10 @@ pub use host::{
 #[cfg(target_arch = "wasm32")]
 mod wasm_types {
     pub use crate::extension::{
-        SdkExtensionMetadata as ExtensionMetadata,
-        SdkMetricDataType as MetricDataType,
-        SdkMetricDefinition as MetricDescriptor,
-        SdkCommandDefinition as ExtensionCommand,
-        SdkParameterDefinition as ParameterDefinition,
-        SdkExtensionMetricValue as ExtensionMetricValue,
-        SdkMetricValue as ParamMetricValue,
-        SdkExtensionError as ExtensionError,
+        SdkCommandDefinition as ExtensionCommand, SdkExtensionError as ExtensionError,
+        SdkExtensionMetadata as ExtensionMetadata, SdkExtensionMetricValue as ExtensionMetricValue,
+        SdkMetricDataType as MetricDataType, SdkMetricDefinition as MetricDescriptor,
+        SdkMetricValue as ParamMetricValue, SdkParameterDefinition as ParameterDefinition,
         SdkParameterGroup as ParameterGroup,
     };
 
@@ -263,8 +293,12 @@ mod wasm_extension {
     #[async_trait::async_trait]
     pub trait Extension: Send + Sync {
         fn metadata(&self) -> &ExtensionMetadata;
-        fn metrics(&self) -> Vec<MetricDescriptor> { Vec::new() }
-        fn commands(&self) -> Vec<ExtensionCommand> { Vec::new() }
+        fn metrics(&self) -> Vec<MetricDescriptor> {
+            Vec::new()
+        }
+        fn commands(&self) -> Vec<ExtensionCommand> {
+            Vec::new()
+        }
 
         async fn execute_command(
             &self,
@@ -312,16 +346,16 @@ mod extension;
 pub use extension::*;
 
 pub use extension::{
-    FrontendManifest, FrontendComponent, FrontendComponentType,
-    FrontendManifestBuilder, ComponentSize, I18nConfig,
+    ComponentSize, FrontendComponent, FrontendComponentType, FrontendManifest,
+    FrontendManifestBuilder, I18nConfig,
 };
 
 // ============================================================================
 // Additional Modules
 // ============================================================================
 
-pub mod prelude;
 mod macros;
+pub mod prelude;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native;
@@ -329,8 +363,8 @@ pub mod native;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
-pub mod utils;
 pub mod capabilities;
+pub mod utils;
 
 // ============================================================================
 // SDK Constants
@@ -457,7 +491,12 @@ impl CommandBuilder {
         self
     }
 
-    pub fn param_simple(mut self, name: impl Into<String>, display_name: impl Into<String>, data_type: MetricDataType) -> Self {
+    pub fn param_simple(
+        mut self,
+        name: impl Into<String>,
+        display_name: impl Into<String>,
+        data_type: MetricDataType,
+    ) -> Self {
         self.command.parameters.push(ParameterDefinition {
             name: name.into(),
             display_name: display_name.into(),
@@ -472,7 +511,12 @@ impl CommandBuilder {
         self
     }
 
-    pub fn param_optional(mut self, name: impl Into<String>, display_name: impl Into<String>, data_type: MetricDataType) -> Self {
+    pub fn param_optional(
+        mut self,
+        name: impl Into<String>,
+        display_name: impl Into<String>,
+        data_type: MetricDataType,
+    ) -> Self {
         self.command.parameters.push(ParameterDefinition {
             name: name.into(),
             display_name: display_name.into(),
@@ -487,7 +531,13 @@ impl CommandBuilder {
         self
     }
 
-    pub fn param_with_default(mut self, name: impl Into<String>, display_name: impl Into<String>, data_type: MetricDataType, default: MetricValue) -> Self {
+    pub fn param_with_default(
+        mut self,
+        name: impl Into<String>,
+        display_name: impl Into<String>,
+        data_type: MetricDataType,
+        default: MetricValue,
+    ) -> Self {
         self.command.parameters.push(ParameterDefinition {
             name: name.into(),
             display_name: display_name.into(),
@@ -589,11 +639,8 @@ impl ParamBuilder {
 #[macro_export]
 macro_rules! static_metadata {
     ($id:literal, $name:literal, $version:literal) => {{
-        static META: $crate::ExtensionMetadata = $crate::ExtensionMetadata::new(
-            $id,
-            $name,
-            $version,
-        );
+        static META: $crate::ExtensionMetadata =
+            $crate::ExtensionMetadata::new($id, $name, $version);
         &META
     }};
 }
@@ -626,8 +673,14 @@ mod tests {
 
     #[test]
     fn test_capability_constants() {
-        assert_eq!(capability_constants::DEVICE_METRICS_READ, "device_metrics_read");
-        assert_eq!(capability_constants::DEVICE_METRICS_WRITE, "device_metrics_write");
+        assert_eq!(
+            capability_constants::DEVICE_METRICS_READ,
+            "device_metrics_read"
+        );
+        assert_eq!(
+            capability_constants::DEVICE_METRICS_WRITE,
+            "device_metrics_write"
+        );
         assert_eq!(capability_constants::DEVICE_CONTROL, "device_control");
         assert_eq!(capability_constants::STORAGE_QUERY, "storage_query");
         assert_eq!(capability_constants::EVENT_PUBLISH, "event_publish");

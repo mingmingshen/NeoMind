@@ -17,7 +17,15 @@ static TRANSFORM_NAMESPACES: OnceLock<[&str; 5]> = OnceLock::new();
 
 /// Get the transform namespaces array.
 fn get_transform_namespaces() -> &'static [&'static str; 5] {
-    TRANSFORM_NAMESPACES.get_or_init(|| ["transform.", "virtual.", "computed.", "derived.", "aggregated."])
+    TRANSFORM_NAMESPACES.get_or_init(|| {
+        [
+            "transform.",
+            "virtual.",
+            "computed.",
+            "derived.",
+            "aggregated.",
+        ]
+    })
 }
 
 /// Get device telemetry data (time series).
@@ -144,7 +152,10 @@ pub async fn get_device_telemetry_handler(
     //
     // For pagination: we query all data, sort by timestamp (newest first), then apply offset/limit.
     // This ensures consistent pagination even when data is inserted during pagination.
-    let (telemetry_data, total_counts): (HashMap<String, serde_json::Value>, HashMap<String, usize>) = if aggregate.is_some() {
+    let (telemetry_data, total_counts): (
+        HashMap<String, serde_json::Value>,
+        HashMap<String, usize>,
+    ) = if aggregate.is_some() {
         // Aggregate queries - run concurrently
         let aggregate_futures: Vec<_> = target_metrics
             .iter()
@@ -175,7 +186,10 @@ pub async fn get_device_telemetry_handler(
             .collect();
 
         let results = futures::future::join_all(aggregate_futures).await;
-        let data: HashMap<String, serde_json::Value> = results.iter().map(|(k, v, _)| (k.clone(), v.clone())).collect();
+        let data: HashMap<String, serde_json::Value> = results
+            .iter()
+            .map(|(k, v, _)| (k.clone(), v.clone()))
+            .collect();
         let counts: HashMap<String, usize> = results.into_iter().map(|(k, _, c)| (k, c)).collect();
         (data, counts)
     } else {
@@ -196,7 +210,7 @@ pub async fn get_device_telemetry_handler(
                             // Sort by timestamp descending (newest first)
                             let mut sorted_points: Vec<_> = all_points.into_iter().collect();
                             sorted_points.sort_by(|a, b| b.0.cmp(&a.0));
-                            
+
                             let total = sorted_points.len();
                             // Apply pagination: skip offset, take limit
                             let paginated: Vec<_> = sorted_points
@@ -219,7 +233,7 @@ pub async fn get_device_telemetry_handler(
                                     // Sort by timestamp descending (newest first)
                                     let mut sorted_points = all_points;
                                     sorted_points.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-                                    
+
                                     let total = sorted_points.len();
                                     // Apply pagination: skip offset, take limit
                                     let paginated: Vec<_> = sorted_points
@@ -245,7 +259,10 @@ pub async fn get_device_telemetry_handler(
             .collect();
 
         let results = futures::future::join_all(query_futures).await;
-        let data: HashMap<String, serde_json::Value> = results.iter().map(|(k, v, _)| (k.clone(), v.clone())).collect();
+        let data: HashMap<String, serde_json::Value> = results
+            .iter()
+            .map(|(k, v, _)| (k.clone(), v.clone()))
+            .collect();
         let counts: HashMap<String, usize> = results.into_iter().map(|(k, _, c)| (k, c)).collect();
         (data, counts)
     };

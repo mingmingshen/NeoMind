@@ -8,19 +8,17 @@
 //!
 //! Tests cover both in-process and IPC-isolated modes.
 
-use neomind_core::extension::context::{
-    ExtensionContext, ExtensionContextConfig, ExtensionCapability,
-    ExtensionCapabilityProvider, CapabilityManifest, CapabilityError,
-};
-use neomind_core::extension::isolated::{
-    IsolatedExtensionManager, IsolatedManagerConfig,
-};
 use neomind_core::eventbus::EventBus;
+use neomind_core::extension::context::{
+    CapabilityError, CapabilityManifest, ExtensionCapability, ExtensionCapabilityProvider,
+    ExtensionContext, ExtensionContextConfig,
+};
+use neomind_core::extension::isolated::{IsolatedExtensionManager, IsolatedManagerConfig};
 use serde_json::{json, Value};
-use std::sync::Arc;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 // ============================================================================
@@ -62,7 +60,8 @@ impl ExtensionCapabilityProvider for TestCapabilityProvider {
     ) -> Result<Value, CapabilityError> {
         match capability {
             ExtensionCapability::DeviceMetricsRead => {
-                let device_id = params.get("device_id")
+                let device_id = params
+                    .get("device_id")
                     .and_then(|v| v.as_str())
                     .unwrap_or("default");
 
@@ -76,10 +75,12 @@ impl ExtensionCapabilityProvider for TestCapabilityProvider {
                 }))
             }
             ExtensionCapability::DeviceMetricsWrite => {
-                let device_id = params.get("device_id")
+                let device_id = params
+                    .get("device_id")
                     .and_then(|v| v.as_str())
                     .unwrap_or("default");
-                let metric = params.get("metric")
+                let metric = params
+                    .get("metric")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
                 let value = params.get("value").cloned().unwrap_or(json!(0));
@@ -93,7 +94,8 @@ impl ExtensionCapabilityProvider for TestCapabilityProvider {
                 }))
             }
             ExtensionCapability::EventPublish => {
-                let event_type = params.get("event_type")
+                let event_type = params
+                    .get("event_type")
                     .and_then(|v| v.as_str())
                     .unwrap_or("custom");
 
@@ -104,7 +106,8 @@ impl ExtensionCapabilityProvider for TestCapabilityProvider {
                 }))
             }
             ExtensionCapability::EventSubscribe => {
-                let event_types = params.get("event_types")
+                let event_types = params
+                    .get("event_types")
                     .and_then(|v| v.as_array())
                     .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
                     .unwrap_or_default();
@@ -146,34 +149,45 @@ async fn test_capability_invocation_through_context() {
     let context = ExtensionContext::new(config, providers.clone());
 
     // Register provider
-    context.register_provider("test-provider".to_string(), provider).await;
+    context
+        .register_provider("test-provider".to_string(), provider)
+        .await;
 
     // Test DeviceMetricsRead
-    let result = context.invoke_capability(
-        ExtensionCapability::DeviceMetricsRead,
-        &json!({ "device_id": "sensor-001" }),
-    ).await.unwrap();
+    let result = context
+        .invoke_capability(
+            ExtensionCapability::DeviceMetricsRead,
+            &json!({ "device_id": "sensor-001" }),
+        )
+        .await
+        .unwrap();
 
     assert!(result.get("device_id").unwrap().as_str().unwrap() == "sensor-001");
     assert!(result.get("metrics").is_some());
 
     // Test DeviceMetricsWrite
-    let result = context.invoke_capability(
-        ExtensionCapability::DeviceMetricsWrite,
-        &json!({
-            "device_id": "sensor-001",
-            "metric": "temperature",
-            "value": 28.5,
-        }),
-    ).await.unwrap();
+    let result = context
+        .invoke_capability(
+            ExtensionCapability::DeviceMetricsWrite,
+            &json!({
+                "device_id": "sensor-001",
+                "metric": "temperature",
+                "value": 28.5,
+            }),
+        )
+        .await
+        .unwrap();
 
     assert!(result.get("success").unwrap().as_bool().unwrap());
 
     // Test EventPublish
-    let result = context.invoke_capability(
-        ExtensionCapability::EventPublish,
-        &json!({ "event_type": "temperature_alert" }),
-    ).await.unwrap();
+    let result = context
+        .invoke_capability(
+            ExtensionCapability::EventPublish,
+            &json!({ "event_type": "temperature_alert" }),
+        )
+        .await
+        .unwrap();
 
     assert!(result.get("success").unwrap().as_bool().unwrap());
 }
@@ -189,33 +203,37 @@ async fn test_capability_permission_check() {
     // Create context with limited permissions
     let config = ExtensionContextConfig {
         extension_id: "limited-extension".to_string(),
-        required_capabilities: vec![
-            ExtensionCapability::DeviceMetricsRead,
-        ],
+        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
 
     let context = ExtensionContext::new(config, providers.clone());
 
     // Register provider
-    context.register_provider("test-provider".to_string(), provider).await;
+    context
+        .register_provider("test-provider".to_string(), provider)
+        .await;
 
     // Should succeed - has permission
-    let result = context.invoke_capability(
-        ExtensionCapability::DeviceMetricsRead,
-        &json!({ "device_id": "sensor-001" }),
-    ).await;
+    let result = context
+        .invoke_capability(
+            ExtensionCapability::DeviceMetricsRead,
+            &json!({ "device_id": "sensor-001" }),
+        )
+        .await;
     assert!(result.is_ok());
 
     // Should fail - no permission
-    let result = context.invoke_capability(
-        ExtensionCapability::DeviceMetricsWrite,
-        &json!({
-            "device_id": "sensor-001",
-            "metric": "temperature",
-            "value": 28.5,
-        }),
-    ).await;
+    let result = context
+        .invoke_capability(
+            ExtensionCapability::DeviceMetricsWrite,
+            &json!({
+                "device_id": "sensor-001",
+                "metric": "temperature",
+                "value": 28.5,
+            }),
+        )
+        .await;
     assert!(result.is_err());
     match result.unwrap_err() {
         CapabilityError::PermissionDenied(_) => {}
@@ -244,20 +262,28 @@ async fn test_multiple_providers_routing() {
     let context = ExtensionContext::new(config, providers.clone());
 
     // Register both providers
-    context.register_provider("device-provider".to_string(), device_provider).await;
-    context.register_provider("event-provider".to_string(), event_provider).await;
+    context
+        .register_provider("device-provider".to_string(), device_provider)
+        .await;
+    context
+        .register_provider("event-provider".to_string(), event_provider)
+        .await;
 
     // Both capabilities should work
-    let result1 = context.invoke_capability(
-        ExtensionCapability::DeviceMetricsRead,
-        &json!({ "device_id": "test" }),
-    ).await;
+    let result1 = context
+        .invoke_capability(
+            ExtensionCapability::DeviceMetricsRead,
+            &json!({ "device_id": "test" }),
+        )
+        .await;
     assert!(result1.is_ok());
 
-    let result2 = context.invoke_capability(
-        ExtensionCapability::EventPublish,
-        &json!({ "event_type": "test" }),
-    ).await;
+    let result2 = context
+        .invoke_capability(
+            ExtensionCapability::EventPublish,
+            &json!({ "event_type": "test" }),
+        )
+        .await;
     assert!(result2.is_ok());
 }
 
@@ -281,13 +307,17 @@ async fn test_capability_not_available() {
     let context = ExtensionContext::new(config, providers.clone());
 
     // Register provider
-    context.register_provider("limited-provider".to_string(), provider).await;
+    context
+        .register_provider("limited-provider".to_string(), provider)
+        .await;
 
     // Should fail - capability not available from any provider
-    let result = context.invoke_capability(
-        ExtensionCapability::RuleTrigger,
-        &json!({ "rule_id": "rule-001" }),
-    ).await;
+    let result = context
+        .invoke_capability(
+            ExtensionCapability::RuleTrigger,
+            &json!({ "rule_id": "rule-001" }),
+        )
+        .await;
 
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -307,22 +337,24 @@ async fn test_capability_error_handling() {
 
     let config = ExtensionContextConfig {
         extension_id: "error-test".to_string(),
-        required_capabilities: vec![
-            ExtensionCapability::DeviceMetricsRead,
-        ],
+        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
 
     let context = ExtensionContext::new(config, providers.clone());
 
     // Register provider
-    context.register_provider("test-provider".to_string(), provider).await;
+    context
+        .register_provider("test-provider".to_string(), provider)
+        .await;
 
     // Test with missing parameters - provider should handle gracefully
-    let result = context.invoke_capability(
-        ExtensionCapability::DeviceMetricsRead,
-        &json!({}), // Missing device_id
-    ).await;
+    let result = context
+        .invoke_capability(
+            ExtensionCapability::DeviceMetricsRead,
+            &json!({}), // Missing device_id
+        )
+        .await;
 
     // Provider should still return a result (using default)
     assert!(result.is_ok());
@@ -406,7 +438,10 @@ fn build_test_binaries() {
         ])
         .status()
         .expect("failed to run cargo build for native capability IPC test");
-    assert!(status.success(), "cargo build failed for native capability IPC test");
+    assert!(
+        status.success(),
+        "cargo build failed for native capability IPC test"
+    );
 }
 
 fn runner_dir() -> PathBuf {
@@ -437,13 +472,19 @@ async fn test_native_isolated_capability_ipc() {
         std::env::set_var("PATH", &joined);
     }
 
-    let manager = Arc::new(IsolatedExtensionManager::new(IsolatedManagerConfig::default()));
+    let manager = Arc::new(IsolatedExtensionManager::new(
+        IsolatedManagerConfig::default(),
+    ));
     manager
         .set_capability_provider(Arc::new(NativeWriteCapabilityProvider))
         .await;
 
     let extension_path = smoke_extension_path();
-    assert!(extension_path.exists(), "smoke extension binary not found at {}", extension_path.display());
+    assert!(
+        extension_path.exists(),
+        "smoke extension binary not found at {}",
+        extension_path.display()
+    );
 
     let metadata = manager
         .load(&extension_path)
@@ -467,14 +508,31 @@ async fn test_native_isolated_capability_ipc() {
     let capability_response = response
         .get("capability_response")
         .expect("missing capability_response");
-    assert_eq!(capability_response.get("success").and_then(|v| v.as_bool()), Some(true));
-    assert_eq!(capability_response.get("capability").and_then(|v| v.as_str()), Some("device_metrics_write"));
-    assert_eq!(capability_response.get("device_id"), Some(&json!("device-42")));
-    assert_eq!(capability_response.get("metric"), Some(&json!("virtual.test.status")));
+    assert_eq!(
+        capability_response.get("success").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        capability_response
+            .get("capability")
+            .and_then(|v| v.as_str()),
+        Some("device_metrics_write")
+    );
+    assert_eq!(
+        capability_response.get("device_id"),
+        Some(&json!("device-42"))
+    );
+    assert_eq!(
+        capability_response.get("metric"),
+        Some(&json!("virtual.test.status"))
+    );
     assert_eq!(capability_response.get("value"), Some(&json!("ok")));
     assert_eq!(capability_response.get("is_virtual"), Some(&json!(true)));
 
-    manager.unload("smoke-test").await.expect("failed to unload smoke extension");
+    manager
+        .unload("smoke-test")
+        .await
+        .expect("failed to unload smoke extension");
 }
 
 #[tokio::test]
@@ -490,7 +548,9 @@ async fn test_native_isolated_event_capability_ipc() {
         std::env::set_var("PATH", &joined);
     }
 
-    let manager = Arc::new(IsolatedExtensionManager::new(IsolatedManagerConfig::default()));
+    let manager = Arc::new(IsolatedExtensionManager::new(
+        IsolatedManagerConfig::default(),
+    ));
     manager
         .set_capability_provider(Arc::new(NativeWriteCapabilityProvider))
         .await;
@@ -516,23 +576,36 @@ async fn test_native_isolated_event_capability_ipc() {
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
     let response = manager
-        .execute_command(
-            "smoke-test",
-            "get_last_event_result",
-            &json!({}),
-        )
+        .execute_command("smoke-test", "get_last_event_result", &json!({}))
         .await
         .expect("failed to fetch last event result");
 
     let capability_response = response
         .get("last_event_result")
         .expect("missing last_event_result");
-    assert_eq!(capability_response.get("success").and_then(|v| v.as_bool()), Some(true));
-    assert_eq!(capability_response.get("capability").and_then(|v| v.as_str()), Some("device_metrics_write"));
-    assert_eq!(capability_response.get("device_id"), Some(&json!("device-event")));
-    assert_eq!(capability_response.get("metric"), Some(&json!("virtual.test.event")));
+    assert_eq!(
+        capability_response.get("success").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        capability_response
+            .get("capability")
+            .and_then(|v| v.as_str()),
+        Some("device_metrics_write")
+    );
+    assert_eq!(
+        capability_response.get("device_id"),
+        Some(&json!("device-event"))
+    );
+    assert_eq!(
+        capability_response.get("metric"),
+        Some(&json!("virtual.test.event"))
+    );
     assert_eq!(capability_response.get("value"), Some(&json!("from-event")));
     assert_eq!(capability_response.get("is_virtual"), Some(&json!(true)));
 
-    manager.unload("smoke-test").await.expect("failed to unload smoke extension");
+    manager
+        .unload("smoke-test")
+        .await
+        .expect("failed to unload smoke extension");
 }

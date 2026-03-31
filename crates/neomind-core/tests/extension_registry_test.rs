@@ -12,17 +12,17 @@
 #![allow(dead_code)]
 //! - Safety manager integration
 
-use neomind_core::extension::*;
+use async_trait::async_trait;
 use neomind_core::extension::registry::ExtensionRegistry;
 use neomind_core::extension::system::{
-    Extension, ExtensionMetadata, ExtensionError, ExtensionState,
-    ExtensionMetricValue, MetricDescriptor, ExtensionCommand,
-    MetricDataType, ParameterDefinition, ParamMetricValue, ExtensionStats,
+    Extension, ExtensionCommand, ExtensionError, ExtensionMetadata, ExtensionMetricValue,
+    ExtensionState, ExtensionStats, MetricDataType, MetricDescriptor, ParamMetricValue,
+    ParameterDefinition,
 };
-use async_trait::async_trait;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, Ordering};
+use neomind_core::extension::*;
 use serde_json::json;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 
 // ============================================================================
 // Mock Extension for Testing
@@ -63,13 +63,7 @@ impl MockExtension {
 impl Extension for MockExtension {
     fn metadata(&self) -> &ExtensionMetadata {
         static META: std::sync::OnceLock<ExtensionMetadata> = std::sync::OnceLock::new();
-        META.get_or_init(|| {
-            ExtensionMetadata::new(
-                "mock.extension",
-                "Mock Extension",
-                "1.0.0",
-            )
-        })
+        META.get_or_init(|| ExtensionMetadata::new("mock.extension", "Mock Extension", "1.0.0"))
     }
 
     fn metrics(&self) -> Vec<MetricDescriptor> {
@@ -78,15 +72,15 @@ impl Extension for MockExtension {
 
     fn commands(&self) -> Vec<ExtensionCommand> {
         static COMMANDS: std::sync::OnceLock<Vec<ExtensionCommand>> = std::sync::OnceLock::new();
-        COMMANDS.get_or_init(|| {
-            vec![
-                ExtensionCommand {
-                    name: "increment".to_string(),
-                    display_name: "Increment".to_string(),
-                    description: "Increment the counter".to_string(),
-                    payload_template: "{}".to_string(),
-                    parameters: vec![
-                        ParameterDefinition {
+        COMMANDS
+            .get_or_init(|| {
+                vec![
+                    ExtensionCommand {
+                        name: "increment".to_string(),
+                        display_name: "Increment".to_string(),
+                        description: "Increment the counter".to_string(),
+                        payload_template: "{}".to_string(),
+                        parameters: vec![ParameterDefinition {
                             name: "amount".to_string(),
                             display_name: "Amount".to_string(),
                             description: "Amount to add".to_string(),
@@ -96,24 +90,24 @@ impl Extension for MockExtension {
                             min: None,
                             max: None,
                             options: vec![],
-                        }
-                    ],
-                    fixed_values: Default::default(),
-                    samples: vec![],
-                    parameter_groups: vec![],
-                },
-                ExtensionCommand {
-                    name: "get_value".to_string(),
-                    display_name: "Get Value".to_string(),
-                    description: "Get current counter value".to_string(),
-                    payload_template: "{}".to_string(),
-                    parameters: vec![],
-                    fixed_values: Default::default(),
-                    samples: vec![],
-                    parameter_groups: vec![],
-                },
-            ]
-        }).clone()
+                        }],
+                        fixed_values: Default::default(),
+                        samples: vec![],
+                        parameter_groups: vec![],
+                    },
+                    ExtensionCommand {
+                        name: "get_value".to_string(),
+                        display_name: "Get Value".to_string(),
+                        description: "Get current counter value".to_string(),
+                        payload_template: "{}".to_string(),
+                        parameters: vec![],
+                        fixed_values: Default::default(),
+                        samples: vec![],
+                        parameter_groups: vec![],
+                    },
+                ]
+            })
+            .clone()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -126,14 +120,14 @@ impl Extension for MockExtension {
         args: &serde_json::Value,
     ) -> Result<serde_json::Value> {
         if *self.should_fail_execute.lock().unwrap() {
-            return Err(ExtensionError::ExecutionFailed("Mock execution failure".to_string()));
+            return Err(ExtensionError::ExecutionFailed(
+                "Mock execution failure".to_string(),
+            ));
         }
 
         match command {
             "increment" => {
-                let amount = args.get("amount")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(1);
+                let amount = args.get("amount").and_then(|v| v.as_i64()).unwrap_or(1);
                 let new_value = self.counter.fetch_add(amount, Ordering::SeqCst) + amount;
                 Ok(json!({ "value": new_value }))
             }
@@ -146,18 +140,18 @@ impl Extension for MockExtension {
     }
 
     fn produce_metrics(&self) -> Result<Vec<ExtensionMetricValue>> {
-        Ok(vec![
-            ExtensionMetricValue {
-                name: "counter".to_string(),
-                value: ParamMetricValue::Integer(self.counter.load(Ordering::SeqCst)),
-                timestamp: chrono::Utc::now().timestamp_millis(),
-            }
-        ])
+        Ok(vec![ExtensionMetricValue {
+            name: "counter".to_string(),
+            value: ParamMetricValue::Integer(self.counter.load(Ordering::SeqCst)),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+        }])
     }
 
     async fn health_check(&self) -> Result<bool> {
         if *self.should_fail_health.lock().unwrap() {
-            Err(ExtensionError::ExecutionFailed("Health check failed".to_string()))
+            Err(ExtensionError::ExecutionFailed(
+                "Health check failed".to_string(),
+            ))
         } else {
             Ok(true)
         }
@@ -194,10 +188,11 @@ async fn test_registry_default() {
 #[tokio::test]
 async fn test_register_extension() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
     let result = registry.register("test.ext".to_string(), ext).await;
     assert!(result.is_ok());
@@ -207,14 +202,16 @@ async fn test_register_extension() {
 #[tokio::test]
 async fn test_register_duplicate_extension() {
     let registry = ExtensionRegistry::new();
-    let ext1 = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
-    let ext2 = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext1 = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
+    let ext2 = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
     // First registration should succeed
     let result1 = registry.register("test.ext".to_string(), ext1).await;
@@ -228,12 +225,16 @@ async fn test_register_duplicate_extension() {
 #[tokio::test]
 async fn test_unregister_extension() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
     assert_eq!(registry.count().await, 1);
 
     let result = registry.unregister("test.ext").await;
@@ -255,10 +256,11 @@ async fn test_register_multiple_extensions() {
     let registry = ExtensionRegistry::new();
 
     for i in 0..5 {
-        let ext = Arc::new(tokio::sync::RwLock::new(
-            Box::new(MockExtension::new(&format!("ext.{}", i), &format!("Extension {}", i), "1.0.0"))
-                as Box<dyn Extension>
-        ));
+        let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+            &format!("ext.{}", i),
+            &format!("Extension {}", i),
+            "1.0.0",
+        )) as Box<dyn Extension>));
         registry.register(format!("ext.{}", i), ext).await.unwrap();
     }
 
@@ -272,12 +274,16 @@ async fn test_register_multiple_extensions() {
 #[tokio::test]
 async fn test_get_extension() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
     let retrieved = registry.get("test.ext").await;
     assert!(retrieved.is_some());
@@ -294,12 +300,16 @@ async fn test_get_nonexistent_extension() {
 #[tokio::test]
 async fn test_get_extension_info() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
     let info = registry.get_info("test.ext").await;
     assert!(info.is_some());
@@ -315,10 +325,11 @@ async fn test_list_extensions() {
     let registry = ExtensionRegistry::new();
 
     for i in 0..3 {
-        let ext = Arc::new(tokio::sync::RwLock::new(
-            Box::new(MockExtension::new(&format!("ext.{}", i), &format!("Extension {}", i), "1.0.0"))
-                as Box<dyn Extension>
-        ));
+        let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+            &format!("ext.{}", i),
+            &format!("Extension {}", i),
+            "1.0.0",
+        )) as Box<dyn Extension>));
         registry.register(format!("ext.{}", i), ext).await.unwrap();
     }
 
@@ -329,14 +340,18 @@ async fn test_list_extensions() {
 #[tokio::test]
 async fn test_contains_extension() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
     assert!(!registry.contains("test.ext").await);
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
     assert!(registry.contains("test.ext").await);
 }
@@ -348,14 +363,20 @@ async fn test_contains_extension() {
 #[tokio::test]
 async fn test_execute_command_success() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
-    let result = registry.execute_command("test.ext", "increment", &json!({"amount": 5})).await;
+    let result = registry
+        .execute_command("test.ext", "increment", &json!({"amount": 5}))
+        .await;
     assert!(result.is_ok());
     let value = result.unwrap();
     assert_eq!(value["value"], 5);
@@ -364,14 +385,20 @@ async fn test_execute_command_success() {
 #[tokio::test]
 async fn test_execute_command_not_found() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
-    let result = registry.execute_command("test.ext", "unknown_command", &json!({})).await;
+    let result = registry
+        .execute_command("test.ext", "unknown_command", &json!({}))
+        .await;
     assert!(matches!(result, Err(ExtensionError::CommandNotFound(_))));
 }
 
@@ -379,7 +406,9 @@ async fn test_execute_command_not_found() {
 async fn test_execute_command_extension_not_found() {
     let registry = ExtensionRegistry::new();
 
-    let result = registry.execute_command("nonexistent", "increment", &json!({})).await;
+    let result = registry
+        .execute_command("nonexistent", "increment", &json!({}))
+        .await;
     assert!(matches!(result, Err(ExtensionError::NotFound(_))));
 }
 
@@ -392,9 +421,14 @@ async fn test_execute_command_execution_failure() {
         Box::new(mock) as Box<dyn Extension>
     ));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
-    let result = registry.execute_command("test.ext", "increment", &json!({})).await;
+    let result = registry
+        .execute_command("test.ext", "increment", &json!({}))
+        .await;
     assert!(matches!(result, Err(ExtensionError::ExecutionFailed(_))));
 }
 
@@ -405,12 +439,16 @@ async fn test_execute_command_execution_failure() {
 #[tokio::test]
 async fn test_health_check_success() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
     let result = registry.health_check("test.ext").await;
     assert!(result.is_ok());
@@ -426,7 +464,10 @@ async fn test_health_check_failure() {
         Box::new(mock) as Box<dyn Extension>
     ));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
     let result = registry.health_check("test.ext").await;
     assert!(result.is_err());
@@ -447,15 +488,22 @@ async fn test_health_check_extension_not_found() {
 #[tokio::test]
 async fn test_get_current_metrics() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
     // Execute a command to change the counter
-    registry.execute_command("test.ext", "increment", &json!({"amount": 10})).await.unwrap();
+    registry
+        .execute_command("test.ext", "increment", &json!({"amount": 10}))
+        .await
+        .unwrap();
 
     let metrics = registry.get_current_metrics("test.ext").await;
     assert_eq!(metrics.len(), 1);
@@ -473,16 +521,26 @@ async fn test_get_current_metrics_extension_not_found() {
 #[tokio::test]
 async fn test_get_stats() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
     // Execute some commands
-    registry.execute_command("test.ext", "increment", &json!({"amount": 5})).await.unwrap();
-    registry.execute_command("test.ext", "increment", &json!({"amount": 3})).await.unwrap();
+    registry
+        .execute_command("test.ext", "increment", &json!({"amount": 5}))
+        .await
+        .unwrap();
+    registry
+        .execute_command("test.ext", "increment", &json!({"amount": 3}))
+        .await
+        .unwrap();
 
     let stats = registry.get_stats("test.ext").await;
     assert!(stats.is_ok());
@@ -510,12 +568,16 @@ async fn test_trait_get_extensions() {
     use neomind_core::extension::registry::ExtensionRegistryTrait;
 
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
     let extensions = registry.get_extensions().await;
     assert_eq!(extensions.len(), 1);
@@ -526,12 +588,16 @@ async fn test_trait_get_extension() {
     use neomind_core::extension::registry::ExtensionRegistryTrait;
 
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
     let retrieved = registry.get_extension("test.ext").await;
     assert!(retrieved.is_some());
@@ -540,14 +606,20 @@ async fn test_trait_get_extension() {
 #[tokio::test]
 async fn test_trait_execute_command() {
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
-    let result = registry.execute_command("test.ext", "increment", &json!({"amount": 7})).await;
+    let result = registry
+        .execute_command("test.ext", "increment", &json!({"amount": 7}))
+        .await;
     assert!(result.is_ok());
 }
 
@@ -556,12 +628,16 @@ async fn test_trait_get_metrics() {
     use neomind_core::extension::registry::ExtensionRegistryTrait;
 
     let registry = ExtensionRegistry::new();
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
     let metrics = registry.get_metrics("test.ext").await;
     assert_eq!(metrics.len(), 0); // MockExtension has empty metrics slice
@@ -579,10 +655,12 @@ async fn test_concurrent_registration() {
     for i in 0..10 {
         let reg = registry.clone();
         let handle = tokio::spawn(async move {
-            let ext = Arc::new(tokio::sync::RwLock::new(
-                Box::new(MockExtension::new(&format!("ext.{}", i), &format!("Extension {}", i), "1.0.0"))
-                    as Box<dyn Extension>
-            ));
+            let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+                &format!("ext.{}", i),
+                &format!("Extension {}", i),
+                "1.0.0",
+            ))
+                as Box<dyn Extension>));
             reg.register(format!("ext.{}", i), ext).await
         });
         handles.push(handle);
@@ -599,19 +677,24 @@ async fn test_concurrent_registration() {
 #[tokio::test]
 async fn test_concurrent_command_execution() {
     let registry = Arc::new(ExtensionRegistry::new());
-    let ext = Arc::new(tokio::sync::RwLock::new(
-        Box::new(MockExtension::new("test.ext", "Test Extension", "1.0.0"))
-            as Box<dyn Extension>
-    ));
+    let ext = Arc::new(tokio::sync::RwLock::new(Box::new(MockExtension::new(
+        "test.ext",
+        "Test Extension",
+        "1.0.0",
+    )) as Box<dyn Extension>));
 
-    registry.register("test.ext".to_string(), ext).await.unwrap();
+    registry
+        .register("test.ext".to_string(), ext)
+        .await
+        .unwrap();
 
     let mut handles = vec![];
 
     for _ in 0..10 {
         let reg = registry.clone();
         let handle = tokio::spawn(async move {
-            reg.execute_command("test.ext", "increment", &json!({"amount": 1})).await
+            reg.execute_command("test.ext", "increment", &json!({"amount": 1}))
+                .await
         });
         handles.push(handle);
     }
@@ -621,6 +704,9 @@ async fn test_concurrent_command_execution() {
     }
 
     // Verify counter was incremented 10 times
-    let result = registry.execute_command("test.ext", "get_value", &json!({})).await.unwrap();
+    let result = registry
+        .execute_command("test.ext", "get_value", &json!({}))
+        .await
+        .unwrap();
     assert_eq!(result["value"], 10);
 }

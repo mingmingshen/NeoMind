@@ -121,9 +121,15 @@ pub async fn get_system_stats_handler(
     let cache_key = "stats:system";
     if let Some(cached) = state.response_cache.get(cache_key) {
         // Return cached response
-        let cached_value: serde_json::Value = serde_json::from_str(&cached.body)
-            .map_err(|e| crate::models::ErrorResponse::internal(format!("Failed to parse cached response: {}", e)))?;
-        return Ok(Json(crate::models::common::ApiResponse::success(cached_value)));
+        let cached_value: serde_json::Value = serde_json::from_str(&cached.body).map_err(|e| {
+            crate::models::ErrorResponse::internal(format!(
+                "Failed to parse cached response: {}",
+                e
+            ))
+        })?;
+        return Ok(Json(crate::models::common::ApiResponse::success(
+            cached_value,
+        )));
     }
 
     // Calculate start of today (UTC midnight)
@@ -293,7 +299,7 @@ pub async fn get_system_stats_handler(
     state.response_cache.put(
         cache_key.to_string(),
         crate::cache::CachedResponse {
-            body: serde_json::to_string(&response.0 .data).unwrap_or_default(),
+            body: serde_json::to_string(&response.0.data).unwrap_or_default(),
             content_type: "application/json".to_string(),
         },
         Some(Duration::from_secs(5)),

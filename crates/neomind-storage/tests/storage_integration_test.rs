@@ -6,12 +6,10 @@
 //! - Vector storage
 //! - Performance tests
 
-use neomind_storage::{
-    TimeSeriesStore, DataPoint,
-    SessionStore, SessionMessage,
-    VectorStore, VectorDocument,
-};
 use chrono::Utc;
+use neomind_storage::{
+    DataPoint, SessionMessage, SessionStore, TimeSeriesStore, VectorDocument, VectorStore,
+};
 use tempfile::TempDir;
 
 // ============================================================================
@@ -24,14 +22,20 @@ async fn test_timeseries_basic_write_read() {
 
     let point = DataPoint::new(Utc::now().timestamp(), 25.5);
 
-    store.write("device1", "temperature", point.clone()).await.unwrap();
+    store
+        .write("device1", "temperature", point.clone())
+        .await
+        .unwrap();
 
-    let results = store.query_range(
-        "device1",
-        "temperature",
-        point.timestamp - 1,
-        point.timestamp + 1,
-    ).await.unwrap();
+    let results = store
+        .query_range(
+            "device1",
+            "temperature",
+            point.timestamp - 1,
+            point.timestamp + 1,
+        )
+        .await
+        .unwrap();
 
     assert_eq!(results.points.len(), 1);
 }
@@ -41,18 +45,17 @@ async fn test_timeseries_batch_write() {
     let store = TimeSeriesStore::memory().unwrap();
 
     let now = Utc::now().timestamp();
-    let points: Vec<DataPoint> = (0..10)
-        .map(|i| DataPoint::new(now + i, i as f64))
-        .collect();
+    let points: Vec<DataPoint> = (0..10).map(|i| DataPoint::new(now + i, i as f64)).collect();
 
-    store.write_batch("device1", "counter", points.clone()).await.unwrap();
+    store
+        .write_batch("device1", "counter", points.clone())
+        .await
+        .unwrap();
 
-    let results = store.query_range(
-        "device1",
-        "counter",
-        now - 1,
-        now + 10,
-    ).await.unwrap();
+    let results = store
+        .query_range("device1", "counter", now - 1, now + 10)
+        .await
+        .unwrap();
 
     assert_eq!(results.points.len(), 10);
 }
@@ -70,12 +73,10 @@ async fn test_timeseries_query_range() {
     }
 
     // Query a specific range (inclusive)
-    let results = store.query_range(
-        "device1",
-        "metric",
-        now + 5 * 60,
-        now + 15 * 60,
-    ).await.unwrap();
+    let results = store
+        .query_range("device1", "metric", now + 5 * 60, now + 15 * 60)
+        .await
+        .unwrap();
 
     // Should get points 5-15 (11 points, inclusive range)
     assert!(results.points.len() >= 10);
@@ -95,7 +96,10 @@ async fn test_timeseries_multiple_devices() {
 
     // Query each device
     for device in ["device1", "device2", "device3"] {
-        let results = store.query_range(device, "status", now - 1, now + 1).await.unwrap();
+        let results = store
+            .query_range(device, "status", now - 1, now + 1)
+            .await
+            .unwrap();
         assert_eq!(results.points.len(), 1);
     }
 }
@@ -104,12 +108,10 @@ async fn test_timeseries_multiple_devices() {
 async fn test_timeseries_empty_query() {
     let store = TimeSeriesStore::memory().unwrap();
 
-    let results = store.query_range(
-        "nonexistent",
-        "metric",
-        0,
-        Utc::now().timestamp(),
-    ).await.unwrap();
+    let results = store
+        .query_range("nonexistent", "metric", 0, Utc::now().timestamp())
+        .await
+        .unwrap();
 
     assert_eq!(results.points.len(), 0);
 }
@@ -302,12 +304,10 @@ async fn test_timeseries_performance_write() {
         store.write("perf-device", "metric", point).await.unwrap();
     }
 
-    let results = store.query_range(
-        "perf-device",
-        "metric",
-        now,
-        now + count,
-    ).await.unwrap();
+    let results = store
+        .query_range("perf-device", "metric", now, now + count)
+        .await
+        .unwrap();
 
     assert_eq!(results.points.len(), count as usize);
 }
@@ -348,14 +348,15 @@ async fn test_timeseries_large_value() {
     let large_value = 1e308; // Near max f64
     let point = DataPoint::new(Utc::now().timestamp(), large_value);
 
-    store.write("device1", "large", point.clone()).await.unwrap();
+    store
+        .write("device1", "large", point.clone())
+        .await
+        .unwrap();
 
-    let results = store.query_range(
-        "device1",
-        "large",
-        point.timestamp - 1,
-        point.timestamp + 1,
-    ).await.unwrap();
+    let results = store
+        .query_range("device1", "large", point.timestamp - 1, point.timestamp + 1)
+        .await
+        .unwrap();
 
     assert_eq!(results.points.len(), 1);
     assert_eq!(results.points[0].value, large_value);
@@ -367,14 +368,20 @@ async fn test_timeseries_negative_values() {
 
     let point = DataPoint::new(Utc::now().timestamp(), -100.5);
 
-    store.write("device1", "negative", point.clone()).await.unwrap();
+    store
+        .write("device1", "negative", point.clone())
+        .await
+        .unwrap();
 
-    let results = store.query_range(
-        "device1",
-        "negative",
-        point.timestamp - 1,
-        point.timestamp + 1,
-    ).await.unwrap();
+    let results = store
+        .query_range(
+            "device1",
+            "negative",
+            point.timestamp - 1,
+            point.timestamp + 1,
+        )
+        .await
+        .unwrap();
 
     assert_eq!(results.points.len(), 1);
     assert_eq!(results.points[0].value, -100.5);
@@ -414,7 +421,10 @@ async fn test_timeseries_concurrent_writes() {
         let store = store.clone();
         let handle = tokio::spawn(async move {
             let point = DataPoint::new(Utc::now().timestamp(), i as f64);
-            store.write(&format!("device{}", i), "counter", point).await.unwrap();
+            store
+                .write(&format!("device{}", i), "counter", point)
+                .await
+                .unwrap();
         });
         handles.push(handle);
     }
@@ -425,12 +435,15 @@ async fn test_timeseries_concurrent_writes() {
 
     // Verify all writes succeeded
     for i in 0..10 {
-        let results = store.query_range(
-            &format!("device{}", i),
-            "counter",
-            0,
-            Utc::now().timestamp() + 1,
-        ).await.unwrap();
+        let results = store
+            .query_range(
+                &format!("device{}", i),
+                "counter",
+                0,
+                Utc::now().timestamp() + 1,
+            )
+            .await
+            .unwrap();
         assert_eq!(results.points.len(), 1);
     }
 }

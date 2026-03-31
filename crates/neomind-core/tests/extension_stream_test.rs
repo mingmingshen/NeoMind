@@ -13,9 +13,8 @@
 #![allow(clippy::assertions_on_constants)]
 
 use neomind_core::extension::stream::{
-    StreamDataType, DataChunk, StreamResult, StreamError,
-    StreamCapability, StreamDirection, StreamMode, FlowControl,
-    StreamSession, ClientInfo, SessionStats,
+    ClientInfo, DataChunk, FlowControl, SessionStats, StreamCapability, StreamDataType,
+    StreamDirection, StreamError, StreamMode, StreamResult, StreamSession,
 };
 use serde_json::json;
 
@@ -54,7 +53,9 @@ fn test_stream_data_type_image() {
     ];
 
     for (format, expected_mime) in formats {
-        let dt = StreamDataType::Image { format: format.to_string() };
+        let dt = StreamDataType::Image {
+            format: format.to_string(),
+        };
         assert_eq!(dt.mime_type(), expected_mime);
     }
 }
@@ -106,16 +107,22 @@ fn test_stream_data_type_video() {
 
 #[test]
 fn test_stream_data_type_sensor() {
-    let dt = StreamDataType::Sensor { sensor_type: "temperature".to_string() };
+    let dt = StreamDataType::Sensor {
+        sensor_type: "temperature".to_string(),
+    };
     assert_eq!(dt.mime_type(), "application/x-sensor.temperature");
 
-    let dt = StreamDataType::Sensor { sensor_type: "humidity".to_string() };
+    let dt = StreamDataType::Sensor {
+        sensor_type: "humidity".to_string(),
+    };
     assert_eq!(dt.mime_type(), "application/x-sensor.humidity");
 }
 
 #[test]
 fn test_stream_data_type_custom() {
-    let dt = StreamDataType::Custom { mime_type: "application/x-custom".to_string() };
+    let dt = StreamDataType::Custom {
+        mime_type: "application/x-custom".to_string(),
+    };
     assert_eq!(dt.mime_type(), "application/x-custom");
 }
 
@@ -161,13 +168,17 @@ fn test_stream_data_type_from_mime_video() {
 #[test]
 fn test_stream_data_type_from_mime_sensor() {
     let dt = StreamDataType::from_mime_type("application/x-sensor.pressure");
-    assert!(matches!(dt, Some(StreamDataType::Sensor { sensor_type }) if sensor_type == "pressure"));
+    assert!(
+        matches!(dt, Some(StreamDataType::Sensor { sensor_type }) if sensor_type == "pressure")
+    );
 }
 
 #[test]
 fn test_stream_data_type_from_mime_custom() {
     let dt = StreamDataType::from_mime_type("application/x-unknown");
-    assert!(matches!(dt, Some(StreamDataType::Custom { mime_type }) if mime_type == "application/x-unknown"));
+    assert!(
+        matches!(dt, Some(StreamDataType::Custom { mime_type }) if mime_type == "application/x-unknown")
+    );
 }
 
 #[test]
@@ -177,7 +188,9 @@ fn test_stream_data_type_serialization() {
     // Binary serializes as a simple string
     assert!(json.contains("binary"));
 
-    let dt = StreamDataType::Image { format: "png".to_string() };
+    let dt = StreamDataType::Image {
+        format: "png".to_string(),
+    };
     let json = serde_json::to_string(&dt).unwrap();
     assert!(json.contains("image"));
     assert!(json.contains("png"));
@@ -320,13 +333,8 @@ fn test_stream_result_error() {
 #[test]
 fn test_stream_result_with_metadata() {
     let metadata = json!({"model": "yolo-v8", "confidence": 0.95});
-    let result = StreamResult::success(
-        Some(1),
-        2,
-        vec![],
-        StreamDataType::Binary,
-        10.0,
-    ).with_metadata(metadata.clone());
+    let result = StreamResult::success(Some(1), 2, vec![], StreamDataType::Binary, 10.0)
+        .with_metadata(metadata.clone());
 
     assert_eq!(result.metadata, Some(metadata));
 }
@@ -356,13 +364,7 @@ fn test_stream_result_as_text() {
 
 #[test]
 fn test_stream_result_as_json_wrong_type() {
-    let result = StreamResult::success(
-        Some(1),
-        2,
-        vec![0x01, 0x02],
-        StreamDataType::Binary,
-        1.0,
-    );
+    let result = StreamResult::success(Some(1), 2, vec![0x01, 0x02], StreamDataType::Binary, 1.0);
 
     // Should return Err for non-JSON type
     assert!(result.as_json().is_err());
@@ -370,13 +372,7 @@ fn test_stream_result_as_json_wrong_type() {
 
 #[test]
 fn test_stream_result_serialization() {
-    let result = StreamResult::success(
-        Some(1),
-        2,
-        vec![0x01, 0x02],
-        StreamDataType::Binary,
-        10.0,
-    );
+    let result = StreamResult::success(Some(1), 2, vec![0x01, 0x02], StreamDataType::Binary, 10.0);
 
     let json = serde_json::to_string(&result).unwrap();
     let parsed: StreamResult = serde_json::from_str(&json).unwrap();
@@ -488,8 +484,12 @@ fn test_stream_capability_push() {
 #[test]
 fn test_stream_capability_with_data_type() {
     let cap = StreamCapability::upload()
-        .with_data_type(StreamDataType::Image { format: "jpeg".to_string() })
-        .with_data_type(StreamDataType::Image { format: "png".to_string() })
+        .with_data_type(StreamDataType::Image {
+            format: "jpeg".to_string(),
+        })
+        .with_data_type(StreamDataType::Image {
+            format: "png".to_string(),
+        })
         .with_data_type(StreamDataType::Video {
             codec: "h264".to_string(),
             width: 1920,
@@ -502,8 +502,7 @@ fn test_stream_capability_with_data_type() {
 
 #[test]
 fn test_stream_capability_with_chunk_size() {
-    let cap = StreamCapability::upload()
-        .with_chunk_size(1024, 10 * 1024);
+    let cap = StreamCapability::upload().with_chunk_size(1024, 10 * 1024);
 
     assert_eq!(cap.preferred_chunk_size, 1024);
     assert_eq!(cap.max_chunk_size, 10 * 1024);
@@ -786,7 +785,8 @@ fn test_chunk_to_result_flow() {
         1,
         json!({"detections": [{"label": "person", "confidence": 0.95}]}),
         25.5,
-    ).unwrap();
+    )
+    .unwrap();
 
     assert_eq!(output_result.input_sequence, Some(1));
     assert_eq!(output_result.processing_ms, 25.5);
@@ -798,20 +798,26 @@ fn test_chunk_to_result_flow() {
 #[test]
 fn test_capability_matching() {
     let cap = StreamCapability::upload()
-        .with_data_type(StreamDataType::Image { format: "jpeg".to_string() })
-        .with_data_type(StreamDataType::Image { format: "png".to_string() })
+        .with_data_type(StreamDataType::Image {
+            format: "jpeg".to_string(),
+        })
+        .with_data_type(StreamDataType::Image {
+            format: "png".to_string(),
+        })
         .with_chunk_size(64 * 1024, 4 * 1024 * 1024);
 
     // Check if capability supports JPEG images
-    let supports_jpeg = cap.supported_data_types.iter().any(|dt| {
-        matches!(dt, StreamDataType::Image { format } if format == "jpeg")
-    });
+    let supports_jpeg = cap
+        .supported_data_types
+        .iter()
+        .any(|dt| matches!(dt, StreamDataType::Image { format } if format == "jpeg"));
     assert!(supports_jpeg);
 
     // Check if capability supports PNG images
-    let supports_png = cap.supported_data_types.iter().any(|dt| {
-        matches!(dt, StreamDataType::Image { format } if format == "png")
-    });
+    let supports_png = cap
+        .supported_data_types
+        .iter()
+        .any(|dt| matches!(dt, StreamDataType::Image { format } if format == "png"));
     assert!(supports_png);
 
     // Check chunk size limits

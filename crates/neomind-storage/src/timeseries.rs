@@ -208,8 +208,8 @@ impl RetentionPolicy {
     pub fn new(default_hours: Option<u64>) -> Self {
         Self {
             default_hours,
-            metric_overrides: std::collections::HashMap::with_capacity(16),  // Pre-allocate for typical use
-            device_type_overrides: std::collections::HashMap::with_capacity(8),  // Pre-allocate for typical use
+            metric_overrides: std::collections::HashMap::with_capacity(16), // Pre-allocate for typical use
+            device_type_overrides: std::collections::HashMap::with_capacity(8), // Pre-allocate for typical use
         }
     }
 
@@ -349,7 +349,7 @@ impl BatchWriteRequest {
         Self {
             device_id,
             device_type: None,
-            metrics: std::collections::HashMap::with_capacity(4),  // Pre-allocate for typical batch size
+            metrics: std::collections::HashMap::with_capacity(4), // Pre-allocate for typical batch size
         }
     }
 
@@ -433,7 +433,7 @@ impl TimeSeriesStore {
 
         let store = Arc::new(TimeSeriesStore {
             db: Arc::new(db),
-            metrics_info: DashMap::with_capacity(64),  // Pre-allocate for typical metrics
+            metrics_info: DashMap::with_capacity(64), // Pre-allocate for typical metrics
             latest_cache: DashMap::with_capacity(config.max_cache_size.min(500)),
             retention_policy: RwLock::new(config.retention_policy),
             stats: Arc::new(RwLock::new(PerformanceStats::default())),
@@ -480,7 +480,8 @@ impl TimeSeriesStore {
         let now = Instant::now();
 
         // DashMap retain is concurrent-safe
-        self.latest_cache.retain(|_, entry| now.duration_since(entry.cached_at) < self.cache_ttl);
+        self.latest_cache
+            .retain(|_, entry| now.duration_since(entry.cached_at) < self.cache_ttl);
 
         before - self.latest_cache.len()
     }
@@ -602,7 +603,7 @@ impl TimeSeriesStore {
         let metric_key = format!("{}:{}", device_id, metric);
         let now = Utc::now().timestamp();
         let last_ts = points.last().map(|p| p.timestamp).unwrap_or(now);
-        
+
         self.metrics_info
             .entry(metric_key)
             .and_modify(|entry| {
@@ -805,20 +806,23 @@ impl TimeSeriesStore {
         let db = Arc::clone(&self.db);
         let device_id = device_id.to_string();
         let metrics: Vec<String> = metrics.iter().map(|s| s.to_string()).collect();
-        
-        let query_tasks: Vec<_> = metrics.iter().map(|metric| {
-            let db = Arc::clone(&db);
-            let device_id = device_id.clone();
-            let metric = metric.clone();
-            
-            tokio::spawn(async move {
-                Self::query_single_metric(db, &device_id, &metric, start, end).await
+
+        let query_tasks: Vec<_> = metrics
+            .iter()
+            .map(|metric| {
+                let db = Arc::clone(&db);
+                let device_id = device_id.clone();
+                let metric = metric.clone();
+
+                tokio::spawn(async move {
+                    Self::query_single_metric(db, &device_id, &metric, start, end).await
+                })
             })
-        }).collect();
+            .collect();
 
         // Wait for all queries to complete in parallel
         let results_vec = try_join_all(query_tasks).await?;
-        
+
         // Collect results into HashMap
         let mut results = std::collections::HashMap::new();
         for result in results_vec {
@@ -1116,7 +1120,8 @@ impl TimeSeriesStore {
         // metrics_info is now DashMap, iterate directly when needed
 
         let mut total_removed: u64 = 0;
-        let mut metrics_cleaned: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut metrics_cleaned: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
 
         let read_txn = self.db.begin_read()?;
 
@@ -1136,7 +1141,8 @@ impl TimeSeriesStore {
         };
 
         // Collect all (device_id, metric) pairs
-        let mut metric_pairs: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+        let mut metric_pairs: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
         let start_key = ("", "", i64::MIN);
         let end_key = ("\u{FF}", "\u{FF}", i64::MAX);
 

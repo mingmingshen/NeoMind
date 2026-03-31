@@ -206,11 +206,11 @@ mod tests {
                 state: state.to_string(),
                 file_path: None,
                 loaded_at: None,
-            health_status: "ok".to_string(),
+                health_status: "ok".to_string(),
                 commands: vec![],
-            last_error: None,
+                last_error: None,
                 metrics: vec![],
-            last_error_at: None,
+                last_error_at: None,
                 config_parameters: None,
             };
             assert_eq!(dto.state, state);
@@ -357,11 +357,11 @@ mod tests {
                 state: "loaded".to_string(),
                 file_path: None,
                 loaded_at: None,
-            health_status: "ok".to_string(),
+                health_status: "ok".to_string(),
                 commands: vec![],
-            last_error: None,
+                last_error: None,
                 metrics: vec![],
-            last_error_at: None,
+                last_error_at: None,
                 config_parameters: None,
             };
             assert_eq!(dto.version, version);

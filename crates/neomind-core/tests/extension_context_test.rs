@@ -8,15 +8,14 @@
 //! - Required capabilities validation
 //! - Available capabilities registry
 
-use neomind_core::extension::context::{
-    ExtensionContext, ExtensionContextConfig, ExtensionCapability,
-    ExtensionCapabilityProvider, CapabilityManifest, CapabilityError,
-    AvailableCapabilities,
-};
 use async_trait::async_trait;
+use neomind_core::extension::context::{
+    AvailableCapabilities, CapabilityError, CapabilityManifest, ExtensionCapability,
+    ExtensionCapabilityProvider, ExtensionContext, ExtensionContextConfig,
+};
 use serde_json::{json, Value};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 // ============================================================================
@@ -164,8 +163,12 @@ async fn test_register_multiple_providers() {
         vec![ExtensionCapability::EventPublish],
     ));
 
-    context.register_provider("provider-1".to_string(), provider1).await;
-    context.register_provider("provider-2".to_string(), provider2).await;
+    context
+        .register_provider("provider-1".to_string(), provider1)
+        .await;
+    context
+        .register_provider("provider-2".to_string(), provider2)
+        .await;
 
     let capabilities = context.list_capabilities().await;
     assert_eq!(capabilities.len(), 2);
@@ -235,10 +238,7 @@ async fn test_invoke_capability_not_registered() {
     let context = ExtensionContext::new(config, providers);
 
     let result = context
-        .invoke_capability(
-            ExtensionCapability::DeviceMetricsRead,
-            &json!({}),
-        )
+        .invoke_capability(ExtensionCapability::DeviceMetricsRead, &json!({}))
         .await;
 
     assert!(result.is_err());
@@ -267,10 +267,7 @@ async fn test_invoke_capability_not_in_required() {
 
     // EventPublish is not in required_capabilities
     let result = context
-        .invoke_capability(
-            ExtensionCapability::EventPublish,
-            &json!({}),
-        )
+        .invoke_capability(ExtensionCapability::EventPublish, &json!({}))
         .await;
 
     assert!(result.is_err());
@@ -299,8 +296,16 @@ async fn test_has_capability() {
         .register_provider("test-provider".to_string(), provider)
         .await;
 
-    assert!(context.has_capability(&ExtensionCapability::DeviceMetricsRead).await);
-    assert!(!context.has_capability(&ExtensionCapability::EventPublish).await);
+    assert!(
+        context
+            .has_capability(&ExtensionCapability::DeviceMetricsRead)
+            .await
+    );
+    assert!(
+        !context
+            .has_capability(&ExtensionCapability::EventPublish)
+            .await
+    );
 }
 
 #[tokio::test]
@@ -325,10 +330,7 @@ async fn test_list_capabilities() {
 
     assert_eq!(capabilities.len(), 2);
 
-    let cap_names: Vec<String> = capabilities
-        .iter()
-        .map(|(c, _, _)| c.name())
-        .collect();
+    let cap_names: Vec<String> = capabilities.iter().map(|(c, _, _)| c.name()).collect();
 
     assert!(cap_names.contains(&"device_metrics_read".to_string()));
     assert!(cap_names.contains(&"event_publish".to_string()));
@@ -408,7 +410,10 @@ fn test_available_capabilities_list() {
 
 #[test]
 fn test_capability_name() {
-    assert_eq!(ExtensionCapability::DeviceMetricsRead.name(), "device_metrics_read");
+    assert_eq!(
+        ExtensionCapability::DeviceMetricsRead.name(),
+        "device_metrics_read"
+    );
     assert_eq!(ExtensionCapability::EventPublish.name(), "event_publish");
     assert_eq!(ExtensionCapability::AgentTrigger.name(), "agent_trigger");
 }
@@ -456,7 +461,9 @@ fn test_capability_from_name() {
 
     assert_eq!(
         ExtensionCapability::from_name("unknown_capability"),
-        Some(ExtensionCapability::Custom("unknown_capability".to_string()))
+        Some(ExtensionCapability::Custom(
+            "unknown_capability".to_string()
+        ))
     );
 }
 
@@ -515,7 +522,8 @@ async fn test_concurrent_capability_check() {
     for _ in 0..10 {
         let ctx = context.clone();
         let handle = tokio::spawn(async move {
-            ctx.has_capability(&ExtensionCapability::DeviceMetricsRead).await
+            ctx.has_capability(&ExtensionCapability::DeviceMetricsRead)
+                .await
         });
         handles.push(handle);
     }
@@ -549,10 +557,8 @@ async fn test_concurrent_invoke() {
     for i in 0..5 {
         let ctx = context.clone();
         let handle = tokio::spawn(async move {
-            ctx.invoke_capability(
-                ExtensionCapability::DeviceMetricsRead,
-                &json!({"index": i}),
-            ).await
+            ctx.invoke_capability(ExtensionCapability::DeviceMetricsRead, &json!({"index": i}))
+                .await
         });
         handles.push(handle);
     }

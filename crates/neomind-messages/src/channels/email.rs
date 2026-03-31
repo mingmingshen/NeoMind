@@ -101,7 +101,11 @@ impl EmailChannel {
                 let payload_str = payload.to_string();
                 // Truncate if too long
                 let display_payload = if payload_str.len() > 2000 {
-                    format!("{}...\n\n<i>(Content truncated, total {} characters)</i>", &payload_str[..2000], payload_str.len())
+                    format!(
+                        "{}...\n\n<i>(Content truncated, total {} characters)</i>",
+                        &payload_str[..2000],
+                        payload_str.len()
+                    )
                 } else {
                     payload_str
                 };
@@ -115,14 +119,17 @@ impl EmailChannel {
             } else {
                 r#"<div class="payload">
             <p><em>No data content</em></p>
-        </div>"#.to_string()
+        </div>"#
+                    .to_string()
             }
         } else {
             String::new()
         };
 
         // Build message content section
-        let message_content = if message.message.is_empty() && message.message_type == super::super::MessageType::DataPush {
+        let message_content = if message.message.is_empty()
+            && message.message_type == super::super::MessageType::DataPush
+        {
             "<em>(Data push message)</em>".to_string()
         } else {
             html_escape(&message.message)
@@ -137,11 +144,12 @@ impl EmailChannel {
         };
 
         // Message type badge
-        let (type_bg, type_text, type_label) = if message.message_type == super::super::MessageType::DataPush {
-            ("#e67e22", "#ffffff", "Data Push")
-        } else {
-            ("#3498db", "#ffffff", "Notification")
-        };
+        let (type_bg, type_text, type_label) =
+            if message.message_type == super::super::MessageType::DataPush {
+                ("#e67e22", "#ffffff", "Data Push")
+            } else {
+                ("#3498db", "#ffffff", "Notification")
+            };
 
         format!(
             r#"<!DOCTYPE html>
@@ -360,8 +368,9 @@ impl super::ChannelFactory for EmailChannelFactory {
                     None
                 }
             })
-            .ok_or_else(|| Error::InvalidConfiguration("Missing or invalid smtp_port".to_string()))?
-            as u16;
+            .ok_or_else(|| {
+                Error::InvalidConfiguration("Missing or invalid smtp_port".to_string())
+            })? as u16;
 
         let username = config
             .get("username")

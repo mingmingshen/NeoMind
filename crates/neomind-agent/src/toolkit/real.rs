@@ -8,11 +8,11 @@ use serde_json::Value;
 
 use super::error::Result;
 use super::error::ToolError;
+use super::tool::ToolExample;
 use super::tool::{
     number_property, object_schema, string_property, Tool, ToolDefinition, ToolOutput,
 };
 use neomind_core::tools::{ToolRelationships, UsageScenario};
-use super::tool::ToolExample;
 
 pub type ToolResult<T> = std::result::Result<T, ToolError>;
 

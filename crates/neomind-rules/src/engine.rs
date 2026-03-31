@@ -903,7 +903,11 @@ impl RuleEngine {
 
                     match manager.create_message(msg).await {
                         Ok(_) => {
-                            tracing::info!("NOTIFY: {} (channels: {:?}) - Message created", message, channels);
+                            tracing::info!(
+                                "NOTIFY: {} (channels: {:?}) - Message created",
+                                message,
+                                channels
+                            );
                             Ok(format!("NOTIFY: {}", message))
                         }
                         Err(e) => {
@@ -913,7 +917,11 @@ impl RuleEngine {
                     }
                 } else {
                     // Fallback: just log if MessageManager is not set
-                    tracing::warn!("NOTIFY: {} (channels: {:?}) - MessageManager not configured, only logging", message, channels);
+                    tracing::warn!(
+                        "NOTIFY: {} (channels: {:?}) - MessageManager not configured, only logging",
+                        message,
+                        channels
+                    );
                     Ok(format!("NOTIFY: {} (logged only)", message))
                 }
             }

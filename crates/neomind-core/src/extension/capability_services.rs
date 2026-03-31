@@ -4,9 +4,9 @@
 //! that can be used by capability providers. Uses `Any` for dynamic typing
 //! to avoid circular dependencies between crates.
 
-use std::sync::Arc;
 use std::any::Any;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Container for capability services.
 ///
@@ -25,7 +25,11 @@ impl CapabilityServices {
     }
 
     /// Add a service to the container
-    pub fn with_service<T: 'static + Send + Sync>(mut self, key: &'static str, service: Arc<T>) -> Self {
+    pub fn with_service<T: 'static + Send + Sync>(
+        mut self,
+        key: &'static str,
+        service: Arc<T>,
+    ) -> Self {
         self.services.insert(key, Arc::new(service));
         self
     }

@@ -9,12 +9,12 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use neomind_devices::mdl_format::DeviceTypeDefinition;
 use crate::toolkit::{
     error::Result as ToolResult,
     tool::{object_schema, string_property},
     Tool, ToolError, ToolOutput,
 };
+use neomind_devices::mdl_format::DeviceTypeDefinition;
 
 /// ListDeviceTypes tool - queries all available device types.
 pub struct ListDeviceTypesTool {

@@ -293,8 +293,8 @@ pub struct TransformDataSourcesResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::transform::TransformedMetric;
+    use super::*;
 
     fn create_test_metrics() -> Vec<TransformedMetric> {
         vec![

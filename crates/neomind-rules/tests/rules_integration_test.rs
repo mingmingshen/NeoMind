@@ -8,8 +8,8 @@
 //! - Complex rule scenarios
 
 use neomind_rules::{
-    RuleEngine, RuleDslParser, InMemoryValueProvider, ValueProvider,
-    dsl::{RuleCondition, RuleAction, ComparisonOperator},
+    dsl::{ComparisonOperator, RuleAction, RuleCondition},
+    InMemoryValueProvider, RuleDslParser, RuleEngine, ValueProvider,
 };
 use std::sync::Arc;
 
@@ -87,7 +87,12 @@ fn test_parse_range_condition() {
     let rule = RuleDslParser::parse(dsl).expect("Failed to parse rule");
 
     match &rule.condition {
-        RuleCondition::DeviceRange { device_id, metric, min, max } => {
+        RuleCondition::DeviceRange {
+            device_id,
+            metric,
+            min,
+            max,
+        } => {
             assert_eq!(device_id, "sensor");
             assert_eq!(metric, "temperature");
             assert_eq!(*min, 20.0);
@@ -145,7 +150,10 @@ fn test_parse_with_description() {
 
     let rule = RuleDslParser::parse(dsl).expect("Failed to parse rule");
 
-    assert_eq!(rule.description, Some("This rule monitors temperature".to_string()));
+    assert_eq!(
+        rule.description,
+        Some("This rule monitors temperature".to_string())
+    );
 }
 
 #[test]
@@ -315,7 +323,11 @@ fn test_parse_execute_action() {
     let rule = RuleDslParser::parse(dsl).expect("Failed to parse");
 
     match &rule.actions[0] {
-        RuleAction::Execute { device_id, command, params } => {
+        RuleAction::Execute {
+            device_id,
+            command,
+            params,
+        } => {
             assert_eq!(device_id, "device1");
             assert_eq!(command, "turn_on");
             assert_eq!(params["mode"], "auto");
@@ -378,7 +390,11 @@ fn test_parse_set_action() {
     let rule = RuleDslParser::parse(dsl).expect("Failed to parse");
 
     match &rule.actions[0] {
-        RuleAction::Set { device_id, property, value } => {
+        RuleAction::Set {
+            device_id,
+            property,
+            value,
+        } => {
             assert_eq!(device_id, "device");
             assert_eq!(property, "mode");
             assert_eq!(*value, serde_json::json!("auto"));
@@ -434,13 +450,16 @@ fn test_all_comparison_operators() {
     let operators = [">", "<", ">=", "<=", "==", "!="];
 
     for op in operators {
-        let dsl = format!(r#"
+        let dsl = format!(
+            r#"
             RULE "Op Test"
             WHEN sensor.temperature {} 25
             DO
                 NOTIFY "Test"
             END
-        "#, op);
+        "#,
+            op
+        );
 
         let result = RuleDslParser::parse(&dsl);
         assert!(result.is_ok(), "Failed for operator: {}", op);
@@ -452,14 +471,17 @@ fn test_all_time_units() {
     let time_units = [("seconds", 1), ("minutes", 60), ("hours", 3600)];
 
     for (unit, _) in time_units {
-        let dsl = format!(r#"
+        let dsl = format!(
+            r#"
             RULE "Time Test"
             WHEN sensor.x > 0
             FOR 5 {}
             DO
                 NOTIFY "Test"
             END
-        "#, unit);
+        "#,
+            unit
+        );
 
         let rule = RuleDslParser::parse(&dsl).expect("Failed to parse");
         assert!(rule.for_duration.is_some());
@@ -506,11 +528,11 @@ async fn test_rule_with_device_metric() {
     "#;
 
     let _rule_id = engine.add_rule_from_dsl(dsl).await.unwrap();
-    
+
     // Update states and evaluate
     engine.update_states().await;
     let triggered = engine.evaluate_rules().await;
-    
+
     // Rule should trigger because temperature > 30
     assert_eq!(triggered.len(), 1);
 }

@@ -40,15 +40,10 @@ use wasmtime_wasi::preview1::{self, WasiP1Ctx};
 use wasmtime_wasi::WasiCtxBuilder;
 
 use neomind_extension_sdk::{
-    ErrorKind, IpcFrame, IpcMessage, IpcResponse,
-    BatchCommand, BatchResult,
-    StreamDataChunk,
-    ExtensionMetadata, ExtensionDescriptor, ExtensionMetricValue,
-    MetricDataType,
-    ExtensionStats, ABI_VERSION,
-    StreamCapability, StreamDataType, DataChunk, StreamResult, SessionStats,
-    ExtensionCommand, MetricDescriptor, ParameterDefinition,
-    capability_constants as cap,
+    capability_constants as cap, BatchCommand, BatchResult, DataChunk, ErrorKind, ExtensionCommand,
+    ExtensionDescriptor, ExtensionMetadata, ExtensionMetricValue, ExtensionStats, IpcFrame,
+    IpcMessage, IpcResponse, MetricDataType, MetricDescriptor, ParameterDefinition, SessionStats,
+    StreamCapability, StreamDataChunk, StreamDataType, StreamResult, ABI_VERSION,
 };
 
 // Resource limits module
@@ -68,12 +63,13 @@ use dylib_validation::validate_library;
 // 1. Pending capability requests (via PENDING_REQUESTS)
 // 2. Main event queue (via EVENT_QUEUE)
 
-use std::sync::mpsc::{Sender, Receiver, channel};
+use std::sync::mpsc::{channel, Receiver, Sender};
 
 type ResponseSender = Sender<IpcResponse>;
 
 /// Pending capability requests: request_id -> response sender
-static PENDING_REQUESTS: std::sync::OnceLock<Mutex<HashMap<u64, ResponseSender>>> = std::sync::OnceLock::new();
+static PENDING_REQUESTS: std::sync::OnceLock<Mutex<HashMap<u64, ResponseSender>>> =
+    std::sync::OnceLock::new();
 
 /// Event queue for main loop
 static EVENT_QUEUE: std::sync::OnceLock<Mutex<Vec<IpcMessage>>> = std::sync::OnceLock::new();
@@ -89,7 +85,10 @@ fn get_event_queue() -> &'static Mutex<Vec<IpcMessage>> {
 /// Register a pending request and return the response receiver
 fn register_pending_request(request_id: u64) -> Receiver<IpcResponse> {
     let (tx, rx) = channel();
-    get_pending_requests().lock().unwrap().insert(request_id, tx);
+    get_pending_requests()
+        .lock()
+        .unwrap()
+        .insert(request_id, tx);
     rx
 }
 
@@ -169,7 +168,10 @@ fn start_stdin_reader() -> std::thread::JoinHandle<()> {
                         },
                     };
                     complete_pending_request(*request_id, response);
-                    eprintln!("[StdinReader] Routed CapabilityResult to request_id={}", request_id);
+                    eprintln!(
+                        "[StdinReader] Routed CapabilityResult to request_id={}",
+                        request_id
+                    );
                 }
                 _ => {
                     // Push to event queue for main loop
@@ -199,7 +201,9 @@ impl GlobalEventState {
     }
 
     fn subscribe(&self, event_type: String) -> i64 {
-        let id = self.next_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let id = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.subscriptions.write().insert(id, event_type);
         id
     }
@@ -213,7 +217,10 @@ impl GlobalEventState {
         let mut queues = self.queues.write();
 
         for (id, sub_type) in subscriptions.iter() {
-            if sub_type == "all" || sub_type == event_type || event_type.starts_with(&format!("{}::", sub_type)) {
+            if sub_type == "all"
+                || sub_type == event_type
+                || event_type.starts_with(&format!("{}::", sub_type))
+            {
                 let event = json!({
                     "event_type": event_type,
                     "payload": payload,
@@ -309,19 +316,26 @@ type SetCapabilityBridgeFn = unsafe extern "C" fn(HostCapabilityInvokeFn, HostCa
 type HostCapabilityInvokeFn = unsafe extern "C" fn(*const u8, usize) -> *mut c_char;
 type HostCapabilityFreeFn = unsafe extern "C" fn(*mut c_char);
 
-static GLOBAL_NATIVE_IPC_CLIENT: std::sync::OnceLock<Arc<SyncIpcClient>> = std::sync::OnceLock::new();
+static GLOBAL_NATIVE_IPC_CLIENT: std::sync::OnceLock<Arc<SyncIpcClient>> =
+    std::sync::OnceLock::new();
 
 unsafe extern "C" fn runner_native_capability_invoke(
     input_ptr: *const u8,
     input_len: usize,
 ) -> *mut c_char {
     let error_json = |message: String| {
-        std::ffi::CString::new(json!({
-            "success": false,
-            "error": message,
-        }).to_string())
-            .unwrap_or_else(|_| std::ffi::CString::new("{\"success\":false,\"error\":\"runner bridge failed\"}").unwrap())
-            .into_raw()
+        std::ffi::CString::new(
+            json!({
+                "success": false,
+                "error": message,
+            })
+            .to_string(),
+        )
+        .unwrap_or_else(|_| {
+            std::ffi::CString::new("{\"success\":false,\"error\":\"runner bridge failed\"}")
+                .unwrap()
+        })
+        .into_raw()
     };
 
     if input_ptr.is_null() || input_len == 0 {
@@ -331,7 +345,9 @@ unsafe extern "C" fn runner_native_capability_invoke(
     let input_bytes = std::slice::from_raw_parts(input_ptr, input_len);
     let input = match serde_json::from_slice::<serde_json::Value>(input_bytes) {
         Ok(value) => value,
-        Err(error) => return error_json(format!("invalid native capability bridge json: {}", error)),
+        Err(error) => {
+            return error_json(format!("invalid native capability bridge json: {}", error))
+        }
     };
 
     let capability = input
@@ -346,7 +362,12 @@ unsafe extern "C" fn runner_native_capability_invoke(
 
     let response = ipc_client.invoke(capability, &params);
     std::ffi::CString::new(response.to_string())
-        .unwrap_or_else(|_| std::ffi::CString::new("{\"success\":false,\"error\":\"failed to serialize native capability response\"}").unwrap())
+        .unwrap_or_else(|_| {
+            std::ffi::CString::new(
+                "{\"success\":false,\"error\":\"failed to serialize native capability response\"}",
+            )
+            .unwrap()
+        })
         .into_raw()
 }
 
@@ -379,8 +400,10 @@ struct NativeExtensionBridge {
 
 impl NativeExtensionBridge {
     fn load(path: &Path) -> Result<(Self, ExtensionDescriptor), String> {
-        let library = Arc::new(unsafe { libloading::Library::new(path) }
-            .map_err(|e| format!("Failed to load native extension library: {}", e))?);
+        let library = Arc::new(
+            unsafe { libloading::Library::new(path) }
+                .map_err(|e| format!("Failed to load native extension library: {}", e))?,
+        );
 
         let abi_version = Self::load_symbol::<unsafe extern "C" fn() -> u32>(
             &library,
@@ -390,29 +413,70 @@ impl NativeExtensionBridge {
         if version != ABI_VERSION {
             return Err(format!(
                 "Incompatible ABI version: expected {}, got {}",
-                ABI_VERSION,
-                version
+                ABI_VERSION, version
             ));
         }
 
         let bridge = Self {
             free_string: Self::load_symbol(&library, b"neomind_extension_free_string\0")?,
             descriptor_json: Self::load_symbol(&library, b"neomind_extension_descriptor_json\0")?,
-            set_capability_bridge: Self::load_optional_symbol(&library, b"neomind_extension_set_capability_bridge\0"),
-            execute_command_json: Self::load_symbol(&library, b"neomind_extension_execute_command_json\0")?,
-            configure_json: Self::load_optional_symbol(&library, b"neomind_extension_configure_json\0"),
-            produce_metrics_json: Self::load_symbol(&library, b"neomind_extension_produce_metrics_json\0")?,
-            health_check_json: Self::load_optional_symbol(&library, b"neomind_extension_health_check_json\0"),
+            set_capability_bridge: Self::load_optional_symbol(
+                &library,
+                b"neomind_extension_set_capability_bridge\0",
+            ),
+            execute_command_json: Self::load_symbol(
+                &library,
+                b"neomind_extension_execute_command_json\0",
+            )?,
+            configure_json: Self::load_optional_symbol(
+                &library,
+                b"neomind_extension_configure_json\0",
+            ),
+            produce_metrics_json: Self::load_symbol(
+                &library,
+                b"neomind_extension_produce_metrics_json\0",
+            )?,
+            health_check_json: Self::load_optional_symbol(
+                &library,
+                b"neomind_extension_health_check_json\0",
+            ),
             stats_json: Self::load_optional_symbol(&library, b"neomind_extension_stats_json\0"),
-            event_subscriptions_json: Self::load_optional_symbol(&library, b"neomind_extension_event_subscriptions_json\0"),
-            stream_capability_json: Self::load_optional_symbol(&library, b"neomind_extension_stream_capability_json\0"),
-            init_session_json: Self::load_optional_symbol(&library, b"neomind_extension_init_session_json\0"),
-            process_session_chunk_json: Self::load_optional_symbol(&library, b"neomind_extension_process_session_chunk_json\0"),
-            close_session_json: Self::load_optional_symbol(&library, b"neomind_extension_close_session_json\0"),
-            process_chunk_json: Self::load_optional_symbol(&library, b"neomind_extension_process_chunk_json\0"),
-            start_push_json: Self::load_optional_symbol(&library, b"neomind_extension_start_push_json\0"),
-            stop_push_json: Self::load_optional_symbol(&library, b"neomind_extension_stop_push_json\0"),
-            handle_event_json: Self::load_optional_symbol(&library, b"neomind_extension_handle_event_json\0"),
+            event_subscriptions_json: Self::load_optional_symbol(
+                &library,
+                b"neomind_extension_event_subscriptions_json\0",
+            ),
+            stream_capability_json: Self::load_optional_symbol(
+                &library,
+                b"neomind_extension_stream_capability_json\0",
+            ),
+            init_session_json: Self::load_optional_symbol(
+                &library,
+                b"neomind_extension_init_session_json\0",
+            ),
+            process_session_chunk_json: Self::load_optional_symbol(
+                &library,
+                b"neomind_extension_process_session_chunk_json\0",
+            ),
+            close_session_json: Self::load_optional_symbol(
+                &library,
+                b"neomind_extension_close_session_json\0",
+            ),
+            process_chunk_json: Self::load_optional_symbol(
+                &library,
+                b"neomind_extension_process_chunk_json\0",
+            ),
+            start_push_json: Self::load_optional_symbol(
+                &library,
+                b"neomind_extension_start_push_json\0",
+            ),
+            stop_push_json: Self::load_optional_symbol(
+                &library,
+                b"neomind_extension_stop_push_json\0",
+            ),
+            handle_event_json: Self::load_optional_symbol(
+                &library,
+                b"neomind_extension_handle_event_json\0",
+            ),
             _library: library,
         };
 
@@ -438,12 +502,19 @@ impl NativeExtensionBridge {
         let _ = GLOBAL_NATIVE_IPC_CLIENT.set(ipc_client);
         if let Some(set_bridge) = self.set_capability_bridge {
             unsafe {
-                set_bridge(runner_native_capability_invoke, runner_native_capability_free);
+                set_bridge(
+                    runner_native_capability_invoke,
+                    runner_native_capability_free,
+                );
             }
         }
     }
 
-    fn execute_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
+    fn execute_command(
+        &self,
+        command: &str,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
         let response = self.call_json1(
             self.execute_command_json,
             &json!({ "command": command, "args": args }),
@@ -451,9 +522,7 @@ impl NativeExtensionBridge {
         Self::extract_success_value(&response, "result")
     }
 
-    fn produce_metrics(
-        &self,
-    ) -> Result<Vec<ExtensionMetricValue>, String> {
+    fn produce_metrics(&self) -> Result<Vec<ExtensionMetricValue>, String> {
         let response = self.call_json0(self.produce_metrics_json)?;
         let metrics = Self::extract_success_value(&response, "metrics")?;
         serde_json::from_value(metrics).map_err(|e| format!("Failed to parse metrics JSON: {}", e))
@@ -468,14 +537,16 @@ impl NativeExtensionBridge {
             return true;
         };
         match self.call_json0(func) {
-            Ok(response) => response
-                .get("success")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-                && response
-                    .get("healthy")
+            Ok(response) => {
+                response
+                    .get("success")
                     .and_then(|v| v.as_bool())
-                    .unwrap_or(false),
+                    .unwrap_or(false)
+                    && response
+                        .get("healthy")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+            }
             Err(_) => false,
         }
     }
@@ -487,7 +558,11 @@ impl NativeExtensionBridge {
         let Ok(response) = self.call_json0(func) else {
             return ExtensionStats::default();
         };
-        if !response.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if !response
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             return ExtensionStats::default();
         }
         response
@@ -504,7 +579,11 @@ impl NativeExtensionBridge {
         let Ok(response) = self.call_json0(func) else {
             return Vec::new();
         };
-        if !response.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if !response
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             return Vec::new();
         }
         response
@@ -514,22 +593,22 @@ impl NativeExtensionBridge {
             .unwrap_or_default()
     }
 
-    fn get_stream_capability(
-        &self,
-    ) -> Result<Option<StreamCapability>, String> {
+    fn get_stream_capability(&self) -> Result<Option<StreamCapability>, String> {
         let Some(func) = self.stream_capability_json else {
             return Ok(None);
         };
         let response = self.call_json0(func)?;
-        if !response.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if !response
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             return Err(Self::extract_error(&response));
         }
         match response.get("capability") {
-            Some(value) if !value.is_null() => {
-                serde_json::from_value(value.clone()).map(Some).map_err(|e| {
-                    format!("Failed to parse native stream capability JSON: {}", e)
-                })
-            }
+            Some(value) if !value.is_null() => serde_json::from_value(value.clone())
+                .map(Some)
+                .map_err(|e| format!("Failed to parse native stream capability JSON: {}", e)),
             _ => Ok(None),
         }
     }
@@ -565,10 +644,7 @@ impl NativeExtensionBridge {
             .map_err(|e| format!("Failed to parse native stream result JSON: {}", e))
     }
 
-    fn close_session(
-        &self,
-        session_id: &str,
-    ) -> Result<SessionStats, String> {
+    fn close_session(&self, session_id: &str) -> Result<SessionStats, String> {
         let response = self.call_required_json1(
             self.close_session_json,
             "native close_session",
@@ -579,10 +655,7 @@ impl NativeExtensionBridge {
             .map_err(|e| format!("Failed to parse native session stats JSON: {}", e))
     }
 
-    fn process_chunk(
-        &self,
-        chunk: StreamDataChunk,
-    ) -> Result<StreamResult, String> {
+    fn process_chunk(&self, chunk: StreamDataChunk) -> Result<StreamResult, String> {
         let chunk = DataChunk {
             sequence: chunk.sequence,
             data_type: StreamDataType::from_mime_type(&chunk.data_type)
@@ -623,7 +696,11 @@ impl NativeExtensionBridge {
         input: &serde_json::Value,
     ) -> Result<(), String> {
         let response = self.call_required_json1(func, "native bridge function", input)?;
-        if response.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if response
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             Ok(())
         } else {
             Err(Self::extract_error(&response))
@@ -658,9 +735,7 @@ impl NativeExtensionBridge {
         if ptr.is_null() {
             return Err("Native extension returned a null JSON pointer".to_string());
         }
-        let json_string = unsafe { CStr::from_ptr(ptr) }
-            .to_string_lossy()
-            .to_string();
+        let json_string = unsafe { CStr::from_ptr(ptr) }.to_string_lossy().to_string();
         unsafe { (self.free_string)(ptr) };
         serde_json::from_str(&json_string)
             .map_err(|e| format!("Failed to parse native extension JSON response: {}", e))
@@ -670,7 +745,11 @@ impl NativeExtensionBridge {
         response: &serde_json::Value,
         key: &str,
     ) -> Result<serde_json::Value, String> {
-        if response.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if response
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             response
                 .get(key)
                 .cloned()
@@ -689,8 +768,13 @@ impl NativeExtensionBridge {
     }
 
     fn load_symbol<T: Copy>(library: &libloading::Library, name: &[u8]) -> Result<T, String> {
-        let symbol: libloading::Symbol<T> = unsafe { library.get(name) }
-            .map_err(|e| format!("Failed to load symbol {:?}: {}", String::from_utf8_lossy(name), e))?;
+        let symbol: libloading::Symbol<T> = unsafe { library.get(name) }.map_err(|e| {
+            format!(
+                "Failed to load symbol {:?}: {}",
+                String::from_utf8_lossy(name),
+                e
+            )
+        })?;
         Ok(*symbol)
     }
 
@@ -719,8 +803,8 @@ impl WasmRuntime {
         config.consume_fuel(true);
         config.async_stack_size(8 * 1024 * 1024);
 
-        let engine = Engine::new(&config)
-            .map_err(|e| format!("Failed to create WASM engine: {}", e))?;
+        let engine =
+            Engine::new(&config).map_err(|e| format!("Failed to create WASM engine: {}", e))?;
 
         // Load module
         let module = Module::from_file(&engine, path)
@@ -742,9 +826,7 @@ impl WasmRuntime {
         let runtime_handle = tokio::runtime::Handle::try_current()
             .map_err(|e| format!("Failed to get runtime handle: {}", e))?;
         tokio::task::block_in_place(|| {
-            runtime_handle.block_on(async {
-                self.get_descriptor_async(&engine, &module).await
-            })
+            runtime_handle.block_on(async { self.get_descriptor_async(&engine, &module).await })
         })
     }
 
@@ -762,14 +844,13 @@ impl WasmRuntime {
         // Add neomind host functions for capability invocation
         add_neomind_to_linker(&mut linker)?;
 
-        let wasi = WasiCtxBuilder::new()
-            .inherit_stdio()
-            .build_p1();
+        let wasi = WasiCtxBuilder::new().inherit_stdio().build_p1();
 
         let host_state = HostState::new(wasi);
 
         let mut store = Store::new(engine, host_state);
-        store.set_fuel(1_000_000)
+        store
+            .set_fuel(1_000_000)
             .map_err(|e| format!("Failed to set fuel: {}", e))?;
 
         // Instantiate module
@@ -806,7 +887,8 @@ impl WasmRuntime {
         // Read result from memory
         let memory = store.data().memory.unwrap();
         let mut result_bytes = vec![0u8; result_len];
-        memory.read(&store, WASM_RESULT_OFFSET, &mut result_bytes)
+        memory
+            .read(&store, WASM_RESULT_OFFSET, &mut result_bytes)
             .map_err(|e| format!("Failed to read result: {}", e))?;
 
         let json_str = String::from_utf8_lossy(&result_bytes);
@@ -820,31 +902,36 @@ impl WasmRuntime {
     /// Parse descriptor JSON into ExtensionDescriptor
     fn parse_descriptor_json(json: &serde_json::Value) -> Result<ExtensionDescriptor, String> {
         use {
-            ExtensionMetadata, ExtensionCommand, MetricDescriptor, 
-            MetricDataType, ParameterDefinition
+            ExtensionCommand, ExtensionMetadata, MetricDataType, MetricDescriptor,
+            ParameterDefinition,
         };
 
-        let metadata_json = json.get("metadata")
+        let metadata_json = json
+            .get("metadata")
             .ok_or("Missing 'metadata' in descriptor")?;
 
         // Parse metadata
-        let id = metadata_json.get("id")
+        let id = metadata_json
+            .get("id")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'id' in metadata")?
             .to_string();
-        let name = metadata_json.get("name")
+        let name = metadata_json
+            .get("name")
             .and_then(|v| v.as_str())
             .ok_or("Missing 'name' in metadata")?
             .to_string();
-        let version_str = metadata_json.get("version")
+        let version_str = metadata_json
+            .get("version")
             .and_then(|v| v.as_str())
             .unwrap_or("1.0.0");
-        let version = semver::Version::parse(version_str)
-            .unwrap_or(semver::Version::new(1, 0, 0));
-        let description = metadata_json.get("description")
+        let version = semver::Version::parse(version_str).unwrap_or(semver::Version::new(1, 0, 0));
+        let description = metadata_json
+            .get("description")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        let author = metadata_json.get("author")
+        let author = metadata_json
+            .get("author")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
@@ -853,139 +940,161 @@ impl WasmRuntime {
         metadata.author = author;
 
         // Parse metrics
-        let metrics: Vec<MetricDescriptor> = json.get("metrics")
+        let metrics: Vec<MetricDescriptor> = json
+            .get("metrics")
             .and_then(|v| v.as_array())
             .map(|arr| {
-                arr.iter().filter_map(|m| {
-                    let name = m.get("name")?.as_str()?.to_string();
-                    let display_name = m.get("display_name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(&name)
-                        .to_string();
-                    let data_type_str = m.get("data_type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("string");
-                    let data_type = match data_type_str {
-                        "float" => MetricDataType::Float,
-                        "integer" => MetricDataType::Integer,
-                        "boolean" => MetricDataType::Boolean,
-                        "binary" => MetricDataType::Binary,
-                        _ => MetricDataType::String,
-                    };
-                    let unit = m.get("unit")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let min = m.get("min").and_then(|v| v.as_f64());
-                    let max = m.get("max").and_then(|v| v.as_f64());
-                    let required = m.get("required")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
+                arr.iter()
+                    .filter_map(|m| {
+                        let name = m.get("name")?.as_str()?.to_string();
+                        let display_name = m
+                            .get("display_name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&name)
+                            .to_string();
+                        let data_type_str = m
+                            .get("data_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("string");
+                        let data_type = match data_type_str {
+                            "float" => MetricDataType::Float,
+                            "integer" => MetricDataType::Integer,
+                            "boolean" => MetricDataType::Boolean,
+                            "binary" => MetricDataType::Binary,
+                            _ => MetricDataType::String,
+                        };
+                        let unit = m
+                            .get("unit")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let min = m.get("min").and_then(|v| v.as_f64());
+                        let max = m.get("max").and_then(|v| v.as_f64());
+                        let required = m.get("required").and_then(|v| v.as_bool()).unwrap_or(false);
 
-                    Some(MetricDescriptor {
-                        name,
-                        display_name,
-                        data_type,
-                        unit,
-                        min,
-                        max,
-                        required,
+                        Some(MetricDescriptor {
+                            name,
+                            display_name,
+                            data_type,
+                            unit,
+                            min,
+                            max,
+                            required,
+                        })
                     })
-                }).collect()
+                    .collect()
             })
             .unwrap_or_default();
 
         // Parse commands
-        let commands: Vec<ExtensionCommand> = json.get("commands")
+        let commands: Vec<ExtensionCommand> = json
+            .get("commands")
             .and_then(|v| v.as_array())
             .map(|arr| {
-                arr.iter().filter_map(|c| {
-                    let name = c.get("name")?.as_str()?.to_string();
-                    let display_name = c.get("display_name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(&name)
-                        .to_string();
-                    let description = c.get("description")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
+                arr.iter()
+                    .filter_map(|c| {
+                        let name = c.get("name")?.as_str()?.to_string();
+                        let display_name = c
+                            .get("display_name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&name)
+                            .to_string();
+                        let description = c
+                            .get("description")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
 
-                    // Parse parameters
-                    let parameters: Vec<ParameterDefinition> = c.get("parameters")
-                        .and_then(|v| v.as_array())
-                        .map(|params| {
-                            params.iter().filter_map(|p| {
-                                let param_name = p.get("name")?.as_str()?.to_string();
-                                let param_display_name = p.get("display_name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or(&param_name)
-                                    .to_string();
-                                let param_desc = p.get("description")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let param_type_str = p.get("param_type")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("string");
-                                let param_type = match param_type_str {
-                                    "float" => MetricDataType::Float,
-                                    "integer" => MetricDataType::Integer,
-                                    "boolean" => MetricDataType::Boolean,
-                                    "binary" => MetricDataType::Binary,
-                                    _ => MetricDataType::String,
-                                };
-                                let required = p.get("required")
-                                    .and_then(|v| v.as_bool())
-                                    .unwrap_or(true);
+                        // Parse parameters
+                        let parameters: Vec<ParameterDefinition> = c
+                            .get("parameters")
+                            .and_then(|v| v.as_array())
+                            .map(|params| {
+                                params
+                                    .iter()
+                                    .filter_map(|p| {
+                                        let param_name = p.get("name")?.as_str()?.to_string();
+                                        let param_display_name = p
+                                            .get("display_name")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or(&param_name)
+                                            .to_string();
+                                        let param_desc = p
+                                            .get("description")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let param_type_str = p
+                                            .get("param_type")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("string");
+                                        let param_type = match param_type_str {
+                                            "float" => MetricDataType::Float,
+                                            "integer" => MetricDataType::Integer,
+                                            "boolean" => MetricDataType::Boolean,
+                                            "binary" => MetricDataType::Binary,
+                                            _ => MetricDataType::String,
+                                        };
+                                        let required = p
+                                            .get("required")
+                                            .and_then(|v| v.as_bool())
+                                            .unwrap_or(true);
 
-                                Some(ParameterDefinition {
-                                    name: param_name,
-                                    display_name: param_display_name,
-                                    description: param_desc,
-                                    param_type,
-                                    required,
-                                    default_value: None,
-                                    min: None,
-                                    max: None,
-                                    options: Vec::new(),
-                                })
-                            }).collect()
+                                        Some(ParameterDefinition {
+                                            name: param_name,
+                                            display_name: param_display_name,
+                                            description: param_desc,
+                                            param_type,
+                                            required,
+                                            default_value: None,
+                                            min: None,
+                                            max: None,
+                                            options: Vec::new(),
+                                        })
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        // Parse samples
+                        let samples: Vec<serde_json::Value> = c
+                            .get("samples")
+                            .and_then(|v| v.as_array())
+                            .cloned()
+                            .unwrap_or_default();
+
+                        Some(ExtensionCommand {
+                            name,
+                            display_name,
+                            description,
+                            payload_template: String::new(),
+                            parameters,
+                            fixed_values: HashMap::new(),
+                            samples,
+                            parameter_groups: Vec::new(),
                         })
-                        .unwrap_or_default();
-
-                    // Parse samples
-                    let samples: Vec<serde_json::Value> = c.get("samples")
-                        .and_then(|v| v.as_array())
-                        .cloned()
-                        .unwrap_or_default();
-
-                    Some(ExtensionCommand {
-                        name,
-                        display_name,
-                        description,
-                        payload_template: String::new(),
-                        parameters,
-                        fixed_values: HashMap::new(),
-                        samples,
-                        parameter_groups: Vec::new(),
                     })
-                }).collect()
+                    .collect()
             })
             .unwrap_or_default();
 
         Ok(ExtensionDescriptor::with_capabilities(
-            metadata,
-            commands,
-            metrics,
+            metadata, commands, metrics,
         ))
     }
 
     /// Execute a command using the new execute_command_json function
-    async fn execute_command(&self, command: &str, args: &serde_json::Value, ipc_client: Option<Arc<SyncIpcClient>>) -> Result<serde_json::Value, String> {
+    async fn execute_command(
+        &self,
+        command: &str,
+        args: &serde_json::Value,
+        ipc_client: Option<Arc<SyncIpcClient>>,
+    ) -> Result<serde_json::Value, String> {
         let input = serde_json::to_string(&json!({
             "command": command,
             "args": args
-        })).map_err(|e| format!("Failed to serialize input: {}", e))?;
+        }))
+        .map_err(|e| format!("Failed to serialize input: {}", e))?;
 
         let module = self.module.clone();
         let engine = self.engine.clone();
@@ -994,91 +1103,96 @@ impl WasmRuntime {
         let metric_values = self.metric_values.clone();
 
         // Execute with timeout
-        let result = tokio::time::timeout(
-            tokio::time::Duration::from_secs(30),
-            async move {
-                // Create linker with WASI support
-                let mut linker = Linker::new(&engine);
-                preview1::add_to_linker_async(&mut linker, |t: &mut HostState| &mut t.wasi)
-                    .map_err(|e| format!("Failed to add WASI: {}", e))?;
+        let result = tokio::time::timeout(tokio::time::Duration::from_secs(30), async move {
+            // Create linker with WASI support
+            let mut linker = Linker::new(&engine);
+            preview1::add_to_linker_async(&mut linker, |t: &mut HostState| &mut t.wasi)
+                .map_err(|e| format!("Failed to add WASI: {}", e))?;
 
-                // Add neomind host functions
-                add_neomind_to_linker(&mut linker)?;
+            // Add neomind host functions
+            add_neomind_to_linker(&mut linker)?;
 
-                let wasi = WasiCtxBuilder::new()
-                    .inherit_stdio()
-                    .build_p1();
+            let wasi = WasiCtxBuilder::new().inherit_stdio().build_p1();
 
-                // Pass IPC client to host state for capability forwarding
-                let host_state = HostState::with_ipc(wasi, ipc_client);
+            // Pass IPC client to host state for capability forwarding
+            let host_state = HostState::with_ipc(wasi, ipc_client);
 
-                let mut store = Store::new(&engine, host_state);
-                store.set_fuel(1_000_000)
-                    .map_err(|e| format!("Failed to set fuel: {}", e))?;
+            let mut store = Store::new(&engine, host_state);
+            store
+                .set_fuel(1_000_000)
+                .map_err(|e| format!("Failed to set fuel: {}", e))?;
 
-                let instance = linker
-                    .instantiate_async(&mut store, &module)
+            let instance = linker
+                .instantiate_async(&mut store, &module)
+                .await
+                .map_err(|e| format!("Failed to instantiate module: {}", e))?;
+
+            let memory = instance
+                .get_memory(&mut store, "memory")
+                .ok_or_else(|| "Module does not export 'memory'".to_string())?;
+            store.data_mut().memory = Some(memory);
+
+            // Try execute_command_json first
+            if let Some(func) = instance.get_func(&mut store, "execute_command_json") {
+                // Write input to memory at offset 0
+                memory
+                    .write(&mut store, 0, &input_bytes)
+                    .map_err(|e| format!("Failed to write input: {}", e))?;
+
+                let mut results = [Val::I32(0)];
+                let params = [Val::I32(0), Val::I32(input_len as i32)];
+
+                func.call_async(&mut store, &params, &mut results)
                     .await
-                    .map_err(|e| format!("Failed to instantiate module: {}", e))?;
+                    .map_err(|e| format!("execute_command_json call failed: {}", e))?;
 
-                let memory = instance
-                    .get_memory(&mut store, "memory")
-                    .ok_or_else(|| "Module does not export 'memory'".to_string())?;
-                store.data_mut().memory = Some(memory);
+                let result_len = match results[0] {
+                    Val::I32(len) => len as usize,
+                    _ => 0,
+                };
 
-                // Try execute_command_json first
-                if let Some(func) = instance.get_func(&mut store, "execute_command_json") {
-                    // Write input to memory at offset 0
-                    memory.write(&mut store, 0, &input_bytes)
-                        .map_err(|e| format!("Failed to write input: {}", e))?;
+                if result_len > 0 && result_len < 65536 {
+                    let mut result_bytes = vec![0u8; result_len];
+                    memory
+                        .read(&store, WASM_RESULT_OFFSET, &mut result_bytes)
+                        .map_err(|e| format!("Failed to read result: {}", e))?;
 
-                    let mut results = [Val::I32(0)];
-                    let params = [Val::I32(0), Val::I32(input_len as i32)];
-                    
-                    func.call_async(&mut store, &params, &mut results)
-                        .await
-                        .map_err(|e| format!("execute_command_json call failed: {}", e))?;
+                    let result_str = String::from_utf8_lossy(&result_bytes);
+                    let result_json: serde_json::Value = serde_json::from_str(&result_str)
+                        .map_err(|e| format!("Failed to parse result JSON: {}", e))?;
 
-                    let result_len = match results[0] {
-                        Val::I32(len) => len as usize,
-                        _ => 0,
-                    };
-
-                    if result_len > 0 && result_len < 65536 {
-                        let mut result_bytes = vec![0u8; result_len];
-                        memory.read(&store, WASM_RESULT_OFFSET, &mut result_bytes)
-                            .map_err(|e| format!("Failed to read result: {}", e))?;
-
-                        let result_str = String::from_utf8_lossy(&result_bytes);
-                        let result_json: serde_json::Value = serde_json::from_str(&result_str)
-                            .map_err(|e| format!("Failed to parse result JSON: {}", e))?;
-
-                        // Cache metric values if present
-                        if let Some(metrics) = result_json.get("metrics").and_then(|v| v.as_array()) {
-                            let mut values = metric_values.write().await;
-                            for m in metrics {
-                                if let (Some(name), Some(value)) = (m.get("name").and_then(|n| n.as_str()), m.get("value")) {
-                                    values.insert(name.to_string(), value.clone());
-                                }
+                    // Cache metric values if present
+                    if let Some(metrics) = result_json.get("metrics").and_then(|v| v.as_array()) {
+                        let mut values = metric_values.write().await;
+                        for m in metrics {
+                            if let (Some(name), Some(value)) =
+                                (m.get("name").and_then(|n| n.as_str()), m.get("value"))
+                            {
+                                values.insert(name.to_string(), value.clone());
                             }
                         }
-
-                        return Ok(result_json);
                     }
-                }
 
-                // Fallback: try the old execute function
-                Err("execute_command_json not found, extension may not support new API".to_string())
+                    return Ok(result_json);
+                }
             }
-        ).await;
+
+            // Fallback: try the old execute function
+            Err("execute_command_json not found, extension may not support new API".to_string())
+        })
+        .await;
 
         result.map_err(|_| "Execution timeout".to_string())?
     }
 
     /// Legacy execute function for backward compatibility
-    async fn execute(&self, function_name: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
-        let args_str = serde_json::to_string(args)
-            .map_err(|e| format!("Failed to serialize args: {}", e))?;
+    async fn execute(
+        &self,
+        function_name: &str,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let args_str =
+            serde_json::to_string(args).map_err(|e| format!("Failed to serialize args: {}", e))?;
 
         let module = self.module.clone();
         let engine = self.engine.clone();
@@ -1088,123 +1202,124 @@ impl WasmRuntime {
         let metric_values = self.metric_values.clone();
 
         // Execute with timeout
-        let result = tokio::time::timeout(
-            tokio::time::Duration::from_secs(30),
-            async move {
-                // Create linker
-                let mut linker = Linker::new(&engine);
+        let result = tokio::time::timeout(tokio::time::Duration::from_secs(30), async move {
+            // Create linker
+            let mut linker = Linker::new(&engine);
 
-                // Add WASI support
-                preview1::add_to_linker_async(&mut linker, |t: &mut HostState| &mut t.wasi)
-                    .map_err(|e| format!("Failed to add WASI: {}", e))?;
+            // Add WASI support
+            preview1::add_to_linker_async(&mut linker, |t: &mut HostState| &mut t.wasi)
+                .map_err(|e| format!("Failed to add WASI: {}", e))?;
 
-                // Add neomind host functions
-                add_neomind_to_linker(&mut linker)?;
+            // Add neomind host functions
+            add_neomind_to_linker(&mut linker)?;
 
-                // Build WASI context
-                let wasi = WasiCtxBuilder::new()
-                    .inherit_stdio()
-                    .build_p1();
+            // Build WASI context
+            let wasi = WasiCtxBuilder::new().inherit_stdio().build_p1();
 
-                let host_state = HostState::new(wasi);
+            let host_state = HostState::new(wasi);
 
-                // Create store with fuel
-                let mut store = Store::new(&engine, host_state);
-                store.set_fuel(1_000_000)
-                    .map_err(|e| format!("Failed to set fuel: {}", e))?;
+            // Create store with fuel
+            let mut store = Store::new(&engine, host_state);
+            store
+                .set_fuel(1_000_000)
+                .map_err(|e| format!("Failed to set fuel: {}", e))?;
 
-                // Instantiate module
-                let instance = linker
-                    .instantiate_async(&mut store, &module)
+            // Instantiate module
+            let instance = linker
+                .instantiate_async(&mut store, &module)
+                .await
+                .map_err(|e| format!("Failed to instantiate module: {}", e))?;
+
+            // Get memory
+            let memory = instance
+                .get_memory(&mut store, "memory")
+                .ok_or_else(|| "Module does not export 'memory'".to_string())?;
+            store.data_mut().memory = Some(memory);
+
+            // Get function
+            let func = instance
+                .get_func(&mut store, &function_name_owned)
+                .ok_or_else(|| format!("Function '{}' not found", function_name_owned))?;
+
+            let func_ty = func.ty(store.as_context_mut());
+            let params_count = func_ty.params().len();
+            let results_count = func_ty.results().len();
+
+            // Call function based on signature
+            if params_count == 0 && results_count == 0 {
+                let mut results = [];
+                func.call_async(&mut store, &[], &mut results)
                     .await
-                    .map_err(|e| format!("Failed to instantiate module: {}", e))?;
+                    .map_err(|e| format!("Function call failed: {}", e))?;
 
-                // Get memory
-                let memory = instance
-                    .get_memory(&mut store, "memory")
-                    .ok_or_else(|| "Module does not export 'memory'".to_string())?;
-                store.data_mut().memory = Some(memory);
+                Ok(json!({
+                    "success": true,
+                    "message": format!("Function {} executed", function_name_owned),
+                    "module": module_name
+                }))
+            } else if params_count == 2 && results_count == 1 {
+                // Standard signature: (args_ptr: i32, args_len: i32) -> result_len: i32
+                let args_bytes = args_str_clone.as_bytes();
+                let args_len = args_bytes.len();
 
-                // Get function
-                let func = instance
-                    .get_func(&mut store, &function_name_owned)
-                    .ok_or_else(|| format!("Function '{}' not found", function_name_owned))?;
+                memory
+                    .write(&mut store, 0, args_bytes)
+                    .map_err(|e| format!("Failed to write args: {}", e))?;
 
-                let func_ty = func.ty(store.as_context_mut());
-                let params_count = func_ty.params().len();
-                let results_count = func_ty.results().len();
+                let params = [Val::I32(0), Val::I32(args_len as i32)];
+                let mut results = [Val::I32(0)];
 
-                // Call function based on signature
-                if params_count == 0 && results_count == 0 {
-                    let mut results = [];
-                    func.call_async(&mut store, &[], &mut results)
-                        .await
-                        .map_err(|e| format!("Function call failed: {}", e))?;
+                func.call_async(&mut store, &params, &mut results)
+                    .await
+                    .map_err(|e| format!("Function call failed: {}", e))?;
 
-                    Ok(json!({
-                        "success": true,
-                        "message": format!("Function {} executed", function_name_owned),
-                        "module": module_name
-                    }))
-                } else if params_count == 2 && results_count == 1 {
-                    // Standard signature: (args_ptr: i32, args_len: i32) -> result_len: i32
-                    let args_bytes = args_str_clone.as_bytes();
-                    let args_len = args_bytes.len();
+                let result_len = match results[0] {
+                    Val::I32(len) => len as usize,
+                    _ => 0,
+                };
 
-                    memory.write(&mut store, 0, args_bytes)
-                        .map_err(|e| format!("Failed to write args: {}", e))?;
+                if result_len > 0 && result_len < 65536 {
+                    let mut result_bytes = vec![0u8; result_len];
+                    memory
+                        .read(&store, WASM_RESULT_OFFSET, &mut result_bytes)
+                        .map_err(|e| format!("Failed to read result: {}", e))?;
 
-                    let params = [Val::I32(0), Val::I32(args_len as i32)];
-                    let mut results = [Val::I32(0)];
-
-                    func.call_async(&mut store, &params, &mut results)
-                        .await
-                        .map_err(|e| format!("Function call failed: {}", e))?;
-
-                    let result_len = match results[0] {
-                        Val::I32(len) => len as usize,
-                        _ => 0,
-                    };
-
-                    if result_len > 0 && result_len < 65536 {
-                        let mut result_bytes = vec![0u8; result_len];
-                        memory.read(&store, WASM_RESULT_OFFSET, &mut result_bytes)
-                            .map_err(|e| format!("Failed to read result: {}", e))?;
-
-                        let result_str = String::from_utf8_lossy(&result_bytes);
-                        let result_json: serde_json::Value = serde_json::from_str(&result_str)
-                            .unwrap_or_else(|_| json!({
+                    let result_str = String::from_utf8_lossy(&result_bytes);
+                    let result_json: serde_json::Value = serde_json::from_str(&result_str)
+                        .unwrap_or_else(|_| {
+                            json!({
                                 "success": true,
                                 "raw_result": result_str.to_string()
-                            }));
+                            })
+                        });
 
-                        // Cache metric values
-                        if let Some(obj) = result_json.as_object() {
-                            let mut values = metric_values.write().await;
-                            for (key, value) in obj {
-                                values.insert(key.clone(), value.clone());
-                            }
+                    // Cache metric values
+                    if let Some(obj) = result_json.as_object() {
+                        let mut values = metric_values.write().await;
+                        for (key, value) in obj {
+                            values.insert(key.clone(), value.clone());
                         }
-
-                        Ok(result_json)
-                    } else {
-                        Ok(json!({
-                            "success": true,
-                            "message": format!("Function {} executed", function_name_owned),
-                            "result_length": result_len
-                        }))
                     }
+
+                    Ok(result_json)
                 } else {
                     Ok(json!({
                         "success": true,
-                        "message": format!("Function {} found", function_name_owned),
-                        "params_count": params_count,
-                        "results_count": results_count,
-                        "note": "Custom function signature"
+                        "message": format!("Function {} executed", function_name_owned),
+                        "result_length": result_len
                     }))
                 }
+            } else {
+                Ok(json!({
+                    "success": true,
+                    "message": format!("Function {} found", function_name_owned),
+                    "params_count": params_count,
+                    "results_count": results_count,
+                    "note": "Custom function signature"
+                }))
             }
-        ).await;
+        })
+        .await;
 
         result.map_err(|_| "Execution timeout".to_string())?
     }
@@ -1219,7 +1334,9 @@ impl WasmRuntime {
     fn produce_metrics(&self) -> Result<Vec<ExtensionMetricValue>, String> {
         use ExtensionMetricValue;
 
-        let values = self.metric_values.try_read()
+        let values = self
+            .metric_values
+            .try_read()
             .map_err(|_| "Lock error".to_string())?;
 
         // For WASM, we don't have metric descriptors, so return raw values
@@ -1243,11 +1360,13 @@ impl WasmRuntime {
                     value: b.into(),
                     timestamp: chrono::Utc::now().timestamp_millis(),
                 })
-            } else { value.as_str().map(|s| ExtensionMetricValue {
+            } else {
+                value.as_str().map(|s| ExtensionMetricValue {
                     name: name.clone(),
                     value: s.into(),
                     timestamp: chrono::Utc::now().timestamp_millis(),
-                }) };
+                })
+            };
 
             if let Some(v) = metric_value {
                 result.push(v);
@@ -1291,7 +1410,11 @@ pub struct SyncIpcClient {}
 
 impl SyncIpcClient {
     /// Create a new sync IPC client
-    pub fn new() -> (Self, std::sync::mpsc::Receiver<SyncIpcRequest>, std::sync::mpsc::SyncSender<SyncIpcResponse>) {
+    pub fn new() -> (
+        Self,
+        std::sync::mpsc::Receiver<SyncIpcRequest>,
+        std::sync::mpsc::SyncSender<SyncIpcResponse>,
+    ) {
         // Return dummy channels for compatibility with existing code
         let (request_tx, request_rx) = std::sync::mpsc::sync_channel(16);
         let (response_tx, response_rx) = std::sync::mpsc::sync_channel(16);
@@ -1300,15 +1423,11 @@ impl SyncIpcClient {
         drop(request_tx);
         drop(response_rx);
 
-        (
-            Self {},
-            request_rx,
-            response_tx,
-        )
+        (Self {}, request_rx, response_tx)
     }
 
     /// Invoke a capability synchronously
-    /// 
+    ///
     /// Sends CapabilityRequest via stdout and waits for CapabilityResult
     /// via the pending requests queue (routed by main loop).
     pub fn invoke(&self, capability: &str, params: &serde_json::Value) -> serde_json::Value {
@@ -1317,7 +1436,10 @@ impl SyncIpcClient {
         static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
         let request_id = REQUEST_ID_COUNTER.fetch_add(1, AtomicOrdering::SeqCst);
 
-        eprintln!("[SyncIpcClient] invoke called: capability={}, request_id={}", capability, request_id);
+        eprintln!(
+            "[SyncIpcClient] invoke called: capability={}, request_id={}",
+            capability, request_id
+        );
 
         // Register pending request BEFORE sending
         let response_rx = register_pending_request(request_id);
@@ -1364,9 +1486,16 @@ impl SyncIpcClient {
             Ok(response) => {
                 eprintln!("[SyncIpcClient] Received response: {:?}", response);
                 match response {
-                    IpcResponse::CapabilityResult { request_id: resp_id, result, error } => {
+                    IpcResponse::CapabilityResult {
+                        request_id: resp_id,
+                        result,
+                        error,
+                    } => {
                         if resp_id != request_id {
-                            eprintln!("[SyncIpcClient] Request ID mismatch: expected {}, got {}", request_id, resp_id);
+                            eprintln!(
+                                "[SyncIpcClient] Request ID mismatch: expected {}, got {}",
+                                request_id, resp_id
+                            );
                             return json!({"success": false, "error": "Request ID mismatch"});
                         }
                         if let Some(err) = error {
@@ -1431,170 +1560,216 @@ fn add_neomind_to_linker(linker: &mut Linker<HostState>) -> Result<(), String> {
     //     params_ptr: *const u8, params_len: i32,
     //     result_ptr: *mut u8, result_max_len: i32
     // ) -> i32
-    linker.func_wrap(
-        "neomind",
-        "host_invoke_capability",
-        |mut caller: wasmtime::Caller<'_, HostState>,
-         capability_ptr: i32, capability_len: i32,
-         params_ptr: i32, params_len: i32,
-         result_ptr: i32, result_max_len: i32| -> i32 {
-            // Read capability name from memory
-            let capability = match read_string_from_memory(&mut caller, capability_ptr as usize, capability_len as usize) {
-                Ok(s) => s,
-                Err(_) => return -1,
-            };
+    linker
+        .func_wrap(
+            "neomind",
+            "host_invoke_capability",
+            |mut caller: wasmtime::Caller<'_, HostState>,
+             capability_ptr: i32,
+             capability_len: i32,
+             params_ptr: i32,
+             params_len: i32,
+             result_ptr: i32,
+             result_max_len: i32|
+             -> i32 {
+                // Read capability name from memory
+                let capability = match read_string_from_memory(
+                    &mut caller,
+                    capability_ptr as usize,
+                    capability_len as usize,
+                ) {
+                    Ok(s) => s,
+                    Err(_) => return -1,
+                };
 
-            // Read params from memory
-            let params_str = match read_string_from_memory(&mut caller, params_ptr as usize, params_len as usize) {
-                Ok(s) => s,
-                Err(_) => return -1,
-            };
+                // Read params from memory
+                let params_str = match read_string_from_memory(
+                    &mut caller,
+                    params_ptr as usize,
+                    params_len as usize,
+                ) {
+                    Ok(s) => s,
+                    Err(_) => return -1,
+                };
 
-            let params: serde_json::Value = match serde_json::from_str(&params_str) {
-                Ok(v) => v,
-                Err(_) => return -1,
-            };
+                let params: serde_json::Value = match serde_json::from_str(&params_str) {
+                    Ok(v) => v,
+                    Err(_) => return -1,
+                };
 
-            // Try to use IPC client if available (for real capability invocation)
-            // Otherwise fall back to mock implementation
-            let result = if let Some(ipc_client) = &caller.data().ipc_client {
-                debug!(
-                    capability = %capability,
-                    "Forwarding capability request via IPC"
-                );
-                ipc_client.invoke(&capability, &params)
-            } else {
-                // Fallback to mock implementation for testing or when IPC is not available
-                debug!(
-                    capability = %capability,
-                    "Using mock capability handler (no IPC client)"
-                );
-                handle_capability_invocation(&capability, &params)
-            };
+                // Try to use IPC client if available (for real capability invocation)
+                // Otherwise fall back to mock implementation
+                let result = if let Some(ipc_client) = &caller.data().ipc_client {
+                    debug!(
+                        capability = %capability,
+                        "Forwarding capability request via IPC"
+                    );
+                    ipc_client.invoke(&capability, &params)
+                } else {
+                    // Fallback to mock implementation for testing or when IPC is not available
+                    debug!(
+                        capability = %capability,
+                        "Using mock capability handler (no IPC client)"
+                    );
+                    handle_capability_invocation(&capability, &params)
+                };
 
-            // Write result to memory
-            let result_str = match serde_json::to_string(&result) {
-                Ok(s) => s,
-                Err(_) => return -1,
-            };
+                // Write result to memory
+                let result_str = match serde_json::to_string(&result) {
+                    Ok(s) => s,
+                    Err(_) => return -1,
+                };
 
-            let result_bytes = result_str.as_bytes();
-            let write_len = result_bytes.len().min(result_max_len as usize);
+                let result_bytes = result_str.as_bytes();
+                let write_len = result_bytes.len().min(result_max_len as usize);
 
-            match write_bytes_to_memory(&mut caller, result_ptr as usize, &result_bytes[..write_len]) {
-                Ok(_) => write_len as i32,
-                Err(_) => -1,
-            }
-        }
-    ).map_err(|e| format!("Failed to add host_invoke_capability: {}", e))?;
+                match write_bytes_to_memory(
+                    &mut caller,
+                    result_ptr as usize,
+                    &result_bytes[..write_len],
+                ) {
+                    Ok(_) => write_len as i32,
+                    Err(_) => -1,
+                }
+            },
+        )
+        .map_err(|e| format!("Failed to add host_invoke_capability: {}", e))?;
 
     // host_event_subscribe(
     //     event_type_ptr: *const u8, event_type_len: i32,
     //     filter_ptr: *const u8, filter_len: i32
     // ) -> i64
-    linker.func_wrap(
-        "neomind",
-        "host_event_subscribe",
-        |mut caller: wasmtime::Caller<'_, HostState>,
-         event_type_ptr: i32, event_type_len: i32,
-         _filter_ptr: i32, _filter_len: i32| -> i64 {
-            // Read event type
-            let event_type = match read_string_from_memory(&mut caller, event_type_ptr as usize, event_type_len as usize) {
-                Ok(s) => s,
-                Err(_) => return -1,
-            };
+    linker
+        .func_wrap(
+            "neomind",
+            "host_event_subscribe",
+            |mut caller: wasmtime::Caller<'_, HostState>,
+             event_type_ptr: i32,
+             event_type_len: i32,
+             _filter_ptr: i32,
+             _filter_len: i32|
+             -> i64 {
+                // Read event type
+                let event_type = match read_string_from_memory(
+                    &mut caller,
+                    event_type_ptr as usize,
+                    event_type_len as usize,
+                ) {
+                    Ok(s) => s,
+                    Err(_) => return -1,
+                };
 
-            // Subscribe using global state
-            let sub_id = get_global_event_state().subscribe(event_type);
+                // Subscribe using global state
+                let sub_id = get_global_event_state().subscribe(event_type);
 
-            debug!(subscription_id = sub_id, "Event subscription created");
-            sub_id
-        }
-    ).map_err(|e| format!("Failed to add host_event_subscribe: {}", e))?;
+                debug!(subscription_id = sub_id, "Event subscription created");
+                sub_id
+            },
+        )
+        .map_err(|e| format!("Failed to add host_event_subscribe: {}", e))?;
 
     // host_event_poll(subscription_id: i64, result_ptr: *mut u8, result_max_len: i32) -> i32
-    linker.func_wrap(
-        "neomind",
-        "host_event_poll",
-        |mut caller: wasmtime::Caller<'_, HostState>,
-         subscription_id: i64,
-         result_ptr: i32, result_max_len: i32| -> i32 {
-            // Get events from global state
-            let events = get_global_event_state().take_events(subscription_id);
+    linker
+        .func_wrap(
+            "neomind",
+            "host_event_poll",
+            |mut caller: wasmtime::Caller<'_, HostState>,
+             subscription_id: i64,
+             result_ptr: i32,
+             result_max_len: i32|
+             -> i32 {
+                // Get events from global state
+                let events = get_global_event_state().take_events(subscription_id);
 
-            // Return events as JSON array
-            let result = json!(events);
-            let result_str = match serde_json::to_string(&result) {
-                Ok(s) => s,
-                Err(_) => return -1,
-            };
+                // Return events as JSON array
+                let result = json!(events);
+                let result_str = match serde_json::to_string(&result) {
+                    Ok(s) => s,
+                    Err(_) => return -1,
+                };
 
-            let result_bytes = result_str.as_bytes();
-            let write_len = result_bytes.len().min(result_max_len as usize);
+                let result_bytes = result_str.as_bytes();
+                let write_len = result_bytes.len().min(result_max_len as usize);
 
-            match write_bytes_to_memory(&mut caller, result_ptr as usize, &result_bytes[..write_len]) {
-                Ok(_) => write_len as i32,
-                Err(_) => -1,
-            }
-        }
-    ).map_err(|e| format!("Failed to add host_event_poll: {}", e))?;
+                match write_bytes_to_memory(
+                    &mut caller,
+                    result_ptr as usize,
+                    &result_bytes[..write_len],
+                ) {
+                    Ok(_) => write_len as i32,
+                    Err(_) => -1,
+                }
+            },
+        )
+        .map_err(|e| format!("Failed to add host_event_poll: {}", e))?;
 
     // host_event_unsubscribe(subscription_id: i64) -> i32
-    linker.func_wrap(
-        "neomind",
-        "host_event_unsubscribe",
-        |_caller: wasmtime::Caller<'_, HostState>, subscription_id: i64| -> i32 {
-            if get_global_event_state().unsubscribe(subscription_id) {
-                debug!(subscription_id, "Event subscription removed");
-                0
-            } else {
-                -1
-            }
-        }
-    ).map_err(|e| format!("Failed to add host_event_unsubscribe: {}", e))?;
+    linker
+        .func_wrap(
+            "neomind",
+            "host_event_unsubscribe",
+            |_caller: wasmtime::Caller<'_, HostState>, subscription_id: i64| -> i32 {
+                if get_global_event_state().unsubscribe(subscription_id) {
+                    debug!(subscription_id, "Event subscription removed");
+                    0
+                } else {
+                    -1
+                }
+            },
+        )
+        .map_err(|e| format!("Failed to add host_event_unsubscribe: {}", e))?;
 
     // host_free(ptr: *const u8)
-    linker.func_wrap(
-        "neomind",
-        "host_free",
-        |_caller: wasmtime::Caller<'_, HostState>, _ptr: i32| {
-            // No-op for now (memory management is handled by WASM linear memory)
-        }
-    ).map_err(|e| format!("Failed to add host_free: {}", e))?;
+    linker
+        .func_wrap(
+            "neomind",
+            "host_free",
+            |_caller: wasmtime::Caller<'_, HostState>, _ptr: i32| {
+                // No-op for now (memory management is handled by WASM linear memory)
+            },
+        )
+        .map_err(|e| format!("Failed to add host_free: {}", e))?;
 
     // host_log(level_ptr: *const u8, level_len: i32, msg_ptr: *const u8, msg_len: i32)
-    linker.func_wrap(
-        "neomind",
-        "host_log",
-        |mut caller: wasmtime::Caller<'_, HostState>,
-         level_ptr: i32, level_len: i32,
-         msg_ptr: i32, msg_len: i32| {
-            let level = read_string_from_memory(&mut caller, level_ptr as usize, level_len as usize)
-                .unwrap_or_else(|_| "info".to_string());
-            let msg = read_string_from_memory(&mut caller, msg_ptr as usize, msg_len as usize)
-                .unwrap_or_else(|_| "".to_string());
+    linker
+        .func_wrap(
+            "neomind",
+            "host_log",
+            |mut caller: wasmtime::Caller<'_, HostState>,
+             level_ptr: i32,
+             level_len: i32,
+             msg_ptr: i32,
+             msg_len: i32| {
+                let level =
+                    read_string_from_memory(&mut caller, level_ptr as usize, level_len as usize)
+                        .unwrap_or_else(|_| "info".to_string());
+                let msg = read_string_from_memory(&mut caller, msg_ptr as usize, msg_len as usize)
+                    .unwrap_or_else(|_| "".to_string());
 
-            match level.as_str() {
-                "error" => error!("{}", msg),
-                "warn" => tracing::warn!("{}", msg),
-                "debug" => debug!("{}", msg),
-                _ => info!("{}", msg),
-            }
-        }
-    ).map_err(|e| format!("Failed to add host_log: {}", e))?;
+                match level.as_str() {
+                    "error" => error!("{}", msg),
+                    "warn" => tracing::warn!("{}", msg),
+                    "debug" => debug!("{}", msg),
+                    _ => info!("{}", msg),
+                }
+            },
+        )
+        .map_err(|e| format!("Failed to add host_log: {}", e))?;
 
     // host_timestamp_ms() -> i64
-    linker.func_wrap(
-        "neomind",
-        "host_timestamp_ms",
-        |_caller: wasmtime::Caller<'_, HostState>| -> i64 {
-            use std::time::{SystemTime, UNIX_EPOCH};
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as i64
-        }
-    ).map_err(|e| format!("Failed to add host_timestamp_ms: {}", e))?;
+    linker
+        .func_wrap(
+            "neomind",
+            "host_timestamp_ms",
+            |_caller: wasmtime::Caller<'_, HostState>| -> i64 {
+                use std::time::{SystemTime, UNIX_EPOCH};
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64
+            },
+        )
+        .map_err(|e| format!("Failed to add host_timestamp_ms: {}", e))?;
 
     Ok(())
 }
@@ -1607,7 +1782,8 @@ fn read_string_from_memory(
 ) -> Result<String, String> {
     let memory = caller.data().memory.ok_or("Memory not set")?;
     let mut buffer = vec![0u8; len];
-    memory.read(caller.as_context(), offset, &mut buffer)
+    memory
+        .read(caller.as_context(), offset, &mut buffer)
         .map_err(|e| format!("Failed to read memory: {}", e))?;
     String::from_utf8(buffer).map_err(|e| format!("Invalid UTF-8: {}", e))
 }
@@ -1619,7 +1795,8 @@ fn write_bytes_to_memory(
     data: &[u8],
 ) -> Result<(), String> {
     let memory = caller.data().memory.ok_or("Memory not set")?;
-    memory.write(caller.as_context_mut(), offset, data)
+    memory
+        .write(caller.as_context_mut(), offset, data)
         .map_err(|e| format!("Failed to write memory: {}", e))
 }
 
@@ -1635,7 +1812,10 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
     match capability {
         // Device capabilities
         cap::DEVICE_METRICS_READ => {
-            let device_id = params.get("device_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let device_id = params
+                .get("device_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             json!({
                 "success": true,
                 "device_id": device_id,
@@ -1648,8 +1828,14 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
             })
         }
         cap::DEVICE_METRICS_WRITE => {
-            let device_id = params.get("device_id").and_then(|v| v.as_str()).unwrap_or("unknown");
-            let metric = params.get("metric").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let device_id = params
+                .get("device_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let metric = params
+                .get("metric")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             json!({
                 "success": true,
                 "device_id": device_id,
@@ -1658,8 +1844,14 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
             })
         }
         cap::DEVICE_CONTROL => {
-            let device_id = params.get("device_id").and_then(|v| v.as_str()).unwrap_or("unknown");
-            let command = params.get("command").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let device_id = params
+                .get("device_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let command = params
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             json!({
                 "success": true,
                 "device_id": device_id,
@@ -1670,7 +1862,10 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
 
         // Telemetry capabilities
         cap::TELEMETRY_HISTORY => {
-            let device_id = params.get("device_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let device_id = params
+                .get("device_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             json!({
                 "success": true,
                 "device_id": device_id,
@@ -1682,7 +1877,10 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
             })
         }
         cap::METRICS_AGGREGATE => {
-            let aggregation = params.get("aggregation").and_then(|v| v.as_str()).unwrap_or("avg");
+            let aggregation = params
+                .get("aggregation")
+                .and_then(|v| v.as_str())
+                .unwrap_or("avg");
             json!({
                 "success": true,
                 "aggregation": aggregation,
@@ -1699,7 +1897,10 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
 
         // Event capabilities
         cap::EVENT_PUBLISH => {
-            let event_type = params.get("event_type").and_then(|v| v.as_str()).unwrap_or("custom");
+            let event_type = params
+                .get("event_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("custom");
             json!({
                 "success": true,
                 "event_type": event_type,
@@ -1707,7 +1908,10 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
             })
         }
         cap::EVENT_SUBSCRIBE => {
-            let event_type = params.get("event_type").and_then(|v| v.as_str()).unwrap_or("all");
+            let event_type = params
+                .get("event_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("all");
             let subscription_id = uuid::Uuid::new_v4().to_string();
             json!({
                 "success": true,
@@ -1718,8 +1922,14 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
 
         // Extension capabilities
         cap::EXTENSION_CALL => {
-            let extension_id = params.get("extension_id").and_then(|v| v.as_str()).unwrap_or("unknown");
-            let command = params.get("command").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let extension_id = params
+                .get("extension_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let command = params
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             json!({
                 "success": true,
                 "extension_id": extension_id,
@@ -1730,7 +1940,10 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
 
         // Agent capabilities
         cap::AGENT_TRIGGER => {
-            let agent_id = params.get("agent_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let agent_id = params
+                .get("agent_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             // Check for action commands
             if let Some(action) = params.get("action").and_then(|v| v.as_str()) {
                 match action {
@@ -1761,7 +1974,10 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
 
         // Rule capabilities
         cap::RULE_TRIGGER => {
-            let rule_id = params.get("rule_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let rule_id = params
+                .get("rule_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             // Check for action commands
             if let Some(action) = params.get("action").and_then(|v| v.as_str()) {
                 match action {
@@ -1798,7 +2014,7 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
         _ => json!({
             "success": false,
             "error": format!("Unknown capability: {}", capability),
-        })
+        }),
     }
 }
 
@@ -1827,7 +2043,10 @@ impl Runner {
             }
         };
 
-        eprintln!("[Extension Runner] Extension loaded, commands_count={}", descriptor.commands.len());
+        eprintln!(
+            "[Extension Runner] Extension loaded, commands_count={}",
+            descriptor.commands.len()
+        );
 
         debug!(
             extension_id = %descriptor.metadata.id,
@@ -1897,8 +2116,12 @@ impl Runner {
 
         match load_result {
             Ok(Ok((bridge, descriptor))) => {
-                info!("Descriptor created: id='{}', commands={}, metrics={}",
-                    descriptor.metadata.id, descriptor.commands.len(), descriptor.metrics.len());
+                info!(
+                    "Descriptor created: id='{}', commands={}, metrics={}",
+                    descriptor.metadata.id,
+                    descriptor.commands.len(),
+                    descriptor.metrics.len()
+                );
                 Ok((bridge, descriptor))
             }
             Ok(Err(e)) => {
@@ -1929,14 +2152,16 @@ impl Runner {
     }
 
     /// Load a WASM extension with full descriptor support
-    async fn load_wasm(extension_path: &PathBuf) -> Result<(WasmRuntime, ExtensionDescriptor), String> {
+    async fn load_wasm(
+        extension_path: &PathBuf,
+    ) -> Result<(WasmRuntime, ExtensionDescriptor), String> {
         // First, create the runtime
         let module_name = extension_path
             .file_stem()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
-        
+
         let runtime = WasmRuntime::new(extension_path, module_name)?;
 
         // Try to get descriptor from WASM module itself
@@ -1954,7 +2179,7 @@ impl Runner {
             }
             Err(e) => {
                 debug!(error = %e, "Failed to get descriptor from WASM, trying sidecar files");
-                
+
                 // Fallback to sidecar JSON files
                 let metadata = Self::load_wasm_metadata(extension_path)?;
                 let descriptor = ExtensionDescriptor::new(metadata);
@@ -1996,8 +2221,8 @@ impl Runner {
     }
 
     fn parse_metadata_json(path: &PathBuf) -> Result<ExtensionMetadata, String> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read JSON: {}", e))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read JSON: {}", e))?;
 
         #[derive(serde::Deserialize)]
         struct MetaJson {
@@ -2010,16 +2235,13 @@ impl Runner {
             author: Option<String>,
         }
 
-        let json: MetaJson = serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+        let json: MetaJson =
+            serde_json::from_str(&content).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-        let version = semver::Version::parse(&json.version).unwrap_or(semver::Version::new(1, 0, 0));
+        let version =
+            semver::Version::parse(&json.version).unwrap_or(semver::Version::new(1, 0, 0));
 
-        let mut meta = ExtensionMetadata::new(
-            json.id,
-            json.name,
-            version.to_string(),
-        );
+        let mut meta = ExtensionMetadata::new(json.id, json.name, version.to_string());
         meta.description = json.description;
         meta.author = json.author;
 
@@ -2065,7 +2287,10 @@ impl Runner {
             // Poll event queue with a small timeout
             match pop_event() {
                 Some(message) => {
-                    debug!("Received IPC message from queue: {:?}", std::mem::discriminant(&message));
+                    debug!(
+                        "Received IPC message from queue: {:?}",
+                        std::mem::discriminant(&message)
+                    );
                     self.handle_message(message).await;
                 }
                 None => {
@@ -2153,46 +2378,59 @@ impl Runner {
                                     } else {
                                         let mut payload = vec![0u8; len];
                                         match stdin.read_exact(&mut payload) {
-                                            Ok(_) => {
-                                                match IpcResponse::from_bytes(&payload) {
-                                                    Ok(IpcResponse::CapabilityResult { request_id: resp_id, result, error }) => {
-                                                        if resp_id != request.request_id {
-                                                            warn!(
-                                                                expected = request.request_id,
-                                                                got = resp_id,
-                                                                "Request ID mismatch"
-                                                            );
-                                                        }
-                                                        SyncIpcResponse {
-                                                            request_id: request.request_id,
-                                                            result,
-                                                            error,
-                                                        }
+                                            Ok(_) => match IpcResponse::from_bytes(&payload) {
+                                                Ok(IpcResponse::CapabilityResult {
+                                                    request_id: resp_id,
+                                                    result,
+                                                    error,
+                                                }) => {
+                                                    if resp_id != request.request_id {
+                                                        warn!(
+                                                            expected = request.request_id,
+                                                            got = resp_id,
+                                                            "Request ID mismatch"
+                                                        );
                                                     }
-                                                    Ok(other) => {
-                                                        error!("Unexpected response type: {:?}", std::mem::discriminant(&other));
-                                                        SyncIpcResponse {
-                                                            request_id: request.request_id,
-                                                            result: json!({}),
-                                                            error: Some("Unexpected response type".to_string()),
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        error!(error = %e, "Failed to parse response");
-                                                        SyncIpcResponse {
-                                                            request_id: request.request_id,
-                                                            result: json!({}),
-                                                            error: Some(format!("Failed to parse response: {}", e)),
-                                                        }
+                                                    SyncIpcResponse {
+                                                        request_id: request.request_id,
+                                                        result,
+                                                        error,
                                                     }
                                                 }
-                                            }
+                                                Ok(other) => {
+                                                    error!(
+                                                        "Unexpected response type: {:?}",
+                                                        std::mem::discriminant(&other)
+                                                    );
+                                                    SyncIpcResponse {
+                                                        request_id: request.request_id,
+                                                        result: json!({}),
+                                                        error: Some(
+                                                            "Unexpected response type".to_string(),
+                                                        ),
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    error!(error = %e, "Failed to parse response");
+                                                    SyncIpcResponse {
+                                                        request_id: request.request_id,
+                                                        result: json!({}),
+                                                        error: Some(format!(
+                                                            "Failed to parse response: {}",
+                                                            e
+                                                        )),
+                                                    }
+                                                }
+                                            },
                                             Err(e) => {
                                                 error!(error = %e, "Failed to read response payload");
                                                 SyncIpcResponse {
                                                     request_id: request.request_id,
                                                     result: json!({}),
-                                                    error: Some(format!("Failed to read response: {}", e)),
+                                                    error: Some(format!(
+                                                        "Failed to read response: {}",
+                                                        e
+                                                    )),
                                                 }
                                             }
                                         }
@@ -2203,7 +2441,10 @@ impl Runner {
                                     SyncIpcResponse {
                                         request_id: request.request_id,
                                         result: json!({}),
-                                        error: Some(format!("Failed to read response length: {}", e)),
+                                        error: Some(format!(
+                                            "Failed to read response length: {}",
+                                            e
+                                        )),
                                     }
                                 }
                             }
@@ -2270,9 +2511,13 @@ impl Runner {
 
     /// Send a capability request to the host and wait for response
     /// This is used for bidirectional IPC communication
-    fn invoke_host_capability(&mut self, capability: &str, params: &serde_json::Value) -> serde_json::Value {
+    fn invoke_host_capability(
+        &mut self,
+        capability: &str,
+        params: &serde_json::Value,
+    ) -> serde_json::Value {
         use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-        
+
         static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
         let request_id = REQUEST_ID_COUNTER.fetch_add(1, AtomicOrdering::SeqCst);
 
@@ -2349,7 +2594,11 @@ impl Runner {
         };
 
         match response {
-            IpcResponse::CapabilityResult { request_id: resp_id, result, error } => {
+            IpcResponse::CapabilityResult {
+                request_id: resp_id,
+                result,
+                error,
+            } => {
                 if resp_id != request_id {
                     warn!(
                         expected = request_id,
@@ -2403,7 +2652,10 @@ impl Runner {
                 // Try to serialize descriptor to verify it's valid
                 match serde_json::to_string(&self.descriptor) {
                     Ok(json_str) => {
-                        debug!(json_len = json_str.len(), "Descriptor serialized successfully");
+                        debug!(
+                            json_len = json_str.len(),
+                            "Descriptor serialized successfully"
+                        );
                     }
                     Err(e) => {
                         error!(error = %e, "Failed to serialize descriptor");
@@ -2417,7 +2669,11 @@ impl Runner {
                 debug!("Ready response sent to host");
             }
 
-            IpcMessage::ExecuteCommand { command, args, request_id } => {
+            IpcMessage::ExecuteCommand {
+                command,
+                args,
+                request_id,
+            } => {
                 self.handle_execute_command(command, args, request_id).await;
             }
 
@@ -2468,11 +2724,20 @@ impl Runner {
                 self.handle_get_stream_capability(request_id).await;
             }
 
-            IpcMessage::InitStreamSession { session_id, extension_id: _, config, client_info: _ } => {
+            IpcMessage::InitStreamSession {
+                session_id,
+                extension_id: _,
+                config,
+                client_info: _,
+            } => {
                 self.handle_init_stream_session(session_id, config).await;
             }
 
-            IpcMessage::ProcessStreamChunk { request_id, session_id, chunk } => {
+            IpcMessage::ProcessStreamChunk {
+                request_id,
+                session_id,
+                chunk,
+            } => {
                 self.handle_process_stream_chunk(request_id, session_id, chunk);
             }
 
@@ -2486,25 +2751,42 @@ impl Runner {
             }
 
             // Push mode support
-            IpcMessage::StartPush { request_id, session_id } => {
+            IpcMessage::StartPush {
+                request_id,
+                session_id,
+            } => {
                 self.handle_start_push(request_id, session_id);
             }
 
-            IpcMessage::StopPush { request_id, session_id } => {
+            IpcMessage::StopPush {
+                request_id,
+                session_id,
+            } => {
                 self.handle_stop_push(request_id, session_id);
             }
 
             // Batch command support
-            IpcMessage::ExecuteBatch { commands, request_id } => {
+            IpcMessage::ExecuteBatch {
+                commands,
+                request_id,
+            } => {
                 self.handle_execute_batch(commands, request_id).await;
             }
 
             // Capability invocation support (for WASM extensions)
-            IpcMessage::InvokeCapability { request_id, capability, params } => {
+            IpcMessage::InvokeCapability {
+                request_id,
+                capability,
+                params,
+            } => {
                 self.handle_invoke_capability(request_id, capability, params);
             }
 
-            IpcMessage::SubscribeEvents { request_id, event_types: _, filter: _ } => {
+            IpcMessage::SubscribeEvents {
+                request_id,
+                event_types: _,
+                filter: _,
+            } => {
                 // Generate subscription ID
                 let subscription_id = uuid::Uuid::new_v4().to_string();
                 self.send_response(IpcResponse::EventSubscriptionResult {
@@ -2514,7 +2796,10 @@ impl Runner {
                 });
             }
 
-            IpcMessage::UnsubscribeEvents { request_id, subscription_id: _ } => {
+            IpcMessage::UnsubscribeEvents {
+                request_id,
+                subscription_id: _,
+            } => {
                 self.send_response(IpcResponse::EventSubscriptionResult {
                     request_id,
                     subscription_id: None,
@@ -2522,7 +2807,10 @@ impl Runner {
                 });
             }
 
-            IpcMessage::PollEvents { request_id, subscription_id: _ } => {
+            IpcMessage::PollEvents {
+                request_id,
+                subscription_id: _,
+            } => {
                 // Return empty events for now
                 self.send_response(IpcResponse::EventPollResult {
                     request_id,
@@ -2530,7 +2818,11 @@ impl Runner {
                 });
             }
 
-            IpcMessage::EventPush { event_type, payload, timestamp: _ } => {
+            IpcMessage::EventPush {
+                event_type,
+                payload,
+                timestamp: _,
+            } => {
                 // Handle event push from host
                 debug!(
                     event_type = %event_type,
@@ -2556,7 +2848,10 @@ impl Runner {
                     }
                 } else {
                     // Call the SDK's event handler for native extensions (fallback)
-                    neomind_extension_sdk::capabilities::event::call_event_handler(&event_type, &payload);
+                    neomind_extension_sdk::capabilities::event::call_event_handler(
+                        &event_type,
+                        &payload,
+                    );
                 }
 
                 // For WASM extensions, push events to global subscription queues
@@ -2565,7 +2860,11 @@ impl Runner {
                 }
             }
 
-            IpcMessage::CapabilityResult { request_id, result, error } => {
+            IpcMessage::CapabilityResult {
+                request_id,
+                result,
+                error,
+            } => {
                 // Handle capability result from host (response to our CapabilityRequest)
                 debug!(
                     request_id,
@@ -2584,16 +2883,17 @@ impl Runner {
         }
     }
 
-    async fn handle_execute_command(&mut self, command: String, args: serde_json::Value, request_id: u64) {
+    async fn handle_execute_command(
+        &mut self,
+        command: String,
+        args: serde_json::Value,
+        request_id: u64,
+    ) {
         debug!(command = %command, request_id, "Executing command");
 
         let result = match self.extension_type {
-            ExtensionType::Native => {
-                self.execute_native_command(&command, &args).await
-            }
-            ExtensionType::Wasm => {
-                self.execute_wasm_command(&command, &args)
-            }
+            ExtensionType::Native => self.execute_native_command(&command, &args).await,
+            ExtensionType::Wasm => self.execute_wasm_command(&command, &args),
         };
 
         match result {
@@ -2616,7 +2916,10 @@ impl Runner {
     async fn handle_init(&mut self, config: serde_json::Value) -> Result<(), String> {
         match self.extension_type {
             ExtensionType::Native => {
-                let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
+                let ext = self
+                    .extension
+                    .as_ref()
+                    .ok_or("No native extension loaded")?;
                 ext.configure(&config)
             }
             ExtensionType::Wasm => Ok(()),
@@ -2624,21 +2927,21 @@ impl Runner {
     }
 
     async fn handle_execute_batch(&mut self, commands: Vec<BatchCommand>, request_id: u64) {
-        debug!(request_id, command_count = commands.len(), "Executing batch command");
+        debug!(
+            request_id,
+            command_count = commands.len(),
+            "Executing batch command"
+        );
 
         let start = std::time::Instant::now();
         let mut results = Vec::new();
 
         for cmd in &commands {
             let cmd_start = std::time::Instant::now();
-            
+
             let result = match self.extension_type {
-                ExtensionType::Native => {
-                    self.execute_native_command(&cmd.command, &cmd.args).await
-                }
-                ExtensionType::Wasm => {
-                    self.execute_wasm_command(&cmd.command, &cmd.args)
-                }
+                ExtensionType::Native => self.execute_native_command(&cmd.command, &cmd.args).await,
+                ExtensionType::Wasm => self.execute_wasm_command(&cmd.command, &cmd.args),
             };
 
             results.push(BatchResult {
@@ -2657,12 +2960,23 @@ impl Runner {
         });
     }
 
-    async fn execute_native_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
-        let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
+    async fn execute_native_command(
+        &self,
+        command: &str,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let ext = self
+            .extension
+            .as_ref()
+            .ok_or("No native extension loaded")?;
         ext.execute_command(command, args)
     }
 
-    fn execute_wasm_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
+    fn execute_wasm_command(
+        &self,
+        command: &str,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
         let runtime = self.wasm_runtime.as_ref().ok_or("No WASM runtime loaded")?;
 
         let ipc_client = self.ipc_client.clone();
@@ -2674,10 +2988,15 @@ impl Runner {
                 match runtime.execute_command(command, args, ipc_client).await {
                     Ok(result) => {
                         // Extract the actual result from the response
-                        if result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        if result
+                            .get("success")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                        {
                             Ok(result.get("result").cloned().unwrap_or(result))
                         } else {
-                            Err(result.get("error")
+                            Err(result
+                                .get("error")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("Unknown error")
                                 .to_string())
@@ -2696,12 +3015,8 @@ impl Runner {
         debug!(request_id, "Producing metrics");
 
         let result = match self.extension_type {
-            ExtensionType::Native => {
-                self.produce_native_metrics().await
-            }
-            ExtensionType::Wasm => {
-                self.produce_wasm_metrics()
-            }
+            ExtensionType::Native => self.produce_native_metrics().await,
+            ExtensionType::Wasm => self.produce_wasm_metrics(),
         };
 
         match result {
@@ -2722,7 +3037,10 @@ impl Runner {
     }
 
     async fn produce_native_metrics(&self) -> Result<Vec<ExtensionMetricValue>, String> {
-        let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
+        let ext = self
+            .extension
+            .as_ref()
+            .ok_or("No native extension loaded")?;
         ext.produce_metrics()
     }
 
@@ -2735,12 +3053,8 @@ impl Runner {
         debug!(request_id, "Health check");
 
         let healthy = match self.extension_type {
-            ExtensionType::Native => {
-                self.native_health_check()
-            }
-            ExtensionType::Wasm => {
-                self.wasm_health_check()
-            }
+            ExtensionType::Native => self.native_health_check(),
+            ExtensionType::Wasm => self.wasm_health_check(),
         };
 
         self.send_response(IpcResponse::Health {
@@ -2749,7 +3063,12 @@ impl Runner {
         });
     }
 
-    fn handle_invoke_capability(&mut self, request_id: u64, capability: String, params: serde_json::Value) {
+    fn handle_invoke_capability(
+        &mut self,
+        request_id: u64,
+        capability: String,
+        params: serde_json::Value,
+    ) {
         debug!(request_id, capability = %capability, "Invoking capability");
 
         // Forward the capability request to the host via bidirectional IPC
@@ -2757,7 +3076,8 @@ impl Runner {
         let result = self.invoke_host_capability(&capability, &params);
 
         // Extract error from result if present
-        let (result_value, error) = if let Some(err) = result.get("error").and_then(|e| e.as_str()) {
+        let (result_value, error) = if let Some(err) = result.get("error").and_then(|e| e.as_str())
+        {
             (serde_json::json!({}), Some(err.to_string()))
         } else {
             (result, None)
@@ -2789,9 +3109,7 @@ impl Runner {
             Err(_) => return false,
         };
         tokio::task::block_in_place(|| {
-            runtime_handle.block_on(async {
-                runtime.health_check().await
-            })
+            runtime_handle.block_on(async { runtime.health_check().await })
         })
     }
 
@@ -2803,9 +3121,7 @@ impl Runner {
         debug!(request_id, "Getting extension statistics");
 
         let stats = match self.extension_type {
-            ExtensionType::Native => {
-                self.get_native_stats()
-            }
+            ExtensionType::Native => self.get_native_stats(),
             ExtensionType::Wasm => {
                 // WASM extensions don't support stats yet
                 // Return default stats
@@ -2813,8 +3129,14 @@ impl Runner {
             }
         };
 
-        debug!(request_id, start_count = stats.start_count, stop_count = stats.stop_count, error_count = stats.error_count, "Sending Stats response");
-        
+        debug!(
+            request_id,
+            start_count = stats.start_count,
+            stop_count = stats.stop_count,
+            error_count = stats.error_count,
+            "Sending Stats response"
+        );
+
         self.send_response(IpcResponse::Stats {
             request_id,
             start_count: stats.start_count,
@@ -2822,7 +3144,7 @@ impl Runner {
             error_count: stats.error_count,
             last_error: stats.last_error,
         });
-        
+
         debug!(request_id, "Stats response sent");
     }
 
@@ -2836,7 +3158,12 @@ impl Runner {
             }
         };
         let stats = ext.get_stats();
-        debug!(start_count = stats.start_count, stop_count = stats.stop_count, error_count = stats.error_count, "Got extension stats");
+        debug!(
+            start_count = stats.start_count,
+            stop_count = stats.stop_count,
+            error_count = stats.error_count,
+            "Got extension stats"
+        );
         stats
     }
 
@@ -2848,11 +3175,9 @@ impl Runner {
         debug!(request_id, "Getting stream capability");
 
         let capability = match self.extension_type {
-            ExtensionType::Native => {
-                self.get_native_stream_capability().await
-            }
+            ExtensionType::Native => self.get_native_stream_capability().await,
             ExtensionType::Wasm => {
-                Ok(None)  // WASM doesn't support streaming yet
+                Ok(None) // WASM doesn't support streaming yet
             }
         };
 
@@ -2874,7 +3199,10 @@ impl Runner {
     }
 
     async fn get_native_stream_capability(&self) -> Result<Option<StreamCapability>, String> {
-        let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
+        let ext = self
+            .extension
+            .as_ref()
+            .ok_or("No native extension loaded")?;
         ext.get_stream_capability()
     }
 
@@ -2882,12 +3210,8 @@ impl Runner {
         debug!(session_id = %session_id, "Initializing stream session");
 
         let result = match self.extension_type {
-            ExtensionType::Native => {
-                self.init_native_stream_session(&session_id, config).await
-            }
-            ExtensionType::Wasm => {
-                Err("WASM streaming not supported".to_string())
-            }
+            ExtensionType::Native => self.init_native_stream_session(&session_id, config).await,
+            ExtensionType::Wasm => Err("WASM streaming not supported".to_string()),
         };
 
         match result {
@@ -2907,20 +3231,28 @@ impl Runner {
             }
         }
     }
-    async fn init_native_stream_session(&self, session_id: &str, config: serde_json::Value) -> Result<(), String> {
-        let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
+    async fn init_native_stream_session(
+        &self,
+        session_id: &str,
+        config: serde_json::Value,
+    ) -> Result<(), String> {
+        let ext = self
+            .extension
+            .as_ref()
+            .ok_or("No native extension loaded")?;
         ext.init_session(session_id, config)
     }
-    fn handle_process_stream_chunk(&mut self, request_id: u64, session_id: String, chunk: StreamDataChunk) {
+    fn handle_process_stream_chunk(
+        &mut self,
+        request_id: u64,
+        session_id: String,
+        chunk: StreamDataChunk,
+    ) {
         debug!(session_id = %session_id, sequence = chunk.sequence, request_id, "Processing stream chunk");
 
         let result = match self.extension_type {
-            ExtensionType::Native => {
-                self.process_native_stream_chunk(&session_id, chunk)
-            }
-            ExtensionType::Wasm => {
-                Err("WASM streaming not supported".to_string())
-            }
+            ExtensionType::Native => self.process_native_stream_chunk(&session_id, chunk),
+            ExtensionType::Wasm => Err("WASM streaming not supported".to_string()),
         };
 
         match result {
@@ -2950,7 +3282,10 @@ impl Runner {
         session_id: &str,
         chunk: StreamDataChunk,
     ) -> Result<StreamResult, String> {
-        let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
+        let ext = self
+            .extension
+            .as_ref()
+            .ok_or("No native extension loaded")?;
         ext.process_session_chunk(session_id, chunk)
     }
 
@@ -2958,12 +3293,8 @@ impl Runner {
         debug!(session_id = %session_id, "Closing stream session");
 
         let result = match self.extension_type {
-            ExtensionType::Native => {
-                self.close_native_stream_session(&session_id)
-            }
-            ExtensionType::Wasm => {
-                Ok(SessionStats::default())
-            }
+            ExtensionType::Native => self.close_native_stream_session(&session_id),
+            ExtensionType::Wasm => Ok(SessionStats::default()),
         };
 
         match result {
@@ -2971,7 +3302,7 @@ impl Runner {
                 self.send_response(IpcResponse::StreamSessionClosed {
                     session_id,
                     total_frames: stats.input_chunks,
-                    duration_ms: 0,  // We don't track this in runner
+                    duration_ms: 0, // We don't track this in runner
                 });
             }
             Err(e) => {
@@ -2985,7 +3316,10 @@ impl Runner {
     }
 
     fn close_native_stream_session(&self, session_id: &str) -> Result<SessionStats, String> {
-        let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
+        let ext = self
+            .extension
+            .as_ref()
+            .ok_or("No native extension loaded")?;
         ext.close_session(session_id)
     }
 
@@ -2993,11 +3327,7 @@ impl Runner {
     // Stateless Mode Support
     // =========================================================================
 
-    fn handle_process_chunk(
-        &mut self,
-        request_id: u64,
-        chunk: StreamDataChunk,
-    ) {
+    fn handle_process_chunk(&mut self, request_id: u64, chunk: StreamDataChunk) {
         debug!(
             request_id,
             sequence = chunk.sequence,
@@ -3005,9 +3335,7 @@ impl Runner {
         );
 
         let result = match self.extension_type {
-            ExtensionType::Native => {
-                self.process_native_chunk(chunk)
-            }
+            ExtensionType::Native => self.process_native_chunk(chunk),
             ExtensionType::Wasm => {
                 Err("Stateless chunk processing not supported for WASM".to_string())
             }
@@ -3035,11 +3363,11 @@ impl Runner {
         }
     }
 
-    fn process_native_chunk(
-        &self,
-        chunk: StreamDataChunk,
-    ) -> Result<StreamResult, String> {
-        let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
+    fn process_native_chunk(&self, chunk: StreamDataChunk) -> Result<StreamResult, String> {
+        let ext = self
+            .extension
+            .as_ref()
+            .ok_or("No native extension loaded")?;
         ext.process_chunk(chunk)
     }
 
@@ -3055,12 +3383,8 @@ impl Runner {
         );
 
         let result = match self.extension_type {
-            ExtensionType::Native => {
-                self.start_native_push(&session_id)
-            }
-            ExtensionType::Wasm => {
-                Err("Push mode not supported for WASM".to_string())
-            }
+            ExtensionType::Native => self.start_native_push(&session_id),
+            ExtensionType::Wasm => Err("Push mode not supported for WASM".to_string()),
         };
 
         match result {
@@ -3084,7 +3408,10 @@ impl Runner {
     }
 
     fn start_native_push(&self, session_id: &str) -> Result<(), String> {
-        let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
+        let ext = self
+            .extension
+            .as_ref()
+            .ok_or("No native extension loaded")?;
         ext.start_push(session_id)
     }
 
@@ -3096,9 +3423,7 @@ impl Runner {
         );
 
         let result = match self.extension_type {
-            ExtensionType::Native => {
-                self.stop_native_push(&session_id)
-            }
+            ExtensionType::Native => self.stop_native_push(&session_id),
             ExtensionType::Wasm => {
                 Ok(()) // WASM doesn't support push, just return success
             }
@@ -3129,7 +3454,10 @@ impl Runner {
     }
 
     fn stop_native_push(&self, session_id: &str) -> Result<(), String> {
-        let ext = self.extension.as_ref().ok_or("No native extension loaded")?;
+        let ext = self
+            .extension
+            .as_ref()
+            .ok_or("No native extension loaded")?;
         ext.stop_push(session_id)
     }
 }
@@ -3139,7 +3467,8 @@ async fn main() {
     // Set up panic hook FIRST to capture any panics during loading
     // This ensures we can report errors to the parent process before dying
     std::panic::set_hook(Box::new(|panic_info| {
-        let location = panic_info.location()
+        let location = panic_info
+            .location()
             .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
             .unwrap_or_else(|| "unknown location".to_string());
 

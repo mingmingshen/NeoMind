@@ -5,12 +5,12 @@
 #![allow(dead_code)]
 
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
+use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::{GenerationParams, LlmInput};
 use neomind_core::{
     message::{Content, Message, MessageRole},
     EventBus, LlmRuntime,
 };
-use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_storage::{
     AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
     DataPoint, LongTermMemory, ResourceType, ScheduleType, ShortTermMemory, TimeSeriesStore,
@@ -50,6 +50,7 @@ impl RealPerfTestContext {
             llm_runtime: Some(llm_runtime.clone()),
             llm_backend_store: None,
             extension_registry: None,
+            tool_registry: None,
         };
         let executor = AgentExecutor::new(executor_config).await?;
 
@@ -148,6 +149,7 @@ impl RealPerfTestContext {
                 short_term: ShortTermMemory::default(),
                 long_term: LongTermMemory::default(),
             },
+            tool_config: None,
             error_message: None,
             priority: 128,
             conversation_history: vec![],
@@ -178,13 +180,9 @@ async fn test_real_llm_performance() -> anyhow::Result<()> {
 
     let ctx = RealPerfTestContext::new().await?;
 
-    println!(
-        "\n============================================================"
-    );
+    println!("\n============================================================");
     println!("真实LLM性能测试 - 每次调用都实际等待LLM响应");
-    println!(
-        "============================================================\n"
-    );
+    println!("============================================================\n");
 
     let system_prompt = "你是一个物联网设备监控助手。分析数据并给出建议。";
 
@@ -283,9 +281,7 @@ async fn test_real_llm_performance() -> anyhow::Result<()> {
     println!("   响应长度: {} 字符", response5.len());
     println!("   响应预览: {}...", &response5[..response5.len().min(100)]);
 
-    println!(
-        "\n============================================================"
-    );
+    println!("\n============================================================");
     println!("真实性能测试完成");
     println!("============================================================");
 
@@ -302,13 +298,9 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
 
     let ctx = RealPerfTestContext::new().await?;
 
-    println!(
-        "\n============================================================"
-    );
+    println!("\n============================================================");
     println!("LLM真实调用 vs 模拟响应 性能对比");
-    println!(
-        "============================================================\n"
-    );
+    println!("============================================================\n");
 
     // 准备测试数据
     ctx.inject_metrics(
@@ -330,6 +322,7 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
         llm_runtime: None, // 没有LLM
         llm_backend_store: None,
         extension_registry: None,
+        tool_registry: None,
     };
 
     let executor = AgentExecutor::new(executor_config).await?;
@@ -375,6 +368,7 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
             short_term: ShortTermMemory::default(),
             long_term: LongTermMemory::default(),
         },
+        tool_config: None,
         error_message: None,
         priority: 128,
         conversation_history: vec![],
@@ -404,7 +398,8 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
     println!("\n📊 场景2: 真实LLM调用分析同样数据");
 
     let llm_input = "传感器数据：温度读数为 [20, 22, 24, 26, 28, 30] 度。
-请分析：1. 趋势如何？2. 是否异常？3. 需要采取什么行动？".to_string();
+请分析：1. 趋势如何？2. 是否异常？3. 需要采取什么行动？"
+        .to_string();
 
     let (llm_response, llm_time) = ctx.llm_analyze("你是设备监控助手。", &llm_input).await;
 
@@ -445,13 +440,9 @@ async fn test_realistic_multi_agent_scenario() -> anyhow::Result<()> {
 
     let ctx = RealPerfTestContext::new().await?;
 
-    println!(
-        "\n============================================================"
-    );
+    println!("\n============================================================");
     println!("真实场景：多Agent协作（每次都调用LLM）");
-    println!(
-        "============================================================\n"
-    );
+    println!("============================================================\n");
 
     // 模拟温室监控场景
     ctx.inject_metrics("greenhouse", "temperature", &[25.0, 26.0, 27.0, 29.0, 31.0])
@@ -520,9 +511,7 @@ async fn test_realistic_multi_agent_scenario() -> anyhow::Result<()> {
     // 总计
     let total_time = monitor_time + executor_time + analyst_time;
 
-    println!(
-        "\n============================================================"
-    );
+    println!("\n============================================================");
     println!("📊 多Agent协作真实耗时:");
     println!("   监控Agent: {}ms", monitor_time);
     println!("   执行Agent: {}ms", executor_time);
@@ -556,20 +545,18 @@ async fn test_parallel_vs_sequential_execution() -> anyhow::Result<()> {
 
     let ctx = RealPerfTestContext::new().await?;
 
-    println!(
-        "\n============================================================"
-    );
+    println!("\n============================================================");
     println!("并行 vs 顺序 LLM调用 性能对比测试");
-    println!(
-        "============================================================\n"
-    );
+    println!("============================================================\n");
 
     let system_prompt = "你是一个物联网设备监控助手。";
 
     // 定义3个不同的查询任务
-    let queries = ["当前温度为28度，湿度为60%，请简要分析这个环境状态。",
+    let queries = [
+        "当前温度为28度，湿度为60%，请简要分析这个环境状态。",
         "办公室A温度26°C湿度55%，办公室B温度29°C湿度65%，请分析差异。",
-        "电机振动7.5mm/s温度82°C运行8小时，请诊断设备状态。"];
+        "电机振动7.5mm/s温度82°C运行8小时，请诊断设备状态。",
+    ];
 
     // 测试1: 顺序LLM调用
     println!("📊 测试1: 顺序调用LLM 3次");
@@ -654,9 +641,7 @@ async fn test_parallel_vs_sequential_execution() -> anyhow::Result<()> {
     println!("   并行调用总时间: {}ms", parallel_time);
 
     // 对比
-    println!(
-        "\n============================================================"
-    );
+    println!("\n============================================================");
     println!("📊 性能对比:");
     println!("   ┌──────────────┬──────────┬──────────────┐");
     println!("   │ 方式         │ 耗时     │ 说明         │");

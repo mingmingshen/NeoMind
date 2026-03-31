@@ -71,9 +71,8 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
         use crate::server::extension_metrics::ExtensionMetricsCollector;
         use std::time::Duration;
 
-        let collector =
-            ExtensionMetricsCollector::new(runtime, metrics_storage)
-                .with_interval(Duration::from_secs(60));
+        let collector = ExtensionMetricsCollector::new(runtime, metrics_storage)
+            .with_interval(Duration::from_secs(60));
 
         collector.run().await;
     });

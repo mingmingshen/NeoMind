@@ -4,9 +4,9 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
-use tempfile::TempDir;
 use std::fs::File;
 use std::io::Write;
+use tempfile::TempDir;
 
 /// Test that plugin command requires a subcommand.
 #[test]
@@ -15,17 +15,14 @@ fn test_plugin_requires_subcommand() {
     cmd.arg("plugin");
 
     // Clap displays usage on stdout with exit code 2
-    cmd.assert()
-        .failure()
-        .code(2);
+    cmd.assert().failure().code(2);
 }
 
 /// Test plugin validate requires path argument.
 #[test]
 fn test_plugin_validate_requires_path() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("plugin")
-        .arg("validate");
+    cmd.arg("plugin").arg("validate");
 
     cmd.assert()
         .failure()
@@ -84,9 +81,7 @@ fn test_plugin_create_invalid_type() {
 #[test]
 fn test_plugin_create_help() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("plugin")
-        .arg("create")
-        .arg("--help");
+    cmd.arg("plugin").arg("create").arg("--help");
 
     cmd.assert()
         .success()
@@ -98,8 +93,7 @@ fn test_plugin_create_help() {
 #[test]
 fn test_plugin_list_command() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("plugin")
-        .arg("list");
+    cmd.arg("plugin").arg("list");
 
     cmd.assert()
         .success()
@@ -130,16 +124,14 @@ fn test_plugin_list_with_type() {
         .arg("--ty")
         .arg("device_adapter");
 
-    cmd.assert()
-        .success();
+    cmd.assert().success();
 }
 
 /// Test plugin info requires path.
 #[test]
 fn test_plugin_info_requires_path() {
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("plugin")
-        .arg("info");
+    cmd.arg("plugin").arg("info");
 
     cmd.assert()
         .failure()
@@ -170,9 +162,7 @@ fn test_plugin_validate_fake_wasm() {
     file.write_all(b"fake wasm content").unwrap();
 
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("plugin")
-        .arg("validate")
-        .arg(&fake_wasm);
+    cmd.arg("plugin").arg("validate").arg(&fake_wasm);
 
     cmd.assert()
         .failure()
@@ -196,9 +186,7 @@ fn test_plugin_validate_fake_native() {
     file.write_all(b"fake library content").unwrap();
 
     let mut cmd = Command::cargo_bin("neomind").unwrap();
-    cmd.arg("plugin")
-        .arg("validate")
-        .arg(&fake_lib);
+    cmd.arg("plugin").arg("validate").arg(&fake_lib);
 
     cmd.assert()
         .failure()

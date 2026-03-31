@@ -100,14 +100,22 @@ impl ExtensionCapability {
 
     pub fn description(&self) -> String {
         match self {
-            ExtensionCapability::DeviceMetricsRead => "Read current device metrics and state".to_string(),
-            ExtensionCapability::DeviceMetricsWrite => "Write device metrics including virtual metrics".to_string(),
+            ExtensionCapability::DeviceMetricsRead => {
+                "Read current device metrics and state".to_string()
+            }
+            ExtensionCapability::DeviceMetricsWrite => {
+                "Write device metrics including virtual metrics".to_string()
+            }
             ExtensionCapability::DeviceControl => "Send commands to control devices".to_string(),
             ExtensionCapability::StorageQuery => "Query stored telemetry data".to_string(),
             ExtensionCapability::EventPublish => "Publish events".to_string(),
             ExtensionCapability::EventSubscribe => "Subscribe to events".to_string(),
-            ExtensionCapability::TelemetryHistory => "Query device telemetry history data".to_string(),
-            ExtensionCapability::MetricsAggregate => "Aggregate and calculate device metrics".to_string(),
+            ExtensionCapability::TelemetryHistory => {
+                "Query device telemetry history data".to_string()
+            }
+            ExtensionCapability::MetricsAggregate => {
+                "Aggregate and calculate device metrics".to_string()
+            }
             ExtensionCapability::ExtensionCall => "Call other extensions".to_string(),
             ExtensionCapability::AgentTrigger => "Trigger AI agent execution".to_string(),
             ExtensionCapability::RuleTrigger => "Trigger rule engine execution".to_string(),
@@ -121,8 +129,12 @@ impl ExtensionCapability {
             | ExtensionCapability::DeviceMetricsWrite
             | ExtensionCapability::DeviceControl => "device".to_string(),
             ExtensionCapability::StorageQuery => "storage".to_string(),
-            ExtensionCapability::EventPublish | ExtensionCapability::EventSubscribe => "event".to_string(),
-            ExtensionCapability::TelemetryHistory | ExtensionCapability::MetricsAggregate => "telemetry".to_string(),
+            ExtensionCapability::EventPublish | ExtensionCapability::EventSubscribe => {
+                "event".to_string()
+            }
+            ExtensionCapability::TelemetryHistory | ExtensionCapability::MetricsAggregate => {
+                "telemetry".to_string()
+            }
             ExtensionCapability::ExtensionCall => "extension".to_string(),
             ExtensionCapability::AgentTrigger => "agent".to_string(),
             ExtensionCapability::RuleTrigger => "rule".to_string(),
@@ -219,7 +231,8 @@ impl AvailableCapabilities {
         package_name: String,
         api_version: String,
     ) {
-        self.capabilities.insert(capability, (package_name, api_version));
+        self.capabilities
+            .insert(capability, (package_name, api_version));
     }
 
     pub fn has_capability(&self, capability: &ExtensionCapability) -> bool {
@@ -344,8 +357,7 @@ impl ExtensionContext {
 // ============================================================================
 
 /// Stream direction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum StreamDirection {
     #[serde(rename = "upload")]
     #[default]
@@ -356,10 +368,8 @@ pub enum StreamDirection {
     Bidirectional,
 }
 
-
 /// Stream mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum StreamMode {
     #[serde(rename = "stateless")]
     #[default]
@@ -369,7 +379,6 @@ pub enum StreamMode {
     #[serde(rename = "push")]
     Push,
 }
-
 
 /// Stream data type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -383,9 +392,18 @@ pub enum StreamDataType {
     #[serde(rename = "image")]
     Image { format: String },
     #[serde(rename = "audio")]
-    Audio { format: String, sample_rate: u32, channels: u16 },
+    Audio {
+        format: String,
+        sample_rate: u32,
+        channels: u16,
+    },
     #[serde(rename = "video")]
-    Video { codec: String, width: u32, height: u32, fps: u32 },
+    Video {
+        codec: String,
+        width: u32,
+        height: u32,
+        fps: u32,
+    },
     #[serde(rename = "sensor")]
     Sensor { sensor_type: String },
     #[serde(rename = "custom")]
@@ -1005,7 +1023,10 @@ struct NativeCapabilityBridge {
 static NATIVE_CAPABILITY_BRIDGE: OnceLock<NativeCapabilityBridge> = OnceLock::new();
 
 /// Set the native capability bridge for FFI.
-pub fn set_native_capability_bridge(invoke: NativeCapabilityInvokeFn, free: NativeCapabilityFreeFn) {
+pub fn set_native_capability_bridge(
+    invoke: NativeCapabilityInvokeFn,
+    free: NativeCapabilityFreeFn,
+) {
     let _ = NATIVE_CAPABILITY_BRIDGE.set(NativeCapabilityBridge { invoke, free });
 }
 
@@ -1016,8 +1037,9 @@ where
     match tokio::runtime::Handle::try_current() {
         Ok(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
         Err(_) => {
-            let runtime = tokio::runtime::Runtime::new()
-                .map_err(|e| CapabilityError::ProviderError(format!("failed to create tokio runtime: {}", e)))?;
+            let runtime = tokio::runtime::Runtime::new().map_err(|e| {
+                CapabilityError::ProviderError(format!("failed to create tokio runtime: {}", e))
+            })?;
             runtime.block_on(future)
         }
     }
@@ -1072,7 +1094,9 @@ impl CapabilityContext {
         };
 
         if let Some(context) = context {
-            return match block_on_sync(async { context.invoke_capability(capability, params).await }) {
+            return match block_on_sync(async {
+                context.invoke_capability(capability, params).await
+            }) {
                 Ok(value) => value,
                 Err(error) => serde_json::json!({
                     "success": false,
@@ -1212,8 +1236,14 @@ pub trait Extension: Send + Sync {
     }
 
     /// Process a chunk in a session.
-    async fn process_session_chunk(&self, _session_id: &str, _chunk: DataChunk) -> Result<StreamResult> {
-        Err(ExtensionError::ExecutionFailed("Session streaming not supported".to_string()))
+    async fn process_session_chunk(
+        &self,
+        _session_id: &str,
+        _chunk: DataChunk,
+    ) -> Result<StreamResult> {
+        Err(ExtensionError::ExecutionFailed(
+            "Session streaming not supported".to_string(),
+        ))
     }
 
     /// Close a streaming session.
@@ -1223,7 +1253,9 @@ pub trait Extension: Send + Sync {
 
     /// Process a single chunk (stateless).
     async fn process_chunk(&self, _chunk: DataChunk) -> Result<StreamResult> {
-        Err(ExtensionError::ExecutionFailed("Streaming not supported".to_string()))
+        Err(ExtensionError::ExecutionFailed(
+            "Streaming not supported".to_string(),
+        ))
     }
 
     /// Start push mode.
@@ -1237,11 +1269,7 @@ pub trait Extension: Send + Sync {
     }
 
     /// Set output sender for push mode.
-    fn set_output_sender(
-        &self,
-        _sender: Arc<tokio::sync::mpsc::Sender<PushOutputMessage>>,
-    ) {
-    }
+    fn set_output_sender(&self, _sender: Arc<tokio::sync::mpsc::Sender<PushOutputMessage>>) {}
 
     /// Get event subscriptions.
     fn event_subscriptions(&self) -> &[&str] {
@@ -1265,4 +1293,3 @@ pub trait Extension: Send + Sync {
 // ============================================================================
 // Re-exports for compatibility
 // ============================================================================
-

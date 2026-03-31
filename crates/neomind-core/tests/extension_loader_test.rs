@@ -63,11 +63,7 @@ async fn test_load_invalid_extension_format() {
 
 #[test]
 fn test_extension_metadata_builder() {
-    let meta = ExtensionMetadata::new(
-        "test.extension",
-        "Test Extension",
-        "1.0.0",
-    );
+    let meta = ExtensionMetadata::new("test.extension", "Test Extension", "1.0.0");
 
     assert_eq!(meta.id, "test.extension");
     assert_eq!(meta.name, "Test Extension");
@@ -76,12 +72,8 @@ fn test_extension_metadata_builder() {
 
 #[test]
 fn test_extension_metadata_with_description() {
-    let meta = ExtensionMetadata::new(
-        "test.extension",
-        "Test Extension",
-        "1.0.0",
-    )
-    .with_description("A test extension for unit testing");
+    let meta = ExtensionMetadata::new("test.extension", "Test Extension", "1.0.0")
+        .with_description("A test extension for unit testing");
 
     assert_eq!(
         meta.description,
@@ -91,25 +83,17 @@ fn test_extension_metadata_with_description() {
 
 #[test]
 fn test_extension_metadata_with_author() {
-    let meta = ExtensionMetadata::new(
-        "test.extension",
-        "Test Extension",
-        "1.0.0",
-    )
-    .with_author("Test Author");
+    let meta = ExtensionMetadata::new("test.extension", "Test Extension", "1.0.0")
+        .with_author("Test Author");
 
     assert_eq!(meta.author, Some("Test Author".to_string()));
 }
 
 #[test]
 fn test_extension_metadata_chaining() {
-    let meta = ExtensionMetadata::new(
-        "test.extension",
-        "Test Extension",
-        "2.1.3",
-    )
-    .with_description("Test description")
-    .with_author("Test Author");
+    let meta = ExtensionMetadata::new("test.extension", "Test Extension", "2.1.3")
+        .with_description("Test description")
+        .with_author("Test Author");
 
     assert_eq!(meta.id, "test.extension");
     assert_eq!(meta.name, "Test Extension");
@@ -269,12 +253,7 @@ fn test_extension_error_timeout() {
 #[test]
 fn test_extension_metadata_version_semver() {
     // Test various semver versions
-    let versions = vec![
-        "0.1.0",
-        "1.0.0",
-        "2.3.4",
-        "10.20.30",
-    ];
+    let versions = vec!["0.1.0", "1.0.0", "2.3.4", "10.20.30"];
 
     for version in &versions {
         let meta = ExtensionMetadata::new("test.extension", "Test", *version);

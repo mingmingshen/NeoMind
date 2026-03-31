@@ -21,8 +21,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use tokio::sync::Mutex;
 use tokio::sync::broadcast;
+use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
 use super::in_flight::InFlightRequests;
@@ -82,41 +82,48 @@ fn send_message_to_extension(
 }
 
 // ✨ FIX: IPC 缓冲区池配置
-const IPC_MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024;  // 10MB 最大缓冲区
+const IPC_MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB 最大缓冲区
 
 // Tiered buffer pool configuration
-const TIERED_POOL_SMALL_SIZE: usize = 4 * 1024;      // 4KB - 控制消息
-const TIERED_POOL_MEDIUM_SIZE: usize = 64 * 1024;    // 64KB - 小数据
-const TIERED_POOL_LARGE_SIZE: usize = 1024 * 1024;   // 1MB - 大数据/视频帧
+const TIERED_POOL_SMALL_SIZE: usize = 4 * 1024; // 4KB - 控制消息
+const TIERED_POOL_MEDIUM_SIZE: usize = 64 * 1024; // 64KB - 小数据
+const TIERED_POOL_LARGE_SIZE: usize = 1024 * 1024; // 1MB - 大数据/视频帧
 const TIERED_POOL_SMALL_COUNT: usize = 16;
 const TIERED_POOL_MEDIUM_COUNT: usize = 8;
 const TIERED_POOL_LARGE_COUNT: usize = 4;
-const TIERED_POOL_MAX_SIZE: usize = 16;  // Maximum buffers per tier
+const TIERED_POOL_MAX_SIZE: usize = 16; // Maximum buffers per tier
 
 /// Tiered IPC buffer pool for optimal memory management
 /// Uses different buffer sizes based on payload requirements
 #[derive(Debug)]
 struct TieredBufferPool {
-    small: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,   // 4KB - 控制消息
-    medium: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,  // 64KB - 小数据
-    large: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,   // 1MB - 大数据/视频帧
+    small: Arc<std::sync::Mutex<Vec<Vec<u8>>>>, // 4KB - 控制消息
+    medium: Arc<std::sync::Mutex<Vec<Vec<u8>>>>, // 64KB - 小数据
+    large: Arc<std::sync::Mutex<Vec<Vec<u8>>>>, // 1MB - 大数据/视频帧
 }
 
 impl TieredBufferPool {
     /// Create a new tiered buffer pool
     fn new() -> Self {
         Self {
-            small: Arc::new(std::sync::Mutex::new(Self::init_pool(TIERED_POOL_SMALL_SIZE, TIERED_POOL_SMALL_COUNT))),
-            medium: Arc::new(std::sync::Mutex::new(Self::init_pool(TIERED_POOL_MEDIUM_SIZE, TIERED_POOL_MEDIUM_COUNT))),
-            large: Arc::new(std::sync::Mutex::new(Self::init_pool(TIERED_POOL_LARGE_SIZE, TIERED_POOL_LARGE_COUNT))),
+            small: Arc::new(std::sync::Mutex::new(Self::init_pool(
+                TIERED_POOL_SMALL_SIZE,
+                TIERED_POOL_SMALL_COUNT,
+            ))),
+            medium: Arc::new(std::sync::Mutex::new(Self::init_pool(
+                TIERED_POOL_MEDIUM_SIZE,
+                TIERED_POOL_MEDIUM_COUNT,
+            ))),
+            large: Arc::new(std::sync::Mutex::new(Self::init_pool(
+                TIERED_POOL_LARGE_SIZE,
+                TIERED_POOL_LARGE_COUNT,
+            ))),
         }
     }
 
     /// Initialize a buffer pool with pre-allocated buffers
     fn init_pool(capacity: usize, count: usize) -> Vec<Vec<u8>> {
-        (0..count)
-            .map(|_| Vec::with_capacity(capacity))
-            .collect()
+        (0..count).map(|_| Vec::with_capacity(capacity)).collect()
     }
 
     /// Acquire a buffer suitable for the given size
@@ -131,7 +138,8 @@ impl TieredBufferPool {
         };
 
         let mut buffers = pool.lock().unwrap();
-        let data = buffers.pop()
+        let data = buffers
+            .pop()
             .unwrap_or_else(|| Vec::with_capacity(capacity));
 
         ReusableBuffer {
@@ -215,15 +223,15 @@ impl Default for IsolatedExtensionConfig {
             // - IPC buffers: ~10MB
             // - System overhead: ~100MB
             // - Headroom: ~918MB
-            max_memory_mb: 2048,  // Increased from 1024MB for YOLO stability
+            max_memory_mb: 2048, // Increased from 1024MB for YOLO stability
             restart_on_crash: true,
             max_restart_attempts: 3,
             restart_cooldown_secs: 5,
             max_concurrent_requests: 100,
             // 🔧 Phase 2: IPC robustness settings
-            ipc_read_timeout_secs: 10,     // 10 second timeout for IPC reads
-            ipc_max_retries: 2,             // Retry failed IPC calls twice
-            ipc_retry_delay_ms: 100,        // Start with 100ms delay, exponential backoff
+            ipc_read_timeout_secs: 10, // 10 second timeout for IPC reads
+            ipc_max_retries: 2,        // Retry failed IPC calls twice
+            ipc_retry_delay_ms: 100,   // Start with 100ms delay, exponential backoff
         }
     }
 }
@@ -231,8 +239,14 @@ impl Default for IsolatedExtensionConfig {
 /// 🔧 Phase 1: Detailed crash event information
 #[derive(Debug, Clone)]
 pub enum CrashEvent {
-    UnexpectedExit { exit_code: Option<i32>, signal: Option<i32> },
-    IpcFailure { reason: String, stage: IpcFailureStage },
+    UnexpectedExit {
+        exit_code: Option<i32>,
+        signal: Option<i32>,
+    },
+    IpcFailure {
+        reason: String,
+        stage: IpcFailureStage,
+    },
 }
 
 /// 🔧 Phase 1: IPC failure stage categorization
@@ -244,13 +258,11 @@ pub enum IpcFailureStage {
 impl CrashEvent {
     pub fn description(&self) -> String {
         match self {
-            CrashEvent::UnexpectedExit { exit_code, signal } => {
-                match (exit_code, signal) {
-                    (Some(code), None) => format!("Process exited with code {}", code),
-                    (None, Some(sig)) => format!("Process terminated by signal {}", sig),
-                    _ => "Process exited unexpectedly".to_string(),
-                }
-            }
+            CrashEvent::UnexpectedExit { exit_code, signal } => match (exit_code, signal) {
+                (Some(code), None) => format!("Process exited with code {}", code),
+                (None, Some(sig)) => format!("Process terminated by signal {}", sig),
+                _ => "Process exited unexpectedly".to_string(),
+            },
             CrashEvent::IpcFailure { reason, stage } => {
                 format!("IPC failure during {:?}: {}", stage, reason)
             }
@@ -326,7 +338,8 @@ pub struct IsolatedExtension {
     event_push_tx: Mutex<Option<tokio::sync::mpsc::Sender<(String, Value)>>>,
     /// Push output channel for receiving PushOutput messages from extension
     /// Uses std::sync::Mutex for thread safety in receiver thread
-    push_output_tx: Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<super::PushOutputData>>>>,
+    push_output_tx:
+        Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<super::PushOutputData>>>>,
     /// ✨ FIX: Tiered IPC buffer pool for optimal memory management
     ipc_buffer_pool: Arc<TieredBufferPool>,
     /// ✨ FIX: Active stream sessions - used to notify clients when extension restarts
@@ -336,7 +349,8 @@ pub struct IsolatedExtension {
     /// Extension death notification channel
     death_tx: Arc<Mutex<Option<broadcast::Sender<()>>>>,
     /// Capability provider for handling InvokeCapability requests from extension
-    capability_provider: Arc<std::sync::RwLock<Option<Arc<dyn super::super::context::ExtensionCapabilityProvider>>>>,
+    capability_provider:
+        Arc<std::sync::RwLock<Option<Arc<dyn super::super::context::ExtensionCapabilityProvider>>>>,
     /// Crash loop detection: consecutive crash count
     consecutive_crashes: AtomicU32,
     /// Crash loop detection: timestamp of last crash
@@ -381,7 +395,10 @@ impl IsolatedExtension {
     }
 
     /// Set the capability provider for handling InvokeCapability requests
-    pub fn set_capability_provider(&self, provider: Arc<dyn super::super::context::ExtensionCapabilityProvider>) {
+    pub fn set_capability_provider(
+        &self,
+        provider: Arc<dyn super::super::context::ExtensionCapabilityProvider>,
+    ) {
         *self.capability_provider.write().unwrap() = Some(provider);
     }
 
@@ -461,7 +478,9 @@ impl IsolatedExtension {
         {
             // Check if this is .nep format (in binaries/<platform>/ subdirectory)
             // by checking if parent directory name matches platform patterns
-            let parent_name = self.extension_path.parent()
+            let parent_name = self
+                .extension_path
+                .parent()
                 .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
@@ -475,32 +494,43 @@ impl IsolatedExtension {
 
             if is_nep_format {
                 // .nep format: go up 3 levels
-                let dir = self.extension_path.parent()
+                let dir = self
+                    .extension_path
+                    .parent()
                     .and_then(|p| p.parent())
                     .and_then(|p| p.parent())
-                    .ok_or_else(|| IsolatedExtensionError::SpawnFailed(
-                        "Invalid extension path - expected binaries/<platform>/extension.<ext>".to_string()
-                    ))?;
+                    .ok_or_else(|| {
+                        IsolatedExtensionError::SpawnFailed(
+                            "Invalid extension path - expected binaries/<platform>/extension.<ext>"
+                                .to_string(),
+                        )
+                    })?;
                 tracing::info!("Detected .nep format, extension_dir: {}", dir.display());
                 dir
             } else {
                 // Legacy format: parent directory IS the extension root
                 // e.g., /path/to/extensions/yolo-video-v2/extension.dylib -> /path/to/extensions/yolo-video-v2/
-                let dir = self.extension_path.parent()
-                    .ok_or_else(|| IsolatedExtensionError::SpawnFailed(
-                        "Invalid extension path - expected extension root directory".to_string()
-                    ))?;
+                let dir = self.extension_path.parent().ok_or_else(|| {
+                    IsolatedExtensionError::SpawnFailed(
+                        "Invalid extension path - expected extension root directory".to_string(),
+                    )
+                })?;
                 tracing::info!("Detected legacy format, extension_dir: {}", dir.display());
                 dir
             }
         } else {
             // Fallback: try to go up 3 levels (old behavior)
-            let dir = self.extension_path.parent()
+            let dir = self
+                .extension_path
+                .parent()
                 .and_then(|p| p.parent())
                 .and_then(|p| p.parent())
-                .ok_or_else(|| IsolatedExtensionError::SpawnFailed(
-                    "Invalid extension path - expected binaries/<platform>/extension.<ext>".to_string()
-                ))?;
+                .ok_or_else(|| {
+                    IsolatedExtensionError::SpawnFailed(
+                        "Invalid extension path - expected binaries/<platform>/extension.<ext>"
+                            .to_string(),
+                    )
+                })?;
             tracing::info!("Using fallback path, extension_dir: {}", dir.display());
             dir
         };
@@ -531,7 +561,7 @@ impl IsolatedExtension {
             .arg("--extension-path")
             .arg(&extension_path_absolute)
             .env("NEOMIND_EXTENSION_DIR", &extension_dir_absolute)
-            .current_dir(extension_dir_absolute)  // Set working directory to extension root
+            .current_dir(extension_dir_absolute) // Set working directory to extension root
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -602,7 +632,9 @@ impl IsolatedExtension {
                             let ipc_frame = IpcFrame::new(frame);
                             let bytes = ipc_frame.encode();
 
-                            let mut stdin_guard: tokio::sync::MutexGuard<Option<BufWriter<std::process::ChildStdin>>> = stdin_ref.lock().await;
+                            let mut stdin_guard: tokio::sync::MutexGuard<
+                                Option<BufWriter<std::process::ChildStdin>>,
+                            > = stdin_ref.lock().await;
                             if let Some(stdin) = stdin_guard.as_mut() {
                                 let _ = stdin.write_all(&bytes);
                                 let _ = stdin.flush();
@@ -636,16 +668,10 @@ impl IsolatedExtension {
         // Wait for ready response with timeout
         let response = self
             .in_flight
-            .wait_with_timeout(
-                0,
-                rx,
-                Duration::from_secs(self.config.startup_timeout_secs),
-            )
+            .wait_with_timeout(0, rx, Duration::from_secs(self.config.startup_timeout_secs))
             .await
             .map_err(|e| match e {
-                super::in_flight::InFlightError::Timeout(ms) => {
-                    IsolatedExtensionError::Timeout(ms)
-                }
+                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
                 super::in_flight::InFlightError::ChannelClosed => {
                     IsolatedExtensionError::IpcError("Response channel closed".to_string())
                 }
@@ -720,7 +746,10 @@ impl IsolatedExtension {
                     Err(e) => {
                         // 🔧 Phase 1: Structured crash detection
                         let crash_event = if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                            CrashEvent::UnexpectedExit { exit_code: None, signal: None }
+                            CrashEvent::UnexpectedExit {
+                                exit_code: None,
+                                signal: None,
+                            }
                         } else if e.kind() == std::io::ErrorKind::BrokenPipe {
                             CrashEvent::IpcFailure {
                                 reason: "Broken pipe".to_string(),
@@ -740,7 +769,7 @@ impl IsolatedExtension {
                             error = %e,
                             "Extension process crashed"
                         );
-                        
+
                         running.store(false, Ordering::SeqCst);
                         // Send death notification to manager
                         if let Ok(tx_guard) = death_tx.try_lock() {
@@ -793,7 +822,12 @@ impl IsolatedExtension {
                 // has a request_id but should NOT be routed to waiting callers
                 if response.is_capability_request() {
                     // Handle CapabilityRequest from extension (bidirectional)
-                    if let IpcResponse::CapabilityRequest { request_id, capability, params } = response {
+                    if let IpcResponse::CapabilityRequest {
+                        request_id,
+                        capability,
+                        params,
+                    } = response
+                    {
                         debug!(
                             extension_id = %extension_id,
                             request_id,
@@ -806,7 +840,9 @@ impl IsolatedExtension {
 
                         if let Some(provider) = provider_opt {
                             // Parse capability
-                            let cap = match super::super::context::ExtensionCapability::from_name(&capability) {
+                            let cap = match super::super::context::ExtensionCapability::from_name(
+                                &capability,
+                            ) {
                                 Some(c) => c,
                                 None => {
                                     // Send error response as IpcMessage
@@ -822,9 +858,8 @@ impl IsolatedExtension {
 
                             // Invoke capability using the runtime handle
                             // This thread is not in a Tokio runtime, so block_on is safe here
-                            let result = rt_handle.block_on(async {
-                                provider.invoke_capability(cap, &params).await
-                            });
+                            let result = rt_handle
+                                .block_on(async { provider.invoke_capability(cap, &params).await });
 
                             // Send response back to extension as IpcMessage
                             let message = match result {
@@ -933,7 +968,7 @@ impl IsolatedExtension {
             // ✅ FIX: Wait with polling to prevent hanging on stuck processes
             let start = std::time::Instant::now();
             let timeout = std::time::Duration::from_secs(5);
-            
+
             loop {
                 match child.try_wait() {
                     Ok(Some(status)) => {
@@ -972,7 +1007,6 @@ impl IsolatedExtension {
         Ok(())
     }
 
-
     /// Execute a command
     pub async fn execute_command(
         &self,
@@ -982,7 +1016,6 @@ impl IsolatedExtension {
         if !self.running.load(Ordering::SeqCst) {
             return Err(IsolatedExtensionError::NotRunning);
         }
-
 
         // Check concurrent request limit (if configured)
         if self.config.max_concurrent_requests > 0 {
@@ -995,7 +1028,7 @@ impl IsolatedExtension {
                     "Concurrent request limit reached"
                 );
                 return Err(IsolatedExtensionError::TooManyRequests(
-                    self.config.max_concurrent_requests
+                    self.config.max_concurrent_requests,
                 ));
             }
         }
@@ -1037,9 +1070,7 @@ impl IsolatedExtension {
             )
             .await
             .map_err(|e| match e {
-                super::in_flight::InFlightError::Timeout(ms) => {
-                    IsolatedExtensionError::Timeout(ms)
-                }
+                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
                 super::in_flight::InFlightError::ChannelClosed => {
                     IsolatedExtensionError::IpcError("Response channel closed".to_string())
                 }
@@ -1047,15 +1078,13 @@ impl IsolatedExtension {
 
         match response {
             IpcResponse::Success { data, .. } => Ok(data),
-            IpcResponse::Error { error, kind, .. } => {
-                match kind {
-                    ErrorKind::CommandNotFound => Err(IsolatedExtensionError::IpcError(error)),
-                    ErrorKind::Timeout => Err(IsolatedExtensionError::Timeout(
-                        self.config.command_timeout_secs * 1000,
-                    )),
-                    _ => Err(IsolatedExtensionError::IpcError(error)),
-                }
-            }
+            IpcResponse::Error { error, kind, .. } => match kind {
+                ErrorKind::CommandNotFound => Err(IsolatedExtensionError::IpcError(error)),
+                ErrorKind::Timeout => Err(IsolatedExtensionError::Timeout(
+                    self.config.command_timeout_secs * 1000,
+                )),
+                _ => Err(IsolatedExtensionError::IpcError(error)),
+            },
             _ => Err(IsolatedExtensionError::InvalidResponse(format!(
                 "Expected Success or Error response, got {:?}",
                 std::mem::discriminant(&response)
@@ -1079,9 +1108,7 @@ impl IsolatedExtension {
             .wait_with_timeout(request_id, rx, Duration::from_secs(5))
             .await
             .map_err(|e| match e {
-                super::in_flight::InFlightError::Timeout(ms) => {
-                    IsolatedExtensionError::Timeout(ms)
-                }
+                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
                 super::in_flight::InFlightError::ChannelClosed => {
                     IsolatedExtensionError::IpcError("Response channel closed".to_string())
                 }
@@ -1112,24 +1139,26 @@ impl IsolatedExtension {
             .wait_with_timeout(request_id, rx, Duration::from_secs(5))
             .await
             .map_err(|e| match e {
-                super::in_flight::InFlightError::Timeout(ms) => {
-                    IsolatedExtensionError::Timeout(ms)
-                }
+                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
                 super::in_flight::InFlightError::ChannelClosed => {
                     IsolatedExtensionError::IpcError("Response channel closed".to_string())
                 }
             })?;
 
         match response {
-            IpcResponse::Stats { start_count, stop_count, error_count, last_error, .. } => {
-                Ok(super::super::system::ExtensionStats {
-                    start_count,
-                    stop_count,
-                    error_count,
-                    last_error,
-                    ..Default::default()
-                })
-            }
+            IpcResponse::Stats {
+                start_count,
+                stop_count,
+                error_count,
+                last_error,
+                ..
+            } => Ok(super::super::system::ExtensionStats {
+                start_count,
+                stop_count,
+                error_count,
+                last_error,
+                ..Default::default()
+            }),
             IpcResponse::Error { error, .. } => Err(IsolatedExtensionError::IpcError(error)),
             _ => Err(IsolatedExtensionError::InvalidResponse(
                 "Expected Stats response".to_string(),
@@ -1138,9 +1167,10 @@ impl IsolatedExtension {
     }
 
     /// Execute multiple commands in a batch
-    pub async fn execute_batch(&self, commands: Vec<super::BatchCommand>)
-        -> IsolatedResult<super::BatchResultsVec>
-    {
+    pub async fn execute_batch(
+        &self,
+        commands: Vec<super::BatchCommand>,
+    ) -> IsolatedResult<super::BatchResultsVec> {
         if !self.running.load(Ordering::SeqCst) {
             return Err(IsolatedExtensionError::NotRunning);
         }
@@ -1179,9 +1209,10 @@ impl IsolatedExtension {
     }
 
     /// Send batch request to extension process
-    pub async fn execute_batch_ipc(&self, commands: Vec<super::BatchCommand>)
-        -> IsolatedResult<super::BatchResultsVec>
-    {
+    pub async fn execute_batch_ipc(
+        &self,
+        commands: Vec<super::BatchCommand>,
+    ) -> IsolatedResult<super::BatchResultsVec> {
         if !self.running.load(Ordering::SeqCst) {
             return Err(IsolatedExtensionError::NotRunning);
         }
@@ -1198,7 +1229,7 @@ impl IsolatedExtension {
                     "Concurrent request limit reached"
                 );
                 return Err(IsolatedExtensionError::TooManyRequests(
-                    self.config.max_concurrent_requests
+                    self.config.max_concurrent_requests,
                 ));
             }
         }
@@ -1240,27 +1271,26 @@ impl IsolatedExtension {
             )
             .await
             .map_err(|e| match e {
-                super::in_flight::InFlightError::Timeout(ms) => {
-                    IsolatedExtensionError::Timeout(ms)
-                }
+                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
                 super::in_flight::InFlightError::ChannelClosed => {
                     IsolatedExtensionError::IpcError("Response channel closed".to_string())
                 }
             })?;
 
         match response {
-            IpcResponse::BatchResults { results, total_elapsed_ms, .. } => {
-                Ok(super::BatchResultsVec {
-                    results,
-                    total_elapsed_ms,
-                })
-            }
-            IpcResponse::Error { error, .. } => {
-                Err(IsolatedExtensionError::IpcError(error))
-            }
-            _ => Err(IsolatedExtensionError::InvalidResponse(
-                format!("Expected BatchResults response, got {:?}", std::mem::discriminant(&response))
-            )),
+            IpcResponse::BatchResults {
+                results,
+                total_elapsed_ms,
+                ..
+            } => Ok(super::BatchResultsVec {
+                results,
+                total_elapsed_ms,
+            }),
+            IpcResponse::Error { error, .. } => Err(IsolatedExtensionError::IpcError(error)),
+            _ => Err(IsolatedExtensionError::InvalidResponse(format!(
+                "Expected BatchResults response, got {:?}",
+                std::mem::discriminant(&response)
+            ))),
         }
     }
 
@@ -1285,7 +1315,6 @@ impl IsolatedExtension {
         self.running.store(false, Ordering::SeqCst);
     }
 
-
     /// Check extension health via IPC
     pub async fn health_check(&self) -> IsolatedResult<bool> {
         if !self.running.load(Ordering::SeqCst) {
@@ -1294,7 +1323,11 @@ impl IsolatedExtension {
 
         let (request_id, rx) = self.in_flight.register().await;
 
-        if self.send_message(&IpcMessage::HealthCheck { request_id }).await.is_err() {
+        if self
+            .send_message(&IpcMessage::HealthCheck { request_id })
+            .await
+            .is_err()
+        {
             return Ok(false);
         }
 
@@ -1313,13 +1346,12 @@ impl IsolatedExtension {
         let is_alive = self.is_alive();
         let pid = self.process_id.lock().await.clone();
         let active_requests = self.active_requests.load(Ordering::SeqCst);
-        let uptime = self.start_time.lock().await
-            .and_then(|start| {
-                SystemTime::now()
-                    .duration_since(start)
-                    .ok()
-                    .map(|d| d.as_secs())
-            });
+        let uptime = self.start_time.lock().await.and_then(|start| {
+            SystemTime::now()
+                .duration_since(start)
+                .ok()
+                .map(|d| d.as_secs())
+        });
 
         // Try to get memory usage
         // Note: Cross-platform memory reading is complex and requires additional dependencies
@@ -1366,47 +1398,52 @@ impl IsolatedExtension {
     // =========================================================================
 
     /// Get stream capability via IPC
-    pub async fn stream_capability(&self) -> IsolatedResult<Option<super::super::stream::StreamCapability>> {
+    pub async fn stream_capability(
+        &self,
+    ) -> IsolatedResult<Option<super::super::stream::StreamCapability>> {
         if !self.running.load(Ordering::SeqCst) {
             return Err(IsolatedExtensionError::NotRunning);
         }
 
         let (request_id, rx) = self.in_flight.register().await;
 
-        self.send_message(&IpcMessage::GetStreamCapability { request_id }).await?;
+        self.send_message(&IpcMessage::GetStreamCapability { request_id })
+            .await?;
 
         let response = self
             .in_flight
             .wait_with_timeout(request_id, rx, Duration::from_secs(5))
             .await
             .map_err(|e| match e {
-                super::in_flight::InFlightError::Timeout(ms) => {
-                    IsolatedExtensionError::Timeout(ms)
-                }
+                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
                 super::in_flight::InFlightError::ChannelClosed => {
                     IsolatedExtensionError::IpcError("Response channel closed".to_string())
                 }
             })?;
 
         match response {
-            IpcResponse::StreamCapability { capability, .. } => {
-                match capability {
-                    Some(cap_json) => {
-                        let cap: super::super::stream::StreamCapability =
-                            serde_json::from_value(cap_json)
-                                .map_err(|e| IsolatedExtensionError::IpcError(e.to_string()))?;
-                        Ok(Some(cap))
-                    }
-                    None => Ok(None),
+            IpcResponse::StreamCapability { capability, .. } => match capability {
+                Some(cap_json) => {
+                    let cap: super::super::stream::StreamCapability =
+                        serde_json::from_value(cap_json)
+                            .map_err(|e| IsolatedExtensionError::IpcError(e.to_string()))?;
+                    Ok(Some(cap))
                 }
-            }
+                None => Ok(None),
+            },
             IpcResponse::Error { error, .. } => Err(IsolatedExtensionError::IpcError(error)),
-            _ => Err(IsolatedExtensionError::InvalidResponse("Expected StreamCapability response".to_string())),
+            _ => Err(IsolatedExtensionError::InvalidResponse(
+                "Expected StreamCapability response".to_string(),
+            )),
         }
     }
 
     /// Initialize a stream session via IPC
-    pub async fn init_session(&self, session_id: &str, config: serde_json::Value) -> IsolatedResult<()> {
+    pub async fn init_session(
+        &self,
+        session_id: &str,
+        config: serde_json::Value,
+    ) -> IsolatedResult<()> {
         if !self.running.load(Ordering::SeqCst) {
             return Err(IsolatedExtensionError::NotRunning);
         }
@@ -1425,7 +1462,8 @@ impl IsolatedExtension {
             extension_id: self.extension_id.clone(),
             config,
             client_info,
-        }).await?;
+        })
+        .await?;
 
         // Wait for StreamSessionInit response
         // Note: InitStreamSession doesn't have a request_id, so we need to handle it specially
@@ -1462,15 +1500,14 @@ impl IsolatedExtension {
             request_id,
             session_id: session_id.to_string(),
             chunk: stream_chunk,
-        }).await?;
+        })
+        .await?;
 
         // Wait for response with timeout (10s for streaming operations)
-        let response = tokio::time::timeout(
-            Duration::from_secs(10),
-            rx
-        ).await
-        .map_err(|_| IsolatedExtensionError::Timeout(10000))?
-        .map_err(|_| IsolatedExtensionError::ChannelClosed)?;
+        let response = tokio::time::timeout(Duration::from_secs(10), rx)
+            .await
+            .map_err(|_| IsolatedExtensionError::Timeout(10000))?
+            .map_err(|_| IsolatedExtensionError::ChannelClosed)?;
 
         // Parse response
         match response {
@@ -1485,7 +1522,10 @@ impl IsolatedExtension {
             } => {
                 // Parse data_type string back to StreamDataType
                 let stream_data_type = if data_type.starts_with("image/") {
-                    let format = data_type.strip_prefix("image/").unwrap_or("jpeg").to_string();
+                    let format = data_type
+                        .strip_prefix("image/")
+                        .unwrap_or("jpeg")
+                        .to_string();
                     super::super::stream::StreamDataType::Image { format }
                 } else if data_type == "application/json" {
                     super::super::stream::StreamDataType::Json
@@ -1505,17 +1545,16 @@ impl IsolatedExtension {
                     processing_ms,
                 ))
             }
-            IpcResponse::Error { error, .. } => {
-                Err(IsolatedExtensionError::ExtensionError(error))
-            }
-            _ => {
-                Err(IsolatedExtensionError::UnexpectedResponse)
-            }
+            IpcResponse::Error { error, .. } => Err(IsolatedExtensionError::ExtensionError(error)),
+            _ => Err(IsolatedExtensionError::UnexpectedResponse),
         }
     }
 
     /// Close a stream session via IPC
-    pub async fn close_session(&self, session_id: &str) -> IsolatedResult<super::super::stream::SessionStats> {
+    pub async fn close_session(
+        &self,
+        session_id: &str,
+    ) -> IsolatedResult<super::super::stream::SessionStats> {
         // Unregister session
         self.unregister_session(session_id).await;
 
@@ -1525,7 +1564,8 @@ impl IsolatedExtension {
 
         self.send_message(&IpcMessage::CloseStreamSession {
             session_id: session_id.to_string(),
-        }).await?;
+        })
+        .await?;
 
         Ok(super::super::stream::SessionStats::default())
     }
@@ -1577,9 +1617,11 @@ impl IsolatedExtension {
         // Try to send close messages to extension process
         if self.running.load(Ordering::SeqCst) {
             for session_id in &sessions {
-                let _ = self.send_message(&IpcMessage::CloseStreamSession {
-                    session_id: session_id.clone(),
-                }).await;
+                let _ = self
+                    .send_message(&IpcMessage::CloseStreamSession {
+                        session_id: session_id.clone(),
+                    })
+                    .await;
             }
         }
 
@@ -1669,7 +1711,8 @@ impl IsolatedExtension {
         self.send_message(&IpcMessage::ProcessChunk {
             request_id,
             chunk: stream_chunk,
-        }).await?;
+        })
+        .await?;
 
         // Wait for the response with timeout
         let response = self
@@ -1681,9 +1724,7 @@ impl IsolatedExtension {
             )
             .await
             .map_err(|e| match e {
-                super::in_flight::InFlightError::Timeout(ms) => {
-                    IsolatedExtensionError::Timeout(ms)
-                }
+                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
                 super::in_flight::InFlightError::ChannelClosed => {
                     IsolatedExtensionError::IpcError("Response channel closed".to_string())
                 }
@@ -1712,14 +1753,10 @@ impl IsolatedExtension {
                 }
                 Ok(result)
             }
-            IpcResponse::Error { error, .. } => {
-                Err(IsolatedExtensionError::ExecutionFailed(error))
-            }
-            _ => {
-                Err(IsolatedExtensionError::InvalidResponse(
-                    "Expected ChunkResult response".to_string(),
-                ))
-            }
+            IpcResponse::Error { error, .. } => Err(IsolatedExtensionError::ExecutionFailed(error)),
+            _ => Err(IsolatedExtensionError::InvalidResponse(
+                "Expected ChunkResult response".to_string(),
+            )),
         }
     }
 
@@ -1751,7 +1788,8 @@ impl IsolatedExtension {
         self.send_message(&IpcMessage::StartPush {
             request_id,
             session_id: session_id.to_string(),
-        }).await?;
+        })
+        .await?;
 
         // Wait for the response with timeout
         let response = self
@@ -1763,9 +1801,7 @@ impl IsolatedExtension {
             )
             .await
             .map_err(|e| match e {
-                super::in_flight::InFlightError::Timeout(ms) => {
-                    IsolatedExtensionError::Timeout(ms)
-                }
+                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
                 super::in_flight::InFlightError::ChannelClosed => {
                     IsolatedExtensionError::IpcError("Response channel closed".to_string())
                 }
@@ -1782,18 +1818,14 @@ impl IsolatedExtension {
                     Ok(())
                 } else {
                     Err(IsolatedExtensionError::ExecutionFailed(
-                        error.unwrap_or_else(|| "Unknown error".to_string())
+                        error.unwrap_or_else(|| "Unknown error".to_string()),
                     ))
                 }
             }
-            IpcResponse::Error { error, .. } => {
-                Err(IsolatedExtensionError::ExecutionFailed(error))
-            }
-            _ => {
-                Err(IsolatedExtensionError::InvalidResponse(
-                    "Expected PushStarted response".to_string(),
-                ))
-            }
+            IpcResponse::Error { error, .. } => Err(IsolatedExtensionError::ExecutionFailed(error)),
+            _ => Err(IsolatedExtensionError::InvalidResponse(
+                "Expected PushStarted response".to_string(),
+            )),
         }
     }
 
@@ -1821,7 +1853,8 @@ impl IsolatedExtension {
         self.send_message(&IpcMessage::StopPush {
             request_id,
             session_id: session_id.to_string(),
-        }).await?;
+        })
+        .await?;
 
         // Wait for the response with timeout
         let response = self
@@ -1833,9 +1866,7 @@ impl IsolatedExtension {
             )
             .await
             .map_err(|e| match e {
-                super::in_flight::InFlightError::Timeout(ms) => {
-                    IsolatedExtensionError::Timeout(ms)
-                }
+                super::in_flight::InFlightError::Timeout(ms) => IsolatedExtensionError::Timeout(ms),
                 super::in_flight::InFlightError::ChannelClosed => {
                     IsolatedExtensionError::IpcError("Response channel closed".to_string())
                 }
@@ -1861,11 +1892,9 @@ impl IsolatedExtension {
                 );
                 Ok(())
             }
-            _ => {
-                Err(IsolatedExtensionError::InvalidResponse(
-                    "Expected PushStopped response".to_string(),
-                ))
-            }
+            _ => Err(IsolatedExtensionError::InvalidResponse(
+                "Expected PushStopped response".to_string(),
+            )),
         }
     }
 
@@ -1901,7 +1930,9 @@ impl IsolatedExtension {
 
         // Send custom command to extension to trigger GC
         // Extension should implement "gc_memory" command
-        let _ = self.execute_command("gc_memory", &serde_json::json!({})).await;
+        let _ = self
+            .execute_command("gc_memory", &serde_json::json!({}))
+            .await;
 
         Ok(())
     }
@@ -1949,9 +1980,9 @@ impl IsolatedExtension {
             .as_mut()
             .ok_or(IsolatedExtensionError::NotInitialized)?;
 
-        let payload = msg.to_bytes().map_err(|e| {
-            IsolatedExtensionError::IpcError(format!("Serialization error: {}", e))
-        })?;
+        let payload = msg
+            .to_bytes()
+            .map_err(|e| IsolatedExtensionError::IpcError(format!("Serialization error: {}", e)))?;
 
         let frame = IpcFrame::new(payload);
         let bytes = frame.encode();
@@ -1998,7 +2029,11 @@ impl IsolatedExtension {
     }
 
     /// Push an event to the extension
-    pub async fn push_event(&self, event_type: String, payload: serde_json::Value) -> IsolatedResult<()> {
+    pub async fn push_event(
+        &self,
+        event_type: String,
+        payload: serde_json::Value,
+    ) -> IsolatedResult<()> {
         if !self.running.load(Ordering::SeqCst) {
             return Err(IsolatedExtensionError::NotRunning);
         }
@@ -2007,7 +2042,8 @@ impl IsolatedExtension {
             event_type,
             payload,
             timestamp: chrono::Utc::now().timestamp_millis(),
-        }).await
+        })
+        .await
     }
 
     async fn kill_internal(&self, process_guard: &mut Option<Child>) {
@@ -2075,9 +2111,10 @@ impl IsolatedExtension {
                         drop(process_guard);
                         // Record crash for crash loop detection
                         self.record_crash().await;
-                        return Err(IsolatedExtensionError::Crashed(
-                            format!("Process exited with status: {:?}", status)
-                        ));
+                        return Err(IsolatedExtensionError::Crashed(format!(
+                            "Process exited with status: {:?}",
+                            status
+                        )));
                     }
                     Ok(None) => {
                         // Process still running, check resources
@@ -2104,9 +2141,10 @@ impl IsolatedExtension {
                         drop(process_guard);
                         // Record crash for crash loop detection
                         self.record_crash().await;
-                        return Err(IsolatedExtensionError::Crashed(
-                            format!("Process exited with code: {:?}", status.code())
-                        ));
+                        return Err(IsolatedExtensionError::Crashed(format!(
+                            "Process exited with code: {:?}",
+                            status.code()
+                        )));
                     }
                     Ok(None) => {}
                     Err(e) => {
@@ -2146,9 +2184,10 @@ impl IsolatedExtension {
                         }
                         return self.start().await;
                     }
-                    return Err(IsolatedExtensionError::Crashed(
-                        format!("Memory limit exceeded: {}MB > {}MB", memory_mb, self.config.max_memory_mb)
-                    ));
+                    return Err(IsolatedExtensionError::Crashed(format!(
+                        "Memory limit exceeded: {}MB > {}MB",
+                        memory_mb, self.config.max_memory_mb
+                    )));
                 } else if memory_mb > (self.config.max_memory_mb as u64 * 80 / 100) {
                     // WARNING: Memory at 80%, trigger GC
                     warn!(
@@ -2193,9 +2232,10 @@ impl IsolatedExtension {
                         }
                         return self.start().await;
                     }
-                    return Err(IsolatedExtensionError::Crashed(
-                        format!("Memory limit exceeded: {}MB > {}MB", memory_mb, self.config.max_memory_mb)
-                    ));
+                    return Err(IsolatedExtensionError::Crashed(format!(
+                        "Memory limit exceeded: {}MB > {}MB",
+                        memory_mb, self.config.max_memory_mb
+                    )));
                 } else if memory_mb > (self.config.max_memory_mb as u64 * 80 / 100) {
                     // WARNING: Memory at 80%, trigger GC
                     warn!(
@@ -2230,7 +2270,10 @@ impl IsolatedExtension {
             }
         }
 
-        Err(std::io::Error::new(std::io::ErrorKind::NotFound, "VmRSS not found"))
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "VmRSS not found",
+        ))
     }
 
     #[cfg(target_os = "macos")]
@@ -2248,14 +2291,19 @@ impl IsolatedExtension {
             }
         }
 
-        Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Failed to get memory"))
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Failed to get memory",
+        ))
     }
 
     /// Get the event push channel for this extension
     ///
     /// This method is called by the EventDispatcher to get the channel
     /// for pushing events to the isolated extension process.
-    pub async fn get_event_push_channel(&self) -> Option<tokio::sync::mpsc::Sender<(String, Value)>> {
+    pub async fn get_event_push_channel(
+        &self,
+    ) -> Option<tokio::sync::mpsc::Sender<(String, Value)>> {
         self.event_push_tx.lock().await.clone()
     }
 
@@ -2274,20 +2322,18 @@ impl IsolatedExtension {
         // Wait for response with timeout
         let timeout_duration = Duration::from_secs(5);
         match tokio::time::timeout(timeout_duration, rx).await {
-            Ok(Ok(response)) => {
-                match response {
-                    IpcResponse::EventSubscriptions { event_types, .. } => Ok(event_types),
-                    IpcResponse::Error { error, .. } => Err(IsolatedExtensionError::SpawnFailed(error)),
-                    _ => Err(IsolatedExtensionError::SpawnFailed(
-                        "Unexpected response type".to_string()
-                    )),
-                }
-            }
+            Ok(Ok(response)) => match response {
+                IpcResponse::EventSubscriptions { event_types, .. } => Ok(event_types),
+                IpcResponse::Error { error, .. } => Err(IsolatedExtensionError::SpawnFailed(error)),
+                _ => Err(IsolatedExtensionError::SpawnFailed(
+                    "Unexpected response type".to_string(),
+                )),
+            },
             Ok(Err(_)) => Err(IsolatedExtensionError::SpawnFailed(
-                "Response channel closed".to_string()
+                "Response channel closed".to_string(),
             )),
             Err(_) => Err(IsolatedExtensionError::SpawnFailed(
-                "Request timeout".to_string()
+                "Request timeout".to_string(),
             )),
         }
     }
@@ -2317,13 +2363,11 @@ impl IsolatedExtension {
                         max_restart_attempts = self.config.max_restart_attempts,
                         "Crash loop detected - too many crashes in cooldown period. Will not auto restart."
                     );
-                    return Err(IsolatedExtensionError::Crashed(
-                        format!(
-                            "Crash loop detected: {} consecutive crashes within cooldown period. \
+                    return Err(IsolatedExtensionError::Crashed(format!(
+                        "Crash loop detected: {} consecutive crashes within cooldown period. \
                              Extension has stability issues. Will not restart.",
-                            consecutive
-                        )
-                    ));
+                        consecutive
+                    )));
                 } else {
                     // Cooldown passed, reset counter and allow restart
                     drop(last_crash);
@@ -2413,7 +2457,7 @@ mod tests {
         let config = IsolatedExtensionConfig::default();
         assert_eq!(config.startup_timeout_secs, 30);
         assert_eq!(config.command_timeout_secs, 30);
-        assert_eq!(config.max_memory_mb, 2048);  // Updated for YOLO extensions
+        assert_eq!(config.max_memory_mb, 2048); // Updated for YOLO extensions
         assert!(config.restart_on_crash);
     }
 
@@ -2445,7 +2489,9 @@ mod tests {
             reason: "Broken pipe".to_string(),
             stage: IpcFailureStage::ReadLength,
         };
-        assert!(event.description().contains("IPC failure during ReadLength"));
+        assert!(event
+            .description()
+            .contains("IPC failure during ReadLength"));
         assert!(event.description().contains("Broken pipe"));
     }
 }

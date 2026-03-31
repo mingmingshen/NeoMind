@@ -9,7 +9,7 @@
 //! - **Linux/Windows**: Basic file existence and format checks
 
 use std::path::Path;
-use tracing::{warn, info};
+use tracing::{info, warn};
 
 /// Validation error types
 #[derive(Debug, thiserror::Error)]
@@ -88,16 +88,19 @@ fn validate_macos_dylib(path: &Path) -> Result<(), ValidationError> {
         .arg("-L")
         .arg(path)
         .output()
-        .map_err(|e| ValidationError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to run otool: {}", e)
-        )))?;
+        .map_err(|e| {
+            ValidationError::IoError(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to run otool: {}", e),
+            ))
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(ValidationError::InvalidFormat(
-            format!("otool failed: {}", stderr)
-        ));
+        return Err(ValidationError::InvalidFormat(format!(
+            "otool failed: {}",
+            stderr
+        )));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -108,7 +111,7 @@ fn validate_macos_dylib(path: &Path) -> Result<(), ValidationError> {
     // or just: "path/to/lib (architecture)"
     if lines.len() < 2 {
         return Err(ValidationError::InvalidFormat(
-            "Could not parse otool output".to_string()
+            "Could not parse otool output".to_string(),
         ));
     }
 
@@ -127,12 +130,13 @@ fn validate_macos_dylib(path: &Path) -> Result<(), ValidationError> {
         // NOT an absolute build path like "/Users/.../extension.dylib"
 
         // Extract the path (before the version info in parentheses)
-        let lib_path = line.split('(').next()
-            .map(|s| s.trim())
-            .unwrap_or(line);
+        let lib_path = line.split('(').next().map(|s| s.trim()).unwrap_or(line);
 
         // Check if this is an absolute path that shouldn't be there
-        if lib_path.starts_with('/') && !lib_path.starts_with("/usr/lib") && !lib_path.starts_with("/System") {
+        if lib_path.starts_with('/')
+            && !lib_path.starts_with("/usr/lib")
+            && !lib_path.starts_with("/System")
+        {
             // This is likely the LC_ID_DYLIB with an absolute build path
             // This will cause crashes on other machines!
             if !lib_path.starts_with("@") {
@@ -183,7 +187,7 @@ fn validate_linux_so(path: &Path) -> Result<(), ValidationError> {
     const ELF_MAGIC: [u8; 4] = [0x7f, 0x45, 0x4c, 0x46]; // "\x7fELF"
     if magic != ELF_MAGIC {
         return Err(ValidationError::InvalidFormat(
-            "Not a valid ELF file (wrong magic number)".to_string()
+            "Not a valid ELF file (wrong magic number)".to_string(),
         ));
     }
 
@@ -212,7 +216,7 @@ fn validate_windows_dll(path: &Path) -> Result<(), ValidationError> {
     const DOS_MAGIC: [u8; 2] = [0x4d, 0x5a]; // "MZ"
     if magic != DOS_MAGIC {
         return Err(ValidationError::InvalidFormat(
-            "Not a valid PE/DLL file (wrong magic number)".to_string()
+            "Not a valid PE/DLL file (wrong magic number)".to_string(),
         ));
     }
 

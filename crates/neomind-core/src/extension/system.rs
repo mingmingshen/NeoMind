@@ -28,15 +28,39 @@ use std::sync::Arc;
 
 // Import from unified SDK
 pub use neomind_extension_sdk::{
-    ABI_VERSION, CExtensionMetadata, CommandDefinition, ExtensionCommand, ExtensionDescriptor,
-    ExtensionError, ExtensionMetadata, ExtensionMetricValue, ExtensionRuntimeState,
-    ExtensionStats, MetricDataType, MetricDefinition, MetricDescriptor, MetricValue, ParamMetricValue,
-    ParameterDefinition, ParameterGroup, PushOutputMessage, Result, ValidationRule,
-    CapabilityContext, Extension,
+    BatchCommand,
+    BatchResult,
+    BatchResultsVec,
+    CExtensionMetadata,
+    CapabilityContext,
+    CommandDefinition,
+    ErrorKind,
+    Extension,
+    ExtensionCommand,
+    ExtensionDescriptor,
+    ExtensionError,
+    ExtensionMetadata,
+    ExtensionMetricValue,
+    ExtensionRuntimeState,
+    ExtensionStats,
+    IpcFrame,
     // IPC Protocol Types (re-exported from SDK for backward compatibility)
-    IpcMessage, IpcResponse, IpcFrame, ErrorKind,
-    BatchCommand, BatchResult, BatchResultsVec,
-    StreamClientInfo, StreamDataChunk, PushOutputData,
+    IpcMessage,
+    IpcResponse,
+    MetricDataType,
+    MetricDefinition,
+    MetricDescriptor,
+    MetricValue,
+    ParamMetricValue,
+    ParameterDefinition,
+    ParameterGroup,
+    PushOutputData,
+    PushOutputMessage,
+    Result,
+    StreamClientInfo,
+    StreamDataChunk,
+    ValidationRule,
+    ABI_VERSION,
 };
 
 /// Type alias for dynamic extension
@@ -102,10 +126,9 @@ mod tests {
 
     #[test]
     fn test_extension_metadata() {
-        let meta =
-            ExtensionMetadata::new("test-ext", "Test Extension", "1.0.0")
-                .with_description("A test extension")
-                .with_author("Test Author");
+        let meta = ExtensionMetadata::new("test-ext", "Test Extension", "1.0.0")
+            .with_description("A test extension")
+            .with_author("Test Author");
 
         assert_eq!(meta.id, "test-ext");
         assert_eq!(meta.name, "Test Extension");

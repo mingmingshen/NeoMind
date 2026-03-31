@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -303,6 +304,7 @@ export function AgentEditorFullScreen({
 
   // Advanced configuration state
   const [enableToolChaining, setEnableToolChaining] = useState(false)
+  const [enableToolMode, setEnableToolMode] = useState(false)
   const [maxChainDepth, setMaxChainDepth] = useState(3)
   const [priority, setPriority] = useState(5)
   const [contextWindowSize, setContextWindowSize] = useState(8192)
@@ -345,6 +347,7 @@ export function AgentEditorFullScreen({
         setLlmBackendId(agent.llm_backend_id || null)
         // Load advanced config from agent
         setEnableToolChaining(agent.enable_tool_chaining ?? false)
+        setEnableToolMode(agent.tool_config?.enabled ?? false)
         setMaxChainDepth(agent.max_chain_depth ?? 3)
         setPriority(agent.priority ?? 5)
         setContextWindowSize(agent.context_window_size ?? 8192)
@@ -358,6 +361,7 @@ export function AgentEditorFullScreen({
         setLlmBackendId(null)
         // Reset to defaults
         setEnableToolChaining(false)
+        setEnableToolMode(false)
         setMaxChainDepth(3)
         setPriority(5)
         setContextWindowSize(8192)
@@ -1025,6 +1029,7 @@ export function AgentEditorFullScreen({
         max_chain_depth: enableToolChaining ? maxChainDepth : undefined,
         priority: priority !== 5 ? priority : undefined,
         context_window_size: contextWindowSize !== 8192 ? contextWindowSize : undefined,
+        tool_config: enableToolMode ? { enabled: true, allowed_tools: [] } : undefined,
       }
 
       await onSave(data)
@@ -1268,27 +1273,16 @@ export function AgentEditorFullScreen({
                   {/* Tool Chaining */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
+                      <div className="space-y-0.5 max-w-[75%]">
                         <Label className="text-sm font-medium">Enable Tool Chaining</Label>
                         <p className="text-xs text-muted-foreground">
                           Allow the agent to chain multiple tool calls for complex tasks
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setEnableToolChaining(!enableToolChaining)}
-                        className={cn(
-                          "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
-                          enableToolChaining ? "bg-primary" : "bg-input"
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                            enableToolChaining ? "translate-x-5" : "translate-x-0.5"
-                          )}
-                        />
-                      </button>
+                      <Switch
+                        checked={enableToolChaining}
+                        onCheckedChange={setEnableToolChaining}
+                      />
                     </div>
 
                     {enableToolChaining && (
@@ -1310,6 +1304,22 @@ export function AgentEditorFullScreen({
                         </p>
                       </div>
                     )}
+                  </div>
+
+                  <div className="h-px bg-border" />
+
+                  {/* Tool Mode */}
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5 max-w-[75%]">
+                      <Label className="text-sm font-medium">Tool Mode</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Enable function calling mode. The agent will use tools to actively query and interact with devices and services.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={enableToolMode}
+                      onCheckedChange={setEnableToolMode}
+                    />
                   </div>
 
                   <div className="h-px bg-border" />

@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use crate::host::*;
 
 #[cfg(target_arch = "wasm32")]
-use crate::wasm::{ExtensionContext, capabilities};
+use crate::wasm::{capabilities, ExtensionContext};
 
 pub type CapabilityError = String;
 
@@ -119,7 +119,10 @@ pub async fn health_check(context: &Context, extension_id: &str) -> Result<bool,
         .await
         .map_err(|e| e.to_string())?;
 
-    result.get("healthy").and_then(|v| v.as_bool()).ok_or_else(|| "Invalid response".to_string())
+    result
+        .get("healthy")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| "Invalid response".to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -129,14 +132,20 @@ pub fn health_check(context: &Context, extension_id: &str) -> Result<bool, Capab
         &json!({"extension_id": extension_id, "action": "health_check"}),
     )?;
 
-    result.get("healthy").and_then(|v| v.as_bool()).ok_or_else(|| "Invalid response".to_string())
+    result
+        .get("healthy")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| "Invalid response".to_string())
 }
 
 /// List extensions
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn list(context: &Context) -> Result<Value, CapabilityError> {
     context
-        .invoke_capability(ExtensionCapability::ExtensionCall, &json!({"action": "list"}))
+        .invoke_capability(
+            ExtensionCapability::ExtensionCall,
+            &json!({"action": "list"}),
+        )
         .await
         .map_err(|e| e.to_string())
 }

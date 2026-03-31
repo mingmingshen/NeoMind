@@ -145,7 +145,11 @@ pub struct SdkMetricDefinition {
 
 impl SdkMetricDefinition {
     /// Create a new metric definition
-    pub fn new(name: impl Into<String>, display_name: impl Into<String>, data_type: SdkMetricDataType) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        display_name: impl Into<String>,
+        data_type: SdkMetricDataType,
+    ) -> Self {
         Self {
             name: name.into(),
             display_name: display_name.into(),
@@ -237,27 +241,39 @@ impl From<MetricValue> for SdkMetricValue {
 }
 
 impl From<f64> for SdkMetricValue {
-    fn from(v: f64) -> Self { Self::Float(v) }
+    fn from(v: f64) -> Self {
+        Self::Float(v)
+    }
 }
 
 impl From<i64> for SdkMetricValue {
-    fn from(v: i64) -> Self { Self::Integer(v) }
+    fn from(v: i64) -> Self {
+        Self::Integer(v)
+    }
 }
 
 impl From<bool> for SdkMetricValue {
-    fn from(v: bool) -> Self { Self::Boolean(v) }
+    fn from(v: bool) -> Self {
+        Self::Boolean(v)
+    }
 }
 
 impl From<String> for SdkMetricValue {
-    fn from(v: String) -> Self { Self::String(v) }
+    fn from(v: String) -> Self {
+        Self::String(v)
+    }
 }
 
 impl From<&str> for SdkMetricValue {
-    fn from(v: &str) -> Self { Self::String(v.to_string()) }
+    fn from(v: &str) -> Self {
+        Self::String(v.to_string())
+    }
 }
 
 impl From<Vec<u8>> for SdkMetricValue {
-    fn from(v: Vec<u8>) -> Self { Self::Binary(v) }
+    fn from(v: Vec<u8>) -> Self {
+        Self::Binary(v)
+    }
 }
 
 // ============================================================================
@@ -283,9 +299,13 @@ impl SdkExtensionMetricValue {
             value,
             timestamp: {
                 #[cfg(not(target_arch = "wasm32"))]
-                { crate::ipc_types::current_timestamp_ms() }
+                {
+                    crate::ipc_types::current_timestamp_ms()
+                }
                 #[cfg(target_arch = "wasm32")]
-                { 0 }
+                {
+                    0
+                }
             },
         }
     }
@@ -404,8 +424,7 @@ impl From<SdkParameterDefinition> for ParameterDefinition {
 }
 
 /// Command definition (SDK-specific)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SdkCommandDefinition {
     /// Command name
     pub name: String,
@@ -486,12 +505,16 @@ impl From<SdkCommandDefinition> for CommandDescriptor {
             parameters: c.parameters.into_iter().map(|p| p.into()).collect(),
             fixed_values: c.fixed_values,
             samples: c.samples,
-            parameter_groups: c.parameter_groups.into_iter().map(|g| ParameterGroup {
-                name: g.name,
-                display_name: g.display_name,
-                description: g.description,
-                parameters: g.parameters,
-            }).collect(),
+            parameter_groups: c
+                .parameter_groups
+                .into_iter()
+                .map(|g| ParameterGroup {
+                    name: g.name,
+                    display_name: g.display_name,
+                    description: g.description,
+                    parameters: g.parameters,
+                })
+                .collect(),
         }
     }
 }
@@ -740,11 +763,7 @@ impl FrontendManifestBuilder {
     }
 
     /// Add a card component
-    pub fn card(
-        mut self,
-        name: impl Into<String>,
-        display_name: impl Into<String>,
-    ) -> Self {
+    pub fn card(mut self, name: impl Into<String>, display_name: impl Into<String>) -> Self {
         self.manifest.components.push(FrontendComponent {
             name: name.into(),
             component_type: FrontendComponentType::Card,
@@ -762,11 +781,7 @@ impl FrontendManifestBuilder {
     }
 
     /// Add a widget component
-    pub fn widget(
-        mut self,
-        name: impl Into<String>,
-        display_name: impl Into<String>,
-    ) -> Self {
+    pub fn widget(mut self, name: impl Into<String>, display_name: impl Into<String>) -> Self {
         self.manifest.components.push(FrontendComponent {
             name: name.into(),
             component_type: FrontendComponentType::Widget,
@@ -784,11 +799,7 @@ impl FrontendManifestBuilder {
     }
 
     /// Add a panel component
-    pub fn panel(
-        mut self,
-        name: impl Into<String>,
-        display_name: impl Into<String>,
-    ) -> Self {
+    pub fn panel(mut self, name: impl Into<String>, display_name: impl Into<String>) -> Self {
         self.manifest.components.push(FrontendComponent {
             name: name.into(),
             component_type: FrontendComponentType::Panel,
@@ -813,7 +824,9 @@ impl FrontendManifestBuilder {
 
     /// Add a dependency
     pub fn dependency(mut self, name: impl Into<String>, version: impl Into<String>) -> Self {
-        self.manifest.dependencies.insert(name.into(), version.into());
+        self.manifest
+            .dependencies
+            .insert(name.into(), version.into());
         self
     }
 
@@ -844,20 +857,30 @@ impl<'a> ArgParser<'a> {
             .get(name)
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
-            .ok_or_else(|| SdkExtensionError::InvalidArguments(format!("Missing or invalid string argument: {}", name)))
+            .ok_or_else(|| {
+                SdkExtensionError::InvalidArguments(format!(
+                    "Missing or invalid string argument: {}",
+                    name
+                ))
+            })
     }
 
     /// Get an optional string argument
     pub fn get_optional_string(&self, name: &str) -> Option<String> {
-        self.args.get(name).and_then(|v| v.as_str()).map(|s| s.to_string())
+        self.args
+            .get(name)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
     }
 
     /// Get an i64 argument
     pub fn get_i64(&self, name: &str) -> SdkResult<i64> {
-        self.args
-            .get(name)
-            .and_then(|v| v.as_i64())
-            .ok_or_else(|| SdkExtensionError::InvalidArguments(format!("Missing or invalid integer argument: {}", name)))
+        self.args.get(name).and_then(|v| v.as_i64()).ok_or_else(|| {
+            SdkExtensionError::InvalidArguments(format!(
+                "Missing or invalid integer argument: {}",
+                name
+            ))
+        })
     }
 
     /// Get an optional i64 argument
@@ -867,10 +890,12 @@ impl<'a> ArgParser<'a> {
 
     /// Get a f64 argument
     pub fn get_f64(&self, name: &str) -> SdkResult<f64> {
-        self.args
-            .get(name)
-            .and_then(|v| v.as_f64())
-            .ok_or_else(|| SdkExtensionError::InvalidArguments(format!("Missing or invalid float argument: {}", name)))
+        self.args.get(name).and_then(|v| v.as_f64()).ok_or_else(|| {
+            SdkExtensionError::InvalidArguments(format!(
+                "Missing or invalid float argument: {}",
+                name
+            ))
+        })
     }
 
     /// Get an optional f64 argument
@@ -883,7 +908,12 @@ impl<'a> ArgParser<'a> {
         self.args
             .get(name)
             .and_then(|v| v.as_bool())
-            .ok_or_else(|| SdkExtensionError::InvalidArguments(format!("Missing or invalid boolean argument: {}", name)))
+            .ok_or_else(|| {
+                SdkExtensionError::InvalidArguments(format!(
+                    "Missing or invalid boolean argument: {}",
+                    name
+                ))
+            })
     }
 
     /// Get an optional bool argument
@@ -896,7 +926,12 @@ impl<'a> ArgParser<'a> {
         self.args
             .get(name)
             .and_then(|v| v.as_object())
-            .ok_or_else(|| SdkExtensionError::InvalidArguments(format!("Missing or invalid object argument: {}", name)))
+            .ok_or_else(|| {
+                SdkExtensionError::InvalidArguments(format!(
+                    "Missing or invalid object argument: {}",
+                    name
+                ))
+            })
     }
 
     /// Get a JSON array argument
@@ -904,7 +939,12 @@ impl<'a> ArgParser<'a> {
         self.args
             .get(name)
             .and_then(|v| v.as_array())
-            .ok_or_else(|| SdkExtensionError::InvalidArguments(format!("Missing or invalid array argument: {}", name)))
+            .ok_or_else(|| {
+                SdkExtensionError::InvalidArguments(format!(
+                    "Missing or invalid array argument: {}",
+                    name
+                ))
+            })
     }
 
     /// Parse the entire args as a specific type

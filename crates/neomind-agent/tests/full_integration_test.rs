@@ -9,12 +9,12 @@
 #![allow(dead_code)]
 
 use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
+use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::{GenerationParams, LlmInput};
 use neomind_core::{
     message::{Content, Message, MessageRole},
     EventBus, LlmRuntime, MetricValue, NeoMindEvent,
 };
-use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_messages::{MessageManager, MessageSeverity};
 use neomind_storage::{
     AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
@@ -70,6 +70,7 @@ impl FullTestContext {
                 as Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>),
             llm_backend_store: None,
             extension_registry: None,
+            tool_registry: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -194,6 +195,7 @@ impl FullTestContext {
                 short_term: ShortTermMemory::default(),
                 long_term: LongTermMemory::default(),
             },
+            tool_config: None,
             error_message: None,
             priority: 128,
             conversation_history: vec![],
@@ -275,6 +277,7 @@ impl FullTestContext {
                 short_term: ShortTermMemory::default(),
                 long_term: LongTermMemory::default(),
             },
+            tool_config: None,
             error_message: None,
             priority: 128,
             conversation_history: vec![],

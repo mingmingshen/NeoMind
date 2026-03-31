@@ -213,7 +213,7 @@ pub async fn list_extensions_handler(
 ) -> HandlerResult<Vec<ExtensionDto>> {
     // Use unified service to get successfully loaded extensions
     let loaded_extensions = state.extensions.runtime.list().await;
-    
+
     // Also get all extension records from storage (including failed ones)
     let stored_records = if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
         store.load_all().unwrap_or_default()
@@ -222,8 +222,10 @@ pub async fn list_extensions_handler(
     };
 
     // Build a set of loaded extension IDs for quick lookup
-    let loaded_ids: std::collections::HashSet<String> = 
-        loaded_extensions.iter().map(|e| e.metadata.id.clone()).collect();
+    let loaded_ids: std::collections::HashSet<String> = loaded_extensions
+        .iter()
+        .map(|e| e.metadata.id.clone())
+        .collect();
 
     let mut extensions: Vec<ExtensionDto> = Vec::new();
 
@@ -238,7 +240,7 @@ pub async fn list_extensions_handler(
         if loaded_ids.contains(&record.id) {
             continue;
         }
-        
+
         // Skip uninstalled extensions
         if record.uninstalled {
             continue;
@@ -274,7 +276,7 @@ pub async fn list_extensions_handler(
 /// Helper function to convert ExtensionInfo to ExtensionDto
 fn extension_info_to_dto(info: &neomind_core::extension::ExtensionRuntimeInfo) -> ExtensionDto {
     use neomind_core::extension::system::ParamMetricValue;
-    
+
     // Convert commands to DTOs (V2 format)
     let commands: Vec<CommandDescriptorDto> = info
         .commands
@@ -314,28 +316,26 @@ fn extension_info_to_dto(info: &neomind_core::extension::ExtensionRuntimeInfo) -
     let config_parameters = info.metadata.config_parameters.as_ref().map(|params| {
         params
             .iter()
-            .map(|p| {
-                ConfigParamDto {
-                    name: p.name.clone(),
-                    display_name: p.display_name.clone(),
-                    description: p.description.clone(),
-                    param_type: format!("{:?}", p.param_type).to_lowercase(),
-                    required: p.required,
-                    default: p.default_value.as_ref().map(|v| match v {
-                        ParamMetricValue::Float(f) => serde_json::json!(f),
-                        ParamMetricValue::Integer(i) => serde_json::json!(i),
-                        ParamMetricValue::Boolean(b) => serde_json::json!(b),
-                        ParamMetricValue::String(s) => serde_json::json!(s),
-                        ParamMetricValue::Binary(_) => serde_json::json!(null),
-                        ParamMetricValue::Null => serde_json::json!(null),
-                    }),
-                    min: p.min,
-                    max: p.max,
-                    options: match &p.param_type {
-                        MetricDataType::Enum { options } => options.clone(),
-                        _ => Vec::new(),
-                    },
-                }
+            .map(|p| ConfigParamDto {
+                name: p.name.clone(),
+                display_name: p.display_name.clone(),
+                description: p.description.clone(),
+                param_type: format!("{:?}", p.param_type).to_lowercase(),
+                required: p.required,
+                default: p.default_value.as_ref().map(|v| match v {
+                    ParamMetricValue::Float(f) => serde_json::json!(f),
+                    ParamMetricValue::Integer(i) => serde_json::json!(i),
+                    ParamMetricValue::Boolean(b) => serde_json::json!(b),
+                    ParamMetricValue::String(s) => serde_json::json!(s),
+                    ParamMetricValue::Binary(_) => serde_json::json!(null),
+                    ParamMetricValue::Null => serde_json::json!(null),
+                }),
+                min: p.min,
+                max: p.max,
+                options: match &p.param_type {
+                    MetricDataType::Enum { options } => options.clone(),
+                    _ => Vec::new(),
+                },
             })
             .collect()
     });
@@ -355,7 +355,11 @@ fn extension_info_to_dto(info: &neomind_core::extension::ExtensionRuntimeInfo) -
     let (health_status, last_error, last_error_at) =
         if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
             if let Ok(Some(record)) = store.load(&info.metadata.id) {
-                (record.health_status, record.last_error, record.last_error_at)
+                (
+                    record.health_status,
+                    record.last_error,
+                    record.last_error_at,
+                )
             } else {
                 ("unknown".to_string(), None, None)
             }
@@ -388,7 +392,11 @@ pub async fn get_extension_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<ExtensionDto> {
     // Use unified service to get both in-process and isolated extensions
-    let info = state.extensions.runtime.get(&id).await
+    let info = state
+        .extensions
+        .runtime
+        .get(&id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     // Convert commands to DTOs (V2 format)
@@ -469,10 +477,14 @@ pub async fn get_extension_handler(
     };
 
     // Try to get health status from storage
-    let (health_status, last_error, last_error_at) = 
+    let (health_status, last_error, last_error_at) =
         if let Ok(store) = ExtensionStore::open("data/extensions.redb") {
             if let Ok(Some(record)) = store.load(&id) {
-                (record.health_status, record.last_error, record.last_error_at)
+                (
+                    record.health_status,
+                    record.last_error,
+                    record.last_error_at,
+                )
             } else {
                 ("unknown".to_string(), None, None)
             }
@@ -512,14 +524,12 @@ pub async fn get_extension_stats_handler(
 
     // Get stats from unified service (supports both in-process and isolated extensions)
     match state.extensions.runtime.get_stats(&id).await {
-        Ok(stats) => {
-            ok(ExtensionStatsDto {
-                start_count: stats.start_count,
-                stop_count: stats.stop_count,
-                error_count: stats.error_count,
-                last_error: stats.last_error,
-            })
-        }
+        Ok(stats) => ok(ExtensionStatsDto {
+            start_count: stats.start_count,
+            stop_count: stats.stop_count,
+            error_count: stats.error_count,
+            last_error: stats.last_error,
+        }),
         Err(e) => {
             tracing::warn!(
                 extension_id = %id,
@@ -872,7 +882,10 @@ pub async fn execute_extension_command_handler(
 
     // Check if extension exists first
     if !runtime.contains(&id).await {
-        return Err(ErrorResponse::not_found(format!("Extension '{}' not found", id)));
+        return Err(ErrorResponse::not_found(format!(
+            "Extension '{}' not found",
+            id
+        )));
     }
 
     // Execute command with panic protection
@@ -885,7 +898,10 @@ pub async fn execute_extension_command_handler(
                 error = %e,
                 "Extension command execution failed"
             );
-            return Err(ErrorResponse::internal(format!("Command execution failed: {}", e)));
+            return Err(ErrorResponse::internal(format!(
+                "Command execution failed: {}",
+                e
+            )));
         }
     };
 
@@ -905,8 +921,10 @@ async fn publish_extension_metrics_safe(
     // Use a timeout to prevent hanging on slow operations
     match tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        publish_extension_metrics(state, extension_id, result)
-    ).await {
+        publish_extension_metrics(state, extension_id, result),
+    )
+    .await
+    {
         Ok(()) => {
             tracing::debug!(extension_id = %extension_id, "Extension metrics published successfully");
         }
@@ -948,7 +966,10 @@ pub async fn invoke_extension_handler(
     }
 
     // Execute command with proper error logging
-    let result = match runtime.execute_command(&id, &req.command, &req.params).await {
+    let result = match runtime
+        .execute_command(&id, &req.command, &req.params)
+        .await
+    {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!(
@@ -1059,10 +1080,15 @@ pub async fn list_extension_commands_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<Vec<CommandDescriptorDto>> {
-    let info = state.extensions.runtime.get(&id).await
+    let info = state
+        .extensions
+        .runtime
+        .get(&id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
-    let result: Vec<CommandDescriptorDto> = info.commands
+    let result: Vec<CommandDescriptorDto> = info
+        .commands
         .iter()
         .map(|cmd| CommandDescriptorDto {
             id: cmd.name.clone(),
@@ -1156,7 +1182,11 @@ pub async fn list_extension_data_sources_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<Vec<DataSourceInfoDto>> {
-    let info = state.extensions.runtime.get(&id).await
+    let info = state
+        .extensions
+        .runtime
+        .get(&id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     let mut sources = Vec::new();
@@ -1870,7 +1900,11 @@ pub async fn install_marketplace_extension_handler(
 
     // Check if .nep package is available (preferred method)
     if let Some(ref package_url) = package_url {
-        tracing::info!("Downloading .nep package for extension {} from {}", req.id, package_url);
+        tracing::info!(
+            "Downloading .nep package for extension {} from {}",
+            req.id,
+            package_url
+        );
 
         // Download the .nep package
         let package_response = match client
@@ -1899,7 +1933,10 @@ pub async fn install_marketplace_extension_handler(
                 downloaded: false,
                 installed: false,
                 path: None,
-                error: Some(format!("Package download failed: {}", package_response.status())),
+                error: Some(format!(
+                    "Package download failed: {}",
+                    package_response.status()
+                )),
             });
         }
 
@@ -1938,8 +1975,7 @@ pub async fn install_marketplace_extension_handler(
         }
 
         // Prepare target directory
-        let data_dir = std::env::var("NEOMIND_DATA_DIR")
-            .unwrap_or_else(|_| "data".to_string());
+        let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
         let target_dir = PathBuf::from(data_dir).join("extensions");
 
         // Install the package
@@ -1951,7 +1987,8 @@ pub async fn install_marketplace_extension_handler(
             let _package = ExtensionPackage::from_bytes(package_bytes_clone.clone())?;
             // Then install using the sync method
             ExtensionPackage::install_sync(&package_bytes_clone, &target_dir_clone)
-        }).await;
+        })
+        .await;
 
         match install_result {
             Ok(Ok(result)) => {
@@ -1986,7 +2023,8 @@ pub async fn install_marketplace_extension_handler(
                 match runtime.load(&result.binary_path).await {
                     Ok(ext_metadata) => {
                         // Determine extension type from binary path
-                        let extension_type = result.binary_path
+                        let extension_type = result
+                            .binary_path
                             .extension()
                             .and_then(|e| e.to_str())
                             .map(|e| if e == "wasm" { "wasm" } else { "native" })
@@ -2006,8 +2044,12 @@ pub async fn install_marketplace_extension_handler(
                             .with_author(ext_metadata.author.clone())
                             .with_checksum(Some(result.checksum.clone()))
                             .with_auto_start(true)
-                            .with_frontend_path(result.frontend_dir.as_ref()
-                                .map(|p| p.to_string_lossy().to_string()));
+                            .with_frontend_path(
+                                result
+                                    .frontend_dir
+                                    .as_ref()
+                                    .map(|p| p.to_string_lossy().to_string()),
+                            );
 
                             if let Err(e) = store.save(&record) {
                                 tracing::warn!("Failed to save extension to storage: {}", e);
@@ -2023,38 +2065,32 @@ pub async fn install_marketplace_extension_handler(
                             error: None,
                         })
                     }
-                    Err(e) => {
-                        ok(MarketplaceInstallResponse {
-                            success: false,
-                            extension_id: req.id.clone(),
-                            downloaded: true,
-                            installed: false,
-                            path: Some(result.binary_path.to_string_lossy().to_string()),
-                            error: Some(format!("Failed to load extension binary: {}", e)),
-                        })
-                    }
+                    Err(e) => ok(MarketplaceInstallResponse {
+                        success: false,
+                        extension_id: req.id.clone(),
+                        downloaded: true,
+                        installed: false,
+                        path: Some(result.binary_path.to_string_lossy().to_string()),
+                        error: Some(format!("Failed to load extension binary: {}", e)),
+                    }),
                 }
             }
-            Ok(Err(e)) => {
-                ok(MarketplaceInstallResponse {
-                    success: false,
-                    extension_id: req.id.clone(),
-                    downloaded: true,
-                    installed: false,
-                    path: None,
-                    error: Some(format!("Package installation failed: {}", e)),
-                })
-            }
-            Err(e) => {
-                ok(MarketplaceInstallResponse {
-                    success: false,
-                    extension_id: req.id.clone(),
-                    downloaded: true,
-                    installed: false,
-                    path: None,
-                    error: Some(format!("Task join error: {}", e)),
-                })
-            }
+            Ok(Err(e)) => ok(MarketplaceInstallResponse {
+                success: false,
+                extension_id: req.id.clone(),
+                downloaded: true,
+                installed: false,
+                path: None,
+                error: Some(format!("Package installation failed: {}", e)),
+            }),
+            Err(e) => ok(MarketplaceInstallResponse {
+                success: false,
+                extension_id: req.id.clone(),
+                downloaded: true,
+                installed: false,
+                path: None,
+                error: Some(format!("Task join error: {}", e)),
+            }),
         }
     } else {
         // Fall back to platform-specific binary download
@@ -2141,8 +2177,7 @@ pub async fn install_marketplace_extension_handler(
         };
 
         // Create extensions directory using NEOMIND_DATA_DIR for consistency
-        let data_dir = std::env::var("NEOMIND_DATA_DIR")
-            .unwrap_or_else(|_| "data".to_string());
+        let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
         let extensions_dir = PathBuf::from(data_dir).join("extensions");
 
         std::fs::create_dir_all(&extensions_dir).map_err(|e| {
@@ -2159,24 +2194,23 @@ pub async fn install_marketplace_extension_handler(
             // WASM: write both .wasm and .json files
             let wasm_path = extensions_dir.join(&wasm_filename);
 
-            std::fs::write(&wasm_path, &bytes)
-                .map_err(|e| ErrorResponse::internal(format!("Failed to write WASM file: {}", e)))?;
+            std::fs::write(&wasm_path, &bytes).map_err(|e| {
+                ErrorResponse::internal(format!("Failed to write WASM file: {}", e))
+            })?;
 
             // Download and write JSON sidecar
             let json_path = extensions_dir.join(&json_filename);
 
             if let Some(json_url) = &build.json_url {
-                let json_response = client
-                    .get(json_url)
-                    .send()
-                    .await
-                    .map_err(|e| ErrorResponse::internal(format!("JSON download failed: {}", e)))?;
+                let json_response =
+                    client.get(json_url).send().await.map_err(|e| {
+                        ErrorResponse::internal(format!("JSON download failed: {}", e))
+                    })?;
 
                 if json_response.status().is_success() {
-                    let json_bytes = json_response
-                        .bytes()
-                        .await
-                        .map_err(|e| ErrorResponse::internal(format!("Failed to read JSON: {}", e)))?;
+                    let json_bytes = json_response.bytes().await.map_err(|e| {
+                        ErrorResponse::internal(format!("Failed to read JSON: {}", e))
+                    })?;
 
                     // Verify JSON SHA256 if provided
                     if let Some(ref expected_sha) = build.json_sha256 {
@@ -2350,7 +2384,11 @@ pub async fn get_extension_config_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     // Get extension info using unified service
-    let ext_info = state.extensions.runtime.get(&id).await
+    let ext_info = state
+        .extensions
+        .runtime
+        .get(&id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     // Get current config from storage
@@ -2389,7 +2427,11 @@ pub async fn update_extension_config_handler(
     Json(config): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
     // Verify extension exists using unified service
-    let ext_info = state.extensions.runtime.get(&id).await
+    let ext_info = state
+        .extensions
+        .runtime
+        .get(&id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     // Validate config against schema if present
@@ -2497,7 +2539,10 @@ pub async fn reload_extension_handler(
                 );
             }
             Err(e) => {
-                return Err(ErrorResponse::internal(format!("Failed to reload extension: {}", e)));
+                return Err(ErrorResponse::internal(format!(
+                    "Failed to reload extension: {}",
+                    e
+                )));
             }
         }
     }
@@ -2802,14 +2847,12 @@ impl From<SizeConstraints> for SizeConstraintsDto {
 }
 
 /// Data binding DTO.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DataBindingDto {
     pub extension_metric: Option<String>,
     pub extension_command: Option<String>,
     pub required_fields: Vec<String>,
 }
-
 
 impl From<DataBindingConfig> for DataBindingDto {
     fn from(c: DataBindingConfig) -> Self {
@@ -2869,12 +2912,15 @@ pub async fn get_extension_components_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<DashboardComponentsResponse> {
     // Check if extension exists using unified service
-    let info = state.extensions.runtime.get(&id).await
+    let info = state
+        .extensions
+        .runtime
+        .get(&id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
 
     // Try to load manifest from extension directory
-    let components = load_extension_components(&id, info.path.as_ref())
-        .unwrap_or_default();
+    let components = load_extension_components(&id, info.path.as_ref()).unwrap_or_default();
 
     let extension_name = info.metadata.name.clone();
 
@@ -2891,7 +2937,6 @@ fn load_extension_components(
     extension_id: &str,
     file_path: Option<&std::path::PathBuf>,
 ) -> Option<Vec<DashboardComponentDto>> {
-
     // Log path configuration for debugging
     let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
     tracing::debug!(
@@ -2906,7 +2951,9 @@ fn load_extension_components(
     } else {
         // Try to find extension in data/extensions directory
         let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
-        std::path::PathBuf::from(data_dir).join("extensions").join(extension_id)
+        std::path::PathBuf::from(data_dir)
+            .join("extensions")
+            .join(extension_id)
     };
 
     tracing::debug!(
@@ -3028,10 +3075,8 @@ fn load_extension_components(
     let base_url = format!("/api/extensions/{}/assets", extension_id);
 
     // Get components from frontend.components
-    let components: Vec<DashboardComponentDef> = manifest
-        .frontend
-        .map(|f| f.components)
-        .unwrap_or_default();
+    let components: Vec<DashboardComponentDef> =
+        manifest.frontend.map(|f| f.components).unwrap_or_default();
 
     let components: Vec<DashboardComponentDto> = components
         .into_iter()
@@ -3053,7 +3098,10 @@ fn load_extension_components(
             data_source_schema: def.data_source_schema,
             default_config: def.default_config,
             variants: def.variants,
-            data_binding: def.data_binding.map(DataBindingDto::from).unwrap_or_default(),
+            data_binding: def
+                .data_binding
+                .map(DataBindingDto::from)
+                .unwrap_or_default(),
             extension_id: extension_id.to_string(),
         })
         .collect();
@@ -3076,7 +3124,9 @@ pub async fn serve_extension_asset_handler(
 
     // Extension directory is always data/extensions/{id}
     let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "./data".to_string());
-    let ext_dir = std::path::PathBuf::from(data_dir).join("extensions").join(&id);
+    let ext_dir = std::path::PathBuf::from(data_dir)
+        .join("extensions")
+        .join(&id);
 
     let asset_file = ext_dir.join(&asset_path);
 
@@ -3141,9 +3191,7 @@ pub async fn get_all_dashboard_components_handler(
     // Load components only from registered extensions
     let all_extensions = state.extensions.runtime.list().await;
     for info in all_extensions {
-        if let Some(components) =
-            load_extension_components(&info.metadata.id, info.path.as_ref())
-        {
+        if let Some(components) = load_extension_components(&info.metadata.id, info.path.as_ref()) {
             all_components.extend(components);
         }
     }
@@ -3164,11 +3212,15 @@ pub async fn upload_extension_package_handler(
     let file_path = PathBuf::from(&req.file_path);
 
     if !file_path.exists() {
-        return Err(ErrorResponse::not_found(format!("Package file not found: {}", req.file_path)));
+        return Err(ErrorResponse::not_found(format!(
+            "Package file not found: {}",
+            req.file_path
+        )));
     }
 
     // Load the package
-    let package = ExtensionPackage::load(&file_path).await
+    let package = ExtensionPackage::load(&file_path)
+        .await
         .map_err(|e| ErrorResponse::bad_request(format!("Invalid package: {}", e)))?;
 
     let ext_id = package.manifest.id.clone();
@@ -3191,16 +3243,18 @@ pub async fn upload_extension_package_handler(
     if is_registered {
         // Unregister existing version first
         tracing::info!("Extension {} already registered, will replace", ext_id);
-        runtime.unregister(&ext_id).await
-            .map_err(|e| ErrorResponse::internal(format!("Failed to unregister existing: {}", e)))?;
+        runtime.unregister(&ext_id).await.map_err(|e| {
+            ErrorResponse::internal(format!("Failed to unregister existing: {}", e))
+        })?;
     }
 
     // Install the package
-    let data_dir = std::env::var("NEOMIND_DATA_DIR")
-        .unwrap_or_else(|_| "data".to_string());
+    let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
     let target_dir = PathBuf::from(data_dir).join("extensions");
 
-    let install_result = package.install(&target_dir).await
+    let install_result = package
+        .install(&target_dir)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Installation failed: {}", e)))?;
 
     tracing::info!(
@@ -3213,7 +3267,9 @@ pub async fn upload_extension_package_handler(
     );
 
     // Load and register the extension binary (handles both isolated and in-process)
-    let _metadata = runtime.load(&install_result.binary_path).await
+    let _metadata = runtime
+        .load(&install_result.binary_path)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to load extension binary: {}", e)))?;
 
     // Save to storage
@@ -3229,8 +3285,12 @@ pub async fn upload_extension_package_handler(
         .with_author(package.manifest.author.clone())
         .with_checksum(Some(install_result.checksum.clone()))
         .with_auto_start(true)
-        .with_frontend_path(install_result.frontend_dir.as_ref()
-            .map(|p| p.to_string_lossy().to_string()));
+        .with_frontend_path(
+            install_result
+                .frontend_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string()),
+        );
 
         if let Err(e) = store.save(&record) {
             tracing::warn!("Failed to save extension to storage: {}", e);
@@ -3271,16 +3331,23 @@ pub async fn validate_extension_package_handler(
     let file_path = PathBuf::from(&req.file_path);
 
     if !file_path.exists() {
-        return Err(ErrorResponse::not_found(format!("Package file not found: {}", req.file_path)));
+        return Err(ErrorResponse::not_found(format!(
+            "Package file not found: {}",
+            req.file_path
+        )));
     }
 
-    let package = ExtensionPackage::load(&file_path).await
+    let package = ExtensionPackage::load(&file_path)
+        .await
         .map_err(|e| ErrorResponse::bad_request(format!("Invalid package: {}", e)))?;
 
     let platform = detect_platform();
     let has_binary = package.get_binary_path().is_some();
     let has_frontend = package.manifest.frontend.is_some();
-    let components_count = package.manifest.frontend.as_ref()
+    let components_count = package
+        .manifest
+        .frontend
+        .as_ref()
         .map(|f| f.components.len())
         .unwrap_or(0);
 
@@ -3323,21 +3390,17 @@ pub async fn uninstall_extension_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    
-
     let runtime = &state.extensions.runtime;
 
     // Check if extension exists
     let exists = runtime.contains(&id).await;
-    let ext_info = if exists {
-        runtime.get(&id).await
-    } else {
-        None
-    };
+    let ext_info = if exists { runtime.get(&id).await } else { None };
 
     // Unregister from memory
     if exists {
-        runtime.unregister(&id).await
+        runtime
+            .unregister(&id)
+            .await
             .map_err(|e| ErrorResponse::internal(format!("Failed to unregister: {}", e)))?;
     }
 
@@ -3349,16 +3412,16 @@ pub async fn uninstall_extension_handler(
     }
 
     // Clean up extension directory
-    let data_dir = std::env::var("NEOMIND_DATA_DIR")
-        .unwrap_or_else(|_| "data".to_string());
+    let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
     let extensions_dir = PathBuf::from(data_dir).join("extensions");
     let ext_dir = extensions_dir.join(&id);
 
     let mut removed_files = Vec::new();
     if ext_dir.exists() {
         tracing::info!("Removing extension directory: {}", ext_dir.display());
-        tokio::fs::remove_dir_all(&ext_dir).await
-            .map_err(|e| ErrorResponse::internal(format!("Failed to remove extension directory: {}", e)))?;
+        tokio::fs::remove_dir_all(&ext_dir).await.map_err(|e| {
+            ErrorResponse::internal(format!("Failed to remove extension directory: {}", e))
+        })?;
         removed_files.push(ext_dir.to_string_lossy().to_string());
     }
 
@@ -3429,7 +3492,9 @@ pub async fn upload_extension_file_handler(
 
     // Check if this looks like a ZIP file
     if body_bytes.len() < 4 {
-        return Err(ErrorResponse::bad_request("File too small to be a valid package"));
+        return Err(ErrorResponse::bad_request(
+            "File too small to be a valid package",
+        ));
     }
 
     let zip_magic: &[u8] = &[0x50, 0x4B, 0x03, 0x04];
@@ -3441,12 +3506,13 @@ pub async fn upload_extension_file_handler(
         || body_bytes.starts_with(zip_spanned);
 
     if !is_zip {
-        return Err(ErrorResponse::bad_request("File is not a valid ZIP archive"));
+        return Err(ErrorResponse::bad_request(
+            "File is not a valid ZIP archive",
+        ));
     }
 
     // Prepare target directory
-    let data_dir = std::env::var("NEOMIND_DATA_DIR")
-        .unwrap_or_else(|_| "data".to_string());
+    let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
     let target_dir = PathBuf::from(data_dir).join("extensions");
 
     // Step 1: Parse the package to get extension ID (validation only, no install yet)
@@ -3456,10 +3522,14 @@ pub async fn upload_extension_file_handler(
         use neomind_core::extension::package::ExtensionPackage;
         let package = ExtensionPackage::from_bytes(body_bytes_for_validate)
             .map_err(|e| format!("Package parse error: {}", e))?;
-        Ok::<_, String>((package.manifest.id.clone(), package.manifest.version.clone()))
-    }).await
-        .map_err(|e| ErrorResponse::internal(format!("Task join error: {}", e)))?
-        .map_err(|e| ErrorResponse::internal(format!("Package validation failed: {}", e)))?;
+        Ok::<_, String>((
+            package.manifest.id.clone(),
+            package.manifest.version.clone(),
+        ))
+    })
+    .await
+    .map_err(|e| ErrorResponse::internal(format!("Task join error: {}", e)))?
+    .map_err(|e| ErrorResponse::internal(format!("Package validation failed: {}", e)))?;
 
     tracing::info!(
         extension_id = %ext_id,
@@ -3473,9 +3543,13 @@ pub async fn upload_extension_file_handler(
     let is_registered = runtime.contains(&ext_id).await;
 
     if is_registered {
-        tracing::info!("Extension {} already registered, unloading before update", ext_id);
-        runtime.unload(&ext_id).await
-            .map_err(|e| ErrorResponse::internal(format!("Failed to unload existing extension: {}", e)))?;
+        tracing::info!(
+            "Extension {} already registered, unloading before update",
+            ext_id
+        );
+        runtime.unload(&ext_id).await.map_err(|e| {
+            ErrorResponse::internal(format!("Failed to unload existing extension: {}", e))
+        })?;
         // Wait a moment for the process to fully terminate and release file handles
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     }
@@ -3486,9 +3560,10 @@ pub async fn upload_extension_file_handler(
     let install_result = tokio::task::spawn_blocking(move || {
         use neomind_core::extension::package::ExtensionPackage;
         ExtensionPackage::install_sync(&body_bytes_for_install, &target_dir_clone)
-    }).await
-        .map_err(|e| ErrorResponse::internal(format!("Task join error: {}", e)))?
-        .map_err(|e| ErrorResponse::internal(format!("Installation failed: {}", e)))?;
+    })
+    .await
+    .map_err(|e| ErrorResponse::internal(format!("Task join error: {}", e)))?
+    .map_err(|e| ErrorResponse::internal(format!("Installation failed: {}", e)))?;
 
     tracing::info!(
         extension_id = %install_result.extension_id,
@@ -3499,11 +3574,14 @@ pub async fn upload_extension_file_handler(
     );
 
     // Step 4: Load and register the extension binary with process isolation
-    let metadata = runtime.load(&install_result.binary_path).await
+    let metadata = runtime
+        .load(&install_result.binary_path)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to load extension binary: {}", e)))?;
 
     // Determine extension type from binary path
-    let extension_type = install_result.binary_path
+    let extension_type = install_result
+        .binary_path
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| if e == "wasm" { "wasm" } else { "native" })
@@ -3523,8 +3601,12 @@ pub async fn upload_extension_file_handler(
         .with_author(metadata.author.clone())
         .with_checksum(Some(install_result.checksum.clone()))
         .with_auto_start(true)
-        .with_frontend_path(install_result.frontend_dir.as_ref()
-            .map(|p| p.to_string_lossy().to_string()));
+        .with_frontend_path(
+            install_result
+                .frontend_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string()),
+        );
 
         if let Err(e) = store.save(&record) {
             tracing::warn!("Failed to save extension to storage: {}", e);
@@ -3563,14 +3645,15 @@ pub async fn sync_extensions_handler(
 ) -> HandlerResult<serde_json::Value> {
     use crate::server::ExtensionInstallService;
 
-    let data_dir = std::env::var("NEOMIND_DATA_DIR")
-        .unwrap_or_else(|_| "data".to_string());
+    let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
     let install_dir = std::path::PathBuf::from(data_dir).join("extensions");
     let nep_cache_dir = std::path::PathBuf::from("extensions");
 
     let install_service = ExtensionInstallService::new(&install_dir, &nep_cache_dir);
 
-    let report = install_service.sync_nep_cache().await
+    let report = install_service
+        .sync_nep_cache()
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Sync failed: {}", e)))?;
 
     ok(serde_json::json!({
@@ -3589,8 +3672,7 @@ pub async fn get_sync_status_handler(
     use neomind_core::extension::package::ExtensionPackage;
 
     let nep_cache_dir = std::path::PathBuf::from("extensions");
-    let data_dir = std::env::var("NEOMIND_DATA_DIR")
-        .unwrap_or_else(|_| "data".to_string());
+    let data_dir = std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string());
     let install_dir = std::path::PathBuf::from(data_dir).join("extensions");
 
     let mut nep_packages = Vec::new();

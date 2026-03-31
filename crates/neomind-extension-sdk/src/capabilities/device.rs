@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use crate::host::*;
 
 #[cfg(target_arch = "wasm32")]
-use crate::wasm::{ExtensionContext, capabilities};
+use crate::wasm::{capabilities, ExtensionContext};
 
 /// Capability error type
 pub type CapabilityError = String;
@@ -39,7 +39,10 @@ pub async fn get_metrics(context: &Context, device_id: &str) -> Result<Value, Ca
 
 #[cfg(target_arch = "wasm32")]
 pub fn get_metrics(context: &Context, device_id: &str) -> Result<Value, CapabilityError> {
-    context.invoke_capability(capabilities::DEVICE_METRICS_READ, &json!({"device_id": device_id}))
+    context.invoke_capability(
+        capabilities::DEVICE_METRICS_READ,
+        &json!({"device_id": device_id}),
+    )
 }
 
 // ============================================================================
@@ -214,9 +217,8 @@ pub fn write_virtual_metric_sync(
     value: &Value,
 ) -> Result<Value, CapabilityError> {
     tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(async {
-            write_virtual_metric(context, device_id, metric, value).await
-        })
+        tokio::runtime::Handle::current()
+            .block_on(async { write_virtual_metric(context, device_id, metric, value).await })
     })
 }
 

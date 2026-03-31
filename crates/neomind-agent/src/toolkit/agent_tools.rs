@@ -14,12 +14,12 @@ use serde_json::Value;
 
 use super::error::Result;
 use super::error::ToolError;
+use super::tool::ToolExample;
 use super::tool::{
     boolean_property, number_property, object_schema, string_property, Tool, ToolDefinition,
     ToolOutput,
 };
 use neomind_core::tools::{ToolCategory, ToolRelationships, UsageScenario};
-use super::tool::ToolExample;
 
 use neomind_storage::agents::{
     AgentFilter, AgentResource, AgentStatus, IntentType, LearnedPattern, ParsedIntent,
@@ -656,16 +656,18 @@ impl Tool for UpdateAgentTool {
                 if let Some(ref filter) = agent.schedule.event_filter {
                     // Parse event_filter to provide better description
                     if let Ok(filter_obj) = serde_json::from_str::<Value>(filter) {
-                        let event_type = filter_obj.get("event_type")
+                        let event_type = filter_obj
+                            .get("event_type")
                             .and_then(|v| v.as_str())
                             .unwrap_or("unknown");
-                        
+
                         match event_type {
                             "device.metric" => {
-                                let device_id = filter_obj.get("device_id")
+                                let device_id = filter_obj
+                                    .get("device_id")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("all");
-                                
+
                                 if device_id == "all" {
                                     "设备指标更新触发：所有设备".to_string()
                                 } else {
@@ -673,7 +675,7 @@ impl Tool for UpdateAgentTool {
                                 }
                             }
                             "manual" => "手动触发（不自动执行）".to_string(),
-                            _ => format!("事件触发: {}", filter)
+                            _ => format!("事件触发: {}", filter),
                         }
                     } else {
                         format!("事件触发: {}", filter)
@@ -1129,6 +1131,7 @@ impl Tool for CreateAgentTool {
             user_messages: vec![],
             conversation_summary: None,
             context_window_size: 10,
+            tool_config: None,
             error_message: None,
             enable_tool_chaining: false, // Default disabled for backward compatibility
             max_chain_depth: 3,          // Default max depth

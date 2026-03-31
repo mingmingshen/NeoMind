@@ -930,8 +930,8 @@ pub struct CompressionStats {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::budget::Priority;
+    use super::*;
 
     #[test]
     fn test_compression_config_default() {

@@ -29,16 +29,26 @@ pub mod system;
 pub mod tracing;
 pub mod types;
 
+pub use capability_services::{keys, CapabilityServices};
+pub use context::{
+    AvailableCapabilities, CapabilityError, CapabilityManifest, ExtensionCapability,
+    ExtensionCapabilityProvider, ExtensionContext, ExtensionContextConfig,
+};
+pub use event_dispatcher::EventDispatcher;
+pub use event_subscription::{EventFilter, EventSubscription};
 pub use executor::{CommandExecutor, CommandResult, UnifiedStorage};
+pub use extension_event_subscription::ExtensionEventSubscriptionService;
 pub use isolated::{
     IsolatedExtension, IsolatedExtensionConfig, IsolatedExtensionError, IsolatedExtensionInfo,
     IsolatedExtensionManager, IsolatedManagerConfig, IsolatedResult,
 };
 pub use loader::{
-    IsolatedExtensionLoader, IsolatedLoaderConfig, LoadedExtension,
-    NativeExtensionMetadataLoader,
+    IsolatedExtensionLoader, IsolatedLoaderConfig, LoadedExtension, NativeExtensionMetadataLoader,
 };
-pub use package::{detect_platform, ExtensionPackage, InstallResult, PACKAGE_FORMAT, CURRENT_ABI_VERSION, MIN_ABI_VERSION};
+pub use package::{
+    detect_platform, ExtensionPackage, InstallResult, CURRENT_ABI_VERSION, MIN_ABI_VERSION,
+    PACKAGE_FORMAT,
+};
 pub use registry::{ExtensionInfo, ExtensionRegistry, ExtensionRegistryTrait};
 pub use runtime::{ExtensionRuntime, ExtensionRuntimeConfig, ExtensionRuntimeInfo};
 pub use stream::{
@@ -46,26 +56,17 @@ pub use stream::{
     StreamDirection, StreamError, StreamMode, StreamResult, StreamSession,
 };
 pub use system::{
-    ABI_VERSION, CExtensionMetadata, CommandDefinition, Extension, ExtensionCommand,
-    ExtensionMetadata, ExtensionMetricValue, ExtensionState, ExtensionStats, MetricDataType,
-    MetricDefinition, MetricDescriptor, ParamMetricValue, ParameterDefinition, ParameterGroup,
-    PushOutputMessage, ToolDescriptor, ValidationRule,
+    CExtensionMetadata, CommandDefinition, Extension, ExtensionCommand, ExtensionMetadata,
+    ExtensionMetricValue, ExtensionState, ExtensionStats, MetricDataType, MetricDefinition,
+    MetricDescriptor, ParamMetricValue, ParameterDefinition, ParameterGroup, PushOutputMessage,
+    ToolDescriptor, ValidationRule, ABI_VERSION,
+};
+pub use tracing::{
+    current_span_id, current_trace_id, extension_command_span, extension_load_span,
+    extension_unload_span, extract_trace_context, inject_trace_context, instrumented_command,
+    instrumented_ipc, instrumented_load, ipc_communication_span,
 };
 pub use types::{DynExtension, ExtensionError, Result};
-pub use event_subscription::{EventSubscription, EventFilter};
-pub use tracing::{
-    current_span_id, current_trace_id, extract_trace_context, inject_trace_context,
-    instrumented_command, instrumented_ipc, instrumented_load, ipc_communication_span,
-    extension_command_span, extension_load_span, extension_unload_span,
-};
-pub use context::{
-    ExtensionContext, ExtensionContextConfig, ExtensionCapability,
-    ExtensionCapabilityProvider, CapabilityManifest, CapabilityError,
-    AvailableCapabilities,
-};
-pub use capability_services::{CapabilityServices, keys};
-pub use event_dispatcher::EventDispatcher;
-pub use extension_event_subscription::ExtensionEventSubscriptionService;
 
 /// Check if a file is a native extension.
 pub fn is_native_extension(path: &std::path::Path) -> bool {

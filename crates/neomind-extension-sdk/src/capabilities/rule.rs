@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use crate::host::*;
 
 #[cfg(target_arch = "wasm32")]
-use crate::wasm::{ExtensionContext, capabilities};
+use crate::wasm::{capabilities, ExtensionContext};
 
 pub type CapabilityError = String;
 
@@ -100,10 +100,7 @@ where
 
 /// Get rule definition
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn get_definition(
-    context: &Context,
-    rule_id: &str,
-) -> Result<Value, CapabilityError> {
+pub async fn get_definition(context: &Context, rule_id: &str) -> Result<Value, CapabilityError> {
     context
         .invoke_capability(
             ExtensionCapability::RuleTrigger,
@@ -114,10 +111,7 @@ pub async fn get_definition(
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn get_definition(
-    context: &Context,
-    rule_id: &str,
-) -> Result<Value, CapabilityError> {
+pub fn get_definition(context: &Context, rule_id: &str) -> Result<Value, CapabilityError> {
     context.invoke_capability(
         capabilities::RULE_TRIGGER,
         &json!({"rule_id": rule_id, "action": "get_definition"}),

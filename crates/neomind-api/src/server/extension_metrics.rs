@@ -18,7 +18,6 @@ use tracing::{debug, info, warn};
 
 use neomind_core::datasource::DataSourceId;
 
-
 // Use ExtensionMetricsStorage from extension_state instead of device TimeSeriesStorage
 use crate::server::state::ExtensionMetricsStorage;
 

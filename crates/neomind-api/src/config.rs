@@ -5,11 +5,11 @@
 //! 2. config.toml (TOML format - preferred for static config)
 //! 3. Environment variables (fallback)
 
+use neomind_agent::memory::{EmbeddingConfig, TieredMemoryConfig};
 use neomind_agent::LlmBackend;
 use neomind_core::config::{
     endpoints, env_vars, models, normalize_ollama_endpoint, normalize_openai_endpoint,
 };
-use neomind_agent::memory::{EmbeddingConfig, TieredMemoryConfig};
 use neomind_storage::{LlmBackendType, LlmSettings};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -101,7 +101,8 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                capabilities: None, })
+                    capabilities: None,
+                })
             }
             LlmBackendType::Anthropic => {
                 let endpoint = settings
@@ -113,7 +114,8 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                capabilities: None, })
+                    capabilities: None,
+                })
             }
             LlmBackendType::Google => {
                 let endpoint = settings
@@ -125,7 +127,8 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                capabilities: None, })
+                    capabilities: None,
+                })
             }
             LlmBackendType::XAi => {
                 let endpoint = settings
@@ -137,7 +140,8 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                capabilities: None, })
+                    capabilities: None,
+                })
             }
             LlmBackendType::Qwen => {
                 let endpoint = settings
@@ -149,7 +153,8 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                capabilities: None, })
+                    capabilities: None,
+                })
             }
             LlmBackendType::DeepSeek => {
                 let endpoint = settings
@@ -161,7 +166,8 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                capabilities: None, })
+                    capabilities: None,
+                })
             }
             LlmBackendType::GLM => {
                 let endpoint = settings
@@ -173,7 +179,8 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                capabilities: None, })
+                    capabilities: None,
+                })
             }
             LlmBackendType::MiniMax => {
                 let endpoint = settings
@@ -185,7 +192,8 @@ impl ConfigSource {
                     api_key,
                     endpoint,
                     model: settings.model,
-                capabilities: None, })
+                    capabilities: None,
+                })
             }
         }
     }
@@ -237,7 +245,11 @@ impl ConfigSource {
             let model = std::env::var(env_vars::LLM_MODEL)
                 .unwrap_or_else(|_| models::OLLAMA_DEFAULT.to_string());
             info!(category = "ai", backend = "ollama", endpoint = %endpoint, model = %model, "Env config: Ollama");
-            return Some(LlmBackend::Ollama { endpoint, model, capabilities: None });
+            return Some(LlmBackend::Ollama {
+                endpoint,
+                model,
+                capabilities: None,
+            });
         }
 
         // Check for OpenAI
