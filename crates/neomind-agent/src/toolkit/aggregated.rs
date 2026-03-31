@@ -130,6 +130,48 @@ impl Tool for DeviceTool {
 }
 
 impl DeviceTool {
+    /// Resolve device_id with fuzzy matching support.
+    ///
+    /// Tries exact match first, then falls back to case-insensitive
+    /// substring matching on device_id or name.
+    async fn resolve_device_id(&self, device_id: &str) -> Result<String> {
+        // 1. Try exact match first
+        if self.device_service.get_device(device_id).await.is_some() {
+            return Ok(device_id.to_string());
+        }
+
+        // 2. Fuzzy match by id or name (case-insensitive substring)
+        let devices = self.device_service.list_devices().await;
+        let candidates: Vec<_> = devices
+            .iter()
+            .filter(|d| {
+                d.device_id
+                    .to_lowercase()
+                    .contains(&device_id.to_lowercase())
+                    || d.name.to_lowercase().contains(&device_id.to_lowercase())
+            })
+            .collect();
+
+        match candidates.len() {
+            0 => Err(ToolError::Execution(format!(
+                "未找到设备 '{}'。请先调用 device(action: 'list') 查看可用设备。",
+                device_id
+            ))),
+            1 => Ok(candidates[0].device_id.clone()),
+            _ => {
+                let device_list: Vec<String> = candidates
+                    .iter()
+                    .map(|d| format!("{} ({})", d.name, d.device_id))
+                    .collect();
+                Err(ToolError::Execution(format!(
+                    "找到多个匹配 '{}' 的设备，请指定更明确的名称: {}",
+                    device_id,
+                    device_list.join(", ")
+                )))
+            }
+        }
+    }
+
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
         let devices = self.device_service.list_devices().await;
         let device_type_filter = args["device_type"].as_str();
@@ -202,13 +244,15 @@ impl DeviceTool {
     }
 
     async fn execute_get(&self, args: &Value) -> Result<ToolOutput> {
-        let device_id = args["device_id"]
+        let device_id_input = args["device_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("device_id is required".into()))?;
 
+        let device_id = self.resolve_device_id(device_id_input).await?;
+
         let device = self
             .device_service
-            .get_device(device_id)
+            .get_device(&device_id)
             .await
             .ok_or_else(|| ToolError::Execution(format!("Device not found: {}", device_id)))?;
 
@@ -222,9 +266,11 @@ impl DeviceTool {
     }
 
     async fn execute_query(&self, args: &Value) -> Result<ToolOutput> {
-        let device_id = args["device_id"]
+        let device_id_input = args["device_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("device_id is required".into()))?;
+
+        let device_id = self.resolve_device_id(device_id_input).await?;
 
         let storage = self
             .storage
@@ -238,7 +284,7 @@ impl DeviceTool {
 
         if let Some(m) = metric {
             let data = storage
-                .query(device_id, m, start_time, end_time)
+                .query(&device_id, m, start_time, end_time)
                 .await
                 .map_err(|e| ToolError::Execution(e.to_string()))?;
 

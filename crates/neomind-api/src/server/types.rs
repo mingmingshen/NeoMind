@@ -1750,7 +1750,7 @@ impl ServerState {
             message_manager: Some(self.core.message_manager.clone()),
             llm_runtime,
             llm_backend_store,
-            tool_registry: None,
+            tool_registry: self.agents.session_manager.get_tool_registry().await,
         };
 
         let manager = neomind_agent::ai_agent::AiAgentManager::new(executor_config)
