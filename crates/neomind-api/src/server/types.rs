@@ -1045,23 +1045,17 @@ impl ServerState {
         use neomind_agent::toolkit::ToolRegistryBuilder;
         use std::sync::Arc;
 
-        // Build tool registry with real implementations that connect to actual services
+        // Build tool registry with aggregated tools (action-based design for token efficiency)
+        // This consolidates 34+ individual tools into 5 aggregated tools
         let builder = ToolRegistryBuilder::new()
-            // Real implementations
-            .with_query_data_tool(
+            // Aggregated tools (replaces 20+ individual tool registrations)
+            .with_aggregated_tools(
+                self.devices.service.clone(),
                 self.devices.telemetry.clone(),
-                Some(self.devices.service.clone()),
+                self.agents.agent_store.clone(),
+                self.automation.rule_engine.clone(),
             )
-            .with_get_device_data_tool(self.devices.service.clone(), self.devices.telemetry.clone())
-            .with_control_device_tool(self.devices.service.clone())
-            .with_list_devices_tool(self.devices.service.clone())
-            .with_device_analyze_tool(self.devices.service.clone(), self.devices.telemetry.clone())
-            .with_create_rule_tool(self.automation.rule_engine.clone())
-            .with_list_rules_tool(self.automation.rule_engine.clone())
-            .with_delete_rule_tool(self.automation.rule_engine.clone())
-            // AI Agent tools for Chat integration
-            .with_agent_tools(self.agents.agent_store.clone())
-            // System help tool for onboarding
+            // System help tool for onboarding (kept separate for discoverability)
             .with_system_help_tool_named("NeoMind");
 
         let tool_registry = Arc::new(builder.build());
@@ -1071,7 +1065,7 @@ impl ServerState {
             .await;
         tracing::info!(
             category = "ai",
-            "Tool registry initialized with {} tools",
+            "Tool registry initialized with {} aggregated tools (action-based design)",
             tool_registry.len()
         );
     }

@@ -1169,3 +1169,120 @@ impl Default for AggregatedToolsBuilder {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_aggregated_tools_builder_creates_tools() {
+        // Test that builder creates tools even without dependencies
+        let tools = AggregatedToolsBuilder::new().build();
+        // Without dependencies, only AlertTool is created
+        assert_eq!(tools.len(), 1);
+    }
+
+    #[test]
+    fn test_alert_tool_name() {
+        // Test AlertTool metadata
+        let tool = AlertTool::new();
+        assert_eq!(tool.name(), "alert");
+    }
+
+    #[tokio::test]
+    async fn test_alert_tool_list_empty() {
+        // Test listing alerts when none exist
+        let tool = AlertTool::new();
+        let result = tool
+            .execute(serde_json::json!({"action": "list"}))
+            .await
+            .unwrap();
+
+        assert!(result.success);
+        assert_eq!(result.data["count"].as_u64().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_alert_tool_create_and_list() {
+        // Test creating and listing alerts
+        let tool = AlertTool::new();
+
+        // Create an alert
+        let create_result = tool
+            .execute(serde_json::json!({
+                "action": "create",
+                "title": "Test Alert",
+                "message": "This is a test",
+                "severity": "warning"
+            }))
+            .await
+            .unwrap();
+
+        assert!(create_result.success);
+        let alert_id = create_result.data["id"].as_str().unwrap().to_string();
+
+        // List alerts
+        let list_result = tool
+            .execute(serde_json::json!({"action": "list"}))
+            .await
+            .unwrap();
+
+        assert!(list_result.success);
+        assert_eq!(list_result.data["count"].as_u64().unwrap(), 1);
+
+        // Acknowledge the alert
+        let ack_result = tool
+            .execute(serde_json::json!({
+                "action": "acknowledge",
+                "alert_id": alert_id
+            }))
+            .await
+            .unwrap();
+
+        assert!(ack_result.success);
+    }
+
+    #[tokio::test]
+    async fn test_alert_tool_unknown_action() {
+        let tool = AlertTool::new();
+
+        let result = tool
+            .execute(serde_json::json!({"action": "unknown_action"}))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_aggregated_alert_severity_variants() {
+        // Test that AggregatedAlertSeverity has all expected variants
+        let info = AggregatedAlertSeverity::Info;
+        let warning = AggregatedAlertSeverity::Warning;
+        let error = AggregatedAlertSeverity::Error;
+        let critical = AggregatedAlertSeverity::Critical;
+
+        // Verify Debug trait is implemented
+        assert!(format!("{:?}", info).contains("Info"));
+        assert!(format!("{:?}", warning).contains("Warning"));
+        assert!(format!("{:?}", error).contains("Error"));
+        assert!(format!("{:?}", critical).contains("Critical"));
+    }
+
+    #[test]
+    fn test_aggregated_alert_info_serialization() {
+        // Test that AggregatedAlertInfo can be serialized
+        let alert = AggregatedAlertInfo {
+            id: "test-id".to_string(),
+            title: "Test Alert".to_string(),
+            message: "Test message".to_string(),
+            severity: AggregatedAlertSeverity::Warning,
+            source: "test".to_string(),
+            acknowledged: false,
+            created_at: 1234567890,
+        };
+
+        let json = serde_json::to_string(&alert).unwrap();
+        assert!(json.contains("test-id"));
+        assert!(json.contains("Test Alert"));
+    }
+}

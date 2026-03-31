@@ -576,6 +576,76 @@ impl ToolRegistryBuilder {
         builder
     }
 
+    // ============================================================================
+    // Aggregated Tools (Action-based design for token efficiency)
+    // ============================================================================
+
+    /// Add aggregated tools that consolidate 34+ individual tools into 5 action-based tools.
+    ///
+    /// This reduces tool definition token usage by ~60% while maintaining the same functionality.
+    ///
+    /// # Arguments
+    /// * `device_service` - Device service for device operations
+    /// * `storage` - Time series storage for data queries
+    /// * `agent_store` - Agent store for agent management
+    /// * `rule_engine` - Rule engine for rule management
+    pub fn with_aggregated_tools(
+        mut self,
+        device_service: Arc<neomind_devices::DeviceService>,
+        storage: Arc<neomind_devices::TimeSeriesStorage>,
+        agent_store: Arc<neomind_storage::AgentStore>,
+        rule_engine: Arc<neomind_rules::RuleEngine>,
+    ) -> Self {
+        use super::aggregated::AggregatedToolsBuilder;
+
+        let tools = AggregatedToolsBuilder::new()
+            .with_device_service(device_service)
+            .with_time_series_storage(storage)
+            .with_agent_store(agent_store)
+            .with_rule_engine(rule_engine)
+            .build();
+
+        for tool in tools {
+            self.registry.register(tool);
+        }
+
+        self
+    }
+
+    /// Add aggregated tools with optional message manager for alert tool.
+    pub fn with_aggregated_tools_full(
+        mut self,
+        device_service: Arc<neomind_devices::DeviceService>,
+        storage: Arc<neomind_devices::TimeSeriesStorage>,
+        agent_store: Arc<neomind_storage::AgentStore>,
+        rule_engine: Arc<neomind_rules::RuleEngine>,
+        rule_history: Option<Arc<neomind_rules::RuleHistoryStorage>>,
+        _message_manager: Option<Arc<neomind_messages::MessageManager>>,
+    ) -> Self {
+        use super::aggregated::AggregatedToolsBuilder;
+
+        let mut builder = AggregatedToolsBuilder::new()
+            .with_device_service(device_service)
+            .with_time_series_storage(storage)
+            .with_agent_store(agent_store)
+            .with_rule_engine(rule_engine);
+
+        if let Some(history) = rule_history {
+            builder = builder.with_rule_history(history);
+        }
+
+        let tools = builder.build();
+
+        for tool in tools {
+            self.registry.register(tool);
+        }
+
+        // Note: AlertTool uses in-memory storage; message_manager not yet integrated
+        // TODO: Add AlertTool integration with MessageManager when available
+
+        self
+    }
+
     /// Build the registry.
     pub fn build(self) -> ToolRegistry {
         self.registry
