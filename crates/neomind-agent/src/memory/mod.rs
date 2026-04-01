@@ -45,25 +45,16 @@
 //! ```
 
 pub mod bm25;
-pub mod budget;
-pub mod compression;
 pub mod embeddings;
 pub mod error;
 pub mod long_term;
 pub mod mid_term;
-pub mod semantic;
 pub mod short_term;
 pub mod tiered;
 
 // Re-export commonly used types
 pub use bm25::{
     extract_text_for_bm25, BM25Index, BM25Result, DocumentStats, DEFAULT_B, DEFAULT_K1,
-};
-pub use budget::{Allocation, Priority, PriorityFilter, ScoredMessage, TokenBudget};
-pub use compression::{
-    CompressedMemory, CompressionConfig, CompressionMetadata, CompressionMethod, CompressionStats,
-    MemoryCompressor, MessageGroup, SummaryLevel, DEFAULT_MAX_SUMMARY_TOKENS, DEFAULT_TARGET_RATIO,
-    MIN_GROUP_SIZE,
 };
 pub use embeddings::{
     cosine_similarity, create_embedding_model, dot_similarity, CachedEmbeddingModel,
@@ -76,10 +67,6 @@ pub use long_term::{
     KnowledgeCategory, KnowledgeEntry, LongTermMemory, SolutionStep, TroubleshootingCase,
 };
 pub use mid_term::{ConversationEntry, MidTermMemory, SearchResult};
-pub use semantic::{
-    SearchConfig, SearchExecutor, SemanticDocument, SemanticSearch, SemanticSearchResult,
-    DEFAULT_HYBRID_ALPHA, DEFAULT_MAX_RESULTS,
-};
 pub use short_term::{MemoryMessage, ShortTermMemory, DEFAULT_MAX_MESSAGES, DEFAULT_MAX_TOKENS};
 pub use tiered::{MemoryQueryResult, MemoryStats, SearchMethod, TieredMemory, TieredMemoryConfig};
 
