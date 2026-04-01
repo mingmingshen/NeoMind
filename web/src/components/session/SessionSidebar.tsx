@@ -421,33 +421,28 @@ export function SessionSidebar({
                               value={editingTitle}
                               onChange={(e) => setEditingTitle(e.target.value)}
                               onKeyDown={(e) => handleEditKeyDown(e, session.sessionId)}
-                              className="h-6 text-sm flex-1"
+                              className="h-7 text-sm flex-1"
+                              autoFocus
                               disabled={isUpdating}
                             />
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0"
                               onClick={() => handleEditSave(session.sessionId)}
                               disabled={isUpdating || !editingTitle.trim()}
-                              className={cn(
-                                "p-1 rounded transition-all",
-                                "flex items-center justify-center",
-                                "text-green-600 hover:bg-green-100 dark:text-green-400 dark:hover:bg-green-900/30",
-                                (isUpdating || !editingTitle.trim()) && "opacity-50"
-                              )}
                             >
-                              <Check className="h-3.5 w-3.5" />
-                            </button>
-                            <button
+                              <Check className="h-3.5 w-3.5 text-green-500" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0"
                               onClick={handleEditCancel}
                               disabled={isUpdating}
-                              className={cn(
-                                "p-1 rounded transition-all",
-                                "flex items-center justify-center",
-                                "text-muted-foreground hover:text-foreground hover:bg-muted",
-                                isUpdating && "opacity-50"
-                              )}
                             >
                               <X className="h-3.5 w-3.5" />
-                            </button>
+                            </Button>
                           </div>
                         ) : (
                           // Normal mode
