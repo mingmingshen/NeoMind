@@ -21,6 +21,8 @@ import {
   Clock,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
+  Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -67,6 +69,7 @@ export function SessionSidebar({
     createSession,
     switchSession,
     deleteSession,
+    updateSessionTitle,
     loadMoreSessions,
     sessionsHasMore,
     sessionsLoading,
@@ -77,8 +80,12 @@ export function SessionSidebar({
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState("")
+  const [isUpdating, setIsUpdating] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null)
+  const editInputRef = useRef<HTMLInputElement>(null)
 
   // Focus search when opened (mobile only)
   useEffect(() => {
@@ -210,6 +217,52 @@ export function SessionSidebar({
   const handleCancelDelete = () => {
     setDeleteDialogOpen(false)
     setSessionToDelete(null)
+  }
+
+  // Handle edit click
+  const handleEditClick = (e: React.MouseEvent, session: ChatSession) => {
+    e.stopPropagation()
+    setEditingId(session.sessionId)
+    setEditingTitle(session.title || "")
+    // Focus input after a short delay to ensure it's rendered
+    setTimeout(() => {
+      editInputRef.current?.focus()
+      editInputRef.current?.select()
+    }, 50)
+  }
+
+  // Handle edit cancel
+  const handleEditCancel = () => {
+    setEditingId(null)
+    setEditingTitle("")
+  }
+
+  // Handle edit save
+  const handleEditSave = async (sessionId: string) => {
+    const trimmedTitle = editingTitle.trim()
+    if (!trimmedTitle || isUpdating) return
+
+    setIsUpdating(true)
+    try {
+      await updateSessionTitle(sessionId, trimmedTitle)
+      setEditingId(null)
+      setEditingTitle("")
+    } catch (error) {
+      console.error('Failed to update session title:', error)
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  // Handle edit key down
+  const handleEditKeyDown = (e: React.KeyboardEvent, sessionId: string) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleEditSave(sessionId)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      handleEditCancel()
+    }
   }
 
   // Get session title
@@ -346,58 +399,116 @@ export function SessionSidebar({
                   {sortedSessions.map((session) => {
                     const isActive = session.sessionId === currentSessionId
                     const isDeleting = deletingId === session.sessionId
+                    const isEditing = editingId === session.sessionId
 
                     return (
                       <div
                         key={session.sessionId}
-                        onClick={() => handleSwitchSession(session.sessionId)}
+                        onClick={() => !isEditing && handleSwitchSession(session.sessionId)}
                         className={cn(
                           "group relative p-2 rounded-lg cursor-pointer transition-all",
                           isActive
                             ? "bg-muted"
-                            : "hover:bg-muted/50"
+                            : "hover:bg-muted/50",
+                          isEditing && "bg-muted"
                         )}
                       >
-                        <div className="flex items-start gap-2">
-                          <MessageSquare className={cn(
-                            "h-3.5 w-3.5 mt-0.5 shrink-0",
-                            isActive ? "text-foreground" : "text-muted-foreground"
-                          )} />
-                          <div className="flex-1 min-w-0">
-                            <h4 className={cn(
-                              "text-sm truncate",
-                              isActive ? "text-foreground font-medium" : "text-foreground/80"
-                            )}>
-                              {getSessionTitle(session)}
-                            </h4>
-                            <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-muted-foreground">
-                              <Clock className="h-2.5 w-2.5" />
-                              <span>{session.updatedAt ? formatTimestamp(session.updatedAt / 1000, false) : formatTimestamp(session.createdAt / 1000, false)}</span>
-                              {session.messageCount ? (
-                                <>
-                                  <span>·</span>
-                                  <span>{t('session.messages', { count: session.messageCount })}</span>
-                                </>
-                              ) : null}
-                            </div>
+                        {isEditing ? (
+                          // Edit mode
+                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <Input
+                              ref={editInputRef}
+                              value={editingTitle}
+                              onChange={(e) => setEditingTitle(e.target.value)}
+                              onKeyDown={(e) => handleEditKeyDown(e, session.sessionId)}
+                              className="h-6 text-sm flex-1"
+                              disabled={isUpdating}
+                            />
+                            <button
+                              onClick={() => handleEditSave(session.sessionId)}
+                              disabled={isUpdating || !editingTitle.trim()}
+                              className={cn(
+                                "p-1 rounded transition-all",
+                                "flex items-center justify-center",
+                                "text-green-600 hover:bg-green-100 dark:text-green-400 dark:hover:bg-green-900/30",
+                                (isUpdating || !editingTitle.trim()) && "opacity-50"
+                              )}
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={handleEditCancel}
+                              disabled={isUpdating}
+                              className={cn(
+                                "p-1 rounded transition-all",
+                                "flex items-center justify-center",
+                                "text-muted-foreground hover:text-foreground hover:bg-muted",
+                                isUpdating && "opacity-50"
+                              )}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
                           </div>
-                        </div>
+                        ) : (
+                          // Normal mode
+                          <>
+                            <div className="flex items-start gap-2">
+                              <MessageSquare className={cn(
+                                "h-3.5 w-3.5 mt-0.5 shrink-0",
+                                isActive ? "text-foreground" : "text-muted-foreground"
+                              )} />
+                              <div className="flex-1 min-w-0">
+                                <h4 className={cn(
+                                  "text-sm truncate",
+                                  isActive ? "text-foreground font-medium" : "text-foreground/80"
+                                )}>
+                                  {getSessionTitle(session)}
+                                </h4>
+                                <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-muted-foreground">
+                                  <Clock className="h-2.5 w-2.5" />
+                                  <span>{session.updatedAt ? formatTimestamp(session.updatedAt / 1000, false) : formatTimestamp(session.createdAt / 1000, false)}</span>
+                                  {session.messageCount ? (
+                                    <>
+                                      <span>·</span>
+                                      <span>{t('session.messages', { count: session.messageCount })}</span>
+                                    </>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
 
-                        {/* Delete button */}
-                        <button
-                          onClick={(e) => handleDeleteClick(e, session.sessionId)}
-                          disabled={isDeleting}
-                          className={cn(
-                            "absolute right-1 top-1/2 -translate-y-1/2",
-                            "p-1 rounded transition-all",
-                            "flex items-center justify-center",
-                            "text-muted-foreground hover:text-destructive hover:bg-destructive/10",
-                            "opacity-0 group-hover:opacity-100",
-                            isDeleting && "opacity-50"
-                          )}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                            {/* Action buttons */}
+                            <div className={cn(
+                              "absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5",
+                              "opacity-0 group-hover:opacity-100 transition-opacity"
+                            )}>
+                              {/* Edit button */}
+                              <button
+                                onClick={(e) => handleEditClick(e, session)}
+                                className={cn(
+                                  "p-1 rounded transition-all",
+                                  "flex items-center justify-center",
+                                  "text-muted-foreground hover:text-foreground hover:bg-muted"
+                                )}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              {/* Delete button */}
+                              <button
+                                onClick={(e) => handleDeleteClick(e, session.sessionId)}
+                                disabled={isDeleting}
+                                className={cn(
+                                  "p-1 rounded transition-all",
+                                  "flex items-center justify-center",
+                                  "text-muted-foreground hover:text-destructive hover:bg-destructive/10",
+                                  isDeleting && "opacity-50"
+                                )}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
                     )
                   })}
