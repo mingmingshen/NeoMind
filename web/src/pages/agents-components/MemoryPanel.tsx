@@ -253,19 +253,40 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   // Trigger manual extraction
   const handleExtract = async () => {
     setExtracting(true)
+    console.log('[MemoryPanel] Starting memory extraction...')
     toast({
       title: t("memory.extractStarted", "Extraction Started"),
       description: t("memory.extractStartedDesc", "Extracting memories from conversations..."),
     })
     try {
+      console.log('[MemoryPanel] Calling api.triggerMemoryExtract()...')
       const result = await api.triggerMemoryExtract()
+      console.log('[MemoryPanel] Extraction result:', result)
       toast({
         title: t("memory.extractComplete", "Extraction Complete"),
         description: result.message || t("memory.extractCompleteDesc", "Successfully extracted memories"),
       })
       loadStats() // Refresh stats after extraction
     } catch (error) {
-      handleError(error, { operation: "Trigger memory extraction" })
+      console.error('[MemoryPanel] Extraction error:', error)
+      // Check for specific error types
+      if (error instanceof Error) {
+        if (error.name === 'AbortError' || error.message.includes('abort')) {
+          handleError(error, {
+            operation: "Trigger memory extraction",
+            userMessage: "Request timed out. The extraction is taking too long - please try again later."
+          })
+        } else if (error.message.includes('Load failed') || error.message.includes('Failed to fetch')) {
+          handleError(error, {
+            operation: "Trigger memory extraction",
+            userMessage: "Could not connect to the server. Please ensure the backend is running."
+          })
+        } else {
+          handleError(error, { operation: "Trigger memory extraction" })
+        }
+      } else {
+        handleError(error, { operation: "Trigger memory extraction" })
+      }
     } finally {
       setExtracting(false)
     }

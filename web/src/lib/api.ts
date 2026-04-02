@@ -1,4 +1,14 @@
 // API Client with centralized authentication
+
+// Polyfill for AbortSignal.timeout (for older WebKit/Safari)
+if (typeof AbortSignal !== 'undefined' && !AbortSignal.timeout) {
+  AbortSignal.timeout = function (ms: number): AbortSignal {
+    const controller = new AbortController()
+    setTimeout(() => controller.abort(new DOMException('TimeoutError', 'TimeoutError')), ms)
+    return controller.signal
+  }
+}
+
 import type {
   UserInfo,
   LoginResponse,
@@ -1924,31 +1934,51 @@ export const api = {
    * POST /api/memory/extract
    * Note: This operation may take a long time, so we use a 5-minute timeout
    */
-  triggerMemoryExtract: (sessionId?: string, force = true) =>
-    fetchAPI<{ success: boolean; extracted: number; message: string }>('/memory/extract', {
+  triggerMemoryExtract: (sessionId?: string, force = true) => {
+    // Create timeout signal with fallback for older browsers
+    let signal: AbortSignal | undefined
+    try {
+      signal = AbortSignal.timeout(5 * 60 * 1000) // 5 minutes timeout
+    } catch (e) {
+      console.warn('AbortSignal.timeout not supported, request will have no timeout', e)
+      signal = undefined
+    }
+
+    return fetchAPI<{ success: boolean; extracted: number; message: string }>('/memory/extract', {
       method: 'POST',
       body: JSON.stringify({
         session_id: sessionId || null,
         force,
       }),
-      signal: AbortSignal.timeout(5 * 60 * 1000), // 5 minutes timeout
-    }),
+      signal,
+    })
+  },
 
   /**
    * Trigger manual compression
    * POST /api/memory/compress
    * Note: This operation may take a long time, so we use a 5-minute timeout
    */
-  triggerMemoryCompress: () =>
-    fetchAPI<{
+  triggerMemoryCompress: () => {
+    // Create timeout signal with fallback for older browsers
+    let signal: AbortSignal | undefined
+    try {
+      signal = AbortSignal.timeout(5 * 60 * 1000) // 5 minutes timeout
+    } catch (e) {
+      console.warn('AbortSignal.timeout not supported, request will have no timeout', e)
+      signal = undefined
+    }
+
+    return fetchAPI<{
       success: boolean
       compressed: number
       deleted: number
       message: string
     }>('/memory/compress', {
       method: 'POST',
-      signal: AbortSignal.timeout(5 * 60 * 1000), // 5 minutes timeout
-    }),
+      signal,
+    })
+  },
 
   /**
    * Export all memory as Markdown
