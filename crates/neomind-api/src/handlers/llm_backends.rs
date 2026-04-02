@@ -692,13 +692,13 @@ pub async fn activate_backend_handler(
         }
     };
 
-    // Update all existing sessions to use the new backend
+    // Update the default backend for NEW sessions only.
+    // Do NOT modify existing agents — each agent has its own independent LLM backend.
     state
         .agents
         .session_manager
-        .set_llm_backend(backend.clone())
-        .await
-        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+        .set_default_llm_backend(backend.clone())
+        .await;
 
     // Also save to SettingsStore for persistence across server restarts
     // This ensures init_llm() will load the correct backend on startup
