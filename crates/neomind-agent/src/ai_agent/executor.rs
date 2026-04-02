@@ -3,6 +3,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::llm_backends::{OllamaConfig, OllamaRuntime};
+use crate::memory::compat::persist_agent_memory;
 use futures::future::join_all;
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::{
@@ -30,6 +31,7 @@ use neomind_storage::{
     GeneratedReport,
     LearnedPattern,
     LlmBackendStore,
+    MarkdownMemoryStore,
     ReasoningStep,
     ResourceType,
     TrendPoint,
@@ -820,6 +822,8 @@ pub struct AgentExecutorConfig {
     pub extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
     /// Tool registry for function calling mode
     pub tool_registry: Option<Arc<crate::toolkit::ToolRegistry>>,
+    /// Memory store for extracting learned patterns
+    pub memory_store: Option<Arc<MarkdownMemoryStore>>,
 }
 
 /// Context for agent execution.
@@ -878,6 +882,8 @@ pub struct AgentExecutor {
     extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
     /// Tool registry for function calling mode
     tool_registry: Option<Arc<crate::toolkit::ToolRegistry>>,
+    /// Memory store for extracting learned patterns
+    memory_store: Option<Arc<MarkdownMemoryStore>>,
 }
 
 /// Calculate relevance score for a conversation turn based on current context.
@@ -1020,6 +1026,7 @@ impl AgentExecutor {
             llm_runtime_cache: Arc::new(RwLock::new(HashMap::new())),
             extension_registry,
             tool_registry: config.tool_registry.clone(),
+            memory_store: config.memory_store.clone(),
         })
     }
 
@@ -1033,14 +1040,18 @@ impl AgentExecutor {
 
     /// Check whether tool mode should be used for this agent execution.
     fn should_use_tools(&self, agent: &AiAgent, llm_runtime: &Arc<dyn LlmRuntime + Send + Sync>) -> bool {
-        let config_enabled = agent
-            .tool_config
-            .as_ref()
-            .map(|c| c.enabled)
-            .unwrap_or(false);
         let llm_supports_tools = llm_runtime.capabilities().function_calling;
         let registry_available = self.tool_registry.is_some();
-        config_enabled && llm_supports_tools && registry_available
+        let result = llm_supports_tools && registry_available;
+        if !result {
+            tracing::warn!(
+                agent_id = %agent.id,
+                llm_supports_tools,
+                registry_available,
+                "Tool mode NOT activated - one or more conditions not met"
+            );
+        }
+        result
     }
 
     /// Execute agent using tool/function-calling mode.
@@ -1117,12 +1128,61 @@ impl AgentExecutor {
         let time_ctx = get_time_context();
         let data_text: Vec<String> = data_collected
             .iter()
-            .map(|d| {
-                format!(
-                    "**Source: {}**\n{}",
-                    d.source,
-                    serde_json::to_string_pretty(&d.values).unwrap_or_default()
+            .filter(|d| {
+                // Exclude images (handled separately)
+                if d.values
+                    .get("_is_image")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    return false;
+                }
+                // Exclude placeholder data from collect_data
+                // When no data sources are bound, collect_data adds a placeholder with guidance
+                // This placeholder should NOT be treated as real sensor data
+                if d.source == "system"
+                    && d.values.get("message")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.contains("No pre-collected data"))
+                        .unwrap_or(false)
+                {
+                    return false;
+                }
+                // Exclude memory-related data (not real-time sensor data)
+                let dtype = d.data_type.to_lowercase();
+                !matches!(
+                    dtype.as_str(),
+                    "summary" | "memory" | "state_variables" | "baselines" | "patterns"
                 )
+            })
+            .map(|d| {
+                // Non-image data: serialize with truncation
+                let json_str = serde_json::to_string_pretty(&d.values).unwrap_or_default();
+                if json_str.len() > 2000 {
+                    format!("**Source: {}**\n{}...", d.source, &json_str[..2000])
+                } else {
+                    format!("**Source: {}**\n{}", d.source, json_str)
+                }
+            })
+            .collect();
+
+        // Collect image data for multimodal support
+        let image_parts: Vec<_> = data_collected
+            .iter()
+            .filter(|d| {
+                d.values
+                    .get("_is_image")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+            })
+            .filter_map(|d| {
+                let base64 = d.values.get("image_base64")?.as_str()?;
+                let mime = d
+                    .values
+                    .get("image_mime_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("image/jpeg");
+                Some((base64.to_string(), mime.to_string()))
             })
             .collect();
 
@@ -1137,13 +1197,25 @@ impl AgentExecutor {
             format!("\nRecommended resources to focus on:\n{}\n", items.join("\n"))
         };
 
+        // Build current data section with appropriate guidance
+        let current_data_section = if data_text.is_empty() {
+            // No pre-collected data - instruct LLM to query using tools
+            "\n## Current Data\nNo pre-collected data available.\n\n\
+             **IMPORTANT**: You MUST use the available tools to query the data you need!\n\
+             - Use `query_metric` or `get_latest_metrics` to fetch device metrics\n\
+             - Use `list_devices` to discover available devices\n\
+             - Do NOT conclude \"no data\" without first attempting to query using tools.\n"
+        } else {
+            &format!("\n## Current Data\n{}\n", data_text.join("\n\n"))
+        };
+
         let system_prompt = format!(
             "You are an intelligent IoT agent named '{}' monitoring edge devices.\n\
              Current time: {}\n\
-             Your task: {}\n{}\
-             \n## Current Data\n{}\n\n\
-             You have access to tools for querying metrics, executing commands, and sending notifications. \
-             Use them as needed. When done, provide your analysis and conclusion as plain text WITHOUT tool calls.\n\n\
+             Your task: {}\n{}{}\
+             \nYou have access to tools for querying metrics, executing commands, and sending notifications. \
+             **Always use tools to fetch the latest data before making conclusions.**\n\
+             When done, provide your analysis and conclusion as plain text WITHOUT tool calls.\n\n\
              Output format for your final response (after tool calls, if any):\n\
              ```json\n\
              {{\n  \"situation_analysis\": \"...\",\n  \"conclusion\": \"...\",\n  \"confidence\": 0.8\n}}\n\
@@ -1152,21 +1224,40 @@ impl AgentExecutor {
             time_ctx,
             agent.user_prompt,
             resource_info,
-            data_text.join("\n\n"),
+            current_data_section,
         );
 
-        // Build messages
-        let mut messages = vec![
-            neomind_core::message::Message::new(
-                neomind_core::message::MessageRole::System,
-                neomind_core::message::Content::text(&system_prompt),
-            ),
+        // Build messages (with multimodal support for images)
+        let user_msg = if !image_parts.is_empty() {
+            // Build multimodal message with text and images
+            let mut parts = vec![neomind_core::message::ContentPart::text(
+                "Analyze the current situation and take appropriate actions using the available tools.",
+            )];
+            for (data, mime) in &image_parts {
+                parts.push(neomind_core::message::ContentPart::image_base64(
+                    data.clone(),
+                    mime.clone(),
+                ));
+            }
+            neomind_core::message::Message::from_parts(
+                neomind_core::message::MessageRole::User,
+                parts,
+            )
+        } else {
             neomind_core::message::Message::new(
                 neomind_core::message::MessageRole::User,
                 neomind_core::message::Content::text(
                     "Analyze the current situation and take appropriate actions using the available tools.",
                 ),
+            )
+        };
+
+        let mut messages = vec![
+            neomind_core::message::Message::new(
+                neomind_core::message::MessageRole::System,
+                neomind_core::message::Content::text(&system_prompt),
             ),
+            user_msg,
         ];
 
         // Tool execution loop (max 5 rounds)
@@ -1505,8 +1596,19 @@ impl AgentExecutor {
         &self,
         agent: &AiAgent,
     ) -> Result<Option<Arc<dyn LlmRuntime + Send + Sync>>, NeoMindError> {
+        // Resolve the actual backend ID (handle "default" → active backend)
+        let resolved_backend_id = match agent.llm_backend_id.as_deref() {
+            Some("default") | None => {
+                // Use active backend
+                self.llm_backend_store
+                    .as_ref()
+                    .and_then(|s| s.get_active_backend_id().ok().flatten())
+            }
+            Some(id) => Some(id.to_string()),
+        };
+
         // If agent has a specific backend ID, try to use it
-        if let Some(ref backend_id) = agent.llm_backend_id {
+        if let Some(ref backend_id) = resolved_backend_id {
             if let Some(ref store) = self.llm_backend_store {
                 if let Ok(Some(backend)) = store.load_instance(backend_id) {
                     use neomind_storage::LlmBackendType;
@@ -1586,7 +1688,16 @@ impl AgentExecutor {
                                         .with_model(&model)
                                         .with_timeout_secs(timeout),
                                 )
-                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                                .map(|runtime| {
+                                    // Override capabilities with accurate detection from storage
+                                    let runtime = runtime.with_capabilities_override(
+                                        backend.capabilities.supports_multimodal,
+                                        backend.capabilities.supports_thinking,
+                                        backend.capabilities.supports_tools,
+                                        backend.capabilities.max_context,
+                                    );
+                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
+                                })
                             }
                             LlmBackendType::Anthropic => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
@@ -1604,7 +1715,16 @@ impl AgentExecutor {
                                         .with_model(&model)
                                         .with_timeout_secs(timeout),
                                 )
-                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                                .map(|runtime| {
+                                    // Override capabilities with accurate detection from storage
+                                    let runtime = runtime.with_capabilities_override(
+                                        backend.capabilities.supports_multimodal,
+                                        backend.capabilities.supports_thinking,
+                                        backend.capabilities.supports_tools,
+                                        backend.capabilities.max_context,
+                                    );
+                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
+                                })
                             }
                             LlmBackendType::Google => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
@@ -1621,7 +1741,16 @@ impl AgentExecutor {
                                         .with_model(&model)
                                         .with_timeout_secs(timeout),
                                 )
-                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                                .map(|runtime| {
+                                    // Override capabilities with accurate detection from storage
+                                    let runtime = runtime.with_capabilities_override(
+                                        backend.capabilities.supports_multimodal,
+                                        backend.capabilities.supports_thinking,
+                                        backend.capabilities.supports_tools,
+                                        backend.capabilities.max_context,
+                                    );
+                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
+                                })
                             }
                             LlmBackendType::XAi => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
@@ -1639,7 +1768,16 @@ impl AgentExecutor {
                                         .with_model(&model)
                                         .with_timeout_secs(timeout),
                                 )
-                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                                .map(|runtime| {
+                                    // Override capabilities with accurate detection from storage
+                                    let runtime = runtime.with_capabilities_override(
+                                        backend.capabilities.supports_multimodal,
+                                        backend.capabilities.supports_thinking,
+                                        backend.capabilities.supports_tools,
+                                        backend.capabilities.max_context,
+                                    );
+                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
+                                })
                             }
                             LlmBackendType::Qwen => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
@@ -1656,7 +1794,16 @@ impl AgentExecutor {
                                         .with_model(&model)
                                         .with_timeout_secs(timeout),
                                 )
-                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                                .map(|runtime| {
+                                    // Override capabilities with accurate detection from storage
+                                    let runtime = runtime.with_capabilities_override(
+                                        backend.capabilities.supports_multimodal,
+                                        backend.capabilities.supports_thinking,
+                                        backend.capabilities.supports_tools,
+                                        backend.capabilities.max_context,
+                                    );
+                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
+                                })
                             }
                             LlmBackendType::DeepSeek => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
@@ -1674,7 +1821,16 @@ impl AgentExecutor {
                                         .with_model(&model)
                                         .with_timeout_secs(timeout),
                                 )
-                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                                .map(|runtime| {
+                                    // Override capabilities with accurate detection from storage
+                                    let runtime = runtime.with_capabilities_override(
+                                        backend.capabilities.supports_multimodal,
+                                        backend.capabilities.supports_thinking,
+                                        backend.capabilities.supports_tools,
+                                        backend.capabilities.max_context,
+                                    );
+                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
+                                })
                             }
                             LlmBackendType::GLM => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
@@ -1691,7 +1847,16 @@ impl AgentExecutor {
                                         .with_model(&model)
                                         .with_timeout_secs(timeout),
                                 )
-                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                                .map(|runtime| {
+                                    // Override capabilities with accurate detection from storage
+                                    let runtime = runtime.with_capabilities_override(
+                                        backend.capabilities.supports_multimodal,
+                                        backend.capabilities.supports_thinking,
+                                        backend.capabilities.supports_tools,
+                                        backend.capabilities.max_context,
+                                    );
+                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
+                                })
                             }
                             LlmBackendType::MiniMax => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
@@ -1709,7 +1874,16 @@ impl AgentExecutor {
                                         .with_model(&model)
                                         .with_timeout_secs(timeout),
                                 )
-                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                                .map(|runtime| {
+                                    // Override capabilities with accurate detection from storage
+                                    let runtime = runtime.with_capabilities_override(
+                                        backend.capabilities.supports_multimodal,
+                                        backend.capabilities.supports_thinking,
+                                        backend.capabilities.supports_tools,
+                                        backend.capabilities.max_context,
+                                    );
+                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
+                                })
                             }
                         };
 
@@ -1994,6 +2168,7 @@ Respond in JSON format:
                             llm_backend_store: executor_llm_store,
                             extension_registry: None,
                             tool_registry: None,
+                            memory_store: None,
                         };
 
                         match AgentExecutor::new(executor_config).await {
@@ -2310,6 +2485,19 @@ Respond in JSON format:
             "Execution and conversation turn saved successfully"
         );
 
+        // Extract and persist memory from successful agent execution
+        if record.status == ExecutionStatus::Completed {
+            if let Some(ref memory_store) = self.memory_store {
+                if let Err(e) = persist_agent_memory(memory_store, &record, &agent_name).await {
+                    tracing::warn!(
+                        agent_id = %agent_id,
+                        error = %e,
+                        "Failed to persist agent memory (non-blocking)"
+                    );
+                }
+            }
+        }
+
         // Reset agent status based on result
         let new_status = if record.status == ExecutionStatus::Completed {
             neomind_storage::AgentStatus::Active
@@ -2492,6 +2680,19 @@ Respond in JSON format:
             .save_execution_with_conversation(&record, Some(&agent_id), turn.as_ref())
             .await
             .map_err(|e| NeoMindError::Storage(format!("Failed to save execution: {}", e)))?;
+
+        // Extract and persist memory from successful event-triggered execution
+        if record.status == ExecutionStatus::Completed {
+            if let Some(ref memory_store) = self.memory_store {
+                if let Err(e) = persist_agent_memory(memory_store, &record, &agent_name).await {
+                    tracing::warn!(
+                        agent_id = %agent_id,
+                        error = %e,
+                        "Failed to persist agent memory (non-blocking)"
+                    );
+                }
+            }
+        }
 
         // Reset agent status based on result
         let new_status = if record.status == ExecutionStatus::Completed {
@@ -3662,7 +3863,9 @@ Respond in JSON format:
             data.push(DataCollected {
                 source: "system".to_string(),
                 data_type: "info".to_string(),
-                values: serde_json::json!({"message": "No data sources configured"}),
+                values: serde_json::json!({
+                    "message": "No pre-collected data available. Use available tools to query device data as needed, or analyze based on user instructions and historical patterns."
+                }),
                 timestamp,
             });
         }
@@ -4502,7 +4705,7 @@ Respond in JSON format:
 
         // Add regular data (excluding duplicates)
         for item in regular_data {
-            // Skip if it's the "No data sources configured" placeholder
+            // Skip if it's the placeholder guidance from collect_data
             if item.data_type == "info" && item.source == "system" {
                 continue;
             }
@@ -4976,58 +5179,56 @@ Respond in JSON format:
                 .unwrap_or(false)
         });
 
-        // Collect image parts first to check if we actually have valid image data
-        // Images are queried from storage (not included in DataCollected to avoid context explosion)
+        // Collect image parts directly from data_collected
+        // Images are already collected in data_collected, no need to re-query storage
         let mut image_parts = Vec::new();
-        if let Some(storage) = self.time_series_storage.clone() {
-            for d in data.iter() {
-                let is_image = d
-                    .values
-                    .get("_is_image")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                if !is_image {
+        let mut image_sources_info = Vec::new(); // Track image sources for text summary
+
+        for d in data.iter() {
+            let is_image = d
+                .values
+                .get("_is_image")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if !is_image {
+                continue;
+            }
+
+            // Record image source info for text summary
+            image_sources_info.push(format!(
+                "[图像数据: {}, 格式: {}]",
+                d.source,
+                d.values
+                    .get("image_mime_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+            ));
+
+            // Try to get image URL first
+            if let Some(url) = d.values.get("image_url").and_then(|v| v.as_str()) {
+                if !url.is_empty() {
+                    image_parts.push((
+                        d.source.clone(),
+                        d.data_type.clone(),
+                        ImageContent::Url(url.to_string()),
+                    ));
                     continue;
                 }
+            }
 
-                // Parse the source to get device_id and metric
-                // Source format: "device_id:metric_name" or "extension:id:metric"
-                if let Some(colon_pos) = d.source.find(':') {
-                    let device_id = &d.source[..colon_pos];
-                    let metric_name = &d.source[colon_pos + 1..];
-
-                    // Query storage for the latest image data
-                    let end_time = chrono::Utc::now().timestamp();
-                    let start_time = end_time - 300; // Last 5 minutes
-
-                    if let Ok(result) = storage
-                        .query_range(device_id, metric_name, start_time, end_time)
-                        .await
-                    {
-                        if !result.points.is_empty() {
-                            let latest = &result.points[result.points.len() - 1];
-
-                            // Extract image data from storage
-                            let (image_url, image_base64, image_mime) =
-                                extract_image_data(&latest.value);
-
-                            // Use URL if available, otherwise base64
-                            if let Some(url) = image_url {
-                                image_parts.push((
-                                    d.source.clone(),
-                                    d.data_type.clone(),
-                                    ImageContent::Url(url),
-                                ));
-                            } else if let Some(base64) = image_base64 {
-                                let mime = image_mime.as_deref().unwrap_or("image/jpeg");
-                                image_parts.push((
-                                    d.source.clone(),
-                                    d.data_type.clone(),
-                                    ImageContent::Base64(base64, mime.to_string()),
-                                ));
-                            }
-                        }
-                    }
+            // Fall back to base64 data
+            if let Some(base64) = d.values.get("image_base64").and_then(|v| v.as_str()) {
+                if !base64.is_empty() {
+                    let mime = d
+                        .values
+                        .get("image_mime_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("image/jpeg");
+                    image_parts.push((
+                        d.source.clone(),
+                        d.data_type.clone(),
+                        ImageContent::Base64(base64.to_string(), mime.to_string()),
+                    ));
                 }
             }
         }
@@ -5063,10 +5264,24 @@ Respond in JSON format:
                 }
                 // Exclude memory-related data types (confuses small models)
                 let data_type_lower = d.data_type.to_lowercase();
-                !matches!(
+                if matches!(
                     data_type_lower.as_str(),
                     "summary" | "memory" | "state_variables" | "baselines" | "patterns"
-                )
+                ) {
+                    return false;
+                }
+                // Exclude placeholder data from collect_data
+                // When no data sources are bound, collect_data adds a placeholder with guidance
+                // This placeholder should NOT be treated as real sensor data
+                if d.source == "system"
+                    && d.values.get("message")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.contains("No pre-collected data"))
+                        .unwrap_or(false)
+                {
+                    return false;
+                }
+                true
             })
             .take(max_metrics)
             .map(|d| {
@@ -5399,7 +5614,12 @@ Respond in JSON format:
                 "{}\n{}\n\n{}",
                 current_data_header,
                 if text_data_summary.is_empty() {
-                    image_only_text.to_string()
+                    // Show image sources info instead of generic "image only" text
+                    if !image_sources_info.is_empty() {
+                        format!("{}\n{}", image_only_text, image_sources_info.join("\n"))
+                    } else {
+                        image_only_text.to_string()
+                    }
                 } else {
                     text_data_summary.join("\n")
                 },
@@ -5408,9 +5628,15 @@ Respond in JSON format:
 
             // Add images
             for (source, _data_type, image_content) in &image_parts {
-                if let ImageContent::Base64(data, mime) = image_content {
-                    parts.push(ContentPart::image_base64(data.clone(), mime.clone()));
-                    tracing::debug!(source = %source, mime = %mime, "Adding base64 image to LLM message");
+                match image_content {
+                    ImageContent::Base64(data, mime) => {
+                        parts.push(ContentPart::image_base64(data.clone(), mime.clone()));
+                        tracing::debug!(source = %source, mime = %mime, "Adding base64 image to LLM message");
+                    }
+                    ImageContent::Url(url) => {
+                        parts.push(ContentPart::image_url(url.clone()));
+                        tracing::debug!(source = %source, url = %url, "Adding URL image to LLM message");
+                    }
                 }
             }
 
@@ -5429,12 +5655,18 @@ Respond in JSON format:
         } else {
             // Text-only message
             let data_summary = if text_data_summary.is_empty() {
-                if is_chinese {
-                    "无数据"
+                // Check if we have image data that couldn't be displayed
+                if !image_sources_info.is_empty() {
+                    if is_chinese {
+                        format!("当前只有图像数据（LLM 不支持视觉）：\n{}", image_sources_info.join("\n"))
+                    } else {
+                        format!("Image data only (LLM doesn't support vision):\n{}", image_sources_info.join("\n"))
+                    }
+                } else if is_chinese {
+                    "当前无预采集的传感器数据。请基于用户指令和已知模式进行分析，如需设备数据请建议用户绑定数据源。".to_string()
                 } else {
-                    "No data available"
+                    "No pre-collected sensor data available. Analyze based on the user's instructions and known patterns. If device data is needed, suggest the user bind data sources.".to_string()
                 }
-                .to_string()
             } else {
                 text_data_summary.join("\n")
             };
@@ -5971,11 +6203,18 @@ Respond in JSON format:
         let mut decisions = Vec::new();
 
         // Step 1: Understand the situation
-        let situation_analysis = format!(
-            "Analyzing {} data points for agent '{}'",
-            data.len(),
-            agent.name
-        );
+        let situation_analysis = if data.is_empty() {
+            format!(
+                "No pre-collected data for agent '{}'. Analyzing based on user instructions and configured rules.",
+                agent.name
+            )
+        } else {
+            format!(
+                "Analyzing {} data points for agent '{}'",
+                data.len(),
+                agent.name
+            )
+        };
 
         reasoning_steps.push(ReasoningStep {
             step_number: 1,
@@ -6030,7 +6269,11 @@ Respond in JSON format:
         }
 
         let conclusion = if decisions.is_empty() {
-            "No actions required - conditions not met".to_string()
+            if data.is_empty() {
+                "No data available and no conditions met. Consider binding data sources or using an LLM-powered agent for flexible analysis.".to_string()
+            } else {
+                "No actions required - conditions not met".to_string()
+            }
         } else {
             format!("{} action(s) to be executed", decisions.len())
         };
@@ -7185,7 +7428,11 @@ Respond in JSON format:
 
         // 5. Current execution data
         let data_text = if current_data.is_empty() {
-            if is_chinese { "无数据" } else { "No data" }.to_string()
+            if is_chinese {
+                "当前无预采集数据，请使用可用工具查询需要的设备数据".to_string()
+            } else {
+                "No pre-collected data available. Use available tools to query the data you need".to_string()
+            }
         } else {
             current_data
                 .iter()

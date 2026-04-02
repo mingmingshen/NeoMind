@@ -46,6 +46,7 @@
 //! ```
 
 pub mod bm25;
+pub mod compat;
 pub mod compressor;
 pub mod dedup;
 pub mod embeddings;
