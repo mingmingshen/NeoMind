@@ -46,8 +46,11 @@
 //! ```
 
 pub mod bm25;
+pub mod compressor;
+pub mod dedup;
 pub mod embeddings;
 pub mod error;
+pub mod extractor;
 pub mod long_term;
 pub mod manager;
 pub mod mid_term;
@@ -74,6 +77,13 @@ pub use tiered::{MemoryQueryResult, MemoryStats, SearchMethod, TieredMemory, Tie
 
 // Memory manager exports
 pub use manager::MemoryManager;
+
+// Memory extractor/compressor/dedup exports
+pub use compressor::{CompressionResult, MemoryCompressor};
+pub use dedup::{DedupProcessor, DedupResult};
+pub use extractor::{
+    parse_category, AgentExtractor, ChatExtractor, ExtractResult, MemoryCandidate,
+};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
