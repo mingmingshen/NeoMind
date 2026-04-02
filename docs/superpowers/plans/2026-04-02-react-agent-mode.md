@@ -71,6 +71,8 @@ Round 6: tool "alert"  → 创建低电量告警
 | File | Change | Purpose |
 |------|--------|---------|
 | `crates/neomind-storage/src/agents.rs:88-91` | Add field | `execution_mode: String` 字段 |
+| `crates/neomind-agent/src/toolkit/aggregated.rs:64-252` | Modify | device 工具精简返回、优化 description |
+| `crates/neomind-agent/src/toolkit/aggregated.rs:1095-1274` | Modify | alert 工具防止重复调用、优化 description |
 | `crates/neomind-agent/src/ai_agent/executor.rs:1239-1255` | Modify | ReAct 模式系统提示词 |
 | `crates/neomind-agent/src/ai_agent/executor.rs:1288-1290` | Add | `react_thoughts` 收集器 |
 | `crates/neomind-agent/src/ai_agent/executor.rs:1319-1326` | Modify | 提取 LLM 推理文本为 thought |
@@ -118,7 +120,130 @@ git commit -m "feat(storage): add execution_mode field to AiAgent"
 
 ---
 
-## Task 2: ReAct 系统提示词
+## Task 2: IoT 工具定义优化（防止重复调用 + context 效率）
+
+**Files:**
+- Modify: `crates/neomind-agent/src/toolkit/aggregated.rs`
+
+> Anthropic 最佳实践: "Tool design > prompt engineering" — 工具响应占 agent 看到内容的 ~80%。优化工具返回比优化 prompt 更有效。
+
+### 问题分析（实测 2026-04-02）
+
+**问题 1**: `device` list 返回完整 metric schema（每设备 12 个 metric × 4 字段 ≈ 400 tokens/设备），但 LLM 只需要 id/name/type 来决定下一步查询。
+
+**问题 2**: `alert` create 返回 `{"status":"created"}` 后，LLM 又调用 `alert` list 验证，返回 10 条历史告警（~500 tokens），其中大部分无关。
+
+**问题 3**: 工具 description 过于简短（`"操作类型"`），LLM 不知道 query 和 get 的区别，容易重复调用。
+
+- [ ] **Step 1: 优化 device 工具 description 和 list 返回**
+
+在 `crates/neomind-agent/src/toolkit/aggregated.rs` 的 `DeviceTool` impl 中：
+
+**修改 description**（约 line 69-71）：
+
+```rust
+// 修改前:
+fn description(&self) -> &str {
+    "设备操作工具。action: list(列出设备), get(获取详情), query(查询数据), control(控制设备)"
+}
+
+// 修改后:
+fn description(&self) -> &str {
+    "IoT device tool. Actions: list (discover devices, returns id/name/type only), query (get latest metric values for a device), control (send command to device). Use 'list' first to discover devices, then 'query' with device_id to get specific metrics."
+}
+```
+
+**修改 list 默认不返回 metric schema**（约 line 175-251）：
+
+```rust
+// 修改前 (line 178):
+let include_details = args["include_details"].as_bool().unwrap_or(true);
+
+// 修改后:
+let include_details = args["include_details"].as_bool().unwrap_or(false);
+```
+
+默认 `include_details=false`，list 只返回 `id/name/type/adapter_type`。LLM 需要详细 schema 时可显式传 `include_details: true`。
+
+**效果**: `list_devices` 响应从 ~800 tokens 降到 ~100 tokens。
+
+- [ ] **Step 2: 优化 alert 工具防止 create 后 list**
+
+在 `crates/neomind-agent/src/toolkit/aggregated.rs` 的 `AlertTool` impl 中：
+
+**修改 description**（约 line 1095-1098）：
+
+```rust
+// 修改前:
+fn description(&self) -> &str {
+    "告警操作工具。action: list(列出告警), create(创建告警), acknowledge(确认告警)"
+}
+
+// 修改后:
+fn description(&self) -> &str {
+    "Alert management tool. Actions: create (send alert notification), list (query existing alerts), acknowledge (mark alert as read). IMPORTANT: After creating an alert, do NOT call 'list' to verify — the create response confirms success with alert ID."
+}
+```
+
+**修改 action 参数 description**（约 line 1100-1103）：
+
+```rust
+// 修改前:
+"action": {
+    "type": "string",
+    "enum": ["list", "create", "acknowledge"],
+    "description": "操作类型"
+}
+
+// 修改后:
+"action": {
+    "type": "string",
+    "enum": ["list", "create", "acknowledge"],
+    "description": "Action type: 'create' to send a new alert, 'list' to query existing alerts (only when needed), 'acknowledge' to mark an alert as read"
+}
+```
+
+**修改 list 默认限制**（约 line 1149）：
+
+```rust
+// 修改前:
+let limit = args["limit"].as_u64().unwrap_or(50) as usize;
+
+// 修改后:
+let limit = args["limit"].as_u64().unwrap_or(10) as usize;
+```
+
+**修改 create 响应更明确**（约 line 1271-1274）：
+
+```rust
+// 修改前:
+Ok(ToolOutput::success(serde_json::json!({
+    "id": msg.id.to_string(),
+    "status": "created"
+})))
+
+// 修改后:
+Ok(ToolOutput::success(serde_json::json!({
+    "id": msg.id.to_string(),
+    "status": "created",
+    "message": "Alert created successfully. No need to list alerts to verify."
+})))
+```
+
+- [ ] **Step 3: 验证编译**
+
+Run: `cargo check -p neomind-agent 2>&1 | tail -10`
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add crates/neomind-agent/src/toolkit/aggregated.rs
+git commit -m "perf(agent): optimize IoT tool descriptions and response sizes to reduce duplicate calls"
+```
+
+---
+
+## Task 3: ReAct 系统提示词
 
 **Files:**
 - Modify: `crates/neomind-agent/src/ai_agent/executor.rs:1239-1255`
@@ -193,7 +318,7 @@ git commit -m "feat(agent): add ReAct system prompt for step-by-step reasoning"
 
 ---
 
-## Task 3: 增强 execute_with_tools 循环 — Thought/Action/Observation 追踪
+## Task 4: 增强 execute_with_tools 循环 — Thought/Action/Observation 追踪
 
 **Files:**
 - Modify: `crates/neomind-agent/src/ai_agent/executor.rs:1288-1416`
@@ -408,7 +533,7 @@ git commit -m "feat(agent): enhance execute_with_tools with thought/action/obser
 
 ---
 
-## Task 4: API 层支持 execution_mode
+## Task 5: API 层支持 execution_mode
 
 **Files:**
 - Modify: `crates/neomind-api/src/handlers/agents.rs`
@@ -461,7 +586,7 @@ git commit -m "feat(api): support execution_mode in agent CRUD"
 
 ---
 
-## Task 5: 前端 ReAct 步骤可视化
+## Task 6: 前端 ReAct 步骤可视化
 
 **Files:**
 - Modify: `web/src/pages/agents-components/AgentThinkingPanel.tsx`
@@ -518,7 +643,7 @@ git commit -m "feat(web): add ReAct step type colors and execution mode i18n"
 
 ---
 
-## Task 6: 前端 Agent 配置 UI
+## Task 7: 前端 Agent 配置 UI
 
 **Files:**
 - Modify: agent 配置表单组件（需确认具体文件）
@@ -553,7 +678,7 @@ git commit -m "feat(web): add execution mode selector in agent config"
 
 ---
 
-## Task 7: 编译验证和测试
+## Task 8: 编译验证和测试
 
 - [ ] **Step 1: cargo check**
 - [ ] **Step 2: cargo clippy -p neomind-agent -p neomind-api**
