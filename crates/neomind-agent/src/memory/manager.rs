@@ -4,9 +4,7 @@
 //! wrapping the MarkdownMemoryStore and coordinating extraction,
 //! compression, and deduplication.
 
-use neomind_storage::{
-    CategoryStats, MarkdownMemoryStore, MemoryCategory, MemoryConfig,
-};
+use neomind_storage::{CategoryStats, MarkdownMemoryStore, MemoryCategory, MemoryConfig};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -53,19 +51,28 @@ impl MemoryManager {
     }
 
     /// Write memory content for a category
-    pub async fn write(&self, category: &MemoryCategory, content: &str) -> neomind_storage::error::Result<()> {
+    pub async fn write(
+        &self,
+        category: &MemoryCategory,
+        content: &str,
+    ) -> neomind_storage::error::Result<()> {
         let store = self.store.read().await;
         store.write_category(category, content)
     }
 
     /// Get statistics for a category
-    pub async fn stats(&self, category: &MemoryCategory) -> neomind_storage::error::Result<CategoryStats> {
+    pub async fn stats(
+        &self,
+        category: &MemoryCategory,
+    ) -> neomind_storage::error::Result<CategoryStats> {
         let store = self.store.read().await;
         store.category_stats(category)
     }
 
     /// Get statistics for all categories
-    pub async fn all_stats(&self) -> neomind_storage::error::Result<HashMap<String, CategoryStats>> {
+    pub async fn all_stats(
+        &self,
+    ) -> neomind_storage::error::Result<HashMap<String, CategoryStats>> {
         let store = self.store.read().await;
         store.all_stats()
     }
@@ -122,7 +129,10 @@ mod tests {
         manager.init().await.unwrap();
 
         let content = "# Test\n\n- item1\n";
-        manager.write(&MemoryCategory::UserProfile, content).await.unwrap();
+        manager
+            .write(&MemoryCategory::UserProfile, content)
+            .await
+            .unwrap();
 
         let read = manager.read(&MemoryCategory::UserProfile).await.unwrap();
         assert!(read.contains("item1"));
@@ -138,7 +148,10 @@ mod tests {
         manager.init().await.unwrap();
 
         let content = "# 用户画像\n\n## 偏好\n\n- 偏好1\n- 偏好2\n";
-        manager.write(&MemoryCategory::UserProfile, content).await.unwrap();
+        manager
+            .write(&MemoryCategory::UserProfile, content)
+            .await
+            .unwrap();
 
         let stats = manager.stats(&MemoryCategory::UserProfile).await.unwrap();
         assert!(stats.file_size > 0);

@@ -126,9 +126,10 @@ mod tests {
 
     #[test]
     fn test_build_prompt() {
-        let entries = "- [2026-04-01] 用户偏好中文\n- [2026-04-02] 用户喜欢简洁回复";
+        let entries =
+            "- [2026-04-01] User prefers Chinese\n- [2026-04-02] User likes concise responses";
         let prompt = MemoryCompressor::build_prompt(entries, &MemoryCategory::UserProfile);
-        assert!(prompt.contains("用户画像"));
+        assert!(prompt.contains("User Profile"));
         assert!(prompt.contains(entries));
     }
 
@@ -177,9 +178,6 @@ mod tests {
             100
         );
         assert_eq!(compressor.max_entries(&MemoryCategory::TaskPatterns), 80);
-        assert_eq!(
-            compressor.max_entries(&MemoryCategory::SystemEvolution),
-            30
-        );
+        assert_eq!(compressor.max_entries(&MemoryCategory::SystemEvolution), 30);
     }
 }

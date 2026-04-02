@@ -5,13 +5,14 @@
 //! - TieredMemory for conversation history and knowledge
 //! - AgentStore for agent persistence
 //! - AgentManager for executing user-defined agents
+//! - MarkdownMemoryStore for system-level memory
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use neomind_agent::memory::TieredMemory;
 use neomind_agent::SessionManager;
-use neomind_storage::AgentStore;
+use neomind_storage::{AgentStore, MarkdownMemoryStore};
 
 /// AI Agent manager type alias.
 pub type AgentManager = Arc<neomind_agent::ai_agent::AiAgentManager>;
@@ -32,6 +33,9 @@ pub struct AgentState {
 
     /// AI Agent manager for executing user-defined agents (lazy-initialized).
     pub agent_manager: Arc<RwLock<Option<AgentManager>>>,
+
+    /// System memory store for Markdown-based persistent memory.
+    pub system_memory_store: Arc<MarkdownMemoryStore>,
 }
 
 impl AgentState {
@@ -41,12 +45,14 @@ impl AgentState {
         memory: Arc<RwLock<TieredMemory>>,
         agent_store: Arc<AgentStore>,
         agent_manager: Arc<RwLock<Option<AgentManager>>>,
+        system_memory_store: Arc<MarkdownMemoryStore>,
     ) -> Self {
         Self {
             session_manager,
             memory,
             agent_store,
             agent_manager,
+            system_memory_store,
         }
     }
 
@@ -58,6 +64,9 @@ impl AgentState {
             memory: Arc::new(RwLock::new(TieredMemory::default())),
             agent_store: AgentStore::memory().unwrap(),
             agent_manager: Arc::new(RwLock::new(None)),
+            system_memory_store: Arc::new(MarkdownMemoryStore::new(
+                std::env::temp_dir().join("test-memory"),
+            )),
         }
     }
 }

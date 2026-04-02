@@ -4,14 +4,16 @@
 //! (like AutomationStore) which cannot be imported into neomind-agent due to
 //! circular dependency issues.
 
+use crate::automation::store::SharedAutomationStore;
+use crate::automation::transform::JsTransformExecutor;
+use crate::automation::types::{
+    Automation, AutomationMetadata, TransformAutomation, TransformScope,
+};
 use async_trait::async_trait;
 use neomind_agent::toolkit::{
-    object_schema, string_property, Tool, ToolCategory, ToolDefinition, ToolError, ToolOutput,
-    ToolExample, ToolRelationships, UsageScenario,
+    object_schema, string_property, Tool, ToolCategory, ToolDefinition, ToolError, ToolExample,
+    ToolOutput, ToolRelationships, UsageScenario,
 };
-use crate::automation::store::SharedAutomationStore;
-use crate::automation::types::{Automation, AutomationMetadata, TransformAutomation, TransformScope};
-use crate::automation::transform::JsTransformExecutor;
 use serde_json::Value;
 
 // ============================================================================

@@ -79,13 +79,13 @@ impl MemoryCategory {
         }
     }
 
-    /// Get Chinese display name
+    /// Get display name
     pub fn display_name(&self) -> &'static str {
         match self {
-            Self::UserProfile => "用户画像",
-            Self::DomainKnowledge => "领域知识",
-            Self::TaskPatterns => "任务模式",
-            Self::SystemEvolution => "系统进化",
+            Self::UserProfile => "User Profile",
+            Self::DomainKnowledge => "Domain Knowledge",
+            Self::TaskPatterns => "Task Patterns",
+            Self::SystemEvolution => "System Evolution",
         }
     }
 
@@ -107,10 +107,20 @@ impl MemoryCategory {
     /// Parse from string
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "user_profile" | "用户画像" | "userprofile" => Some(Self::UserProfile),
-            "domain_knowledge" | "领域知识" | "domainknowledge" => Some(Self::DomainKnowledge),
-            "task_patterns" | "任务模式" | "taskpatterns" => Some(Self::TaskPatterns),
-            "system_evolution" | "系统进化" | "systemevolution" => Some(Self::SystemEvolution),
+            // English names
+            "user_profile" | "user profile" | "userprofile" => Some(Self::UserProfile),
+            "domain_knowledge" | "domain knowledge" | "domainknowledge" => {
+                Some(Self::DomainKnowledge)
+            }
+            "task_patterns" | "task patterns" | "taskpatterns" => Some(Self::TaskPatterns),
+            "system_evolution" | "system evolution" | "systemevolution" => {
+                Some(Self::SystemEvolution)
+            }
+            // Chinese names (backward compatibility)
+            "用户画像" => Some(Self::UserProfile),
+            "领域知识" => Some(Self::DomainKnowledge),
+            "任务模式" => Some(Self::TaskPatterns),
+            "系统进化" => Some(Self::SystemEvolution),
             // Legacy aliases for backward compatibility
             "pattern" | "patterns" => Some(Self::TaskPatterns),
             "entity" | "entities" => Some(Self::DomainKnowledge),
@@ -122,13 +132,24 @@ impl MemoryCategory {
 
     /// All categories
     pub fn all() -> &'static [Self] {
-        &[Self::UserProfile, Self::DomainKnowledge, Self::TaskPatterns, Self::SystemEvolution]
+        &[
+            Self::UserProfile,
+            Self::DomainKnowledge,
+            Self::TaskPatterns,
+            Self::SystemEvolution,
+        ]
     }
 }
 
 impl std::fmt::Display for MemoryCategory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", serde_json::to_string(self).unwrap_or_default().trim_matches('"'))
+        write!(
+            f,
+            "{}",
+            serde_json::to_string(self)
+                .unwrap_or_default()
+                .trim_matches('"')
+        )
     }
 }
 
@@ -148,14 +169,9 @@ pub struct CategoryStats {
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum MemorySource {
     /// Memory from an AI Agent
-    Agent {
-        id: String,
-        name: String,
-    },
+    Agent { id: String, name: String },
     /// Memory from a chat session
-    Chat {
-        session_id: String,
-    },
+    Chat { session_id: String },
     /// System-level global memory
     System,
 }
@@ -176,7 +192,9 @@ impl MemorySource {
     pub fn display_name(&self) -> String {
         match self {
             MemorySource::Agent { name, .. } => name.clone(),
-            MemorySource::Chat { session_id } => format!("Chat {}", &session_id[..8.min(session_id.len())]),
+            MemorySource::Chat { session_id } => {
+                format!("Chat {}", &session_id[..8.min(session_id.len())])
+            }
             MemorySource::System => "System".to_string(),
         }
     }
@@ -233,7 +251,11 @@ impl MemoryEntry {
     }
 
     /// Parse from markdown line
-    pub fn from_markdown(line: &str, category: MemoryCategory, source: MemorySource) -> Option<Self> {
+    pub fn from_markdown(
+        line: &str,
+        category: MemoryCategory,
+        source: MemorySource,
+    ) -> Option<Self> {
         // Format: "- 2026-04-01: Content here [importance: 80]"
         let line = line.trim();
         if !line.starts_with('-') {
@@ -358,7 +380,7 @@ impl MarkdownMemoryStore {
         // Create system.md if it doesn't exist (legacy)
         let system_path = self.base_path.join("system.md");
         if !system_path.exists() {
-            let content = "# System Memory\n\n## Patterns\n\n## Entities\n\n## Preferences\n\n## Facts\n";
+            let content = "# System Memory\n\n## User Profile\n\n## Domain Knowledge\n\n## Task Patterns\n\n## System Evolution\n";
             fs::write(&system_path, content)?;
             info!(path = %system_path.display(), "Created system memory file");
         }
@@ -406,7 +428,10 @@ impl MarkdownMemoryStore {
         let path = self.category_path(category);
 
         let content = self.read_category(category)?;
-        let entry_count = content.lines().filter(|l| l.trim().starts_with('-')).count();
+        let entry_count = content
+            .lines()
+            .filter(|l| l.trim().starts_with('-'))
+            .count();
 
         let (file_size, modified_at) = if path.exists() {
             let metadata = fs::metadata(&path)?;
@@ -460,7 +485,7 @@ impl MarkdownMemoryStore {
     /// Generate default content for a category file
     fn default_category_content(&self, category: &MemoryCategory) -> String {
         format!(
-            "# {}\n\n> 最后更新: {}\n> 条目总数: 0\n\n",
+            "# {}\n\n> Last updated: {}\n> Total entries: 0\n\n",
             category.display_name(),
             Utc::now().format("%Y-%m-%d %H:%M")
         )
@@ -537,7 +562,11 @@ impl MarkdownMemoryStore {
             content.insert_str(insert_pos, &entry_text);
         } else {
             // Section doesn't exist, append it
-            content.push_str(&format!("\n## {}\n\n{}\n", section_name, entry.to_markdown()));
+            content.push_str(&format!(
+                "\n## {}\n\n{}\n",
+                section_name,
+                entry.to_markdown()
+            ));
         }
 
         // Write back
@@ -574,10 +603,7 @@ impl MarkdownMemoryStore {
         // Group by category
         let mut by_category: HashMap<MemoryCategory, Vec<&MemoryEntry>> = HashMap::new();
         for entry in entries {
-            by_category
-                .entry(entry.category)
-                .or_default()
-                .push(entry);
+            by_category.entry(entry.category).or_default().push(entry);
         }
 
         // Build markdown content
@@ -670,8 +696,14 @@ impl MarkdownMemoryStore {
         // Calculate stats
         result.total = result.entries.len();
         for entry in &result.entries {
-            *result.by_category.entry(entry.category.to_string().to_lowercase()).or_default() += 1;
-            *result.by_source.entry(entry.source.display_name()).or_default() += 1;
+            *result
+                .by_category
+                .entry(entry.category.to_string().to_lowercase())
+                .or_default() += 1;
+            *result
+                .by_source
+                .entry(entry.source.display_name())
+                .or_default() += 1;
         }
 
         Ok(result)
@@ -746,7 +778,10 @@ impl MarkdownMemoryStore {
 
         let mut output = String::new();
         output.push_str("# NeoMind Memory Export\n\n");
-        output.push_str(&format!("Generated: {}\n\n", Utc::now().format("%Y-%m-%d %H:%M:%S UTC")));
+        output.push_str(&format!(
+            "Generated: {}\n\n",
+            Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+        ));
         output.push_str(&format!("Total entries: {}\n\n", all.total));
 
         // Group by category
@@ -799,8 +834,7 @@ impl MarkdownMemoryStore {
                 if path.extension().map(|e| e == "md").unwrap_or(false) {
                     if let Some(agent_id) = path.file_stem().and_then(|s| s.to_str()) {
                         if let Some(info) = self.get_file_info(
-                            &path,
-                            agent_id,
+                            &path, agent_id,
                             agent_id, // Will be replaced with actual agent name if available
                             "agent",
                         )? {
@@ -819,8 +853,11 @@ impl MarkdownMemoryStore {
                 let path = entry.path();
                 if path.extension().map(|e| e == "md").unwrap_or(false) {
                     if let Some(session_id) = path.file_stem().and_then(|s| s.to_str()) {
-                        let display_name = format!("Chat {}", &session_id[..8.min(session_id.len())]);
-                        if let Some(info) = self.get_file_info(&path, session_id, &display_name, "chat")? {
+                        let display_name =
+                            format!("Chat {}", &session_id[..8.min(session_id.len())]);
+                        if let Some(info) =
+                            self.get_file_info(&path, session_id, &display_name, "chat")?
+                        {
                             files.push(info);
                         }
                     }
@@ -963,15 +1000,15 @@ impl MarkdownMemoryStore {
     fn create_empty_markdown(&self, source: &MemorySource) -> String {
         match source {
             MemorySource::Agent { name, .. } => format!(
-                "# {} Memory\n\n## Patterns\n\n## Entities\n\n## Preferences\n\n## Facts\n",
+                "# {} Memory\n\n## User Profile\n\n## Domain Knowledge\n\n## Task Patterns\n\n## System Evolution\n",
                 name
             ),
             MemorySource::Chat { session_id } => format!(
-                "# Chat {} Memory\n\n## Patterns\n\n## Entities\n\n## Preferences\n\n## Facts\n",
+                "# Chat {} Memory\n\n## User Profile\n\n## Domain Knowledge\n\n## Task Patterns\n\n## System Evolution\n",
                 session_id
             ),
             MemorySource::System => {
-                "# System Memory\n\n## Patterns\n\n## Entities\n\n## Preferences\n\n## Facts\n"
+                "# System Memory\n\n## User Profile\n\n## Domain Knowledge\n\n## Task Patterns\n\n## System Evolution\n"
                     .to_string()
             }
         }
@@ -1071,9 +1108,15 @@ mod tests {
     #[test]
     fn test_new_memory_categories() {
         assert_eq!(MemoryCategory::UserProfile.filename(), "user_profile.md");
-        assert_eq!(MemoryCategory::DomainKnowledge.filename(), "domain_knowledge.md");
+        assert_eq!(
+            MemoryCategory::DomainKnowledge.filename(),
+            "domain_knowledge.md"
+        );
         assert_eq!(MemoryCategory::TaskPatterns.filename(), "task_patterns.md");
-        assert_eq!(MemoryCategory::SystemEvolution.filename(), "system_evolution.md");
+        assert_eq!(
+            MemoryCategory::SystemEvolution.filename(),
+            "system_evolution.md"
+        );
 
         assert_eq!(MemoryCategory::UserProfile.max_entries(), 50);
         assert_eq!(MemoryCategory::DomainKnowledge.max_entries(), 100);
@@ -1112,7 +1155,11 @@ mod tests {
         store
             .append(
                 &MemorySource::System,
-                &MemoryEntry::new("Global fact", MemoryCategory::DomainKnowledge, MemorySource::System),
+                &MemoryEntry::new(
+                    "Global fact",
+                    MemoryCategory::DomainKnowledge,
+                    MemorySource::System,
+                ),
             )
             .unwrap();
 
@@ -1124,7 +1171,11 @@ mod tests {
         store
             .append(
                 &agent_source,
-                &MemoryEntry::new("Agent pattern", MemoryCategory::TaskPatterns, agent_source.clone()),
+                &MemoryEntry::new(
+                    "Agent pattern",
+                    MemoryCategory::TaskPatterns,
+                    agent_source.clone(),
+                ),
             )
             .unwrap();
 
@@ -1208,14 +1259,14 @@ mod tests {
         store.init().unwrap();
 
         // Write to a category
-        let content = "# 用户画像\n\n## 偏好\n\n- 测试偏好\n";
+        let content = "# User Profile\n\n## Preferences\n\n- Test preference\n";
         store
             .write_category(&MemoryCategory::UserProfile, content)
             .unwrap();
 
         // Read it back
         let read = store.read_category(&MemoryCategory::UserProfile).unwrap();
-        assert!(read.contains("测试偏好"));
+        assert!(read.contains("Test preference"));
 
         // Check stats
         let stats = store.category_stats(&MemoryCategory::UserProfile).unwrap();
@@ -1235,16 +1286,22 @@ mod tests {
 
         // Write to multiple categories
         store
-            .write_category(&MemoryCategory::UserProfile, "# 用户画像\n\n- 偏好1\n")
+            .write_category(
+                &MemoryCategory::UserProfile,
+                "# User Profile\n\n- Preference 1\n",
+            )
             .unwrap();
         store
-            .write_category(&MemoryCategory::DomainKnowledge, "# 领域知识\n\n- 知识1\n")
+            .write_category(
+                &MemoryCategory::DomainKnowledge,
+                "# Domain Knowledge\n\n- Knowledge 1\n",
+            )
             .unwrap();
 
         // Export all
         let export = store.export_all().unwrap();
-        assert!(export.contains("用户画像"));
-        assert!(export.contains("领域知识"));
+        assert!(export.contains("User Profile"));
+        assert!(export.contains("Domain Knowledge"));
         assert!(export.contains("NeoMind Memory Export"));
     }
 }

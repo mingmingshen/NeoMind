@@ -70,13 +70,13 @@ pub mod error;
 pub mod extensions;
 pub mod llm_backends;
 pub mod llm_data;
+pub mod memory_config;
 pub mod messages;
 pub mod monitoring;
 pub mod session;
 pub mod settings;
 pub mod singleton;
 pub mod system_memory;
-pub mod memory_config;
 pub mod timeseries;
 pub mod vector;
 
@@ -194,8 +194,8 @@ pub use dashboards::{
 // System memory exports (Markdown-based)
 pub use system_memory::{
     AggregatedMemory, CategoryStats, MarkdownMemoryStore, MemoryCategory,
-    MemoryEntry as SystemMemoryEntry, MemoryFileInfo, MemorySource, MAX_MEMORY_ENTRIES,
-    DEFAULT_MIN_IMPORTANCE,
+    MemoryEntry as SystemMemoryEntry, MemoryFileInfo, MemorySource, DEFAULT_MIN_IMPORTANCE,
+    MAX_MEMORY_ENTRIES,
 };
 
 // Memory configuration exports

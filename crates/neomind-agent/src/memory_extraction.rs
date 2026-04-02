@@ -1,0 +1,467 @@
+//! Memory Extraction Module
+//!
+//! Provides functions to extract memories from chat conversations and agent executions
+//! using LLM-based extraction and persist them to category-based markdown files.
+
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+use neomind_core::llm::backend::{GenerationParams, LlmInput, LlmRuntime};
+use neomind_storage::{MarkdownMemoryStore, MemoryCategory, SessionMessage};
+
+use crate::error::Result;
+use crate::memory::compressor::MemoryCompressor;
+use crate::memory::extractor::{parse_category, AgentExtractor, ChatExtractor, ExtractResult};
+
+/// Memory extraction configuration
+#[derive(Debug, Clone)]
+pub struct ExtractionConfig {
+    /// Minimum messages required to trigger extraction
+    pub min_messages: usize,
+    /// Maximum messages to include in extraction prompt
+    pub max_messages: usize,
+    /// Minimum importance threshold for extracted memories
+    pub min_importance: u8,
+    /// Whether to deduplicate extracted memories
+    pub dedup_enabled: bool,
+}
+
+impl Default for ExtractionConfig {
+    fn default() -> Self {
+        Self {
+            min_messages: 3,
+            max_messages: 50,
+            min_importance: 30,
+            dedup_enabled: true,
+        }
+    }
+}
+
+/// Memory extractor that uses LLM to extract and persist memories
+pub struct MemoryExtractor {
+    store: Arc<RwLock<MarkdownMemoryStore>>,
+    llm: Arc<dyn LlmRuntime>,
+    config: ExtractionConfig,
+}
+
+impl MemoryExtractor {
+    /// Create a new memory extractor
+    pub fn new(store: Arc<RwLock<MarkdownMemoryStore>>, llm: Arc<dyn LlmRuntime>) -> Self {
+        Self {
+            store,
+            llm,
+            config: ExtractionConfig::default(),
+        }
+    }
+
+    /// Create with custom configuration
+    pub fn with_config(
+        store: Arc<RwLock<MarkdownMemoryStore>>,
+        llm: Arc<dyn LlmRuntime>,
+        config: ExtractionConfig,
+    ) -> Self {
+        Self { store, llm, config }
+    }
+
+    /// Extract memories from chat messages
+    ///
+    /// This method:
+    /// 1. Formats chat messages into a prompt
+    /// 2. Calls LLM to extract memory candidates
+    /// 3. Parses the response
+    /// 4. Appends extracted memories to category files
+    ///
+    /// # Arguments
+    /// * `messages` - Chat messages to extract from
+    ///
+    /// # Returns
+    /// * Number of memories extracted
+    pub async fn extract_from_chat(&self, messages: &[SessionMessage]) -> Result<usize> {
+        if messages.len() < self.config.min_messages {
+            tracing::debug!(
+                message_count = messages.len(),
+                min_required = self.config.min_messages,
+                "Skipping extraction: not enough messages"
+            );
+            return Ok(0);
+        }
+
+        // Format messages for extraction
+        let formatted = self.format_chat_messages(messages);
+
+        // Build prompt
+        let prompt = ChatExtractor::build_prompt(&formatted);
+
+        // Call LLM
+        let response = self.call_llm(&prompt).await?;
+
+        // Parse response
+        let extract_result = ChatExtractor::parse_response(&response)
+            .map_err(|e| crate::error::NeoMindError::Memory(format!("Parse error: {}", e)))?;
+
+        // Filter and write memories
+        let count = self.persist_memories(extract_result).await?;
+
+        tracing::info!(
+            extracted_count = count,
+            message_count = messages.len(),
+            "Chat memory extraction completed"
+        );
+
+        Ok(count)
+    }
+
+    /// Extract memories from agent execution
+    ///
+    /// This method:
+    /// 1. Formats agent execution record into a prompt
+    /// 2. Calls LLM to extract memory candidates
+    /// 3. Parses the response
+    /// 4. Appends extracted memories to category files
+    ///
+    /// # Arguments
+    /// * `agent_name` - Name of the agent
+    /// * `user_prompt` - Original user request (if any)
+    /// * `reasoning_steps` - Agent reasoning process
+    /// * `conclusion` - Final result/conclusion
+    ///
+    /// # Returns
+    /// * Number of memories extracted
+    pub async fn extract_from_agent(
+        &self,
+        agent_name: &str,
+        user_prompt: Option<&str>,
+        reasoning_steps: &str,
+        conclusion: &str,
+    ) -> Result<usize> {
+        // Build prompt
+        let prompt =
+            AgentExtractor::build_prompt(agent_name, user_prompt, reasoning_steps, conclusion);
+
+        // Call LLM
+        let response = self.call_llm(&prompt).await?;
+
+        // Parse response
+        let extract_result = AgentExtractor::parse_response(&response)
+            .map_err(|e| crate::error::NeoMindError::Memory(format!("Parse error: {}", e)))?;
+
+        // Filter and write memories
+        let count = self.persist_memories(extract_result).await?;
+
+        tracing::info!(
+            extracted_count = count,
+            agent_name = %agent_name,
+            "Agent memory extraction completed"
+        );
+
+        Ok(count)
+    }
+
+    /// Extract and compress memories from chat (full pipeline)
+    ///
+    /// This performs extraction followed by compression if needed
+    pub async fn extract_and_compress_chat(
+        &self,
+        messages: &[SessionMessage],
+        compressor: &MemoryCompressor,
+    ) -> Result<(usize, bool)> {
+        // Extract
+        let extracted = self.extract_from_chat(messages).await?;
+
+        if extracted == 0 {
+            return Ok((0, false));
+        }
+
+        // Check if compression is needed for each category
+        let mut compressed = false;
+        let store = self.store.read().await;
+
+        for category in MemoryCategory::all() {
+            let stats = store
+                .category_stats(&category)
+                .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
+
+            let max_entries = compressor.max_entries(&category);
+
+            if stats.entry_count > max_entries {
+                tracing::info!(
+                    category = ?category,
+                    current = stats.entry_count,
+                    max = max_entries,
+                    "Category exceeds max entries, compression needed"
+                );
+                // Note: Actual compression would be done by MemoryScheduler
+                compressed = true;
+            }
+        }
+
+        Ok((extracted, compressed))
+    }
+
+    // === Private helper methods ===
+
+    /// Format chat messages for extraction prompt
+    fn format_chat_messages(&self, messages: &[SessionMessage]) -> String {
+        let limited: Vec<_> = messages
+            .iter()
+            .rev()
+            .take(self.config.max_messages)
+            .rev()
+            .collect();
+
+        limited
+            .iter()
+            .map(|m| {
+                let role = match m.role.as_str() {
+                    "user" => "User",
+                    "assistant" => "Assistant",
+                    "system" => "System",
+                    "tool" => "Tool",
+                    _ => &m.role,
+                };
+
+                // Include thinking if present
+                let content = if let Some(ref thinking) = m.thinking {
+                    format!("[Thinking: {}]\n{}", thinking, m.content)
+                } else {
+                    m.content.clone()
+                };
+
+                format!("**{}**: {}", role, content)
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+
+    /// Call LLM with prompt and return response
+    async fn call_llm(&self, prompt: &str) -> Result<String> {
+        let input = LlmInput::new(prompt).with_params(GenerationParams {
+            temperature: Some(0.3), // Lower temperature for more consistent extraction
+            max_tokens: Some(1024), // Limit response size
+            ..Default::default()
+        });
+
+        let output = self
+            .llm
+            .generate(input)
+            .await
+            .map_err(|e| crate::error::NeoMindError::Llm(e.to_string()))?;
+
+        Ok(output.text)
+    }
+
+    /// Persist extracted memories to category files
+    async fn persist_memories(&self, result: ExtractResult) -> Result<usize> {
+        let mut count = 0;
+        let store = self.store.read().await;
+
+        for candidate in result.memories {
+            // Filter by minimum importance
+            if candidate.importance < self.config.min_importance {
+                tracing::debug!(
+                    content = %candidate.content,
+                    importance = candidate.importance,
+                    min_required = self.config.min_importance,
+                    "Skipping memory: below importance threshold"
+                );
+                continue;
+            }
+
+            // Parse category
+            let category = parse_category(&candidate.category);
+
+            // Read existing content
+            let mut content = store
+                .read_category(&category)
+                .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
+
+            // Check for duplicates if enabled
+            if self.config.dedup_enabled && self.is_duplicate(&content, &candidate.content) {
+                tracing::debug!(
+                    content = %candidate.content,
+                    category = ?category,
+                    "Skipping duplicate memory"
+                );
+                continue;
+            }
+
+            // Format the memory entry
+            let entry = self.format_memory_entry(&candidate.content, candidate.importance);
+
+            // Append to content
+            if !content.ends_with('\n') {
+                content.push('\n');
+            }
+            content.push_str(&entry);
+
+            // Write back
+            store
+                .write_category(&category, &content)
+                .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
+
+            count += 1;
+            tracing::debug!(
+                content = %candidate.content,
+                category = ?category,
+                importance = candidate.importance,
+                "Persisted memory entry"
+            );
+        }
+
+        Ok(count)
+    }
+
+    /// Check if content already exists (simple duplicate detection)
+    fn is_duplicate(&self, existing_content: &str, new_content: &str) -> bool {
+        // Simple check: if the new content appears verbatim
+        let normalized_new = new_content.to_lowercase().trim().to_string();
+
+        existing_content
+            .lines()
+            .any(|line| line.to_lowercase().contains(&normalized_new))
+    }
+
+    /// Format a memory entry for markdown
+    fn format_memory_entry(&self, content: &str, importance: u8) -> String {
+        let timestamp = chrono::Utc::now().format("%Y-%m-%d");
+        format!(
+            "- [{}] {} [importance: {}]\n",
+            timestamp, content, importance
+        )
+    }
+}
+
+/// Convenience functions for manual memory operations
+
+/// Manually add a memory entry to a category
+pub async fn add_memory(
+    store: &Arc<RwLock<MarkdownMemoryStore>>,
+    category: &MemoryCategory,
+    content: &str,
+    importance: u8,
+) -> Result<()> {
+    let store_guard = store.read().await;
+
+    let mut existing = store_guard
+        .read_category(category)
+        .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
+
+    let timestamp = chrono::Utc::now().format("%Y-%m-%d");
+    let entry = format!(
+        "- [{}] {} [importance: {}]\n",
+        timestamp, content, importance
+    );
+
+    if !existing.ends_with('\n') {
+        existing.push('\n');
+    }
+    existing.push_str(&entry);
+
+    store_guard
+        .write_category(category, &existing)
+        .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::Stream;
+    use neomind_core::llm::backend::{FinishReason, LlmOutput, StreamChunk};
+    use tempfile::TempDir;
+
+    // Mock LLM for testing
+    struct MockLlm;
+
+    #[async_trait::async_trait]
+    impl LlmRuntime for MockLlm {
+        fn backend_id(&self) -> neomind_core::llm::backend::BackendId {
+            neomind_core::llm::backend::BackendId::new("mock")
+        }
+
+        fn model_name(&self) -> &str {
+            "mock-model"
+        }
+
+        async fn generate(
+            &self,
+            _input: LlmInput,
+        ) -> std::result::Result<LlmOutput, neomind_core::llm::backend::LlmError> {
+            Ok(LlmOutput {
+                text: r#"{"memories":[{"content":"User prefers Chinese language","category":"user_profile","importance":80}]}"#.to_string(),
+                finish_reason: FinishReason::Stop,
+                usage: None,
+                thinking: None,
+            })
+        }
+
+        async fn generate_stream(
+            &self,
+            _input: LlmInput,
+        ) -> std::result::Result<
+            std::pin::Pin<Box<dyn Stream<Item = StreamChunk> + Send>>,
+            neomind_core::llm::backend::LlmError,
+        > {
+            unimplemented!()
+        }
+
+        fn max_context_length(&self) -> usize {
+            4096
+        }
+    }
+
+    #[tokio::test]
+    async fn test_format_chat_messages() {
+        let temp_dir = TempDir::new().unwrap();
+        let store = Arc::new(RwLock::new(MarkdownMemoryStore::new(temp_dir.path())));
+        let llm = Arc::new(MockLlm);
+
+        let extractor = MemoryExtractor::new(store, llm);
+
+        let messages = vec![
+            SessionMessage::user("Hello"),
+            SessionMessage::assistant("Hi there!"),
+            SessionMessage::user("I prefer Chinese"),
+        ];
+
+        let formatted = extractor.format_chat_messages(&messages);
+        assert!(formatted.contains("**User**: Hello"));
+        assert!(formatted.contains("**Assistant**: Hi there"));
+        assert!(formatted.contains("**User**: I prefer Chinese"));
+    }
+
+    #[test]
+    fn test_format_memory_entry() {
+        let temp_dir = TempDir::new().unwrap();
+        let store = Arc::new(RwLock::new(MarkdownMemoryStore::new(temp_dir.path())));
+        let llm = Arc::new(MockLlm);
+
+        let extractor = MemoryExtractor::new(store, llm);
+        let entry = extractor.format_memory_entry("Test memory", 75);
+
+        assert!(entry.starts_with("- ["));
+        assert!(entry.contains("Test memory"));
+        assert!(entry.contains("[importance: 75]"));
+    }
+
+    #[tokio::test]
+    async fn test_add_memory() {
+        let temp_dir = TempDir::new().unwrap();
+        let store = MarkdownMemoryStore::new(temp_dir.path());
+        store.init().unwrap();
+        let store = Arc::new(RwLock::new(store));
+
+        add_memory(&store, &MemoryCategory::UserProfile, "User likes pizza", 60)
+            .await
+            .unwrap();
+
+        let content = store
+            .read()
+            .await
+            .read_category(&MemoryCategory::UserProfile)
+            .unwrap();
+        assert!(content.contains("User likes pizza"));
+        assert!(content.contains("[importance: 60]"));
+    }
+}

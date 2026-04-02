@@ -339,6 +339,11 @@ pub struct ExternalBroker {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_key: Option<String>,
 
+    /// Custom client ID for MQTT connection.
+    /// If not specified, a random ID will be generated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+
     /// Whether this broker is enabled.
     #[serde(default = "default_external_broker_enabled")]
     pub enabled: bool,
@@ -398,6 +403,7 @@ impl ExternalBroker {
             ca_cert: None,
             client_cert: None,
             client_key: None,
+            client_id: None,
             enabled: true,
             connected: false,
             last_error: None,

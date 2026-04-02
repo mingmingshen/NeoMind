@@ -12,7 +12,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use neomind_storage::{CategoryStats, MarkdownMemoryStore, MemoryCategory, MemoryConfig, MemoryFileInfo};
+use neomind_storage::{
+    CategoryStats, MarkdownMemoryStore, MemoryCategory, MemoryConfig, MemoryFileInfo,
+};
 
 use super::ServerState;
 
@@ -64,6 +66,34 @@ pub struct StatsResponse {
 #[derive(Debug, Deserialize)]
 pub struct UpdateConfigRequest {
     pub config: MemoryConfig,
+}
+
+/// Request to trigger extraction
+#[derive(Debug, Deserialize)]
+pub struct ExtractionRequest {
+    /// Session ID to extract from (optional - if not provided, extracts from all recent sessions)
+    pub session_id: Option<String>,
+    /// Force extraction even if minimum message count not met
+    pub force: bool,
+}
+
+/// Response for extraction
+#[derive(Debug, Serialize)]
+pub struct ExtractionResponse {
+    pub success: bool,
+    pub extracted_count: usize,
+    pub message: String,
+}
+
+/// Request to add a manual memory entry
+#[derive(Debug, Deserialize)]
+pub struct AddMemoryRequest {
+    /// Category to add to
+    pub category: String,
+    /// Memory content
+    pub content: String,
+    /// Importance score (0-100)
+    pub importance: u8,
 }
 
 // ============================================================================
@@ -215,14 +245,194 @@ pub async fn update_config(
 }
 
 /// POST /api/memory/extract - Trigger manual extraction
-pub async fn trigger_extract(State(_state): State<ServerState>) -> Response {
-    // TODO: Implement actual extraction
-    Json(serde_json::json!({
-        "success": true,
-        "extracted": 0,
-        "message": "Extraction triggered"
-    }))
+///
+/// This endpoint triggers memory extraction from chat sessions.
+/// If session_id is provided, extracts from that specific session.
+/// Otherwise, extracts from the most recent sessions.
+pub async fn trigger_extract(
+    State(state): State<ServerState>,
+    Json(req): Json<ExtractionRequest>,
+) -> Response {
+    use neomind_agent::memory_extraction::{ExtractionConfig, MemoryExtractor};
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    // Get the LLM backend
+    let llm_manager = match neomind_agent::get_instance_manager() {
+        Ok(manager) => manager,
+        Err(e) => {
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("LLM backend not available: {}", e),
+            )
+        }
+    };
+
+    let llm_runtime = match llm_manager.get_active_runtime().await {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("No active LLM backend configured: {}", e),
+            )
+        }
+    };
+
+    // Get session store
+    let session_store = state.agents.session_manager.session_store();
+
+    // Determine which session(s) to extract from
+    let session_ids: Vec<String> = match req.session_id {
+        Some(id) => vec![id],
+        None => {
+            // Get all sessions
+            match session_store.list_sessions() {
+                Ok(ids) => ids,
+                Err(e) => {
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to list sessions: {}", e),
+                    )
+                }
+            }
+        }
+    };
+
+    if session_ids.is_empty() {
+        return Json(ExtractionResponse {
+            success: true,
+            extracted_count: 0,
+            message: "No sessions available to extract from".to_string(),
+        })
+        .into_response();
+    }
+
+    // Get the memory store (wrapped in Arc<RwLock<>>)
+    let memory_store = Arc::new(RwLock::new(state.agents.system_memory_store.as_ref().clone()));
+
+    // Create extractor with custom config if force is set
+    let config = if req.force {
+        ExtractionConfig {
+            min_messages: 1,
+            ..Default::default()
+        }
+    } else {
+        ExtractionConfig::default()
+    };
+
+    let extractor = MemoryExtractor::with_config(memory_store, llm_runtime, config);
+
+    // Extract from each session
+    let mut total_extracted = 0;
+    let mut processed_sessions = 0;
+
+    for session_id in session_ids {
+        // Load session history
+        let messages = match session_store.load_history(&session_id) {
+            Ok(msgs) => msgs,
+            Err(e) => {
+                tracing::warn!(
+                    session_id = %session_id,
+                    error = %e,
+                    "Failed to load session history, skipping"
+                );
+                continue;
+            }
+        };
+
+        if messages.is_empty() {
+            continue;
+        }
+
+        // Perform extraction
+        match extractor.extract_from_chat(&messages).await {
+            Ok(count) => {
+                total_extracted += count;
+                processed_sessions += 1;
+                tracing::info!(
+                    session_id = %session_id,
+                    extracted = count,
+                    "Extraction completed for session"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    session_id = %session_id,
+                    error = %e,
+                    "Extraction failed for session"
+                );
+            }
+        }
+    }
+
+    Json(ExtractionResponse {
+        success: true,
+        extracted_count: total_extracted,
+        message: format!(
+            "Extracted {} memories from {} sessions",
+            total_extracted, processed_sessions
+        ),
+    })
     .into_response()
+}
+
+/// POST /api/memory/add - Manually add a memory entry
+pub async fn add_memory_entry(
+    State(state): State<ServerState>,
+    Json(req): Json<AddMemoryRequest>,
+) -> Response {
+    // Parse category
+    let category = match MemoryCategory::from_str(&req.category) {
+        Some(c) => c,
+        None => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "Invalid category: {}. Valid: user_profile, domain_knowledge, task_patterns, system_evolution",
+                    req.category
+                ),
+            )
+        }
+    };
+
+    let store = state.agents.system_memory_store.clone();
+
+    // Read existing content
+    let mut content = match store.read_category(&category) {
+        Ok(c) => c,
+        Err(e) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to read category: {}", e),
+            )
+        }
+    };
+
+    // Format the entry
+    let timestamp = chrono::Utc::now().format("%Y-%m-%d");
+    let entry = format!(
+        "- [{}] {} [importance: {}]\n",
+        timestamp, req.content, req.importance
+    );
+
+    // Append to content
+    if !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content.push_str(&entry);
+
+    // Write back
+    match store.write_category(&category, &content) {
+        Ok(()) => Json(serde_json::json!({
+            "success": true,
+            "message": format!("Memory added to {}", category.display_name())
+        }))
+        .into_response(),
+        Err(e) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to write memory: {}", e),
+        ),
+    }
 }
 
 /// POST /api/memory/compress - Trigger manual compression

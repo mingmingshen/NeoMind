@@ -509,11 +509,19 @@ impl ServerState {
             }
         };
 
+        // Initialize system memory store (Markdown-based persistent memory)
+        let system_memory_store =
+            Arc::new(neomind_storage::MarkdownMemoryStore::new("data/memory"));
+        if let Err(e) = system_memory_store.init() {
+            tracing::warn!(category = "storage", error = %e, "Failed to initialize system memory store");
+        }
+
         let agents = AgentState::new(
             Arc::new(session_manager),
             memory,
             agent_store,
             Arc::new(tokio::sync::RwLock::new(None)),
+            system_memory_store,
         );
 
         // ========== Build AUTH STATE ==========
@@ -689,12 +697,16 @@ impl ServerState {
             memory_config,
         )));
         let agent_store = neomind_storage::AgentStore::memory().unwrap();
+        let system_memory_store = Arc::new(neomind_storage::MarkdownMemoryStore::new(
+            std::env::temp_dir().join("neomind-test-memory"),
+        ));
 
         let agents = AgentState::new(
             Arc::new(session_manager),
             memory,
             agent_store,
             Arc::new(tokio::sync::RwLock::new(None)),
+            system_memory_store,
         );
 
         // ========== Build AUTH STATE ==========
@@ -893,6 +905,10 @@ impl ServerState {
                 client_id: Some("neomind-internal".to_string()),
                 username: None,
                 password: None,
+                tls: false,
+                ca_cert: None,
+                client_cert: None,
+                client_key: None,
                 keep_alive: 60,
                 clean_session: true,
                 qos: 1,
@@ -1056,7 +1072,7 @@ impl ServerState {
                 self.devices.telemetry.clone(),
                 self.agents.agent_store.clone(),
                 self.automation.rule_engine.clone(),
-                None, // rule_history
+                None,                                    // rule_history
                 Some(self.core.message_manager.clone()), // message_manager for alert tool
             )
             // System help tool for onboarding (kept separate for discoverability)
@@ -1751,6 +1767,7 @@ impl ServerState {
             llm_runtime,
             llm_backend_store,
             tool_registry: self.agents.session_manager.get_tool_registry().await,
+            memory_store: Some(self.agents.system_memory_store.clone()),
         };
 
         let manager = neomind_agent::ai_agent::AiAgentManager::new(executor_config)

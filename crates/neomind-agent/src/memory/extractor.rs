@@ -184,10 +184,7 @@ That's all.
 
     #[test]
     fn test_parse_category() {
-        assert_eq!(
-            parse_category("user_profile"),
-            MemoryCategory::UserProfile
-        );
+        assert_eq!(parse_category("user_profile"), MemoryCategory::UserProfile);
         assert_eq!(
             parse_category("DOMAIN_KNOWLEDGE"),
             MemoryCategory::DomainKnowledge

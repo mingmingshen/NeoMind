@@ -13,7 +13,9 @@ pub struct DedupProcessor {
 impl DedupProcessor {
     /// Create a new dedup processor
     pub fn new(similarity_threshold: f32) -> Self {
-        Self { similarity_threshold }
+        Self {
+            similarity_threshold,
+        }
     }
 
     /// Create with default threshold (0.85)
@@ -46,11 +48,7 @@ impl DedupProcessor {
     }
 
     /// Find similar entry in existing list
-    pub fn find_similar<'a>(
-        &self,
-        content: &str,
-        existing: &'a [String],
-    ) -> Option<(usize, f32)> {
+    pub fn find_similar<'a>(&self, content: &str, existing: &'a [String]) -> Option<(usize, f32)> {
         for (i, entry) in existing.iter().enumerate() {
             let similarity = Self::jaccard_similarity(content, entry);
             if similarity >= self.similarity_threshold {

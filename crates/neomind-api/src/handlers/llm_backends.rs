@@ -343,7 +343,8 @@ pub async fn create_backend_handler(
         // For Ollama, try to get capabilities from /api/show endpoint
         let endpoint = req.endpoint.as_deref().unwrap_or("http://localhost:11434");
         let show_url = format!("{}/api/show", endpoint);
-        match get_model_capabilities_from_show(&reqwest::Client::new(), &show_url, &req.model).await {
+        match get_model_capabilities_from_show(&reqwest::Client::new(), &show_url, &req.model).await
+        {
             Ok(caps) => {
                 tracing::info!(
                     model = %req.model,
@@ -361,14 +362,18 @@ pub async fn create_backend_handler(
                     "Failed to get Ollama capabilities via API, using name-based detection"
                 );
                 // Fallback to name-based detection
-                let mut caps = req.capabilities.unwrap_or_else(|| get_default_capabilities(&backend_type));
+                let mut caps = req
+                    .capabilities
+                    .unwrap_or_else(|| get_default_capabilities(&backend_type));
                 adjust_capabilities_for_model(&req.model, &mut caps);
                 caps
             }
         }
     } else {
         // For non-Ollama backends, use provided capabilities or defaults with name-based adjustment
-        let mut caps = req.capabilities.unwrap_or_else(|| get_default_capabilities(&backend_type));
+        let mut caps = req
+            .capabilities
+            .unwrap_or_else(|| get_default_capabilities(&backend_type));
         adjust_capabilities_for_model(&req.model, &mut caps);
         caps
     };
@@ -432,9 +437,13 @@ pub async fn update_backend_handler(
         // Re-detect capabilities when model changes
         // For Ollama, try API detection first
         if matches!(instance.backend_type, LlmBackendType::Ollama) {
-            let endpoint = instance.endpoint.as_deref().unwrap_or("http://localhost:11434");
+            let endpoint = instance
+                .endpoint
+                .as_deref()
+                .unwrap_or("http://localhost:11434");
             let show_url = format!("{}/api/show", endpoint);
-            match get_model_capabilities_from_show(&reqwest::Client::new(), &show_url, &model).await {
+            match get_model_capabilities_from_show(&reqwest::Client::new(), &show_url, &model).await
+            {
                 Ok(caps) => {
                     tracing::info!(
                         model = %model,

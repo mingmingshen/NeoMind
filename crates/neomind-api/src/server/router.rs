@@ -634,7 +634,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/memory", get(memory::get_all_memory))
         .route("/api/memory/export", get(memory::export_all))
         .route("/api/memory/stats", get(memory::get_stats))
-        .route("/api/memory/config", get(memory::get_config).put(memory::update_config))
+        .route(
+            "/api/memory/config",
+            get(memory::get_config).put(memory::update_config),
+        )
         .route("/api/memory/extract", post(memory::trigger_extract))
         .route("/api/memory/compress", post(memory::trigger_compress))
         .route(
