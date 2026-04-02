@@ -8,6 +8,7 @@
 //! - **Mid-term Memory**: Recent conversation history with semantic search
 //! - **Long-term Memory**: Device knowledge base and troubleshooting guides
 //! - **Unified Interface**: Single interface to all memory layers
+//! - **Markdown Memory**: Simple markdown-based memory with LLM extraction
 //!
 //! ## Example
 //!
@@ -48,6 +49,7 @@ pub mod bm25;
 pub mod embeddings;
 pub mod error;
 pub mod long_term;
+pub mod manager;
 pub mod mid_term;
 pub mod short_term;
 pub mod tiered;
@@ -69,6 +71,9 @@ pub use long_term::{
 pub use mid_term::{ConversationEntry, MidTermMemory, SearchResult};
 pub use short_term::{MemoryMessage, ShortTermMemory, DEFAULT_MAX_MESSAGES, DEFAULT_MAX_TOKENS};
 pub use tiered::{MemoryQueryResult, MemoryStats, SearchMethod, TieredMemory, TieredMemoryConfig};
+
+// Memory manager exports
+pub use manager::MemoryManager;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
