@@ -339,10 +339,23 @@ impl MarkdownMemoryStore {
 
     /// Initialize the directory structure
     pub fn init(&self) -> Result<()> {
+        fs::create_dir_all(&self.base_path)?;
+
+        // Create category files if they don't exist
+        for category in MemoryCategory::all() {
+            let path = self.category_path(category);
+            if !path.exists() {
+                let content = self.default_category_content(category);
+                fs::write(&path, content)?;
+                info!(path = %path.display(), "Created category memory file");
+            }
+        }
+
+        // Create legacy directories for backward compatibility
         fs::create_dir_all(self.base_path.join("agents"))?;
         fs::create_dir_all(self.base_path.join("chat"))?;
 
-        // Create system.md if it doesn't exist
+        // Create system.md if it doesn't exist (legacy)
         let system_path = self.base_path.join("system.md");
         if !system_path.exists() {
             let content = "# System Memory\n\n## Patterns\n\n## Entities\n\n## Preferences\n\n## Facts\n";
@@ -351,6 +364,106 @@ impl MarkdownMemoryStore {
         }
 
         Ok(())
+    }
+
+    // ========================================================================
+    // Category-based API (simplified for new memory system)
+    // ========================================================================
+
+    /// Get the file path for a category
+    pub fn category_path(&self, category: &MemoryCategory) -> PathBuf {
+        self.base_path.join(category.filename())
+    }
+
+    /// Read markdown content for a category
+    pub fn read_category(&self, category: &MemoryCategory) -> Result<String> {
+        let path = self.category_path(category);
+        if !path.exists() {
+            return Ok(self.default_category_content(category));
+        }
+        fs::read_to_string(&path)
+            .map_err(|e| Error::Storage(format!("Failed to read {:?}: {}", category, e)))
+    }
+
+    /// Write markdown content for a category
+    pub fn write_category(&self, category: &MemoryCategory, content: &str) -> Result<()> {
+        let path = self.category_path(category);
+
+        // Ensure parent directory exists
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        fs::write(&path, content)
+            .map_err(|e| Error::Storage(format!("Failed to write {:?}: {}", category, e)))?;
+
+        info!(category = ?category, size = content.len(), "Wrote category memory file");
+        Ok(())
+    }
+
+    /// Get statistics for a category
+    pub fn category_stats(&self, category: &MemoryCategory) -> Result<CategoryStats> {
+        let path = self.category_path(category);
+
+        let content = self.read_category(category)?;
+        let entry_count = content.lines().filter(|l| l.trim().starts_with('-')).count();
+
+        let (file_size, modified_at) = if path.exists() {
+            let metadata = fs::metadata(&path)?;
+            let modified = metadata
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            (metadata.len(), modified)
+        } else {
+            (content.len() as u64, 0)
+        };
+
+        Ok(CategoryStats {
+            entry_count,
+            file_size,
+            modified_at,
+        })
+    }
+
+    /// Get statistics for all categories
+    pub fn all_stats(&self) -> Result<HashMap<String, CategoryStats>> {
+        let mut stats = HashMap::new();
+        for category in MemoryCategory::all() {
+            let key = category.to_string();
+            stats.insert(key, self.category_stats(category)?);
+        }
+        Ok(stats)
+    }
+
+    /// Export all categories as a single markdown string
+    pub fn export_all(&self) -> Result<String> {
+        let mut output = String::new();
+        output.push_str("# NeoMind Memory Export\n\n");
+        output.push_str(&format!(
+            "Generated: {}\n\n",
+            Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+        ));
+
+        for category in MemoryCategory::all() {
+            let content = self.read_category(category)?;
+            output.push_str(&format!("---\n\n# {}\n\n", category.display_name()));
+            output.push_str(&content);
+            output.push_str("\n\n");
+        }
+
+        Ok(output)
+    }
+
+    /// Generate default content for a category file
+    fn default_category_content(&self, category: &MemoryCategory) -> String {
+        format!(
+            "# {}\n\n> 最后更新: {}\n> 条目总数: 0\n\n",
+            category.display_name(),
+            Utc::now().format("%Y-%m-%d %H:%M")
+        )
     }
 
     /// Get the base path
@@ -1086,5 +1199,52 @@ mod tests {
         assert!(importances.contains(&50));
         assert!(importances.contains(&40));
         assert!(importances.contains(&30));
+    }
+
+    #[test]
+    fn test_category_operations() {
+        let temp_dir = TempDir::new().unwrap();
+        let store = MarkdownMemoryStore::new(temp_dir.path());
+        store.init().unwrap();
+
+        // Write to a category
+        let content = "# 用户画像\n\n## 偏好\n\n- 测试偏好\n";
+        store
+            .write_category(&MemoryCategory::UserProfile, content)
+            .unwrap();
+
+        // Read it back
+        let read = store.read_category(&MemoryCategory::UserProfile).unwrap();
+        assert!(read.contains("测试偏好"));
+
+        // Check stats
+        let stats = store.category_stats(&MemoryCategory::UserProfile).unwrap();
+        assert!(stats.file_size > 0);
+        assert_eq!(stats.entry_count, 1); // One line starting with '-'
+
+        // Check all_stats
+        let all_stats = store.all_stats().unwrap();
+        assert!(all_stats.contains_key("user_profile"));
+    }
+
+    #[test]
+    fn test_export_all() {
+        let temp_dir = TempDir::new().unwrap();
+        let store = MarkdownMemoryStore::new(temp_dir.path());
+        store.init().unwrap();
+
+        // Write to multiple categories
+        store
+            .write_category(&MemoryCategory::UserProfile, "# 用户画像\n\n- 偏好1\n")
+            .unwrap();
+        store
+            .write_category(&MemoryCategory::DomainKnowledge, "# 领域知识\n\n- 知识1\n")
+            .unwrap();
+
+        // Export all
+        let export = store.export_all().unwrap();
+        assert!(export.contains("用户画像"));
+        assert!(export.contains("领域知识"));
+        assert!(export.contains("NeoMind Memory Export"));
     }
 }
