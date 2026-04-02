@@ -168,7 +168,9 @@ export function isNetworkError(error: StandardError): boolean {
     message.includes('network') ||
     message.includes('fetch') ||
     message.includes('connection') ||
-    message.includes('timeout')
+    message.includes('timeout') ||
+    message.includes('load failed') ||  // Safari/WebKit network error
+    message.includes('failed to fetch')  // Chrome/Firefox network error
   )
 }
 
@@ -240,7 +242,11 @@ export function formatErrorForUser(error: StandardError, context?: ErrorContext)
 
   // Provide user-friendly messages for common errors
   if (isNetworkError(error)) {
-    return 'Network error. Please check your connection and try again.'
+    // Check for specific timeout case
+    if (message.toLowerCase().includes('timeout')) {
+      return 'Request timed out. The operation is taking too long - please try again later.'
+    }
+    return 'Network error. Please check that the server is running and try again.'
   }
 
   if (isAuthError(error)) {

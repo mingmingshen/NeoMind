@@ -85,10 +85,8 @@ export function PageTabsBar({
               disabled={action.disabled || action.loading}
               className="h-9 text-xs px-2.5 sm:px-3"
             >
-              {action.loading ? (
-                <span className="mr-1.5 h-4 w-4 animate-spin">⟳</span>
-              ) : action.icon ? (
-                <span className="mr-1.5 shrink-0 h-4 w-4">{action.icon}</span>
+              {action.icon ? (
+                <span className="mr-1.5 shrink-0 flex items-center justify-center h-4 w-4">{action.icon}</span>
               ) : null}
               <span className="whitespace-nowrap">{action.label}</span>
             </Button>
@@ -143,7 +141,7 @@ export function PageTabsBar({
                   className="h-9"
                 >
                   {action.loading ? (
-                    <span className="mr-2 h-4 w-4 animate-spin">⟳</span>
+                    <span className="mr-2 shrink-0 h-4 w-4 flex items-center justify-center">{action.icon || '⟳'}</span>
                   ) : (
                     action.icon && <span className="mr-2 shrink-0 h-4 w-4">{action.icon}</span>
                   )}
@@ -386,7 +384,7 @@ export function PageTabs({
                   className="min-h-11 shrink-0 px-4 md:min-h-9"
                 >
                   {action.loading ? (
-                    <span className="mr-2 h-4 w-4 animate-spin">⟳</span>
+                    <span className="mr-2 shrink-0 h-4 w-4 flex items-center justify-center">{action.icon || '⟳'}</span>
                   ) : (
                     action.icon && <span className="mr-2 shrink-0 h-4 w-4">{action.icon}</span>
                   )}

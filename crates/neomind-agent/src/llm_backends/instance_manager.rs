@@ -9,6 +9,7 @@ use std::time::Instant;
 
 use dashmap::DashMap;
 use neomind_core::llm::backend::{LlmError, LlmInput, LlmRuntime};
+use neomind_core::llm::detect_vision_capability;
 use neomind_storage::{
     BackendCapabilities, ConnectionTestResult, LlmBackendInstance, LlmBackendStore, LlmBackendType,
 };
@@ -46,7 +47,8 @@ fn detect_ollama_capabilities(model_name: &str) -> BackendCapabilities {
     }
 }
 
-/// Ensure an instance has correct capabilities (for Ollama models)
+/// Ensure an instance has correct capabilities
+/// This function corrects potentially outdated capabilities stored in the database
 fn ensure_instance_capabilities(mut instance: LlmBackendInstance) -> LlmBackendInstance {
     // For Ollama backends, update capabilities based on model name
     if matches!(instance.backend_type, LlmBackendType::Ollama) {
@@ -55,6 +57,23 @@ fn ensure_instance_capabilities(mut instance: LlmBackendInstance) -> LlmBackendI
         let detected = detect_ollama_capabilities(&instance.model);
         if !instance.capabilities.supports_tools && detected.supports_tools {
             instance.capabilities = detected;
+        }
+    } else {
+        // For cloud backends (OpenAI, Anthropic, etc.), correct the vision capability
+        // based on the actual model name. This fixes instances that were created
+        // before we had proper model-specific capability detection.
+        let detected_multimodal = detect_vision_capability(&instance.model);
+
+        // Only update if there's a mismatch
+        if instance.capabilities.supports_multimodal != detected_multimodal {
+            tracing::info!(
+                backend_id = %instance.id,
+                model = %instance.model,
+                old_multimodal = instance.capabilities.supports_multimodal,
+                new_multimodal = detected_multimodal,
+                "Correcting multimodal capability for cloud backend"
+            );
+            instance.capabilities.supports_multimodal = detected_multimodal;
         }
     }
     instance

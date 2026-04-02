@@ -11,7 +11,7 @@ use neomind_storage::{MarkdownMemoryStore, MemoryCategory, SessionMessage};
 
 use crate::error::Result;
 use crate::memory::compressor::MemoryCompressor;
-use crate::memory::extractor::{parse_category, AgentExtractor, ChatExtractor, ExtractResult};
+use crate::memory::extractor::{parse_category, AgentExtractor, ChatExtractor, ExtractResult, MemoryAction};
 
 /// Memory extraction configuration
 #[derive(Debug, Clone)]
@@ -89,8 +89,11 @@ impl MemoryExtractor {
         // Format messages for extraction
         let formatted = self.format_chat_messages(messages);
 
-        // Build prompt
-        let prompt = ChatExtractor::build_prompt(&formatted);
+        // Read existing memories for context (to enable deduplication)
+        let existing_memories = self.gather_existing_memories().await;
+
+        // Build prompt with existing memories for deduplication
+        let prompt = ChatExtractor::build_prompt(&formatted, &existing_memories);
 
         // Call LLM
         let response = self.call_llm(&prompt).await?;
@@ -99,7 +102,7 @@ impl MemoryExtractor {
         let extract_result = ChatExtractor::parse_response(&response)
             .map_err(|e| crate::error::NeoMindError::Memory(format!("Parse error: {}", e)))?;
 
-        // Filter and write memories
+        // Filter and write memories (handles merge/append actions)
         let count = self.persist_memories(extract_result).await?;
 
         tracing::info!(
@@ -134,9 +137,17 @@ impl MemoryExtractor {
         reasoning_steps: &str,
         conclusion: &str,
     ) -> Result<usize> {
-        // Build prompt
-        let prompt =
-            AgentExtractor::build_prompt(agent_name, user_prompt, reasoning_steps, conclusion);
+        // Read existing memories for context (to enable deduplication)
+        let existing_memories = self.gather_existing_memories().await;
+
+        // Build prompt with existing memories
+        let prompt = AgentExtractor::build_prompt(
+            agent_name,
+            user_prompt,
+            reasoning_steps,
+            conclusion,
+            &existing_memories,
+        );
 
         // Call LLM
         let response = self.call_llm(&prompt).await?;
@@ -145,7 +156,7 @@ impl MemoryExtractor {
         let extract_result = AgentExtractor::parse_response(&response)
             .map_err(|e| crate::error::NeoMindError::Memory(format!("Parse error: {}", e)))?;
 
-        // Filter and write memories
+        // Filter and write memories (handles merge/append actions)
         let count = self.persist_memories(extract_result).await?;
 
         tracing::info!(
@@ -200,6 +211,28 @@ impl MemoryExtractor {
 
     // === Private helper methods ===
 
+    /// Gather existing memories from all categories for deduplication context
+    async fn gather_existing_memories(&self) -> String {
+        let store = self.store.read().await;
+        let mut all_memories = String::new();
+
+        for category in MemoryCategory::all() {
+            if let Ok(content) = store.read_category(&category) {
+                if !content.trim().is_empty() {
+                    all_memories.push_str(&format!("\n### {}\n", category.display_name()));
+                    // Limit to last 20 entries per category to avoid context overflow
+                    let lines: Vec<&str> = content.lines().rev().take(20).collect();
+                    for line in lines.into_iter().rev() {
+                        all_memories.push_str(line);
+                        all_memories.push('\n');
+                    }
+                }
+            }
+        }
+
+        all_memories
+    }
+
     /// Format chat messages for extraction prompt
     fn format_chat_messages(&self, messages: &[SessionMessage]) -> String {
         let limited: Vec<_> = messages
@@ -251,6 +284,10 @@ impl MemoryExtractor {
     }
 
     /// Persist extracted memories to category files
+    ///
+    /// Handles both Append and Merge actions:
+    /// - Append: Add as new entry
+    /// - Merge: Find matching entries and replace with merged content
     async fn persist_memories(&self, result: ExtractResult) -> Result<usize> {
         let mut count = 0;
         let store = self.store.read().await;
@@ -275,40 +312,120 @@ impl MemoryExtractor {
                 .read_category(&category)
                 .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
 
-            // Check for duplicates if enabled
-            if self.config.dedup_enabled && self.is_duplicate(&content, &candidate.content) {
+            // Handle action
+            let should_add = match &candidate.action {
+                MemoryAction::Append => {
+                    // For append, check duplicates if enabled
+                    if self.config.dedup_enabled && self.is_duplicate(&content, &candidate.content) {
+                        tracing::debug!(
+                            content = %candidate.content,
+                            category = ?category,
+                            "Skipping duplicate memory (append)"
+                        );
+                        false
+                    } else {
+                        true
+                    }
+                }
+                MemoryAction::Merge { targets } => {
+                    // For merge, find and replace matching lines
+                    let merged = self.merge_with_targets(&mut content, &candidate.content, targets, candidate.importance);
+                    if merged {
+                        // Write back the modified content
+                        store
+                            .write_category(&category, &content)
+                            .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
+
+                        count += 1;
+                        tracing::debug!(
+                            content = %candidate.content,
+                            category = ?category,
+                            targets = ?targets,
+                            "Merged memory entry"
+                        );
+                    }
+                    false // Don't add as new entry
+                }
+            };
+
+            if should_add {
+                // Format the memory entry
+                let entry = self.format_memory_entry(&candidate.content, candidate.importance);
+
+                // Append to content
+                if !content.ends_with('\n') {
+                    content.push('\n');
+                }
+                content.push_str(&entry);
+
+                // Write back
+                store
+                    .write_category(&category, &content)
+                    .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
+
+                count += 1;
                 tracing::debug!(
                     content = %candidate.content,
                     category = ?category,
-                    "Skipping duplicate memory"
+                    importance = candidate.importance,
+                    "Appended memory entry"
                 );
-                continue;
             }
-
-            // Format the memory entry
-            let entry = self.format_memory_entry(&candidate.content, candidate.importance);
-
-            // Append to content
-            if !content.ends_with('\n') {
-                content.push('\n');
-            }
-            content.push_str(&entry);
-
-            // Write back
-            store
-                .write_category(&category, &content)
-                .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
-
-            count += 1;
-            tracing::debug!(
-                content = %candidate.content,
-                category = ?category,
-                importance = candidate.importance,
-                "Persisted memory entry"
-            );
         }
 
         Ok(count)
+    }
+
+    /// Merge new content with existing entries matching targets
+    ///
+    /// Returns true if merge was performed, false otherwise
+    fn merge_with_targets(
+        &self,
+        content: &mut String,
+        new_content: &str,
+        targets: &[String],
+        importance: u8,
+    ) -> bool {
+        let lines: Vec<&str> = content.lines().collect();
+        let mut merged = false;
+        let mut new_lines = Vec::new();
+        let timestamp = chrono::Utc::now().format("%Y-%m-%d");
+
+        for line in lines {
+            let line_lower = line.to_lowercase();
+            let matches_any = targets.iter().any(|t| {
+                let target_lower = t.to_lowercase();
+                // Check if target keyword appears in the line
+                line_lower.contains(&target_lower) ||
+                // Also check without the target to see if it's semantically related
+                (target_lower.len() > 5 && line_lower.chars().take(50).collect::<String>().contains(&target_lower.chars().take(20).collect::<String>()))
+            });
+
+            if matches_any && !merged {
+                // Replace this line with merged content
+                new_lines.push(format!(
+                    "- [{}] {} [importance: {}]",
+                    timestamp, new_content, importance
+                ));
+                merged = true;
+                tracing::debug!(
+                    old_line = %line,
+                    new_content = %new_content,
+                    "Merged memory line"
+                );
+            } else {
+                new_lines.push(line.to_string());
+            }
+        }
+
+        if merged {
+            *content = new_lines.join("\n");
+            if !content.ends_with('\n') {
+                content.push('\n');
+            }
+        }
+
+        merged
     }
 
     /// Check if content already exists (simple duplicate detection)

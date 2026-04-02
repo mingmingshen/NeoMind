@@ -936,7 +936,20 @@ pub async fn create_agent(
         name: request.name.clone(),
         description: request.description.clone(),
         user_prompt: request.user_prompt,
-        llm_backend_id: request.llm_backend_id,
+        llm_backend_id: {
+            // Auto-lock to the current active backend so the agent
+            // won't be affected by future chat model switches.
+            // Each agent keeps its own independent LLM backend.
+            match request.llm_backend_id.as_deref() {
+                None | Some("default") => {
+                    get_instance_manager()
+                        .ok()
+                        .and_then(|m| m.get_active_instance())
+                        .map(|inst| inst.id)
+                }
+                Some(id) => Some(id.to_string()),
+            }
+        },
         parsed_intent: None,
         resources,
         schedule,
@@ -1017,8 +1030,17 @@ pub async fn update_agent(
     if let Some(prompt) = request.user_prompt {
         agent.user_prompt = prompt;
     }
-    if let Some(backend_id) = request.llm_backend_id {
-        agent.llm_backend_id = Some(backend_id);
+    if let Some(backend_id) = request.llm_backend_id.clone() {
+        // Handle "default" by locking to the current active backend
+        agent.llm_backend_id = match backend_id.as_str() {
+            "default" => {
+                get_instance_manager()
+                    .ok()
+                    .and_then(|m| m.get_active_instance())
+                    .map(|inst| inst.id)
+            }
+            _ => Some(backend_id),
+        };
     }
     if let Some(status_str) = request.status {
         agent.status = match status_str.as_str() {

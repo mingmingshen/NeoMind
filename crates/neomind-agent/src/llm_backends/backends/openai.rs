@@ -2,7 +2,7 @@
 //!
 //! Supports cloud APIs that are compatible with OpenAI's format:
 //! - OpenAI (GPT-4, GPT-3.5, o1, etc.)
-//! - Anthropic Claude (via compatibility layer)
+//! - Anthropic Claude (native Messages API)
 //! - Google Gemini (via compatibility layer)
 //! - xAI Grok
 //! - Other OpenAI-compatible providers
@@ -439,38 +439,136 @@ impl CloudRuntime {
             })
             .collect()
     }
-}
 
-#[async_trait::async_trait]
-impl LlmRuntime for CloudRuntime {
-    fn backend_id(&self) -> BackendId {
-        // Return backend ID based on the cloud provider
-        match self.config.provider {
-            CloudProvider::OpenAI => BackendId::new("openai"),
-            CloudProvider::Anthropic => BackendId::new("anthropic"),
-            CloudProvider::Google => BackendId::new("google"),
-            CloudProvider::Grok => BackendId::new("grok"),
-            CloudProvider::Custom => BackendId::new("custom"),
-            CloudProvider::Qwen => BackendId::new("qwen"),
-            CloudProvider::DeepSeek => BackendId::new("deepseek"),
-            CloudProvider::GLM => BackendId::new("glm"),
-            CloudProvider::MiniMax => BackendId::new("minimax"),
+    /// Build an Anthropic-native API request from LlmInput.
+    /// Extracts system messages into the top-level `system` field
+    /// and converts tool schemas from OpenAI to Anthropic format.
+    fn build_anthropic_request(
+        &self,
+        input: &neomind_core::llm::backend::LlmInput,
+        stream: bool,
+    ) -> (AnthropicRequest, String) {
+        let model = input.model.clone().unwrap_or_else(|| self.model.clone());
+
+        // Handle max_tokens: Anthropic requires this field
+        const MAX_TOKENS_CAP: u32 = 32768;
+        let max_tokens = match input.params.max_tokens {
+            Some(v) if v >= usize::MAX - 1000 => MAX_TOKENS_CAP,
+            Some(v) => (v as u32).min(MAX_TOKENS_CAP),
+            None => 8192, // Anthropic default
+        };
+
+        // Extract system messages and convert remaining messages
+        let mut system_text = String::new();
+        let mut messages: Vec<AnthropicApiMessage> = Vec::new();
+
+        for msg in &input.messages {
+            match msg.role {
+                MessageRole::System => {
+                    // Concatenate system messages
+                    let text = match &msg.content {
+                        Content::Text(t) => t.clone(),
+                        Content::Parts(parts) => parts
+                            .iter()
+                            .filter_map(|p| match p {
+                                ContentPart::Text { text } => Some(text.as_str()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                    };
+                    if !system_text.is_empty() {
+                        system_text.push('\n');
+                    }
+                    system_text.push_str(&text);
+                }
+                _ => {
+                    let role = match msg.role {
+                        MessageRole::User => "user",
+                        MessageRole::Assistant => "assistant",
+                        MessageRole::Tool => "user",
+                        MessageRole::System => unreachable!(),
+                    };
+
+                    // Convert content to Anthropic format
+                    let content_value = match &msg.content {
+                        Content::Text(t) => serde_json::Value::String(t.clone()),
+                        Content::Parts(parts) => {
+                            let api_parts: Vec<serde_json::Value> = parts
+                                .iter()
+                                .map(|part| match part {
+                                    ContentPart::Text { text } => {
+                                        serde_json::json!({"type": "text", "text": text})
+                                    }
+                                    ContentPart::ImageUrl { url, .. }
+                                    | ContentPart::ImageBase64 { data: url, .. } => {
+                                        let (media_type, data) = extract_data_url(url);
+                                        serde_json::json!({
+                                            "type": "image",
+                                            "source": {
+                                                "type": "base64",
+                                                "media_type": media_type,
+                                                "data": data
+                                            }
+                                        })
+                                    }
+                                })
+                                .collect();
+                            serde_json::Value::Array(api_parts)
+                        }
+                    };
+
+                    messages.push(AnthropicApiMessage {
+                        role: role.to_string(),
+                        content: content_value,
+                    });
+                }
+            }
         }
+
+        // Convert tools from OpenAI format to Anthropic format
+        let tools = input.tools.as_ref().map(|tools| {
+            tools
+                .iter()
+                .map(|t| AnthropicTool {
+                    name: t.name.clone(),
+                    description: Some(t.description.clone()),
+                    input_schema: t.parameters.clone(),
+                })
+                .collect::<Vec<_>>()
+        });
+
+        let request = AnthropicRequest {
+            model: model.clone(),
+            max_tokens,
+            system: if system_text.is_empty() {
+                None
+            } else {
+                Some(system_text)
+            },
+            messages,
+            temperature: input.params.temperature,
+            top_p: input.params.top_p,
+            stop_sequences: input.params.stop.clone(),
+            stream,
+            tools,
+        };
+
+        let url = format!(
+            "{}{}",
+            self.config.get_base_url(),
+            self.config.provider.chat_path()
+        );
+
+        (request, url)
     }
 
-    fn model_name(&self) -> &str {
-        &self.model
-    }
-
-    async fn is_available(&self) -> bool {
-        !self.config.api_key.is_empty()
-    }
-
-    async fn generate(
+    /// OpenAI-compatible non-streaming generation path.
+    async fn generate_openai(
         &self,
         input: neomind_core::llm::backend::LlmInput,
+        start_time: Instant,
     ) -> Result<LlmOutput, LlmError> {
-        let start_time = Instant::now();
         let model = input.model.unwrap_or_else(|| self.model.clone());
 
         let url = format!(
@@ -587,7 +685,6 @@ impl LlmRuntime for CloudRuntime {
                 completion_tokens: u.completion_tokens,
                 total_tokens: u.total_tokens,
             }),
-            // OpenAI doesn't have thinking field in this format
             thinking: None,
         });
 
@@ -609,7 +706,136 @@ impl LlmRuntime for CloudRuntime {
         result
     }
 
-    async fn generate_stream(
+    /// Anthropic-native non-streaming generation path.
+    async fn generate_anthropic(
+        &self,
+        input: neomind_core::llm::backend::LlmInput,
+        start_time: Instant,
+    ) -> Result<LlmOutput, LlmError> {
+        let (request, url) = self.build_anthropic_request(&input, false);
+
+        let rate_limit_key = format!(
+            "{:?}:{:x}",
+            self.config.provider,
+            hash_api_key(&self.config.api_key)
+        );
+
+        let req = self
+            .client
+            .inner()
+            .post(&url)
+            .header("x-api-key", &self.config.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .json(&request);
+
+        let response = self
+            .client
+            .execute_request(&rate_limit_key, req.build().unwrap())
+            .await
+            .map_err(|e| LlmError::Network(e.to_string()))?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| LlmError::Network(e.to_string()))?;
+
+        if !status.is_success() {
+            self.metrics.write().unwrap().record_failure();
+            return Err(LlmError::Generation(format!(
+                "Anthropic API error {}: {}",
+                status.as_u16(),
+                body
+            )));
+        }
+
+        // Check if the response is an error payload wrapped in HTTP 200
+        // (common with proxy/gateway services)
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
+            if val.get("error").is_some()
+                || (val.get("code").is_some() && val.get("msg").is_some())
+                || (val.get("code").is_some() && val.get("success").is_some())
+            {
+                self.metrics.write().unwrap().record_failure();
+                return Err(LlmError::Generation(format!(
+                    "Anthropic API error (HTTP {}): {}",
+                    status.as_u16(),
+                    body
+                )));
+            }
+        }
+
+        let api_response: AnthropicResponse =
+            serde_json::from_str(&body).map_err(|e| LlmError::Generation(format!(
+                "Anthropic deserialization error: {} - body: {}",
+                e, body
+            )))?;
+
+        // Build response text from content blocks
+        let mut response_text = String::new();
+        let mut tool_calls_json: Vec<serde_json::Value> = Vec::new();
+
+        for block in &api_response.content {
+            match block {
+                AnthropicContentBlock::Text { text } => {
+                    response_text.push_str(text);
+                }
+                AnthropicContentBlock::ToolUse { id, name, input } => {
+                    tool_calls_json.push(serde_json::json!({
+                        "id": id,
+                        "name": name,
+                        "arguments": input
+                    }));
+                }
+            }
+        }
+
+        // Append tool calls as JSON if any
+        if !tool_calls_json.is_empty() {
+            let json_str = serde_json::to_string(&tool_calls_json).unwrap_or_default();
+            response_text.push_str(&json_str);
+        }
+
+        let finish_reason = match api_response.stop_reason.as_deref() {
+            Some("end_turn") => FinishReason::Stop,
+            Some("max_tokens") => FinishReason::Length,
+            Some("stop_sequence") => FinishReason::Stop,
+            Some("tool_use") => FinishReason::Stop,
+            _ => FinishReason::Error,
+        };
+
+        let result = Ok(LlmOutput {
+            text: response_text,
+            finish_reason,
+            usage: Some(TokenUsage {
+                prompt_tokens: api_response.usage.input_tokens,
+                completion_tokens: api_response.usage.output_tokens,
+                total_tokens: api_response.usage.input_tokens + api_response.usage.output_tokens,
+            }),
+            thinking: None,
+        });
+
+        // Record metrics
+        let latency_ms = start_time.elapsed().as_millis() as u64;
+        match &result {
+            Ok(output) => {
+                let tokens = output.usage.map_or(0, |u| u.completion_tokens as u64);
+                self.metrics
+                    .write()
+                    .unwrap()
+                    .record_success(tokens, latency_ms);
+            }
+            Err(_) => {
+                self.metrics.write().unwrap().record_failure();
+            }
+        }
+
+        result
+    }
+
+    /// OpenAI-compatible streaming generation path.
+    fn generate_stream_openai(
         &self,
         input: neomind_core::llm::backend::LlmInput,
     ) -> Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, LlmError> {
@@ -629,11 +855,11 @@ impl LlmRuntime for CloudRuntime {
         let provider = self.config.provider;
 
         // Handle max_tokens: cap at reasonable limit for cloud APIs
-        const MAX_TOKENS_CAP: u32 = 32768; // 32k tokens - reasonable for most models
+        const MAX_TOKENS_CAP: u32 = 32768;
         let max_tokens = match input.params.max_tokens {
             Some(v) if v >= usize::MAX - 1000 => Some(MAX_TOKENS_CAP),
             Some(v) => Some((v as u32).min(MAX_TOKENS_CAP)),
-            None => None, // Let API use its default
+            None => None,
         };
 
         let request = ChatCompletionRequest {
@@ -776,12 +1002,10 @@ impl LlmRuntime for CloudRuntime {
                                                                     arguments: String::new(),
                                                                 });
 
-                                                            // Update ID if present
                                                             if let Some(ref id) = tc.id {
                                                                 entry.id = Some(id.clone());
                                                             }
 
-                                                            // Update function details
                                                             if let Some(ref func) = tc.function {
                                                                 if let Some(ref name) = func.name {
                                                                     entry.name = Some(name.clone());
@@ -830,7 +1054,6 @@ impl LlmRuntime for CloudRuntime {
                                             }
                                         }
                                     } else {
-                                        // No more complete lines, break the loop
                                         break;
                                     }
                                 }
@@ -848,6 +1071,280 @@ impl LlmRuntime for CloudRuntime {
         });
 
         Ok(Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx)))
+    }
+
+    /// Anthropic-native streaming generation path.
+    fn generate_stream_anthropic(
+        &self,
+        input: neomind_core::llm::backend::LlmInput,
+    ) -> Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, LlmError> {
+        use tokio::sync::mpsc;
+
+        let (tx, rx) = mpsc::channel(64);
+
+        let (request, url) = self.build_anthropic_request(&input, true);
+        let api_key = self.config.api_key.clone();
+        let rate_limiter = self.client.clone();
+        let inner_client = self.client.inner().clone();
+
+        tokio::spawn(async move {
+            let rate_limit_key = format!("Anthropic:{:x}", hash_api_key(&api_key));
+            rate_limiter.acquire(&rate_limit_key).await;
+
+            let result = inner_client
+                .post(&url)
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("content-type", "application/json")
+                .json(&request)
+                .send()
+                .await;
+
+            match result {
+                Ok(response) => {
+                    let status = response.status();
+
+                    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                        let _ = tx
+                            .send(Err(LlmError::Generation("Rate limited by API".to_string())))
+                            .await;
+                        return;
+                    }
+
+                    if !status.is_success() {
+                        let body = response.text().await.unwrap_or_default();
+                        let _ = tx
+                            .send(Err(LlmError::Generation(format!(
+                                "Anthropic API error {}: {}",
+                                status.as_u16(),
+                                body
+                            ))))
+                            .await;
+                        return;
+                    }
+
+                    // If we get JSON instead of an event stream, it's an error wrapped in HTTP 200
+                    let content_type = response
+                        .headers()
+                        .get("content-type")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("");
+                    if content_type.contains("application/json") {
+                        let body = response.text().await.unwrap_or_default();
+                        let _ = tx
+                            .send(Err(LlmError::Generation(format!(
+                                "Anthropic API error (unexpected JSON response): {}",
+                                body
+                            ))))
+                            .await;
+                        return;
+                    }
+
+                    let mut stream = response.bytes_stream();
+                    let mut buffer = Vec::new();
+                    // Accumulate tool call arguments: (id, name, arguments_json)
+                    let mut accumulated_tool_calls: std::collections::HashMap<
+                        u32,
+                        (Option<String>, Option<String>, String),
+                    > = std::collections::HashMap::new();
+
+                    while let Some(chunk_result) = stream.next().await {
+                        match chunk_result {
+                            Ok(chunk) => {
+                                buffer.extend_from_slice(&chunk);
+
+                                let mut search_start = 0;
+                                loop {
+                                    if let Some(nl_pos) =
+                                        buffer[search_start..].iter().position(|&b| b == b'\n')
+                                    {
+                                        let line_end = search_start + nl_pos;
+                                        let line_bytes = &buffer[..line_end];
+                                        let line =
+                                            String::from_utf8_lossy(line_bytes).trim().to_string();
+
+                                        buffer = buffer[line_end + 1..].to_vec();
+                                        search_start = 0;
+
+                                        if line.is_empty() {
+                                            continue;
+                                        }
+
+                                        if let Some(json) = line.strip_prefix("data: ") {
+                                            if let Ok(evt) =
+                                                serde_json::from_str::<AnthropicStreamEvent>(json)
+                                            {
+                                                match evt {
+                                                    AnthropicStreamEvent::ContentBlockStart {
+                                                        index,
+                                                        content_block,
+                                                    } => {
+                                                        // For tool_use blocks, extract id and name
+                                                        if content_block
+                                                            .get("type")
+                                                            .and_then(|v| v.as_str())
+                                                            == Some("tool_use")
+                                                        {
+                                                            let id = content_block
+                                                                .get("id")
+                                                                .and_then(|v| v.as_str())
+                                                                .map(|s| s.to_string());
+                                                            let name = content_block
+                                                                .get("name")
+                                                                .and_then(|v| v.as_str())
+                                                                .map(|s| s.to_string());
+                                                            accumulated_tool_calls
+                                                                .entry(index)
+                                                                .or_insert((id, name, String::new()));
+                                                        }
+                                                    }
+                                                    AnthropicStreamEvent::ContentBlockDelta {
+                                                        index,
+                                                        delta,
+                                                    } => {
+                                                        match delta.delta_type.as_str() {
+                                                            "text_delta" => {
+                                                                if let Some(ref text) = delta.text {
+                                                                    if !text.is_empty() {
+                                                                        let _ = tx
+                                                                            .send(Ok((
+                                                                                text.clone(),
+                                                                                false,
+                                                                            )))
+                                                                            .await;
+                                                                    }
+                                                                }
+                                                            }
+                                                            "input_json_delta" => {
+                                                                // Accumulate tool call arguments
+                                                                if let Some(ref partial) =
+                                                                    delta.partial_json
+                                                                {
+                                                                    let entry =
+                                                                        accumulated_tool_calls
+                                                                            .entry(index)
+                                                                            .or_insert((
+                                                                                None,
+                                                                                None,
+                                                                                String::new(),
+                                                                            ));
+                                                                    entry.2.push_str(partial);
+                                                                }
+                                                            }
+                                                            _ => {}
+                                                        }
+                                                    }
+                                                    AnthropicStreamEvent::ContentBlockStop {
+                                                        index,
+                                                    } => {
+                                                        // Flush accumulated tool call if present
+                                                        if let Some((id, name, args_json)) =
+                                                            accumulated_tool_calls.remove(&index)
+                                                        {
+                                                            if name.is_some() {
+                                                                let args: serde_json::Value =
+                                                                    serde_json::from_str(
+                                                                        &args_json,
+                                                                    )
+                                                                    .unwrap_or_else(|_| {
+                                                                        serde_json::json!({})
+                                                                    });
+                                                                let tc_json = serde_json::json!({
+                                                                    "id": id,
+                                                                    "name": name,
+                                                                    "arguments": args
+                                                                });
+                                                                let json_str =
+                                                                    serde_json::to_string(&tc_json)
+                                                                        .unwrap_or_default();
+                                                                let _ =
+                                                                    tx.send(Ok((json_str, false)))
+                                                                        .await;
+                                                            }
+                                                        }
+                                                    }
+                                                    AnthropicStreamEvent::MessageStop => {
+                                                        // Signal end of stream
+                                                        let _ =
+                                                            tx.send(Ok((String::new(), false)))
+                                                                .await;
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let _ = tx.send(Err(LlmError::Network(e.to_string()))).await;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(LlmError::Network(e.to_string()))).await;
+                }
+            }
+        });
+
+        Ok(Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx)))
+    }
+}
+
+#[async_trait::async_trait]
+impl LlmRuntime for CloudRuntime {
+    fn backend_id(&self) -> BackendId {
+        // Return backend ID based on the cloud provider
+        match self.config.provider {
+            CloudProvider::OpenAI => BackendId::new("openai"),
+            CloudProvider::Anthropic => BackendId::new("anthropic"),
+            CloudProvider::Google => BackendId::new("google"),
+            CloudProvider::Grok => BackendId::new("grok"),
+            CloudProvider::Custom => BackendId::new("custom"),
+            CloudProvider::Qwen => BackendId::new("qwen"),
+            CloudProvider::DeepSeek => BackendId::new("deepseek"),
+            CloudProvider::GLM => BackendId::new("glm"),
+            CloudProvider::MiniMax => BackendId::new("minimax"),
+        }
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+
+    async fn is_available(&self) -> bool {
+        !self.config.api_key.is_empty()
+    }
+
+    async fn generate(
+        &self,
+        input: neomind_core::llm::backend::LlmInput,
+    ) -> Result<LlmOutput, LlmError> {
+        let start_time = Instant::now();
+
+        // Anthropic-native API path
+        if self.config.provider == CloudProvider::Anthropic {
+            return self.generate_anthropic(input, start_time).await;
+        }
+
+        // OpenAI-compatible path (default)
+        self.generate_openai(input, start_time).await
+    }
+
+    async fn generate_stream(
+        &self,
+        input: neomind_core::llm::backend::LlmInput,
+    ) -> Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, LlmError> {
+        // Anthropic-native streaming path
+        if self.config.provider == CloudProvider::Anthropic {
+            return self.generate_stream_anthropic(input);
+        }
+
+        // OpenAI-compatible streaming path (default)
+        self.generate_stream_openai(input)
     }
 
     fn max_context_length(&self) -> usize {
@@ -1174,7 +1671,116 @@ struct StreamFunctionCall {
     arguments: Option<String>,
 }
 
-use tokio_stream;
+// --- Anthropic-native API types ---
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+struct AnthropicRequest {
+    model: String,
+    max_tokens: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system: Option<String>,
+    messages: Vec<AnthropicApiMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stop_sequences: Option<Vec<String>>,
+    stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<AnthropicTool>>,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicApiMessage {
+    role: String,
+    content: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+struct AnthropicTool {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    input_schema: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicResponse {
+    content: Vec<AnthropicContentBlock>,
+    stop_reason: Option<String>,
+    usage: AnthropicUsage,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+enum AnthropicContentBlock {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "tool_use")]
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicUsage {
+    input_tokens: u32,
+    output_tokens: u32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+enum AnthropicStreamEvent {
+    #[serde(rename = "message_start")]
+    MessageStart { message: AnthropicMessageStart },
+    #[serde(rename = "content_block_start")]
+    ContentBlockStart {
+        index: u32,
+        content_block: serde_json::Value,
+    },
+    #[serde(rename = "content_block_delta")]
+    ContentBlockDelta { index: u32, delta: AnthropicDelta },
+    #[serde(rename = "content_block_stop")]
+    ContentBlockStop { index: u32 },
+    #[serde(rename = "message_delta")]
+    MessageDelta {
+        delta: AnthropicMessageDeltaBody,
+        usage: Option<AnthropicUsage>,
+    },
+    #[serde(rename = "message_stop")]
+    MessageStop,
+    #[serde(rename = "ping")]
+    Ping,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicDelta {
+    #[serde(rename = "type")]
+    delta_type: String,
+    text: Option<String>,
+    partial_json: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicMessageStart {
+    #[allow(dead_code)]
+    id: Option<String>,
+    #[allow(dead_code)]
+    model: Option<String>,
+    #[allow(dead_code)]
+    usage: Option<AnthropicUsage>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct AnthropicMessageDeltaBody {
+    stop_reason: Option<String>,
+}
 
 /// Check if a model supports vision (image input) based on provider and model name.
 /// This uses name-based heuristic detection for common vision-capable models.

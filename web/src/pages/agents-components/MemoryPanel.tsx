@@ -54,6 +54,7 @@ import {
   FullScreenDialogMain,
 } from "@/components/automation/dialog"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { useToast } from "@/hooks/use-toast"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
@@ -175,11 +176,14 @@ export interface MemoryPanelRef {
   openConfig: () => void
   triggerExtract: () => void
   triggerCompress: () => void
+  isExtracting: boolean
+  isCompressing: boolean
 }
 
 export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function MemoryPanel({ refreshKey }, ref) {
   const { t } = useTranslation("agents")
   const { handleError } = useErrorHandler()
+  const { toast } = useToast()
 
   // State
   const [stats, setStats] = useState<Record<string, CategoryStats>>({})
@@ -219,7 +223,8 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   // Load LLM backends for dropdown
   const loadLlmBackends = useCallback(async () => {
     try {
-      const response = await api.listLlmBackends({ active_only: true })
+      // Load all backends (not just active) so user can select any configured model
+      const response = await api.listLlmBackends({})
       setLlmBackends(response.backends || [])
     } catch (error) {
       handleError(error, { operation: "Load LLM backends", showToast: false })
@@ -248,8 +253,16 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   // Trigger manual extraction
   const handleExtract = async () => {
     setExtracting(true)
+    toast({
+      title: t("memory.extractStarted", "Extraction Started"),
+      description: t("memory.extractStartedDesc", "Extracting memories from conversations..."),
+    })
     try {
       const result = await api.triggerMemoryExtract()
+      toast({
+        title: t("memory.extractComplete", "Extraction Complete"),
+        description: result.message || t("memory.extractCompleteDesc", "Successfully extracted memories"),
+      })
       loadStats() // Refresh stats after extraction
     } catch (error) {
       handleError(error, { operation: "Trigger memory extraction" })
@@ -261,8 +274,16 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   // Trigger manual compression
   const handleCompress = async () => {
     setCompressing(true)
+    toast({
+      title: t("memory.compressStarted", "Compression Started"),
+      description: t("memory.compressStartedDesc", "Compressing and cleaning up memories..."),
+    })
     try {
       const result = await api.triggerMemoryCompress()
+      toast({
+        title: t("memory.compressComplete", "Compression Complete"),
+        description: result.message || t("memory.compressCompleteDesc", "Successfully compressed memories"),
+      })
       loadStats() // Refresh stats after compression
     } catch (error) {
       handleError(error, { operation: "Trigger memory compression" })
@@ -357,10 +378,16 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
 
   // Expose methods via ref
   useImperativeHandle(ref, () => ({
-    openConfig: () => setConfigOpen(true),
+    openConfig: () => {
+      setConfigOpen(true)
+      loadConfig() // Refresh config when opening
+      loadLlmBackends() // Refresh backends when opening config
+    },
     triggerExtract: handleExtract,
     triggerCompress: handleCompress,
-  }), [handleExtract, handleCompress])
+    isExtracting: extracting,
+    isCompressing: compressing,
+  }), [handleExtract, handleCompress, loadConfig, loadLlmBackends, extracting, compressing])
 
   // Prepare table data
   const tableData: MemoryCategoryRow[] = categoryConfig.map((cat) => ({
@@ -588,340 +615,395 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
       </FullScreenDialog>
 
       {/* Configuration Dialog */}
-      <Dialog open={configOpen} onOpenChange={setConfigOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              {t("memory.config.title", "Memory Configuration")}
-            </DialogTitle>
-            <DialogDescription>
-              {t("memory.config.description", "Configure memory extraction, compression, and LLM settings")}
-            </DialogDescription>
-          </DialogHeader>
+      <FullScreenDialog open={configOpen} onOpenChange={setConfigOpen}>
+        <FullScreenDialogHeader
+          icon={<Settings className="h-5 w-5" />}
+          iconBg="bg-purple-500/10 dark:bg-purple-500/20"
+          iconColor="text-purple-500"
+          title={t("memory.config.title", "Memory Configuration")}
+          subtitle={t("memory.config.description", "Configure memory extraction, compression, and LLM settings")}
+          onClose={() => setConfigOpen(false)}
+        />
 
+        <FullScreenDialogContent>
           {configLoading ? (
-            <div className="flex items-center justify-center py-8">
+            <div className="flex items-center justify-center h-full">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="space-y-6 py-4">
-              {/* Extraction Settings */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-purple-500" />
-                  {t("memory.config.extraction", "Extraction Settings")}
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>{t("memory.config.minMessages", "Min Messages")}</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={config.extraction?.min_messages ?? 3}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          extraction: {
-                            ...config.extraction,
-                            min_messages: parseInt(e.target.value) || 3,
-                          },
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {t("memory.config.minMessagesHint", "Minimum messages to trigger extraction")}
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t("memory.config.minImportance", "Min Importance")}</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={config.extraction?.min_importance ?? 30}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          extraction: {
-                            ...config.extraction,
-                            min_importance: parseInt(e.target.value) || 30,
-                          },
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {t("memory.config.minImportanceHint", "Minimum importance threshold (0-100)")}
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t("memory.config.similarityThreshold", "Similarity Threshold")}</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={config.extraction?.similarity_threshold ?? 0.85}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          extraction: {
-                            ...config.extraction,
-                            similarity_threshold: parseFloat(e.target.value) || 0.85,
-                          },
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {t("memory.config.similarityThresholdHint", "Dedup similarity (0-1)")}
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label>{t("memory.config.dedupEnabled", "Deduplication")}</Label>
-                    <Switch
-                      checked={config.extraction?.dedup_enabled ?? true}
-                      onCheckedChange={(checked) =>
-                        setConfig({
-                          ...config,
-                          extraction: {
-                            ...config.extraction,
-                            dedup_enabled: checked,
-                          },
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Compression Settings */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Archive className="h-4 w-4 text-blue-500" />
-                  {t("memory.config.compression", "Compression Settings")}
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>{t("memory.config.decayPeriodDays", "Decay Period (Days)")}</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={365}
-                      value={config.compression?.decay_period_days ?? 30}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          compression: {
-                            ...config.compression,
-                            decay_period_days: parseInt(e.target.value) || 30,
-                          },
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t("memory.config.compressionMinImportance", "Min Importance")}</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={config.compression?.min_importance ?? 20}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          compression: {
-                            ...config.compression,
-                            min_importance: parseInt(e.target.value) || 20,
-                          },
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {t("memory.config.compressionMinImportanceHint", "Entries below this will be deleted")}
-                    </p>
+            <FullScreenDialogMain className="p-6">
+              <div className="space-y-8 max-w-4xl mx-auto">
+                {/* Extraction Settings */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-purple-500" />
+                    {t("memory.config.extraction", "Extraction Settings")}
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>{t("memory.config.minMessages", "Min Messages")}</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={config.extraction?.min_messages ?? 3}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            extraction: {
+                              ...config.extraction,
+                              min_messages: parseInt(e.target.value) || 3,
+                            },
+                          })
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t("memory.config.minMessagesHint", "Minimum messages to trigger extraction")}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("memory.config.minImportance", "Min Importance")}</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={config.extraction?.min_importance ?? 30}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            extraction: {
+                              ...config.extraction,
+                              min_importance: parseInt(e.target.value) || 30,
+                            },
+                          })
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t("memory.config.minImportanceHint", "Minimum importance threshold (0-100)")}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("memory.config.similarityThreshold", "Similarity Threshold")}</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={config.extraction?.similarity_threshold ?? 0.85}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            extraction: {
+                              ...config.extraction,
+                              similarity_threshold: parseFloat(e.target.value) || 0.85,
+                            },
+                          })
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t("memory.config.similarityThresholdHint", "Dedup similarity (0-1)")}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("memory.config.dedupEnabled", "Deduplication")}</Label>
+                      <div className="flex items-center">
+                        <Switch
+                          checked={config.extraction?.dedup_enabled ?? true}
+                          onCheckedChange={(checked) =>
+                            setConfig({
+                              ...config,
+                              extraction: {
+                                ...config.extraction,
+                                dedup_enabled: checked,
+                              },
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* LLM Backend Settings */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Cpu className="h-4 w-4 text-green-500" />
-                  {t("memory.config.llmBackends", "LLM Backends")}
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>{t("memory.config.extractionBackend", "Extraction Model")}</Label>
-                    <Select
-                      value={config.llm?.extraction_backend_id || "__default__"}
-                      onValueChange={(value) =>
-                        setConfig({
-                          ...config,
-                          llm: {
-                            ...config.llm,
-                            extraction_backend_id: value === "__default__" ? undefined : value,
-                          },
-                        })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={t("memory.config.defaultBackend", "Use default")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__default__">{t("memory.config.defaultBackend", "Use default")}</SelectItem>
-                        {llmBackends.map((backend) => (
-                          <SelectItem key={backend.id} value={backend.id}>
-                            {backend.name} ({backend.model})
+                {/* Compression Settings */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Archive className="h-4 w-4 text-blue-500" />
+                    {t("memory.config.compression", "Compression Settings")}
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>{t("memory.config.decayPeriodDays", "Decay Period (Days)")}</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={config.compression?.decay_period_days ?? 30}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            compression: {
+                              ...config.compression,
+                              decay_period_days: parseInt(e.target.value) || 30,
+                            },
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("memory.config.compressionMinImportance", "Min Importance")}</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={config.compression?.min_importance ?? 20}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            compression: {
+                              ...config.compression,
+                              min_importance: parseInt(e.target.value) || 20,
+                            },
+                          })
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t("memory.config.compressionMinImportanceHint", "Entries below this will be deleted")}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* LLM Backend Settings */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Cpu className="h-4 w-4 text-green-500" />
+                    {t("memory.config.llmBackends", "LLM Backends")}
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>{t("memory.config.extractionBackend", "Extraction Model")}</Label>
+                      <Select
+                        value={config.llm?.extraction_backend_id || "__default__"}
+                        onValueChange={(value) =>
+                          setConfig({
+                            ...config,
+                            llm: {
+                              ...config.llm,
+                              extraction_backend_id: value === "__default__" ? undefined : value,
+                            },
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-10">
+                          <SelectValue placeholder={t("memory.config.defaultBackend", "Use default")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__default__">
+                            <div className="flex items-center gap-2">
+                              <span>{t("memory.config.defaultBackend", "Use default")}</span>
+                            </div>
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      {t("memory.config.extractionBackendHint", "Lightweight model for extraction")}
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t("memory.config.compressionBackend", "Compression Model")}</Label>
-                    <Select
-                      value={config.llm?.compression_backend_id || "__default__"}
-                      onValueChange={(value) =>
-                        setConfig({
-                          ...config,
-                          llm: {
-                            ...config.llm,
-                            compression_backend_id: value === "__default__" ? undefined : value,
-                          },
-                        })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={t("memory.config.defaultBackend", "Use default")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__default__">{t("memory.config.defaultBackend", "Use default")}</SelectItem>
-                        {llmBackends.map((backend) => (
-                          <SelectItem key={backend.id} value={backend.id}>
-                            {backend.name} ({backend.model})
+                          {llmBackends.map((backend) => (
+                            <SelectItem key={backend.id} value={backend.id}>
+                              <div className="flex items-center gap-2">
+                                <span>{backend.name}</span>
+                                <div className="flex items-center gap-0.5 text-muted-foreground">
+                                  {backend.capabilities?.supports_multimodal && (
+                                    <span title={t("memory.config.supportsVision", "Supports vision")}>
+                                      <Eye className="h-3 w-3" />
+                                    </span>
+                                  )}
+                                  {backend.capabilities?.supports_tools && (
+                                    <span title={t("memory.config.supportsTools", "Supports tools")}>
+                                      <Wrench className="h-3 w-3" />
+                                    </span>
+                                  )}
+                                  {backend.capabilities?.supports_thinking && (
+                                    <span title={t("memory.config.supportsThinking", "Supports thinking")}>
+                                      <Brain className="h-3 w-3" />
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-xs text-muted-foreground ml-auto">{backend.model}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {t("memory.config.extractionBackendHint", "Lightweight model for extraction")}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("memory.config.compressionBackend", "Compression Model")}</Label>
+                      <Select
+                        value={config.llm?.compression_backend_id || "__default__"}
+                        onValueChange={(value) =>
+                          setConfig({
+                            ...config,
+                            llm: {
+                              ...config.llm,
+                              compression_backend_id: value === "__default__" ? undefined : value,
+                            },
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-10">
+                          <SelectValue placeholder={t("memory.config.defaultBackend", "Use default")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__default__">
+                            <div className="flex items-center gap-2">
+                              <span>{t("memory.config.defaultBackend", "Use default")}</span>
+                            </div>
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      {t("memory.config.compressionBackendHint", "Powerful model for summarization")}
-                    </p>
+                          {llmBackends.map((backend) => (
+                            <SelectItem key={backend.id} value={backend.id}>
+                              <div className="flex items-center gap-2">
+                                <span>{backend.name}</span>
+                                <div className="flex items-center gap-0.5 text-muted-foreground">
+                                  {backend.capabilities?.supports_multimodal && (
+                                    <span title={t("memory.config.supportsVision", "Supports vision")}>
+                                      <Eye className="h-3 w-3" />
+                                    </span>
+                                  )}
+                                  {backend.capabilities?.supports_tools && (
+                                    <span title={t("memory.config.supportsTools", "Supports tools")}>
+                                      <Wrench className="h-3 w-3" />
+                                    </span>
+                                  )}
+                                  {backend.capabilities?.supports_thinking && (
+                                    <span title={t("memory.config.supportsThinking", "Supports thinking")}>
+                                      <Brain className="h-3 w-3" />
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-xs text-muted-foreground ml-auto">{backend.model}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {t("memory.config.compressionBackendHint", "Powerful model for summarization")}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Schedule Settings */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-orange-500" />
-                  {t("memory.config.schedule", "Schedule")}
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex items-center justify-between">
-                    <Label>{t("memory.config.autoExtraction", "Auto Extraction")}</Label>
-                    <Switch
-                      checked={config.schedule?.extraction_enabled ?? true}
-                      onCheckedChange={(checked) =>
-                        setConfig({
-                          ...config,
-                          schedule: {
-                            ...config.schedule,
-                            extraction_enabled: checked,
-                          },
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t("memory.config.extractionInterval", "Extraction Interval")}</Label>
-                    <Select
-                      value={String(config.schedule?.extraction_interval_secs ?? 3600)}
-                      onValueChange={(value) =>
-                        setConfig({
-                          ...config,
-                          schedule: {
-                            ...config.schedule,
-                            extraction_interval_secs: parseInt(value),
-                          },
-                        })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1800">30 {t("common.minutes", "minutes")}</SelectItem>
-                        <SelectItem value="3600">1 {t("common.hour", "hour")}</SelectItem>
-                        <SelectItem value="7200">2 {t("common.hours", "hours")}</SelectItem>
-                        <SelectItem value="14400">4 {t("common.hours", "hours")}</SelectItem>
-                        <SelectItem value="28800">8 {t("common.hours", "hours")}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label>{t("memory.config.autoCompression", "Auto Compression")}</Label>
-                    <Switch
-                      checked={config.schedule?.compression_enabled ?? true}
-                      onCheckedChange={(checked) =>
-                        setConfig({
-                          ...config,
-                          schedule: {
-                            ...config.schedule,
-                            compression_enabled: checked,
-                          },
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t("memory.config.compressionInterval", "Compression Interval")}</Label>
-                    <Select
-                      value={String(config.schedule?.compression_interval_secs ?? 86400)}
-                      onValueChange={(value) =>
-                        setConfig({
-                          ...config,
-                          schedule: {
-                            ...config.schedule,
-                            compression_interval_secs: parseInt(value),
-                          },
-                        })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="43200">12 {t("common.hours", "hours")}</SelectItem>
-                        <SelectItem value="86400">1 {t("common.day", "day")}</SelectItem>
-                        <SelectItem value="172800">2 {t("common.days", "days")}</SelectItem>
-                        <SelectItem value="604800">1 {t("common.week", "week")}</SelectItem>
-                      </SelectContent>
-                    </Select>
+                {/* Schedule Settings */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-orange-500" />
+                    {t("memory.config.schedule", "Schedule")}
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>{t("memory.config.autoExtraction", "Auto Extraction")}</Label>
+                      <div className="flex items-center">
+                        <Switch
+                          checked={config.schedule?.extraction_enabled ?? true}
+                          onCheckedChange={(checked) =>
+                            setConfig({
+                              ...config,
+                              schedule: {
+                                ...config.schedule,
+                                extraction_enabled: checked,
+                              },
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("memory.config.extractionInterval", "Extraction Interval")}</Label>
+                      <Select
+                        value={String(config.schedule?.extraction_interval_secs ?? 3600)}
+                        onValueChange={(value) =>
+                          setConfig({
+                            ...config,
+                            schedule: {
+                              ...config.schedule,
+                              extraction_interval_secs: parseInt(value),
+                            },
+                          })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1800">30 {t("common.minutes", "minutes")}</SelectItem>
+                          <SelectItem value="3600">1 {t("common.hour", "hour")}</SelectItem>
+                          <SelectItem value="7200">2 {t("common.hours", "hours")}</SelectItem>
+                          <SelectItem value="14400">4 {t("common.hours", "hours")}</SelectItem>
+                          <SelectItem value="28800">8 {t("common.hours", "hours")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("memory.config.autoCompression", "Auto Compression")}</Label>
+                      <div className="flex items-center">
+                        <Switch
+                          checked={config.schedule?.compression_enabled ?? true}
+                          onCheckedChange={(checked) =>
+                            setConfig({
+                              ...config,
+                              schedule: {
+                                ...config.schedule,
+                                compression_enabled: checked,
+                              },
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("memory.config.compressionInterval", "Compression Interval")}</Label>
+                      <Select
+                        value={String(config.schedule?.compression_interval_secs ?? 86400)}
+                        onValueChange={(value) =>
+                          setConfig({
+                            ...config,
+                            schedule: {
+                              ...config.schedule,
+                              compression_interval_secs: parseInt(value),
+                            },
+                          })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="43200">12 {t("common.hours", "hours")}</SelectItem>
+                          <SelectItem value="86400">1 {t("common.day", "day")}</SelectItem>
+                          <SelectItem value="172800">2 {t("common.days", "days")}</SelectItem>
+                          <SelectItem value="604800">1 {t("common.week", "week")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            </FullScreenDialogMain>
           )}
+        </FullScreenDialogContent>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfigOpen(false)}>
-              {t("common.cancel", "Cancel")}
-            </Button>
-            <Button onClick={handleSaveConfig} disabled={configSaving}>
-              {configSaving ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4 mr-1" />
-              )}
-              {configSaving ? t("common.saving", "Saving...") : t("common.save", "Save")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <FullScreenDialogFooter>
+          <Button variant="outline" onClick={() => setConfigOpen(false)}>
+            {t("common.cancel", "Cancel")}
+          </Button>
+          <Button onClick={handleSaveConfig} disabled={configSaving}>
+            {configSaving ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
+            {configSaving ? t("common.saving", "Saving...") : t("common.save", "Save")}
+          </Button>
+        </FullScreenDialogFooter>
+      </FullScreenDialog>
     </div>
   )
 })

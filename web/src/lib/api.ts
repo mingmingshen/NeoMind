@@ -1922,15 +1922,22 @@ export const api = {
   /**
    * Trigger manual extraction
    * POST /api/memory/extract
+   * Note: This operation may take a long time, so we use a 5-minute timeout
    */
-  triggerMemoryExtract: () =>
+  triggerMemoryExtract: (sessionId?: string, force = true) =>
     fetchAPI<{ success: boolean; extracted: number; message: string }>('/memory/extract', {
       method: 'POST',
+      body: JSON.stringify({
+        session_id: sessionId || null,
+        force,
+      }),
+      signal: AbortSignal.timeout(5 * 60 * 1000), // 5 minutes timeout
     }),
 
   /**
    * Trigger manual compression
    * POST /api/memory/compress
+   * Note: This operation may take a long time, so we use a 5-minute timeout
    */
   triggerMemoryCompress: () =>
     fetchAPI<{
@@ -1940,6 +1947,7 @@ export const api = {
       message: string
     }>('/memory/compress', {
       method: 'POST',
+      signal: AbortSignal.timeout(5 * 60 * 1000), // 5 minutes timeout
     }),
 
   /**

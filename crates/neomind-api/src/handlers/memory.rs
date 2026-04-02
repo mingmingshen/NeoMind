@@ -81,7 +81,7 @@ pub struct ExtractionRequest {
 #[derive(Debug, Serialize)]
 pub struct ExtractionResponse {
     pub success: bool,
-    pub extracted_count: usize,
+    pub extracted: usize,
     pub message: String,
 }
 
@@ -282,12 +282,15 @@ pub async fn trigger_extract(
     let session_store = state.agents.session_manager.session_store();
 
     // Determine which session(s) to extract from
+    // Limit to recent sessions to avoid timeout issues
+    const MAX_SESSIONS_PER_EXTRACTION: usize = 5;
+
     let session_ids: Vec<String> = match req.session_id {
         Some(id) => vec![id],
         None => {
-            // Get all sessions
+            // Get all sessions, but only process the most recent ones
             match session_store.list_sessions() {
-                Ok(ids) => ids,
+                Ok(ids) => ids.into_iter().take(MAX_SESSIONS_PER_EXTRACTION).collect(),
                 Err(e) => {
                     return error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -301,7 +304,7 @@ pub async fn trigger_extract(
     if session_ids.is_empty() {
         return Json(ExtractionResponse {
             success: true,
-            extracted_count: 0,
+            extracted: 0,
             message: "No sessions available to extract from".to_string(),
         })
         .into_response();
@@ -367,7 +370,7 @@ pub async fn trigger_extract(
 
     Json(ExtractionResponse {
         success: true,
-        extracted_count: total_extracted,
+        extracted: total_extracted,
         message: format!(
             "Extracted {} memories from {} sessions",
             total_extracted, processed_sessions

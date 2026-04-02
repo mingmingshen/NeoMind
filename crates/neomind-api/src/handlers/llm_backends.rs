@@ -692,13 +692,15 @@ pub async fn activate_backend_handler(
         }
     };
 
-    // Update the default backend for NEW sessions only.
-    // Do NOT modify existing agents — each agent has its own independent LLM backend.
+    // Update existing chat sessions and set as default for new sessions.
+    // Note: SessionManager.sessions contains chat Agent instances (not AI agents).
+    // AI agents use their own locked llm_backend_id via get_llm_runtime_for_agent.
     state
         .agents
         .session_manager
-        .set_default_llm_backend(backend.clone())
-        .await;
+        .set_llm_backend(backend.clone())
+        .await
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     // Also save to SettingsStore for persistence across server restarts
     // This ensures init_llm() will load the correct backend on startup
