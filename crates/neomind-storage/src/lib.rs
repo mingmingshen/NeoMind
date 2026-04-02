@@ -75,6 +75,8 @@ pub mod monitoring;
 pub mod session;
 pub mod settings;
 pub mod singleton;
+pub mod system_memory;
+pub mod memory_config;
 pub mod timeseries;
 pub mod vector;
 
@@ -187,6 +189,18 @@ pub use device_registry::{
 pub use dashboards::{
     default_templates, ComponentPosition, Dashboard, DashboardLayout, DashboardStore,
     DashboardTemplate, LayoutBreakpoints, RequiredResources, RowsValue,
+};
+
+// System memory exports (Markdown-based)
+pub use system_memory::{
+    AggregatedMemory, CategoryStats, MarkdownMemoryStore, MemoryCategory,
+    MemoryEntry as SystemMemoryEntry, MemoryFileInfo, MemorySource, MAX_MEMORY_ENTRIES,
+    DEFAULT_MIN_IMPORTANCE,
+};
+
+// Memory configuration exports
+pub use memory_config::{
+    CompressionConfig, ExtractionConfig, MemoryConfig, MemoryLlmConfig, ScheduleConfig,
 };
 
 // Re-exports from core (backward compatibility)
