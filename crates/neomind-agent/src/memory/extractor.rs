@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// A candidate memory entry extracted by LLM
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryCandidate {
-    /// Memory content
+    /// Memory content (in English by default, adapt to user's language if needed)
     pub content: String,
     /// Target category
     pub category: String,
@@ -31,18 +31,23 @@ impl ChatExtractor {
     /// Build LLM prompt for extracting from chat
     pub fn build_prompt(messages: &str) -> String {
         format!(
-            r#"分析以下对话，提取有价值的记忆。
+            r#"Analyze the following conversation and extract valuable memories.
 
-## 对话内容
+## Conversation
 {}
 
-## 输出格式 (只输出 JSON)
-{{"memories":[{{"content":"内容","category":"user_profile|domain_knowledge|task_patterns","importance":50}}]}}
+## Output Format (JSON only)
+{{"memories":[{{"content":"content","category":"user_profile|domain_knowledge|task_patterns","importance":50}}]}}
 
-## 规则
-- 跳过闲聊和问候语
-- 只提取长期有价值的信息
-- importance 范围 0-100，越高越重要
+## Rules
+- Skip small talk and greetings
+- Only extract information with long-term value
+- importance range: 0-100, higher means more important
+- Write content in English by default, but adapt to user's preferred language if detected
+- Categories:
+  - user_profile: User preferences, habits, settings
+  - domain_knowledge: Device info, protocols, environment facts
+  - task_patterns: Successful approaches, common workflows
 "#,
             messages
         )
@@ -70,31 +75,33 @@ impl AgentExtractor {
         conclusion: &str,
     ) -> String {
         format!(
-            r#"分析 Agent 执行记录，提取有价值的记忆。
+            r#"Analyze the agent execution log and extract valuable memories.
 
-## Agent 名称
+## Agent Name
 {}
 
-## 用户预期（提示词）
+## User Intent (Prompt)
 {}
 
-## 执行过程
+## Execution Process
 {}
 
-## 执行结果
+## Execution Result
 {}
 
-## 输出格式 (只输出 JSON)
-{{"memories":[{{"content":"内容","category":"user_profile|domain_knowledge|task_patterns|system_evolution","importance":50}}]}}
+## Output Format (JSON only)
+{{"memories":[{{"content":"content","category":"user_profile|domain_knowledge|task_patterns|system_evolution","importance":50}}]}}
 
-## 规则
-- 提取用户的偏好和习惯 -> user_profile
-- 提取发现的设备状态、环境规律 -> domain_knowledge
-- 提取成功的任务模式、失败原因 -> task_patterns
-- 提取 Agent 学到的经验 -> system_evolution
+## Rules
+- User preferences and habits -> user_profile
+- Device states, environment patterns discovered -> domain_knowledge
+- Successful task patterns, failure reasons -> task_patterns
+- Lessons learned by the agent -> system_evolution
+- Write content in English by default, but adapt to user's preferred language if detected
+- importance range: 0-100, higher means more important
 "#,
             agent_name,
-            user_prompt.unwrap_or("(无)"),
+            user_prompt.unwrap_or("(none)"),
             reasoning_steps,
             conclusion
         )
@@ -123,31 +130,31 @@ mod tests {
 
     #[test]
     fn test_chat_extractor_prompt() {
-        let messages = "User: 你好\nAssistant: 你好！有什么可以帮助你的？";
+        let messages = "User: Hello\nAssistant: Hi! How can I help you?";
         let prompt = ChatExtractor::build_prompt(messages);
-        assert!(prompt.contains("对话内容"));
+        assert!(prompt.contains("Conversation"));
         assert!(prompt.contains(messages));
     }
 
     #[test]
     fn test_agent_extractor_prompt() {
         let prompt = AgentExtractor::build_prompt(
-            "温度监控",
-            Some("监控室内温度"),
-            "1. 获取温度读数\n2. 检查阈值",
-            "温度正常",
+            "Temperature Monitor",
+            Some("Monitor room temperature"),
+            "1. Get temperature reading\n2. Check threshold",
+            "Temperature normal",
         );
-        assert!(prompt.contains("温度监控"));
-        assert!(prompt.contains("监控室内温度"));
-        assert!(prompt.contains("温度正常"));
+        assert!(prompt.contains("Temperature Monitor"));
+        assert!(prompt.contains("Monitor room temperature"));
+        assert!(prompt.contains("Temperature normal"));
     }
 
     #[test]
     fn test_parse_response_valid() {
-        let json = r#"{"memories":[{"content":"用户偏好中文","category":"user_profile","importance":80}]}"#;
+        let json = r#"{"memories":[{"content":"User prefers Chinese","category":"user_profile","importance":80}]}"#;
         let result = ChatExtractor::parse_response(json).unwrap();
         assert_eq!(result.memories.len(), 1);
-        assert_eq!(result.memories[0].content, "用户偏好中文");
+        assert_eq!(result.memories[0].content, "User prefers Chinese");
         assert_eq!(result.memories[0].importance, 80);
     }
 
@@ -155,7 +162,7 @@ mod tests {
     fn test_parse_response_with_noise() {
         let response = r#"
 Here is the analysis:
-{"memories":[{"content":"设备温度25度","category":"domain_knowledge","importance":60}]}
+{"memories":[{"content":"Device temperature 25C","category":"domain_knowledge","importance":60}]}
 That's all.
 "#;
         let result = ChatExtractor::parse_response(response).unwrap();

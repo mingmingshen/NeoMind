@@ -53,23 +53,24 @@ impl MemoryCompressor {
     /// Build LLM prompt for compression
     pub fn build_prompt(entries: &str, category: &MemoryCategory) -> String {
         format!(
-            r#"压缩以下记忆条目。
+            r#"Compress the following memory entries.
 
-## 类别: {}
+## Category: {}
 
-## 条目
+## Entries
 {}
 
-## 压缩规则
-1. 合并相似内容
-2. 提取通用模式
-3. 保留关键数值和阈值
-4. 去除冗余
+## Compression Rules
+1. Merge similar content
+2. Extract general patterns
+3. Keep key values and thresholds
+4. Remove redundancy
+5. Write in English by default, adapt to detected language if needed
 
-## 输出
-直接输出 Markdown 格式的摘要内容，包含：
-- 简短的标题
-- 关键点列表
+## Output
+Output Markdown formatted summary containing:
+- Brief title
+- Key points list
 "#,
             category.display_name(),
             entries
