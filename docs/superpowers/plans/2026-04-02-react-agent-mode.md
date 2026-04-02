@@ -1,683 +1,523 @@
 # NeoMind ReAct Agent Mode 实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在现有 Agent 架构基础上，将执行模式从"先全量采集→单次分析"升级为 ReAct (Reasoning + Acting) 模式，实现 Thought → Action → Observation 迭代循环，让 Agent 具备动态推理和自适应决策能力。
+**Goal:** 增强 `execute_with_tools` 的工具调用循环，将每轮迭代拆分为 Thought → Action → Observation 三类步骤，让前端能实时展示 LLM 的推理过程，并为 data-on-demand 打下基础。
 
-**Architecture:** 基于 `execute_with_tools` 已有的工具调用循环，重构为显式的 ReAct 三阶段循环。新增 `ReActStep` 追踪结构，保留向后兼容。前端通过现有 `AgentThinking` 事件实时展示 Thought/Action/Observation 步骤。
+**Architecture:** 不创建新的执行函数。修改 `execute_with_tools` 内部循环，在 LLM 每次响应后提取推理文本作为 "thought"，工具调用标记为 "action"，执行结果标记为 "observation"。优化工具响应的 token 效率。通过 `AiAgent.execution_mode` 字段选择模式，默认 "standard" 保持完全向后兼容。
 
 **Tech Stack:** Rust, serde, LLM function calling, NeoMind EventBus, React + TypeScript
 
 ---
 
-## 现状分析
+## 实测验证
 
-### 当前执行模式 vs ReAct
+### Tool 模式（无绑定资源）— 2026-04-02 实测
+
+Agent 自主执行了 6 轮工具调用，发现电池异常并创建告警：
 
 ```
-当前模式（先采集后分析）:
-  1. collect_data() → 全量采集所有数据源
-  2. analyze_with_llm() → 单次 LLM 调用，一次性输出所有 reasoning_steps + decisions
-  3. execute_decisions() → 执行决策
-  4. [可选] execute_with_tools() → 工具调用循环（已有多轮能力）
-
-ReAct 模式（边思考边行动）:
-  1. 初始上下文 → LLM 生成 Thought（"我需要检查设备A的温度"）
-  2. LLM 选择 Action → 调用 get_device_metric 工具
-  3. Observation → 工具返回 "温度 85°C"
-  4. LLM 基于 Observation 生成新 Thought（"温度偏高，需要检查原因"）
-  5. LLM 选择新 Action → 调用 get_device_metric 查看其他指标
-  6. ... 循环直到 LLM 认为任务完成
-  7. 输出最终 conclusion + decisions
+Round 1: tool "device" → 列出2个NE101设备
+Round 2: tool "device" → 查询TEST设备battery=41%
+Round 3: tool "device" → 查询TEST设备batteryVoltage=4590mV
+Round 4: tool "device" → 查询101 PC Test设备battery (空)
+Round 5: tool "device" → 查询101 PC Test设备batteryVoltage (空)
+Round 6: tool "alert"  → 创建低电量告警
 ```
 
-### 已有基础设施（可复用）
+**优点**: Agent 自主发现设备、逐步排查、主动创建告警
+**问题**:
+1. 所有 reasoning step 都显示 "Executed tool 'device'" — 没有 LLM 的推理文本
+2. step_type 全部是 "tool_call" — 无法区分思考/行动/观察
+3. 工具返回的设备列表包含完整 metric schema（~800 tokens），浪费 context
+4. 前端只看到 "tool_call" 步骤，看不到 Agent "为什么" 要查 battery
 
-| 组件 | 位置 | 状态 |
-|------|------|------|
-| 工具调用循环 | `execute_with_tools` (executor.rs:1066) | ✅ 已有 LLM→Tool→LLM 多轮循环 |
-| 工具注册表 | `toolkit/registry.rs` | ✅ 完整的工具注册/执行 |
-| 工具调用解析 | `agent/tool_parser.rs` | ✅ 支持 JSON/XML 多格式 |
-| Chaining 循环 | `execute_with_chaining` (executor.rs:2849) | ✅ 多轮执行 + 上下文累积 |
-| ReasoningStep | `neomind-storage/src/agents.rs:840` | ✅ 灵活的 step_type 字段 |
-| 事件系统 | `NeoMindEvent::AgentThinking` | ✅ 实时推送推理步骤 |
-| 前端展示 | `AgentThinkingPanel.tsx` | ✅ 实时显示推理过程 |
-| 内存系统 | working/short-term/long-term | ✅ 跨执行记忆 |
+### 标准模式（有绑定资源）— 2026-04-02 实测
 
-### 需要新增/修改的部分
+Agent 只收集到图像数据，1 个 reasoning step，结论 "No actions required"，完全遗漏了电池异常。
 
-| 组件 | 改动类型 | 影响范围 |
-|------|----------|----------|
-| 执行模式选择 | 新增逻辑 | executor.rs |
-| ReAct 系统提示词 | 新增 | executor.rs |
-| ReActStep 数据类型 | 新增 | neomind-storage |
-| ReasoningStep.step_type 扩展 | 兼容扩展 | 无破坏性变更 |
-| AgentThinking 事件扩展 | 兼容扩展 | 新增字段 |
-| 前端 ReAct 步骤可视化 | 增强 | React 组件 |
-| IoT 专用工具定义 | 新增 | toolkit/ |
+**结论**: Tool 模式已经远优于标准模式。ReAct 增强的核心价值是让推理过程可见，而非改变执行逻辑。
 
 ---
 
-## 数据结构影响评估
+## 设计原则（来自行业最佳实践）
 
-### 1. 现有结构（无需修改）
+> 来源: [Anthropic - Building Effective Agents](https://www.anthropic.com/research/building-effective-agents), [Anthropic - Writing Effective Tools](https://www.anthropic.com/engineering/writing-tools-for-agents), [Braintrust - Canonical Agent Architecture](https://www.braintrust.dev/blog/agent-while-loop)
 
-```rust
-// ReasoningStep - 现有结构完全够用
-pub struct ReasoningStep {
-    pub step_number: u32,
-    pub description: String,        // ← Thought/Action/Observation 的内容
-    pub step_type: String,          // ← 扩展: "thought" | "action" | "observation"
-    pub input: Option<String>,      // ← Action 的参数
-    pub output: String,             // ← Observation 的结果
-    pub confidence: f32,
-}
-
-// Decision - 无需修改
-// DecisionProcess - 无需修改
-// ConversationTurn - 无需修改
-// TurnOutput - 无需修改
-```
-
-**结论**: 所有现有存储结构保持不变。`step_type` 字段已经是 String 类型，天然支持新值。
-
-### 2. 需要新增的结构
-
-```rust
-// 新增: ReAct 执行轨迹记录（存储在 DecisionProcess.reasoning_steps 中）
-// 不需要新的数据库表，复用现有结构
-```
-
-### 3. 前端类型影响
-
-```typescript
-// 现有 TypeScript 类型 - 无需修改
-interface ReasoningStep {
-  step_number: number
-  description: string
-  step_type: string    // ← 新增 "thought" | "action" | "observation" 值
-  input?: string
-  output: string
-  confidence: number
-}
-```
-
-**结论**: 前端类型无需修改，只是 `step_type` 有了新值。
+1. **The canonical agent is a while loop**: `while (!done) { callLLM(); executeTools(); }` — Claude Code 和 OpenAI Agents SDK 都收敛于此。我们的 `execute_with_tools` 已经是了。
+2. **Function calling > text ReAct**: 所有生产系统都用原生 function calling，不是文本解析。ReAct 的价值在于结构化追踪，不在于文本格式。
+3. **Tool design > prompt engineering**: 工具响应占 agent 看到内容的 ~80%（67.6% tool responses + 10.7% tool definitions）。优化工具返回比优化 prompt 更有效。
+4. **Context efficiency**: Claude Code 默认限制工具响应 25,000 tokens。我们的工具返回完整 JSON 没有截断。
+5. **Transparency**: Anthropic 的三大原则之一是 "明确展示规划步骤"。
 
 ---
 
-## 前端改造评估
+## 文件结构
 
-### 需要的改动
-
-#### 1. AgentThinkingPanel.tsx — 增强步骤类型显示（小改）
-
-当前按 `step_type` 着色：
-```typescript
-// 当前
-const stepColors: Record<string, string> = {
-  analysis: 'blue',
-  evaluation: 'orange',
-  planning: 'purple',
-  execution: 'green',
-  tool_call: 'teal',
-  llm_analysis: 'indigo',
-};
-```
-
-需要新增 ReAct 步骤类型的颜色/图标：
-```typescript
-// 新增
-thought: 'purple',      // 思考 - 紫色
-action: 'blue',         // 行动 - 蓝色
-observation: 'green',   // 观察 - 绿色
-```
-
-#### 2. AgentExecutionTimeline.tsx — 无需修改
-
-现有的展开式展示已经能显示所有 reasoning_steps，新增的 step_type 会自动被渲染。
-
-#### 3. 可选增强：ReAct 循环可视化
-
-如果想要更直观的 Thought→Action→Observation 时间线，可以新增一个小组件。但这不是必须的——现有的步骤列表已经足够清晰。
-
-### 前端改动总结
-
-| 文件 | 改动量 | 说明 |
-|------|--------|------|
-| `AgentThinkingPanel.tsx` | ~10 行 | 新增 ReAct step_type 的颜色映射 |
-| `useAgentEvents.ts` | 无 | 现有事件处理已足够 |
-| 新增 `ReActFlowView.tsx` | ~100 行 | 可选增强：专用 ReAct 流程图 |
+| File | Change | Purpose |
+|------|--------|---------|
+| `crates/neomind-storage/src/agents.rs:88-91` | Add field | `execution_mode: String` 字段 |
+| `crates/neomind-agent/src/ai_agent/executor.rs:1239-1255` | Modify | ReAct 模式系统提示词 |
+| `crates/neomind-agent/src/ai_agent/executor.rs:1288-1290` | Add | `react_thoughts` 收集器 |
+| `crates/neomind-agent/src/ai_agent/executor.rs:1319-1326` | Modify | 提取 LLM 推理文本为 thought |
+| `crates/neomind-agent/src/ai_agent/executor.rs:1368-1385` | Modify | 截断工具响应（context 效率） |
+| `crates/neomind-agent/src/ai_agent/executor.rs:1396-1416` | Modify | 构建 thought/action/observation 步骤 |
+| `crates/neomind-api/src/handlers/agents.rs` | Add fields | API 支持 execution_mode |
+| `web/src/pages/agents-components/AgentThinkingPanel.tsx:172-189` | Modify | 新增 ReAct 步骤样式 |
+| `web/src/i18n/locales/{en,zh}/agents.json` | Add keys | 执行模式翻译 |
 
 ---
 
-## 实施任务
-
-### Task 1: 定义 ReAct 执行模式常量和 IoT 专用工具
+## Task 1: AiAgent 添加 execution_mode 字段
 
 **Files:**
-- Modify: `crates/neomind-agent/src/ai_agent/executor.rs`
-- Modify: `crates/neomind-agent/src/agent/tool_parser.rs` (如需)
+- Modify: `crates/neomind-storage/src/agents.rs`
 
-- [ ] **Step 1: 在 executor.rs 中定义 ReAct 模式常量**
+- [ ] **Step 1: 在 AiAgent struct 中添加字段**
 
-在文件顶部常量区域添加：
-```rust
-/// ReAct step types for structured Thought-Action-Observation loop
-const REACT_STEP_THOUGHT: &str = "thought";
-const REACT_STEP_ACTION: &str = "action";
-const REACT_STEP_OBSERVATION: &str = "observation";
-```
-
-- [ ] **Step 2: 在 execute_with_tools 或新函数中添加 IoT 工具定义**
-
-确保以下工具在工具注册时可用（检查现有工具，按需补充）：
-- `get_device_data` — 获取设备最新数据（已有 device 工具）
-- `get_device_history` — 获取设备历史数据
-- `send_alert` — 发送告警（已有 alert 工具）
-- `execute_command` — 执行设备命令
-- `query_rule_status` — 查询规则状态
-
-- [ ] **Step 3: 验证编译**
-
-Run: `cargo check -p neomind-agent`
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add crates/neomind-agent/src/ai_agent/executor.rs
-git commit -m "feat(agent): add ReAct step type constants and IoT tool definitions"
-```
-
----
-
-### Task 2: 实现 ReAct 系统提示词
-
-**Files:**
-- Modify: `crates/neomind-agent/src/ai_agent/executor.rs`
-
-- [ ] **Step 1: 新增 ReAct 系统提示词构建函数**
-
-在 `analyze_with_llm` 附近新增函数 `build_react_system_prompt`：
+在 `crates/neomind-storage/src/agents.rs` 的 `AiAgent` struct 中，`error_message` 之前添加：
 
 ```rust
-/// Build system prompt for ReAct (Thought-Action-Observation) mode
-fn build_react_system_prompt(
-    agent: &AiAgent,
-    data_summary: &str,
-    tools_json: &str,
-    is_chinese: bool,
-) -> String {
-    let time_context = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
-
-    if is_chinese {
-        format!(
-            r#"你是 '{agent_name}'，一个物联网自动化助手。当前时间: {time}
-
-## 你的任务
-{user_prompt}
-
-## 可用数据
-{data_summary}
-
-## 可用工具
-{tools_json}
-
-## ReAct 工作模式
-你必须严格遵循 Thought → Action → Observation 循环：
-
-1. **Thought**: 分析当前已知信息，判断还需要什么数据或应该采取什么行动
-2. **Action**: 调用一个工具来获取数据或执行操作
-3. **Observation**: 系统返回工具执行结果
-
-重复以上循环，直到你有足够信息做出最终判断。
-
-## 输出格式
-每次回复你必须输出：
-- Thought: 你的推理过程（必填）
-- 然后选择以下之一：
-  - 调用一个工具（Action）
-  - 或输出最终 JSON 结论（当你认为分析完成时）
-
-最终结论格式:
-```json
-{{
-  "situation_analysis": "完整分析",
-  "conclusion": "结论",
-  "confidence": 0.85,
-  "decisions": [{{"decision_type": "alert|command|info", "description": "描述", "action": "动作", "rationale": "理由"}}]
-}}
-```"#,
-            agent_name = agent.name,
-            user_prompt = agent.user_prompt,
-        )
-    } else {
-        format!(
-            r#"You are '{agent_name}', an IoT automation assistant. Current time: {time}
-
-## Your Task
-{user_prompt}
-
-## Available Data
-{data_summary}
-
-## Available Tools
-{tools_json}
-
-## ReAct Mode
-You must follow the Thought → Action → Observation loop:
-
-1. **Thought**: Analyze what you know and what you still need
-2. **Action**: Call a tool to gather data or execute an action
-3. **Observation**: System returns the tool result
-
-Repeat until you have enough information for a final conclusion.
-
-## Output Format
-Each response must include:
-- Thought: Your reasoning (required)
-- Then either:
-  - A tool call (Action)
-  - Or a final JSON conclusion (when analysis is complete)
-
-Final conclusion format:
-```json
-{{
-  "situation_analysis": "Full analysis",
-  "conclusion": "Conclusion",
-  "confidence": 0.85,
-  "decisions": [{{"decision_type": "alert|command|info", "description": "desc", "action": "action", "rationale": "reason"}}]
-}}
-```"#,
-            agent_name = agent.name,
-            user_prompt = agent.user_prompt,
-        )
-    }
-}
+    /// Agent execution mode: "standard" (default) or "react"
+    #[serde(default = "default_execution_mode")]
+    pub execution_mode: String,
 ```
 
-- [ ] **Step 2: 验证编译**
+在文件 default helper 函数区域（`default_max_chain_depth` 附近）添加：
 
-Run: `cargo check -p neomind-agent`
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add crates/neomind-agent/src/ai_agent/executor.rs
-git commit -m "feat(agent): add ReAct system prompt builder for IoT agents"
-```
-
----
-
-### Task 3: 实现 ReAct 执行循环核心
-
-**Files:**
-- Modify: `crates/neomind-agent/src/ai_agent/executor.rs`
-
-- [ ] **Step 1: 新增 `execute_with_react` 函数**
-
-这是核心改动。在 `execute_with_tools` 基础上，新增一个显式追踪 Thought/Action/Observation 的执行函数：
-
-```rust
-/// Execute agent using ReAct (Reasoning + Acting) pattern.
-/// Iterates Thought → Action → Observation loop until LLM concludes.
-async fn execute_with_react(
-    &self,
-    agent: &AiAgent,
-    initial_data: &[DataCollected],
-    llm_runtime: Arc<dyn LlmRuntime>,
-    execution_id: &str,
-) -> AgentResult<(String, Vec<neomind_storage::ReasoningStep>, Vec<neomind_storage::Decision>, String)> {
-    let max_rounds = agent.max_chain_depth.max(3).min(10);
-    let is_chinese = SemanticToolMapper::detect_language(&agent.user_prompt)
-        .map(|l| matches!(l, crate::agent::semantic_mapper::Language::Chinese | crate::agent::semantic_mapper::Language::Mixed));
-
-    // Get available tools
-    let registry = self.tool_registry.as_ref()
-        .ok_or_else(|| NeoMindError::Tool("Tool registry not available for ReAct mode".to_string()))?;
-    let tool_defs = registry.definitions_json();
-
-    // Build initial data summary
-    let data_summary = Self::build_data_summary(initial_data);
-
-    // Build system prompt
-    let system_prompt = Self::build_react_system_prompt(agent, &data_summary, &tool_defs, is_chinese);
-
-    // Build conversation messages
-    let mut messages = vec![Message::system(&system_prompt)];
-
-    // Add initial data as first user message
-    let initial_context = if is_chinese {
-        format!("当前采集到的数据:\n{}", data_summary)
-    } else {
-        format!("Current collected data:\n{}", data_summary)
-    };
-    messages.push(Message::user(&initial_context));
-
-    let mut all_reasoning_steps: Vec<neomind_storage::ReasoningStep> = Vec::new();
-    let mut step_counter: u32 = 0;
-    let mut final_analysis = String::new();
-    let mut final_conclusion = String::new();
-    let mut final_confidence: f32 = 0.7;
-    let mut final_decisions: Vec<neomind_storage::Decision> = Vec::new();
-
-    for round in 0..max_rounds {
-        // LLM call
-        let input = LlmInput {
-            messages: messages.clone(),
-            tools: Some(registry.tool_definitions()),
-            ..Default::default()
-        };
-
-        let output = llm_runtime.generate(input).await
-            .map_err(|e| NeoMindError::Llm(format!("ReAct LLM call failed: {}", e)))?;
-
-        let response_text = output.text.trim().to_string();
-
-        // Parse tool calls from response
-        let (remaining_text, tool_calls) = parse_tool_calls(&response_text);
-
-        // Emit Thought step
-        if !remaining_text.is_empty() {
-            step_counter += 1;
-            let thought_step = neomind_storage::ReasoningStep {
-                step_number: step_counter,
-                description: remaining_text.chars().take(500).collect(),
-                step_type: REACT_STEP_THOUGHT.to_string(),
-                input: None,
-                output: String::new(),
-                confidence: 0.8,
-            };
-
-            // Emit event for frontend
-            if let Some(ref bus) = self.event_bus {
-                let _ = bus.publish(NeoMindEvent::AgentThinking {
-                    agent_id: agent.id.clone(),
-                    execution_id: execution_id.to_string(),
-                    step_number: thought_step.step_number,
-                    step_type: REACT_STEP_THOUGHT.to_string(),
-                    description: thought_step.description.clone(),
-                    details: None,
-                    timestamp: chrono::Utc::now().timestamp(),
-                }).await;
-            }
-
-            all_reasoning_steps.push(thought_step);
-        }
-
-        // Check if LLM produced a final conclusion (no tool calls)
-        if tool_calls.is_empty() {
-            // Try to parse final JSON conclusion
-            if let Some((analysis, conclusion, decisions, confidence)) =
-                Self::parse_react_final_response(&response_text, is_chinese) {
-                final_analysis = analysis;
-                final_conclusion = conclusion;
-                final_decisions = decisions;
-                final_confidence = confidence;
-            } else {
-                // Fallback: use raw text as conclusion
-                final_analysis = response_text.chars().take(500).collect();
-                final_conclusion = final_analysis.clone();
-            }
-            break;
-        }
-
-        // Execute tool calls and record Action + Observation steps
-        // Add assistant message to conversation
-        messages.push(Message::assistant(&response_text));
-
-        let results = registry.execute_parallel(tool_calls.clone()).await;
-
-        for result in &results {
-            // Action step
-            step_counter += 1;
-            let action_step = neomind_storage::ReasoningStep {
-                step_number: step_counter,
-                description: format!("Execute tool '{}'", result.name),
-                step_type: REACT_STEP_ACTION.to_string(),
-                input: Some(serde_json::to_string(&tool_calls.iter()
-                    .find(|tc| tc.name == result.name)
-                    .map(|tc| &tc.args)).unwrap_or_default()),
-                output: String::new(),
-                confidence: 0.9,
-            };
-
-            if let Some(ref bus) = self.event_bus {
-                let _ = bus.publish(NeoMindEvent::AgentThinking {
-                    agent_id: agent.id.clone(),
-                    execution_id: execution_id.to_string(),
-                    step_number: action_step.step_number,
-                    step_type: REACT_STEP_ACTION.to_string(),
-                    description: action_step.description.clone(),
-                    details: Some(serde_json::to_value(&result.result).unwrap_or_default()),
-                    timestamp: chrono::Utc::now().timestamp(),
-                }).await;
-            }
-
-            all_reasoning_steps.push(action_step);
-
-            // Observation step
-            step_counter += 1;
-            let obs_text = match &result.result {
-                Ok(output) => serde_json::to_string_pretty(&output.data)
-                    .unwrap_or_default()
-                    .chars().take(500).collect(),
-                Err(e) => format!("Error: {}", e),
-            };
-
-            let obs_step = neomind_storage::ReasoningStep {
-                step_number: step_counter,
-                description: format!("Tool '{}' result", result.name),
-                step_type: REACT_STEP_OBSERVATION.to_string(),
-                input: None,
-                output: obs_text.clone(),
-                confidence: 0.9,
-            };
-
-            if let Some(ref bus) = self.event_bus {
-                let _ = bus.publish(NeoMindEvent::AgentThinking {
-                    agent_id: agent.id.clone(),
-                    execution_id: execution_id.to_string(),
-                    step_number: obs_step.step_number,
-                    step_type: REACT_STEP_OBSERVATION.to_string(),
-                    description: obs_step.description.clone(),
-                    details: Some(serde_json::Value::String(obs_text.clone())),
-                    timestamp: chrono::Utc::now().timestamp(),
-                }).await;
-            }
-
-            all_reasoning_steps.push(obs_step);
-
-            // Feed result back to LLM conversation
-            messages.push(Message::user(&format!(
-                "Observation from '{}':\n{}",
-                result.name, obs_text
-            )));
-        }
-
-        // If last round, use whatever we have
-        if round == max_rounds - 1 {
-            final_analysis = "ReAct loop reached maximum iterations".to_string();
-            final_conclusion = "Analysis incomplete - max rounds reached".to_string();
-            final_confidence = 0.5;
-        }
-    }
-
-    // If no steps were produced, create a fallback
-    if all_reasoning_steps.is_empty() {
-        all_reasoning_steps.push(neomind_storage::ReasoningStep {
-            step_number: 1,
-            description: "ReAct analysis completed".to_string(),
-            step_type: "llm_analysis".to_string(),
-            input: Some(format!("{} data sources", initial_data.len())),
-            output: final_analysis.chars().take(200).collect(),
-            confidence: final_confidence,
-        });
-    }
-
-    Ok((final_analysis, all_reasoning_steps, final_decisions, final_conclusion))
-}
-```
-
-注意：以上代码是伪代码级别的详细设计，实际实现时需要：
-- 适配 `LlmInput` / `Message` 的实际 API
-- 适配 `ToolRegistry::execute_parallel` 的实际签名
-- 添加 `parse_react_final_response` 辅助函数
-- 添加 `build_data_summary` 辅助函数
-
-- [ ] **Step 2: 验证编译**
-
-Run: `cargo check -p neomind-agent`
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add crates/neomind-agent/src/ai_agent/executor.rs
-git commit -m "feat(agent): implement ReAct execution loop core"
-```
-
----
-
-### Task 4: 集成 ReAct 模式到执行流程
-
-**Files:**
-- Modify: `crates/neomind-agent/src/ai_agent/executor.rs`
-- Modify: `crates/neomind-storage/src/agents.rs` (添加 execution_mode 字段)
-
-- [ ] **Step 1: 在 AiAgent 中添加执行模式配置**
-
-在 `crates/neomind-storage/src/agents.rs` 的 `AiAgent` 结构中添加：
-```rust
-/// Agent execution mode: "standard" (default) or "react"
-#[serde(default = "default_execution_mode")]
-pub execution_mode: String,
-```
-
-辅助函数：
 ```rust
 fn default_execution_mode() -> String {
     "standard".to_string()
 }
 ```
 
-- [ ] **Step 2: 在 execute_internal 中添加模式路由**
+- [ ] **Step 2: 验证编译**
 
-在 `execute_internal` 函数中，在 `analyze_situation_with_intent` 调用之前添加模式判断：
-
-```rust
-// Route to ReAct mode if configured
-if agent.execution_mode == "react" && self.tool_registry.is_some() {
-    if let Some(ref llm) = llm_backend {
-        match self.execute_with_react(agent, &data_collected, llm.clone(), &context.execution_id).await {
-            Ok((analysis, steps, decisions, conclusion)) => {
-                // Build DecisionProcess from ReAct result
-                decision_process = DecisionProcess {
-                    situation_analysis: analysis,
-                    data_collected: data_collected.clone(),
-                    reasoning_steps: steps,
-                    decisions,
-                    conclusion,
-                    confidence: /* from steps */,
-                };
-                // Skip standard analysis
-                return Ok(/* build execution result */);
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "ReAct mode failed, falling back to standard");
-                // Fall through to standard mode
-            }
-        }
-    }
-}
-```
-
-- [ ] **Step 3: 验证编译和测试**
-
-Run: `cargo check -p neomind-agent && cargo test -p neomind-agent --lib`
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add crates/neomind-agent/src/ai_agent/executor.rs crates/neomind-storage/src/agents.rs
-git commit -m "feat(agent): integrate ReAct mode into execution flow with fallback"
-```
-
----
-
-### Task 5: 前端 ReAct 步骤可视化增强
-
-**Files:**
-- Modify: `web/src/pages/agents-components/AgentThinkingPanel.tsx`
-
-- [ ] **Step 1: 新增 ReAct 步骤类型样式**
-
-在 AgentThinkingPanel 中找到步骤类型颜色映射，添加 ReAct 类型：
-
-```typescript
-// 新增 ReAct 步骤类型的颜色和图标
-const stepTypeConfig: Record<string, { color: string; icon: string; label: string }> = {
-  // ... 现有类型保持不变 ...
-  thought: { color: 'purple', icon: 'Lightbulb', label: '思考' },      // 思考
-  action: { color: 'blue', icon: 'Zap', label: '行动' },              // 行动
-  observation: { color: 'green', icon: 'Eye', label: '观察' },        // 观察
-};
-```
-
-- [ ] **Step 2: 为 ReAct 步骤添加分组视觉分隔**
-
-在步骤列表中，当检测到连续的 thought→action→observation 序列时，用视觉分组（如竖线连接或卡片边框）展示 ReAct 循环。这是可选增强，最简方案只添加颜色区分即可。
-
-- [ ] **Step 3: 验证前端构建**
-
-Run: `cd web && npm run build`
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add web/src/pages/agents-components/AgentThinkingPanel.tsx
-git commit -m "feat(web): add ReAct step type visualization in thinking panel"
-```
-
----
-
-### Task 6: API 层适配
-
-**Files:**
-- Modify: `crates/neomind-api/src/handlers/agents.rs`
-
-- [ ] **Step 1: 在 Agent 创建/更新 API 中支持 execution_mode**
-
-在 agent 创建和更新的 DTO 中添加 `execution_mode` 字段：
-```rust
-// 在 CreateAgentRequest / UpdateAgentRequest 中
-pub execution_mode: Option<String>, // "standard" | "react"
-```
-
-- [ ] **Step 2: 验证 API 文档**
-
-Run: `cargo check -p neomind-api`
+Run: `cargo check -p neomind-storage 2>&1 | tail -10`
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add crates/neomind-api/src/handlers/agents.rs
-git commit -m "feat(api): support execution_mode field in agent CRUD"
+git add crates/neomind-storage/src/agents.rs
+git commit -m "feat(storage): add execution_mode field to AiAgent"
 ```
 
 ---
 
-### Task 7: 前端 Agent 设置界面
+## Task 2: ReAct 系统提示词
 
 **Files:**
-- Modify: `web/src/components/agents/AgentConfigForm.tsx`（或对应的 agent 配置组件）
+- Modify: `crates/neomind-agent/src/ai_agent/executor.rs:1239-1255`
 
-- [ ] **Step 1: 添加执行模式选择器**
+- [ ] **Step 1: 在 execute_with_tools 中添加条件分支**
 
-在 agent 配置表单中添加执行模式选择：
+在 `execute_with_tools` 中构建 `system_prompt` 的位置（约 line 1239），将现有硬编码 prompt 改为条件分支：
+
+```rust
+let is_react_mode = agent.execution_mode == "react";
+
+let system_prompt = if is_react_mode {
+    format!(
+        "You are '{name}', an IoT monitoring agent. Current time: {time}\n\
+         \n## Task\n{prompt}\n\
+         {resources}\
+         {data}\
+         \n## Reasoning Approach\n\
+         Think step-by-step:\n\
+         1. Analyze what you already know and what you still need\n\
+         2. Call the most relevant tool to gather missing data\n\
+         3. After each result, assess if you have enough information\n\
+         4. When confident, provide your final analysis\n\
+         \nAlways explain your reasoning BEFORE calling a tool.\n\
+         \nFinal output (after tool calls):\n\
+         ```json\n\
+         {{\n  \"situation_analysis\": \"...\",\n  \"conclusion\": \"...\",\n  \"confidence\": 0.8\n}}\n\
+         ```",
+        name = agent.name,
+        time = time_ctx,
+        prompt = agent.user_prompt,
+        resources = resource_info,
+        data = current_data_section,
+    )
+} else {
+    // 原有标准模式提示词保持不变
+    format!(
+        "You are an intelligent IoT agent named '{}' monitoring edge devices.\n\
+         Current time: {}\n\
+         Your task: {}\n{}{}\
+         \nYou have access to tools for querying metrics, executing commands, and sending notifications. \
+         **Always use tools to fetch the latest data before making conclusions.**\n\
+         When done, provide your analysis and conclusion as plain text WITHOUT tool calls.\n\n\
+         Output format for your final response (after tool calls, if any):\n\
+         ```json\n\
+         {{\n  \"situation_analysis\": \"...\",\n  \"conclusion\": \"...\",\n  \"confidence\": 0.8\n}}\n\
+         ```",
+        agent.name,
+        time_ctx,
+        agent.user_prompt,
+        resource_info,
+        current_data_section,
+    )
+};
+```
+
+关键设计:
+- ReAct prompt 的核心差异是 "Always explain your reasoning BEFORE calling a tool"，引导 LLM 输出 thought 文本
+- 标准 prompt 完全保留，不影响现有行为
+- 两者都使用相同的 function calling 机制
+
+- [ ] **Step 2: 验证编译**
+
+Run: `cargo check -p neomind-agent 2>&1 | tail -10`
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add crates/neomind-agent/src/ai_agent/executor.rs
+git commit -m "feat(agent): add ReAct system prompt for step-by-step reasoning"
+```
+
+---
+
+## Task 3: 增强 execute_with_tools 循环 — Thought/Action/Observation 追踪
+
+**Files:**
+- Modify: `crates/neomind-agent/src/ai_agent/executor.rs:1288-1416`
+
+这是核心改动。在工具执行循环中收集 LLM 的推理文本，并在最终构建 reasoning_steps 时分类为 thought/action/observation。
+
+### 实测对照
+
+当前行为（2026-04-02 实测）:
+```
+Step 1: "Executed tool 'device'" — step_type: "tool_call"
+Step 2: "Executed tool 'device'" — step_type: "tool_call"
+...全是 "tool_call"，看不到 LLM 的思考过程
+```
+
+目标行为:
+```
+Step 1: "I need to check what devices are available first..." — step_type: "thought"
+Step 2: "List devices" — step_type: "action"
+Step 3: "Found 2 NE101 cameras. Let me check battery levels..." — step_type: "observation" (tool result)
+Step 4: "TEST device battery is only 41%, that's concerning..." — step_type: "thought"
+Step 5: "Query battery for device 4t1vcbefzk" — step_type: "action"
+Step 6: "Battery: 41%, Voltage: 4590mV" — step_type: "observation"
+...
+```
+
+- [ ] **Step 1: 在循环前声明 thought 收集器**
+
+在 `let mut all_tool_results` 声明附近（约 line 1288），添加：
+
+```rust
+let mut react_thoughts: Vec<String> = Vec::new();
+```
+
+- [ ] **Step 2: 在循环中收集 LLM 推理文本**
+
+在 `parse_tool_calls` 之后（约 line 1320-1326），利用 `remaining_text`（LLM 响应中非工具调用部分的文本）：
+
+```rust
+// 修改前 (line 1323-1326):
+if tool_calls.is_empty() {
+    final_text = remaining_text;
+    break;
+}
+
+// 修改后:
+if tool_calls.is_empty() {
+    final_text = remaining_text.clone();
+    // 在 ReAct 模式下，最后一轮的推理也是 thought
+    if is_react_mode && !remaining_text.trim().is_empty() {
+        react_thoughts.push(remaining_text.chars().take(500).collect());
+    }
+    break;
+}
+
+// ReAct 模式: 记录 LLM 在工具调用前的推理文本
+if is_react_mode && !remaining_text.trim().is_empty() {
+    react_thoughts.push(remaining_text.chars().take(500).collect());
+}
+```
+
+关键: `remaining_text` 是 `parse_tool_calls` 返回的非工具调用文本。当 LLM 先输出推理文字再输出工具调用时（ReAct 行为），这里就是 "thought"。
+
+- [ ] **Step 3: 截断工具响应（context 效率优化）**
+
+在工具执行结果处理处（约 line 1373），添加截断：
+
+```rust
+// 修改前 (line 1373-1377):
+let result_text = match &result.result {
+    Ok(output) => serde_json::to_string_pretty(&output.data)
+        .unwrap_or_else(|_| "Success".to_string()),
+    Err(e) => format!("Error: {}", e),
+};
+
+// 修改后:
+let result_text = match &result.result {
+    Ok(output) => {
+        let json = serde_json::to_string_pretty(&output.data)
+            .unwrap_or_else(|_| "Success".to_string());
+        // 截断过长的工具响应以节省 context (Anthropic 最佳实践)
+        if json.len() > 2000 {
+            format!("{}...\n[truncated, {} chars total]", &json[..2000], json.len())
+        } else {
+            json
+        }
+    }
+    Err(e) => format!("Error: {}", e),
+};
+```
+
+实测对照: 当前 `list_devices` 工具返回完整 metric schema（~800 tokens），截断后只需 ~200 tokens。
+
+- [ ] **Step 4: 重构 reasoning_steps 构建**
+
+将当前（约 line 1396-1416）的工具结果 → reasoning_steps 逻辑，替换为 ReAct 感知的版本：
+
+```rust
+// 修改前:
+let reasoning_steps: Vec<ReasoningStep> = all_tool_results
+    .iter()
+    .enumerate()
+    .map(|(i, r)| {
+        let (desc, conf) = match &r.result { ... };
+        ReasoningStep {
+            step_number: (i + 1) as u32,
+            description: desc,
+            step_type: "tool_call".to_string(),
+            input: None,
+            output: String::new(),
+            confidence: conf,
+        }
+    })
+    .collect();
+
+// 修改后:
+let mut reasoning_steps: Vec<ReasoningStep> = Vec::new();
+let mut step_counter: u32 = 0;
+
+if is_react_mode {
+    // ReAct 模式: 按 thought → action → observation 分组
+    let tool_count = all_tool_results.len();
+    let thought_count = react_thoughts.len();
+
+    for (round_idx, thought) in react_thoughts.iter().enumerate() {
+        // Thought step — LLM 的推理过程
+        step_counter += 1;
+        reasoning_steps.push(ReasoningStep {
+            step_number: step_counter,
+            description: thought.clone(),
+            step_type: "thought".to_string(),
+            input: None,
+            output: String::new(),
+            confidence: 0.8,
+        });
+
+        // 对应的 Action + Observation（如果该 thought 后面有工具调用）
+        if round_idx < tool_count {
+            let r = &all_tool_results[round_idx];
+
+            // Action step
+            step_counter += 1;
+            let action_conf = match &r.result {
+                Ok(o) if o.success => 0.9f32,
+                _ => 0.3f32,
+            };
+            reasoning_steps.push(ReasoningStep {
+                step_number: step_counter,
+                description: format!("Call tool '{}'", r.name),
+                step_type: "action".to_string(),
+                input: None,
+                output: String::new(),
+                confidence: action_conf,
+            });
+
+            // Observation step — 工具返回结果
+            step_counter += 1;
+            let obs_text = match &r.result {
+                Ok(output) => {
+                    let json = serde_json::to_string_pretty(&output.data)
+                        .unwrap_or_default();
+                    if json.len() > 500 {
+                        format!("{}...", &json[..500])
+                    } else {
+                        json
+                    }
+                }
+                Err(e) => format!("Error: {}", e),
+            };
+            reasoning_steps.push(ReasoningStep {
+                step_number: step_counter,
+                description: format!("Result from '{}'", r.name),
+                step_type: "observation".to_string(),
+                input: None,
+                output: obs_text,
+                confidence: action_conf,
+            });
+        }
+    }
+} else {
+    // 标准模式: 保持原有行为
+    for (i, r) in all_tool_results.iter().enumerate() {
+        let (desc, conf) = match &r.result {
+            Ok(output) => (
+                format!("Executed tool '{}'", r.name),
+                if output.success { 0.9 } else { 0.3 },
+            ),
+            Err(e) => (format!("Tool '{}' failed: {}", r.name, e), 0.2),
+        };
+        reasoning_steps.push(ReasoningStep {
+            step_number: (i + 1) as u32,
+            description: desc,
+            step_type: "tool_call".to_string(),
+            input: None,
+            output: String::new(),
+            confidence: conf,
+        });
+    }
+}
+```
+
+- [ ] **Step 5: 验证编译**
+
+Run: `cargo check -p neomind-agent 2>&1 | tail -10`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add crates/neomind-agent/src/ai_agent/executor.rs
+git commit -m "feat(agent): enhance execute_with_tools with thought/action/observation tracking"
+```
+
+---
+
+## Task 4: API 层支持 execution_mode
+
+**Files:**
+- Modify: `crates/neomind-api/src/handlers/agents.rs`
+
+- [ ] **Step 1: 在 CreateAgentRequest 和 UpdateAgentRequest 添加字段**
+
+两个 DTO 中（约 line 386 和 line 467），在 `context_window_size` 之后添加：
+
+```rust
+/// Execution mode: "standard" or "react"
+pub execution_mode: Option<String>,
+```
+
+- [ ] **Step 2: 在创建和更新逻辑中使用该字段**
+
+`create_agent` handler（约 line 954）添加：
+```rust
+execution_mode: request.execution_mode.unwrap_or_else(|| "standard".to_string()),
+```
+
+`update_agent` handler（约 line 1158）添加：
+```rust
+if let Some(mode) = request.execution_mode {
+    agent.execution_mode = mode;
+}
+```
+
+- [ ] **Step 3: 在 Response DTO 中添加字段**
+
+AgentResponse DTOs（约 line 117, 150）添加：
+```rust
+pub execution_mode: Option<String>,
+```
+
+构建 response 处（约 line 538, 675）添加：
+```rust
+execution_mode: Some(agent.execution_mode.clone()),
+```
+
+- [ ] **Step 4: 验证编译**
+
+Run: `cargo check -p neomind-api 2>&1 | tail -10`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add crates/neomind-api/src/handlers/agents.rs
+git commit -m "feat(api): support execution_mode in agent CRUD"
+```
+
+---
+
+## Task 5: 前端 ReAct 步骤可视化
+
+**Files:**
+- Modify: `web/src/pages/agents-components/AgentThinkingPanel.tsx`
+- Modify: `web/src/i18n/locales/en/agents.json`
+- Modify: `web/src/i18n/locales/zh/agents.json`
+
+- [ ] **Step 1: 新增 ReAct 步骤类型颜色**
+
+在 `AgentThinkingPanel.tsx` 的 `getStepTypeColor` 函数中（line 172），在 `default` 之前添加：
+
+```typescript
+case 'thought':
+  return 'text-purple-500 bg-purple-500/10 border-purple-500/20'
+case 'action':
+  return 'text-blue-500 bg-blue-500/10 border-blue-500/20'
+case 'observation':
+  return 'text-green-500 bg-green-500/10 border-green-500/20'
+case 'tool_call':
+  return 'text-teal-500 bg-teal-500/10 border-teal-500/20'
+```
+
+- [ ] **Step 2: 添加 i18n**
+
+`en/agents.json`:
+```json
+{
+  "executionMode": "Execution Mode",
+  "executionModeStandard": "Standard (Single Analysis)",
+  "executionModeReact": "ReAct (Step-by-Step Reasoning)",
+  "executionModeDescription": "ReAct mode uses Thought→Action→Observation loops for dynamic reasoning"
+}
+```
+
+`zh/agents.json`:
+```json
+{
+  "executionMode": "执行模式",
+  "executionModeStandard": "标准模式（单次分析）",
+  "executionModeReact": "ReAct 模式（逐步推理）",
+  "executionModeDescription": "ReAct 模式使用 思考→行动→观察 循环进行动态推理"
+}
+```
+
+- [ ] **Step 3: 验证前端构建**
+
+Run: `cd web && npm run build 2>&1 | tail -10`
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add web/src/pages/agents-components/AgentThinkingPanel.tsx web/src/i18n/
+git commit -m "feat(web): add ReAct step type colors and execution mode i18n"
+```
+
+---
+
+## Task 6: 前端 Agent 配置 UI
+
+**Files:**
+- Modify: agent 配置表单组件（需确认具体文件）
+
+- [ ] **Step 1: 在 agent 配置表单中添加执行模式选择器**
+
+在 agent 创建/编辑表单中，tool 配置区域附近添加：
 
 ```tsx
 <SelectField
   label={t('agents:executionMode')}
+  value={form.execution_mode || 'standard'}
+  onChange={(v) => setForm(prev => ({ ...prev, execution_mode: v }))}
   options={[
     { value: 'standard', label: t('agents:executionModeStandard') },
     { value: 'react', label: t('agents:executionModeReact') },
@@ -686,72 +526,51 @@ git commit -m "feat(api): support execution_mode field in agent CRUD"
 />
 ```
 
-- [ ] **Step 2: 添加 i18n 翻译**
+- [ ] **Step 2: 验证前端构建**
 
-在 `web/src/i18n/locales/en/agents.json` 和 `zh/agents.json` 中添加：
-```json
-{
-  "executionMode": "Execution Mode",
-  "executionModeStandard": "Standard (Single Analysis)",
-  "executionModeReact": "ReAct (Iterative Reasoning)",
-  "executionModeDescription": "ReAct mode enables Thought→Action→Observation loops for dynamic reasoning"
-}
-```
+Run: `cd web && npm run build 2>&1 | tail -10`
 
-- [ ] **Step 3: 验证前端构建**
-
-Run: `cd web && npm run build`
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add web/src/components/agents/ web/src/i18n/
+git add web/src/
 git commit -m "feat(web): add execution mode selector in agent config"
 ```
 
 ---
 
-### Task 8: 端到端测试和验证
+## Task 7: 编译验证和测试
 
-- [ ] **Step 1: 运行完整构建验证**
-
-Run: `cargo check && cargo test -p neomind-agent --lib && cargo fmt -- --check`
-
-- [ ] **Step 2: 运行前端构建**
-
-Run: `cd web && npm run build`
-
-- [ ] **Step 3: 手动验证**
-
-启动服务后：
-1. 创建一个 agent，设置 `execution_mode: "react"`
-2. 配置数据源和工具
-3. 手动触发执行
-4. 在前端观察 Thought→Action→Observation 步骤
-5. 验证最终 conclusion 和 decisions
-
-- [ ] **Step 4: 最终 Commit**
-
-```bash
-git add -A
-git commit -m "feat(agent): complete ReAct agent mode implementation"
-```
+- [ ] **Step 1: cargo check**
+- [ ] **Step 2: cargo clippy -p neomind-agent -p neomind-api**
+- [ ] **Step 3: cargo test -p neomind-agent --lib**
+- [ ] **Step 4: cargo fmt**
+- [ ] **Step 5: cd web && npm run build**
 
 ---
 
-## 风险评估
+## 改动影响总结
 
-| 风险 | 等级 | 缓解措施 |
-|------|------|----------|
-| LLM 不遵循 ReAct 格式 | 中 | few-shot 示例 + 解析容错 + 回退到标准模式 |
-| Token 消耗增加 | 中 | max_rounds 限制 + 中间摘要 |
-| 工具调用循环不终止 | 低 | 硬性 max_rounds 上限 (10) |
-| 向后兼容性 | 低 | execution_mode 默认 "standard"，新字段 Option |
-| 前端兼容性 | 低 | 新 step_type 值自动被现有组件渲染 |
+| 改动 | 影响范围 | 向后兼容 |
+|------|----------|----------|
+| `execution_mode` 字段 | AiAgent struct | ✅ `#[serde(default)]` |
+| ReAct 系统提示词 | execute_with_tools 内部 | ✅ 仅 `execution_mode == "react"` 时生效 |
+| thought/action/observation 步骤 | reasoning_steps 构建 | ✅ 仅 react 模式 |
+| 工具响应截断 | execute_with_tools 循环 | ✅ 标准+react 模式都受益 |
+| API DTO | 创建/更新/响应 | ✅ `Option<String>` |
+| 前端步骤颜色 | AgentThinkingPanel | ✅ 新 step_type 走 default case |
+
+## 后续优化（不在本计划范围）
+
+1. **Data-on-demand**: ReAct 模式下跳过预采集，让 LLM 通过工具按需查询
+2. **中间摘要**: 长 ReAct 对话时压缩 early rounds 的 context
+3. **评估驱动**: 添加 Braintrust 风格的 agent evaluation metrics
+4. **ReAct 流程图组件**: 专用可视化展示 Thought→Action→Observation 时间线
 
 ## 参考资源
 
+- [Building Effective AI Agents - Anthropic](https://www.anthropic.com/research/building-effective-agents)
+- [Writing Effective Tools for AI Agents - Anthropic Engineering](https://www.anthropic.com/engineering/writing-tools-for-agents)
+- [The Canonical Agent Architecture: A While Loop With Tools - Braintrust](https://www.braintrust.dev/blog/agent-while-loop)
+- [Claude Code Architecture Analysis](https://bits-bytes-nn.github.io/insights/agentic-ai/2026/03/31/claude-code-architecture-analysis.html)
 - [ReAct: Synergizing Reasoning and Acting in Language Models (Yao et al., 2022)](https://arxiv.org/abs/2210.03629)
-- [ReAct Pattern Guide - Michael Brenndoerfer](https://mbrenndoerfer.com/writing/react-pattern-llm-reasoning-action-agents)
-- [Agent Loop - AI-Girls Lab](https://ai-girls.org/en/2026/03/11/agent-loop-react-en/)
-- [Braintrust Agent Evaluation Framework](https://www.braintrust.dev/articles/ai-agent-evaluation-framework)
