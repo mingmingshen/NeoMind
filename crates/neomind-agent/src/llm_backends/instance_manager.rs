@@ -116,11 +116,15 @@ impl LlmBackendInstanceManager {
             });
 
         // Load instances from storage (after potentially creating default)
+        // Apply capability correction to ensure consistency with list_instances/get_instance
         let instances: Vec<(String, LlmBackendInstance)> = storage
             .load_all_instances()
             .unwrap_or_default()
             .into_iter()
-            .map(|inst| (inst.id.clone(), inst))
+            .map(|inst| {
+                let corrected = ensure_instance_capabilities(inst);
+                (corrected.id.clone(), corrected)
+            })
             .collect();
 
         Self {
@@ -135,7 +139,11 @@ impl LlmBackendInstanceManager {
     /// Get the active backend instance
     pub fn get_active_instance(&self) -> Option<LlmBackendInstance> {
         let active_id = self.active_id.lock().ok()?.clone();
-        active_id.and_then(|id| self.instances.get(&id).map(|item| item.value().clone()))
+        active_id.and_then(|id| {
+            self.instances
+                .get(&id)
+                .map(|item| ensure_instance_capabilities(item.value().clone()))
+        })
     }
 
     /// Get the active runtime (with caching)
@@ -162,9 +170,10 @@ impl LlmBackendInstanceManager {
         }
 
         // Get instance configuration - DashMap read is lock-free
-        let instance = self.instances.get(id).map(|item| item.value().clone());
-
-        let instance = instance
+        // Apply capability correction to ensure consistent capabilities
+        let instance = self.instances
+            .get(id)
+            .map(|item| ensure_instance_capabilities(item.value().clone()))
             .ok_or_else(|| LlmError::BackendUnavailable(format!("Backend instance {}", id)))?;
 
         // Create runtime from instance
