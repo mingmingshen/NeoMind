@@ -54,6 +54,7 @@ pub mod extractor;
 pub mod long_term;
 pub mod manager;
 pub mod mid_term;
+pub mod scheduler;
 pub mod short_term;
 pub mod tiered;
 
@@ -84,6 +85,9 @@ pub use dedup::{DedupProcessor, DedupResult};
 pub use extractor::{
     parse_category, AgentExtractor, ChatExtractor, ExtractResult, MemoryCandidate,
 };
+
+// Memory scheduler export
+pub use scheduler::MemoryScheduler;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
