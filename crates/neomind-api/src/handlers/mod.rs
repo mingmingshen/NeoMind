@@ -15,6 +15,7 @@ pub mod events;
 pub mod extension_stream;
 pub mod extensions;
 pub mod llm_backends;
+pub mod memory;
 pub mod message_channels;
 pub mod messages;
 pub mod mqtt;
@@ -112,3 +113,9 @@ pub use message_channels::{
 pub use data::list_all_data_sources_handler;
 // Tools API
 pub use tools::{get_tool_handler, list_tools_handler};
+// System Memory API
+pub use memory::{
+    delete_memory_file, export_all, export_memory, get_all_memory, get_category, get_config,
+    get_memory_content, get_stats, trigger_compress, trigger_extract, update_category,
+    update_config, update_memory_content,
+};

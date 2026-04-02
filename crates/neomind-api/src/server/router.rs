@@ -23,7 +23,7 @@ pub async fn create_router() -> Router {
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
         agents, auth as auth_handlers, auth_users, automations, basic, capabilities, config,
-        dashboards, data, devices, events, extension_stream, extensions, llm_backends,
+        dashboards, data, devices, events, extension_stream, extensions, llm_backends, memory,
         message_channels, messages, mqtt, rules, sessions, settings, setup, stats, suggestions,
         tools,
     };
@@ -629,6 +629,23 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route(
             "/api/agents/:id/messages/:message_id",
             delete(agents::delete_user_message),
+        )
+        // System Memory API (Markdown-based)
+        .route("/api/memory", get(memory::get_all_memory))
+        .route("/api/memory/export", get(memory::export_all))
+        .route("/api/memory/stats", get(memory::get_stats))
+        .route("/api/memory/config", get(memory::get_config).put(memory::update_config))
+        .route("/api/memory/extract", post(memory::trigger_extract))
+        .route("/api/memory/compress", post(memory::trigger_compress))
+        .route(
+            "/api/memory/category/:category",
+            get(memory::get_category).put(memory::update_category),
+        )
+        .route(
+            "/api/memory/:source_type/:id",
+            get(memory::get_memory_content)
+                .put(memory::update_memory_content)
+                .delete(memory::delete_memory_file),
         )
         // MQTT Management API
         .route("/api/mqtt/status", get(mqtt::get_mqtt_status_handler))
