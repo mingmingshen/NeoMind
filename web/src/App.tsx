@@ -432,8 +432,9 @@ function App() {
                       {/* Automation with tab routes */}
                       <Route path="/automation" element={<AutomationPage />} />
                       <Route path="/automation/transforms" element={<AutomationPage />} />
-                      {/* Agents */}
+                      {/* Agents with tab routes */}
                       <Route path="/agents" element={<AgentsPage />} />
+                      <Route path="/agents/memory" element={<AgentsPage />} />
                       <Route path="/settings" element={<SettingsPage />} />
                       {/* Messages with tab routes */}
                       <Route path="/messages" element={<MessagesPage />} />

@@ -483,7 +483,7 @@ export function SessionSidebar({
                                 className={cn(
                                   "p-1 rounded transition-all",
                                   "flex items-center justify-center",
-                                  "text-muted-foreground hover:text-foreground hover:bg-muted"
+                                  "text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                                 )}
                               >
                                 <Pencil className="h-3.5 w-3.5" />

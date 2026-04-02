@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
-import { Loader2, Eye, EyeOff } from 'lucide-react'
+import { Loader2, Eye, EyeOff, Upload } from 'lucide-react'
 import type { PluginConfigSchema } from '@/types'
 
 /**
@@ -283,14 +283,36 @@ function FormField({
   control,
   register,
   errors,
+  setValue,
   t
 }: FormFieldProps) {
   const [secretVisible, setSecretVisible] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const displayName = getFieldDisplayName(fieldName, schema.ui_hints)
   const helpText = getFieldHelpText(fieldName, schema.ui_hints, prop)
   const isSecret = prop.secret
+  const isMultiline = (prop as any).format === 'multiline'
   const error = errors[fieldName]
+
+  // Handle file upload for certificate fields
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const content = event.target?.result as string
+        setValue(fieldName, content.trim())
+      }
+      reader.readAsText(file)
+    }
+    // Reset input so same file can be uploaded again
+    e.target.value = ''
+  }, [fieldName, setValue])
+
+  const triggerFileUpload = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
 
   return (
     <div className="space-y-2">
@@ -397,6 +419,45 @@ function FormField({
             />
           )}
         />
+      ) : isMultiline ? (
+        <Controller
+          name={fieldName}
+          control={control}
+          render={({ field }) => (
+            <div className="space-y-2">
+              <Textarea
+                id={fieldName}
+                value={String(field.value || '')}
+                onChange={(e) => field.onChange(e.target.value)}
+                placeholder={schema.ui_hints?.placeholders?.[fieldName]}
+                rows={6}
+                className="font-mono text-xs"
+              />
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pem,.crt,.cer,.key"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={triggerFileUpload}
+                  className="text-xs"
+                >
+                  <Upload className="h-3 w-3 mr-1" />
+                  {t('plugins:uploadFile', { defaultValue: 'Upload File' })}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {t('plugins:orPaste', { defaultValue: 'or paste content above' })}
+                </span>
+              </div>
+            </div>
+          )}
+        />
       ) : (
         <div className="relative">
           <Input
@@ -459,7 +520,7 @@ export function ConfigFormBuilder({
     ...initialValues,
   }), [schemaDefaults, initialValues])
 
-  const { register, handleSubmit, control, formState: { errors } } = useForm({
+  const { register, handleSubmit, control, formState: { errors }, setValue } = useForm({
     resolver: zodResolver(zodSchema as any),
     defaultValues,
   })
@@ -546,7 +607,7 @@ export function ConfigFormBuilder({
               control={control}
               register={register}
               errors={errors}
-              setValue={() => {}}
+              setValue={setValue}
               t={t}
             />
           )

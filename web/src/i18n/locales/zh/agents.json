@@ -475,5 +475,81 @@
       "America/Los_Angeles": "洛杉矶 (UTC-8/-7)",
       "UTC": "UTC (UTC+0)"
     }
+  },
+  "tabs": {
+    "agents": "智能体",
+    "memory": "记忆"
+  },
+  "memory": {
+    "title": "系统记忆",
+    "search": "搜索记忆...",
+    "source": {
+      "all": "全部",
+      "agent": "智能体",
+      "chat": "对话",
+      "system": "系统"
+    },
+    "category": {
+      "all": "全部",
+      "pattern": "模式",
+      "entity": "实体",
+      "preference": "偏好",
+      "fact": "事实"
+    },
+    "importance": "重要度",
+    "prune": "修剪记忆",
+    "export": "导出 Markdown",
+    "empty": "暂无记忆数据",
+    "emptyDesc": "智能体和对话学习到的内容会保存在这里。",
+    "showMore": "展开更多",
+    "showLess": "收起",
+    "extract": "提取",
+    "compress": "压缩",
+    "viewEdit": "查看/编辑",
+    "config": {
+      "title": "记忆配置",
+      "description": "配置记忆提取、压缩和LLM设置",
+      "extraction": "提取设置",
+      "minMessages": "最小消息数",
+      "minMessagesHint": "触发提取的最小消息数",
+      "minImportance": "最小重要度",
+      "minImportanceHint": "最小重要度阈值 (0-100)",
+      "similarityThreshold": "相似度阈值",
+      "similarityThresholdHint": "去重相似度 (0-1)",
+      "dedupEnabled": "启用去重",
+      "compression": "压缩设置",
+      "decayPeriodDays": "衰减周期（天）",
+      "compressionMinImportance": "最小重要度",
+      "compressionMinImportanceHint": "低于此值的条目将被删除",
+      "llmBackends": "LLM后端",
+      "extractionBackend": "提取模型",
+      "extractionBackendHint": "轻量级模型用于提取",
+      "compressionBackend": "压缩模型",
+      "compressionBackendHint": "强大模型用于摘要",
+      "defaultBackend": "使用默认",
+      "schedule": "调度",
+      "autoExtraction": "自动提取",
+      "extractionInterval": "提取间隔",
+      "autoCompression": "自动压缩",
+      "compressionInterval": "压缩间隔"
+    },
+    "categories": {
+      "userProfile": "用户画像",
+      "domainKnowledge": "领域知识",
+      "taskPatterns": "任务模式",
+      "systemEvolution": "系统进化"
+    },
+    "headers": {
+      "category": "分类",
+      "entries": "条目",
+      "size": "大小",
+      "modified": "修改时间"
+    },
+    "lines": "行",
+    "cancel": "取消",
+    "save": "保存",
+    "saving": "保存中...",
+    "edit": "编辑",
+    "empty": "暂无内容"
   }
 }

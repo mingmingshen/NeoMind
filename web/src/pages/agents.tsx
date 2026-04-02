@@ -7,7 +7,8 @@
  * Also includes System Memory tab for viewing aggregated memory.
  */
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
+import { useLocation, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav } from "@/components/shared"
@@ -17,7 +18,7 @@ import { confirm } from "@/hooks/use-confirm"
 import { useEvents } from "@/hooks/useEvents"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useIsMobile } from "@/hooks/useMobile"
-import { Loader2, Bot, Plus, Brain, Cpu, RefreshCw } from "lucide-react"
+import { Loader2, Bot, Plus, Brain, Cpu, RefreshCw, Settings, Sparkles, Archive, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/shared/EmptyState"
 import type { AiAgent, AiAgentDetail, Extension, ExtensionDataSourceInfo, TransformDataSourceInfo } from "@/types"
@@ -41,6 +42,26 @@ export function AgentsPage() {
   const { t: tAgent } = useTranslation('agents')
   const { toast } = useToast()
   const { handleError } = useErrorHandler()
+  const location = useLocation()
+  const navigate = useNavigate()
+
+  // Determine active tab from URL path
+  const getTabFromPath = () => {
+    if (location.pathname.includes('/agents/memory')) {
+      return 'memory'
+    }
+    return 'agents'
+  }
+  const activeTab = getTabFromPath()
+
+  // Handle tab change by navigating to the appropriate URL
+  const handleTabChange = (tab: string) => {
+    if (tab === 'memory') {
+      navigate('/agents/memory')
+    } else {
+      navigate('/agents')
+    }
+  }
 
   // Dialog states
   const [showAgentDialog, setShowAgentDialog] = useState(false)
@@ -58,8 +79,8 @@ export function AgentsPage() {
   // Data state
   const [agents, setAgents] = useState<AiAgent[]>([])
   const [loading, setLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState<string>("agents")
   const [memoryRefreshKey, setMemoryRefreshKey] = useState(0)
+  const memoryPanelRef = useRef<{ openConfig: () => void; triggerExtract: () => void; triggerCompress: () => void }>(null)
 
   // Track executing agents for real-time updates with timestamps for timeout
   const [executingAgents, setExecutingAgents] = useState<Map<string, number>>(new Map())
@@ -418,7 +439,12 @@ export function AgentsPage() {
   const tabActions = activeTab === 'agents' && agents.length > 0
     ? [{ label: tAgent('createAgent'), icon: <Plus className="h-4 w-4" />, onClick: handleCreate }]
     : activeTab === 'memory'
-    ? [{ label: tCommon('refresh'), icon: <RefreshCw className="h-4 w-4" />, onClick: () => setMemoryRefreshKey(k => k + 1) }]
+    ? [
+        { label: tAgent('memory.config.title', 'Config'), icon: <Settings className="h-4 w-4" />, onClick: () => memoryPanelRef.current?.openConfig() },
+        { label: tAgent('memory.extract', 'Extract'), icon: <Sparkles className="h-4 w-4" />, onClick: () => memoryPanelRef.current?.triggerExtract() },
+        { label: tAgent('memory.compress', 'Compress'), icon: <Archive className="h-4 w-4" />, onClick: () => memoryPanelRef.current?.triggerCompress() },
+        { label: tCommon('refresh'), icon: <RefreshCw className="h-4 w-4" />, onClick: () => setMemoryRefreshKey(k => k + 1) },
+      ]
     : []
 
   return (
@@ -429,7 +455,7 @@ export function AgentsPage() {
         <PageTabsBar
           tabs={tabs}
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
           actions={tabActions}
         />
       }
@@ -470,14 +496,14 @@ export function AgentsPage() {
       </PageTabsContent>
 
       <PageTabsContent value="memory" activeTab={activeTab}>
-        <MemoryPanel refreshKey={memoryRefreshKey} />
+        <MemoryPanel ref={memoryPanelRef} refreshKey={memoryRefreshKey} />
       </PageTabsContent>
 
       {/* Mobile: Bottom navigation bar */}
       <PageTabsBottomNav
         tabs={tabs}
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
       />
 
       {/* Agent Editor Full Screen */}

@@ -79,6 +79,26 @@ const getAdapterSchema = (adapterType: string): PluginConfigSchema => {
             description: 'Use TLS/SSL',
             default: false,
           },
+          ca_cert: {
+            type: 'string',
+            description: 'CA certificate for TLS verification (PEM format). Required for self-signed certificates.',
+            format: 'multiline',
+          },
+          client_cert: {
+            type: 'string',
+            description: 'Client certificate for mTLS authentication (PEM format).',
+            format: 'multiline',
+          },
+          client_key: {
+            type: 'string',
+            description: 'Client private key for mTLS authentication (PEM format).',
+            secret: true,
+            format: 'multiline',
+          },
+          client_id: {
+            type: 'string',
+            description: 'Custom MQTT client ID. Leave empty to auto-generate.',
+          },
           subscribe_topics: {
             type: 'array',
             description: 'Topics to subscribe (one per line). Wildcards: + matches single level, # matches all levels (must be last). Examples: ne301/+, sensor/+/data, device/#',
@@ -87,15 +107,39 @@ const getAdapterSchema = (adapterType: string): PluginConfigSchema => {
         },
         required: ['broker'],
         ui_hints: {
-          field_order: ['broker', 'port', 'username', 'password', 'tls', 'subscribe_topics'],
+          field_order: ['broker', 'port', 'username', 'password', 'client_id', 'tls', 'ca_cert', 'client_cert', 'client_key', 'subscribe_topics'],
           display_names: {
             broker: 'Broker Address',
             port: 'Port',
             username: 'Username',
             password: 'Password',
             tls: 'Use TLS',
+            ca_cert: 'CA Certificate',
+            client_cert: 'Client Certificate',
+            client_key: 'Client Private Key',
+            client_id: 'Client ID',
             subscribe_topics: 'Subscribe Topics',
           },
+          placeholders: {
+            ca_cert: '-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----',
+            client_cert: '-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----',
+            client_key: '-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----',
+            client_id: 'Auto-generated if empty',
+          },
+          help_texts: {
+            ca_cert: 'Required for self-signed or private CA certificates. Leave empty for public CAs.',
+            client_cert: 'Required for mutual TLS (mTLS) authentication.',
+            client_key: 'Required for mutual TLS (mTLS) authentication.',
+            client_id: 'Unique identifier for this MQTT connection. Auto-generated if not specified.',
+          },
+          visibility_rules: [
+            {
+              field: 'tls',
+              condition: 'equals',
+              value: true,
+              then_show: ['ca_cert', 'client_cert', 'client_key'],
+            },
+          ],
         },
       }
     case 'http':
@@ -313,6 +357,10 @@ export function UnifiedDeviceConnectionsTab() {
         username: getOptionalString(config.username),
         password: getOptionalString(config.password),
         tls: config.tls || false,
+        ca_cert: getOptionalString(config.ca_cert),
+        client_cert: getOptionalString(config.client_cert),
+        client_key: getOptionalString(config.client_key),
+        client_id: getOptionalString(config.client_id),
         enabled: true,
         subscribe_topics: config.subscribe_topics as string[] | undefined,
       }
@@ -346,6 +394,10 @@ export function UnifiedDeviceConnectionsTab() {
         tls: config.tls as boolean,
         username: getOptionalString(config.username),
         password: getOptionalString(config.password),
+        ca_cert: getOptionalString(config.ca_cert),
+        client_cert: getOptionalString(config.client_cert),
+        client_key: getOptionalString(config.client_key),
+        client_id: getOptionalString(config.client_id),
         enabled: broker.enabled,
         subscribe_topics: config.subscribe_topics as string[] | undefined,
       })
@@ -920,7 +972,12 @@ function brokerToInstance(broker: any): PluginInstance {
       broker: String(broker.broker || ''),
       port: Number(broker.port || 1883),
       username: broker.username || '',
+      password: broker.password || '',
       tls: broker.tls || false,
+      ca_cert: broker.ca_cert || '',
+      client_cert: broker.client_cert || '',
+      client_key: broker.client_key || '',
+      client_id: broker.client_id || '',
       subscribe_topics: broker.subscribe_topics || ['#'],
     } as Record<string, unknown>,
     status: {

@@ -925,6 +925,43 @@ export interface MemoryConsolidation {
   message: string
 }
 
+// ========== System Memory Configuration Types ==========
+
+export interface MemoryExtractionConfig {
+  similarity_threshold: number
+  min_messages?: number
+  max_messages?: number
+  min_importance?: number
+  dedup_enabled?: boolean
+}
+
+export interface MemoryCompressionConfig {
+  decay_period_days: number
+  min_importance: number
+  max_entries?: Record<string, number>
+}
+
+export interface MemoryLlmConfig {
+  extraction_backend_id?: string
+  compression_backend_id?: string
+}
+
+export interface MemoryScheduleConfig {
+  extraction_enabled: boolean
+  extraction_interval_secs: number
+  compression_enabled: boolean
+  compression_interval_secs: number
+}
+
+export interface MemorySystemConfig {
+  enabled: boolean
+  storage_path: string
+  extraction: MemoryExtractionConfig
+  compression: MemoryCompressionConfig
+  llm: MemoryLlmConfig
+  schedule: MemoryScheduleConfig
+}
+
 // ========== Events Types ==========
 
 export interface Event {

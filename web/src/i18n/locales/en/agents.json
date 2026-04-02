@@ -475,5 +475,81 @@
       "America/Los_Angeles": "Los Angeles (UTC-8/-7)",
       "UTC": "UTC (UTC+0)"
     }
+  },
+  "tabs": {
+    "agents": "Agents",
+    "memory": "Memory"
+  },
+  "memory": {
+    "title": "System Memory",
+    "search": "Search memory...",
+    "source": {
+      "all": "All",
+      "agent": "Agent",
+      "chat": "Chat",
+      "system": "System"
+    },
+    "category": {
+      "all": "All",
+      "pattern": "Pattern",
+      "entity": "Entity",
+      "preference": "Preference",
+      "fact": "Fact"
+    },
+    "importance": "Importance",
+    "prune": "Prune Memory",
+    "export": "Export Markdown",
+    "empty": "No memory entries",
+    "emptyDesc": "Memory entries will appear here as agents and chats learn.",
+    "showMore": "Show more",
+    "showLess": "Show less",
+    "extract": "Extract",
+    "compress": "Compress",
+    "viewEdit": "View/Edit",
+    "config": {
+      "title": "Memory Configuration",
+      "description": "Configure memory extraction, compression, and LLM settings",
+      "extraction": "Extraction Settings",
+      "minMessages": "Min Messages",
+      "minMessagesHint": "Minimum messages to trigger extraction",
+      "minImportance": "Min Importance",
+      "minImportanceHint": "Minimum importance threshold (0-100)",
+      "similarityThreshold": "Similarity Threshold",
+      "similarityThresholdHint": "Dedup similarity (0-1)",
+      "dedupEnabled": "Deduplication",
+      "compression": "Compression Settings",
+      "decayPeriodDays": "Decay Period (Days)",
+      "compressionMinImportance": "Min Importance",
+      "compressionMinImportanceHint": "Entries below this will be deleted",
+      "llmBackends": "LLM Backends",
+      "extractionBackend": "Extraction Model",
+      "extractionBackendHint": "Lightweight model for extraction",
+      "compressionBackend": "Compression Model",
+      "compressionBackendHint": "Powerful model for summarization",
+      "defaultBackend": "Use default",
+      "schedule": "Schedule",
+      "autoExtraction": "Auto Extraction",
+      "extractionInterval": "Extraction Interval",
+      "autoCompression": "Auto Compression",
+      "compressionInterval": "Compression Interval"
+    },
+    "categories": {
+      "userProfile": "User Profile",
+      "domainKnowledge": "Domain Knowledge",
+      "taskPatterns": "Task Patterns",
+      "systemEvolution": "System Evolution"
+    },
+    "headers": {
+      "category": "Category",
+      "entries": "Entries",
+      "size": "Size",
+      "modified": "Modified"
+    },
+    "lines": "lines",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving...",
+    "edit": "Edit",
+    "empty": "No content yet"
   }
 }

@@ -97,6 +97,8 @@ import type {
   // Data Source Types
   TransformDataSourceInfo,
   UnifiedDataSourceInfo,
+  // Memory System Types
+  MemorySystemConfig,
 } from '@/types'
 import { notifyFromError, notifySuccess } from './notify'
 import { tokenManager as unifiedTokenManager } from './auth'
@@ -1905,25 +1907,14 @@ export const api = {
    * GET /api/memory/config
    */
   getMemoryConfig: () =>
-    fetchAPI<{
-      enabled: boolean
-      storage_path: string
-      extraction: { similarity_threshold: number }
-      compression: { decay_period_days: number; min_importance: number }
-      schedule: {
-        extraction_enabled: boolean
-        extraction_interval_secs: number
-        compression_enabled: boolean
-        compression_interval_secs: number
-      }
-    }>('/memory/config'),
+    fetchAPI<MemorySystemConfig>('/memory/config'),
 
   /**
    * Update memory configuration
    * PUT /api/memory/config
    */
-  updateMemoryConfig: (config: object) =>
-    fetchAPI<{ success: boolean; config: object }>('/memory/config', {
+  updateMemoryConfig: (config: Partial<MemorySystemConfig>) =>
+    fetchAPI<{ success: boolean; config: MemorySystemConfig }>('/memory/config', {
       method: 'PUT',
       body: JSON.stringify({ config }),
     }),
