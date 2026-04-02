@@ -257,10 +257,20 @@ pub async fn trigger_extract(
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
+    tracing::info!(
+        session_id = ?req.session_id,
+        force = req.force,
+        "Starting memory extraction request"
+    );
+
     // Get the LLM backend
     let llm_manager = match neomind_agent::get_instance_manager() {
-        Ok(manager) => manager,
+        Ok(manager) => {
+            tracing::debug!("Got LLM instance manager");
+            manager
+        }
         Err(e) => {
+            tracing::error!(error = %e, "Failed to get LLM instance manager");
             return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 format!("LLM backend not available: {}", e),
@@ -269,8 +279,16 @@ pub async fn trigger_extract(
     };
 
     let llm_runtime = match llm_manager.get_active_runtime().await {
-        Ok(runtime) => runtime,
+        Ok(runtime) => {
+            tracing::info!(
+                model = %runtime.model_name(),
+                backend = ?runtime.backend_id(),
+                "Got active LLM runtime"
+            );
+            runtime
+        }
         Err(e) => {
+            tracing::error!(error = %e, "No active LLM runtime configured");
             return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 format!("No active LLM backend configured: {}", e),
@@ -302,6 +320,7 @@ pub async fn trigger_extract(
     };
 
     if session_ids.is_empty() {
+        tracing::info!("No sessions available for extraction");
         return Json(ExtractionResponse {
             success: true,
             extracted: 0,
@@ -310,11 +329,18 @@ pub async fn trigger_extract(
         .into_response();
     }
 
+    tracing::info!(
+        session_count = session_ids.len(),
+        sessions = ?session_ids,
+        "Found sessions for extraction"
+    );
+
     // Get the memory store (wrapped in Arc<RwLock<>>)
     let memory_store = Arc::new(RwLock::new(state.agents.system_memory_store.as_ref().clone()));
 
     // Create extractor with custom config if force is set
     let config = if req.force {
+        tracing::debug!("Using force extraction config (min_messages=1)");
         ExtractionConfig {
             min_messages: 1,
             ..Default::default()
@@ -324,6 +350,7 @@ pub async fn trigger_extract(
     };
 
     let extractor = MemoryExtractor::with_config(memory_store, llm_runtime, config);
+    tracing::debug!("Created MemoryExtractor");
 
     // Extract from each session
     let mut total_extracted = 0;

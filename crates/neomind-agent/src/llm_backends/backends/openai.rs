@@ -1249,11 +1249,13 @@ impl CloudRuntime {
                                                                     .unwrap_or_else(|_| {
                                                                         serde_json::json!({})
                                                                     });
-                                                                let tc_json = serde_json::json!({
+                                                                // Wrap in array format for consistent parsing with OpenAI format
+                                                                // This ensures detect_json_tool_calls can properly detect the tool call
+                                                                let tc_json = serde_json::json!([{
                                                                     "id": id,
                                                                     "name": name,
                                                                     "arguments": args
-                                                                });
+                                                                }]);
                                                                 let json_str =
                                                                     serde_json::to_string(&tc_json)
                                                                         .unwrap_or_default();

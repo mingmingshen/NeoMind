@@ -268,6 +268,18 @@ impl MemoryExtractor {
 
     /// Call LLM with prompt and return response
     async fn call_llm(&self, prompt: &str) -> Result<String> {
+        tracing::info!(
+            prompt_length = prompt.len(),
+            model = %self.llm.model_name(),
+            "Calling LLM for memory extraction"
+        );
+
+        // Log prompt preview (first 500 chars)
+        tracing::debug!(
+            prompt_preview = %prompt.chars().take(500).collect::<String>(),
+            "Memory extraction prompt"
+        );
+
         let input = LlmInput::new(prompt).with_params(GenerationParams {
             temperature: Some(0.3), // Lower temperature for more consistent extraction
             max_tokens: Some(1024), // Limit response size
@@ -278,7 +290,23 @@ impl MemoryExtractor {
             .llm
             .generate(input)
             .await
-            .map_err(|e| crate::error::NeoMindError::Llm(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "LLM generation failed");
+                crate::error::NeoMindError::Llm(e.to_string())
+            })?;
+
+        // Log the LLM response
+        tracing::info!(
+            response_length = output.text.len(),
+            finish_reason = ?output.finish_reason,
+            "LLM response received"
+        );
+
+        // Log response preview (first 500 chars)
+        tracing::debug!(
+            response_preview = %output.text.chars().take(500).collect::<String>(),
+            "Memory extraction LLM response"
+        );
 
         Ok(output.text)
     }
