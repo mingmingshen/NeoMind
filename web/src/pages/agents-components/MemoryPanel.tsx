@@ -13,15 +13,11 @@ import {
   Eye,
   Pencil,
   Download,
-  RefreshCw,
-  Minimize2,
   Loader2,
-  Brain,
   User,
   BookOpen,
   Repeat2,
   Cpu,
-  FileText,
   Clock,
   Hash,
   Save,
@@ -32,12 +28,11 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogContentBody,
-} from "@/components/ui/dialog"
+  FullScreenDialog,
+  FullScreenDialogHeader,
+  FullScreenDialogContent,
+  FullScreenDialogFooter,
+} from "@/components/automation/dialog"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -136,7 +131,7 @@ export function MemoryPanel({ refreshKey }: MemoryPanelProps) {
   const [editing, setEditing] = useState(false)
   const [editContent, setEditContent] = useState("")
   const [saving, setSaving] = useState(false)
-  const [operating, setOperating] = useState<string | null>(null)
+  const [exporting, setExporting] = useState<string | null>(null)
 
   // Load stats
   const loadStats = useCallback(async () => {
@@ -195,9 +190,9 @@ export function MemoryPanel({ refreshKey }: MemoryPanelProps) {
     }
   }
 
-  // Handle export single category
-  const handleExportCategory = async (categoryId: string) => {
-    setOperating(`export-${categoryId}`)
+  // Handle export
+  const handleExport = async (categoryId: string) => {
+    setExporting(categoryId)
     try {
       const markdown = await api.exportAllMemory()
       const blob = new Blob([markdown], { type: "text/markdown" })
@@ -210,39 +205,15 @@ export function MemoryPanel({ refreshKey }: MemoryPanelProps) {
     } catch (error) {
       handleError(error, { operation: "Export memory" })
     } finally {
-      setOperating(null)
+      setExporting(null)
     }
   }
 
-  // Handle extract
-  const handleExtract = async () => {
-    setOperating("extract")
-    try {
-      await api.triggerMemoryExtract()
-      await loadStats()
-      if (selectedCategory) {
-        await loadContent(selectedCategory)
-      }
-    } catch (error) {
-      handleError(error, { operation: "Extract memory" })
-    } finally {
-      setOperating(null)
-    }
-  }
-
-  // Handle compress
-  const handleCompress = async () => {
-    setOperating("compress")
-    try {
-      await api.triggerMemoryCompress()
-      await loadStats()
-      if (selectedCategory) {
-        await loadContent(selectedCategory)
-      }
-    } catch (error) {
-      handleError(error, { operation: "Compress memory" })
-    } finally {
-      setOperating(null)
+  // Handle dialog close
+  const handleDialogClose = (open: boolean) => {
+    setDialogOpen(open)
+    if (!open) {
+      setEditing(false)
     }
   }
 
@@ -271,36 +242,6 @@ export function MemoryPanel({ refreshKey }: MemoryPanelProps) {
 
   return (
     <div className="space-y-4">
-      {/* Action buttons */}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleExtract}
-          disabled={operating !== null}
-        >
-          {operating === "extract" ? (
-            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4 mr-1" />
-          )}
-          {t("memory.extract", "Extract")}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleCompress}
-          disabled={operating !== null}
-        >
-          {operating === "compress" ? (
-            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-          ) : (
-            <Minimize2 className="h-4 w-4 mr-1" />
-          )}
-          {t("memory.compress", "Compress")}
-        </Button>
-      </div>
-
       {/* Category table */}
       <ResponsiveTable
         columns={[
@@ -403,115 +344,102 @@ export function MemoryPanel({ refreshKey }: MemoryPanelProps) {
           },
           {
             label: t("memory.export", "Export"),
-            icon: <Download className="h-4 w-4" />,
+            icon: exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />,
             onClick: (rowData) => {
               const row = rowData as unknown as MemoryCategoryRow
-              handleExportCategory(row.id)
+              handleExport(row.id)
             },
           },
         ]}
       />
 
-      {/* Content Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-4xl sm:max-h-[85vh] p-0 gap-0 flex flex-col [&>[data-radix-dialog-close]]:right-4 [&>[data-radix-dialog-close]]:top-4">
-          <DialogHeader className="px-4 pt-4 pb-3 sm:px-6 sm:pt-6 sm:pb-4 border-b shrink-0 pr-10">
-            <DialogTitle className="flex items-center gap-2">
-              {(() => {
-                const config = getSelectedCategoryConfig()
-                if (!config) return null
-                const Icon = config.icon
-                return (
-                  <>
-                    <div
-                      className={cn(
-                        "w-7 h-7 rounded-lg flex items-center justify-center border",
-                        config.color
-                      )}
-                    >
-                      <Icon className="h-3.5 w-3.5" />
-                    </div>
-                    <span>{t(config.labelKey, config.defaultLabel)}</span>
-                  </>
-                )
-              })()}
-            </DialogTitle>
-          </DialogHeader>
+      {/* Full Screen Dialog for View/Edit */}
+      <FullScreenDialog open={dialogOpen} onOpenChange={handleDialogClose}>
+        <FullScreenDialogHeader
+          icon={
+            (() => {
+              const config = getSelectedCategoryConfig()
+              if (!config) return null
+              const Icon = config.icon
+              return <Icon className="h-5 w-5" />
+            })()
+          }
+          iconBg={getSelectedCategoryConfig()?.color || "bg-muted"}
+          title={getSelectedCategoryConfig() ? t(getSelectedCategoryConfig()!.labelKey, getSelectedCategoryConfig()!.defaultLabel) : ""}
+          onClose={() => handleDialogClose(false)}
+        />
 
-          {/* Dialog toolbar */}
-          <div className="px-4 py-2 border-b flex items-center gap-2 bg-muted/30">
-            {editing ? (
-              <>
-                <Button size="sm" onClick={handleSave} disabled={saving}>
-                  {saving ? (
-                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4 mr-1" />
-                  )}
-                  {saving ? t("memory.saving", "Saving...") : t("memory.save", "Save")}
+        <FullScreenDialogContent>
+          {contentLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : editing ? (
+            <div className="h-full flex flex-col">
+              <CodeMirror
+                value={editContent}
+                height="100%"
+                onChange={(value) => setEditContent(value)}
+                theme={isDark ? "dark" : "light"}
+                className="flex-1 text-sm"
+                style={{
+                  fontSize: "14px",
+                  fontFamily:
+                    'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace',
+                }}
+              />
+            </div>
+          ) : (
+            <div className="prose prose-sm dark:prose-invert max-w-none p-6 overflow-auto h-full">
+              {content ? (
+                <ReactMarkdown>{content}</ReactMarkdown>
+              ) : (
+                <p className="text-muted-foreground italic">
+                  {t("memory.empty", "No content yet")}
+                </p>
+              )}
+            </div>
+          )}
+        </FullScreenDialogContent>
+
+        <FullScreenDialogFooter>
+          <div className="flex items-center justify-between w-full">
+            <div className="text-xs text-muted-foreground">
+              {content.split("\n").filter(l => l.trim()).length} {t("memory.lines", "lines")}
+            </div>
+            <div className="flex items-center gap-2">
+              {editing ? (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setEditContent(content)
+                      setEditing(false)
+                    }}
+                    disabled={saving}
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    {t("memory.cancel", "Cancel")}
+                  </Button>
+                  <Button onClick={handleSave} disabled={saving}>
+                    {saving ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4 mr-1" />
+                    )}
+                    {saving ? t("memory.saving", "Saving...") : t("memory.save", "Save")}
+                  </Button>
+                </>
+              ) : (
+                <Button onClick={() => setEditing(true)}>
+                  <Pencil className="h-4 w-4 mr-1" />
+                  {t("memory.edit", "Edit")}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setEditContent(content)
-                    setEditing(false)
-                  }}
-                  disabled={saving}
-                >
-                  <X className="h-4 w-4 mr-1" />
-                  {t("memory.cancel", "Cancel")}
-                </Button>
-              </>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setEditing(true)}
-              >
-                <Pencil className="h-4 w-4 mr-1" />
-                {t("memory.edit", "Edit")}
-              </Button>
-            )}
+              )}
+            </div>
           </div>
-
-          <DialogContentBody className="flex-1 overflow-y-auto">
-            {contentLoading ? (
-              <div className="space-y-2 p-4 sm:p-6">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-1/2" />
-              </div>
-            ) : editing ? (
-              <div className="p-0">
-                <CodeMirror
-                  value={editContent}
-                  height="calc(85vh - 180px)"
-                  onChange={(value) => setEditContent(value)}
-                  theme={isDark ? "dark" : "light"}
-                  className="text-sm"
-                  style={{
-                    fontSize: "14px",
-                    fontFamily:
-                      'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace',
-                  }}
-                />
-              </div>
-            ) : (
-              <div className="p-4 sm:p-6 prose prose-sm dark:prose-invert max-w-none">
-                {content ? (
-                  <ReactMarkdown>{content}</ReactMarkdown>
-                ) : (
-                  <p className="text-muted-foreground italic">
-                    {t("memory.empty", "No content yet")}
-                  </p>
-                )}
-              </div>
-            )}
-          </DialogContentBody>
-        </DialogContent>
-      </Dialog>
+        </FullScreenDialogFooter>
+      </FullScreenDialog>
     </div>
   )
 }
