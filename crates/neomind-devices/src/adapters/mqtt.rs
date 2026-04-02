@@ -45,6 +45,11 @@ use tracing::trace;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+// TLS support
+use rumqttc::{TlsConfiguration, Transport};
+use rustls_pki_types::{CertificateDer, PrivateKeyDer};
+use std::io::Cursor;
+
 /// MQTT device adapter configuration.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MqttAdapterConfig {
@@ -483,6 +488,328 @@ impl MqttAdapter {
 
         info!("Added MQTT broker: {} ({})", broker_id, broker_addr);
         Ok(())
+    }
+
+    /// Add a broker connection with full TLS support.
+    ///
+    /// This allows connecting to MQTT brokers with TLS/mTLS encryption.
+    pub async fn add_broker_with_tls(
+        &self,
+        broker_id: impl Into<String>,
+        broker_host: impl Into<String>,
+        broker_port: u16,
+        username: Option<String>,
+        password: Option<String>,
+        tls: bool,
+        ca_cert: Option<String>,
+        client_cert: Option<String>,
+        client_key: Option<String>,
+        client_id: Option<String>,
+        subscribe_topics: Vec<String>,
+    ) -> AdapterResult<()> {
+        let broker_id = broker_id.into();
+        let broker_host = broker_host.into();
+        let broker_addr = format!("{}:{}", broker_host, broker_port);
+
+        // Check if broker already exists
+        if self.mqtt_clients.read().await.contains_key(&broker_id) {
+            return Err(AdapterError::Configuration(format!(
+                "Broker already exists: {}",
+                broker_id
+            )));
+        }
+
+        // Build MQTT options
+        let mqtt_client_id =
+            client_id.unwrap_or_else(|| format!("neomind-{}-{}", broker_id, Uuid::new_v4()));
+        let mut mqttoptions = rumqttc::MqttOptions::new(&mqtt_client_id, &broker_host, broker_port);
+        mqttoptions.set_max_packet_size(10 * 1024 * 1024, 10 * 1024 * 1024);
+        mqttoptions.set_keep_alive(Duration::from_secs(60));
+
+        // Set credentials if provided
+        if let (Some(user), Some(pass)) = (username, password) {
+            mqttoptions.set_credentials(&user, &pass);
+        }
+
+        // Configure TLS if enabled
+        if tls {
+            let transport = Self::build_tls_transport(
+                ca_cert.as_deref(),
+                client_cert.as_deref(),
+                client_key.as_deref(),
+            )?;
+            mqttoptions.set_transport(transport);
+            info!(
+                "TLS enabled for broker {} with {} verification",
+                broker_id,
+                if ca_cert.is_some() {
+                    "custom CA"
+                } else {
+                    "system CA"
+                }
+            );
+        }
+
+        // Create client
+        let (client, eventloop) = rumqttc::AsyncClient::new(mqttoptions, 10);
+
+        let running = Arc::new(RwLock::new(true));
+        let subscribed_topics = Arc::new(RwLock::new(std::collections::HashSet::new()));
+
+        // Subscribe to initial topics on this broker
+        let mut initial_topics = vec![
+            "device/+/+/uplink".to_string(),
+            "device/+/+/downlink".to_string(),
+        ];
+        for topic in &self.config.subscribe_topics {
+            initial_topics.push(topic.clone());
+        }
+        // Add broker-specific topics
+        for topic in &subscribe_topics {
+            initial_topics.push(topic.clone());
+        }
+
+        for topic in &initial_topics {
+            debug!(
+                "Attempting to subscribe to topic '{}' on broker '{}'...",
+                topic, broker_id
+            );
+            if let Err(e) = client.subscribe(topic, rumqttc::QoS::AtLeastOnce).await {
+                warn!(
+                    "Failed to subscribe to {} on broker {}: {}",
+                    topic, broker_id, e
+                );
+            } else {
+                subscribed_topics.write().await.insert(topic.clone());
+                info!(
+                    "Successfully subscribed to topic '{}' on broker '{}'",
+                    topic, broker_id
+                );
+            }
+        }
+
+        info!(
+            "Subscribed to {} topics for broker '{}': {:?}",
+            subscribed_topics.read().await.len(),
+            broker_id,
+            subscribed_topics.read().await
+        );
+
+        // Store the client
+        let inner = MqttClientInner {
+            _broker_id: broker_id.clone(),
+            _broker_addr: broker_addr.clone(),
+            client,
+            running: running.clone(),
+            subscribed_topics,
+        };
+        self.mqtt_clients
+            .write()
+            .await
+            .insert(broker_id.clone(), inner);
+
+        // Restore topic_to_device and device_types mappings from device registry
+        let registry = self.device_registry.read().await;
+        let devices = registry.list_devices().await;
+        let mut topic_mapping = self.topic_to_device.write().await;
+        let mut type_mapping = self.device_types.write().await;
+        let mut restored_topic_count = 0;
+        let mut restored_type_count = 0;
+
+        for device in devices {
+            if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
+                topic_mapping.insert(telemetry_topic.clone(), device.device_id.clone());
+                restored_topic_count += 1;
+            }
+            type_mapping.insert(device.device_id.clone(), device.device_type.clone());
+            restored_type_count += 1;
+        }
+
+        drop(topic_mapping);
+        drop(type_mapping);
+        info!(
+            "Restored {} topic-to-device and {} device_type mappings for broker {}",
+            restored_topic_count, restored_type_count, broker_id
+        );
+
+        // Update connection status
+        self.update_connection_status().await;
+
+        // Spawn message processing task
+        let running_flag = running.clone();
+        let running_flag2 = running.clone();
+        let config = self.config.clone();
+        let event_tx = self.event_tx.clone();
+        let event_bus = self.event_bus.clone();
+        let device_types = self.device_types.clone();
+        let metric_cache = self.metric_cache.clone();
+        let telemetry_storage = self.telemetry_storage.clone();
+        let device_registry = self.device_registry.clone();
+        let connection_status = self.connection_status.clone();
+        let mqtt_clients = self.mqtt_clients.clone();
+        let broker_id_clone = broker_id.clone();
+        let broker_id_clone2 = broker_id.clone();
+        let extractor = self.extractor.clone();
+        let topic_to_device = self.topic_to_device.clone();
+
+        let (eventloop_tx, eventloop_rx) = async_channel::unbounded();
+        let event_tx_clone = event_tx.clone();
+
+        tokio::spawn(async move {
+            while *running_flag.read().await {
+                match eventloop_rx.recv().await {
+                    Ok(notification) => {
+                        Self::handle_mqtt_notification(
+                            notification,
+                            &config,
+                            &event_tx_clone,
+                            &event_bus,
+                            &device_types,
+                            &metric_cache,
+                            &telemetry_storage,
+                            &device_registry,
+                            &connection_status,
+                            &broker_id_clone,
+                            &extractor,
+                            &topic_to_device,
+                        )
+                        .await;
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        info!(
+            "Starting event loop task for broker '{}' with TLS, connecting to {}...",
+            broker_id, broker_addr
+        );
+
+        tokio::spawn(async move {
+            let mut eventloop = eventloop;
+            let mut error_count = 0;
+            let max_errors = 5;
+
+            while *running_flag2.read().await {
+                match eventloop.poll().await {
+                    Ok(notification) => {
+                        error_count = 0;
+                        if let Err(e) = eventloop_tx.send(notification).await {
+                            warn!("Failed to send MQTT notification to channel: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        error_count += 1;
+                        if error_count >= max_errors {
+                            error!(
+                                "MQTT broker {} error count reached {}, stopping: {}",
+                                broker_id_clone2, max_errors, e
+                            );
+                            break;
+                        }
+                        warn!(
+                            "MQTT broker {} error ({}/{}): {}",
+                            broker_id_clone2, error_count, max_errors, e
+                        );
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                }
+            }
+
+            mqtt_clients.write().await.remove(&broker_id_clone2);
+            info!("MQTT broker {} connection closed", broker_id_clone2);
+        });
+
+        info!(
+            "Added MQTT broker with TLS: {} ({})",
+            broker_id, broker_addr
+        );
+        Ok(())
+    }
+
+    /// Build TLS transport with optional certificates.
+    fn build_tls_transport(
+        ca_cert: Option<&str>,
+        client_cert: Option<&str>,
+        client_key: Option<&str>,
+    ) -> AdapterResult<Transport> {
+        // Use rumqttc's re-exported rustls types for compatibility
+        use rumqttc::tokio_rustls::rustls::{ClientConfig, RootCertStore};
+
+        let mut root_cert_store = RootCertStore::empty();
+
+        // Load custom CA certificate if provided
+        if let Some(ca_pem) = ca_cert {
+            let ca_certs = Self::load_certs(ca_pem).map_err(|e| {
+                AdapterError::Configuration(format!("Failed to load CA cert: {}", e))
+            })?;
+            let ca_cert_count = ca_certs.len();
+            for cert in ca_certs {
+                root_cert_store.add(cert).map_err(|e| {
+                    AdapterError::Configuration(format!("Failed to add CA cert to store: {}", e))
+                })?;
+            }
+            info!("Loaded {} CA certificates", ca_cert_count);
+        } else {
+            // Use system's native certificate store
+            let certs = rustls_native_certs::load_native_certs().map_err(|e| {
+                AdapterError::Configuration(format!("Failed to load native certs: {}", e))
+            })?;
+            for cert in certs {
+                root_cert_store.add(cert).map_err(|e| {
+                    AdapterError::Configuration(format!("Failed to add native cert: {}", e))
+                })?;
+            }
+            info!("Loaded system CA certificates");
+        }
+
+        // Build client config
+        let mut client_config = ClientConfig::builder()
+            .with_root_certificates(root_cert_store.clone())
+            .with_no_client_auth();
+
+        // Configure mTLS if client certificates are provided
+        if let (Some(cert_pem), Some(key_pem)) = (client_cert, client_key) {
+            let client_certs = Self::load_certs(cert_pem).map_err(|e| {
+                AdapterError::Configuration(format!("Failed to load client cert: {}", e))
+            })?;
+            let client_key = Self::load_private_key(key_pem).map_err(|e| {
+                AdapterError::Configuration(format!("Failed to load client key: {}", e))
+            })?;
+
+            client_config = ClientConfig::builder()
+                .with_root_certificates(root_cert_store)
+                .with_client_auth_cert(client_certs, client_key)
+                .map_err(|e| {
+                    AdapterError::Configuration(format!("Failed to configure mTLS: {}", e))
+                })?;
+            info!("Configured mTLS with client certificate");
+        }
+
+        Ok(Transport::tls_with_config(TlsConfiguration::from(
+            client_config,
+        )))
+    }
+
+    /// Load PEM-encoded certificates from a string.
+    fn load_certs(pem: &str) -> Result<Vec<CertificateDer<'static>>, Box<dyn std::error::Error>> {
+        let mut certs = Vec::new();
+        let mut pem_cursor = Cursor::new(pem.as_bytes());
+        let certs_iter = rustls_pemfile::certs(&mut pem_cursor);
+        for cert in certs_iter {
+            certs.push(cert?.to_owned());
+        }
+        Ok(certs)
+    }
+
+    /// Load a PEM-encoded private key from a string.
+    fn load_private_key(pem: &str) -> Result<PrivateKeyDer<'static>, Box<dyn std::error::Error>> {
+        let mut pem_cursor = Cursor::new(pem.as_bytes());
+        let keys_iter = rustls_pemfile::pkcs8_private_keys(&mut pem_cursor);
+        for key in keys_iter {
+            return Ok(PrivateKeyDer::Pkcs8(key?));
+        }
+        Err("No PKCS#8 private key found in PEM".into())
     }
 
     /// Remove a broker connection from this adapter.

@@ -34,6 +34,22 @@ pub struct MqttConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
 
+    /// Use TLS/SSL for secure connection
+    #[serde(default)]
+    pub tls: bool,
+
+    /// CA certificate for TLS verification (PEM format)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ca_cert: Option<String>,
+
+    /// Client certificate for mTLS (PEM format)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_cert: Option<String>,
+
+    /// Client private key for mTLS (PEM format)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_key: Option<String>,
+
     /// Keep-alive interval in seconds
     #[serde(default = "default_keep_alive")]
     pub keep_alive: u64,
@@ -71,6 +87,10 @@ impl MqttConfig {
             client_id: None,
             username: None,
             password: None,
+            tls: false,
+            ca_cert: None,
+            client_cert: None,
+            client_key: None,
             keep_alive: 60,
             clean_session: true,
             qos: 1,
@@ -92,6 +112,26 @@ impl MqttConfig {
 
     pub fn with_client_id(mut self, client_id: impl Into<String>) -> Self {
         self.client_id = Some(client_id.into());
+        self
+    }
+
+    pub fn with_tls(mut self, tls: bool) -> Self {
+        self.tls = tls;
+        self
+    }
+
+    pub fn with_ca_cert(mut self, ca_cert: impl Into<String>) -> Self {
+        self.ca_cert = Some(ca_cert.into());
+        self
+    }
+
+    pub fn with_client_cert(mut self, client_cert: impl Into<String>) -> Self {
+        self.client_cert = Some(client_cert.into());
+        self
+    }
+
+    pub fn with_client_key(mut self, client_key: impl Into<String>) -> Self {
+        self.client_key = Some(client_key.into());
         self
     }
 

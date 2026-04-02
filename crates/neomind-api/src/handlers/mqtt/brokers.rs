@@ -30,9 +30,18 @@ struct ExternalBrokerDto {
     username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     password: Option<String>,
-    /// Indicates if certificates are configured
-    #[serde(default)]
-    has_certs: bool,
+    /// CA certificate for TLS verification (PEM format)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ca_cert: Option<String>,
+    /// Client certificate for mTLS (PEM format)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_cert: Option<String>,
+    /// Client private key for mTLS (masked in response)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_key: Option<String>,
+    /// Custom MQTT client ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_id: Option<String>,
     enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     connected: Option<bool>,
@@ -58,8 +67,18 @@ impl From<ExternalBroker> for ExternalBrokerDto {
             } else {
                 None
             },
-            // Check if any certificates are configured
-            has_certs: b.ca_cert.is_some() || b.client_cert.is_some() || b.client_key.is_some(),
+            // Return CA cert as-is (public certificate)
+            ca_cert: b.ca_cert,
+            // Return client cert as-is (public certificate)
+            client_cert: b.client_cert,
+            // Mask client private key in response (sensitive)
+            client_key: if b.client_key.is_some() {
+                Some("*****".to_string())
+            } else {
+                None
+            },
+            // Return client_id
+            client_id: b.client_id,
             enabled: b.enabled,
             connected: Some(b.connected),
             last_error: b.last_error,
@@ -92,6 +111,9 @@ pub struct ExternalBrokerRequest {
     /// Client private key for mTLS (PEM format)
     #[serde(default)]
     pub client_key: Option<String>,
+    /// Custom MQTT client ID
+    #[serde(default)]
+    pub client_id: Option<String>,
     #[serde(default = "default_external_broker_enabled")]
     pub enabled: bool,
     /// Topics to subscribe to. Defaults to ["#"] for all topics.
@@ -133,9 +155,16 @@ pub async fn create_and_connect_broker(
         mqtt: neomind_devices::mqtt::MqttConfig {
             broker: broker.broker.clone(),
             port: broker.port,
-            client_id: Some(format!("neomind-external-{}", broker.id)),
+            client_id: broker
+                .client_id
+                .clone()
+                .or_else(|| Some(format!("neomind-external-{}", broker.id))),
             username: broker.username.clone(),
             password: broker.password.clone(),
+            tls: broker.tls,
+            ca_cert: broker.ca_cert.clone(),
+            client_cert: broker.client_cert.clone(),
+            client_key: broker.client_key.clone(),
             keep_alive: 60,
             clean_session: true,
             qos: 1,
@@ -166,6 +195,65 @@ pub async fn create_and_connect_broker(
             if let Some(mqtt) = adapter.as_any().downcast_ref::<MqttAdapter>() {
                 mqtt.set_shared_device_registry(context.device_service.get_registry().await)
                     .await;
+
+                // Use add_broker_with_tls for proper TLS support
+                match mqtt
+                    .add_broker_with_tls(
+                        &broker.id,
+                        &broker.broker,
+                        broker.port,
+                        broker.username.clone(),
+                        broker.password.clone(),
+                        broker.tls,
+                        broker.ca_cert.clone(),
+                        broker.client_cert.clone(),
+                        broker.client_key.clone(),
+                        broker.client_id.clone(),
+                        broker.subscribe_topics.clone(),
+                    )
+                    .await
+                {
+                    Ok(()) => {
+                        connected = true;
+                        tracing::info!(
+                            category = "mqtt",
+                            broker_id = %broker.id,
+                            tls = broker.tls,
+                            "MQTT adapter connected successfully with TLS={}",
+                            broker.tls
+                        );
+                    }
+                    Err(e) => {
+                        connection_error = Some(format!("MQTT connection failed: {}", e));
+                        tracing::warn!(
+                            category = "mqtt",
+                            broker_id = %broker.id,
+                            error = %e,
+                            "Failed to connect MQTT adapter"
+                        );
+                    }
+                }
+            } else {
+                // Fallback to standard start() if downcast fails (shouldn't happen)
+                match adapter.start().await {
+                    Ok(()) => {
+                        connected = true;
+                        tracing::info!(
+                            category = "mqtt",
+                            broker_id = %broker.id,
+                            "MQTT adapter started successfully (fallback)"
+                        );
+                    }
+                    Err(e) => {
+                        connection_error = Some(format!("MQTT connection failed: {}", e));
+                        tracing::warn!(
+                            category = "mqtt",
+                            broker_id = %broker.id,
+                            error = %e,
+                            "Failed to start MQTT adapter"
+                        );
+                    }
+                }
             }
 
             // Register adapter with device service
@@ -174,27 +262,6 @@ pub async fn create_and_connect_broker(
                 .device_service
                 .register_adapter(adapter_id.clone(), adapter.clone())
                 .await;
-
-            // Start the adapter
-            match adapter.start().await {
-                Ok(()) => {
-                    connected = true;
-                    tracing::info!(
-                        category = "mqtt",
-                        broker_id = %broker.id,
-                        "MQTT adapter started successfully"
-                    );
-                }
-                Err(e) => {
-                    connection_error = Some(format!("MQTT connection failed: {}", e));
-                    tracing::warn!(
-                        category = "mqtt",
-                        broker_id = %broker.id,
-                        error = %e,
-                        "Failed to start MQTT adapter"
-                    );
-                }
-            }
         }
         Err(e) => {
             connection_error = Some(format!("Failed to create adapter: {}", e));
@@ -310,6 +377,7 @@ pub async fn create_broker_handler(
     broker.ca_cert = req.ca_cert.clone();
     broker.client_cert = req.client_cert.clone();
     broker.client_key = req.client_key.clone();
+    broker.client_id = req.client_id.clone();
     broker.enabled = req.enabled;
     // Use custom subscribe_topics if provided, otherwise keep default
     if let Some(topics) = &req.subscribe_topics {
@@ -445,17 +513,27 @@ pub async fn update_broker_handler(
     broker.port = req.port;
     broker.tls = req.tls;
     broker.username = req.username;
-    // Only update password if provided (non-empty)
+    // Only update password if provided (non-empty) and not the masked placeholder
     if let Some(pwd) = req.password {
-        if !pwd.is_empty() {
+        if !pwd.is_empty() && pwd != "*****" {
             broker.password = Some(pwd);
         }
     }
     // Update certificates
     broker.ca_cert = req.ca_cert;
     broker.client_cert = req.client_cert;
-    broker.client_key = req.client_key;
+    // Only update client_key if provided and not the masked placeholder
+    if let Some(key) = req.client_key {
+        if !key.is_empty() && key != "*****" {
+            broker.client_key = Some(key);
+        }
+    } else {
+        // If client_key is explicitly set to None, clear it
+        broker.client_key = None;
+    }
     broker.enabled = req.enabled;
+    // Update client_id if provided
+    broker.client_id = req.client_id;
     // Update subscribe_topics if provided
     if let Some(topics) = req.subscribe_topics {
         broker.subscribe_topics = topics;
