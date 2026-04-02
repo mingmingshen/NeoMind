@@ -178,18 +178,20 @@ impl Tool for SystemHelpTool {
                 description: "获取系统概览".to_string(),
             }),
             category: ToolCategory::System,
-            scenarios: vec![
-                UsageScenario {
-                    description: "新用户了解系统".to_string(),
-                    example_query: "这个系统能做什么？".to_string(),
-                    suggested_call: Some(
-                        r#"{"tool": "system_help", "arguments": {"topic": "overview"}}"#.to_string(),
-                    ),
-                },
-            ],
+            scenarios: vec![UsageScenario {
+                description: "新用户了解系统".to_string(),
+                example_query: "这个系统能做什么？".to_string(),
+                suggested_call: Some(
+                    r#"{"tool": "system_help", "arguments": {"topic": "overview"}}"#.to_string(),
+                ),
+            }],
             relationships: ToolRelationships {
                 call_after: vec![],
-                output_to: vec!["device".to_string(), "agent".to_string(), "rule".to_string()],
+                output_to: vec![
+                    "device".to_string(),
+                    "agent".to_string(),
+                    "rule".to_string(),
+                ],
                 exclusive_with: vec![],
             },
             deprecated: false,

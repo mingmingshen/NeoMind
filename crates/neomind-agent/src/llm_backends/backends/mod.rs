@@ -52,7 +52,7 @@ pub fn create_backend(
             Ok(std::sync::Arc::new(OllamaRuntime::new(cfg)?))
         }
 
-        #[cfg(feature = "openai")]
+        #[cfg(feature = "cloud")]
         "openai" => {
             let mut cfg: CloudConfig = serde_json::from_value(config.clone())
                 .map_err(|e| anyhow::anyhow!("Invalid OpenAI config: {}", e))?;
@@ -60,7 +60,7 @@ pub fn create_backend(
             Ok(std::sync::Arc::new(CloudRuntime::new(cfg)?))
         }
 
-        #[cfg(feature = "anthropic")]
+        #[cfg(feature = "cloud")]
         "anthropic" => {
             let mut cfg: CloudConfig = serde_json::from_value(config.clone())
                 .map_err(|e| anyhow::anyhow!("Invalid Anthropic config: {}", e))?;
@@ -68,7 +68,7 @@ pub fn create_backend(
             Ok(std::sync::Arc::new(CloudRuntime::new(cfg)?))
         }
 
-        #[cfg(feature = "google")]
+        #[cfg(feature = "cloud")]
         "google" => {
             let mut cfg: CloudConfig = serde_json::from_value(config.clone())
                 .map_err(|e| anyhow::anyhow!("Invalid Google config: {}", e))?;
@@ -76,7 +76,7 @@ pub fn create_backend(
             Ok(std::sync::Arc::new(CloudRuntime::new(cfg)?))
         }
 
-        #[cfg(feature = "xai")]
+        #[cfg(feature = "cloud")]
         "xai" => {
             let mut cfg: CloudConfig = serde_json::from_value(config.clone())
                 .map_err(|e| anyhow::anyhow!("Invalid xAI config: {}", e))?;
@@ -127,16 +127,16 @@ pub fn available_backends() -> Vec<&'static str> {
     #[cfg(feature = "ollama")]
     backends.push("ollama");
 
-    #[cfg(feature = "openai")]
+    #[cfg(feature = "cloud")]
     backends.push("openai");
 
-    #[cfg(feature = "anthropic")]
+    #[cfg(feature = "cloud")]
     backends.push("anthropic");
 
-    #[cfg(feature = "google")]
+    #[cfg(feature = "cloud")]
     backends.push("google");
 
-    #[cfg(feature = "xai")]
+    #[cfg(feature = "cloud")]
     backends.push("xai");
 
     #[cfg(feature = "cloud")]
@@ -172,7 +172,7 @@ mod tests {
         assert_eq!(config.model, "qwen3-vl:2b");
     }
 
-    #[cfg(feature = "openai")]
+    #[cfg(feature = "cloud")]
     #[test]
     fn test_cloud_backend_openai() {
         let config = CloudConfig::openai("sk-test");

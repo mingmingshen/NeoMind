@@ -281,6 +281,18 @@ pub struct CloudRuntime {
     client: RateLimitedClient,
     model: String,
     metrics: Arc<RwLock<BackendMetrics>>,
+    /// Optional override for capabilities (from storage/API detection)
+    /// If None, capabilities are detected from model name heuristics
+    capabilities_override: Option<CloudCapabilities>,
+}
+
+/// Capabilities override for cloud runtime.
+#[derive(Debug, Clone)]
+struct CloudCapabilities {
+    supports_multimodal: bool,
+    supports_thinking: bool,
+    supports_tools: bool,
+    max_context: usize,
 }
 
 impl CloudRuntime {
@@ -320,7 +332,27 @@ impl CloudRuntime {
             client,
             model,
             metrics: Arc::new(RwLock::new(BackendMetrics::default())),
+            capabilities_override: None,
         })
+    }
+
+    /// Set capabilities override from storage/API detection.
+    /// This allows using accurate capabilities from the backend instance storage
+    /// instead of name-based heuristics.
+    pub fn with_capabilities_override(
+        mut self,
+        supports_multimodal: bool,
+        supports_thinking: bool,
+        supports_tools: bool,
+        max_context: usize,
+    ) -> Self {
+        self.capabilities_override = Some(CloudCapabilities {
+            supports_multimodal,
+            supports_thinking,
+            supports_tools,
+            max_context,
+        });
+        self
     }
 
     /// Convert messages to API format (provider-specific).
@@ -833,32 +865,55 @@ impl LlmRuntime for CloudRuntime {
     }
 
     fn supports_multimodal(&self) -> bool {
-        // Check if the specific model supports vision based on model name
-        let model = self.model.to_lowercase();
-        is_vision_model(&self.config.provider, &model)
+        // Use override if available, otherwise fall back to name-based detection
+        if let Some(ref caps) = self.capabilities_override {
+            caps.supports_multimodal
+        } else {
+            // Check if the specific model supports vision based on model name
+            let model = self.model.to_lowercase();
+            is_vision_model(&self.config.provider, &model)
+        }
     }
 
     fn capabilities(&self) -> BackendCapabilities {
-        let supports_multimodal = self.supports_multimodal();
-        let supports_function_calling = matches!(
-            self.config.provider,
-            CloudProvider::OpenAI
-                | CloudProvider::Qwen
-                | CloudProvider::DeepSeek
-                | CloudProvider::GLM
-                | CloudProvider::MiniMax
-                | CloudProvider::Google
-                | CloudProvider::Grok
-        );
+        // Use override if available (from storage), otherwise detect from name
+        let (supports_multimodal, supports_function_calling, supports_thinking, max_context) =
+            if let Some(ref caps) = self.capabilities_override {
+                (
+                    caps.supports_multimodal,
+                    caps.supports_tools,
+                    caps.supports_thinking,
+                    caps.max_context,
+                )
+            } else {
+                // Fall back to name-based heuristics
+                let supports_multimodal = self.supports_multimodal();
+                let supports_function_calling = matches!(
+                    self.config.provider,
+                    CloudProvider::OpenAI
+                        | CloudProvider::Qwen
+                        | CloudProvider::DeepSeek
+                        | CloudProvider::GLM
+                        | CloudProvider::MiniMax
+                        | CloudProvider::Google
+                        | CloudProvider::Grok
+                );
+                (
+                    supports_multimodal,
+                    supports_function_calling,
+                    false, // thinking not detected by name
+                    self.max_context_length(),
+                )
+            };
 
         BackendCapabilities {
             streaming: true,
             multimodal: supports_multimodal,
             function_calling: supports_function_calling,
             multiple_models: true,
-            max_context: Some(self.max_context_length()),
+            max_context: Some(max_context),
             modalities: vec!["text".to_string()],
-            thinking_display: false,
+            thinking_display: supports_thinking,
             supports_images: supports_multimodal,
             supports_audio: false,
         }

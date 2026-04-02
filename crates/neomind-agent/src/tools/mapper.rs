@@ -100,11 +100,11 @@ impl ToolNameMapper {
 
         // ===== 旧工具名称兼容映射 =====
         // 将旧工具名称映射到新的聚合工具
-        self.register_alias("list_workflows", "rule");  // 工作流暂用rule
+        self.register_alias("list_workflows", "rule"); // 工作流暂用rule
         self.register_alias("create_workflow", "rule");
         self.register_alias("trigger_workflow", "rule");
 
-        self.register_alias("list_scenarios", "rule");  // 场景暂用rule
+        self.register_alias("list_scenarios", "rule"); // 场景暂用rule
         self.register_alias("create_scenario", "rule");
         self.register_alias("execute_scenario", "rule");
     }

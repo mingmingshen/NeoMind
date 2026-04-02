@@ -43,6 +43,7 @@ pub mod error;
 pub mod llm;
 pub mod llm_backends; // Merged from neomind-llm crate
 pub mod memory;
+pub mod memory_extraction;
 pub mod prompts;
 pub mod session;
 pub mod smart_conversation;
@@ -69,6 +70,9 @@ pub use llm_backends::{
     get_instance_manager, BackendTypeDefinition, CloudConfig, CloudProvider, CloudRuntime,
     LlmBackendInstanceManager, OllamaConfig, OllamaRuntime,
 };
+
+// Re-export memory extraction types
+pub use memory_extraction::{add_memory, ExtractionConfig, MemoryExtractor};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

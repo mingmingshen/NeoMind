@@ -79,8 +79,8 @@ pub use extension_tools::{
 // ============================================================================
 
 pub use aggregated::{
-    AggregatedAlertInfo, AggregatedAlertSeverity, AggregatedToolsBuilder, AgentHistoryTool,
-    AgentTool, AlertTool, DeviceTool, RuleTool,
+    AgentHistoryTool, AgentTool, AggregatedAlertInfo, AggregatedAlertSeverity,
+    AggregatedToolsBuilder, AlertTool, DeviceTool, RuleTool,
 };
 
 /// Version information

@@ -533,12 +533,22 @@ pub fn format_tools_for_llm() -> String {
     prompt.push_str("- agent_history(action=\"executions|conversation\", agent_id=\"...\")\n");
     prompt.push_str("- rule(action=\"list|get|create|delete|history\", ...)\n");
     prompt.push_str("- alert(action=\"list|create|acknowledge\", ...)\n\n");
-    prompt.push_str("格式: [{\"name\":\"工具名\",\"arguments\":{\"action\":\"操作\",\"参数\":\"值\"}}]\n\n");
+    prompt.push_str(
+        "格式: [{\"name\":\"工具名\",\"arguments\":{\"action\":\"操作\",\"参数\":\"值\"}}]\n\n",
+    );
 
     for tool in tools {
         prompt.push_str(&format!("### {} - {}", tool.name, tool.description));
         if !tool.aliases.is_empty() {
-            prompt.push_str(&format!(" [别名:{}]", tool.aliases.iter().take(3).cloned().collect::<Vec<_>>().join(",")));
+            prompt.push_str(&format!(
+                " [别名:{}]",
+                tool.aliases
+                    .iter()
+                    .take(3)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ));
         }
         prompt.push('\n');
 
@@ -549,7 +559,12 @@ pub fn format_tools_for_llm() -> String {
         if !tool.optional.is_empty() {
             prompt.push_str(&format!(
                 " 可参:{}",
-                tool.optional.keys().take(5).cloned().collect::<Vec<_>>().join(",")
+                tool.optional
+                    .keys()
+                    .take(5)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(",")
             ));
         }
         prompt.push('\n');

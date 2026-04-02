@@ -1039,7 +1039,11 @@ impl AgentExecutor {
     }
 
     /// Check whether tool mode should be used for this agent execution.
-    fn should_use_tools(&self, agent: &AiAgent, llm_runtime: &Arc<dyn LlmRuntime + Send + Sync>) -> bool {
+    fn should_use_tools(
+        &self,
+        agent: &AiAgent,
+        llm_runtime: &Arc<dyn LlmRuntime + Send + Sync>,
+    ) -> bool {
         let llm_supports_tools = llm_runtime.capabilities().function_calling;
         let registry_available = self.tool_registry.is_some();
         let result = llm_supports_tools && registry_available;
@@ -1069,9 +1073,10 @@ impl AgentExecutor {
         use crate::agent::tool_parser::parse_tool_calls;
         use neomind_core::llm::backend::{GenerationParams, LlmInput};
 
-        let registry = self.tool_registry.as_ref().ok_or_else(|| {
-            NeoMindError::Tool("Tool registry not available".to_string())
-        })?;
+        let registry = self
+            .tool_registry
+            .as_ref()
+            .ok_or_else(|| NeoMindError::Tool("Tool registry not available".to_string()))?;
 
         // Get tool definitions, applying allowed_tools filter if configured
         let tool_defs_json = registry.definitions_json();
@@ -1081,27 +1086,40 @@ impl AgentExecutor {
             .cloned()
             .unwrap_or_default();
 
-        let filtered_tools: Vec<neomind_core::llm::backend::ToolDefinition> = if let Some(ref config) = agent.tool_config {
-            if config.allowed_tools.is_empty() {
-                tools_list
-                    .iter()
-                    .filter_map(|t| {
-                        Some(neomind_core::llm::backend::ToolDefinition {
-                            name: t.get("name")?.as_str()?.to_string(),
-                            description: t.get("description")?.as_str()?.to_string(),
-                            parameters: t.get("parameters")?.clone(),
+        let filtered_tools: Vec<neomind_core::llm::backend::ToolDefinition> =
+            if let Some(ref config) = agent.tool_config {
+                if config.allowed_tools.is_empty() {
+                    tools_list
+                        .iter()
+                        .filter_map(|t| {
+                            Some(neomind_core::llm::backend::ToolDefinition {
+                                name: t.get("name")?.as_str()?.to_string(),
+                                description: t.get("description")?.as_str()?.to_string(),
+                                parameters: t.get("parameters")?.clone(),
+                            })
                         })
-                    })
-                    .collect()
+                        .collect()
+                } else {
+                    tools_list
+                        .iter()
+                        .filter(|t| {
+                            t.get("name")
+                                .and_then(|n| n.as_str())
+                                .map(|n| config.allowed_tools.contains(&n.to_string()))
+                                .unwrap_or(true)
+                        })
+                        .filter_map(|t| {
+                            Some(neomind_core::llm::backend::ToolDefinition {
+                                name: t.get("name")?.as_str()?.to_string(),
+                                description: t.get("description")?.as_str()?.to_string(),
+                                parameters: t.get("parameters")?.clone(),
+                            })
+                        })
+                        .collect()
+                }
             } else {
                 tools_list
                     .iter()
-                    .filter(|t| {
-                        t.get("name")
-                            .and_then(|n| n.as_str())
-                            .map(|n| config.allowed_tools.contains(&n.to_string()))
-                            .unwrap_or(true)
-                    })
                     .filter_map(|t| {
                         Some(neomind_core::llm::backend::ToolDefinition {
                             name: t.get("name")?.as_str()?.to_string(),
@@ -1110,19 +1128,7 @@ impl AgentExecutor {
                         })
                     })
                     .collect()
-            }
-        } else {
-            tools_list
-                .iter()
-                .filter_map(|t| {
-                    Some(neomind_core::llm::backend::ToolDefinition {
-                        name: t.get("name")?.as_str()?.to_string(),
-                        description: t.get("description")?.as_str()?.to_string(),
-                        parameters: t.get("parameters")?.clone(),
-                    })
-                })
-                .collect()
-        };
+            };
 
         // Build system prompt
         let time_ctx = get_time_context();
@@ -1141,7 +1147,8 @@ impl AgentExecutor {
                 // When no data sources are bound, collect_data adds a placeholder with guidance
                 // This placeholder should NOT be treated as real sensor data
                 if d.source == "system"
-                    && d.values.get("message")
+                    && d.values
+                        .get("message")
                         .and_then(|v| v.as_str())
                         .map(|s| s.contains("No pre-collected data"))
                         .unwrap_or(false)
@@ -1167,6 +1174,7 @@ impl AgentExecutor {
             .collect();
 
         // Collect image data for multimodal support
+        // Handle both image_url (e.g., RTSP screenshots) and image_base64 formats
         let image_parts: Vec<_> = data_collected
             .iter()
             .filter(|d| {
@@ -1176,13 +1184,29 @@ impl AgentExecutor {
                     .unwrap_or(false)
             })
             .filter_map(|d| {
-                let base64 = d.values.get("image_base64")?.as_str()?;
-                let mime = d
-                    .values
-                    .get("image_mime_type")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("image/jpeg");
-                Some((base64.to_string(), mime.to_string()))
+                // Try image_url first (e.g., from RTSP camera snapshots)
+                if let Some(url) = d.values.get("image_url").and_then(|v| v.as_str()) {
+                    if !url.is_empty() {
+                        return Some(neomind_core::message::ContentPart::image_url(
+                            url.to_string(),
+                        ));
+                    }
+                }
+                // Fall back to base64 data
+                if let Some(base64) = d.values.get("image_base64").and_then(|v| v.as_str()) {
+                    if !base64.is_empty() {
+                        let mime = d
+                            .values
+                            .get("image_mime_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("image/jpeg");
+                        return Some(neomind_core::message::ContentPart::image_base64(
+                            base64.to_string(),
+                            mime.to_string(),
+                        ));
+                    }
+                }
+                None
             })
             .collect();
 
@@ -1194,7 +1218,10 @@ impl AgentExecutor {
                 .iter()
                 .map(|r| format!("- {} ({})", r.name, r.resource_id))
                 .collect();
-            format!("\nRecommended resources to focus on:\n{}\n", items.join("\n"))
+            format!(
+                "\nRecommended resources to focus on:\n{}\n",
+                items.join("\n")
+            )
         };
 
         // Build current data section with appropriate guidance
@@ -1233,12 +1260,8 @@ impl AgentExecutor {
             let mut parts = vec![neomind_core::message::ContentPart::text(
                 "Analyze the current situation and take appropriate actions using the available tools.",
             )];
-            for (data, mime) in &image_parts {
-                parts.push(neomind_core::message::ContentPart::image_base64(
-                    data.clone(),
-                    mime.clone(),
-                ));
-            }
+            // image_parts already contains ContentPart objects
+            parts.extend(image_parts.clone());
             neomind_core::message::Message::from_parts(
                 neomind_core::message::MessageRole::User,
                 parts,
@@ -1317,7 +1340,11 @@ impl AgentExecutor {
                     "Round {}: Executing {} tool(s): {}",
                     round + 1,
                     tool_calls.len(),
-                    tool_calls.iter().map(|tc| tc.name.as_str()).collect::<Vec<_>>().join(", ")
+                    tool_calls
+                        .iter()
+                        .map(|tc| tc.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             )
             .await;
@@ -1371,7 +1398,10 @@ impl AgentExecutor {
             .enumerate()
             .map(|(i, r)| {
                 let (desc, conf) = match &r.result {
-                    Ok(output) => (format!("Executed tool '{}'", r.name), if output.success { 0.9 } else { 0.3 }),
+                    Ok(output) => (
+                        format!("Executed tool '{}'", r.name),
+                        if output.success { 0.9 } else { 0.3 },
+                    ),
                     Err(e) => (format!("Tool '{}' failed: {}", r.name, e), 0.2),
                 };
                 ReasoningStep {
@@ -3284,10 +3314,13 @@ Respond in JSON format:
             match self.parse_intent(&agent.user_prompt).await {
                 Ok(intent) => {
                     // Update agent with parsed intent
-                    let _ = self
+                    if let Err(e) = self
                         .store
                         .update_agent_parsed_intent(&agent.id, Some(intent.clone()))
-                        .await;
+                        .await
+                    {
+                        tracing::warn!(agent_id = %agent.id, error = %e, "Failed to store parsed intent");
+                    }
                     Some(intent)
                 }
                 Err(e) => {
@@ -3539,10 +3572,13 @@ Respond in JSON format:
             match self.parse_intent(&agent.user_prompt).await {
                 Ok(intent) => {
                     // Update agent with parsed intent
-                    let _ = self
+                    if let Err(e) = self
                         .store
                         .update_agent_parsed_intent(&agent.id, Some(intent.clone()))
-                        .await;
+                        .await
+                    {
+                        tracing::warn!(agent_id = %agent.id, error = %e, "Failed to store parsed intent");
+                    }
                     Some(intent)
                 }
                 Err(e) => {
@@ -5250,7 +5286,7 @@ Respond in JSON format:
 
         // Build text data summary for non-image data
         // IMPORTANT: Filter out memory-related data to avoid confusing small models
-        let max_metrics = 6;
+        let max_metrics = 15;
         let text_data_summary: Vec<_> = data
             .iter()
             .filter(|d| {
@@ -5274,7 +5310,8 @@ Respond in JSON format:
                 // When no data sources are bound, collect_data adds a placeholder with guidance
                 // This placeholder should NOT be treated as real sensor data
                 if d.source == "system"
-                    && d.values.get("message")
+                    && d.values
+                        .get("message")
                         .and_then(|v| v.as_str())
                         .map(|s| s.contains("No pre-collected data"))
                         .unwrap_or(false)
@@ -5560,23 +5597,23 @@ Respond in JSON format:
         let system_prompt = if has_valid_images {
             if is_chinese {
                 format!(
-                    "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"图像内容描述\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"分析步骤\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n{}\n{}",
+                    "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"图像内容描述\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"分析步骤\", \"result\": \"该步骤的具体发现\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n{}\n{}",
                     role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
                 )
             } else {
                 format!(
-                    "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Image content description\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Analysis step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\"\n}}\n\n{}\n{}",
+                    "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Image content description\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Analysis step\", \"result\": \"Specific finding from this step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\"\n}}\n\n{}\n{}",
                     role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
                 )
             }
         } else if is_chinese {
             format!(
-                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"情况分析\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"步骤\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n{}\n{}",
+                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"情况分析\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"步骤\", \"result\": \"该步骤的具体发现\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n{}\n{}",
                 role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
             )
         } else {
             format!(
-                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Situation analysis\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\"\n}}\n\n{}\n{}",
+                "{}\n\n{}\n\n{}\n{{\n  \"situation_analysis\": \"Situation analysis\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"Step\", \"result\": \"Specific finding from this step\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"Description\", \"action\": \"log or device:command\", \"rationale\": \"Rationale\", \"confidence\": 0.8}}],\n  \"conclusion\": \"Conclusion\"\n}}\n\n{}\n{}",
                 role_prompt, resources_info, output_format_header, user_instruction_header, agent.user_prompt
             )
         };
@@ -5658,9 +5695,15 @@ Respond in JSON format:
                 // Check if we have image data that couldn't be displayed
                 if !image_sources_info.is_empty() {
                     if is_chinese {
-                        format!("当前只有图像数据（LLM 不支持视觉）：\n{}", image_sources_info.join("\n"))
+                        format!(
+                            "当前只有图像数据（LLM 不支持视觉）：\n{}",
+                            image_sources_info.join("\n")
+                        )
                     } else {
-                        format!("Image data only (LLM doesn't support vision):\n{}", image_sources_info.join("\n"))
+                        format!(
+                            "Image data only (LLM doesn't support vision):\n{}",
+                            image_sources_info.join("\n")
+                        )
                     }
                 } else if is_chinese {
                     "当前无预采集的传感器数据。请基于用户指令和已知模式进行分析，如需设备数据请建议用户绑定数据源。".to_string()
@@ -5780,6 +5823,9 @@ Respond in JSON format:
                     step: serde_json::Value,
                     #[serde(alias = "output", default)]
                     description: Option<String>,
+                    /// Step-specific result/finding (distinct from the overall situation_analysis)
+                    #[serde(default)]
+                    result: Option<String>,
                     #[serde(default)]
                     confidence: f32,
                 }
@@ -5815,13 +5861,16 @@ Respond in JSON format:
                             .reasoning_steps
                             .into_iter()
                             .enumerate()
-                            .map(|(_i, step)| neomind_storage::ReasoningStep {
-                                step_number: extract_step_number(&step.step, (_i + 1) as u32),
-                                description: step.description.unwrap_or_default(),
-                                step_type: "llm_analysis".to_string(),
-                                input: Some(text_data_summary.join("\n")),
-                                output: situation_analysis.clone(),
-                                confidence: step.confidence,
+                            .map(|(_i, step)| {
+                                let desc = step.description.clone().unwrap_or_default();
+                                neomind_storage::ReasoningStep {
+                                    step_number: extract_step_number(&step.step, (_i + 1) as u32),
+                                    description: desc.clone(),
+                                    step_type: "llm_analysis".to_string(),
+                                    input: Some(text_data_summary.join("\n")),
+                                    output: step.result.or_else(|| Some(desc)).unwrap_or_default(),
+                                    confidence: step.confidence,
+                                }
                             })
                             .collect();
 
@@ -5900,16 +5949,23 @@ Respond in JSON format:
                                             .reasoning_steps
                                             .into_iter()
                                             .enumerate()
-                                            .map(|(_i, step)| neomind_storage::ReasoningStep {
-                                                step_number: extract_step_number(
-                                                    &step.step,
-                                                    (_i + 1) as u32,
-                                                ),
-                                                description: step.description.unwrap_or_default(),
-                                                step_type: "llm_analysis".to_string(),
-                                                input: Some(text_data_summary.join("\n")),
-                                                output: situation_analysis.clone(),
-                                                confidence: step.confidence,
+                                            .map(|(_i, step)| {
+                                                let desc =
+                                                    step.description.clone().unwrap_or_default();
+                                                neomind_storage::ReasoningStep {
+                                                    step_number: extract_step_number(
+                                                        &step.step,
+                                                        (_i + 1) as u32,
+                                                    ),
+                                                    description: desc.clone(),
+                                                    step_type: "llm_analysis".to_string(),
+                                                    input: Some(text_data_summary.join("\n")),
+                                                    output: step
+                                                        .result
+                                                        .or_else(|| Some(desc))
+                                                        .unwrap_or_default(),
+                                                    confidence: step.confidence,
+                                                }
                                             })
                                             .collect();
 
@@ -5962,16 +6018,23 @@ Respond in JSON format:
                                             .reasoning_steps
                                             .into_iter()
                                             .enumerate()
-                                            .map(|(_i, step)| neomind_storage::ReasoningStep {
-                                                step_number: extract_step_number(
-                                                    &step.step,
-                                                    (_i + 1) as u32,
-                                                ),
-                                                description: step.description.unwrap_or_default(),
-                                                step_type: "llm_analysis".to_string(),
-                                                input: Some(text_data_summary.join("\n")),
-                                                output: situation_analysis.clone(),
-                                                confidence: step.confidence,
+                                            .map(|(_i, step)| {
+                                                let desc =
+                                                    step.description.clone().unwrap_or_default();
+                                                neomind_storage::ReasoningStep {
+                                                    step_number: extract_step_number(
+                                                        &step.step,
+                                                        (_i + 1) as u32,
+                                                    ),
+                                                    description: desc.clone(),
+                                                    step_type: "llm_analysis".to_string(),
+                                                    input: Some(text_data_summary.join("\n")),
+                                                    output: step
+                                                        .result
+                                                        .or_else(|| Some(desc))
+                                                        .unwrap_or_default(),
+                                                    confidence: step.confidence,
+                                                }
                                             })
                                             .collect();
 
@@ -6039,12 +6102,18 @@ Respond in JSON format:
                                             .and_then(|v| v.as_f64())
                                             .unwrap_or(0.8)
                                             as f32;
+                                        let step_result = item
+                                            .get("result")
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| s.to_string())
+                                            .or_else(|| Some(description.clone()))
+                                            .unwrap_or_default();
                                         reasoning_steps.push(neomind_storage::ReasoningStep {
                                             step_number: step_num,
                                             description,
                                             step_type: "llm_analysis".to_string(),
                                             input: Some(text_data_summary.join("\n")),
-                                            output: situation_analysis.clone(),
+                                            output: step_result,
                                             confidence,
                                         });
                                     }
@@ -6098,7 +6167,10 @@ Respond in JSON format:
                                                 description: "LLM analysis completed".to_string(),
                                                 step_type: "llm_analysis".to_string(),
                                                 input: Some(format!("{} data sources", data.len())),
-                                                output: situation_analysis.clone(),
+                                                output: situation_analysis
+                                                    .chars()
+                                                    .take(200)
+                                                    .collect::<String>(),
                                                 confidence: 0.7,
                                             }]
                                         } else {
@@ -7431,7 +7503,8 @@ Respond in JSON format:
             if is_chinese {
                 "当前无预采集数据，请使用可用工具查询需要的设备数据".to_string()
             } else {
-                "No pre-collected data available. Use available tools to query the data you need".to_string()
+                "No pre-collected data available. Use available tools to query the data you need"
+                    .to_string()
             }
         } else {
             current_data

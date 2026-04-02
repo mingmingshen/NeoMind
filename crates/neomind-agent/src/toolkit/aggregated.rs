@@ -199,33 +199,41 @@ impl DeviceTool {
                 if let Some(template) = self.device_service.get_template(&d.device_type).await {
                     // Add metrics info (simplified for AI consumption)
                     if !template.metrics.is_empty() {
-                        let metrics_info: Vec<Value> = template.metrics.iter().map(|m| {
-                            serde_json::json!({
-                                "name": m.name,
-                                "display_name": m.display_name,
-                                "unit": m.unit,
-                                "data_type": format!("{:?}", m.data_type)
+                        let metrics_info: Vec<Value> = template
+                            .metrics
+                            .iter()
+                            .map(|m| {
+                                serde_json::json!({
+                                    "name": m.name,
+                                    "display_name": m.display_name,
+                                    "unit": m.unit,
+                                    "data_type": format!("{:?}", m.data_type)
+                                })
                             })
-                        }).collect();
+                            .collect();
                         device_json["metrics"] = serde_json::json!(metrics_info);
                     }
 
                     // Add commands info (simplified for AI consumption)
                     if !template.commands.is_empty() {
-                        let commands_info: Vec<Value> = template.commands.iter().map(|c| {
-                            serde_json::json!({
-                                "name": c.name,
-                                "display_name": c.display_name,
-                                "parameters": c.parameters.iter().map(|p| {
-                                    serde_json::json!({
-                                        "name": p.name,
-                                        "display_name": p.display_name,
-                                        "data_type": format!("{:?}", p.data_type),
-                                        "required": p.required
-                                    })
-                                }).collect::<Vec<_>>()
+                        let commands_info: Vec<Value> = template
+                            .commands
+                            .iter()
+                            .map(|c| {
+                                serde_json::json!({
+                                    "name": c.name,
+                                    "display_name": c.display_name,
+                                    "parameters": c.parameters.iter().map(|p| {
+                                        serde_json::json!({
+                                            "name": p.name,
+                                            "display_name": p.display_name,
+                                            "data_type": format!("{:?}", p.data_type),
+                                            "required": p.required
+                                        })
+                                    }).collect::<Vec<_>>()
+                                })
                             })
-                        }).collect();
+                            .collect();
                         device_json["commands"] = serde_json::json!(commands_info);
                     }
                 }
@@ -278,7 +286,9 @@ impl DeviceTool {
             .ok_or_else(|| ToolError::Execution("Storage not configured".into()))?;
 
         let metric = args["metric"].as_str();
-        let end_time = args["end_time"].as_i64().unwrap_or_else(|| chrono::Utc::now().timestamp());
+        let end_time = args["end_time"]
+            .as_i64()
+            .unwrap_or_else(|| chrono::Utc::now().timestamp());
         let start_time = args["start_time"].as_i64().unwrap_or(end_time - 3600);
         let limit = args["limit"].as_u64().unwrap_or(100) as usize;
 
@@ -972,11 +982,10 @@ impl RuleTool {
             .map_err(|e| ToolError::Execution(format!("Failed to remove old rule: {}", e)))?;
 
         // Parse and add the new rule
-        let new_rule_id = self
-            .rule_engine
-            .add_rule_from_dsl(dsl)
-            .await
-            .map_err(|e| ToolError::Execution(format!("Failed to create updated rule: {}", e)))?;
+        let new_rule_id =
+            self.rule_engine.add_rule_from_dsl(dsl).await.map_err(|e| {
+                ToolError::Execution(format!("Failed to create updated rule: {}", e))
+            })?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "id": new_rule_id.to_string(),
@@ -1254,7 +1263,9 @@ impl AlertTool {
                 source.to_string(),
             );
 
-            let msg = manager.create_message(msg).await
+            let msg = manager
+                .create_message(msg)
+                .await
                 .map_err(|e| ToolError::Execution(e.to_string()))?;
 
             Ok(ToolOutput::success(serde_json::json!({
@@ -1302,7 +1313,9 @@ impl AlertTool {
             let alert_id = MessageId::from_string(alert_id_str)
                 .map_err(|e| ToolError::InvalidArguments(format!("Invalid alert_id: {}", e)))?;
 
-            manager.acknowledge(&alert_id).await
+            manager
+                .acknowledge(&alert_id)
+                .await
                 .map_err(|e| ToolError::Execution(e.to_string()))?;
 
             Ok(ToolOutput::success(serde_json::json!({
