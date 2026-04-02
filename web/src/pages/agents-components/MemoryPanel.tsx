@@ -45,7 +45,7 @@ const categoryConfig = [
     labelKey: "memory.categories.userProfile",
     defaultLabel: "User Profile",
     icon: User,
-    description: "用户偏好、习惯和设置",
+    description: "User preferences, habits and settings",
     color: "bg-blue-500/10 text-blue-600 border-blue-500/20",
   },
   {
@@ -53,7 +53,7 @@ const categoryConfig = [
     labelKey: "memory.categories.domainKnowledge",
     defaultLabel: "Domain Knowledge",
     icon: BookOpen,
-    description: "设备、协议和系统知识",
+    description: "Devices, protocols and system knowledge",
     color: "bg-green-500/10 text-green-600 border-green-500/20",
   },
   {
@@ -61,7 +61,7 @@ const categoryConfig = [
     labelKey: "memory.categories.taskPatterns",
     defaultLabel: "Task Patterns",
     icon: Repeat2,
-    description: "常见任务和操作模式",
+    description: "Common tasks and operation patterns",
     color: "bg-purple-500/10 text-purple-600 border-purple-500/20",
   },
   {
@@ -69,7 +69,7 @@ const categoryConfig = [
     labelKey: "memory.categories.systemEvolution",
     defaultLabel: "System Evolution",
     icon: Cpu,
-    description: "系统变更和优化记录",
+    description: "System changes and optimization records",
     color: "bg-orange-500/10 text-orange-600 border-orange-500/20",
   },
 ]
