@@ -10,11 +10,13 @@
 
 ---
 
-## 实测验证
+## 实测验证（2026-04-02）
 
-### Tool 模式（无绑定资源）— 2026-04-02 实测
+### Agent A: 工具模式 — 电池分析 Agent
 
-Agent 自主执行了 6 轮工具调用，发现电池异常并创建告警：
+- **绑定资源**: 无（Agent 自主发现设备）
+- **提示词**: "分析设备电池使用情况如果出现电池异常可以发送告警消息"
+- **执行时间**: 77.29s，6 轮工具调用
 
 ```
 Round 1: tool "device" → 列出2个NE101设备
@@ -25,18 +27,30 @@ Round 5: tool "device" → 查询101 PC Test设备batteryVoltage (空)
 Round 6: tool "alert"  → 创建低电量告警
 ```
 
-**优点**: Agent 自主发现设备、逐步排查、主动创建告警
-**问题**:
-1. 所有 reasoning step 都显示 "Executed tool 'device'" — 没有 LLM 的推理文本
+**结论正确**: 发现电池 41% 偏低，主动创建告警。
+
+**可改进点**:
+1. 所有 reasoning step 都显示 "Executed tool 'device'" — 没有 LLM 的推理文本（看不到"为什么"要查 battery）
 2. step_type 全部是 "tool_call" — 无法区分思考/行动/观察
 3. 工具返回的设备列表包含完整 metric schema（~800 tokens），浪费 context
-4. 前端只看到 "tool_call" 步骤，看不到 Agent "为什么" 要查 battery
 
-### 标准模式（有绑定资源）— 2026-04-02 实测
+### Agent B: 标准模式 — 图像监控 Agent
 
-Agent 只收集到图像数据，1 个 reasoning step，结论 "No actions required"，完全遗漏了电池异常。
+- **绑定资源**: 2 个 NE101 摄像头图像
+- **提示词**: "检查办公室中是否出现人员聚集或者火灾的情况，如果有请发送告警通知"
+- **执行结果**: 1 个 reasoning step，结论 "No actions required"
 
-**结论**: Tool 模式已经远优于标准模式。ReAct 增强的核心价值是让推理过程可见，而非改变执行逻辑。
+**结论正确**: 图像中确实没有人群聚集或火灾，无需告警。
+
+**可改进点**: reasoning_steps 只有 1 步 "Collect and analyze input data"，描述过于简单。
+
+### 两个 Agent 对比
+
+两个 Agent 执行的是**完全不同的任务**，各自结论都正确。ReAct 增强不是为了让标准模式"赶上"工具模式，而是：
+
+1. **让推理过程可见** — 工具模式 6 轮调用中，前端看不到 LLM "为什么"要查 battery
+2. **结构化步骤追踪** — thought/action/observation 分类比 "tool_call" 更直观
+3. **上下文效率** — 工具响应需要截断（实测 `list_devices` 返回 ~800 tokens 的完整 metric schema）
 
 ---
 
