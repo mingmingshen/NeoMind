@@ -369,28 +369,29 @@ export function MemoryPanel({ refreshKey }: MemoryPanelProps) {
           onClose={() => handleDialogClose(false)}
         />
 
-        <FullScreenDialogContent>
+        <FullScreenDialogContent className="flex-col">
           {contentLoading ? (
             <div className="flex items-center justify-center h-full">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : editing ? (
-            <div className="h-full flex flex-col">
+            <div className="w-full h-full overflow-hidden">
               <CodeMirror
                 value={editContent}
                 height="100%"
                 onChange={(value) => setEditContent(value)}
                 theme={isDark ? "dark" : "light"}
-                className="flex-1 text-sm"
                 style={{
                   fontSize: "14px",
                   fontFamily:
                     'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace',
+                  height: "100%",
+                  width: "100%",
                 }}
               />
             </div>
           ) : (
-            <div className="prose prose-sm dark:prose-invert max-w-none p-6 overflow-auto h-full">
+            <div className="prose prose-sm dark:prose-invert max-w-none p-6 overflow-auto h-full w-full">
               {content ? (
                 <ReactMarkdown>{content}</ReactMarkdown>
               ) : (
