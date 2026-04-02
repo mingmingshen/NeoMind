@@ -4,17 +4,20 @@
  * User-defined AI Agents for autonomous IoT automation.
  * Card grid layout with detail dialog for viewing individual agent details.
  * Uses WebSocket events for real-time agent status updates.
+ * Also includes System Memory tab for viewing aggregated memory.
  */
 
 import { useState, useCallback, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { PageLayout } from "@/components/layout/PageLayout"
+import { PageTabsBar, PageTabsContent, PageTabsBottomNav } from "@/components/shared"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
 import { useEvents } from "@/hooks/useEvents"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
-import { Loader2, Bot, Plus } from "lucide-react"
+import { useIsMobile } from "@/hooks/useMobile"
+import { Loader2, Bot, Plus, Brain, Cpu, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/shared/EmptyState"
 import type { AiAgent, AiAgentDetail, Extension, ExtensionDataSourceInfo, TransformDataSourceInfo } from "@/types"
@@ -25,6 +28,7 @@ import { AgentCard } from "./agents-components/AgentCard"
 import { AgentEditorFullScreen } from "./agents-components/AgentEditorFullScreen"
 import { ExecutionDetailDialog } from "./agents-components/ExecutionDetailDialog"
 import { AgentDetailPanel } from "./agents-components/AgentDetailPanel"
+import { MemoryPanel } from "./agents-components/MemoryPanel"
 import {
   Dialog,
   DialogContent,
@@ -54,6 +58,8 @@ export function AgentsPage() {
   // Data state
   const [agents, setAgents] = useState<AiAgent[]>([])
   const [loading, setLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState<string>("agents")
+  const [memoryRefreshKey, setMemoryRefreshKey] = useState(0)
 
   // Track executing agents for real-time updates with timestamps for timeout
   const [executingAgents, setExecutingAgents] = useState<Map<string, number>>(new Map())
@@ -402,55 +408,77 @@ export function AgentsPage() {
     };
   })
 
+  const isMobile = useIsMobile()
+
+  const tabs = [
+    { value: 'agents', label: tAgent('tabs.agents'), icon: <Cpu className="h-4 w-4" /> },
+    { value: 'memory', label: tAgent('tabs.memory'), icon: <Brain className="h-4 w-4" /> },
+  ]
+
+  const tabActions = activeTab === 'agents' && agents.length > 0
+    ? [{ label: tAgent('createAgent'), icon: <Plus className="h-4 w-4" />, onClick: handleCreate }]
+    : activeTab === 'memory'
+    ? [{ label: tCommon('refresh'), icon: <RefreshCw className="h-4 w-4" />, onClick: () => setMemoryRefreshKey(k => k + 1) }]
+    : []
+
   return (
     <PageLayout
       title={tAgent('title')}
       subtitle={tAgent('description')}
+      headerContent={
+        <PageTabsBar
+          tabs={tabs}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          actions={tabActions}
+        />
+      }
+      hideFooterOnMobile
     >
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : agents.length === 0 ? (
-        <div className="flex min-h-[500px] items-center justify-center">
-          <EmptyState
-            icon={<Bot className="h-12 w-12" />}
-            title={tAgent('noAgents')}
-            description={tAgent('noAgentsDesc')}
-            action={{
-              label: tAgent('createAgent'),
-              onClick: handleCreate,
-            }}
-          />
-        </div>
-      ) : (
-        <>
-          {/* Top action button - only show when there are agents */}
-          <div className="mb-4 flex justify-start">
-            <Button
-              size="sm"
-              onClick={handleCreate}
-              className="h-9"
-            >
-              <Plus className="h-4 w-4 mr-1.5" />
-              <span className="text-sm">{tAgent('createAgent')}</span>
-            </Button>
+      <PageTabsContent value="agents" activeTab={activeTab}>
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {agentsWithExecutingStatus.map((agent) => (
-            <AgentCard
-              key={agent.id}
-              agent={agent}
-              onToggleStatus={handleToggleStatus}
-              onExecute={handleExecute}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-              onClick={() => handleViewDetail(agent)}
+        ) : agents.length === 0 ? (
+          <div className="flex min-h-[500px] items-center justify-center">
+            <EmptyState
+              icon={<Bot className="h-12 w-12" />}
+              title={tAgent('noAgents')}
+              description={tAgent('noAgentsDesc')}
+              action={{
+                label: tAgent('createAgent'),
+                onClick: handleCreate,
+              }}
             />
-          ))}
-        </div>
-        </>
-      )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {agentsWithExecutingStatus.map((agent) => (
+              <AgentCard
+                key={agent.id}
+                agent={agent}
+                onToggleStatus={handleToggleStatus}
+                onExecute={handleExecute}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onClick={() => handleViewDetail(agent)}
+              />
+            ))}
+          </div>
+        )}
+      </PageTabsContent>
+
+      <PageTabsContent value="memory" activeTab={activeTab}>
+        <MemoryPanel refreshKey={memoryRefreshKey} />
+      </PageTabsContent>
+
+      {/* Mobile: Bottom navigation bar */}
+      <PageTabsBottomNav
+        tabs={tabs}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
 
       {/* Agent Editor Full Screen */}
       <AgentEditorFullScreen
