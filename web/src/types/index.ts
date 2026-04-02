@@ -615,6 +615,7 @@ export interface ExternalBroker {
   ca_cert?: string
   client_cert?: string
   client_key?: string
+  client_id?: string
   enabled: boolean
   connected?: boolean
   last_error?: string
@@ -644,6 +645,12 @@ export interface ExternalBrokerConnection {
   enabled: boolean
   last_error?: string
   subscribe_topics?: string[]
+  // TLS certificate fields
+  ca_cert?: string
+  client_cert?: string
+  client_key?: string
+  // MQTT client configuration
+  client_id?: string
 }
 
 export interface ApiResponse<T> {

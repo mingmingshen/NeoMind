@@ -1862,4 +1862,146 @@ export const api = {
    */
   listTimezones: () =>
     fetchAPI<{ timezones: Array<{ id: string; name: string }> }>('/settings/timezones'),
+
+  // ==========================================================================
+  // System Memory API - Category-based (New)
+  // ==========================================================================
+
+  /**
+   * Get memory content by category
+   * GET /api/memory/category/:category
+   */
+  getMemoryCategory: (category: string) =>
+    fetchAPI<{
+      category: string
+      content: string
+      stats: { entry_count: number; file_size: number; modified_at: number }
+    }>(`/memory/category/${category}`),
+
+  /**
+   * Update memory content by category
+   * PUT /api/memory/category/:category
+   */
+  updateMemoryCategory: (category: string, content: string) =>
+    fetchAPI<{ success: boolean; message: string }>(`/memory/category/${category}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }),
+
+  /**
+   * Get all memory statistics
+   * GET /api/memory/stats
+   */
+  getMemoryStats: () =>
+    fetchAPI<{
+      categories: Record<
+        string,
+        { entry_count: number; file_size: number; modified_at: number }
+      >
+    }>('/memory/stats'),
+
+  /**
+   * Get memory configuration
+   * GET /api/memory/config
+   */
+  getMemoryConfig: () =>
+    fetchAPI<{
+      enabled: boolean
+      storage_path: string
+      extraction: { similarity_threshold: number }
+      compression: { decay_period_days: number; min_importance: number }
+      schedule: {
+        extraction_enabled: boolean
+        extraction_interval_secs: number
+        compression_enabled: boolean
+        compression_interval_secs: number
+      }
+    }>('/memory/config'),
+
+  /**
+   * Update memory configuration
+   * PUT /api/memory/config
+   */
+  updateMemoryConfig: (config: object) =>
+    fetchAPI<{ success: boolean; config: object }>('/memory/config', {
+      method: 'PUT',
+      body: JSON.stringify({ config }),
+    }),
+
+  /**
+   * Trigger manual extraction
+   * POST /api/memory/extract
+   */
+  triggerMemoryExtract: () =>
+    fetchAPI<{ success: boolean; extracted: number; message: string }>('/memory/extract', {
+      method: 'POST',
+    }),
+
+  /**
+   * Trigger manual compression
+   * POST /api/memory/compress
+   */
+  triggerMemoryCompress: () =>
+    fetchAPI<{
+      success: boolean
+      compressed: number
+      deleted: number
+      message: string
+    }>('/memory/compress', {
+      method: 'POST',
+    }),
+
+  /**
+   * Export all memory as Markdown
+   * GET /api/memory/export
+   */
+  exportAllMemory: () =>
+    fetchAPI<string>('/memory/export', {
+      headers: { Accept: 'text/markdown' },
+    }),
+
+  // ==========================================================================
+  // System Memory API - File-based (Legacy)
+  // ==========================================================================
+
+  /**
+   * List all memory files
+   * GET /api/memory
+   */
+  listMemoryFiles: <T>() => fetchAPI<T>('/memory'),
+
+  /**
+   * Get memory file content
+   * GET /api/memory/:source_type/:id
+   */
+  getMemoryContent: (sourceType: string, id: string) =>
+    fetchAPI<{ id: string; source_type: string; content: string }>(`/memory/${sourceType}/${id}`),
+
+  /**
+   * Update memory file content
+   * PUT /api/memory/:source_type/:id
+   */
+  updateMemoryContent: (sourceType: string, id: string, content: string) =>
+    fetchAPI<{ success: boolean; message: string }>(`/memory/${sourceType}/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }),
+
+  /**
+   * Delete a memory file
+   * DELETE /api/memory/:source_type/:id
+   */
+  deleteMemoryFile: (sourceType: string, id: string) =>
+    fetchAPI<{ success: boolean; message: string }>(`/memory/${sourceType}/${id}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * Export all memory as Markdown (Legacy alias)
+   * GET /api/memory/export
+   */
+  exportMemory: () =>
+    fetchAPI<string>('/memory/export', {
+      headers: { Accept: 'text/markdown' },
+    }),
 }
