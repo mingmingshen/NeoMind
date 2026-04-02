@@ -175,6 +175,7 @@ impl LoadTestContext {
             llm_backend_store: None,
             extension_registry: None,
             tool_registry: None,
+            memory_store: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
