@@ -198,16 +198,7 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             xdg-utils \
-            liblzma-dev \
-            clang \
-            lld
-
-      - name: Configure Clang for Linux builds
-        if: startsWith(matrix.os, 'ubuntu')
-        run: |
-          # Use clang to avoid GCC memcmp bug with aws-lc-sys
-          echo "CC=clang" >> $GITHUB_ENV
-          echo "CXX=clang++" >> $GITHUB_ENV
+            liblzma-dev
 
       # ========== 优化：使用更快的构建选项 ==========
       - name: Build extension runner (optimized)
