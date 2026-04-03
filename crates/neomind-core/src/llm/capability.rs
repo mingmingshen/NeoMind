@@ -208,9 +208,8 @@ impl CapabilityDetector {
 
         // GLM (智谱)
         // glm-4v 系列: glm-4v, glm-4v-plus, glm-4v-flash
-        // glm-5 (支持视觉)
-        // 注意: glm-4-plus, glm-4-flash, glm-z1 不支持视觉
-        if model.contains("glm-4v") || model.contains("glm-5") {
+        // 注意: glm-4-plus, glm-4-flash, glm-5, glm-z1 不支持视觉
+        if model.contains("glm-4v") {
             return true;
         }
 
