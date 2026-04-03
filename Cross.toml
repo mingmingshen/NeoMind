@@ -9,13 +9,11 @@ image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:0.2.5"
 pre-build = [
     "apt-get update && apt-get install -y clang lld",
 ]
+env = { CC = "clang", CXX = "clang++" }
 
 [target.aarch64-unknown-linux-gnu]
 image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:0.2.5"
 pre-build = [
     "apt-get update && apt-get install -y clang lld",
 ]
-
-[env]
-CC = "clang"
-CXX = "clang++"
+env = { CC = "clang", CXX = "clang++" }
