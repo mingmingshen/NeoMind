@@ -121,6 +121,8 @@ struct AgentDto {
     priority: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     context_window_size: Option<usize>,
+    /// Execution mode: "chat" or "react"
+    execution_mode: String,
 }
 
 /// AI Agent detail.
@@ -154,6 +156,8 @@ struct AgentDetailDto {
     priority: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     context_window_size: Option<usize>,
+    /// Execution mode: "chat" or "react"
+    execution_mode: String,
 }
 
 /// Agent resource for API responses.
@@ -545,6 +549,7 @@ impl From<AiAgent> for AgentDto {
             max_chain_depth: Some(agent.max_chain_depth),
             priority: Some(agent.priority),
             context_window_size: Some(agent.context_window_size),
+            execution_mode: format!("{:?}", agent.execution_mode).to_lowercase(),
         }
     }
 }
@@ -682,6 +687,7 @@ impl From<&AiAgent> for AgentDetailDto {
             max_chain_depth: Some(agent.max_chain_depth),
             priority: Some(agent.priority),
             context_window_size: Some(agent.context_window_size),
+            execution_mode: format!("{:?}", agent.execution_mode).to_lowercase(),
         }
     }
 }
