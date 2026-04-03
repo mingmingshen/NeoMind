@@ -10,8 +10,9 @@ use tracing::{error, info, warn};
 
 use super::compressor::{CompressionResult, MemoryCompressor};
 use super::manager::MemoryManager;
+use crate::memory_extraction::MemoryExtractor;
 use neomind_core::llm::backend::LlmRuntime;
-use neomind_storage::{MarkdownMemoryStore, MemoryCategory, MemoryConfig};
+use neomind_storage::{MarkdownMemoryStore, MemoryCategory, MemoryConfig, SessionStore};
 
 /// Memory scheduler for background tasks
 pub struct MemoryScheduler {
@@ -19,6 +20,8 @@ pub struct MemoryScheduler {
     store: Arc<RwLock<MarkdownMemoryStore>>,
     config: MemoryConfig,
     llm: Arc<dyn LlmRuntime>,
+    /// Session store for extracting memories from chat history
+    session_store: Option<Arc<SessionStore>>,
     extraction_handle: Option<tokio::task::JoinHandle<()>>,
     compression_handle: Option<tokio::task::JoinHandle<()>>,
 }
@@ -41,6 +44,7 @@ impl MemoryScheduler {
             store,
             config,
             llm,
+            session_store: None,
             extraction_handle: None,
             compression_handle: None,
         }
@@ -58,9 +62,16 @@ impl MemoryScheduler {
             store,
             config,
             llm,
+            session_store: None,
             extraction_handle: None,
             compression_handle: None,
         }
+    }
+
+    /// Set the session store for chat history extraction
+    pub fn with_session_store(mut self, session_store: Arc<SessionStore>) -> Self {
+        self.session_store = Some(session_store);
+        self
     }
 
     /// Start background tasks
@@ -75,6 +86,7 @@ impl MemoryScheduler {
             let manager = self.manager.clone();
             let store = self.store.clone();
             let llm = self.llm.clone();
+            let session_store = self.session_store.clone();
             let interval_secs = self.config.schedule.extraction_interval_secs;
 
             self.extraction_handle = Some(tokio::spawn(async move {
@@ -82,6 +94,7 @@ impl MemoryScheduler {
 
                 info!(
                     interval_secs = interval_secs,
+                    has_session_store = session_store.is_some(),
                     "Memory extraction scheduler started"
                 );
 
@@ -90,7 +103,7 @@ impl MemoryScheduler {
 
                     info!("Scheduled memory extraction triggered");
 
-                    match Self::run_extraction(&manager, &store, &llm).await {
+                    match Self::run_extraction(&manager, &store, &llm, &session_store).await {
                         Ok(count) => {
                             info!(entries_extracted = count, "Extraction completed");
                         }
@@ -141,15 +154,90 @@ impl MemoryScheduler {
         }
     }
 
-    /// Run extraction on all categories
+    /// Run extraction on all sessions
     async fn run_extraction(
         _manager: &Arc<RwLock<MemoryManager>>,
-        _store: &Arc<RwLock<MarkdownMemoryStore>>,
-        _llm: &Arc<dyn LlmRuntime>,
+        store: &Arc<RwLock<MarkdownMemoryStore>>,
+        llm: &Arc<dyn LlmRuntime>,
+        session_store: &Option<Arc<SessionStore>>,
     ) -> Result<usize, String> {
-        // TODO: Implement extraction from session store
-        // For now, extraction is triggered manually via API
-        Ok(0)
+        let Some(session_store) = session_store else {
+            info!("No session store configured, skipping extraction");
+            return Ok(0);
+        };
+
+        // Get all sessions
+        let sessions = session_store
+            .list_sessions()
+            .map_err(|e| format!("Failed to list sessions: {}", e))?;
+
+        if sessions.is_empty() {
+            info!("No sessions found for extraction");
+            return Ok(0);
+        }
+
+        info!(session_count = sessions.len(), "Starting memory extraction from sessions");
+
+        // Create extractor
+        let extractor = MemoryExtractor::new(store.clone(), llm.clone());
+
+        let mut total_extracted = 0;
+        let mut processed = 0;
+        let mut skipped_no_messages = 0;
+        let mut errors = 0;
+
+        for session_id in sessions {
+            // Load session history
+            match session_store.load_history(&session_id) {
+                Ok(messages) => {
+                    if messages.len() < 3 {
+                        // Skip sessions with too few messages
+                        skipped_no_messages += 1;
+                        continue;
+                    }
+
+                    processed += 1;
+
+                    // Extract memories from chat
+                    match extractor.extract_from_chat(&messages).await {
+                        Ok(count) => {
+                            total_extracted += count;
+                            info!(
+                                session_id = %session_id,
+                                extracted = count,
+                                message_count = messages.len(),
+                                "Extracted memories from session"
+                            );
+                        }
+                        Err(e) => {
+                            errors += 1;
+                            warn!(
+                                session_id = %session_id,
+                                error = %e,
+                                "Failed to extract from session"
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        session_id = %session_id,
+                        error = %e,
+                        "Failed to load session history"
+                    );
+                }
+            }
+        }
+
+        info!(
+            total_extracted = total_extracted,
+            sessions_processed = processed,
+            sessions_skipped = skipped_no_messages,
+            errors = errors,
+            "Memory extraction completed"
+        );
+
+        Ok(total_extracted)
     }
 
     /// Run compression on all categories

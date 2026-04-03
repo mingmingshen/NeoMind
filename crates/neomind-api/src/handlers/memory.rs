@@ -466,15 +466,104 @@ pub async fn add_memory_entry(
 }
 
 /// POST /api/memory/compress - Trigger manual compression
-pub async fn trigger_compress(State(_state): State<ServerState>) -> Response {
-    // TODO: Implement actual compression
+pub async fn trigger_compress(State(state): State<ServerState>) -> Response {
+    use neomind_agent::memory::compressor::MemoryCompressor;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    tracing::info!("Starting memory compression request");
+
+    // Get the LLM backend
+    let llm_manager = match neomind_agent::get_instance_manager() {
+        Ok(manager) => {
+            tracing::debug!("Got LLM instance manager");
+            manager
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to get LLM instance manager");
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("LLM backend not available: {}", e),
+            )
+        }
+    };
+
+    let llm_runtime = match llm_manager.get_active_runtime().await {
+        Ok(runtime) => {
+            tracing::info!(
+                model = %runtime.model_name(),
+                backend = ?runtime.backend_id(),
+                "Got active LLM runtime for compression"
+            );
+            runtime
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "No active LLM runtime configured");
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("No active LLM backend configured: {}", e),
+            )
+        }
+    };
+
+    // Get the memory store
+    let memory_store = Arc::new(RwLock::new(state.agents.system_memory_store.as_ref().clone()));
+
+    // Create compressor
+    let compressor = MemoryCompressor::new(llm_runtime);
+
+    // Compress all categories
+    let mut total_result = CompressionResultSummary::default();
+
+    for category in MemoryCategory::all() {
+        match compressor.compress(&memory_store, category.clone()).await {
+            Ok(result) => {
+                tracing::info!(
+                    category = ?category,
+                    total_before = result.total_before,
+                    kept = result.kept,
+                    compressed = result.compressed,
+                    deleted = result.deleted,
+                    "Compression completed for category"
+                );
+                total_result.total_before += result.total_before;
+                total_result.kept += result.kept;
+                total_result.compressed += result.compressed;
+                total_result.deleted += result.deleted;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    category = ?category,
+                    error = %e,
+                    "Compression failed for category"
+                );
+            }
+        }
+    }
+
     Json(serde_json::json!({
         "success": true,
-        "compressed": 0,
-        "deleted": 0,
-        "message": "Compression triggered"
+        "total_before": total_result.total_before,
+        "kept": total_result.kept,
+        "compressed": total_result.compressed,
+        "deleted": total_result.deleted,
+        "message": format!(
+            "Compression completed: {} entries processed, {} compressed, {} deleted",
+            total_result.total_before,
+            total_result.compressed,
+            total_result.deleted
+        )
     }))
     .into_response()
+}
+
+/// Summary of compression results across all categories
+#[derive(Debug, Default)]
+struct CompressionResultSummary {
+    total_before: usize,
+    kept: usize,
+    compressed: usize,
+    deleted: usize,
 }
 
 /// GET /api/memory/export - Export all categories as Markdown

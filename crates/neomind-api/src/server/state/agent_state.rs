@@ -79,12 +79,16 @@ impl AgentState {
             neomind_agent::memory::MemoryManager::new(config.clone())
         ));
 
+        // Get session store from session manager for extraction
+        let session_store = self.session_manager.session_store();
+
         let mut scheduler = MemoryScheduler::with_config(
             manager,
             store,
             config,
             llm,
-        );
+        )
+        .with_session_store(session_store);
 
         scheduler.start();
 
