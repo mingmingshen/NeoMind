@@ -76,7 +76,6 @@ import type {
   ExtensionDataSourceInfo,
   ExtensionCommandDescriptor,
 } from "@/types"
-import { AgentLogicPreview } from "./AgentLogicPreview"
 // Unified dialog components
 import {
   FullScreenDialog,
@@ -1105,32 +1104,79 @@ export function AgentEditorFullScreen({
         onClose={() => onOpenChange(false)}
       />
 
-      {/* Two Column Content: Preview (Left, narrow) + Config (Right, wide) */}
       <FullScreenDialogContent>
         <FullScreenDialogMain className="overflow-hidden">
-          <div className="h-full grid grid-cols-1 lg:grid-cols-12 gap-0">
-            {/* Left: Logic Preview (narrower) */}
-            <div className="hidden lg:block lg:col-span-4 border-r overflow-hidden">
-              <AgentLogicPreview props={{
-                name,
-                userPrompt,
-                scheduleType,
-                intervalValue,
-                scheduleHour,
-                scheduleMinute,
-                selectedWeekdays,
-                eventConfig,
-                selectedResources,
-                isValid,
-              }} />
-            </div>
-
-            {/* Right: Configuration Form (wider) */}
-            <div className="col-span-12 lg:col-span-8 overflow-y-auto">
+          <div className="h-full overflow-y-auto">
               <div className={cn(
                 "space-y-6",
                 isMobile ? "px-4 py-6" : "px-4 py-6"
               )}>
+            {/* Execution Mode */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-2">
+                <Brain className="h-4 w-4 text-muted-foreground" />
+                {tAgent('executionMode', 'Execution Mode')}
+              </Label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setExecutionMode('chat')}
+                  className={cn(
+                    "relative flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all",
+                    executionMode === 'chat'
+                      ? "border-primary bg-primary/5 shadow-sm"
+                      : "border-border hover:border-primary/30"
+                  )}
+                >
+                  <div className="flex items-center gap-2 w-full">
+                    <div className={cn(
+                      "h-8 w-8 rounded-lg flex items-center justify-center",
+                      executionMode === 'chat' ? "bg-primary text-primary-foreground" : "bg-muted"
+                    )}>
+                      <MessageSquare className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium">{tAgent('chatMode', 'Chat Mode')}</div>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground pl-10">
+                    {tAgent('chatModeDesc', 'Single-pass LLM analysis. Fast responses, no tool calling.')}
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setExecutionMode('react')}
+                  className={cn(
+                    "relative flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all",
+                    executionMode === 'react'
+                      ? "border-primary bg-primary/5 shadow-sm"
+                      : "border-border hover:border-primary/30"
+                  )}
+                >
+                  <div className="flex items-center gap-2 w-full">
+                    <div className={cn(
+                      "h-8 w-8 rounded-lg flex items-center justify-center",
+                      executionMode === 'react' ? "bg-primary text-primary-foreground" : "bg-muted"
+                    )}>
+                      <Wrench className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium">{tAgent('reactMode', 'ReAct Mode')}</div>
+                      {executionMode === 'react' && (
+                        <Badge variant="secondary" className="text-xs h-4 mt-0.5">
+                          {tAgent('recommended', 'Recommended')}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground pl-10">
+                    {tAgent('reactModeDesc', 'Multi-round reasoning + tool calling. Plans actions, executes tools, analyzes results.')}
+                  </p>
+                </button>
+              </div>
+            </div>
+
             {/* Name */}
             <div className="space-y-2">
               <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>
@@ -1253,72 +1299,6 @@ export function AgentEditorFullScreen({
               {llmValidationError && (
                 <p className="text-xs text-destructive">{llmValidationError}</p>
               )}
-            </div>
-
-            {/* Execution Mode */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium flex items-center gap-2">
-                <Brain className="h-4 w-4 text-muted-foreground" />
-                {tAgent('executionMode', 'Execution Mode')}
-              </Label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setExecutionMode('chat')}
-                  className={cn(
-                    "relative flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all",
-                    executionMode === 'chat'
-                      ? "border-primary bg-primary/5 shadow-sm"
-                      : "border-border hover:border-primary/30"
-                  )}
-                >
-                  <div className="flex items-center gap-2 w-full">
-                    <div className={cn(
-                      "h-8 w-8 rounded-lg flex items-center justify-center",
-                      executionMode === 'chat' ? "bg-primary text-primary-foreground" : "bg-muted"
-                    )}>
-                      <MessageSquare className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-medium">{tAgent('chatMode', 'Chat Mode')}</div>
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground pl-10">
-                    {tAgent('chatModeDesc', 'Single-pass LLM analysis. Fast responses, no tool calling.')}
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setExecutionMode('react')}
-                  className={cn(
-                    "relative flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all",
-                    executionMode === 'react'
-                      ? "border-primary bg-primary/5 shadow-sm"
-                      : "border-border hover:border-primary/30"
-                  )}
-                >
-                  <div className="flex items-center gap-2 w-full">
-                    <div className={cn(
-                      "h-8 w-8 rounded-lg flex items-center justify-center",
-                      executionMode === 'react' ? "bg-primary text-primary-foreground" : "bg-muted"
-                    )}>
-                      <Wrench className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-medium">{tAgent('reactMode', 'ReAct Mode')}</div>
-                      {executionMode === 'react' && (
-                        <Badge variant="secondary" className="text-xs h-4 mt-0.5">
-                          {tAgent('recommended', 'Recommended')}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground pl-10">
-                    {tAgent('reactModeDesc', 'Multi-round reasoning + tool calling. Plans actions, executes tools, analyzes results.')}
-                  </p>
-                </button>
-              </div>
             </div>
 
             {/* Advanced Configuration */}
@@ -1747,7 +1727,6 @@ export function AgentEditorFullScreen({
               )}
             </div>
           </div>
-        </div>
         </div>
         </FullScreenDialogMain>
       </FullScreenDialogContent>

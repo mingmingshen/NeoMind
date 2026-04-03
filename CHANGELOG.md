@@ -11,6 +11,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.6.3] - 2025-04-03
+
+### 🎉 Overview
+
+Feature release focusing on **Memory System Integration** and **MQTT Security**.
+
+**Highlights**:
+- 🧠 **Memory Scheduler** - LLM-powered automatic memory extraction and compression
+- 📂 **Category-based Memory** - Reorganized memory with 4 categories (Profile, Knowledge, Tasks, Evolution)
+- 🔐 **MQTT mTLS Support** - Secure MQTT connections with client certificates
+- 🤖 **Agent LLM Decoupling** - Separate LLM backends for agents vs chat
+- 🎨 **Memory Panel Redesign** - Full-screen dialog with better UX
+
+---
+
+### ✨ New Features
+
+#### Memory System
+- **MemoryScheduler Integration** - Automatic memory extraction/compression on LLM backend activation
+- **MemoryCompressor** - LLM-based memory summarization with importance decay
+- **Category-based Memory API** - REST endpoints for UserProfile, DomainKnowledge, TaskPatterns, SystemEvolution
+- **Detailed Logging** - Track memory extraction progress and results
+
+#### MQTT Security
+- **mTLS Support** - Client certificate authentication for MQTT brokers
+- **CA Certificate** - Custom CA certificate configuration
+- **Secure Connection** - Enhanced TLS/SSL options for device connections
+
+#### Agent System
+- **Per-step Result Field** - Track execution results for each reasoning step
+- **LLM Backend Decoupling** - Agents use independent LLM backends, not tied to chat model
+- **Capability Correction** - Consistent vision/reasoning capability detection
+
+#### UI Improvements
+- **MemoryPanel Redesign** - Full-screen dialog with category tabs
+- **ResponsiveTable** - Better memory list display
+- **CodeMirror Width Fix** - Editor fills full dialog width
+- **AbortSignal Polyfill** - Better timeout handling for memory extraction
+
+---
+
+### 🔧 Improvements
+
+#### Code Quality
+- English prompts for memory extraction and compression
+- Removed old memory_extraction module, added compat stub
+- Updated integration tests for memory module refactor
+
+#### Vision Model Detection
+- Fixed Claude 4.5 model vision capability detection
+- Removed GLM-5 from vision support list
+
+---
+
+### 🐛 Bug Fixes
+
+- Fixed chat model selection overwriting agent LLM backends
+- Fixed LLM capability correction inconsistency
+- Fixed CodeMirror width in edit mode
+- Fixed memory extraction API response field
+
+---
+
+### 📁 Changed Files
+
+**New Features**:
+- `crates/neomind-agent/src/memory/scheduler.rs` - Memory scheduler
+- `crates/neomind-agent/src/memory/compressor.rs` - LLM compression
+- `crates/neomind-storage/src/system_memory.rs` - Category-based storage
+- `crates/neomind-api/src/handlers/memory.rs` - Memory API handlers
+- `web/src/pages/agents-components/MemoryPanel.tsx` - Redesigned UI
+
+**Modified**: 19 files, 1,135 insertions(+), 260 deletions(-)
+
+---
+
+### 🎯 Summary
+
+✅ Memory system with LLM-powered extraction and compression
+✅ MQTT mTLS for secure device connections
+✅ Category-based memory organization
+✅ Agent/chat LLM backend decoupling
+✅ Improved memory panel UX
+
+**Production-ready and recommended for all users.**
+
+---
+
+**Previous Release**: [v0.6.2](https://github.com/camthink-ai/NeoMind/releases/tag/v0.6.2)
+**Release Date**: April 3, 2025
+
+---
+
 ## [v0.6.2] - 2025-03-25
 
 ### 🎉 Overview
