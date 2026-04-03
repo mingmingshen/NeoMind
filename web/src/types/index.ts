@@ -2224,15 +2224,10 @@ export interface CreateAgentRequest {
   enable_tool_chaining?: boolean
   /** Maximum chain depth (default: 3) */
   max_chain_depth?: number
-  /** Agent priority 1-10 (default: 5) */
+  /** Agent priority 0-255 (default: 128) */
   priority?: number
-  /** Context window size in tokens (default: 8192) */
+  /** Context window size (default: 10) */
   context_window_size?: number
-  /** Tool configuration for function calling mode */
-  tool_config?: {
-    enabled: boolean
-    allowed_tools?: string[]
-  }
   /** Execution mode: "chat" for single-pass, "react" for multi-round tool calling */
   execution_mode?: 'chat' | 'react'
 }

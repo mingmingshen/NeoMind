@@ -3029,6 +3029,106 @@ Respond in JSON format:
         false
     }
 
+    /// Generate a conclusion summary using LLM when the original conclusion is empty or meaningless.
+    async fn generate_conclusion_summary(
+        &self,
+        agent: &AiAgent,
+        actions: &[neomind_storage::ActionExecuted],
+        chain_depth: usize,
+        original_prompt: &str,
+    ) -> AgentResult<String> {
+        // Get LLM runtime
+        let llm_runtime = match self.get_llm_runtime_for_agent(agent).await? {
+            Some(runtime) => runtime,
+            None => {
+                // Fallback to simple summary
+                let success_count = actions.iter().filter(|a| a.success).count();
+                return Ok(format!(
+                    "执行完成: 共 {} 轮, {} / {} 操作成功",
+                    chain_depth,
+                    success_count,
+                    actions.len()
+                ));
+            }
+        };
+
+        // Build action summary
+        let action_details: Vec<String> = actions.iter()
+            .take(5)
+            .map(|a| {
+                format!(
+                    "- {} -> {}: {} ({})",
+                    a.action_type,
+                    a.target,
+                    if a.success { "成功" } else { "失败" },
+                    a.result.as_deref().unwrap_or("无结果").chars().take(100).collect::<String>()
+                )
+            })
+            .collect();
+
+        let success_rate = if actions.is_empty() {
+            1.0
+        } else {
+            actions.iter().filter(|a| a.success).count() as f32 / actions.len() as f32
+        };
+
+        let prompt = format!(
+            r#"基于以下工具执行结果，生成一个简洁的总结（1-2句话）：
+
+用户原始请求：{}
+执行轮数：{}
+成功率：{:.0}%
+
+执行的操作：
+{}
+
+请直接输出总结，不要包含任何其他内容。"#,
+            original_prompt,
+            chain_depth,
+            success_rate * 100.0,
+            action_details.join("\n")
+        );
+
+        use neomind_core::llm::backend::{GenerationParams, LlmInput};
+        use neomind_core::message::{Message, MessageRole, Content};
+
+        let input = LlmInput {
+            messages: vec![
+                Message::new(MessageRole::System, Content::text("你是一个简洁的总结助手。用1-2句话总结执行结果。")),
+                Message::new(MessageRole::User, Content::text(&prompt)),
+            ],
+            params: GenerationParams {
+                max_tokens: Some(200),
+                temperature: Some(0.3),
+                ..Default::default()
+            },
+            model: None,
+            stream: false,
+            tools: None,
+        };
+
+        match llm_runtime.generate(input).await {
+            Ok(output) => {
+                let conclusion = output.text.trim().to_string();
+                if conclusion.is_empty() {
+                    Ok(format!("执行完成: 共 {} 轮, 成功率 {:.0}%", chain_depth, success_rate * 100.0))
+                } else {
+                    Ok(conclusion)
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to generate conclusion summary");
+                let success_count = actions.iter().filter(|a| a.success).count();
+                Ok(format!(
+                    "执行完成: 共 {} 轮, {} / {} 操作成功",
+                    chain_depth,
+                    success_count,
+                    actions.len()
+                ))
+            }
+        }
+    }
+
     /// Execute with tool chaining support
     async fn execute_with_chaining(
         &self,
@@ -3150,16 +3250,46 @@ Respond in JSON format:
                     final_dp.situation_analysis, chain_state.depth
                 );
             }
+
+            // If conclusion is empty or meaningless, generate via LLM
+            if final_dp.conclusion.is_empty()
+                || final_dp.conclusion == "No conclusion"
+                || final_dp.conclusion == "Completed tool execution rounds."
+                || final_dp.conclusion.len() < 10
+            {
+                final_dp.conclusion = self
+                    .generate_conclusion_summary(
+                        &agent,
+                        &all_actions_executed,
+                        chain_state.depth,
+                        &agent.user_prompt,
+                    )
+                    .await?;
+            }
+
             final_dp
         } else {
-            // Fallback (shouldn't happen)
+            // Fallback (shouldn't happen) - build from actions
+            let conclusion = if !all_actions_executed.is_empty() {
+                let success_count = all_actions_executed.iter().filter(|a| a.success).count();
+                let total_count = all_actions_executed.len();
+                format!(
+                    "执行完成: 共 {} 轮, {} / {} 操作成功",
+                    chain_state.depth,
+                    success_count,
+                    total_count
+                )
+            } else {
+                format!("执行完成: 共 {} 轮工具调用", chain_state.depth)
+            };
+
             DecisionProcess {
-                situation_analysis: "No decision process generated".to_string(),
+                situation_analysis: format!("Agent executed {} rounds via tool chaining", chain_state.depth),
                 data_collected: vec![],
                 reasoning_steps: vec![],
                 decisions: vec![],
-                conclusion: "No conclusion".to_string(),
-                confidence: 0.0,
+                conclusion,
+                confidence: 0.5,
             }
         };
 
@@ -3325,16 +3455,46 @@ Respond in JSON format:
                     final_dp.situation_analysis, chain_state.depth
                 );
             }
+
+            // If conclusion is empty or meaningless, generate via LLM
+            if final_dp.conclusion.is_empty()
+                || final_dp.conclusion == "No conclusion"
+                || final_dp.conclusion == "Completed tool execution rounds."
+                || final_dp.conclusion.len() < 10
+            {
+                final_dp.conclusion = self
+                    .generate_conclusion_summary(
+                        &agent,
+                        &all_actions_executed,
+                        chain_state.depth,
+                        &agent.user_prompt,
+                    )
+                    .await?;
+            }
+
             final_dp
         } else {
-            // Fallback (shouldn't happen)
+            // Fallback (shouldn't happen) - build from actions
+            let conclusion = if !all_actions_executed.is_empty() {
+                let success_count = all_actions_executed.iter().filter(|a| a.success).count();
+                let total_count = all_actions_executed.len();
+                format!(
+                    "执行完成: 共 {} 轮, {} / {} 操作成功",
+                    chain_state.depth,
+                    success_count,
+                    total_count
+                )
+            } else {
+                format!("执行完成: 共 {} 轮工具调用", chain_state.depth)
+            };
+
             DecisionProcess {
-                situation_analysis: "No decision process generated".to_string(),
+                situation_analysis: format!("Agent executed {} rounds via tool chaining", chain_state.depth),
                 data_collected: vec![],
                 reasoning_steps: vec![],
                 decisions: vec![],
-                conclusion: "No conclusion".to_string(),
-                confidence: 0.0,
+                conclusion,
+                confidence: 0.5,
             }
         };
 

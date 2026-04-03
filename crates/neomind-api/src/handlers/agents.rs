@@ -499,6 +499,9 @@ pub struct UpdateAgentRequest {
     pub priority: Option<u8>,
     #[serde(default)]
     pub context_window_size: Option<usize>,
+    /// Execution mode: "chat" for single-pass, "react" for multi-round tool calling
+    #[serde(default)]
+    pub execution_mode: Option<String>,
 }
 
 /// Resource in update request (new format).
@@ -1195,6 +1198,12 @@ pub async fn update_agent(
     }
     if let Some(context_window) = request.context_window_size {
         agent.context_window_size = context_window;
+    }
+    if let Some(mode) = request.execution_mode {
+        agent.execution_mode = match mode.as_str() {
+            "react" => neomind_storage::agents::ExecutionMode::React,
+            _ => neomind_storage::agents::ExecutionMode::Chat,
+        };
     }
 
     agent.updated_at = chrono::Utc::now().timestamp();

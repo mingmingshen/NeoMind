@@ -305,7 +305,6 @@ export function AgentEditorFullScreen({
   // Advanced configuration state
   const [executionMode, setExecutionMode] = useState<'chat' | 'react'>('chat')
   const [enableToolChaining, setEnableToolChaining] = useState(false)
-  const [enableToolMode, setEnableToolMode] = useState(false)
   const [maxChainDepth, setMaxChainDepth] = useState(3)
   const [priority, setPriority] = useState(5)
   const [contextWindowSize, setContextWindowSize] = useState(8192)
@@ -348,7 +347,6 @@ export function AgentEditorFullScreen({
         setLlmBackendId(agent.llm_backend_id || null)
         // Load advanced config from agent
         setEnableToolChaining(agent.enable_tool_chaining ?? false)
-        setEnableToolMode(agent.tool_config?.enabled ?? false)
         setExecutionMode(agent.execution_mode ?? 'chat')
         setMaxChainDepth(agent.max_chain_depth ?? 3)
         setPriority(agent.priority ?? 5)
@@ -364,7 +362,6 @@ export function AgentEditorFullScreen({
         // Reset to defaults
         setExecutionMode('chat')
         setEnableToolChaining(false)
-        setEnableToolMode(false)
         setMaxChainDepth(3)
         setPriority(5)
         setContextWindowSize(8192)
@@ -1032,7 +1029,6 @@ export function AgentEditorFullScreen({
         max_chain_depth: enableToolChaining ? maxChainDepth : undefined,
         priority: priority !== 5 ? priority : undefined,
         context_window_size: contextWindowSize !== 8192 ? contextWindowSize : undefined,
-        tool_config: enableToolMode ? { enabled: true, allowed_tools: [] } : undefined,
         execution_mode: executionMode,
       }
 
@@ -1321,59 +1317,45 @@ export function AgentEditorFullScreen({
 
               {showAdvanced && (
                 <div className="bg-muted/50 rounded-xl p-4 border space-y-4">
-                  {/* Tool Chaining */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5 max-w-[75%]">
-                        <Label className="text-sm font-medium">Enable Tool Chaining</Label>
-                        <p className="text-xs text-muted-foreground">
-                          Allow the agent to chain multiple tool calls for complex tasks
-                        </p>
-                      </div>
-                      <Switch
-                        checked={enableToolChaining}
-                        onCheckedChange={setEnableToolChaining}
-                      />
-                    </div>
-
-                    {enableToolChaining && (
-                      <div className="space-y-2">
-                        <Label className="text-xs text-muted-foreground">Max Chain Depth</Label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="range"
-                            min="1"
-                            max="10"
-                            value={maxChainDepth}
-                            onChange={(e) => setMaxChainDepth(parseInt(e.target.value))}
-                            className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer"
+                  {/* Tool Chaining - Only for ReAct Mode */}
+                  {executionMode === 'react' && (
+                    <>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5 max-w-[75%]">
+                            <Label className="text-sm font-medium">Enable Tool Chaining</Label>
+                            <p className="text-xs text-muted-foreground">
+                              Allow the agent to chain multiple tool calls for complex tasks
+                            </p>
+                          </div>
+                          <Switch
+                            checked={enableToolChaining}
+                            onCheckedChange={setEnableToolChaining}
                           />
-                          <span className="text-sm font-medium w-8 text-center">{maxChainDepth}</span>
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          Maximum number of sequential tool calls (1-10)
-                        </p>
+
+                        {enableToolChaining && (
+                          <div className="space-y-2">
+                            <Label className="text-xs text-muted-foreground">Max Chain Depth</Label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="range"
+                                min="1"
+                                max="10"
+                                value={maxChainDepth}
+                                onChange={(e) => setMaxChainDepth(parseInt(e.target.value))}
+                                className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer"
+                              />
+                              <span className="text-sm font-medium w-8 text-center">{maxChainDepth}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Maximum number of sequential tool calls (1-10)
+                            </p>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-
-                  <div className="h-px bg-border" />
-
-                  {/* Tool Mode */}
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5 max-w-[75%]">
-                      <Label className="text-sm font-medium">Tool Mode</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Enable function calling mode. The agent will use tools to actively query and interact with devices and services.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={enableToolMode}
-                      onCheckedChange={setEnableToolMode}
-                    />
-                  </div>
-
-                  <div className="h-px bg-border" />
+                    </>
+                  )}
 
                   {/* Agent Priority */}
                   <div className="space-y-2">
