@@ -1001,8 +1001,9 @@ fn parse_final_tool_response(text: &str) -> (String, String, f32) {
         return (situation_analysis, conclusion, confidence);
     }
 
-    // Fallback: use the whole text as both analysis and conclusion
-    (text.to_string(), text.to_string(), 0.5)
+    // Fallback: return empty analysis (caller will construct from reasoning history),
+    // use the text as conclusion
+    (String::new(), text.to_string(), 0.5)
 }
 
 impl AgentExecutor {
@@ -1044,6 +1045,17 @@ impl AgentExecutor {
         agent: &AiAgent,
         llm_runtime: &Arc<dyn LlmRuntime + Send + Sync>,
     ) -> bool {
+        use neomind_storage::agents::ExecutionMode;
+
+        // If execution_mode is explicitly set to Chat, skip tool mode
+        if agent.execution_mode == ExecutionMode::Chat {
+            tracing::info!(
+                agent_id = %agent.id,
+                "Execution mode is Chat - using direct LLM analysis"
+            );
+            return false;
+        }
+
         let llm_supports_tools = llm_runtime.capabilities().function_calling;
         let registry_available = self.tool_registry.is_some();
         let result = llm_supports_tools && registry_available;
@@ -1283,9 +1295,24 @@ impl AgentExecutor {
             user_msg,
         ];
 
+        // Per-round tracking for interleaved reasoning steps
+        #[derive(Debug)]
+        struct ToolCallRecord {
+            name: String,
+            input: serde_json::Value,
+            result: crate::toolkit::ToolResult,
+        }
+
+        struct RoundData {
+            thought: Option<String>,
+            tool_calls: Vec<ToolCallRecord>,
+        }
+
         // Tool execution loop (max 5 rounds)
         let max_rounds = 5;
         let mut all_tool_results: Vec<crate::toolkit::ToolResult> = Vec::new();
+        let mut round_data_list: Vec<RoundData> = Vec::new();
+        let mut all_reasoning_texts: Vec<String> = Vec::new();
         let mut final_text = String::new();
         let mut step_num = 1u32;
 
@@ -1358,14 +1385,39 @@ impl AgentExecutor {
 
             // Convert parsed tool calls to registry ToolCalls and execute
             let registry_calls: Vec<crate::toolkit::registry::ToolCall> = tool_calls
-                .into_iter()
+                .iter()
                 .map(|tc| crate::toolkit::registry::ToolCall {
-                    name: tc.name,
-                    args: tc.arguments,
-                    id: Some(tc.id),
+                    name: tc.name.clone(),
+                    args: tc.arguments.clone(),
+                    id: Some(tc.id.clone()),
                 })
                 .collect();
             let results = registry.execute_parallel(registry_calls).await;
+
+            // Capture reasoning text for this round
+            if !remaining_text.is_empty() {
+                all_reasoning_texts.push(remaining_text.clone());
+            }
+
+            // Collect tool info for this round
+            let mut round_tool_calls: Vec<ToolCallRecord> = Vec::new();
+            for (i, tc) in tool_calls.iter().enumerate() {
+                let result = results.get(i).cloned().unwrap_or_else(|| crate::toolkit::ToolResult {
+                    name: tc.name.clone(),
+                    result: Err(crate::toolkit::error::ToolError::Execution("No result".to_string())),
+                });
+                round_tool_calls.push(ToolCallRecord {
+                    name: tc.name.clone(),
+                    input: tc.arguments.clone(),
+                    result,
+                });
+            }
+
+            // Save round data
+            round_data_list.push(RoundData {
+                thought: if remaining_text.is_empty() { None } else { Some(remaining_text.clone()) },
+                tool_calls: round_tool_calls,
+            });
 
             // Add results to conversation
             for result in &results {
@@ -1385,45 +1437,177 @@ impl AgentExecutor {
             }
         }
 
+        // If LLM exhausted all rounds without producing a final conclusion,
+        // make one extra LLM call to generate a proper summary
+        let is_generic_fallback = final_text.is_empty();
+        if is_generic_fallback && !messages.is_empty() {
+            // Ask the LLM to summarize what happened
+            messages.push(neomind_core::message::Message::new(
+                neomind_core::message::MessageRole::User,
+                neomind_core::message::Content::text(
+                    "Based on all the tool results above, please provide a JSON summary in this exact format:\n\
+                     ```json\n\
+                     {\"situation_analysis\": \"brief analysis of what was found\", \"conclusion\": \"summary of findings and any actions taken\", \"confidence\": 0.85}\n\
+                     ```\n\
+                     Respond ONLY with the JSON block, no other text."
+                ),
+            ));
+
+            let summary_input = LlmInput {
+                messages: messages.clone(),
+                params: GenerationParams {
+                    temperature: Some(0.3),
+                    max_tokens: Some(1000),
+                    ..Default::default()
+                },
+                model: None,
+                stream: false,
+                tools: Some(filtered_tools.clone()),
+            };
+
+            match llm_runtime.generate(summary_input).await {
+                Ok(output) => {
+                    final_text = output.text.trim().to_string();
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to generate final summary: {}", e);
+                    final_text = "Completed tool execution rounds.".to_string();
+                }
+            }
+        }
+
         if final_text.is_empty() {
             final_text = "Completed tool execution rounds.".to_string();
         }
 
         // Parse final response for situation_analysis, conclusion, confidence
-        let (situation_analysis, conclusion, confidence) = parse_final_tool_response(&final_text);
+        let (mut situation_analysis, mut conclusion, confidence) = parse_final_tool_response(&final_text);
 
-        // Build DecisionProcess
-        let reasoning_steps: Vec<ReasoningStep> = all_tool_results
-            .iter()
-            .enumerate()
-            .map(|(i, r)| {
-                let (desc, conf) = match &r.result {
-                    Ok(output) => (
-                        format!("Executed tool '{}'", r.name),
-                        if output.success { 0.9 } else { 0.3 },
-                    ),
-                    Err(e) => (format!("Tool '{}' failed: {}", r.name, e), 0.2),
-                };
-                ReasoningStep {
-                    step_number: (i + 1) as u32,
-                    description: desc,
-                    step_type: "tool_call".to_string(),
+        // When the LLM exhausted all rounds without a clean conclusion,
+        // build meaningful analysis from accumulated reasoning and tool results
+        if is_generic_fallback || situation_analysis.is_empty() || situation_analysis == "Completed tool execution rounds." {
+            // Build situation analysis from reasoning texts
+            situation_analysis = if !all_reasoning_texts.is_empty() {
+                let combined = all_reasoning_texts.join(" ");
+                if combined.len() > 500 {
+                    let end = combined[..500].rfind(|c: char| c == '.' || c == '!' || c == '?')
+                        .map(|i| i + 1)
+                        .unwrap_or(500);
+                    format!("{}...", &combined[..end])
+                } else {
+                    combined
+                }
+            } else {
+                format!("Agent executed {} tool operations across {} rounds.", all_tool_results.len(), max_rounds)
+            };
+
+            // Build conclusion from tool results summary
+            conclusion = if !all_tool_results.is_empty() {
+                let tool_summary: Vec<String> = all_tool_results.iter()
+                    .filter_map(|r| match &r.result {
+                        Ok(output) => {
+                            let data = &output.data;
+                            if let Some(obj) = data.as_object() {
+                                if let Some(count) = obj.get("count") {
+                                    Some(format!("{} returned {} items", r.name, count))
+                                } else if let Some(msg) = obj.get("message").and_then(|m| m.as_str()) {
+                                    Some(format!("{}: {}", r.name, msg))
+                                } else if let Some(points) = obj.get("points").and_then(|p| p.as_array()) {
+                                    Some(format!("{} retrieved {} data points", r.name, points.len()))
+                                } else {
+                                    Some(format!("{} completed", r.name))
+                                }
+                            } else {
+                                Some(format!("{} completed", r.name))
+                            }
+                        }
+                        Err(e) => Some(format!("{} failed: {}", r.name, e)),
+                    })
+                    .collect();
+                tool_summary.join("; ") + "."
+            } else {
+                "No tools were executed during this agent run.".to_string()
+            };
+        }
+
+        // Build reasoning steps interleaved by round (thought -> tool_call)
+        let mut reasoning_steps: Vec<ReasoningStep> = Vec::new();
+        let mut step_counter = 0u32;
+
+        for round_data in &round_data_list {
+            // Add thought step if present
+            if let Some(thought) = &round_data.thought {
+                step_counter += 1;
+                reasoning_steps.push(ReasoningStep {
+                    step_number: step_counter,
+                    description: thought.clone(),
+                    step_type: "thought".to_string(),
                     input: None,
                     output: String::new(),
+                    confidence: 0.8,
+                });
+            }
+
+            // Add tool call steps
+            for tc in &round_data.tool_calls {
+                step_counter += 1;
+                let (desc, conf, step_type) = match &tc.result.result {
+                    Ok(output) => (
+                        format!("Executed tool '{}'", tc.name),
+                        if output.success { 0.9 } else { 0.3 },
+                        "tool_call",
+                    ),
+                    Err(e) => (format!("Tool '{}' failed: {}", tc.name, e), 0.2, "error"),
+                };
+
+                let input_str = serde_json::to_string(&tc.input).ok();
+                let output_str = match &tc.result.result {
+                    Ok(output) => {
+                    let data_str = serde_json::to_string(&output.data).unwrap_or_default();
+                    if data_str.len() > 2000 { format!("{}...", &data_str[..2000]) } else { data_str }
+                },
+                    Err(e) => format!("Error: {}", e),
+                };
+
+                reasoning_steps.push(ReasoningStep {
+                    step_number: step_counter,
+                    description: desc,
+                    step_type: step_type.to_string(),
+                    input: input_str,
+                    output: output_str,
                     confidence: conf,
-                }
-            })
-            .collect();
+                });
+            }
+        }
 
         let decisions: Vec<Decision> = all_tool_results
             .iter()
             .map(|r| {
                 let (desc, action) = match &r.result {
-                    Ok(output) => (
-                        format!("Executed tool '{}'", r.name),
-                        output.data.to_string(),
-                    ),
-                    Err(e) => (format!("Tool '{}' failed", r.name), e.to_string()),
+                    Ok(output) => {
+                        let action_summary = {
+                            let data = &output.data;
+                            if let Some(obj) = data.as_object() {
+                                if let Some(count) = obj.get("count") {
+                                    format!("Returned {} items", count)
+                                } else if let Some(msg) = obj.get("message").and_then(|m| m.as_str()) {
+                                    msg.to_string()
+                                } else if let Some(points) = obj.get("points").and_then(|p| p.as_array()) {
+                                    format!("{} data points retrieved", points.len())
+                                } else if let Some(id) = obj.get("id").and_then(|v| v.as_str()) {
+                                    let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or(id);
+                                    format!("Retrieved: {} ({})", name, id)
+                                } else {
+                                    let keys: Vec<&str> = obj.keys().take(3).map(|s| s.as_str()).collect();
+                                    format!("Fields: {}", keys.join(", "))
+                                }
+                            } else {
+                                "Completed".to_string()
+                            }
+                        };
+                        (format!("Executed tool '{}'", r.name), action_summary)
+                    },
+                    Err(e) => (format!("Tool '{}' failed", r.name), format!("Error: {}", e)),
                 };
                 Decision {
                     decision_type: "tool_execution".to_string(),

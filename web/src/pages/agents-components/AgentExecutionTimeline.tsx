@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,7 @@ import {
   Loader2,
   Zap,
   Bell,
+  ChevronUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
@@ -230,9 +231,22 @@ export function AgentExecutionTimeline({
                                     title={t('agents:memory.reasoningSteps')}
                                   >
                                     <div className="space-y-2">
-                                      {detail.decision_process.reasoning_steps.map((step, idx) => (
-                                        <ReasoningStepItem key={idx} step={step} />
-                                      ))}
+                                      {detail.decision_process.reasoning_steps.map((step, idx, steps) => {
+                                        // Detect round boundaries: a thought after a tool_call/error starts a new round
+                                        const prevStep = idx > 0 ? steps[idx - 1] : null;
+                                        const isNewRound = step.step_type === 'thought' &&
+                                          (prevStep?.step_type === 'tool_call' || prevStep?.step_type === 'error' || idx === 0);
+                                        // Count round number by counting thoughts up to this point
+                                        const roundNumber = steps.slice(0, idx + 1).filter(s => s.step_type === 'thought').length;
+                                        return (
+                                          <ReasoningStepItem
+                                            key={idx}
+                                            step={step}
+                                            showRoundSeparator={isNewRound}
+                                            roundNumber={roundNumber}
+                                          />
+                                        );
+                                      })}
                                     </div>
                                   </TimelineSection>
                                 )}
@@ -419,49 +433,176 @@ function TimelineSection({ icon, title, subtitle, children }: TimelineSectionPro
 
 function DataCollectedItem({ data }: { data: DataCollected }) {
   const { t } = useTranslation(['common', 'agents'])
+  const [expanded, setExpanded] = useState(false)
+
+  // Format values for display
+  const formatValues = (values: unknown): string => {
+    if (typeof values === 'string') return values
+    if (typeof values === 'number' || typeof values === 'boolean') return String(values)
+    if (typeof values === 'object' && values !== null) {
+      const obj = values as Record<string, unknown>
+      // For simple objects with few keys, show as key-value pairs
+      const keys = Object.keys(obj)
+      if (keys.length <= 5) {
+        const pairs = keys.map(k => {
+          const v = obj[k]
+          if (typeof v === 'object' && v !== null) {
+            return `${k}: ${JSON.stringify(v)}`
+          }
+          return `${k}: ${v}`
+        })
+        return pairs.join(', ')
+      }
+      return JSON.stringify(values, null, 2)
+    }
+    return String(values)
+  }
+
+  const formatted = formatValues(data.values)
+  const isLong = formatted.length > 200
+  const displayContent = expanded ? formatted : (isLong ? formatted.slice(0, 200) + '...' : formatted)
+
   return (
     <Card className="p-2 min-w-0">
       <div className="flex items-center justify-between mb-1 gap-2">
         <span className="text-xs font-medium truncate flex-1 min-w-0" title={data.source}>{data.source}</span>
         <Badge variant="outline" className="text-xs h-5 shrink-0">{data.data_type}</Badge>
       </div>
-      <pre className="text-xs bg-muted p-1.5 rounded overflow-x-auto max-h-24 w-full min-w-0 break-all">
-        {typeof data.values === 'object'
-          ? JSON.stringify(data.values, null, 2)
-          : String(data.values)}
-      </pre>
+      <div className="text-xs bg-muted p-1.5 rounded w-full min-w-0 break-words whitespace-pre-wrap font-mono">
+        {displayContent}
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="text-xs text-primary hover:underline mt-0.5 flex items-center gap-0.5"
+        >
+          {expanded ? (
+            <>{t('agents:memory.showLess', 'Show less')} <ChevronUp className="h-3 w-3" /></>
+          ) : (
+            <>{t('agents:memory.showMore', 'Show more')} <ChevronDown className="h-3 w-3" /></>
+          )}
+        </button>
+      )}
     </Card>
   )
 }
 
-function ReasoningStepItem({ step }: { step: ReasoningStep }) {
-  const { t } = useTranslation(['common', 'agents'])
+/// Collapsible output display for long tool results
+function CollapsibleOutput({ label, content }: { label: string; content: string }) {
+  const { t } = useTranslation(['agents'])
+  const [expanded, setExpanded] = useState(false)
+  const isLong = content.length > 300
+  const displayContent = expanded ? content : (isLong ? content.slice(0, 300) + '...' : content)
+
   return (
-    <div className="flex gap-3 min-w-0">
-      <div className="flex flex-col items-center shrink-0">
-        <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">
-          {step.step_number}
-        </div>
-        {step.step_number < 10 && <div className="w-0.5 flex-1 bg-border min-h-[24px]" />}
+    <div className="mt-1.5">
+      <div className="text-xs text-muted-foreground mb-0.5 font-medium">{label}:</div>
+      <div className="text-xs bg-muted p-2 rounded break-words font-mono whitespace-pre-wrap">
+        {displayContent}
       </div>
-      <div className="flex-1 min-w-0 pb-4">
-        <div className="text-sm break-words">{step.description}</div>
-        {step.input && (
-          <div className="text-xs text-muted-foreground mt-1 break-words">
-            {t('agents:memory.input')}: {step.input}
-          </div>
-        )}
-        {step.output && (
-          <div className="text-xs bg-muted p-2 rounded mt-2 break-words">
-            {t('agents:memory.output')}: {step.output}
-          </div>
-        )}
-        <div className="flex items-center gap-2 mt-2 flex-wrap">
-          <Badge variant="outline" className="text-xs h-5">{step.step_type}</Badge>
-          <span className="text-xs text-muted-foreground">
-            {t('agents:memory.confidence')}: {(step.confidence * 100).toFixed(0)}%
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="text-xs text-primary hover:underline mt-0.5 flex items-center gap-0.5"
+        >
+          {expanded ? (
+            <>{t('memory.showLess', 'Show less')} <ChevronUp className="h-3 w-3" /></>
+          ) : (
+            <>{t('memory.showMore', 'Show more')} <ChevronDown className="h-3 w-3" /></>
+          )}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function ReasoningStepItem({ step, showRoundSeparator, roundNumber }: { step: ReasoningStep; showRoundSeparator?: boolean; roundNumber?: number }) {
+  const { t } = useTranslation(['common', 'agents'])
+  const [descExpanded, setDescExpanded] = useState(false)
+
+  // Different visual styles based on step type
+  const isThought = step.step_type === 'thought'
+  const isError = step.step_type === 'error'
+  const isLongDesc = step.description.length > 300
+  const displayDesc = descExpanded ? step.description : (isLongDesc ? step.description.slice(0, 300) + '...' : step.description)
+
+  const numberBg = isError ? 'bg-red-500 text-white' :
+                    isThought ? 'bg-blue-500 text-white' :
+                    'bg-primary text-primary-foreground'
+  const borderColor = isError ? 'border-red-200 dark:border-red-800' :
+                      isThought ? 'border-blue-200 dark:border-blue-800' :
+                      'border-border'
+
+  return (
+    <div>
+      {/* Round separator - shown above the step content */}
+      {showRoundSeparator && roundNumber !== undefined && (
+        <div className="flex items-center gap-2 mb-3 -mt-1">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+          <span className="text-xs text-muted-foreground font-medium shrink-0 px-2">
+            {t('agents:memory.round', 'Round {{round}}', { round: roundNumber })}
           </span>
+          <div className="h-px flex-1 bg-gradient-to-l from-transparent via-border to-transparent" />
         </div>
+      )}
+      <div className="flex gap-3 min-w-0">
+        <div className="flex flex-col items-center shrink-0">
+          <div className={cn("w-6 h-6 rounded-full text-xs flex items-center justify-center", numberBg)}>
+            {step.step_number}
+          </div>
+          <div className={cn("w-0.5 flex-1 min-h-[24px]", isError ? "bg-red-200 dark:bg-red-800" : isThought ? "bg-blue-200 dark:bg-blue-800" : "bg-border")} />
+        </div>
+        <div className={cn("flex-1 min-w-0 pb-4 pl-1")}>
+        {/* Description with icon */}
+        <div className="flex items-start gap-1.5">
+          {isThought && <span className="text-blue-500 text-xs mt-0.5 shrink-0">&#x1F4AD;</span>}
+          {isError && <span className="text-red-500 text-xs mt-0.5 shrink-0">&#x26A0;</span>}
+          <div className={cn(
+            "text-sm break-words",
+            isThought && "italic text-blue-700 dark:text-blue-300",
+            isError && "text-red-600 dark:text-red-400"
+          )}>
+            {displayDesc}
+          </div>
+        </div>
+        {isLongDesc && (
+          <button
+            type="button"
+            onClick={() => setDescExpanded(!descExpanded)}
+            className="text-xs text-primary hover:underline mt-0.5 flex items-center gap-0.5"
+          >
+            {descExpanded ? (
+              <>{t('agents:memory.showLess', 'Show less')} <ChevronUp className="h-3 w-3" /></>
+            ) : (
+              <>{t('agents:memory.showMore', 'Show more')} <ChevronDown className="h-3 w-3" /></>
+            )}
+          </button>
+        )}
+
+        {/* Tool input */}
+        {step.input && (
+          <div className="text-xs text-muted-foreground mt-1.5 flex gap-1">
+            <span className="font-medium shrink-0">{t('agents:memory.input')}:</span>
+            <code className="bg-muted px-1.5 py-0.5 rounded text-xs break-all flex-1">{step.input}</code>
+          </div>
+        )}
+
+        {/* Tool output - collapsible for long outputs */}
+        {step.output && (
+          <CollapsibleOutput label={t('agents:memory.output')} content={step.output} />
+        )}
+
+        {/* Step type badge only - no per-step confidence */}
+        <Badge variant="outline" className={cn(
+          "text-xs h-5 mt-1.5",
+          isError && "border-red-300 text-red-600",
+          isThought && "border-blue-300 text-blue-600"
+        )}>
+          {step.step_type}
+        </Badge>
+      </div>
       </div>
     </div>
   )

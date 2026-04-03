@@ -425,7 +425,13 @@
     "advanced": {
       "title": "高级配置",
       "dataCollection": "数据收集配置",
-      "selectMetricsFirst": "请先选择指标"
+      "selectMetricsFirst": "请先选择指标",
+      "executionMode": "执行模式",
+      "chatMode": "对话模式",
+      "chatModeDesc": "单次 LLM 分析，快速响应，不使用工具调用。",
+      "reactMode": "ReAct 模式",
+      "reactModeDesc": "多轮推理 + 工具调用。规划行动、执行工具、分析结果。",
+      "recommended": "推荐"
     },
     "dataCollection": {
       "title": "数据收集配置",
@@ -480,7 +486,7 @@
     "agents": "智能体",
     "memory": "记忆"
   },
-  "memory": {
+  "systemMemory": {
     "title": "系统记忆",
     "search": "搜索记忆...",
     "source": {

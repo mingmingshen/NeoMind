@@ -86,6 +86,9 @@ pub struct AiAgent {
     /// Tool configuration for function calling mode
     #[serde(default)]
     pub tool_config: Option<AgentToolConfig>,
+    /// Execution mode: chat (single-pass) or react (multi-round tool calling)
+    #[serde(default)]
+    pub execution_mode: ExecutionMode,
     /// Error message (if status is error)
     pub error_message: Option<String>,
 }
@@ -212,6 +215,17 @@ pub enum AgentStatus {
     Error,
     /// Executing
     Executing,
+}
+
+/// Agent execution mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ExecutionMode {
+    /// Direct LLM conversation - single pass analysis
+    #[default]
+    Chat,
+    /// ReAct mode - multi-round reasoning + tool calling loop
+    React,
 }
 
 /// Agent execution statistics.

@@ -765,6 +765,16 @@ pub async fn activate_backend_handler(
         tracing::warn!(category = "settings", error = %e, "Failed to save LLM config to SettingsStore after backend activation");
     }
 
+    // Start the memory scheduler with the new LLM backend
+    // Get the runtime from the instance manager
+    if let Ok(instance_manager) = neomind_agent::get_instance_manager() {
+        if let Ok(runtime) = instance_manager.get_active_runtime().await {
+            if let Err(e) = state.agents.start_memory_scheduler(runtime).await {
+                tracing::warn!(category = "memory", error = %e, "Failed to start memory scheduler");
+            }
+        }
+    }
+
     ok(json!({
         "id": id,
         "message": "Backend activated successfully",

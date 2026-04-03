@@ -6,13 +6,15 @@
 //! - AgentStore for agent persistence
 //! - AgentManager for executing user-defined agents
 //! - MarkdownMemoryStore for system-level memory
+//! - MemoryScheduler for background memory tasks
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use neomind_agent::memory::TieredMemory;
+use neomind_agent::memory::{MemoryScheduler, TieredMemory};
 use neomind_agent::SessionManager;
-use neomind_storage::{AgentStore, MarkdownMemoryStore};
+use neomind_core::llm::backend::LlmRuntime;
+use neomind_storage::{AgentStore, MarkdownMemoryStore, MemoryConfig};
 
 /// AI Agent manager type alias.
 pub type AgentManager = Arc<neomind_agent::ai_agent::AiAgentManager>;
@@ -36,6 +38,9 @@ pub struct AgentState {
 
     /// System memory store for Markdown-based persistent memory.
     pub system_memory_store: Arc<MarkdownMemoryStore>,
+
+    /// Memory scheduler for background extraction/compression (lazy-initialized).
+    pub memory_scheduler: Arc<RwLock<Option<MemoryScheduler>>>,
 }
 
 impl AgentState {
@@ -53,6 +58,49 @@ impl AgentState {
             agent_store,
             agent_manager,
             system_memory_store,
+            memory_scheduler: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Start the memory scheduler with LLM runtime
+    pub async fn start_memory_scheduler(
+        &self,
+        llm: Arc<dyn LlmRuntime>,
+    ) -> Result<(), String> {
+        let config = MemoryConfig::load();
+
+        if !config.enabled {
+            tracing::info!("Memory system disabled, not starting scheduler");
+            return Ok(());
+        }
+
+        let store = Arc::new(RwLock::new((*self.system_memory_store).clone()));
+        let manager = Arc::new(RwLock::new(
+            neomind_agent::memory::MemoryManager::new(config.clone())
+        ));
+
+        let mut scheduler = MemoryScheduler::with_config(
+            manager,
+            store,
+            config,
+            llm,
+        );
+
+        scheduler.start();
+
+        let mut scheduler_guard = self.memory_scheduler.write().await;
+        *scheduler_guard = Some(scheduler);
+
+        tracing::info!("Memory scheduler started successfully");
+        Ok(())
+    }
+
+    /// Stop the memory scheduler
+    pub async fn stop_memory_scheduler(&self) {
+        let mut scheduler_guard = self.memory_scheduler.write().await;
+        if let Some(mut scheduler) = scheduler_guard.take() {
+            scheduler.stop();
+            tracing::info!("Memory scheduler stopped");
         }
     }
 
@@ -67,6 +115,7 @@ impl AgentState {
             system_memory_store: Arc::new(MarkdownMemoryStore::new(
                 std::env::temp_dir().join("test-memory"),
             )),
+            memory_scheduler: Arc::new(RwLock::new(None)),
         }
     }
 }

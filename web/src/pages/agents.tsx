@@ -469,9 +469,9 @@ export function AgentsPage() {
     ? [{ label: tAgent('createAgent'), icon: <Plus className="h-4 w-4" />, onClick: handleCreate }]
     : activeTab === 'memory'
     ? [
-        { label: tAgent('memory.config.title', 'Config'), icon: <Settings className="h-4 w-4" />, onClick: () => memoryPanelRef.current?.openConfig() },
-        { label: tAgent('memory.extract', 'Extract'), icon: isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />, onClick: handleTriggerExtract, loading: isExtracting, disabled: isExtracting || isCompressing },
-        { label: tAgent('memory.compress', 'Compress'), icon: isCompressing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />, onClick: handleTriggerCompress, loading: isCompressing, disabled: isExtracting || isCompressing },
+        { label: tAgent('systemMemory.config.title', 'Config'), icon: <Settings className="h-4 w-4" />, onClick: () => memoryPanelRef.current?.openConfig() },
+        { label: tAgent('systemMemory.extract', 'Extract'), icon: isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />, onClick: handleTriggerExtract, loading: isExtracting, disabled: isExtracting || isCompressing },
+        { label: tAgent('systemMemory.compress', 'Compress'), icon: isCompressing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />, onClick: handleTriggerCompress, loading: isCompressing, disabled: isExtracting || isCompressing },
         { label: tCommon('refresh'), icon: <RefreshCw className="h-4 w-4" />, onClick: () => setMemoryRefreshKey(k => k + 1), disabled: isExtracting || isCompressing },
       ]
     : []

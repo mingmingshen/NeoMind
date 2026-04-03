@@ -8,20 +8,28 @@ use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
 
+use super::compressor::{CompressionResult, MemoryCompressor};
 use super::manager::MemoryManager;
-use neomind_storage::MemoryConfig;
+use neomind_core::llm::backend::LlmRuntime;
+use neomind_storage::{MarkdownMemoryStore, MemoryCategory, MemoryConfig};
 
 /// Memory scheduler for background tasks
 pub struct MemoryScheduler {
     manager: Arc<RwLock<MemoryManager>>,
+    store: Arc<RwLock<MarkdownMemoryStore>>,
     config: MemoryConfig,
+    llm: Arc<dyn LlmRuntime>,
     extraction_handle: Option<tokio::task::JoinHandle<()>>,
     compression_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl MemoryScheduler {
-    /// Create a new scheduler
-    pub fn new(manager: Arc<RwLock<MemoryManager>>) -> Self {
+    /// Create a new scheduler with LLM runtime
+    pub fn new(
+        manager: Arc<RwLock<MemoryManager>>,
+        store: Arc<RwLock<MarkdownMemoryStore>>,
+        llm: Arc<dyn LlmRuntime>,
+    ) -> Self {
         let config = {
             tokio::task::block_in_place(|| {
                 futures::executor::block_on(async { manager.read().await.config().clone() })
@@ -30,17 +38,26 @@ impl MemoryScheduler {
 
         Self {
             manager,
+            store,
             config,
+            llm,
             extraction_handle: None,
             compression_handle: None,
         }
     }
 
     /// Create scheduler with explicit config
-    pub fn with_config(manager: Arc<RwLock<MemoryManager>>, config: MemoryConfig) -> Self {
+    pub fn with_config(
+        manager: Arc<RwLock<MemoryManager>>,
+        store: Arc<RwLock<MarkdownMemoryStore>>,
+        config: MemoryConfig,
+        llm: Arc<dyn LlmRuntime>,
+    ) -> Self {
         Self {
             manager,
+            store,
             config,
+            llm,
             extraction_handle: None,
             compression_handle: None,
         }
@@ -56,6 +73,8 @@ impl MemoryScheduler {
         // Start extraction task
         if self.config.schedule.extraction_enabled {
             let manager = self.manager.clone();
+            let store = self.store.clone();
+            let llm = self.llm.clone();
             let interval_secs = self.config.schedule.extraction_interval_secs;
 
             self.extraction_handle = Some(tokio::spawn(async move {
@@ -71,7 +90,7 @@ impl MemoryScheduler {
 
                     info!("Scheduled memory extraction triggered");
 
-                    match Self::run_extraction(&manager).await {
+                    match Self::run_extraction(&manager, &store, &llm).await {
                         Ok(count) => {
                             info!(entries_extracted = count, "Extraction completed");
                         }
@@ -85,7 +104,8 @@ impl MemoryScheduler {
 
         // Start compression task
         if self.config.schedule.compression_enabled {
-            let manager = self.manager.clone();
+            let store = self.store.clone();
+            let llm = self.llm.clone();
             let interval_secs = self.config.schedule.compression_interval_secs;
 
             self.compression_handle = Some(tokio::spawn(async move {
@@ -93,6 +113,7 @@ impl MemoryScheduler {
 
                 info!(
                     interval_secs = interval_secs,
+                    model = %llm.model_name(),
                     "Memory compression scheduler started"
                 );
 
@@ -101,7 +122,7 @@ impl MemoryScheduler {
 
                     info!("Scheduled memory compression triggered");
 
-                    match Self::run_compression(&manager).await {
+                    match Self::run_compression(&store, &llm).await {
                         Ok(result) => {
                             info!(
                                 total_before = result.total_before,
@@ -121,46 +142,40 @@ impl MemoryScheduler {
     }
 
     /// Run extraction on all categories
-    async fn run_extraction(manager: &Arc<RwLock<MemoryManager>>) -> Result<usize, String> {
-        // TODO: Implement actual extraction from Chat/Agent logs
-        // For now, just return 0
-        let _ = manager;
+    async fn run_extraction(
+        _manager: &Arc<RwLock<MemoryManager>>,
+        _store: &Arc<RwLock<MarkdownMemoryStore>>,
+        _llm: &Arc<dyn LlmRuntime>,
+    ) -> Result<usize, String> {
+        // TODO: Implement extraction from session store
+        // For now, extraction is triggered manually via API
         Ok(0)
     }
 
     /// Run compression on all categories
     async fn run_compression(
-        manager: &Arc<RwLock<MemoryManager>>,
-    ) -> Result<super::compressor::CompressionResult, String> {
-        use super::compressor::MemoryCompressor;
-        use neomind_storage::MemoryCategory;
-
-        let compressor = MemoryCompressor::with_defaults();
-        let mut total_result = super::compressor::CompressionResult::default();
-
-        let mgr = manager.read().await;
+        store: &Arc<RwLock<MarkdownMemoryStore>>,
+        llm: &Arc<dyn LlmRuntime>,
+    ) -> Result<CompressionResult, String> {
+        let compressor = MemoryCompressor::new(llm.clone());
+        let mut total_result = CompressionResult::default();
 
         for category in MemoryCategory::all() {
-            let stats = mgr
-                .stats(category)
-                .await
-                .map_err(|e| format!("Failed to get stats: {}", e))?;
-
-            total_result.total_before += stats.entry_count;
-
-            // Check if compression is needed
-            let max = compressor.max_entries(category);
-            if stats.entry_count > max {
-                // TODO: Implement actual compression
-                warn!(
-                    category = ?category,
-                    current = stats.entry_count,
-                    max = max,
-                    "Category exceeds max entries, compression needed"
-                );
+            match compressor.compress(store, category.clone()).await {
+                Ok(result) => {
+                    total_result.total_before += result.total_before;
+                    total_result.kept += result.kept;
+                    total_result.compressed += result.compressed;
+                    total_result.deleted += result.deleted;
+                }
+                Err(e) => {
+                    warn!(
+                        category = ?category,
+                        error = %e,
+                        "Compression failed for category"
+                    );
+                }
             }
-
-            total_result.kept += stats.entry_count;
         }
 
         Ok(total_result)
@@ -194,7 +209,43 @@ impl Drop for MemoryScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
+
+    // Mock LLM for testing
+    struct MockLlm;
+
+    #[async_trait::async_trait]
+    impl LlmRuntime for MockLlm {
+        fn backend_id(&self) -> neomind_core::llm::backend::BackendId {
+            neomind_core::llm::backend::BackendId::new("mock")
+        }
+
+        fn model_name(&self) -> &str {
+            "mock-model"
+        }
+
+        async fn generate(
+            &self,
+            _input: neomind_core::llm::backend::LlmInput,
+        ) -> std::result::Result<neomind_core::llm::backend::LlmOutput, neomind_core::llm::backend::LlmError> {
+            Ok(neomind_core::llm::backend::LlmOutput {
+                text: r#"{"summaries":[{"content":"Test summary","importance":70}]}"#.to_string(),
+                finish_reason: neomind_core::llm::backend::FinishReason::Stop,
+                usage: None,
+                thinking: None,
+            })
+        }
+
+        async fn generate_stream(
+            &self,
+            _input: neomind_core::llm::backend::LlmInput,
+        ) -> std::result::Result<std::pin::Pin<Box<dyn futures::Stream<Item = neomind_core::llm::backend::StreamChunk> + Send>>, neomind_core::llm::backend::LlmError> {
+            unimplemented!()
+        }
+
+        fn max_context_length(&self) -> usize {
+            4096
+        }
+    }
 
     #[test]
     fn test_scheduler_creation() {
@@ -205,7 +256,9 @@ mod tests {
         config.schedule.compression_interval_secs = 1;
 
         let manager = Arc::new(RwLock::new(MemoryManager::new(config.clone())));
-        let scheduler = MemoryScheduler::with_config(manager, config);
+        let store = Arc::new(RwLock::new(MarkdownMemoryStore::new(temp.path())));
+        let llm = Arc::new(MockLlm);
+        let scheduler = MemoryScheduler::with_config(manager, store, config, llm);
 
         assert!(!scheduler.is_running());
     }
@@ -219,7 +272,9 @@ mod tests {
         config.schedule.compression_interval_secs = 60;
 
         let manager = Arc::new(RwLock::new(MemoryManager::new(config.clone())));
-        let mut scheduler = MemoryScheduler::with_config(manager, config);
+        let store = Arc::new(RwLock::new(MarkdownMemoryStore::new(temp.path())));
+        let llm = Arc::new(MockLlm);
+        let mut scheduler = MemoryScheduler::with_config(manager, store, config, llm);
 
         scheduler.start();
         assert!(scheduler.is_running());
@@ -236,7 +291,9 @@ mod tests {
         config.enabled = false;
 
         let manager = Arc::new(RwLock::new(MemoryManager::new(config.clone())));
-        let mut scheduler = MemoryScheduler::with_config(manager, config);
+        let store = Arc::new(RwLock::new(MarkdownMemoryStore::new(temp.path())));
+        let llm = Arc::new(MockLlm);
+        let mut scheduler = MemoryScheduler::with_config(manager, store, config, llm);
 
         scheduler.start();
         assert!(!scheduler.is_running()); // Should not start when disabled

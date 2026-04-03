@@ -97,7 +97,7 @@ const defaultConfig: MemorySystemConfig = {
 const categoryConfig = [
   {
     id: "user_profile",
-    labelKey: "memory.categories.userProfile",
+    labelKey: "systemMemory.categories.userProfile",
     defaultLabel: "User Profile",
     icon: User,
     description: "User preferences, habits and settings",
@@ -105,7 +105,7 @@ const categoryConfig = [
   },
   {
     id: "domain_knowledge",
-    labelKey: "memory.categories.domainKnowledge",
+    labelKey: "systemMemory.categories.domainKnowledge",
     defaultLabel: "Domain Knowledge",
     icon: BookOpen,
     description: "Devices, protocols and system knowledge",
@@ -255,16 +255,16 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
     setExtracting(true)
     console.log('[MemoryPanel] Starting memory extraction...')
     toast({
-      title: t("memory.extractStarted", "Extraction Started"),
-      description: t("memory.extractStartedDesc", "Extracting memories from conversations..."),
+      title: t("systemMemory.extractStarted", "Extraction Started"),
+      description: t("systemMemory.extractStartedDesc", "Extracting memories from conversations..."),
     })
     try {
       console.log('[MemoryPanel] Calling api.triggerMemoryExtract()...')
       const result = await api.triggerMemoryExtract()
       console.log('[MemoryPanel] Extraction result:', result)
       toast({
-        title: t("memory.extractComplete", "Extraction Complete"),
-        description: result.message || t("memory.extractCompleteDesc", "Successfully extracted memories"),
+        title: t("systemMemory.extractComplete", "Extraction Complete"),
+        description: result.message || t("systemMemory.extractCompleteDesc", "Successfully extracted memories"),
       })
       loadStats() // Refresh stats after extraction
     } catch (error) {
@@ -296,14 +296,14 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   const handleCompress = async () => {
     setCompressing(true)
     toast({
-      title: t("memory.compressStarted", "Compression Started"),
-      description: t("memory.compressStartedDesc", "Compressing and cleaning up memories..."),
+      title: t("systemMemory.compressStarted", "Compression Started"),
+      description: t("systemMemory.compressStartedDesc", "Compressing and cleaning up memories..."),
     })
     try {
       const result = await api.triggerMemoryCompress()
       toast({
-        title: t("memory.compressComplete", "Compression Complete"),
-        description: result.message || t("memory.compressCompleteDesc", "Successfully compressed memories"),
+        title: t("systemMemory.compressComplete", "Compression Complete"),
+        description: result.message || t("systemMemory.compressCompleteDesc", "Successfully compressed memories"),
       })
       loadStats() // Refresh stats after compression
     } catch (error) {
@@ -440,14 +440,14 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
         columns={[
           {
             key: "name",
-            label: t("memory.headers.category", "Category"),
+            label: t("systemMemory.headers.category", "Category"),
           },
           {
             key: "entry_count",
             label: (
               <div className="flex items-center gap-1">
                 <Hash className="h-3.5 w-3.5" />
-                {t("memory.headers.entries", "Entries")}
+                {t("systemMemory.headers.entries", "Entries")}
               </div>
             ),
             align: "center",
@@ -455,7 +455,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
           },
           {
             key: "file_size",
-            label: t("memory.headers.size", "Size"),
+            label: t("systemMemory.headers.size", "Size"),
             align: "right",
             width: "w-20",
           },
@@ -464,7 +464,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
             label: (
               <div className="flex items-center gap-1">
                 <Clock className="h-3.5 w-3.5" />
-                {t("memory.headers.modified", "Modified")}
+                {t("systemMemory.headers.modified", "Modified")}
               </div>
             ),
             align: "right",
@@ -528,7 +528,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
         }}
         actions={[
           {
-            label: t("memory.viewEdit", "View/Edit"),
+            label: t("systemMemory.viewEdit", "View/Edit"),
             icon: <Eye className="h-4 w-4" />,
             onClick: (rowData) => {
               const row = rowData as unknown as MemoryCategoryRow
@@ -536,7 +536,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
             },
           },
           {
-            label: t("memory.export", "Export"),
+            label: t("systemMemory.export", "Export"),
             icon: exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />,
             onClick: (rowData) => {
               const row = rowData as unknown as MemoryCategoryRow
@@ -589,7 +589,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                 <ReactMarkdown>{content}</ReactMarkdown>
               ) : (
                 <p className="text-muted-foreground italic">
-                  {t("memory.empty", "No content yet")}
+                  {t("systemMemory.empty", "No content yet")}
                 </p>
               )}
             </div>
@@ -599,7 +599,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
         <FullScreenDialogFooter>
           <div className="flex items-center justify-between w-full">
             <div className="text-xs text-muted-foreground">
-              {content.split("\n").filter(l => l.trim()).length} {t("memory.lines", "lines")}
+              {content.split("\n").filter(l => l.trim()).length} {t("systemMemory.lines", "lines")}
             </div>
             <div className="flex items-center gap-2">
               {editing ? (
@@ -613,7 +613,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                     disabled={saving}
                   >
                     <X className="h-4 w-4 mr-1" />
-                    {t("memory.cancel", "Cancel")}
+                    {t("systemMemory.cancel", "Cancel")}
                   </Button>
                   <Button onClick={handleSave} disabled={saving}>
                     {saving ? (
@@ -621,13 +621,13 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                     ) : (
                       <Save className="h-4 w-4 mr-1" />
                     )}
-                    {saving ? t("memory.saving", "Saving...") : t("memory.save", "Save")}
+                    {saving ? t("systemMemory.saving", "Saving...") : t("systemMemory.save", "Save")}
                   </Button>
                 </>
               ) : (
                 <Button onClick={() => setEditing(true)}>
                   <Pencil className="h-4 w-4 mr-1" />
-                  {t("memory.edit", "Edit")}
+                  {t("systemMemory.edit", "Edit")}
                 </Button>
               )}
             </div>
@@ -641,8 +641,8 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
           icon={<Settings className="h-5 w-5" />}
           iconBg="bg-purple-500/10 dark:bg-purple-500/20"
           iconColor="text-purple-500"
-          title={t("memory.config.title", "Memory Configuration")}
-          subtitle={t("memory.config.description", "Configure memory extraction, compression, and LLM settings")}
+          title={t("systemMemory.config.title", "Memory Configuration")}
+          subtitle={t("systemMemory.config.description", "Configure memory extraction, compression, and LLM settings")}
           onClose={() => setConfigOpen(false)}
         />
 
@@ -658,11 +658,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-purple-500" />
-                    {t("memory.config.extraction", "Extraction Settings")}
+                    {t("systemMemory.config.extraction", "Extraction Settings")}
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>{t("memory.config.minMessages", "Min Messages")}</Label>
+                      <Label>{t("systemMemory.config.minMessages", "Min Messages")}</Label>
                       <Input
                         type="number"
                         min={1}
@@ -679,11 +679,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                         }
                       />
                       <p className="text-xs text-muted-foreground">
-                        {t("memory.config.minMessagesHint", "Minimum messages to trigger extraction")}
+                        {t("systemMemory.config.minMessagesHint", "Minimum messages to trigger extraction")}
                       </p>
                     </div>
                     <div className="space-y-2">
-                      <Label>{t("memory.config.minImportance", "Min Importance")}</Label>
+                      <Label>{t("systemMemory.config.minImportance", "Min Importance")}</Label>
                       <Input
                         type="number"
                         min={0}
@@ -700,11 +700,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                         }
                       />
                       <p className="text-xs text-muted-foreground">
-                        {t("memory.config.minImportanceHint", "Minimum importance threshold (0-100)")}
+                        {t("systemMemory.config.minImportanceHint", "Minimum importance threshold (0-100)")}
                       </p>
                     </div>
                     <div className="space-y-2">
-                      <Label>{t("memory.config.similarityThreshold", "Similarity Threshold")}</Label>
+                      <Label>{t("systemMemory.config.similarityThreshold", "Similarity Threshold")}</Label>
                       <Input
                         type="number"
                         min={0}
@@ -722,11 +722,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                         }
                       />
                       <p className="text-xs text-muted-foreground">
-                        {t("memory.config.similarityThresholdHint", "Dedup similarity (0-1)")}
+                        {t("systemMemory.config.similarityThresholdHint", "Dedup similarity (0-1)")}
                       </p>
                     </div>
                     <div className="space-y-2">
-                      <Label>{t("memory.config.dedupEnabled", "Deduplication")}</Label>
+                      <Label>{t("systemMemory.config.dedupEnabled", "Deduplication")}</Label>
                       <div className="flex items-center">
                         <Switch
                           checked={config.extraction?.dedup_enabled ?? true}
@@ -749,11 +749,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
                     <Archive className="h-4 w-4 text-blue-500" />
-                    {t("memory.config.compression", "Compression Settings")}
+                    {t("systemMemory.config.compression", "Compression Settings")}
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>{t("memory.config.decayPeriodDays", "Decay Period (Days)")}</Label>
+                      <Label>{t("systemMemory.config.decayPeriodDays", "Decay Period (Days)")}</Label>
                       <Input
                         type="number"
                         min={1}
@@ -771,7 +771,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>{t("memory.config.compressionMinImportance", "Min Importance")}</Label>
+                      <Label>{t("systemMemory.config.compressionMinImportance", "Min Importance")}</Label>
                       <Input
                         type="number"
                         min={0}
@@ -788,7 +788,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                         }
                       />
                       <p className="text-xs text-muted-foreground">
-                        {t("memory.config.compressionMinImportanceHint", "Entries below this will be deleted")}
+                        {t("systemMemory.config.compressionMinImportanceHint", "Entries below this will be deleted")}
                       </p>
                     </div>
                   </div>
@@ -798,11 +798,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
                     <Cpu className="h-4 w-4 text-green-500" />
-                    {t("memory.config.llmBackends", "LLM Backends")}
+                    {t("systemMemory.config.llmBackends", "LLM Backends")}
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>{t("memory.config.extractionBackend", "Extraction Model")}</Label>
+                      <Label>{t("systemMemory.config.extractionBackend", "Extraction Model")}</Label>
                       <Select
                         value={config.llm?.extraction_backend_id || "__default__"}
                         onValueChange={(value) =>
@@ -816,12 +816,12 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                         }
                       >
                         <SelectTrigger className="h-10">
-                          <SelectValue placeholder={t("memory.config.defaultBackend", "Use default")} />
+                          <SelectValue placeholder={t("systemMemory.config.defaultBackend", "Use default")} />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__default__">
                             <div className="flex items-center gap-2">
-                              <span>{t("memory.config.defaultBackend", "Use default")}</span>
+                              <span>{t("systemMemory.config.defaultBackend", "Use default")}</span>
                             </div>
                           </SelectItem>
                           {llmBackends.map((backend) => (
@@ -830,17 +830,17 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                                 <span>{backend.name}</span>
                                 <div className="flex items-center gap-0.5 text-muted-foreground">
                                   {backend.capabilities?.supports_multimodal && (
-                                    <span title={t("memory.config.supportsVision", "Supports vision")}>
+                                    <span title={t("systemMemory.config.supportsVision", "Supports vision")}>
                                       <Eye className="h-3 w-3" />
                                     </span>
                                   )}
                                   {backend.capabilities?.supports_tools && (
-                                    <span title={t("memory.config.supportsTools", "Supports tools")}>
+                                    <span title={t("systemMemory.config.supportsTools", "Supports tools")}>
                                       <Wrench className="h-3 w-3" />
                                     </span>
                                   )}
                                   {backend.capabilities?.supports_thinking && (
-                                    <span title={t("memory.config.supportsThinking", "Supports thinking")}>
+                                    <span title={t("systemMemory.config.supportsThinking", "Supports thinking")}>
                                       <Brain className="h-3 w-3" />
                                     </span>
                                   )}
@@ -852,11 +852,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">
-                        {t("memory.config.extractionBackendHint", "Lightweight model for extraction")}
+                        {t("systemMemory.config.extractionBackendHint", "Lightweight model for extraction")}
                       </p>
                     </div>
                     <div className="space-y-2">
-                      <Label>{t("memory.config.compressionBackend", "Compression Model")}</Label>
+                      <Label>{t("systemMemory.config.compressionBackend", "Compression Model")}</Label>
                       <Select
                         value={config.llm?.compression_backend_id || "__default__"}
                         onValueChange={(value) =>
@@ -870,12 +870,12 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                         }
                       >
                         <SelectTrigger className="h-10">
-                          <SelectValue placeholder={t("memory.config.defaultBackend", "Use default")} />
+                          <SelectValue placeholder={t("systemMemory.config.defaultBackend", "Use default")} />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__default__">
                             <div className="flex items-center gap-2">
-                              <span>{t("memory.config.defaultBackend", "Use default")}</span>
+                              <span>{t("systemMemory.config.defaultBackend", "Use default")}</span>
                             </div>
                           </SelectItem>
                           {llmBackends.map((backend) => (
@@ -884,17 +884,17 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                                 <span>{backend.name}</span>
                                 <div className="flex items-center gap-0.5 text-muted-foreground">
                                   {backend.capabilities?.supports_multimodal && (
-                                    <span title={t("memory.config.supportsVision", "Supports vision")}>
+                                    <span title={t("systemMemory.config.supportsVision", "Supports vision")}>
                                       <Eye className="h-3 w-3" />
                                     </span>
                                   )}
                                   {backend.capabilities?.supports_tools && (
-                                    <span title={t("memory.config.supportsTools", "Supports tools")}>
+                                    <span title={t("systemMemory.config.supportsTools", "Supports tools")}>
                                       <Wrench className="h-3 w-3" />
                                     </span>
                                   )}
                                   {backend.capabilities?.supports_thinking && (
-                                    <span title={t("memory.config.supportsThinking", "Supports thinking")}>
+                                    <span title={t("systemMemory.config.supportsThinking", "Supports thinking")}>
                                       <Brain className="h-3 w-3" />
                                     </span>
                                   )}
@@ -906,7 +906,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">
-                        {t("memory.config.compressionBackendHint", "Powerful model for summarization")}
+                        {t("systemMemory.config.compressionBackendHint", "Powerful model for summarization")}
                       </p>
                     </div>
                   </div>
@@ -916,11 +916,11 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                 <div className="space-y-4">
                   <h3 className="text-sm font-semibold flex items-center gap-2">
                     <Clock className="h-4 w-4 text-orange-500" />
-                    {t("memory.config.schedule", "Schedule")}
+                    {t("systemMemory.config.schedule", "Schedule")}
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>{t("memory.config.autoExtraction", "Auto Extraction")}</Label>
+                      <Label>{t("systemMemory.config.autoExtraction", "Auto Extraction")}</Label>
                       <div className="flex items-center">
                         <Switch
                           checked={config.schedule?.extraction_enabled ?? true}
@@ -937,7 +937,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label>{t("memory.config.extractionInterval", "Extraction Interval")}</Label>
+                      <Label>{t("systemMemory.config.extractionInterval", "Extraction Interval")}</Label>
                       <Select
                         value={String(config.schedule?.extraction_interval_secs ?? 3600)}
                         onValueChange={(value) =>
@@ -963,7 +963,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label>{t("memory.config.autoCompression", "Auto Compression")}</Label>
+                      <Label>{t("systemMemory.config.autoCompression", "Auto Compression")}</Label>
                       <div className="flex items-center">
                         <Switch
                           checked={config.schedule?.compression_enabled ?? true}
@@ -980,7 +980,7 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label>{t("memory.config.compressionInterval", "Compression Interval")}</Label>
+                      <Label>{t("systemMemory.config.compressionInterval", "Compression Interval")}</Label>
                       <Select
                         value={String(config.schedule?.compression_interval_secs ?? 86400)}
                         onValueChange={(value) =>

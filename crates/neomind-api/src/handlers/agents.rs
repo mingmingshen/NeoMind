@@ -415,6 +415,9 @@ pub struct CreateAgentRequest {
     /// Context window size (default: 10)
     #[serde(default)]
     pub context_window_size: Option<usize>,
+    /// Execution mode: "chat" for single-pass, "react" for multi-round tool calling
+    #[serde(default)]
+    pub execution_mode: Option<String>,
 }
 
 /// Resource request in the new unified format.
@@ -968,6 +971,10 @@ pub async fn create_agent(
         enable_tool_chaining: request.enable_tool_chaining.unwrap_or(false),
         max_chain_depth: request.max_chain_depth.unwrap_or(3),
         tool_config: None,
+        execution_mode: match request.execution_mode.as_deref() {
+            Some("react") => neomind_storage::agents::ExecutionMode::React,
+            _ => neomind_storage::agents::ExecutionMode::Chat,
+        },
     };
 
     // Save to storage

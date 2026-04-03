@@ -425,7 +425,13 @@
     "advanced": {
       "title": "Advanced",
       "dataCollection": "Data Collection Config",
-      "selectMetricsFirst": "Please select metrics first"
+      "selectMetricsFirst": "Please select metrics first",
+      "executionMode": "Execution Mode",
+      "chatMode": "Chat Mode",
+      "chatModeDesc": "Single-pass LLM analysis. Fast responses, no tool calling.",
+      "reactMode": "ReAct Mode",
+      "reactModeDesc": "Multi-round reasoning + tool calling. Plans actions, executes tools, analyzes results.",
+      "recommended": "Recommended"
     },
     "dataCollection": {
       "title": "Data Collection Config",
@@ -480,7 +486,7 @@
     "agents": "Agents",
     "memory": "Memory"
   },
-  "memory": {
+  "systemMemory": {
     "title": "System Memory",
     "search": "Search memory...",
     "source": {

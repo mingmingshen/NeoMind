@@ -1958,6 +1958,8 @@ export interface AiAgentDetail extends AiAgent {
     enabled: boolean
     allowed_tools?: string[]
   }
+  /** Execution mode: "chat" for single-pass, "react" for multi-round tool calling */
+  execution_mode?: 'chat' | 'react'
 }
 
 /**
@@ -2231,6 +2233,8 @@ export interface CreateAgentRequest {
     enabled: boolean
     allowed_tools?: string[]
   }
+  /** Execution mode: "chat" for single-pass, "react" for multi-round tool calling */
+  execution_mode?: 'chat' | 'react'
 }
 
 /**

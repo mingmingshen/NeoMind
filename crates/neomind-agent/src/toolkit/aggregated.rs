@@ -545,6 +545,7 @@ impl AgentTool {
             enable_tool_chaining: false,
             max_chain_depth: 3,
             tool_config: None,
+            execution_mode: Default::default(),
             error_message: None,
         };
 

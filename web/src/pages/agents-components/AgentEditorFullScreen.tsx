@@ -65,6 +65,7 @@ import {
   Eye,
   Brain,
   Wrench,
+  MessageSquare,
 } from "lucide-react"
 import type {
   AiAgentDetail,
@@ -303,6 +304,7 @@ export function AgentEditorFullScreen({
   const [activeBackendId, setActiveBackendId] = useState<string | null>(null)
 
   // Advanced configuration state
+  const [executionMode, setExecutionMode] = useState<'chat' | 'react'>('chat')
   const [enableToolChaining, setEnableToolChaining] = useState(false)
   const [enableToolMode, setEnableToolMode] = useState(false)
   const [maxChainDepth, setMaxChainDepth] = useState(3)
@@ -348,6 +350,7 @@ export function AgentEditorFullScreen({
         // Load advanced config from agent
         setEnableToolChaining(agent.enable_tool_chaining ?? false)
         setEnableToolMode(agent.tool_config?.enabled ?? false)
+        setExecutionMode(agent.execution_mode ?? 'chat')
         setMaxChainDepth(agent.max_chain_depth ?? 3)
         setPriority(agent.priority ?? 5)
         setContextWindowSize(agent.context_window_size ?? 8192)
@@ -360,6 +363,7 @@ export function AgentEditorFullScreen({
         setUserPrompt("")
         setLlmBackendId(null)
         // Reset to defaults
+        setExecutionMode('chat')
         setEnableToolChaining(false)
         setEnableToolMode(false)
         setMaxChainDepth(3)
@@ -1030,6 +1034,7 @@ export function AgentEditorFullScreen({
         priority: priority !== 5 ? priority : undefined,
         context_window_size: contextWindowSize !== 8192 ? contextWindowSize : undefined,
         tool_config: enableToolMode ? { enabled: true, allowed_tools: [] } : undefined,
+        execution_mode: executionMode,
       }
 
       await onSave(data)
@@ -1248,6 +1253,72 @@ export function AgentEditorFullScreen({
               {llmValidationError && (
                 <p className="text-xs text-destructive">{llmValidationError}</p>
               )}
+            </div>
+
+            {/* Execution Mode */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-2">
+                <Brain className="h-4 w-4 text-muted-foreground" />
+                {tAgent('executionMode', 'Execution Mode')}
+              </Label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setExecutionMode('chat')}
+                  className={cn(
+                    "relative flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all",
+                    executionMode === 'chat'
+                      ? "border-primary bg-primary/5 shadow-sm"
+                      : "border-border hover:border-primary/30"
+                  )}
+                >
+                  <div className="flex items-center gap-2 w-full">
+                    <div className={cn(
+                      "h-8 w-8 rounded-lg flex items-center justify-center",
+                      executionMode === 'chat' ? "bg-primary text-primary-foreground" : "bg-muted"
+                    )}>
+                      <MessageSquare className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium">{tAgent('chatMode', 'Chat Mode')}</div>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground pl-10">
+                    {tAgent('chatModeDesc', 'Single-pass LLM analysis. Fast responses, no tool calling.')}
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setExecutionMode('react')}
+                  className={cn(
+                    "relative flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all",
+                    executionMode === 'react'
+                      ? "border-primary bg-primary/5 shadow-sm"
+                      : "border-border hover:border-primary/30"
+                  )}
+                >
+                  <div className="flex items-center gap-2 w-full">
+                    <div className={cn(
+                      "h-8 w-8 rounded-lg flex items-center justify-center",
+                      executionMode === 'react' ? "bg-primary text-primary-foreground" : "bg-muted"
+                    )}>
+                      <Wrench className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium">{tAgent('reactMode', 'ReAct Mode')}</div>
+                      {executionMode === 'react' && (
+                        <Badge variant="secondary" className="text-xs h-4 mt-0.5">
+                          {tAgent('recommended', 'Recommended')}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground pl-10">
+                    {tAgent('reactModeDesc', 'Multi-round reasoning + tool calling. Plans actions, executes tools, analyzes results.')}
+                  </p>
+                </button>
+              </div>
             </div>
 
             {/* Advanced Configuration */}
