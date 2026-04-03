@@ -1,8 +1,8 @@
 # Agent Module
 
 **Package**: `neomind-agent`
-**Version**: 0.5.9
-**Completion**: 90%
+**Version**: 0.6.3
+**Completion**: 95%
 **Purpose**: AI chat agent with LLM, memory, and tools integration
 
 ## Overview
@@ -43,14 +43,62 @@ crates/neomind-agent/src/
 └── translation.rs              # Translation
 ```
 
-## Important Changes (v0.5.x)
+## Important Changes (v0.6.x)
 
-### Removed Modules
+### Aggregated Tools (Token Efficiency)
+Agent now uses **aggregated tools** instead of individual tool functions. This significantly reduces token usage in function calling:
+
+```rust
+// Old: ~50 individual tool definitions (~3000 tokens)
+tools: [query_device, control_device, create_rule, update_rule, ...]
+
+// New: ~8 aggregated tool definitions (~800 tokens)
+tools: [device_tools, automation_tools, system_tools, ...]
+```
+
+Benefits:
+- **60%+ token reduction** in tool definitions
+- Faster LLM inference
+- Cleaner tool organization
+
+### Execution Mode
+Agents now support different execution modes:
+
+```rust
+pub enum ExecutionMode {
+    /// Single-step execution (default)
+    Single,
+    /// Multi-step with planning
+    MultiStep,
+    /// Autonomous continuous execution
+    Autonomous,
+}
+```
+
+### Per-Step Results
+Agent execution now captures per-step results for better observability:
+
+```rust
+pub struct StepResult {
+    pub step_number: u32,
+    pub action: String,
+    pub result: String,
+    pub duration_ms: u64,
+}
+```
+
+### LLM Backend Decoupling
+Agent LLM backends are now **decoupled** from chat model selection:
+- Changing chat model no longer overwrites agent LLM backend
+- Agents can use different LLM backends for different purposes
+- Separate configuration for extraction vs. execution
+
+### Removed Modules (v0.5.x)
 - `agent/intent_classifier.rs` - Intent classification integrated into executor
 - `task_orchestrator.rs` - Task orchestration integrated into executor
 - `tools/automation.rs` - Automation tools migrated to automation module
 
-### New Features
+### Extension Metrics Support
 - **Extension Metrics Support**: executor.rs now collects extension (Extension) metrics
 - **DataSourceId Integration**: Uses type-safe DataSourceId for metrics queries
 - **Unified Time-Series Database**: Uses `data/telemetry.redb` unified storage for device and extension metrics

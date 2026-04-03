@@ -1,7 +1,7 @@
 # Agent 模块
 
 **包名**: `neomind-agent`
-**版本**: 0.5.11
+**版本**: 0.6.3
 **完成度**: 95%
 **用途**: AI会话代理，集成LLM、内存和工具
 
@@ -43,14 +43,62 @@ crates/neomind-agent/src/
 └── translation.rs              # 翻译
 ```
 
-## 重要变更 (v0.5.x)
+## 重要变更 (v0.6.x)
 
-### 移除的模块
+### 聚合工具（Token 优化）
+智能体现在使用**聚合工具**代替独立的工具函数，显著减少函数调用中的 token 消耗：
+
+```rust
+// 旧方式：~50 个独立工具定义（~3000 tokens）
+tools: [query_device, control_device, create_rule, update_rule, ...]
+
+// 新方式：~8 个聚合工具定义（~800 tokens）
+tools: [device_tools, automation_tools, system_tools, ...]
+```
+
+优势：
+- **减少 60%+ 的 token 消耗**
+- 更快的 LLM 推理
+- 更清晰的工具组织
+
+### 执行模式
+智能体支持不同的执行模式：
+
+```rust
+pub enum ExecutionMode {
+    /// 单步执行（默认）
+    Single,
+    /// 多步带规划
+    MultiStep,
+    /// 自主连续执行
+    Autonomous,
+}
+```
+
+### 每步结果
+智能体执行现在捕获每步结果，提升可观测性：
+
+```rust
+pub struct StepResult {
+    pub step_number: u32,
+    pub action: String,
+    pub result: String,
+    pub duration_ms: u64,
+}
+```
+
+### LLM 后端解耦
+智能体 LLM 后端与聊天模型选择**解耦**：
+- 更改聊天模型不再覆盖智能体 LLM 后端
+- 智能体可使用不同的 LLM 后端用于不同用途
+- 提取和执行使用独立配置
+
+### 移除的模块 (v0.5.x)
 - `agent/intent_classifier.rs` - 意图分类已整合到executor
 - `task_orchestrator.rs` - 任务编排已整合到executor
 - `tools/automation.rs` - 自动化工具已迁移到automation模块
 
-### 新增功能
+### 扩展指标支持
 - **扩展指标支持**: executor.rs现在可以采集扩展(Extension)指标
 - **DataSourceId集成**: 使用类型安全的DataSourceId进行指标查询
 - **统一时序数据库**: 使用`data/telemetry.redb`统一存储设备和扩展指标

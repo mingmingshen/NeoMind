@@ -10,7 +10,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 
 [![Build Status](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml/badge.svg)](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.6.2](https://img.shields.io/badge/v-0.6.2-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
+[![Version: 0.6.3](https://img.shields.io/badge/v-0.6.3-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.85+-orange.svg)](https://www.rust-lang.org)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](https://github.com/camthink-ai/NeoMind/releases)
 
@@ -52,11 +52,11 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 ### 🧠 LLM as System Brain
 - **Interactive Chat**: Natural language interface for querying and controlling devices
 - **AI Agents**: Autonomous agents with tool calling capabilities for automation
-- **Tool Calling**: Execute real system actions through LLM function calling
+- **Aggregated Tools**: Token-efficient tool definitions that reduce context usage by 60%+
 - **Multi-Backend Support**: Ollama, OpenAI, Anthropic, Google, xAI, Qwen, DeepSeek, GLM, MiniMax
 
 ### 🔌 Modular Device Integration
-- **MQTT Protocol**: Primary device integration with embedded broker
+- **MQTT Protocol**: Primary device integration with embedded broker, mTLS and CA certificate support
 - **Device Discovery**: Automatic device detection and type registration
 - **HTTP/Webhook**: Flexible device adapter options
 - **Auto-Onboarding**: AI-assisted device registration from data samples
@@ -69,8 +69,9 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 ### 📦 Complete Storage System
 - **Time-Series**: Device metrics history and queries (redb)
 - **State Storage**: Device states, automation execution records
-- **LLM Memory**: Three-tier memory (short/mid/long-term)
+- **LLM Memory**: Category-based memory system (Profile, Knowledge, Tasks, Evolution) with LLM-powered extraction and compression
 - **Vector Search**: Semantic search across devices and rules
+- **Data Explorer**: Unified interface for browsing and exploring time-series data
 
 ### 🧩 Unified Extension System (V2)
 - **Dynamic Loading**: Runtime extension loading/unloading
@@ -165,7 +166,7 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 **Install specific version:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.6.2 sh
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.6.3 sh
 ```
 
 **Custom installation:**
@@ -194,7 +195,7 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 ```bash
 # 1. Download binary (replace VERSION and PLATFORM)
 # PLATFORM: linux-amd64, linux-arm64, darwin-amd64, darwin-arm64
-wget https://github.com/camthink-ai/NeoMind/releases/download/v0.6.2/neomind-server-linux-amd64.tar.gz
+wget https://github.com/camthink-ai/NeoMind/releases/download/v0.6.3/neomind-server-linux-amd64.tar.gz
 
 # 2. Extract package (contains neomind + neomind-extension-runner)
 tar xzf neomind-server-linux-amd64.tar.gz
