@@ -162,15 +162,16 @@ impl CapabilityDetector {
             return true;
         }
 
-        // Anthropic - 所有 Claude 3+ 支持
-        // claude-3-opus, claude-3-sonnet, claude-3-haiku
-        // claude-3.5-sonnet, claude-3.5-haiku
-        // claude-opus-4, claude-sonnet-4, claude-haiku-4
-        if model.contains("claude-3")
-            || model.contains("claude-opus-4")
-            || model.contains("claude-sonnet-4")
-            || model.contains("claude-haiku-4")
-        {
+        // Anthropic - Claude 3 系列和特定的 Claude 4 模型支持视觉
+        // Claude 3 系列: claude-3-opus, claude-3-sonnet, claude-3-haiku, // Claude 3.5 系列: claude-3.5-sonnet, claude-3.5-haiku
+        // Claude 4 系列: claude-opus-4, claude-sonnet-4, claude-haiku-4 (注意: 必须是精确匹配，不能包含 -5)
+        // 例如: claude-haiku-4-5-20251001 不支持视觉
+        let has_vision = model.contains("claude-3")
+            || (model.contains("claude-opus-4") && !model.contains("claude-opus-4-5"))
+            || (model.contains("claude-sonnet-4") && !model.contains("claude-sonnet-4-5"))
+            || (model.contains("claude-haiku-4") && !model.contains("claude-haiku-4-5"));
+
+        if has_vision {
             return true;
         }
 
