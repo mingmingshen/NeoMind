@@ -355,6 +355,9 @@ jobs:
 
           # Verify binaries exist
           ls -la target/${{ matrix.target }}/release/neomind target/${{ matrix.target }}/release/neomind-extension-runner
+        env:
+          CC: clang
+          CXX: clang++
 
       - name: Run native capability IPC smoke test
         if: matrix.os == 'linux' && matrix.arch == 'amd64'
