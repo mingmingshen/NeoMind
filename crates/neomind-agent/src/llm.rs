@@ -777,18 +777,16 @@ impl LlmInterface {
 
         // Add quick reference table
         prompt.push_str("## Quick Reference\n");
-        prompt.push_str("| User Query | Tool to Call |\n");
-        prompt.push_str("|------------|-------------|\n");
-        prompt.push_str("| \"What devices are there?\" | `list_devices()` |\n");
-        prompt
-            .push_str("| \"What's the temperature?\" | `query_data(device='device_id', metric='temperature')` |\n");
-        prompt.push_str(
-            "| \"Turn on the light\" | `control_device(device='device_id', action='on')` |\n",
-        );
-        prompt.push_str(
-            "| \"Create a rule\" | `create_rule(name='rule_name', condition='condition', action='action')` |\n",
-        );
-        prompt.push_str("| \"Show all rules\" | `list_rules()` |\n");
+        prompt.push_str("| User Query | Tool Call |\n");
+        prompt.push_str("|------------|----------|\n");
+        prompt.push_str("| \"What devices?\" | `device(action=\"list\")` |\n");
+        prompt.push_str("| \"Temperature of ne101?\" | `device(action=\"query\", device_id=\"id\", metric=\"temperature\")` |\n");
+        prompt.push_str("| \"Turn on light\" | `device(action=\"control\", device_id=\"id\", command=\"turn_on\", confirm=true)` |\n");
+        prompt.push_str("| \"Create a rule\" | `rule(action=\"create\", dsl=\"RULE ...\")` |\n");
+        prompt.push_str("| \"Show all rules\" | `rule(action=\"list\")` |\n");
+        prompt.push_str("| \"List agents\" | `agent(action=\"list\")` |\n");
+        prompt.push_str("| \"Create an agent\" | `agent(action=\"create\", name=\"...\", user_prompt=\"...\", schedule_type=\"interval\")` |\n");
+        prompt.push_str("| \"Show alerts\" | `alert(action=\"list\")` |\n");
         prompt.push('\n');
 
         // Cache the result

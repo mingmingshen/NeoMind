@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::error::{Result, ToolError};
-use super::tool::{object_schema, string_property, Tool, ToolOutput};
+use super::tool::{object_schema, Tool, ToolOutput};
 use neomind_core::tools::ToolCategory;
 use neomind_storage::agents::{AgentMemory, AgentStats};
 
@@ -67,7 +67,19 @@ impl Tool for DeviceTool {
     }
 
     fn description(&self) -> &str {
-        "设备操作工具。action: list(列出设备), get(获取详情), query(查询数据), control(控制设备)"
+        r#"Device management tool for querying and controlling IoT devices.
+
+Actions:
+- list: List all devices with type/status filtering. Use when user asks what devices exist or their status.
+- get: Get device details including capabilities, supported metrics and commands. Use when user asks about a specific device.
+- query: Query device time-series data and sensor readings. Defaults to last 1 hour. Use when user asks for current or historical readings.
+- control: Send control commands to devices (switch on/off, adjust parameters). WARNING: This changes real device state.
+
+Important:
+- Always confirm user intent before using control action
+- If device_id is uncertain, call list first, then get/query
+- Supports fuzzy matching on device names (partial name works)
+- Use response_format="detailed" when you need IDs for follow-up chained calls"#
     }
 
     fn parameters(&self) -> Value {
@@ -76,31 +88,52 @@ impl Tool for DeviceTool {
                 "action": {
                     "type": "string",
                     "enum": ["list", "get", "query", "control"],
-                    "description": "操作类型"
+                    "description": "Operation type: 'list' (list all devices), 'get' (device details), 'query' (time-series data), 'control' (send command)"
                 },
-                "device_id": string_property("设备ID (get/query/control必填)"),
-                "metric": string_property("查询的指标名 (query可选)"),
-                "command": string_property("控制命令 (control必填)"),
+                "device_id": {
+                    "type": "string",
+                    "description": "Device ID or name. Required for get/query/control. Supports fuzzy matching (e.g., 'living' matches 'Living Room Light'). Examples: 'ne101', 'sensor_1', 'living_room_light'"
+                },
+                "metric": {
+                    "type": "string",
+                    "description": "Metric name to query (query action). Format: 'field' or 'values.field'. Examples: 'values.battery', 'temperature', 'humidity'"
+                },
+                "command": {
+                    "type": "string",
+                    "description": "Control command to send (control action). Common: 'turn_on', 'turn_off', 'set_value', 'toggle'. Examples: 'turn_on', 'set_value'"
+                },
                 "params": {
                     "type": "object",
-                    "description": "控制参数 (control可选)"
+                    "description": "Control parameters as key-value pairs (control action, optional). Example: {\"value\": 26, \"unit\": \"celsius\"}"
                 },
-                "device_type": string_property("按类型过滤 (list可选)"),
+                "device_type": {
+                    "type": "string",
+                    "description": "Filter by device type (list action). Examples: 'sensor', 'switch', 'light', 'camera'"
+                },
                 "include_details": {
                     "type": "boolean",
-                    "description": "是否包含设备指标和命令信息 (list可选, 默认true)"
+                    "description": "Include metrics and commands info in list output (list action, default: true)"
                 },
                 "start_time": {
                     "type": "number",
-                    "description": "开始时间戳 (query可选)"
+                    "description": "Start timestamp in seconds for time range query (query action, default: 1 hour ago). Example: 1712000000"
                 },
                 "end_time": {
                     "type": "number",
-                    "description": "结束时间戳 (query可选)"
+                    "description": "End timestamp in seconds for time range query (query action, default: now)"
                 },
                 "limit": {
                     "type": "number",
-                    "description": "返回数量限制 (可选)"
+                    "description": "Max number of results to return (default: 100 for query, unlimited for list)"
+                },
+                "response_format": {
+                    "type": "string",
+                    "enum": ["concise", "detailed"],
+                    "description": "Output format. 'concise': key info only (default). 'detailed': full data with IDs and metadata for follow-up chained calls"
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Set to true after user confirms. Required for control action. Without confirmation, the tool returns a preview instead of executing"
                 }
             }),
             vec!["action".to_string()],
@@ -130,6 +163,11 @@ impl Tool for DeviceTool {
 }
 
 impl DeviceTool {
+    /// Check if response_format is "detailed".
+    fn is_detailed(args: &Value) -> bool {
+        args["response_format"].as_str() == Some("detailed")
+    }
+
     /// Resolve device_id with fuzzy matching support.
     ///
     /// Tries exact match first, then falls back to case-insensitive
@@ -175,7 +213,7 @@ impl DeviceTool {
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
         let devices = self.device_service.list_devices().await;
         let device_type_filter = args["device_type"].as_str();
-        let include_details = args["include_details"].as_bool().unwrap_or(true);
+        let detailed = Self::is_detailed(args);
 
         let mut result = Vec::new();
 
@@ -187,6 +225,17 @@ impl DeviceTool {
                 }
             }
 
+            // Concise mode: name/type only
+            if !detailed {
+                result.push(serde_json::json!({
+                    "id": d.device_id,
+                    "name": d.name,
+                    "type": d.device_type,
+                }));
+                continue;
+            }
+
+            // Detailed mode: full info with metrics and commands
             let mut device_json = serde_json::json!({
                 "id": d.device_id,
                 "name": d.name,
@@ -194,48 +243,43 @@ impl DeviceTool {
                 "adapter_type": d.adapter_type
             });
 
-            // Include metrics and commands from device type template for better understanding
-            if include_details {
-                if let Some(template) = self.device_service.get_template(&d.device_type).await {
-                    // Add metrics info (simplified for AI consumption)
-                    if !template.metrics.is_empty() {
-                        let metrics_info: Vec<Value> = template
-                            .metrics
-                            .iter()
-                            .map(|m| {
-                                serde_json::json!({
-                                    "name": m.name,
-                                    "display_name": m.display_name,
-                                    "unit": m.unit,
-                                    "data_type": format!("{:?}", m.data_type)
-                                })
+            if let Some(template) = self.device_service.get_template(&d.device_type).await {
+                if !template.metrics.is_empty() {
+                    let metrics_info: Vec<Value> = template
+                        .metrics
+                        .iter()
+                        .map(|m| {
+                            serde_json::json!({
+                                "name": m.name,
+                                "display_name": m.display_name,
+                                "unit": m.unit,
+                                "data_type": format!("{:?}", m.data_type)
                             })
-                            .collect();
-                        device_json["metrics"] = serde_json::json!(metrics_info);
-                    }
+                        })
+                        .collect();
+                    device_json["metrics"] = serde_json::json!(metrics_info);
+                }
 
-                    // Add commands info (simplified for AI consumption)
-                    if !template.commands.is_empty() {
-                        let commands_info: Vec<Value> = template
-                            .commands
-                            .iter()
-                            .map(|c| {
-                                serde_json::json!({
-                                    "name": c.name,
-                                    "display_name": c.display_name,
-                                    "parameters": c.parameters.iter().map(|p| {
-                                        serde_json::json!({
-                                            "name": p.name,
-                                            "display_name": p.display_name,
-                                            "data_type": format!("{:?}", p.data_type),
-                                            "required": p.required
-                                        })
-                                    }).collect::<Vec<_>>()
-                                })
+                if !template.commands.is_empty() {
+                    let commands_info: Vec<Value> = template
+                        .commands
+                        .iter()
+                        .map(|c| {
+                            serde_json::json!({
+                                "name": c.name,
+                                "display_name": c.display_name,
+                                "parameters": c.parameters.iter().map(|p| {
+                                    serde_json::json!({
+                                        "name": p.name,
+                                        "display_name": p.display_name,
+                                        "data_type": format!("{:?}", p.data_type),
+                                        "required": p.required
+                                    })
+                                }).collect::<Vec<_>>()
                             })
-                            .collect();
-                        device_json["commands"] = serde_json::json!(commands_info);
-                    }
+                        })
+                        .collect();
+                    device_json["commands"] = serde_json::json!(commands_info);
                 }
             }
 
@@ -264,13 +308,20 @@ impl DeviceTool {
             .await
             .ok_or_else(|| ToolError::Execution(format!("Device not found: {}", device_id)))?;
 
-        Ok(ToolOutput::success(serde_json::json!({
-            "id": device.device_id,
-            "name": device.name,
-            "type": device.device_type,
-            "adapter_type": device.adapter_type,
-            "adapter_id": device.adapter_id
-        })))
+        if Self::is_detailed(args) {
+            Ok(ToolOutput::success(serde_json::json!({
+                "id": device.device_id,
+                "name": device.name,
+                "type": device.device_type,
+                "adapter_type": device.adapter_type,
+                "adapter_id": device.adapter_id
+            })))
+        } else {
+            Ok(ToolOutput::success(serde_json::json!({
+                "name": device.name,
+                "type": device.device_type
+            })))
+        }
     }
 
     async fn execute_query(&self, args: &Value) -> Result<ToolOutput> {
@@ -323,6 +374,18 @@ impl DeviceTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("command is required".into()))?;
 
+        // Confirmation check
+        let confirm = args["confirm"].as_bool().unwrap_or(false);
+        if !confirm {
+            return Ok(ToolOutput::success(serde_json::json!({
+                "preview": true,
+                "device_id": device_id,
+                "command": command,
+                "params": args.get("params").cloned().unwrap_or(serde_json::json!({})),
+                "message": "This will change device state. Set confirm=true to execute."
+            })));
+        }
+
         let params: HashMap<String, Value> = args
             .get("params")
             .and_then(|p| p.as_object())
@@ -366,7 +429,20 @@ impl Tool for AgentTool {
     }
 
     fn description(&self) -> &str {
-        "AI Agent管理工具。action: list(列出), get(详情), create(创建), update(更新), control(控制:pause/resume), memory(查询记忆)"
+        r#"AI Agent management tool for creating and managing automated agents.
+
+Actions:
+- list: List all agents or filter by status (active/paused/stopped/error). Use when user asks about existing agents.
+- get: Get agent details including config, schedule, and execution stats. Use when user asks about a specific agent.
+- create: Create a new automated agent. Requires: name, user_prompt, schedule_type. Use when user wants to automate a monitoring or control task.
+- update: Modify an existing agent's configuration (name, description, user_prompt). Use when user wants to change agent behavior.
+- control: Pause or resume agent execution (control_action: pause/resume). WARNING: This affects running agents.
+- memory: View agent's learned patterns and intent understanding. Use when debugging agent behavior.
+
+When creating agents:
+- schedule_type: 'event' (triggered by device events), 'cron' (cron schedule), 'interval' (periodic, e.g., every 5 minutes)
+- user_prompt should be specific, e.g., 'Check temperature every 5 minutes, alert if above 30C'
+- Use response_format="detailed" to get full agent config including IDs"#
     }
 
     fn parameters(&self) -> Value {
@@ -375,21 +451,57 @@ impl Tool for AgentTool {
                 "action": {
                     "type": "string",
                     "enum": ["list", "get", "create", "update", "control", "memory"],
-                    "description": "操作类型"
+                    "description": "Operation type: 'list' (all agents), 'get' (agent details), 'create' (new agent), 'update' (modify agent), 'control' (pause/resume), 'memory' (view learned patterns)"
                 },
-                "agent_id": string_property("Agent ID (get/update/control/memory必填)"),
-                "name": string_property("Agent名称 (create/update必填)"),
-                "description": string_property("Agent描述 (create/update可选)"),
-                "user_prompt": string_property("用户需求描述 (create/update必填)"),
-                "schedule_type": string_property("调度类型: event/cron/interval (create必填)"),
-                "schedule_config": string_property("调度配置 (create可选)"),
-                "control_action": string_property("控制动作: pause/resume (control必填)"),
-                "status": string_property("按状态过滤 (list可选): active/paused/stopped/error/executing"),
+                "agent_id": {
+                    "type": "string",
+                    "description": "Agent ID. Required for get/update/control/memory actions. Example: 'agent_1', or use the ID returned from list action"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Agent display name. Required for create, optional for update. Example: 'Temperature Monitor', 'Security Patrol'"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Agent description. Optional for create/update. Example: 'Monitors living room temperature and alerts on threshold breach'"
+                },
+                "user_prompt": {
+                    "type": "string",
+                    "description": "Natural language description of what the agent should do. Required for create, optional for update. Be specific: 'Check ne101 temperature every 5 minutes, alert if above 30C'"
+                },
+                "schedule_type": {
+                    "type": "string",
+                    "description": "How the agent is triggered (create action): 'event' (device data changes), 'cron' (time schedule), 'interval' (periodic execution)"
+                },
+                "schedule_config": {
+                    "type": "string",
+                    "description": "Schedule configuration (create action). For cron: cron expression like '*/5 * * * *'. For interval: seconds like '300'"
+                },
+                "control_action": {
+                    "type": "string",
+                    "description": "Control operation (control action): 'pause' (stop execution temporarily), 'resume' (restart paused agent)"
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Filter by agent status (list action): 'active', 'paused', 'stopped', 'error', 'executing'"
+                },
                 "limit": {
                     "type": "number",
-                    "description": "返回数量限制 (list/memory可选)"
+                    "description": "Max results to return (list/memory actions). Default: 20"
                 },
-                "memory_type": string_property("记忆类型: patterns/intents (memory可选)")
+                "memory_type": {
+                    "type": "string",
+                    "description": "Type of memory to retrieve (memory action): 'patterns' (learned patterns, default), 'intents' (parsed intent). Default: 'patterns'"
+                },
+                "response_format": {
+                    "type": "string",
+                    "enum": ["concise", "detailed"],
+                    "description": "Output format. 'concise': name/status/schedule only (default). 'detailed': full config with IDs and metadata"
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Set to true after user confirms. Required for control action. Without confirmation, returns a preview"
+                }
             }),
             vec!["action".to_string()],
         )
@@ -420,6 +532,10 @@ impl Tool for AgentTool {
 }
 
 impl AgentTool {
+    fn is_detailed(args: &Value) -> bool {
+        args["response_format"].as_str() == Some("detailed")
+    }
+
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
         use neomind_storage::agents::{AgentFilter, AgentStatus};
 
@@ -449,13 +565,22 @@ impl AgentTool {
         let list: Vec<Value> = agents
             .iter()
             .map(|a| {
-                serde_json::json!({
-                    "id": a.id,
-                    "name": a.name,
-                    "description": a.description,
-                    "status": format!("{:?}", a.status).to_lowercase(),
-                    "schedule_type": format!("{:?}", a.schedule.schedule_type).to_lowercase()
-                })
+                if Self::is_detailed(args) {
+                    serde_json::json!({
+                        "id": a.id,
+                        "name": a.name,
+                        "description": a.description,
+                        "status": format!("{:?}", a.status).to_lowercase(),
+                        "schedule_type": format!("{:?}", a.schedule.schedule_type).to_lowercase()
+                    })
+                } else {
+                    serde_json::json!({
+                        "id": a.id,
+                        "name": a.name,
+                        "status": format!("{:?}", a.status).to_lowercase(),
+                        "schedule_type": format!("{:?}", a.schedule.schedule_type).to_lowercase()
+                    })
+                }
             })
             .collect();
 
@@ -604,6 +729,17 @@ impl AgentTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("control_action is required".into()))?;
 
+        // Confirmation check
+        let confirm = args["confirm"].as_bool().unwrap_or(false);
+        if !confirm {
+            return Ok(ToolOutput::success(serde_json::json!({
+                "preview": true,
+                "agent_id": agent_id,
+                "control_action": control_action,
+                "message": "This will change agent execution state. Set confirm=true to execute."
+            })));
+        }
+
         use neomind_storage::agents::AgentStatus;
 
         let (status, error_msg) = match control_action {
@@ -684,7 +820,16 @@ impl Tool for AgentHistoryTool {
     }
 
     fn description(&self) -> &str {
-        "Agent执行历史工具。action: executions(执行统计), conversation(对话记录)"
+        r#"Agent execution history tool for reviewing agent performance and conversation logs.
+
+Actions:
+- executions: View agent execution statistics (total runs, success rate, last execution time). Use when user asks about agent performance or reliability.
+- conversation: View agent's conversation history (inputs and outputs from past runs). Use when debugging agent behavior or reviewing what an agent did.
+
+Use cases:
+- Check if an agent is running correctly: executions action
+- Debug why an agent made a decision: conversation action
+- Review recent agent activity: conversation with limit"#
     }
 
     fn parameters(&self) -> Value {
@@ -693,12 +838,20 @@ impl Tool for AgentHistoryTool {
                 "action": {
                     "type": "string",
                     "enum": ["executions", "conversation"],
-                    "description": "操作类型"
+                    "description": "Operation type: 'executions' (execution statistics), 'conversation' (conversation log)"
                 },
-                "agent_id": string_property("Agent ID (必填)"),
+                "agent_id": {
+                    "type": "string",
+                    "description": "Agent ID to query. Required. Use agent(action='list') to find available agent IDs"
+                },
                 "limit": {
                     "type": "number",
-                    "description": "返回数量限制 (可选)"
+                    "description": "Max number of conversation entries to return (conversation action). Default: 50"
+                },
+                "response_format": {
+                    "type": "string",
+                    "enum": ["concise", "detailed"],
+                    "description": "Output format. 'concise': summary stats only (default). 'detailed': full execution details with timestamps"
                 }
             }),
             vec!["action".to_string(), "agent_id".to_string()],
@@ -818,7 +971,22 @@ impl Tool for RuleTool {
     }
 
     fn description(&self) -> &str {
-        "规则管理工具。action: list(列出规则), get(详情), create(创建规则), update(更新规则), delete(删除), history(执行历史)"
+        r#"Rule management tool for automation rules that trigger actions based on device conditions.
+
+Actions:
+- list: List all rules or filter by name. Use when user asks about existing automation rules.
+- get: Get rule details including full DSL definition. Use when user asks about a specific rule's logic.
+- create: Create a new automation rule from DSL. Requires: dsl. Use when user wants to automate a response to device conditions.
+- update: Replace a rule's DSL definition. WARNING: Deletes old rule and creates new one. Requires: rule_id, dsl.
+- delete: Permanently remove a rule. WARNING: This is irreversible. Requires confirmation.
+- history: View rule execution history (when rules triggered and what they did).
+
+Rule DSL format:
+RULE "rule_name" WHEN device_id.metric OPERATOR value DO ACTION END
+Example: RULE "Low Battery Alert" WHEN ne101.battery < 50 DO NOTIFY "Battery below 50%" END
+
+Operators: <, >, <=, >=, ==, !=
+Actions: NOTIFY (send alert), CONTROL (send device command)"#
     }
 
     fn parameters(&self) -> Value {
@@ -827,22 +995,40 @@ impl Tool for RuleTool {
                 "action": {
                     "type": "string",
                     "enum": ["list", "get", "create", "update", "delete", "history"],
-                    "description": "操作类型"
+                    "description": "Operation type: 'list' (all rules), 'get' (rule details), 'create' (new rule), 'update' (modify rule), 'delete' (remove rule), 'history' (execution log)"
                 },
-                "rule_id": string_property("规则ID (get/update/delete必填)"),
-                "dsl": string_property("规则DSL定义 (create/update必填)。格式: RULE \"名称\" WHEN 条件 DO 动作 END"),
-                "name_filter": string_property("按名称过滤 (list可选)"),
+                "rule_id": {
+                    "type": "string",
+                    "description": "Rule ID. Required for get/update/delete. Use list action first to find the rule ID"
+                },
+                "dsl": {
+                    "type": "string",
+                    "description": "Rule DSL definition. Required for create/update. Format: RULE \"name\" WHEN device.metric OP value DO ACTION END. Example: RULE \"Low Battery\" WHEN ne101.battery < 50 DO NOTIFY \"Battery low\" END"
+                },
+                "name_filter": {
+                    "type": "string",
+                    "description": "Filter rules by name substring (list action). Example: 'battery', 'temperature'"
+                },
                 "limit": {
                     "type": "number",
-                    "description": "返回数量限制 (可选)"
+                    "description": "Max results to return. Default: 100"
                 },
                 "start_time": {
                     "type": "number",
-                    "description": "开始时间戳 (history可选)"
+                    "description": "Start timestamp for history range (history action). Unix timestamp in seconds"
                 },
                 "end_time": {
                     "type": "number",
-                    "description": "结束时间戳 (history可选)"
+                    "description": "End timestamp for history range (history action). Unix timestamp in seconds"
+                },
+                "response_format": {
+                    "type": "string",
+                    "enum": ["concise", "detailed"],
+                    "description": "Output format. 'concise': name/status only (default). 'detailed': full DSL and metadata"
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Set to true after user confirms. Required for delete and update actions. Without confirmation, returns a preview instead of executing"
                 }
             }),
             vec!["action".to_string()],
@@ -874,11 +1060,16 @@ impl Tool for RuleTool {
 }
 
 impl RuleTool {
+    fn is_detailed(args: &Value) -> bool {
+        args["response_format"].as_str() == Some("detailed")
+    }
+
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
         let rules = self.rule_engine.list_rules().await;
 
         let name_filter = args["name_filter"].as_str();
         let limit = args["limit"].as_u64().unwrap_or(100) as usize;
+        let detailed = Self::is_detailed(args);
 
         let filtered: Vec<Value> = rules
             .iter()
@@ -891,11 +1082,20 @@ impl RuleTool {
             })
             .take(limit)
             .map(|r| {
-                serde_json::json!({
-                    "id": r.id.to_string(),
-                    "name": r.name,
-                    "description": r.description
-                })
+                if detailed {
+                    serde_json::json!({
+                        "id": r.id.to_string(),
+                        "name": r.name,
+                        "description": r.description,
+                        "dsl": r.dsl
+                    })
+                } else {
+                    serde_json::json!({
+                        "id": r.id.to_string(),
+                        "name": r.name,
+                        "description": r.description
+                    })
+                }
             })
             .collect();
 
@@ -931,6 +1131,16 @@ impl RuleTool {
         let rule_id_str = args["rule_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("rule_id is required".into()))?;
+
+        // Confirmation check
+        let confirm = args["confirm"].as_bool().unwrap_or(false);
+        if !confirm {
+            return Ok(ToolOutput::success(serde_json::json!({
+                "preview": true,
+                "rule_id": rule_id_str,
+                "message": "This will permanently delete the rule. Set confirm=true to execute."
+            })));
+        }
 
         let rule_id = neomind_rules::RuleId::from_string(rule_id_str)
             .map_err(|e| ToolError::InvalidArguments(format!("Invalid rule_id: {}", e)))?;
@@ -972,6 +1182,17 @@ impl RuleTool {
         let dsl = args["dsl"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("dsl is required".into()))?;
+
+        // Confirmation check
+        let confirm = args["confirm"].as_bool().unwrap_or(false);
+        if !confirm {
+            return Ok(ToolOutput::success(serde_json::json!({
+                "preview": true,
+                "rule_id": rule_id_str,
+                "new_dsl": dsl,
+                "message": "This will replace the rule definition. Set confirm=true to execute."
+            })));
+        }
 
         let rule_id = neomind_rules::RuleId::from_string(rule_id_str)
             .map_err(|e| ToolError::InvalidArguments(format!("Invalid rule_id: {}", e)))?;
@@ -1092,7 +1313,22 @@ impl Tool for AlertTool {
     }
 
     fn description(&self) -> &str {
-        "告警管理工具。action: list(列出告警), create(创建告警), acknowledge(确认告警)"
+        r#"Alert management tool for viewing and managing system alerts and notifications.
+
+Actions:
+- list: List alerts with optional severity and acknowledgment filters. Use when user asks about current or recent alerts.
+- create: Create a new alert manually. Use when user wants to flag something or when an agent needs to notify the user.
+- acknowledge: Mark an alert as acknowledged/resolved. Use when user confirms they've seen an alert.
+
+Severity levels:
+- info: Informational, no action needed (e.g., 'Device came online')
+- warning: Attention recommended (e.g., 'Battery below 30%')
+- error: Action needed (e.g., 'Device communication failed')
+- critical: Immediate action required (e.g., 'Temperature exceeds safety limit')
+
+Tips:
+- Use unacknowledged_only=true to see only active alerts
+- Filter by severity to prioritize critical issues"#
     }
 
     fn parameters(&self) -> Value {
@@ -1101,21 +1337,44 @@ impl Tool for AlertTool {
                 "action": {
                     "type": "string",
                     "enum": ["list", "create", "acknowledge"],
-                    "description": "操作类型"
+                    "description": "Operation type: 'list' (view alerts), 'create' (new alert), 'acknowledge' (mark as resolved)"
                 },
-                "alert_id": string_property("告警ID (acknowledge必填)"),
-                "title": string_property("告警标题 (create必填)"),
-                "message": string_property("告警消息 (create必填)"),
-                "severity": string_property("严重程度: info/warning/error/critical (create可选)"),
-                "source": string_property("告警来源 (create可选)"),
+                "alert_id": {
+                    "type": "string",
+                    "description": "Alert ID to acknowledge (acknowledge action). Use list action first to find the alert ID"
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Alert title (create action). Short summary. Example: 'High Temperature Alert', 'Device Offline'"
+                },
+                "message": {
+                    "type": "string",
+                    "description": "Alert message body (create action). Detailed description. Example: 'Living room sensor reports 35.2C, threshold is 30C'"
+                },
+                "severity": {
+                    "type": "string",
+                    "description": "Alert severity level (create action): 'info', 'warning', 'error', 'critical'. Default: 'warning'"
+                },
+                "source": {
+                    "type": "string",
+                    "description": "Alert source identifier (create action). Default: 'system'. Example: 'temperature_monitor', 'security_agent'"
+                },
                 "unacknowledged_only": {
                     "type": "boolean",
-                    "description": "仅返回未确认的告警 (list可选)"
+                    "description": "Only return unacknowledged alerts (list action). Default: false"
                 },
-                "severity_filter": string_property("按严重程度过滤 (list可选)"),
+                "severity_filter": {
+                    "type": "string",
+                    "description": "Filter by severity (list action): 'info', 'warning', 'error', 'critical'"
+                },
                 "limit": {
                     "type": "number",
-                    "description": "返回数量限制 (list可选)"
+                    "description": "Max alerts to return (list action). Default: 50"
+                },
+                "response_format": {
+                    "type": "string",
+                    "enum": ["concise", "detailed"],
+                    "description": "Output format. 'concise': title/severity/status only (default). 'detailed': full alert info with timestamps"
                 }
             }),
             vec!["action".to_string()],
@@ -1144,10 +1403,15 @@ impl Tool for AlertTool {
 }
 
 impl AlertTool {
+    fn is_detailed(args: &Value) -> bool {
+        args["response_format"].as_str() == Some("detailed")
+    }
+
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
         let unacknowledged_only = args["unacknowledged_only"].as_bool().unwrap_or(false);
         let severity_filter = args["severity_filter"].as_str();
         let limit = args["limit"].as_u64().unwrap_or(50) as usize;
+        let detailed = Self::is_detailed(args);
 
         // Use message_manager if available, otherwise use in-memory storage
         if let Some(manager) = &self.message_manager {
@@ -1186,15 +1450,24 @@ impl AlertTool {
                         MessageSeverity::Critical => "critical",
                         MessageSeverity::Emergency => "emergency",
                     };
-                    serde_json::json!({
-                        "id": m.id.to_string(),
-                        "title": m.title,
-                        "message": m.message,
-                        "severity": severity_str,
-                        "source": m.source_type,
-                        "acknowledged": !m.is_active(),
-                        "created_at": m.timestamp.timestamp()
-                    })
+                    if detailed {
+                        serde_json::json!({
+                            "id": m.id.to_string(),
+                            "title": m.title,
+                            "message": m.message,
+                            "severity": severity_str,
+                            "source": m.source_type,
+                            "acknowledged": !m.is_active(),
+                            "created_at": m.timestamp.timestamp()
+                        })
+                    } else {
+                        serde_json::json!({
+                            "id": m.id.to_string(),
+                            "title": m.title,
+                            "severity": severity_str,
+                            "acknowledged": !m.is_active()
+                        })
+                    }
                 })
                 .collect();
 
@@ -1222,7 +1495,18 @@ impl AlertTool {
                     }
                 })
                 .take(limit)
-                .map(|a| serde_json::to_value(a).unwrap())
+                .map(|a| {
+                    if detailed {
+                        serde_json::to_value(a).unwrap()
+                    } else {
+                        serde_json::json!({
+                            "id": a.id,
+                            "title": a.title,
+                            "severity": format!("{:?}", a.severity).to_lowercase(),
+                            "acknowledged": a.acknowledged
+                        })
+                    }
+                })
                 .collect();
 
             Ok(ToolOutput::success(serde_json::json!({

@@ -243,13 +243,13 @@ pub struct Example {
 /// IMPORTANT: Tool names MUST match the actual tool names registered in the tool registry.
 /// See real.rs, agent_tools.rs, and system_tools.rs for actual tool names.
 ///
-/// DESIGN PRINCIPLES (基于 Anthropic 最佳实践):
-/// - 更少、更聚焦的工具，而非大量细粒度工具
-/// - 合并功能相似的工具，减少 LLM 选择负担
-/// - 优先考虑高价值、高使用频率的工具
-/// - 每个工具应该是"不可删减"的
+/// DESIGN PRINCIPLES (based on Anthropic best practices):
+/// - Fewer, more focused tools rather than many granular ones
+/// - Merge similar tools to reduce LLM selection burden
+/// - Prioritize high-value, high-frequency tools
+/// - Each tool should be "irreducible"
 ///
-/// 工具清单 (5个聚合工具，替代原来的34+个独立工具):
+/// Tool list (5 aggregated tools replacing 34+ individual tools):
 /// - device: list, get, query, control
 /// - agent: list, get, create, update, control, memory
 /// - agent_history: executions, conversation
@@ -257,265 +257,315 @@ pub struct Example {
 /// - alert: list, create, acknowledge
 pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
     vec![
-        // === 工具调用流程说明 ===
-        //
-        // **聚合工具设计原则**:
-        //   - 所有工具使用 action 参数区分具体操作
-        //   - 大幅减少工具定义的 token 消耗 (~60%)
-        //   - 输出格式与原工具保持兼容
-        //
-        // **推荐调用方式**:
-        //   场景A - 用户询问设备:
-        //     device(action="list") → 列出所有设备
-        //     device(action="get", device_id="xxx") → 获取设备详情
-        //     device(action="query", device_id="xxx", metric="xxx") → 查询数据
-        //     device(action="control", device_id="xxx", command="xxx") → 控制设备
-        //
-        //   场景B - 用户管理Agent:
-        //     agent(action="list") → 列出所有Agent
-        //     agent(action="get", agent_id="xxx") → 获取Agent详情
-        //     agent(action="create", name="xxx", user_prompt="xxx") → 创建Agent
-        //
-        //   场景C - 用户管理规则:
-        //     rule(action="list") → 列出所有规则
-        //     rule(action="get", rule_id="xxx") → 获取规则详情
-        //     rule(action="delete", rule_id="xxx") → 删除规则
-        //
-        // ================================
-
-        // === Device Tool (聚合4个设备操作) ===
+        // === Device Tool (aggregates 4 device operations) ===
         LlmToolDefinition {
             name: "device".to_string(),
-            description: "设备管理工具。action: list(列出设备)|get(获取详情)|query(查询数据)|control(控制设备)".to_string(),
-            aliases: vec!["设备".to_string(), "device_discover".to_string(), "get_device_data".to_string(), "query_data".to_string(), "device_control".to_string()],
+            description: "Device management tool for querying and controlling IoT devices. Actions: list (list devices), get (device details), query (time-series data), control (send commands). Supports fuzzy device name matching.".to_string(),
+            aliases: vec!["device".to_string(), "devices".to_string(), "sensor".to_string(), "iot".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
                 ("device_id".to_string(), ParameterInfo {
-                    description: "设备ID (get/query/control需要)".to_string(),
+                    description: "Device ID or partial name (get/query/control). Fuzzy matching supported, e.g., 'living' matches 'Living Room Light'".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["ne101".to_string(), "sensor_1".to_string()],
+                    examples: vec!["ne101".to_string(), "sensor_1".to_string(), "living_room_light".to_string()],
                 }),
                 ("metric".to_string(), ParameterInfo {
-                    description: "指标名称 (query需要，如values.battery)".to_string(),
+                    description: "Metric name to query (query action). Format: 'field' or 'values.field'. Examples: 'values.battery', 'temperature'".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["values.battery".to_string(), "temperature".to_string()],
+                    examples: vec!["values.battery".to_string(), "temperature".to_string(), "humidity".to_string()],
                 }),
                 ("command".to_string(), ParameterInfo {
-                    description: "控制命令 (control需要: turn_on/turn_off/set_value)".to_string(),
+                    description: "Control command (control action). Common: 'turn_on', 'turn_off', 'set_value', 'toggle'".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["turn_on".to_string(), "turn_off".to_string()],
+                    examples: vec!["turn_on".to_string(), "turn_off".to_string(), "set_value".to_string()],
                 }),
                 ("params".to_string(), ParameterInfo {
-                    description: "控制参数 (control可选)".to_string(),
+                    description: "Control parameters as JSON object (control action, optional). Example: {\"value\": 26}".to_string(),
                     default: serde_json::json!({}),
-                    examples: vec!["{\"value\": 26}".to_string()],
+                    examples: vec![r#"{"value": 26}"#.to_string(), r#"{"brightness": 80}"#.to_string()],
                 }),
                 ("start_time".to_string(), ParameterInfo {
-                    description: "起始时间戳 (query可选)".to_string(),
+                    description: "Start timestamp for time range query (query action). Unix timestamp in seconds. Default: 1 hour ago".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["今天0点".to_string()],
+                    examples: vec!["1712000000".to_string()],
                 }),
                 ("end_time".to_string(), ParameterInfo {
-                    description: "结束时间戳 (query可选)".to_string(),
+                    description: "End timestamp for time range query (query action). Default: now".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["现在".to_string()],
+                    examples: vec!["1712100000".to_string()],
+                }),
+                ("response_format".to_string(), ParameterInfo {
+                    description: "Output verbosity: 'concise' (default, key info only) or 'detailed' (full data with IDs, for chained calls)".to_string(),
+                    default: serde_json::json!("concise"),
+                    examples: vec!["concise".to_string(), "detailed".to_string()],
+                }),
+                ("confirm".to_string(), ParameterInfo {
+                    description: "Set to true after user confirms (control action). Without confirmation, returns a preview instead of executing".to_string(),
+                    default: serde_json::json!(false),
+                    examples: vec!["true".to_string()],
                 }),
             ]),
             examples: vec![
                 Example {
-                    user_query: "有哪些设备？".to_string(),
-                    tool_call: "device(action=\"list\")".to_string(),
-                    explanation: "列出所有设备".to_string(),
+                    user_query: "What devices do I have?".to_string(),
+                    tool_call: r#"device(action="list")"#.to_string(),
+                    explanation: "List all devices".to_string(),
                 },
                 Example {
-                    user_query: "ne101的电量？".to_string(),
-                    tool_call: "device(action=\"get\", device_id=\"ne101\")".to_string(),
-                    explanation: "获取设备当前所有指标".to_string(),
+                    user_query: "What's the battery level of ne101?".to_string(),
+                    tool_call: r#"device(action="get", device_id="ne101")"#.to_string(),
+                    explanation: "Get device details and current metrics".to_string(),
                 },
                 Example {
-                    user_query: "今天的电池趋势".to_string(),
-                    tool_call: "device(action=\"query\", device_id=\"ne101\", metric=\"values.battery\")".to_string(),
-                    explanation: "查询历史数据".to_string(),
+                    user_query: "Show battery trend for today".to_string(),
+                    tool_call: r#"device(action="query", device_id="ne101", metric="values.battery")"#.to_string(),
+                    explanation: "Query historical time-series data".to_string(),
                 },
                 Example {
-                    user_query: "打开客厅灯".to_string(),
-                    tool_call: "device(action=\"control\", device_id=\"light_living\", command=\"turn_on\")".to_string(),
-                    explanation: "控制设备".to_string(),
+                    user_query: "Turn off the living room light".to_string(),
+                    tool_call: r#"device(action="control", device_id="light_living", command="turn_off", confirm=true)"#.to_string(),
+                    explanation: "Control device with user confirmation".to_string(),
                 },
             ],
-            use_when: vec!["用户询问设备".to_string(), "用户要控制设备".to_string()],
+            use_when: vec![
+                "User asks about devices, sensors, or IoT hardware".to_string(),
+                "User wants to check device status or readings".to_string(),
+                "User wants to control a device (turn on/off, adjust)".to_string(),
+                "User asks for historical sensor data or trends".to_string(),
+            ],
         },
 
-        // === Agent Tool (聚合6个Agent操作) ===
+        // === Agent Tool (aggregates 6 agent operations) ===
         LlmToolDefinition {
             name: "agent".to_string(),
-            description: "智能体管理工具。action: list|get|create|update|control|memory".to_string(),
-            aliases: vec!["智能体".to_string(), "list_agents".to_string(), "get_agent".to_string(), "create_agent".to_string(), "execute_agent".to_string(), "control_agent".to_string()],
+            description: "AI Agent management tool for creating and managing automated monitoring/control agents. Actions: list, get, create, update, control (pause/resume), memory (view learned patterns).".to_string(),
+            aliases: vec!["agent".to_string(), "automation".to_string(), "monitor".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
                 ("agent_id".to_string(), ParameterInfo {
-                    description: "智能体ID (get/update/control/memory需要)".to_string(),
+                    description: "Agent ID (get/update/control/memory actions). Use list action to find IDs".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["agent_1".to_string()],
+                    examples: vec!["agent_1".to_string(), "550e8400-e29b-41d4-a716-446655440000".to_string()],
                 }),
                 ("name".to_string(), ParameterInfo {
-                    description: "智能体名称 (create/update需要)".to_string(),
+                    description: "Agent display name (create/update actions). Example: 'Temperature Monitor'".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["温度监控".to_string()],
+                    examples: vec!["Temperature Monitor".to_string(), "Security Patrol".to_string()],
                 }),
                 ("description".to_string(), ParameterInfo {
-                    description: "智能体描述 (create可选)".to_string(),
+                    description: "Agent description (create action, optional)".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["监控温度变化".to_string()],
+                    examples: vec!["Monitors living room temperature".to_string()],
                 }),
                 ("user_prompt".to_string(), ParameterInfo {
-                    description: "用户需求描述 (create需要)".to_string(),
+                    description: "Natural language description of what the agent should do (create action). Be specific with device names and thresholds".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["每5分钟检查一次温度".to_string()],
+                    examples: vec!["Check ne101 temperature every 5 minutes, alert if above 30C".to_string()],
+                }),
+                ("schedule_type".to_string(), ParameterInfo {
+                    description: "How agent is triggered (create): 'event' (device events), 'cron' (cron schedule), 'interval' (periodic)".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["event".to_string(), "cron".to_string(), "interval".to_string()],
                 }),
                 ("control_action".to_string(), ParameterInfo {
-                    description: "控制动作 (control需要: pause/resume/start/stop)".to_string(),
+                    description: "Control operation (control action): 'pause' or 'resume'".to_string(),
                     default: serde_json::json!(null),
                     examples: vec!["pause".to_string(), "resume".to_string()],
                 }),
                 ("memory_type".to_string(), ParameterInfo {
-                    description: "记忆类型 (memory可选: patterns/intents)".to_string(),
+                    description: "Memory type to retrieve (memory action): 'patterns' or 'intents'. Default: 'patterns'".to_string(),
                     default: serde_json::json!("patterns"),
-                    examples: vec!["patterns".to_string()],
+                    examples: vec!["patterns".to_string(), "intents".to_string()],
+                }),
+                ("response_format".to_string(), ParameterInfo {
+                    description: "Output verbosity: 'concise' (name/status only) or 'detailed' (full config with IDs)".to_string(),
+                    default: serde_json::json!("concise"),
+                    examples: vec!["concise".to_string(), "detailed".to_string()],
+                }),
+                ("confirm".to_string(), ParameterInfo {
+                    description: "Set to true after user confirms (control action). Returns preview without confirmation".to_string(),
+                    default: serde_json::json!(false),
+                    examples: vec!["true".to_string()],
                 }),
             ]),
             examples: vec![
                 Example {
-                    user_query: "有哪些智能体？".to_string(),
-                    tool_call: "agent(action=\"list\")".to_string(),
-                    explanation: "列出所有Agent".to_string(),
+                    user_query: "What agents are running?".to_string(),
+                    tool_call: r#"agent(action="list")"#.to_string(),
+                    explanation: "List all agents".to_string(),
                 },
                 Example {
-                    user_query: "创建一个温度监控Agent".to_string(),
-                    tool_call: "agent(action=\"create\", name=\"温度监控\", user_prompt=\"每5分钟检查一次ne101的温度，超过30度告警\")".to_string(),
-                    explanation: "创建Agent".to_string(),
+                    user_query: "Create a temperature monitoring agent".to_string(),
+                    tool_call: r#"agent(action="create", name="Temperature Monitor", user_prompt="Check ne101 temperature every 5 minutes, alert if above 30C", schedule_type="interval", schedule_config="300")"#.to_string(),
+                    explanation: "Create an interval-based monitoring agent".to_string(),
                 },
                 Example {
-                    user_query: "暂停温度监控".to_string(),
-                    tool_call: "agent(action=\"control\", agent_id=\"agent_1\", control_action=\"pause\")".to_string(),
-                    explanation: "控制Agent".to_string(),
+                    user_query: "Pause the temperature monitor".to_string(),
+                    tool_call: r#"agent(action="control", agent_id="agent_1", control_action="pause", confirm=true)"#.to_string(),
+                    explanation: "Pause agent with confirmation".to_string(),
                 },
             ],
-            use_when: vec!["用户询问Agent".to_string(), "用户要创建/控制Agent".to_string()],
+            use_when: vec![
+                "User asks about agents or automations".to_string(),
+                "User wants to create a monitoring or control agent".to_string(),
+                "User wants to pause/resume agent execution".to_string(),
+            ],
         },
 
         // === Agent History Tool ===
         LlmToolDefinition {
             name: "agent_history".to_string(),
-            description: "智能体历史工具。action: executions(执行统计)|conversation(对话记录)".to_string(),
-            aliases: vec!["执行历史".to_string(), "get_agent_executions".to_string(), "get_agent_conversation".to_string()],
+            description: "Agent execution history tool. View execution stats (success rate, run count) or conversation logs (what agent did and decided). Useful for debugging agent behavior.".to_string(),
+            aliases: vec!["agent history".to_string(), "agent logs".to_string(), "execution history".to_string()],
             required: vec!["action".to_string(), "agent_id".to_string()],
             optional: HashMap::from_iter(vec![
                 ("limit".to_string(), ParameterInfo {
-                    description: "返回数量限制".to_string(),
-                    default: serde_json::json!(10),
-                    examples: vec!["20".to_string()],
+                    description: "Max conversation entries to return (conversation action). Default: 50".to_string(),
+                    default: serde_json::json!(50),
+                    examples: vec!["10".to_string(), "20".to_string()],
+                }),
+                ("response_format".to_string(), ParameterInfo {
+                    description: "Output verbosity: 'concise' (summary) or 'detailed' (full details with timestamps)".to_string(),
+                    default: serde_json::json!("concise"),
+                    examples: vec!["concise".to_string(), "detailed".to_string()],
                 }),
             ]),
             examples: vec![
                 Example {
-                    user_query: "温度监控Agent的执行情况".to_string(),
-                    tool_call: "agent_history(action=\"executions\", agent_id=\"agent_1\")".to_string(),
-                    explanation: "查看执行统计".to_string(),
+                    user_query: "How is the temperature monitor performing?".to_string(),
+                    tool_call: r#"agent_history(action="executions", agent_id="agent_1")"#.to_string(),
+                    explanation: "View execution statistics".to_string(),
+                },
+                Example {
+                    user_query: "What did the agent do recently?".to_string(),
+                    tool_call: r#"agent_history(action="conversation", agent_id="agent_1", limit=5)"#.to_string(),
+                    explanation: "View recent conversation history".to_string(),
                 },
             ],
-            use_when: vec!["用户询问Agent执行历史".to_string()],
+            use_when: vec![
+                "User asks about agent execution history or performance".to_string(),
+                "User wants to debug why an agent made a decision".to_string(),
+                "User asks what an agent has been doing".to_string(),
+            ],
         },
 
-        // === Rule Tool (聚合4个规则操作) ===
+        // === Rule Tool (aggregates rule operations) ===
         LlmToolDefinition {
             name: "rule".to_string(),
-            description: "规则管理工具。action: list|get|delete|history".to_string(),
-            aliases: vec!["规则".to_string(), "list_rules".to_string(), "get_rule".to_string(), "delete_rule".to_string(), "create_rule".to_string()],
+            description: "Rule management tool for automation rules. Actions: list, get, create, update, delete, history. Rules trigger actions when device conditions are met. DSL format: RULE \"name\" WHEN device.metric OP value DO ACTION END".to_string(),
+            aliases: vec!["rule".to_string(), "automation rule".to_string(), "trigger".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
                 ("rule_id".to_string(), ParameterInfo {
-                    description: "规则ID (get/delete需要)".to_string(),
+                    description: "Rule ID (get/update/delete actions). Use list action to find IDs".to_string(),
                     default: serde_json::json!(null),
                     examples: vec!["rule_1".to_string()],
                 }),
-                ("name".to_string(), ParameterInfo {
-                    description: "规则名称 (create需要)".to_string(),
-                    default: serde_json::json!(null),
-                    examples: vec!["低电量告警".to_string()],
-                }),
                 ("dsl".to_string(), ParameterInfo {
-                    description: "规则DSL (create需要)".to_string(),
+                    description: "Rule DSL definition (create/update). Example: RULE \"Low Battery\" WHEN ne101.battery < 50 DO NOTIFY \"Battery low\" END".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["RULE \"低电量\" WHEN ne101.battery < 50 DO NOTIFY \"电量低\" END".to_string()],
+                    examples: vec![r#"RULE "Low Battery" WHEN ne101.battery < 50 DO NOTIFY "Battery low" END"#.to_string()],
+                }),
+                ("name_filter".to_string(), ParameterInfo {
+                    description: "Filter rules by name substring (list action)".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["battery".to_string(), "temperature".to_string()],
                 }),
                 ("start_time".to_string(), ParameterInfo {
-                    description: "起始时间戳 (history可选)".to_string(),
+                    description: "Start timestamp for history range (history action)".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["今天0点".to_string()],
+                    examples: vec!["1712000000".to_string()],
+                }),
+                ("response_format".to_string(), ParameterInfo {
+                    description: "Output verbosity: 'concise' (name/status) or 'detailed' (full DSL and metadata)".to_string(),
+                    default: serde_json::json!("concise"),
+                    examples: vec!["concise".to_string(), "detailed".to_string()],
+                }),
+                ("confirm".to_string(), ParameterInfo {
+                    description: "Set to true after user confirms (delete/update actions). Returns preview without confirmation".to_string(),
+                    default: serde_json::json!(false),
+                    examples: vec!["true".to_string()],
                 }),
             ]),
             examples: vec![
                 Example {
-                    user_query: "有哪些规则？".to_string(),
-                    tool_call: "rule(action=\"list\")".to_string(),
-                    explanation: "列出所有规则".to_string(),
+                    user_query: "What rules are configured?".to_string(),
+                    tool_call: r#"rule(action="list")"#.to_string(),
+                    explanation: "List all rules".to_string(),
                 },
                 Example {
-                    user_query: "当ne101电量低于50%时告警".to_string(),
-                    tool_call: "rule(action=\"create\", name=\"低电量告警\", dsl=\"RULE \\\"低电量告警\\\" WHEN ne101.battery < 50 DO NOTIFY \\\"电量低于50%\\\" END\")".to_string(),
-                    explanation: "创建规则".to_string(),
+                    user_query: "Alert me when battery drops below 50%".to_string(),
+                    tool_call: r#"rule(action="create", dsl="RULE \"Low Battery\" WHEN ne101.battery < 50 DO NOTIFY \"Battery below 50%\" END")"#.to_string(),
+                    explanation: "Create an automation rule".to_string(),
                 },
                 Example {
-                    user_query: "删除规则123".to_string(),
-                    tool_call: "rule(action=\"delete\", rule_id=\"123\")".to_string(),
-                    explanation: "删除规则".to_string(),
+                    user_query: "Delete rule 123".to_string(),
+                    tool_call: r#"rule(action="delete", rule_id="123", confirm=true)"#.to_string(),
+                    explanation: "Delete rule with confirmation".to_string(),
                 },
             ],
-            use_when: vec!["用户询问规则".to_string(), "用户要创建/删除规则".to_string()],
+            use_when: vec![
+                "User asks about automation rules".to_string(),
+                "User wants to create a rule triggered by device conditions".to_string(),
+                "User wants to delete or modify a rule".to_string(),
+            ],
         },
 
         // === Alert Tool ===
         LlmToolDefinition {
             name: "alert".to_string(),
-            description: "告警管理工具。action: list|create|acknowledge".to_string(),
-            aliases: vec!["告警".to_string(), "list_alerts".to_string(), "create_alert".to_string(), "acknowledge_alert".to_string()],
+            description: "Alert management tool. Actions: list (view alerts with filters), create (new alert), acknowledge (mark resolved). Severity levels: info, warning, error, critical.".to_string(),
+            aliases: vec!["alert".to_string(), "notification".to_string(), "warning".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
                 ("alert_id".to_string(), ParameterInfo {
-                    description: "告警ID (acknowledge需要)".to_string(),
+                    description: "Alert ID to acknowledge (acknowledge action)".to_string(),
                     default: serde_json::json!(null),
                     examples: vec!["alert_1".to_string()],
                 }),
                 ("title".to_string(), ParameterInfo {
-                    description: "告警标题 (create需要)".to_string(),
+                    description: "Alert title (create action). Short summary".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["温度异常".to_string()],
+                    examples: vec!["High Temperature Alert".to_string(), "Device Offline".to_string()],
                 }),
                 ("message".to_string(), ParameterInfo {
-                    description: "告警消息 (create需要)".to_string(),
+                    description: "Alert message body (create action). Detailed description".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["温度超过阈值".to_string()],
+                    examples: vec!["Sensor reports 35.2C, threshold is 30C".to_string()],
                 }),
                 ("severity".to_string(), ParameterInfo {
-                    description: "严重程度 (create可选: info/warning/error/critical)".to_string(),
+                    description: "Alert severity (create action): info/warning/error/critical. Default: warning".to_string(),
                     default: serde_json::json!("warning"),
-                    examples: vec!["warning".to_string(), "critical".to_string()],
+                    examples: vec!["info".to_string(), "warning".to_string(), "critical".to_string()],
+                }),
+                ("unacknowledged_only".to_string(), ParameterInfo {
+                    description: "Only return unacknowledged alerts (list action). Default: false".to_string(),
+                    default: serde_json::json!(false),
+                    examples: vec!["true".to_string()],
+                }),
+                ("response_format".to_string(), ParameterInfo {
+                    description: "Output verbosity: 'concise' (title/severity only) or 'detailed' (full info with timestamps)".to_string(),
+                    default: serde_json::json!("concise"),
+                    examples: vec!["concise".to_string(), "detailed".to_string()],
                 }),
             ]),
             examples: vec![
                 Example {
-                    user_query: "有哪些告警？".to_string(),
-                    tool_call: "alert(action=\"list\")".to_string(),
-                    explanation: "列出所有告警".to_string(),
+                    user_query: "Are there any active alerts?".to_string(),
+                    tool_call: r#"alert(action="list", unacknowledged_only=true)"#.to_string(),
+                    explanation: "List unacknowledged alerts".to_string(),
                 },
                 Example {
-                    user_query: "确认告警123".to_string(),
-                    tool_call: "alert(action=\"acknowledge\", alert_id=\"123\")".to_string(),
-                    explanation: "确认告警".to_string(),
+                    user_query: "Acknowledge alert 123".to_string(),
+                    tool_call: r#"alert(action="acknowledge", alert_id="123")"#.to_string(),
+                    explanation: "Mark alert as acknowledged".to_string(),
                 },
             ],
-            use_when: vec!["用户询问告警".to_string(), "用户要确认告警".to_string()],
+            use_when: vec![
+                "User asks about alerts, notifications, or warnings".to_string(),
+                "User wants to acknowledge or dismiss alerts".to_string(),
+                "User wants to create a custom alert".to_string(),
+            ],
         },
     ]
 }
@@ -523,25 +573,25 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
 /// Format simplified tools into a prompt for the LLM.
 pub fn format_tools_for_llm() -> String {
     let tools = get_simplified_tools();
-    let mut prompt = String::from("## 可用工具 (聚合设计)\n\n");
+    let mut prompt = String::from("## Available Tools (Aggregated Design)\n\n");
 
-    // 精简指导原则
-    prompt.push_str("### 调用方式\n\n");
-    prompt.push_str("所有工具使用 action 参数区分操作类型:\n");
+    // Concise guide
+    prompt.push_str("### Usage\n\n");
+    prompt.push_str("All tools use an `action` parameter to differentiate operations:\n");
     prompt.push_str("- device(action=\"list|get|query|control\", ...)\n");
     prompt.push_str("- agent(action=\"list|get|create|update|control|memory\", ...)\n");
     prompt.push_str("- agent_history(action=\"executions|conversation\", agent_id=\"...\")\n");
     prompt.push_str("- rule(action=\"list|get|create|delete|history\", ...)\n");
     prompt.push_str("- alert(action=\"list|create|acknowledge\", ...)\n\n");
     prompt.push_str(
-        "格式: [{\"name\":\"工具名\",\"arguments\":{\"action\":\"操作\",\"参数\":\"值\"}}]\n\n",
+        "Format: [{\"name\":\"tool_name\",\"arguments\":{\"action\":\"operation\",\"param\":\"value\"}}]\n\n",
     );
 
     for tool in tools {
         prompt.push_str(&format!("### {} - {}", tool.name, tool.description));
         if !tool.aliases.is_empty() {
             prompt.push_str(&format!(
-                " [别名:{}]",
+                " [Aliases:{}]",
                 tool.aliases
                     .iter()
                     .take(3)
@@ -552,13 +602,13 @@ pub fn format_tools_for_llm() -> String {
         }
         prompt.push('\n');
 
-        // 精简参数展示
+        // Concise parameter display
         if !tool.required.is_empty() {
-            prompt.push_str(&format!("必参:{}", tool.required.join(",")));
+            prompt.push_str(&format!("Required:{}", tool.required.join(",")));
         }
         if !tool.optional.is_empty() {
             prompt.push_str(&format!(
-                " 可参:{}",
+                " Optional:{}",
                 tool.optional
                     .keys()
                     .take(5)
