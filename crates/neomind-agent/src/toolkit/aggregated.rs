@@ -1317,6 +1317,7 @@ impl Tool for AlertTool {
 
 Actions:
 - list: List alerts with optional severity and acknowledgment filters. Use when user asks about current or recent alerts.
+- get: Get a single alert by ID. Use when you need full details of a specific alert.
 - create: Create a new alert manually. Use when user wants to flag something or when an agent needs to notify the user.
 - acknowledge: Mark an alert as acknowledged/resolved. Use when user confirms they've seen an alert.
 
@@ -1336,8 +1337,8 @@ Tips:
             serde_json::json!({
                 "action": {
                     "type": "string",
-                    "enum": ["list", "create", "acknowledge"],
-                    "description": "Operation type: 'list' (view alerts), 'create' (new alert), 'acknowledge' (mark as resolved)"
+                    "enum": ["list", "get", "create", "acknowledge"],
+                    "description": "Operation type: 'list' (view alerts), 'get' (single alert by ID), 'create' (new alert), 'acknowledge' (mark as resolved)"
                 },
                 "alert_id": {
                     "type": "string",
@@ -1392,6 +1393,7 @@ Tips:
 
         match action {
             "list" => self.execute_list(&args).await,
+            "get" => self.execute_get(&args).await,
             "create" => self.execute_create(&args).await,
             "acknowledge" => self.execute_acknowledge(&args).await,
             _ => Err(ToolError::InvalidArguments(format!(
@@ -1512,6 +1514,58 @@ impl AlertTool {
             Ok(ToolOutput::success(serde_json::json!({
                 "count": filtered.len(),
                 "alerts": filtered
+            })))
+        }
+    }
+
+    async fn execute_get(&self, args: &Value) -> Result<ToolOutput> {
+        let alert_id_str = args["alert_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("alert_id is required".into()))?;
+
+        // Use message_manager if available
+        if let Some(manager) = &self.message_manager {
+            use neomind_messages::MessageId;
+
+            let alert_id = MessageId::from_string(alert_id_str)
+                .map_err(|e| ToolError::InvalidArguments(format!("Invalid alert_id: {}", e)))?;
+
+            let message = manager
+                .get_message(&alert_id)
+                .await
+                .ok_or_else(|| ToolError::Execution("Alert not found".into()))?;
+
+            let severity_str = match message.severity {
+                neomind_messages::MessageSeverity::Info => "info",
+                neomind_messages::MessageSeverity::Warning => "warning",
+                neomind_messages::MessageSeverity::Critical => "critical",
+                neomind_messages::MessageSeverity::Emergency => "emergency",
+            };
+
+            Ok(ToolOutput::success(serde_json::json!({
+                "id": message.id.to_string(),
+                "title": message.title,
+                "message": message.message,
+                "severity": severity_str,
+                "source": message.source_type,
+                "acknowledged": !message.is_active(),
+                "created_at": message.timestamp.timestamp()
+            })))
+        } else {
+            let alerts = self.alerts.read().await;
+            let alert = alerts
+                .iter()
+                .find(|a| a.id == alert_id_str)
+                .ok_or_else(|| ToolError::Execution("Alert not found".into()))?;
+
+            Ok(ToolOutput::success(serde_json::json!({
+                "id": alert.id,
+                "title": alert.title,
+                "message": alert.message,
+                "severity": format!("{:?}", alert.severity).to_lowercase(),
+                "source": alert.source,
+                "acknowledged": alert.acknowledged,
+                "created_at": alert.created_at
             })))
         }
     }
