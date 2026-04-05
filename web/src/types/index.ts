@@ -531,6 +531,25 @@ export interface SessionHistoryResponse {
   count: number
 }
 
+/** Planning mode - how the plan was generated */
+export type PlanningMode = 'keyword' | 'llm'
+
+/** A single step in an execution plan */
+export interface PlanStep {
+  id: number
+  tool_name: string
+  action: string
+  params: Record<string, unknown>
+  depends_on: number[]
+  description: string
+}
+
+/** An execution plan produced by the planner */
+export interface ExecutionPlan {
+  steps: PlanStep[]
+  mode: PlanningMode
+}
+
 // Server WebSocket message types (matching backend)
 //
 // NOTE: These types must match the AgentEvent serialization in crates/agent/src/agent/types.rs
@@ -556,6 +575,12 @@ export type ServerMessage =
   | { type: 'Intent'; category: string; displayName: string; confidence?: number; keywords?: string[]; sessionId: string }
   // Execution plan step (informational, not displayed in current UI)
   | { type: 'Plan'; step: string; stage: string; sessionId: string }
+  // Execution plan created - full plan with all steps
+  | { type: 'ExecutionPlanCreated'; plan: ExecutionPlan; sessionId: string }
+  // A plan step has started executing
+  | { type: 'PlanStepStarted'; stepId: number; description: string; sessionId: string }
+  // A plan step has completed
+  | { type: 'PlanStepCompleted'; stepId: number; success: boolean; summary: string; sessionId: string }
   // Heartbeat to keep connection alive (not displayed)
   | { type: 'Heartbeat'; timestamp: number; sessionId: string }
   // Ping from server - client auto-responds with pong
