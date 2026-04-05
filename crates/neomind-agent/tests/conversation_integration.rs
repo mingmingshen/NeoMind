@@ -86,6 +86,8 @@ impl TestContext {
             },
             tool_config: None,
             error_message: None,
+            max_retries: 0,
+            consecutive_failures: 0,
             priority: 128,
             conversation_history: vec![],
             user_messages: vec![],

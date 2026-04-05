@@ -107,6 +107,8 @@ impl LlmTestContext {
             context_window_size: 5,
             tool_config: None,
             error_message: None,
+            max_retries: 0,
+            consecutive_failures: 0,
             enable_tool_chaining: false,
             max_chain_depth: 3,
         };

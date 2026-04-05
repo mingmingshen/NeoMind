@@ -973,6 +973,8 @@ pub async fn create_agent(
         stats: AgentStats::default(),
         memory: AgentMemory::default(),
         error_message: None,
+            max_retries: 0,
+            consecutive_failures: 0,
         conversation_history: Default::default(),
         user_messages: Default::default(),
         conversation_summary: Default::default(),

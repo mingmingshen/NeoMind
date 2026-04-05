@@ -744,6 +744,8 @@ impl AgentTool {
             tool_config: None,
             execution_mode: Default::default(),
             error_message: None,
+            max_retries: 0,
+            consecutive_failures: 0,
         };
 
         let id = agent.id.clone();

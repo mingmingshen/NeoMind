@@ -1547,10 +1547,17 @@ impl AgentExecutor {
         let record = match execution_result {
             Ok((decision_process, result)) => {
                 // Update stats
-                let _ = self
+                if let Err(e) = self
                     .store
                     .update_agent_stats(&agent_id, true, duration_ms)
-                    .await;
+                    .await
+                {
+                    tracing::error!(
+                        agent_id = %agent_id,
+                        error = %e,
+                        "Failed to update agent stats after successful execution"
+                    );
+                }
 
                 AgentExecutionRecord {
                     id: execution_id.clone(),
@@ -1566,10 +1573,17 @@ impl AgentExecutor {
             }
             Err(e) => {
                 // Update stats with failure
-                let _ = self
+                if let Err(stats_err) = self
                     .store
                     .update_agent_stats(&agent_id, false, duration_ms)
-                    .await;
+                    .await
+                {
+                    tracing::error!(
+                        agent_id = %agent_id,
+                        error = %stats_err,
+                        "Failed to update agent stats after failed execution"
+                    );
+                }
 
                 AgentExecutionRecord {
                     id: execution_id.clone(),
@@ -1667,10 +1681,35 @@ impl AgentExecutor {
             neomind_storage::AgentStatus::Error
         };
 
-        let _ = self
+        // Retry status reset once on failure to prevent agent getting stuck in Executing state
+        match self
             .store
             .update_agent_status(&agent_id, new_status, record.error.clone())
-            .await;
+            .await
+        {
+            Ok(()) => {}
+            Err(e) => {
+                tracing::error!(
+                    agent_id = %agent_id,
+                    new_status = ?new_status,
+                    error = %e,
+                    "Failed to reset agent status after execution, retrying once"
+                );
+                // Single retry after a short delay
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                if let Err(retry_err) = self
+                    .store
+                    .update_agent_status(&agent_id, new_status, record.error.clone())
+                    .await
+                {
+                    tracing::error!(
+                        agent_id = %agent_id,
+                        error = %retry_err,
+                        "Agent may be stuck in Executing status after retry failed"
+                    );
+                }
+            }
+        }
 
         // Emit agent execution completed event
         let completion_timestamp = chrono::Utc::now().timestamp();

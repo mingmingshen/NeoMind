@@ -91,6 +91,12 @@ pub struct AiAgent {
     pub execution_mode: ExecutionMode,
     /// Error message (if status is error)
     pub error_message: Option<String>,
+    /// Maximum number of automatic retries for transient execution failures (default: 0 = no retry)
+    #[serde(default)]
+    pub max_retries: u32,
+    /// Current consecutive failure count (reset to 0 on success)
+    #[serde(default)]
+    pub consecutive_failures: u32,
 }
 
 /// Tool configuration for AI Agent function calling mode.
@@ -1126,6 +1132,41 @@ impl AgentStore {
         Ok(())
     }
 
+    /// Update agent consecutive failure count.
+    pub async fn update_agent_consecutive_failures(
+        &self,
+        id: &str,
+        consecutive_failures: u32,
+    ) -> Result<(), Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(AGENTS_TABLE)?;
+
+        let agent = match table.get(id)? {
+            Some(bytes) => {
+                let mut ag: AiAgent = serde_json::from_slice(bytes.value())
+                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                ag.consecutive_failures = consecutive_failures;
+                ag.updated_at = chrono::Utc::now().timestamp();
+                ag
+            }
+            None => return Ok(()), // Agent doesn't exist
+        };
+        drop(table);
+        drop(read_txn);
+
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(AGENTS_TABLE)?;
+
+            let value =
+                serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
+
+            table.insert(id, value.as_slice())?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
     /// Update agent parsed intent after initial parsing.
     pub async fn update_agent_parsed_intent(
         &self,
@@ -1866,6 +1907,8 @@ mod tests {
             max_chain_depth: 3,
             tool_config: None,
             error_message: None,
+            max_retries: 0,
+            consecutive_failures: 0,
         };
 
         store.save_agent(&agent).await.unwrap();
@@ -1908,6 +1951,8 @@ mod tests {
             max_chain_depth: 3,
             tool_config: None,
             error_message: None,
+            max_retries: 0,
+            consecutive_failures: 0,
         };
 
         store.save_agent(&agent).await.unwrap();
@@ -1983,6 +2028,8 @@ mod tests {
             max_chain_depth: 3,
             tool_config: None,
             error_message: None,
+            max_retries: 0,
+            consecutive_failures: 0,
         };
 
         // Save initial agent
@@ -2048,6 +2095,8 @@ mod tests {
             max_chain_depth: 3,
             tool_config: None,
             error_message: None,
+            max_retries: 0,
+            consecutive_failures: 0,
         };
 
         store.save_agent(&agent).await.unwrap();
