@@ -8,9 +8,10 @@
 //! All types used here are re-exported from the neomind-agent crate root.
 
 use neomind_agent::{
-    ContextBundle, ExecutionPlan, IntentCategory, IntentResult, KeywordPlanner, PlanningConfig,
+    ExecutionPlan, IntentCategory, IntentResult, KeywordPlanner, PlanningConfig,
     PlanningCoordinator, PlanningMode,
 };
+use neomind_agent::context_selector::ContextBundle;
 
 /// Helper to create an IntentResult for testing
 fn create_intent(category: IntentCategory, confidence: f32, keywords: Vec<&str>) -> IntentResult {
