@@ -6,8 +6,9 @@
 
 pub mod types;
 pub mod keyword;       // Task 2
-// pub mod llm_planner;   // Task 3
+pub mod llm_planner;   // Task 3
 // pub mod coordinator;   // Task 5
 
 pub use types::{ExecutionPlan, PlanningConfig, PlanningMode, PlanStep, StepId};
 pub use keyword::KeywordPlanner;
+pub use llm_planner::LLMPlanner;
