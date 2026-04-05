@@ -309,20 +309,66 @@ impl DeviceTool {
             .await
             .ok_or_else(|| ToolError::Execution(format!("Device not found: {}", device_id)))?;
 
-        if Self::is_detailed(args) {
-            Ok(ToolOutput::success(serde_json::json!({
+        let detailed = Self::is_detailed(args);
+
+        let mut device_json = if detailed {
+            serde_json::json!({
                 "id": device.device_id,
                 "name": device.name,
                 "type": device.device_type,
                 "adapter_type": device.adapter_type,
                 "adapter_id": device.adapter_id
-            })))
+            })
         } else {
-            Ok(ToolOutput::success(serde_json::json!({
+            serde_json::json!({
+                "id": device.device_id,
                 "name": device.name,
                 "type": device.device_type
-            })))
+            })
+        };
+
+        // Enrich with metrics and commands from device type template
+        if let Some(template) = self.device_service.get_template(&device.device_type).await {
+            if !template.metrics.is_empty() {
+                let metrics_info: Vec<Value> = template
+                    .metrics
+                    .iter()
+                    .map(|m| {
+                        serde_json::json!({
+                            "name": m.name,
+                            "display_name": m.display_name,
+                            "unit": m.unit,
+                            "data_type": format!("{:?}", m.data_type)
+                        })
+                    })
+                    .collect();
+                device_json["metrics"] = serde_json::json!(metrics_info);
+            }
+
+            if !template.commands.is_empty() {
+                let commands_info: Vec<Value> = template
+                    .commands
+                    .iter()
+                    .map(|c| {
+                        serde_json::json!({
+                            "name": c.name,
+                            "display_name": c.display_name,
+                            "parameters": c.parameters.iter().map(|p| {
+                                serde_json::json!({
+                                    "name": p.name,
+                                    "display_name": p.display_name,
+                                    "data_type": format!("{:?}", p.data_type),
+                                    "required": p.required
+                                })
+                            }).collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
+                device_json["commands"] = serde_json::json!(commands_info);
+            }
         }
+
+        Ok(ToolOutput::success(device_json))
     }
 
     async fn execute_query(&self, args: &Value) -> Result<ToolOutput> {
@@ -345,14 +391,40 @@ impl DeviceTool {
         let limit = args["limit"].as_u64().unwrap_or(100) as usize;
 
         if let Some(m) = metric {
-            let data = storage
+            let mut data = storage
                 .query(&device_id, m, start_time, end_time)
                 .await
                 .map_err(|e| ToolError::Execution(e.to_string()))?;
 
+            let mut resolved_metric = m.to_string();
+
+            // If no data found, try to resolve metric name from device template
+            // This handles cases where user passes "battery" but storage key is "values.battery"
+            if data.is_empty() {
+                if let Some(device) = self.device_service.get_device(&device_id).await {
+                    if let Some(template) = self.device_service.get_template(&device.device_type).await {
+                        // Try to find a metric whose name ends with the user input
+                        // e.g., "battery" matches "values.battery"
+                        let m_lower = m.to_lowercase();
+                        if let Some(matched_def) = template.metrics.iter().find(|def| {
+                            def.name == m || def.name.ends_with(&format!(".{}", m)) || def.name == m_lower
+                        }) {
+                            let resolved = matched_def.name.clone();
+                            if let Ok(d) = storage
+                                .query(&device_id, &resolved, start_time, end_time)
+                                .await
+                            {
+                                data = d;
+                                resolved_metric = resolved;
+                            }
+                        }
+                    }
+                }
+            }
+
             Ok(ToolOutput::success(serde_json::json!({
                 "device_id": device_id,
-                "metric": m,
+                "metric": resolved_metric,
                 "points": data.iter().take(limit).map(|p| serde_json::json!({
                     "timestamp": p.timestamp,
                     "value": p.value
