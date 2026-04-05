@@ -3,7 +3,7 @@
 //! This planner provides zero-cost, sub-millisecond planning by mapping intent categories
 //! to predefined plan templates. No LLM calls are made.
 
-use crate::agent::planner::types::{ExecutionPlan, PlanStep, PlanningMode, StepId};
+use crate::agent::planner::types::{ExecutionPlan, PlanStep, PlanningMode};
 use crate::agent::staged::{IntentCategory, IntentResult};
 
 /// Keyword-based planner that maps intents to execution plans.
@@ -65,7 +65,8 @@ impl KeywordPlanner {
 
     /// Plan for device-related intents.
     /// Detects control vs query from message keywords.
-    fn plan_device(&self, _intent: &IntentResult, message: &str) -> Option<ExecutionPlan> {
+    #[allow(unused_variables)]
+    fn plan_device(&self, intent: &IntentResult, message: &str) -> Option<ExecutionPlan> {
         let message_lower = message.to_lowercase();
         let is_control = self
             .control_keywords
