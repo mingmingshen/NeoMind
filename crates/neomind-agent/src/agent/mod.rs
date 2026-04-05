@@ -1073,7 +1073,7 @@ impl Agent {
 
         // Use simplified tool definitions for LLM function calling
         let simplified_tools = simplified::get_simplified_tools();
-        let core_defs: Vec<CoreToolDefinition> = simplified_tools
+        let mut core_defs: Vec<CoreToolDefinition> = simplified_tools
             .iter()
             .map(|tool| {
                 // Build simplified parameters schema
@@ -1117,6 +1117,25 @@ impl Agent {
             })
             .collect();
 
+        // Add extension tools from the tool registry
+        let extension_names: Vec<String> = self
+            .tools
+            .list()
+            .into_iter()
+            .filter(|name| name.contains(':'))
+            .collect();
+
+        for ext_name in &extension_names {
+            if let Some(tool) = self.tools.get(ext_name) {
+                let def = tool.definition();
+                core_defs.push(CoreToolDefinition {
+                    name: def.name.clone(),
+                    description: def.description.clone(),
+                    parameters: def.parameters.clone(),
+                });
+            }
+        }
+
         let tool_count = core_defs.len();
         self.llm_interface.set_tool_definitions(core_defs).await;
 
@@ -1124,7 +1143,12 @@ impl Agent {
         let dynamic_prompt = self.generate_dynamic_system_prompt(&simplified_tools).await;
         self.llm_interface.set_system_prompt(&dynamic_prompt).await;
 
-        tracing::debug!("Updated {} simplified tool definitions for LLM", tool_count);
+        tracing::debug!(
+            "Updated {} tool definitions for LLM ({} core + {} extension)",
+            tool_count,
+            tool_count - extension_names.len(),
+            extension_names.len()
+        );
     }
 
     /// Generate a dynamic system prompt with tool descriptions.
@@ -1162,6 +1186,7 @@ impl Agent {
         let mut data_tools = Vec::new();
         let mut rule_tools = Vec::new();
         let mut agent_tools = Vec::new();
+        let mut ext_aggregated_tools = Vec::new();
         let mut system_tools = Vec::new();
 
         for tool in simplified_tools {
@@ -1180,6 +1205,8 @@ impl Agent {
                 rule_tools.push(tool);
             } else if tool.name.contains("agent") {
                 agent_tools.push(tool);
+            } else if tool.name.contains("extension") || tool.name.contains("alert") {
+                ext_aggregated_tools.push(tool);
             } else {
                 system_tools.push(tool);
             }
@@ -1304,6 +1331,29 @@ impl Agent {
             }
         }
 
+        if !ext_aggregated_tools.is_empty() {
+            prompt.push_str("### Extension & Alert Tools\n");
+            for tool in &ext_aggregated_tools {
+                prompt.push_str(&format!(
+                    "**{}**: {} (aliases: {})\n",
+                    tool.name,
+                    tool.description,
+                    tool.aliases.join(", ")
+                ));
+
+                if !tool.examples.is_empty() {
+                    prompt.push_str("  *Examples*:\n");
+                    for example in &tool.examples {
+                        prompt.push_str(&format!(
+                            "    - User: \"{}\" -> {}\n",
+                            example.user_query, example.tool_call
+                        ));
+                    }
+                }
+                prompt.push('\n');
+            }
+        }
+
         if !system_tools.is_empty() {
             prompt.push_str("### System Tools\n");
             for tool in system_tools {
@@ -1315,6 +1365,42 @@ impl Agent {
                 ));
             }
             prompt.push('\n');
+        }
+
+        // Add extension tools from the tool registry
+        let extension_tools: Vec<_> = self
+            .tools
+            .list()
+            .into_iter()
+            .filter(|name| name.contains(':'))
+            .collect();
+
+        if !extension_tools.is_empty() {
+            prompt.push_str("### Extension Tools\n");
+            prompt.push_str("These tools are provided by installed extensions. Use them when users ask about related functionality.\n\n");
+            for ext_name in &extension_tools {
+                if let Some(tool) = self.tools.get(ext_name) {
+                    let def = tool.definition();
+                    prompt.push_str(&format!(
+                        "**{}**: {}\n",
+                        def.name, def.description
+                    ));
+                    // Add parameter info
+                    if let Some(params) = def.parameters.get("properties") {
+                        prompt.push_str("  Parameters:\n");
+                        if let Some(obj) = params.as_object() {
+                            for (pname, pschema) in obj {
+                                let desc = pschema
+                                    .get("description")
+                                    .and_then(|d| d.as_str())
+                                    .unwrap_or("");
+                                prompt.push_str(&format!("    - `{}`: {}\n", pname, desc));
+                            }
+                        }
+                    }
+                    prompt.push('\n');
+                }
+            }
         }
 
         // Add usage guidance with chain instructions

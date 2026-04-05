@@ -1,6 +1,6 @@
 use super::*;
 
-fn extract_semantic_patterns(
+pub(crate) fn extract_semantic_patterns(
     decisions: &[Decision],
     situation_analysis: &str,
     _data: &[DataCollected],
@@ -60,7 +60,7 @@ fn extract_semantic_patterns(
     patterns
 }
 
-fn extract_symptom(situation_analysis: &str, decision: &Decision) -> String {
+pub(crate) fn extract_symptom(situation_analysis: &str, decision: &Decision) -> String {
     // Try to extract from situation analysis - use static strings for common cases
     if !situation_analysis.is_empty() {
         // Look for key phrases indicating conditions
@@ -86,7 +86,7 @@ fn extract_symptom(situation_analysis: &str, decision: &Decision) -> String {
     }
 }
 
-fn extract_threshold_from_data(
+pub(crate) fn extract_threshold_from_data(
     data: &[DataCollected],
     baselines: &HashMap<String, f64>,
 ) -> Option<f64> {
@@ -107,7 +107,7 @@ fn extract_threshold_from_data(
     None
 }
 
-fn extract_trigger_conditions(decision: &Decision) -> serde_json::Value {
+pub(crate) fn extract_trigger_conditions(decision: &Decision) -> serde_json::Value {
     let mut conditions = Vec::new();
 
     // Use a fixed confidence since Decision doesn't have one
@@ -120,7 +120,7 @@ fn extract_trigger_conditions(decision: &Decision) -> serde_json::Value {
     serde_json::json!(conditions)
 }
 
-fn extract_semantic_description(decision: &Decision, symptom: &str) -> String {
+pub(crate) fn extract_semantic_description(decision: &Decision, symptom: &str) -> String {
     // Convert specific descriptions to abstract patterns
     let desc = &decision.description;
 
@@ -141,7 +141,7 @@ fn extract_semantic_description(decision: &Decision, symptom: &str) -> String {
 
 
 impl AgentExecutor {
-    async fn update_memory(
+    pub(crate) async fn update_memory(
         &self,
         agent: &AiAgent,
         data: &[DataCollected],
@@ -314,8 +314,8 @@ impl AgentExecutor {
         let time_context = get_time_context();
 
         let system_prompt = format!(
-            "{}\n\n{}\n\n{}\n{}\n\n{}",
-            role_prompt, time_context, task_header, agent.user_prompt, conversation_context
+            "{}\n\n{}\n\n{}\n\n{}\n{}\n\n{}",
+            LANGUAGE_POLICY, role_prompt, time_context, task_header, agent.user_prompt, conversation_context
         );
         messages.push(Message::system(system_prompt));
 
@@ -594,4 +594,5 @@ impl AgentExecutor {
             success,
         }
 
+}
 }

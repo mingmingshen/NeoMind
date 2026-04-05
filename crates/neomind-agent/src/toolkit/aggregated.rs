@@ -1,6 +1,6 @@
 //! Aggregated tools using action-based design pattern.
 //!
-//! This module consolidates 34+ individual tools into 5 aggregated tools,
+//! This module consolidates 34+ individual tools into 6 aggregated tools,
 //! reducing token usage in tool definitions by ~60%.
 //!
 //! ## Design Principles
@@ -16,6 +16,7 @@
 //! 3. `agent_history` - Execution history (executions, conversation)
 //! 4. `rule` - Rule management (list, get, delete, history)
 //! 5. `alert` - Alert management (list, create, acknowledge)
+//! 6. `extension` - Extension management (list, get, execute, status)
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -1679,6 +1680,234 @@ impl AlertTool {
 }
 
 // ============================================================================
+// Extension Tool - Aggregates: list, get, execute, status
+// ============================================================================
+
+/// Aggregated extension tool with action-based routing.
+///
+/// Provides a unified entry point for interacting with all installed extensions,
+/// replacing per-command tool registration (e.g., `weather-forecast-v2:get_weather`).
+pub struct ExtensionAggregatedTool {
+    registry: Arc<neomind_core::extension::registry::ExtensionRegistry>,
+}
+
+impl ExtensionAggregatedTool {
+    /// Create a new extension aggregated tool.
+    pub fn new(registry: Arc<neomind_core::extension::registry::ExtensionRegistry>) -> Self {
+        Self { registry }
+    }
+}
+
+#[async_trait]
+impl Tool for ExtensionAggregatedTool {
+    fn name(&self) -> &str {
+        "extension"
+    }
+
+    fn description(&self) -> &str {
+        r#"Extension management tool for interacting with installed extensions (plugins).
+
+Actions:
+- list: List all installed extensions with their status and command count. Use when user asks what extensions or plugins are available.
+- get: Get detailed info about a specific extension, including its commands and metrics. Use before executing a command.
+- execute: Execute a command on an extension. Requires extension_id, command name, and optional params.
+- status: Check the health and runtime status of an extension.
+
+Tips:
+- Always call list first if you're unsure which extensions are available
+- Use get to discover available commands before calling execute
+- The params field should be a JSON object matching the command's expected parameters"#
+    }
+
+    fn parameters(&self) -> Value {
+        object_schema(
+            serde_json::json!({
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "get", "execute", "status"],
+                    "description": "Operation type: 'list' (list extensions), 'get' (extension details), 'execute' (run command), 'status' (health check)"
+                },
+                "extension_id": {
+                    "type": "string",
+                    "description": "Extension ID (get/execute/status actions). Use list action first to discover available IDs. Example: 'weather-forecast-v2'"
+                },
+                "command": {
+                    "type": "string",
+                    "description": "Command name to execute (execute action). Use get action to discover available commands. Example: 'get_weather'"
+                },
+                "params": {
+                    "type": "object",
+                    "description": "Command parameters as JSON object (execute action). Example: {\"city\": \"Beijing\"}"
+                },
+                "response_format": {
+                    "type": "string",
+                    "enum": ["concise", "detailed"],
+                    "description": "Output format. 'concise': summary only (default). 'detailed': full info with all metadata"
+                }
+            }),
+            vec!["action".to_string()],
+        )
+    }
+
+    fn category(&self) -> ToolCategory {
+        ToolCategory::System
+    }
+
+    async fn execute(&self, args: Value) -> Result<ToolOutput> {
+        let action = args["action"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("action is required".into()))?;
+
+        match action {
+            "list" => self.execute_list(&args).await,
+            "get" => self.execute_get(&args).await,
+            "execute" => self.execute_command(&args).await,
+            "status" => self.execute_status(&args).await,
+            _ => Err(ToolError::InvalidArguments(format!(
+                "Unknown action: {}",
+                action
+            ))),
+        }
+    }
+}
+
+impl ExtensionAggregatedTool {
+    fn is_detailed(args: &Value) -> bool {
+        args["response_format"].as_str() == Some("detailed")
+    }
+
+    async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
+        let detailed = Self::is_detailed(args);
+        let extensions = self.registry.list().await;
+
+        let items: Vec<Value> = extensions
+            .iter()
+            .map(|info| {
+                if detailed {
+                    serde_json::json!({
+                        "id": info.metadata.id,
+                        "name": info.metadata.name,
+                        "version": info.metadata.version,
+                        "description": info.metadata.description,
+                        "state": format!("{:?}", info.state),
+                        "commands_count": info.commands.len(),
+                        "metrics_count": info.metrics.len()
+                    })
+                } else {
+                    serde_json::json!({
+                        "id": info.metadata.id,
+                        "name": info.metadata.name,
+                        "state": format!("{:?}", info.state),
+                        "commands": info.commands.len()
+                    })
+                }
+            })
+            .collect();
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "count": items.len(),
+            "extensions": items
+        })))
+    }
+
+    async fn execute_get(&self, args: &Value) -> Result<ToolOutput> {
+        let extension_id = args["extension_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("extension_id is required".into()))?;
+
+        let info = self
+            .registry
+            .get_info(extension_id)
+            .await
+            .ok_or_else(|| ToolError::Execution(format!("Extension '{}' not found", extension_id)))?;
+
+        let commands: Vec<Value> = info
+            .commands
+            .iter()
+            .map(|cmd| {
+                serde_json::json!({
+                    "name": cmd.name,
+                    "display_name": cmd.display_name,
+                    "description": cmd.description,
+                    "params": cmd.parameters
+                })
+            })
+            .collect();
+
+        let metrics: Vec<Value> = info
+            .metrics
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "name": m.name,
+                    "display_name": m.display_name,
+                    "unit": m.unit
+                })
+            })
+            .collect();
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "id": info.metadata.id,
+            "name": info.metadata.name,
+            "version": info.metadata.version,
+            "description": info.metadata.description,
+            "state": format!("{:?}", info.state),
+            "commands": commands,
+            "metrics": metrics
+        })))
+    }
+
+    async fn execute_command(&self, args: &Value) -> Result<ToolOutput> {
+        let extension_id = args["extension_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("extension_id is required".into()))?;
+        let command = args["command"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("command is required".into()))?;
+        let params = args.get("params").cloned().unwrap_or(serde_json::json!({}));
+
+        let result = self
+            .registry
+            .execute_command(extension_id, command, &params)
+            .await
+            .map_err(|e| ToolError::Execution(format!("Extension command failed: {}", e)))?;
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "extension_id": extension_id,
+            "command": command,
+            "result": result
+        })))
+    }
+
+    async fn execute_status(&self, args: &Value) -> Result<ToolOutput> {
+        let extension_id = args["extension_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("extension_id is required".into()))?;
+
+        let info = self
+            .registry
+            .get_info(extension_id)
+            .await
+            .ok_or_else(|| ToolError::Execution(format!("Extension '{}' not found", extension_id)))?;
+
+        let healthy = self
+            .registry
+            .health_check(extension_id)
+            .await
+            .unwrap_or(false);
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "id": info.metadata.id,
+            "name": info.metadata.name,
+            "state": format!("{:?}", info.state),
+            "healthy": healthy,
+            "commands_executed": info.stats.commands_executed,
+            "error_count": info.stats.error_count
+        })))
+    }
+}
+
+// ============================================================================
 // Builder for Aggregated Tools
 // ============================================================================
 
@@ -1690,6 +1919,7 @@ pub struct AggregatedToolsBuilder {
     rule_engine: Option<Arc<neomind_rules::RuleEngine>>,
     rule_history: Option<Arc<neomind_rules::RuleHistoryStorage>>,
     message_manager: Option<Arc<neomind_messages::MessageManager>>,
+    extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
 }
 
 impl AggregatedToolsBuilder {
@@ -1702,6 +1932,7 @@ impl AggregatedToolsBuilder {
             rule_engine: None,
             rule_history: None,
             message_manager: None,
+            extension_registry: None,
         }
     }
 
@@ -1744,6 +1975,15 @@ impl AggregatedToolsBuilder {
         self
     }
 
+    /// Set extension registry for the extension aggregated tool.
+    pub fn with_extension_registry(
+        mut self,
+        registry: Arc<neomind_core::extension::registry::ExtensionRegistry>,
+    ) -> Self {
+        self.extension_registry = Some(registry);
+        self
+    }
+
     /// Build all aggregated tools as a vector of DynTool.
     pub fn build(self) -> Vec<Arc<dyn Tool>> {
         let mut tools: Vec<Arc<dyn Tool>> = Vec::new();
@@ -1781,6 +2021,11 @@ impl AggregatedToolsBuilder {
             AlertTool::new()
         };
         tools.push(Arc::new(alert_tool));
+
+        // Extension tool
+        if let Some(ext_reg) = self.extension_registry {
+            tools.push(Arc::new(ExtensionAggregatedTool::new(ext_reg)));
+        }
 
         tools
     }

@@ -249,12 +249,13 @@ pub struct Example {
 /// - Prioritize high-value, high-frequency tools
 /// - Each tool should be "irreducible"
 ///
-/// Tool list (5 aggregated tools replacing 34+ individual tools):
+/// Tool list (6 aggregated tools replacing 34+ individual tools):
 /// - device: list, get, query, control
 /// - agent: list, get, create, update, control, memory
 /// - agent_history: executions, conversation
 /// - rule: list, get, delete, history
 /// - alert: list, create, acknowledge
+/// - extension: list, get, execute, status
 pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
     vec![
         // === Device Tool (aggregates 4 device operations) ===
@@ -567,6 +568,63 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 "User wants to create a custom alert".to_string(),
             ],
         },
+
+        // === Extension Tool (aggregates all extension commands) ===
+        LlmToolDefinition {
+            name: "extension".to_string(),
+            description: "Extension (plugin) management tool for interacting with installed extensions. Actions: list (show extensions), get (extension details and commands), execute (run extension command), status (health check).".to_string(),
+            aliases: vec!["extension".to_string(), "plugin".to_string(), "weather".to_string()],
+            required: vec!["action".to_string()],
+            optional: HashMap::from_iter(vec![
+                ("extension_id".to_string(), ParameterInfo {
+                    description: "Extension ID (get/execute/status actions). Use list first to discover available extensions".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["weather-forecast-v2".to_string(), "image-analyzer-v2".to_string()],
+                }),
+                ("command".to_string(), ParameterInfo {
+                    description: "Command name to execute (execute action). Use get action to discover available commands".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["get_weather".to_string(), "analyze_image".to_string()],
+                }),
+                ("params".to_string(), ParameterInfo {
+                    description: "Command parameters as JSON object (execute action). Example: {\"city\": \"Beijing\"}".to_string(),
+                    default: serde_json::json!({}),
+                    examples: vec![r#"{"city": "Beijing"}"#.to_string(), r#"{"url": "https://example.com/img.jpg"}"#.to_string()],
+                }),
+                ("response_format".to_string(), ParameterInfo {
+                    description: "Output verbosity: 'concise' (summary only) or 'detailed' (full info)".to_string(),
+                    default: serde_json::json!("concise"),
+                    examples: vec!["concise".to_string(), "detailed".to_string()],
+                }),
+            ]),
+            examples: vec![
+                Example {
+                    user_query: "What extensions are installed?".to_string(),
+                    tool_call: r#"extension(action="list")"#.to_string(),
+                    explanation: "List all installed extensions".to_string(),
+                },
+                Example {
+                    user_query: "What can the weather extension do?".to_string(),
+                    tool_call: r#"extension(action="get", extension_id="weather-forecast-v2")"#.to_string(),
+                    explanation: "Get extension details including available commands".to_string(),
+                },
+                Example {
+                    user_query: "Check weather in Beijing".to_string(),
+                    tool_call: r#"extension(action="execute", extension_id="weather-forecast-v2", command="get_weather", params={"city":"北京"})"#.to_string(),
+                    explanation: "Execute an extension command with parameters".to_string(),
+                },
+                Example {
+                    user_query: "Is the weather extension healthy?".to_string(),
+                    tool_call: r#"extension(action="status", extension_id="weather-forecast-v2")"#.to_string(),
+                    explanation: "Check extension health and status".to_string(),
+                },
+            ],
+            use_when: vec![
+                "User asks about installed extensions, plugins, or add-ons".to_string(),
+                "User wants to use extension functionality (weather, image analysis, etc.)".to_string(),
+                "User wants to check if an extension is working properly".to_string(),
+            ],
+        },
     ]
 }
 
@@ -582,7 +640,8 @@ pub fn format_tools_for_llm() -> String {
     prompt.push_str("- agent(action=\"list|get|create|update|control|memory\", ...)\n");
     prompt.push_str("- agent_history(action=\"executions|conversation\", agent_id=\"...\")\n");
     prompt.push_str("- rule(action=\"list|get|create|delete|history\", ...)\n");
-    prompt.push_str("- alert(action=\"list|create|acknowledge\", ...)\n\n");
+    prompt.push_str("- alert(action=\"list|create|acknowledge\", ...)\n");
+    prompt.push_str("- extension(action=\"list|get|execute|status\", ...)\n\n");
     prompt.push_str(
         "Format: [{\"name\":\"tool_name\",\"arguments\":{\"action\":\"operation\",\"param\":\"value\"}}]\n\n",
     );
@@ -682,8 +741,8 @@ mod tests {
     #[test]
     fn test_get_simplified_tools_count() {
         let tools = get_simplified_tools();
-        // Should have 5 aggregated tools
-        assert_eq!(tools.len(), 5);
+        // Should have 6 aggregated tools
+        assert_eq!(tools.len(), 6);
     }
 
     #[test]
@@ -695,6 +754,7 @@ mod tests {
         assert!(names.contains(&"agent_history"));
         assert!(names.contains(&"rule"));
         assert!(names.contains(&"alert"));
+        assert!(names.contains(&"extension"));
     }
 
     #[test]

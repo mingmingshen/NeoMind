@@ -122,8 +122,11 @@ pub async fn llm_generate_handler(
         }
     };
 
-    // Build the input with system prompt
-    let system_prompt = "You are a helpful assistant.";
+    // Build the input with system prompt (includes language policy to respond in user's language)
+    let system_prompt = format!(
+        "You are a helpful assistant.\n\n{}",
+        neomind_agent::prompts::LANGUAGE_POLICY
+    );
     let input = LlmInput {
         messages: vec![Message::system(system_prompt), Message::user(&req.prompt)],
         params: GenerationParams {

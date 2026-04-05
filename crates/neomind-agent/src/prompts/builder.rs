@@ -30,6 +30,17 @@ pub const LOCAL_TIME_PLACEHOLDER: &str = "{{LOCAL_TIME}}";
 /// Placeholder for system timezone in prompts.
 pub const TIMEZONE_PLACEHOLDER: &str = "{{TIMEZONE}}";
 
+/// Language policy prepended to all prompts, instructing the LLM to respond in the user's language.
+pub const LANGUAGE_POLICY: &str = r#"## Language Policy (Highest Priority)
+
+You MUST respond in the EXACT SAME language as the user's message.
+- User writes in English → respond in English
+- User writes in Chinese → respond in Chinese
+- Never mix languages in a single response
+- When uncertain, default to English
+
+"#;
+
 /// Enhanced prompt builder with multi-language support.
 #[derive(Debug, Clone)]
 pub struct PromptBuilder {
@@ -140,17 +151,6 @@ impl PromptBuilder {
     }
 
     // === Static content constants ===
-
-    // ⚠️ HIGHEST PRIORITY: Language Policy (prepended to all prompts)
-    const LANGUAGE_POLICY: &str = r#"## Language Policy (Highest Priority)
-
-You MUST respond in the EXACT SAME language as the user's message.
-- User writes in English → respond in English
-- User writes in Chinese → respond in Chinese
-- Never mix languages in a single response
-- When uncertain, default to English
-
-"#;
 
     // Unified system prompt with language adaptation (English as base, auto-detect user language)
     const IDENTITY_ZH: &str = r#"## 核心身份
@@ -638,7 +638,7 @@ When thinking mode is enabled, structure your thought process:
         let mut prompt = String::with_capacity(4096);
 
         // ⚠️ HIGHEST PRIORITY: Language policy (must be first!)
-        prompt.push_str(Self::LANGUAGE_POLICY);
+        prompt.push_str(LANGUAGE_POLICY);
         prompt.push_str("\n\n");
 
         // Core identity
@@ -690,7 +690,7 @@ When thinking mode is enabled, structure your thought process:
         let mut prompt = String::with_capacity(4096);
 
         // ⚠️ HIGHEST PRIORITY: Language policy (must be first!)
-        prompt.push_str(Self::LANGUAGE_POLICY);
+        prompt.push_str(LANGUAGE_POLICY);
         prompt.push_str("\n\n");
 
         prompt.push_str(Self::IDENTITY_EN);
@@ -786,7 +786,8 @@ pub fn get_role_system_prompt(role: &str, user_prompt: &str, language: Language)
     };
 
     format!(
-        "{}\n\n## 你的任务\n{}\n\n{}",
+        "{}\n\n{}\n\n## 你的任务\n{}\n\n{}",
+        LANGUAGE_POLICY,
         role_instruction,
         user_prompt,
         match language {

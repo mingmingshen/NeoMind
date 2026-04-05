@@ -1101,6 +1101,51 @@ impl ServerState {
         );
     }
 
+    /// Refresh extension tools in the tool registry.
+    ///
+    /// Should be called after extensions are loaded (`init_extensions`) to ensure
+    /// extension-provided tools are available to chat sessions and agents.
+    /// The initial `init_tools()` runs before extensions are loaded, so this
+    /// rescans the extension registry and updates the cached tool registry.
+    pub async fn refresh_extension_tools(&self) {
+        use neomind_agent::toolkit::ToolRegistryBuilder;
+        use std::sync::Arc;
+
+        // Rebuild the entire registry with extensions now loaded
+        let mut registry = ToolRegistryBuilder::new()
+            .with_extension_registry(self.extensions.registry.clone())
+            .with_aggregated_tools_full(
+                self.devices.service.clone(),
+                self.devices.telemetry.clone(),
+                self.agents.agent_store.clone(),
+                self.automation.rule_engine.clone(),
+                None,
+                Some(self.core.message_manager.clone()),
+            )
+            .with_system_help_tool_named("NeoMind")
+            .with_extensions_scanned()
+            .await
+            .build();
+
+        // Register API-level tools
+        if let Some(automation_store) = &self.automation.automation_store {
+            use crate::server::tools::TransformTool;
+            registry.register(Arc::new(TransformTool::new((**automation_store).clone())));
+        }
+
+        let tool_registry = Arc::new(registry);
+        let tool_count = tool_registry.len();
+        self.agents
+            .session_manager
+            .set_tool_registry(tool_registry)
+            .await;
+        tracing::info!(
+            category = "ai",
+            "Tool registry refreshed with {} tools (extensions now loaded)",
+            tool_count
+        );
+    }
+
     /// Initialize extension event subscription.
     ///
     /// Starts a background task that subscribes to EventBus events

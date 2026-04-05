@@ -344,6 +344,10 @@ impl ToolRegistryBuilder {
             builder = builder.with_message_manager(manager);
         }
 
+        if let Some(ext_reg) = self.extension_registry.clone() {
+            builder = builder.with_extension_registry(ext_reg);
+        }
+
         let tools = builder.build();
 
         for tool in tools {

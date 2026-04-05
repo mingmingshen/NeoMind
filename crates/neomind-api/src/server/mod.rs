@@ -86,6 +86,10 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     // This loads all extensions marked with auto_start=true
     state.init_extensions().await;
 
+    // Refresh tool registry now that extensions are loaded
+    // (init_tools runs before extensions, so we rescan here)
+    state.refresh_extension_tools().await;
+
     // Start extension death monitoring for auto-restart
     state.extensions.runtime.clone().start_death_monitoring();
     startup.service("Extension death monitoring", ServiceStatus::Started);
@@ -102,6 +106,19 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     // Initialize AI Agent event listener
     state.init_agent_events().await;
     startup.service("AI Agent events", ServiceStatus::Started);
+
+    // Start memory scheduler if LLM runtime is available
+    if let Ok(instance_manager) = neomind_agent::get_instance_manager() {
+        if let Ok(runtime) = instance_manager.get_active_runtime().await {
+            if let Err(e) = state.agents.start_memory_scheduler(runtime).await {
+                tracing::warn!(category = "memory", error = %e, "Failed to start memory scheduler on startup");
+            } else {
+                startup.service("Memory scheduler", ServiceStatus::Started);
+            }
+        }
+    } else {
+        tracing::info!("No LLM runtime available yet, memory scheduler will start when LLM backend is added");
+    }
 
     // Configuration phase
     startup.phase_config();

@@ -1,7 +1,7 @@
 use super::*;
 
 impl AgentExecutor {
-    fn build_available_commands_description(agent: &AiAgent) -> String {
+    pub(crate) fn build_available_commands_description(agent: &AiAgent) -> String {
         let mut device_commands: std::collections::HashMap<String, Vec<&AgentResource>> =
             std::collections::HashMap::new();
         let mut extension_commands: std::collections::HashMap<String, Vec<&AgentResource>> =
@@ -154,7 +154,7 @@ impl AgentExecutor {
 
     /// Build available data sources description for LLM.
 
-    fn build_available_data_sources_description(agent: &AiAgent) -> String {
+    pub(crate) fn build_available_data_sources_description(agent: &AiAgent) -> String {
         let mut device_metrics: std::collections::HashMap<String, Vec<&AgentResource>> =
             std::collections::HashMap::new();
         let mut extension_metrics: std::collections::HashMap<String, Vec<&AgentResource>> =
@@ -322,7 +322,7 @@ impl AgentExecutor {
     }
 
 
-    async fn analyze_situation_with_intent(
+    pub(crate) async fn analyze_situation_with_intent(
         &self,
         agent: &AiAgent,
         data: &[DataCollected],
@@ -417,7 +417,7 @@ impl AgentExecutor {
     }
 
 
-    async fn analyze_with_llm(
+    pub(crate) async fn analyze_with_llm(
         &self,
         llm: Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>,
         agent: &AiAgent,
@@ -1008,18 +1008,8 @@ impl AgentExecutor {
             Ok(output) => {
                 let json_str = output.text.trim();
                 // Extract JSON if wrapped in markdown
-                let json_str = if json_str.contains("```json") {
-                    json_str
-                        .split("```json")
-                        .nth(1)
-                        .and_then(|s| s.split("```").next())
-                        .unwrap_or(json_str)
-                        .trim()
-                } else if json_str.contains("```") {
-                    json_str.split("```").nth(1).unwrap_or(json_str).trim()
-                } else {
-                    json_str
-                };
+                let json_str = extract_json_from_codeblock(json_str)
+                    .unwrap_or(json_str);
 
                 // Sanitize control characters that may break JSON parsing
                 let sanitized_json = sanitize_json_string(json_str);
@@ -1497,7 +1487,7 @@ impl AgentExecutor {
     }
 
 
-    async fn analyze_rule_based(
+    pub(crate) async fn analyze_rule_based(
         &self,
         agent: &AiAgent,
         data: &[DataCollected],
@@ -1586,7 +1576,7 @@ impl AgentExecutor {
     }
 
 
-    async fn evaluate_condition(&self, condition: &str, data: &[DataCollected]) -> bool {
+    pub(crate) async fn evaluate_condition(&self, condition: &str, data: &[DataCollected]) -> bool {
         let condition_lower = condition.to_lowercase();
 
         // Check if any data meets the condition

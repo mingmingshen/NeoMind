@@ -13,11 +13,11 @@ pub struct EventTriggerData {
 #[derive(Debug, Clone)]
 pub struct ChainState {
     /// Current depth in the chain
-    depth: usize,
+    pub(crate) depth: usize,
     /// Results from previous rounds that can be used as input
-    previous_results: Vec<ChainResult>,
+    pub(crate) previous_results: Vec<ChainResult>,
     /// Maximum depth allowed
-    max_depth: usize,
+    pub(crate) max_depth: usize,
 }
 
 /// A result from one step in the chain that can be used as input
@@ -34,7 +34,7 @@ pub struct ChainResult {
 }
 
 impl ChainState {
-    fn new(max_depth: usize) -> Self {
+    pub(crate) fn new(max_depth: usize) -> Self {
         Self {
             depth: 0,
             previous_results: Vec::new(),
@@ -42,11 +42,11 @@ impl ChainState {
         }
     }
 
-    fn can_continue(&self) -> bool {
+    pub(crate) fn can_continue(&self) -> bool {
         self.depth < self.max_depth
     }
 
-    fn advance(&mut self, results: &[neomind_storage::ActionExecuted]) {
+    pub(crate) fn advance(&mut self, results: &[neomind_storage::ActionExecuted]) {
         self.depth += 1;
         for action in results {
             self.previous_results.push(ChainResult {
@@ -59,7 +59,7 @@ impl ChainState {
     }
 
     /// Format previous results as context for the next LLM round
-    fn format_as_context(&self) -> String {
+    pub(crate) fn format_as_context(&self) -> String {
         if self.previous_results.is_empty() {
             return String::new();
         }
@@ -98,7 +98,8 @@ impl ChainState {
 }
 
 
-fn build_medium_term_summary(
+#[allow(dead_code)]
+pub(crate) fn build_medium_term_summary(
     memory: &AgentMemory,
     _current_analysis: &str,
     current_conclusion: &str,
@@ -139,16 +140,77 @@ fn build_medium_term_summary(
     parts.join("; ")
 }
 
-fn should_compact_context(history_context: &str, threshold_chars: usize) -> bool {
+#[allow(dead_code)]
+pub(crate) fn should_compact_context(history_context: &str, threshold_chars: usize) -> bool {
     // Rough estimation: 1 token ≈ 3 characters for Chinese/English mixed
     let estimated_tokens = history_context.chars().count() / 3;
     estimated_tokens > threshold_chars
 }
 
-fn clean_and_truncate_text(text: &str, max_chars: usize) -> String {
+/// Strip LLM thinking/reasoning artifacts from text.
+/// Some models output their internal reasoning as plain text (e.g., "Thinking Process: ...",
+/// "Let me analyze...", "## Thinking") instead of the expected structured JSON.
+/// This function detects and removes such artifacts, keeping only the substantive content.
+fn strip_llm_thinking(text: &str) -> String {
+    let mut cleaned = text.to_string();
+
+    // Common LLM thinking markers (ordered by specificity)
+    let thinking_markers = [
+        "Thinking Process:",
+        "Thinking process:",
+        "thinking process:",
+        "Let me analyze",
+        "Let me think",
+        "## Thinking",
+        "## Analysis",
+        "## Reasoning",
+        "Let me break this down",
+    ];
+
+    // Find the earliest thinking marker and truncate there
+    let mut earliest_pos = None;
+    for marker in &thinking_markers {
+        if let Some(pos) = cleaned.find(marker) {
+            match earliest_pos {
+                None => earliest_pos = Some(pos),
+                Some(current) if pos < current => earliest_pos = Some(pos),
+                _ => {}
+            }
+        }
+    }
+
+    if let Some(pos) = earliest_pos {
+        // Keep content before the thinking marker
+        cleaned.truncate(pos);
+    }
+
+    // Also remove common LLM meta-commentary patterns from the end
+    let trailing_patterns = [
+        "\n\nNote:",
+        "\n\nSummary:",
+        "\n\nIn conclusion,",
+    ];
+    for pattern in &trailing_patterns {
+        if let Some(pos) = cleaned.rfind(pattern) {
+            // Only remove if it appears near the end (last 30% of text)
+            let threshold = (cleaned.len() as f64 * 0.7) as usize;
+            if pos >= threshold {
+                cleaned.truncate(pos);
+            }
+        }
+    }
+
+    cleaned.trim().to_string()
+}
+
+pub(crate) fn clean_and_truncate_text(text: &str, max_chars: usize) -> String {
     if text.is_empty() {
         return String::new();
     }
+
+    // Strip LLM thinking/reasoning artifacts before further processing.
+    // Some models output their internal reasoning as plain text instead of the expected JSON.
+    let text = strip_llm_thinking(text);
 
     // First, check for obvious repetition patterns
     // If a short phrase (10-50 chars) appears 3+ times, it's likely stuck in a loop
@@ -231,7 +293,7 @@ fn clean_and_truncate_text(text: &str, max_chars: usize) -> String {
 ///
 /// Target: < 200 characters for small models (qwen3:1.7b)
 #[allow(dead_code)]
-fn compact_history_context(_history_context: &str, memory: &AgentMemory) -> String {
+pub(crate) fn compact_history_context(_history_context: &str, memory: &AgentMemory) -> String {
     let mut parts = Vec::new();
 
     // === STRATEGY 1: Recent trend (最简化的趋势) ===
@@ -303,7 +365,7 @@ fn compact_history_context(_history_context: &str, memory: &AgentMemory) -> Stri
 }
 
 /// Truncate text to max_chars, adding "..." if needed
-fn truncate_to(text: &str, max_chars: usize) -> String {
+pub(crate) fn truncate_to(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         text.to_string()
     } else {
@@ -312,7 +374,7 @@ fn truncate_to(text: &str, max_chars: usize) -> String {
     }
 }
 
-fn score_turn_relevance(
+pub(crate) fn score_turn_relevance(
     turn: &ConversationTurn,
     current_data: &[DataCollected],
     current_trigger: &str,
@@ -364,5 +426,39 @@ fn score_turn_relevance(
 
     // Clamp to [0, 1]
     score.clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_llm_thinking_removes_thinking_process() {
+        let input = "温度正常范围。Thinking Process: 1. Analyze the Request: ...";
+        let result = strip_llm_thinking(input);
+        assert_eq!(result, "温度正常范围。");
+    }
+
+    #[test]
+    fn test_strip_llm_thinking_no_markers() {
+        let input = "设备温度25度，正常范围。";
+        let result = strip_llm_thinking(input);
+        assert_eq!(result, "设备温度25度，正常范围。");
+    }
+
+    #[test]
+    fn test_strip_llm_thinking_let_me_analyze() {
+        let input = "结论文本。Let me analyze this further...";
+        let result = strip_llm_thinking(input);
+        assert_eq!(result, "结论文本。");
+    }
+
+    #[test]
+    fn test_clean_and_truncate_strips_thinking() {
+        let input = "所有设备正常。Thinking Process: 1. **Analyze the Request:** * Input: Execution results of tools...";
+        let result = clean_and_truncate_text(input, 500);
+        assert!(!result.contains("Thinking Process"));
+        assert!(result.contains("所有设备正常"));
+    }
 }
 

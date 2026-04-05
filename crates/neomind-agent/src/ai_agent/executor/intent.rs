@@ -87,18 +87,8 @@ Respond in JSON format:
                 // Try to parse JSON from LLM output
                 let json_str = output.text.trim();
                 // Extract JSON if it's wrapped in markdown code blocks
-                let json_str = if json_str.contains("```json") {
-                    json_str
-                        .split("```json")
-                        .nth(1)
-                        .and_then(|s| s.split("```").next())
-                        .unwrap_or(json_str)
-                        .trim()
-                } else if json_str.contains("```") {
-                    json_str.split("```").nth(1).unwrap_or(json_str).trim()
-                } else {
-                    json_str
-                };
+                let json_str = extract_json_from_codeblock(json_str)
+                    .unwrap_or(json_str);
 
                 serde_json::from_str(json_str).map_err(|_| {
                     NeoMindError::Llm("Failed to parse LLM intent response".to_string())
@@ -140,6 +130,82 @@ Respond in JSON format:
             confidence,
         })
     }
+}
 
+/// Helper function to extract metrics from text.
+pub(crate) fn extract_metrics(text: &str) -> Vec<String> {
+    let mut metrics = Vec::new();
 
+    if text.contains("温度") {
+        metrics.push("temperature".to_string());
+    }
+    if text.contains("湿度") {
+        metrics.push("humidity".to_string());
+    }
+    if text.contains("能耗") || text.contains("功率") || text.contains("电量") {
+        metrics.push("power".to_string());
+    }
+    if text.contains("光照") {
+        metrics.push("illuminance".to_string());
+    }
+    if text.contains("气压") {
+        metrics.push("pressure".to_string());
+    }
+
+    metrics
+}
+
+/// Helper function to extract conditions from text.
+pub(crate) fn extract_conditions(text: &str) -> Vec<String> {
+    let mut conditions = Vec::new();
+
+    if text.contains("大于") || text.contains("超过") {
+        if let Some(start) = text.find("大于").or_else(|| text.find("超过")) {
+            let start_char = text[..start].chars().count();
+            let remaining: String = text.chars().skip(start_char).take(12).collect();
+            if !remaining.is_empty() {
+                conditions.push(remaining);
+            }
+        }
+    }
+
+    if text.contains("小于") || text.contains("低于") {
+        if let Some(start) = text.find("小于").or_else(|| text.find("低于")) {
+            let start_char = text[..start].chars().count();
+            let remaining: String = text.chars().skip(start_char).take(12).collect();
+            if !remaining.is_empty() {
+                conditions.push(remaining);
+            }
+        }
+    }
+
+    conditions
+}
+
+/// Helper function to extract actions from text.
+pub(crate) fn extract_actions(text: &str) -> Vec<String> {
+    let mut actions = Vec::new();
+
+    if text.contains("报警") || text.contains("通知") {
+        actions.push("send_alert".to_string());
+    }
+    if text.contains("开关") || text.contains("控制") {
+        actions.push("send_command".to_string());
+    }
+    if text.contains("生成报告") {
+        actions.push("generate_report".to_string());
+    }
+
+    actions
+}
+
+/// Helper function to extract threshold value from condition text.
+pub(crate) fn extract_threshold(text: &str) -> Option<f64> {
+    let nums: Vec<f64> = text
+        .split(|c: char| !c.is_ascii_digit() && c != '.')
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse().ok())
+        .collect();
+
+    nums.first().copied()
 }

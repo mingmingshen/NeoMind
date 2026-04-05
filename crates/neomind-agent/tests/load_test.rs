@@ -406,7 +406,7 @@ async fn test_agent_with_large_dataset() -> anyhow::Result<()> {
         let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
 
         let start = Instant::now();
-        let record = ctx.executor.execute_agent(agent.clone()).await?;
+        let record = ctx.executor.execute_agent(agent.clone(), None).await?;
         let elapsed = start.elapsed();
 
         times.push(elapsed);
@@ -465,7 +465,7 @@ async fn test_conversation_history_under_load() -> anyhow::Result<()> {
 
     for i in 0..execution_count {
         let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-        ctx.executor.execute_agent(agent.clone()).await?;
+        ctx.executor.execute_agent(agent.clone(), None).await?;
 
         if (i + 1) % 10 == 0 {
             let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
@@ -560,7 +560,7 @@ async fn test_multi_agent_concurrent_execution() -> anyhow::Result<()> {
             let agent = ctx.store.get_agent(agent_id).await?.unwrap();
             let agent_start = Instant::now();
 
-            let record = ctx.executor.execute_agent(agent.clone()).await?;
+            let record = ctx.executor.execute_agent(agent.clone(), None).await?;
 
             let elapsed = agent_start.elapsed();
             all_times.push(elapsed);
@@ -640,7 +640,7 @@ async fn test_command_execution_simulation() -> anyhow::Result<()> {
         let _ = ctx.inject_metrics_batch(10).await?;
 
         let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-        let record = ctx.executor.execute_agent(agent.clone()).await?;
+        let record = ctx.executor.execute_agent(agent.clone(), None).await?;
 
         let decision_count = record.decision_process.decisions.len();
         decision_counts.push(decision_count);
@@ -742,7 +742,7 @@ async fn test_real_llm_with_large_dataset() -> anyhow::Result<()> {
 
             let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
             let start = Instant::now();
-            let record = ctx.executor.execute_agent(agent.clone()).await?;
+            let record = ctx.executor.execute_agent(agent.clone(), None).await?;
             let elapsed = start.elapsed();
             times.push(elapsed);
 
@@ -792,7 +792,7 @@ async fn test_performance_benchmark() -> anyhow::Result<()> {
             .await?;
 
         let start = Instant::now();
-        let record = ctx.executor.execute_agent(agent.clone()).await?;
+        let record = ctx.executor.execute_agent(agent.clone(), None).await?;
         let elapsed = start.elapsed();
 
         println!(
@@ -815,7 +815,7 @@ async fn test_performance_benchmark() -> anyhow::Result<()> {
 
     for _ in 0..iterations {
         let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
-        ctx.executor.execute_agent(agent.clone()).await.ok();
+        ctx.executor.execute_agent(agent.clone(), None).await.ok();
     }
 
     let elapsed = start.elapsed();
@@ -832,7 +832,7 @@ async fn test_performance_benchmark() -> anyhow::Result<()> {
     // Execute many times and check conversation history doesn't grow unbounded
     for i in 0..20 {
         let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
-        ctx.executor.execute_agent(agent.clone()).await.ok();
+        ctx.executor.execute_agent(agent.clone(), None).await.ok();
 
         if (i + 1) % 5 == 0 {
             let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
@@ -863,7 +863,7 @@ async fn test_performance_benchmark() -> anyhow::Result<()> {
     for _ in 0..executions_per_agent {
         for agent_id in &agent_ids {
             let agent = ctx.store.get_agent(agent_id).await?.unwrap();
-            ctx.executor.execute_agent(agent.clone()).await.ok();
+            ctx.executor.execute_agent(agent.clone(), None).await.ok();
         }
     }
 

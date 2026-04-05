@@ -197,7 +197,7 @@ impl AiAgentManager {
             .await?;
 
         // Execute the agent
-        let result = self.executor.execute_agent(agent.clone()).await;
+        let result = self.executor.execute_agent(agent.clone(), None).await;
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 

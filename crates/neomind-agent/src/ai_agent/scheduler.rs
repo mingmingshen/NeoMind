@@ -297,7 +297,7 @@ impl AgentScheduler {
 
                         match executor.store().get_agent(&agent_id).await {
                             Ok(Some(agent)) => {
-                                let result = executor.execute_agent(agent).await;
+                                let result = executor.execute_agent(agent, None).await;
 
                                 match result {
                                     Ok(record) => {

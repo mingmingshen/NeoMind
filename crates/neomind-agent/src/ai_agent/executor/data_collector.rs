@@ -1,6 +1,17 @@
 use super::*;
 
-fn get_time_context() -> String {
+fn metric_value_to_json(v: &neomind_core::extension::system::ParamMetricValue) -> serde_json::Value {
+    match v {
+        neomind_core::extension::system::ParamMetricValue::Float(v) => serde_json::json!(*v),
+        neomind_core::extension::system::ParamMetricValue::Integer(v) => serde_json::json!(*v),
+        neomind_core::extension::system::ParamMetricValue::Boolean(v) => serde_json::json!(*v),
+        neomind_core::extension::system::ParamMetricValue::String(v) => serde_json::json!(v),
+        neomind_core::extension::system::ParamMetricValue::Null => serde_json::Value::Null,
+        neomind_core::extension::system::ParamMetricValue::Binary(_) => serde_json::json!("<binary data>"),
+    }
+}
+
+pub(crate) fn get_time_context() -> String {
     use neomind_storage::SettingsStore;
 
     const SETTINGS_DB_PATH: &str = "data/settings.redb";
@@ -51,7 +62,7 @@ fn get_time_context() -> String {
 
 
 impl AgentExecutor {
-    async fn collect_data(&self, agent: &AiAgent) -> AgentResult<Vec<DataCollected>> {
+    pub(crate) async fn collect_data(&self, agent: &AiAgent) -> AgentResult<Vec<DataCollected>> {
         let timestamp = chrono::Utc::now().timestamp();
 
         // DEBUG: Log data collection start
@@ -185,7 +196,7 @@ impl AgentExecutor {
     }
 
 
-    async fn collect_metric_data_parallel(
+    pub(crate) async fn collect_metric_data_parallel(
         &self,
         _agent: &AiAgent, // Reserved for future use
         resources: Vec<AgentResource>,
@@ -312,7 +323,7 @@ impl AgentExecutor {
     }
 
 
-    async fn collect_single_metric(
+    pub(crate) async fn collect_single_metric(
         storage: Arc<neomind_storage::TimeSeriesStore>,
         device_id: &str,
         metric_name: &str,
@@ -432,7 +443,7 @@ impl AgentExecutor {
     }
 
 
-    async fn collect_device_data_parallel(
+    pub(crate) async fn collect_device_data_parallel(
         &self,
         _agent: &AiAgent, // Reserved for future use
         device_ids: Vec<String>,
@@ -502,7 +513,7 @@ impl AgentExecutor {
     /// This collects:
     /// 1. Device metadata (device_info)
 
-    async fn collect_single_device_data(
+    pub(crate) async fn collect_single_device_data(
         device_service: Arc<DeviceService>,
         storage: Arc<neomind_storage::TimeSeriesStore>,
         device_id: &str,
@@ -646,7 +657,7 @@ impl AgentExecutor {
         Ok(data)
     }
 
-    async fn collect_extension_metric_data_parallel(
+    pub(crate) async fn collect_extension_metric_data_parallel(
         &self,
         _agent: &AiAgent,
         resources: Vec<AgentResource>,
@@ -746,27 +757,7 @@ impl AgentExecutor {
                     match (current_metric, historical_result) {
                         (Some(metric_value), Ok(Ok(_storage_result))) => {
                             // Has both current value and historical data
-                            let json_value = match &metric_value.value {
-                                neomind_core::extension::system::ParamMetricValue::Float(v) => {
-                                    serde_json::json!(*v)
-                                }
-                                neomind_core::extension::system::ParamMetricValue::Integer(v) => {
-                                    serde_json::json!(*v)
-                                }
-                                neomind_core::extension::system::ParamMetricValue::Boolean(v) => {
-                                    serde_json::json!(*v)
-                                }
-                                neomind_core::extension::system::ParamMetricValue::String(v) => {
-                                    serde_json::json!(v)
-                                }
-                                neomind_core::extension::system::ParamMetricValue::Null => {
-                                    serde_json::Value::Null
-                                }
-                                neomind_core::extension::ParamMetricValue::Binary(_) => {
-                                    // Binary data encoded as base64 string
-                                    serde_json::json!("<binary data>")
-                                }
-                            };
+                            let json_value = metric_value_to_json(&metric_value.value);
 
                             tracing::debug!(
                                 extension_id = %extension_id,
@@ -791,27 +782,7 @@ impl AgentExecutor {
                         }
                         (Some(metric_value), _) => {
                             // Only current value available, no historical data
-                            let json_value = match &metric_value.value {
-                                neomind_core::extension::system::ParamMetricValue::Float(v) => {
-                                    serde_json::json!(*v)
-                                }
-                                neomind_core::extension::system::ParamMetricValue::Integer(v) => {
-                                    serde_json::json!(*v)
-                                }
-                                neomind_core::extension::system::ParamMetricValue::Boolean(v) => {
-                                    serde_json::json!(*v)
-                                }
-                                neomind_core::extension::system::ParamMetricValue::String(v) => {
-                                    serde_json::json!(v)
-                                }
-                                neomind_core::extension::system::ParamMetricValue::Null => {
-                                    serde_json::Value::Null
-                                }
-                                neomind_core::extension::ParamMetricValue::Binary(_) => {
-                                    // Binary data encoded as base64 string
-                                    serde_json::json!("<binary data>")
-                                }
-                            };
+                            let json_value = metric_value_to_json(&metric_value.value);
 
                             tracing::debug!(
                                 extension_id = %extension_id,
@@ -886,7 +857,7 @@ impl AgentExecutor {
     }
 
 
-    fn collect_memory_summary(
+    pub(crate) fn collect_memory_summary(
         &self,
         agent: &AiAgent,
         timestamp: i64,
@@ -956,7 +927,7 @@ impl AgentExecutor {
 
     /// Collect data including the triggering event data.
 
-    async fn collect_data_with_event(
+    pub(crate) async fn collect_data_with_event(
         &self,
         agent: &AiAgent,
         event_data: &EventTriggerData,
@@ -1038,25 +1009,99 @@ impl AgentExecutor {
 
         Ok(data)
     }
-
-    /// Build a description of available commands for the LLM.
-    ///
-    /// This formats the command resources into a clear, structured text
-    /// that the LLM can understand and use to make decisions about which
-
 }
 
-// Helper types and functions
 
-struct Stats {
+pub(crate) struct Stats {
     min: f64,
     max: f64,
     avg: f64,
     count: usize,
 }
 
+/// Calculate statistics for numeric data points.
+pub(crate) fn calculate_stats(points: &[neomind_storage::DataPoint]) -> Option<Stats> {
+    let nums: Vec<f64> = points.iter().filter_map(|p| p.value.as_f64()).collect();
+
+    if nums.is_empty() {
+        return None;
+    }
+
+    let min_val = nums.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+    let max_val = nums.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+    let avg_val = nums.iter().sum::<f64>() / nums.len() as f64;
+
+    Some(Stats {
+        min: min_val,
+        max: max_val,
+        avg: avg_val,
+        count: nums.len(),
+    })
+}
+
+/// Extract image data from a metric value.
+/// Returns (image_url, base64_data, mime_type).
+pub(crate) fn extract_image_data(
+    value: &serde_json::Value,
+) -> (Option<String>, Option<String>, Option<String>) {
+    if let Some(s) = value.as_str() {
+        if s.starts_with("http://") || s.starts_with("https://") {
+            (Some(s.to_string()), None, None)
+        } else if s.starts_with("data:image/") {
+            if let Some(rest) = s.strip_prefix("data:image/") {
+                let parts: Vec<&str> = rest.splitn(2, ';').collect();
+                if parts.len() == 2 {
+                    let mime_type = parts[0].to_string();
+                    if let Some(data) = parts[1].strip_prefix("base64,") {
+                        (None, Some(data.to_string()), Some(mime_type))
+                    } else {
+                        (None, Some(parts[1].to_string()), Some(mime_type))
+                    }
+                } else {
+                    (None, Some(rest.to_string()), Some("image/jpeg".to_string()))
+                }
+            } else {
+                (None, Some(s.to_string()), Some("image/jpeg".to_string()))
+            }
+        } else if s.len() > 100 && (s.contains("/9j/") || s.contains("iVBORw0KGgo")) {
+            let mime_type = if s.contains("iVBORw0KGgo") {
+                "image/png"
+            } else {
+                "image/jpeg"
+            };
+            (None, Some(s.to_string()), Some(mime_type.to_string()))
+        } else {
+            (None, None, None)
+        }
+    } else if let Some(obj) = value.as_object() {
+        if let Some(url) = obj
+            .get("image_url")
+            .or(obj.get("url"))
+            .and_then(|v| v.as_str())
+        {
+            return (Some(url.to_string()), None, None);
+        }
+        if let Some(base64) = obj
+            .get("base64")
+            .or(obj.get("data"))
+            .or(obj.get("image_data"))
+            .and_then(|v| v.as_str())
+        {
+            let mime = obj
+                .get("mime_type")
+                .or(obj.get("type"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("image/jpeg");
+            return (None, Some(base64.to_string()), Some(mime.to_string()));
+        }
+        (None, None, None)
+    } else {
+        (None, None, None)
+    }
+}
+
 /// Check if a metric value contains image data.
-fn is_image_metric(metric_name: &str, value: &serde_json::Value) -> bool {
+pub(crate) fn is_image_metric(metric_name: &str, value: &serde_json::Value) -> bool {
     // Check metric name for image-related keywords
     let name_indicates_image = metric_name.to_lowercase().contains("image")
         || metric_name.to_lowercase().contains("snapshot")
@@ -1098,201 +1143,3 @@ fn is_image_metric(metric_name: &str, value: &serde_json::Value) -> bool {
         false
     }
 }
-
-/// Extract image data from a metric value.
-
-fn extract_image_data(
-    value: &serde_json::Value,
-) -> (Option<String>, Option<String>, Option<String>) {
-    if let Some(s) = value.as_str() {
-        if s.starts_with("http://") || s.starts_with("https://") {
-            (Some(s.to_string()), None, None)
-        } else if s.starts_with("data:image/") {
-            // Parse data URL: data:image/<mime>;base64,<data>
-            if let Some(rest) = s.strip_prefix("data:image/") {
-                let parts: Vec<&str> = rest.splitn(2, ';').collect();
-                if parts.len() == 2 {
-                    let mime_type = parts[0].to_string();
-                    if let Some(data) = parts[1].strip_prefix("base64,") {
-                        (None, Some(data.to_string()), Some(mime_type))
-                    } else {
-                        (None, Some(parts[1].to_string()), Some(mime_type))
-                    }
-                } else {
-                    (None, Some(rest.to_string()), Some("image/jpeg".to_string()))
-                }
-            } else {
-                (None, Some(s.to_string()), Some("image/jpeg".to_string()))
-            }
-        } else if s.len() > 100 && (s.contains("/9j/") || s.contains("iVBORw0KGgo")) {
-            // Raw base64 image data
-            let mime_type = if s.contains("iVBORw0KGgo") {
-                "image/png"
-            } else {
-                "image/jpeg"
-            };
-            (None, Some(s.to_string()), Some(mime_type.to_string()))
-        } else {
-            (None, None, None)
-        }
-    } else if let Some(obj) = value.as_object() {
-        // Try various field names
-        if let Some(url) = obj
-            .get("image_url")
-            .or(obj.get("url"))
-            .and_then(|v| v.as_str())
-        {
-            return (Some(url.to_string()), None, None);
-        }
-        if let Some(base64) = obj
-            .get("base64")
-            .or(obj.get("data"))
-            .or(obj.get("image_data"))
-            .and_then(|v| v.as_str())
-        {
-            let mime = obj
-                .get("mime_type")
-                .or(obj.get("type"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("image/jpeg");
-            return (None, Some(base64.to_string()), Some(mime.to_string()));
-        }
-        (None, None, None)
-    } else {
-        (None, None, None)
-
-fn extract_metrics(text: &str) -> Vec<String> {
-    let mut metrics = Vec::new();
-
-    if text.contains("温度") {
-        metrics.push("temperature".to_string());
-    }
-    if text.contains("湿度") {
-        metrics.push("humidity".to_string());
-    }
-    if text.contains("能耗") || text.contains("功率") || text.contains("电量") {
-        metrics.push("power".to_string());
-    }
-    if text.contains("光照") {
-        metrics.push("illuminance".to_string());
-    }
-    if text.contains("气压") {
-        metrics.push("pressure".to_string());
-    }
-
-    metrics
-}
-
-/// Helper function to extract conditions from text.
-fn extract_conditions(text: &str) -> Vec<String> {
-    let mut conditions = Vec::new();
-
-    // Look for patterns like "大于30", "小于50", "超过", "低于"
-    if text.contains("大于") || text.contains("超过") {
-        if let Some(start) = text.find("大于").or_else(|| text.find("超过")) {
-            // Use character-based slicing to handle multi-byte UTF-8 characters
-            let start_char = text[..start].chars().count();
-            let remaining: String = text.chars().skip(start_char).take(12).collect();
-            if !remaining.is_empty() {
-                conditions.push(remaining);
-            }
-        }
-    }
-
-    if text.contains("小于") || text.contains("低于") {
-        if let Some(start) = text.find("小于").or_else(|| text.find("低于")) {
-            // Use character-based slicing to handle multi-byte UTF-8 characters
-            let start_char = text[..start].chars().count();
-            let remaining: String = text.chars().skip(start_char).take(12).collect();
-            if !remaining.is_empty() {
-                conditions.push(remaining);
-            }
-        }
-    }
-
-    conditions
-}
-
-/// Helper function to extract actions from text.
-fn extract_actions(text: &str) -> Vec<String> {
-
-fn extract_actions(text: &str) -> Vec<String> {
-    let mut actions = Vec::new();
-
-    if text.contains("报警") || text.contains("通知") {
-        actions.push("send_alert".to_string());
-    }
-    if text.contains("开关") || text.contains("控制") {
-        actions.push("send_command".to_string());
-    }
-    if text.contains("生成报告") {
-        actions.push("generate_report".to_string());
-    }
-
-    actions
-}
-
-
-fn extract_threshold(text: &str) -> Option<f64> {
-    // Find numbers in the text
-    let nums: Vec<f64> = text
-        .split(|c: char| !c.is_ascii_digit() && c != '.')
-        .filter(|s| !s.is_empty())
-        .filter_map(|s| s.parse().ok())
-        .collect();
-
-    nums.first().copied()
-}
-
-/// Build JSON Schema parameters from extension command parameters.
-/// Helper for V2 extension integration.
-fn build_parameters_schema(
-    parameters: &[neomind_core::extension::ParameterDefinition],
-) -> serde_json::Value {
-    use neomind_core::extension::MetricDataType;
-    use std::collections::HashMap;
-
-    let mut properties = HashMap::new();
-    let mut required = Vec::new();
-
-    for param in parameters {
-        let param_type = match param.param_type {
-
-        let param_type = match param.param_type {
-            MetricDataType::Float => "number",
-            MetricDataType::Integer => "integer",
-            MetricDataType::Boolean => "boolean",
-            MetricDataType::String | MetricDataType::Enum { .. } => "string",
-            MetricDataType::Binary => "string",
-        };
-
-        let mut param_schema = serde_json::json!({
-            "type": param_type,
-            "description": param.description,
-        });
-
-        // Add enum options if present
-        if let MetricDataType::Enum { options } = &param.param_type {
-            param_schema["enum"] = serde_json::json!(options);
-        }
-
-        // Add default value if present
-
-        // Add default value if present
-        if let Some(default_val) = &param.default_value {
-            param_schema["default"] = serde_json::json!(default_val);
-        }
-
-        properties.insert(param.name.clone(), param_schema);
-
-        if param.required {
-            required.push(param.name.clone());
-        }
-    }
-
-    serde_json::json!({
-        "type": "object",
-        "properties": properties,
-        "required": required,
-    })
-

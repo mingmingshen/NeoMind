@@ -20,6 +20,7 @@ use neomind_storage::{
     AgentMemory,
     AgentResource,
     AgentStore,
+    AgentToolConfig,
     AiAgent,
     // New conversation types
     ConversationTurn,
@@ -48,13 +49,35 @@ use neomind_core::datasource::DataSourceId;
 use crate::agent::semantic_mapper::SemanticToolMapper;
 use crate::agent::types::LlmBackend;
 use crate::error::{NeoMindError, Result as AgentResult};
-use crate::prompts::{CONVERSATION_CONTEXT_EN, CONVERSATION_CONTEXT_ZH};
+use crate::prompts::{LANGUAGE_POLICY, CONVERSATION_CONTEXT_EN, CONVERSATION_CONTEXT_ZH};
 
 /// Internal representation of image content for multimodal LLM messages.
 #[allow(dead_code)]
 enum ImageContent {
     Url(String),
     Base64(String, String), // (_data, _mime_type)
+}
+
+/// Intermediate data from the tool execution loop, passed to result construction.
+struct ToolCallRecord {
+    name: String,
+    input: serde_json::Value,
+    result: crate::toolkit::ToolResult,
+}
+
+struct RoundData {
+    thought: Option<String>,
+    tool_calls: Vec<ToolCallRecord>,
+}
+
+struct ToolLoopOutput {
+    final_text: String,
+    is_generic_fallback: bool,
+    all_tool_results: Vec<crate::toolkit::ToolResult>,
+    all_reasoning_texts: Vec<String>,
+    /// (thought, tool_calls) per round
+    round_data_list_raw: Vec<(Option<String>, Vec<ToolCallRecord>)>,
+    max_rounds: usize,
 }
 
 
@@ -70,36 +93,68 @@ mod intent;
 // Re-export public types
 pub use context::{EventTriggerData, ChainState, ChainResult};
 
-/// Extract command name from decision description.
-/// Supports formats like "execute command: turn_on_light" or "execute: open_valve"
+// Re-export functions needed by sibling modules (via use super::*)
+pub(crate) use response_parser::{
+    extract_command_from_description, extract_device_from_description,
+    json_value_to_string, extract_string_field, sanitize_json_string,
+    extract_json_from_mixed_text, try_recover_truncated_json,
+    parse_final_tool_response, summarize_tool_output, extract_json_from_codeblock,
+};
+pub(crate) use context::{
+    clean_and_truncate_text, truncate_to, score_turn_relevance,
+};
+pub(crate) use data_collector::{
+    get_time_context,
+};
+pub(crate) use intent::{
+    extract_threshold,
+};
 
-/// Get time context string for LLM prompts.
-/// This provides the LLM with current time information for better temporal understanding.
-/// Loads timezone from settings if available, otherwise uses default.
+/// Build JSON Schema parameters from extension command parameters.
+fn build_parameters_schema(
+    parameters: &[neomind_core::extension::ParameterDefinition],
+) -> serde_json::Value {
+    use neomind_core::extension::MetricDataType;
+    use std::collections::HashMap;
 
-/// Convert a JSON Value to a String, handling both string and object types.
-/// - If the value is a string, return it directly.
-/// - If the value is an object, serialize it to a formatted JSON string.
-/// - For other types, return empty string.
+    let mut properties = HashMap::new();
+    let mut required = Vec::new();
 
-/// Attempts to recover a truncated JSON string by finding the last complete object.
-/// Returns Some((recovered_json, was_truncated)) if recovery was possible,
-/// None if the JSON is beyond recovery.
+    for param in parameters {
+        let param_type = match param.param_type {
+            MetricDataType::Float => "number",
+            MetricDataType::Integer => "integer",
+            MetricDataType::Boolean => "boolean",
+            MetricDataType::String | MetricDataType::Enum { .. } => "string",
+            MetricDataType::Binary => "string",
+        };
 
-/// Extract semantic patterns from decisions based on Claude Code's approach.
-/// Returns abstract patterns {symptom, cause, solution} instead of raw history.
+        let mut param_schema = serde_json::json!({
+            "type": param_type,
+            "description": param.description,
+        });
 
-/// Build medium-term summary for 24h context compression.
-#[allow(dead_code)]
+        if let MetricDataType::Enum { options } = &param.param_type {
+            param_schema["enum"] = serde_json::json!(options);
+        }
 
-/// Check if context needs compaction based on token estimation.
-#[allow(dead_code)]
+        if let Some(default_val) = &param.default_value {
+            param_schema["default"] = serde_json::json!(default_val);
+        }
 
-/// Clean and truncate text to prevent storing repetitive/looping LLM output.
-/// - Detects and removes repetitive patterns (same phrase appearing 3+ times)
-/// - Truncates to max_chars
-/// - Removes common LLM artifacts (internal monologue, formatting codes)
+        properties.insert(param.name.clone(), param_schema);
 
+        if param.required {
+            required.push(param.name.clone());
+        }
+    }
+
+    serde_json::json!({
+        "type": "object",
+        "properties": properties,
+        "required": required,
+    })
+}
 
 /// Configuration for agent executor.
 #[derive(Clone)]
@@ -202,6 +257,13 @@ pub struct AgentExecutor {
 /// Falls back to sensible defaults if parsing fails.
 
 impl AgentExecutor {
+    /// Publish an event to the event bus (no-op if no bus is configured).
+    async fn publish_event(&self, event: NeoMindEvent) {
+        if let Some(ref bus) = self.event_bus {
+            let _ = bus.publish(event).await;
+        }
+    }
+
     /// Create a new agent executor.
     pub async fn new(config: AgentExecutorConfig) -> AgentResult<Self> {
         let llm_runtime = config.llm_runtime.clone();
@@ -270,22 +332,11 @@ impl AgentExecutor {
     /// In this mode, the LLM receives tool definitions and can make tool calls
     /// that are parsed from its text response, executed, and the results fed back
     /// for further reasoning.
-    async fn execute_with_tools(
-        &self,
-        agent: &AiAgent,
-        data_collected: &[DataCollected],
-        llm_runtime: Arc<dyn LlmRuntime + Send + Sync>,
-        execution_id: &str,
-    ) -> AgentResult<(DecisionProcess, neomind_storage::ExecutionResult)> {
-        use crate::agent::tool_parser::parse_tool_calls;
-        use neomind_core::llm::backend::{GenerationParams, LlmInput};
-
-        let registry = self
-            .tool_registry
-            .as_ref()
-            .ok_or_else(|| NeoMindError::Tool("Tool registry not available".to_string()))?;
-
-        // Get tool definitions, applying allowed_tools filter if configured
+    /// Filter tool definitions based on agent's allowed_tools config.
+    fn filter_tools(
+        registry: &crate::toolkit::registry::ToolRegistry,
+        tool_config: &Option<AgentToolConfig>,
+    ) -> Vec<neomind_core::llm::backend::ToolDefinition> {
         let tool_defs_json = registry.definitions_json();
         let tools_list = tool_defs_json
             .get("tools")
@@ -293,84 +344,51 @@ impl AgentExecutor {
             .cloned()
             .unwrap_or_default();
 
-        let filtered_tools: Vec<neomind_core::llm::backend::ToolDefinition> =
-            if let Some(ref config) = agent.tool_config {
-                if config.allowed_tools.is_empty() {
-                    tools_list
-                        .iter()
-                        .filter_map(|t| {
-                            Some(neomind_core::llm::backend::ToolDefinition {
-                                name: t.get("name")?.as_str()?.to_string(),
-                                description: t.get("description")?.as_str()?.to_string(),
-                                parameters: t.get("parameters")?.clone(),
-                            })
-                        })
-                        .collect()
-                } else {
-                    tools_list
-                        .iter()
-                        .filter(|t| {
-                            t.get("name")
-                                .and_then(|n| n.as_str())
-                                .map(|n| config.allowed_tools.contains(&n.to_string()))
-                                .unwrap_or(true)
-                        })
-                        .filter_map(|t| {
-                            Some(neomind_core::llm::backend::ToolDefinition {
-                                name: t.get("name")?.as_str()?.to_string(),
-                                description: t.get("description")?.as_str()?.to_string(),
-                                parameters: t.get("parameters")?.clone(),
-                            })
-                        })
-                        .collect()
-                }
-            } else {
-                tools_list
-                    .iter()
-                    .filter_map(|t| {
-                        Some(neomind_core::llm::backend::ToolDefinition {
-                            name: t.get("name")?.as_str()?.to_string(),
-                            description: t.get("description")?.as_str()?.to_string(),
-                            parameters: t.get("parameters")?.clone(),
-                        })
-                    })
-                    .collect()
-            };
+        let to_tool_def = |t: &serde_json::Value| -> Option<neomind_core::llm::backend::ToolDefinition> {
+            Some(neomind_core::llm::backend::ToolDefinition {
+                name: t.get("name")?.as_str()?.to_string(),
+                description: t.get("description")?.as_str()?.to_string(),
+                parameters: t.get("parameters")?.clone(),
+            })
+        };
 
-        // Build system prompt
+        match tool_config {
+            Some(config) if !config.allowed_tools.is_empty() => tools_list
+                .iter()
+                .filter(|t| {
+                    t.get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|n| config.allowed_tools.contains(&n.to_string()))
+                        .unwrap_or(true)
+                })
+                .filter_map(|t| to_tool_def(t))
+                .collect(),
+            _ => tools_list.iter().filter_map(|t| to_tool_def(t)).collect(),
+        }
+    }
+
+    /// Build the system prompt for tool-calling mode.
+    fn build_tool_system_prompt(agent: &AiAgent, data_collected: &[DataCollected]) -> String {
         let time_ctx = get_time_context();
+
+        // Collect non-image, non-placeholder, non-memory data
         let data_text: Vec<String> = data_collected
             .iter()
             .filter(|d| {
-                // Exclude images (handled separately)
-                if d.values
-                    .get("_is_image")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
-                {
+                if d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false) {
                     return false;
                 }
-                // Exclude placeholder data from collect_data
-                // When no data sources are bound, collect_data adds a placeholder with guidance
-                // This placeholder should NOT be treated as real sensor data
                 if d.source == "system"
-                    && d.values
-                        .get("message")
-                        .and_then(|v| v.as_str())
+                    && d.values.get("message").and_then(|v| v.as_str())
                         .map(|s| s.contains("No pre-collected data"))
                         .unwrap_or(false)
                 {
                     return false;
                 }
-                // Exclude memory-related data (not real-time sensor data)
                 let dtype = d.data_type.to_lowercase();
-                !matches!(
-                    dtype.as_str(),
-                    "summary" | "memory" | "state_variables" | "baselines" | "patterns"
-                )
+                !matches!(dtype.as_str(), "summary" | "memory" | "state_variables" | "baselines" | "patterns")
             })
             .map(|d| {
-                // Non-image data: serialize with truncation
                 let json_str = serde_json::to_string_pretty(&d.values).unwrap_or_default();
                 if json_str.len() > 2000 {
                     format!("**Source: {}**\n{}...", d.source, &json_str[..2000])
@@ -380,60 +398,16 @@ impl AgentExecutor {
             })
             .collect();
 
-        // Collect image data for multimodal support
-        // Handle both image_url (e.g., RTSP screenshots) and image_base64 formats
-        let image_parts: Vec<_> = data_collected
-            .iter()
-            .filter(|d| {
-                d.values
-                    .get("_is_image")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
-            })
-            .filter_map(|d| {
-                // Try image_url first (e.g., from RTSP camera snapshots)
-                if let Some(url) = d.values.get("image_url").and_then(|v| v.as_str()) {
-                    if !url.is_empty() {
-                        return Some(neomind_core::message::ContentPart::image_url(
-                            url.to_string(),
-                        ));
-                    }
-                }
-                // Fall back to base64 data
-                if let Some(base64) = d.values.get("image_base64").and_then(|v| v.as_str()) {
-                    if !base64.is_empty() {
-                        let mime = d
-                            .values
-                            .get("image_mime_type")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("image/jpeg");
-                        return Some(neomind_core::message::ContentPart::image_base64(
-                            base64.to_string(),
-                            mime.to_string(),
-                        ));
-                    }
-                }
-                None
-            })
-            .collect();
-
         let resource_info = if agent.resources.is_empty() {
             String::new()
         } else {
-            let items: Vec<String> = agent
-                .resources
-                .iter()
+            let items: Vec<String> = agent.resources.iter()
                 .map(|r| format!("- {} ({})", r.name, r.resource_id))
                 .collect();
-            format!(
-                "\nRecommended resources to focus on:\n{}\n",
-                items.join("\n")
-            )
+            format!("\nRecommended resources to focus on:\n{}\n", items.join("\n"))
         };
 
-        // Build current data section with appropriate guidance
         let current_data_section = if data_text.is_empty() {
-            // No pre-collected data - instruct LLM to query using tools
             "\n## Current Data\nNo pre-collected data available.\n\n\
              **IMPORTANT**: You MUST use the available tools to query the data you need!\n\
              - Use `query_metric` or `get_latest_metrics` to fetch device metrics\n\
@@ -443,68 +417,85 @@ impl AgentExecutor {
             &format!("\n## Current Data\n{}\n", data_text.join("\n\n"))
         };
 
-        let system_prompt = format!(
+        format!(
             "You are an intelligent IoT agent named '{}' monitoring edge devices.\n\
              Current time: {}\n\
              Your task: {}\n{}{}\
              \nYou have access to tools for querying metrics, executing commands, and sending notifications. \
-             **Always use tools to fetch the latest data before making conclusions.**\n\
+             **Always use tools to fetch the latest data before making conclusions.**\n\n\
+             **IMPORTANT - Avoid redundant tool calls:**\n\
+             - Do NOT call the same tool with the same parameters if it already returned results (even empty).\n\
+             - If a metric query returns empty data, try a different metric name or move on — do not retry the same query.\n\
+             - Max 3 rounds of tool calls. Be efficient.\n\n\
              When done, provide your analysis and conclusion as plain text WITHOUT tool calls.\n\n\
              Output format for your final response (after tool calls, if any):\n\
              ```json\n\
              {{\n  \"situation_analysis\": \"...\",\n  \"conclusion\": \"...\",\n  \"confidence\": 0.8\n}}\n\
              ```",
-            agent.name,
-            time_ctx,
-            agent.user_prompt,
-            resource_info,
-            current_data_section,
-        );
+            agent.name, time_ctx, agent.user_prompt, resource_info, current_data_section,
+        )
+    }
 
-        // Build messages (with multimodal support for images)
+    /// Build initial messages (system + user) with multimodal image support.
+    fn build_tool_messages(
+        system_prompt: &str,
+        data_collected: &[DataCollected],
+    ) -> Vec<Message> {
+        // Collect image parts
+        let image_parts: Vec<ContentPart> = data_collected
+            .iter()
+            .filter(|d| d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false))
+            .filter_map(|d| {
+                if let Some(url) = d.values.get("image_url").and_then(|v| v.as_str()) {
+                    if !url.is_empty() {
+                        return Some(ContentPart::image_url(url.to_string()));
+                    }
+                }
+                if let Some(base64) = d.values.get("image_base64").and_then(|v| v.as_str()) {
+                    if !base64.is_empty() {
+                        let mime = d.values.get("image_mime_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("image/jpeg");
+                        return Some(ContentPart::image_base64(base64.to_string(), mime.to_string()));
+                    }
+                }
+                None
+            })
+            .collect();
+
         let user_msg = if !image_parts.is_empty() {
-            // Build multimodal message with text and images
-            let mut parts = vec![neomind_core::message::ContentPart::text(
+            let mut parts = vec![ContentPart::text(
                 "Analyze the current situation and take appropriate actions using the available tools.",
             )];
-            // image_parts already contains ContentPart objects
-            parts.extend(image_parts.clone());
-            neomind_core::message::Message::from_parts(
-                neomind_core::message::MessageRole::User,
-                parts,
-            )
+            parts.extend(image_parts);
+            Message::from_parts(MessageRole::User, parts)
         } else {
-            neomind_core::message::Message::new(
-                neomind_core::message::MessageRole::User,
-                neomind_core::message::Content::text(
-                    "Analyze the current situation and take appropriate actions using the available tools.",
-                ),
+            Message::new(
+                MessageRole::User,
+                Content::text("Analyze the current situation and take appropriate actions using the available tools."),
             )
         };
 
-        let mut messages = vec![
-            neomind_core::message::Message::new(
-                neomind_core::message::MessageRole::System,
-                neomind_core::message::Content::text(&system_prompt),
-            ),
+        vec![
+            Message::new(MessageRole::System, Content::text(system_prompt)),
             user_msg,
-        ];
+        ]
+    }
 
-        // Per-round tracking for interleaved reasoning steps
-        #[derive(Debug)]
-        struct ToolCallRecord {
-            name: String,
-            input: serde_json::Value,
-            result: crate::toolkit::ToolResult,
-        }
+    /// Run the tool execution loop for up to `max_rounds` LLM calls.
+    async fn run_tool_loop(
+        &self,
+        agent: &AiAgent,
+        registry: &crate::toolkit::registry::ToolRegistry,
+        llm_runtime: &Arc<dyn LlmRuntime + Send + Sync>,
+        filtered_tools: &[neomind_core::llm::backend::ToolDefinition],
+        messages: &mut Vec<Message>,
+        execution_id: &str,
+    ) -> ToolLoopOutput {
+        use crate::agent::tool_parser::parse_tool_calls;
+        use neomind_core::llm::backend::{GenerationParams, LlmInput};
 
-        struct RoundData {
-            thought: Option<String>,
-            tool_calls: Vec<ToolCallRecord>,
-        }
-
-        // Tool execution loop (max 5 rounds)
-        let max_rounds = 5;
+        let max_rounds = 3;
         let mut all_tool_results: Vec<crate::toolkit::ToolResult> = Vec::new();
         let mut round_data_list: Vec<RoundData> = Vec::new();
         let mut all_reasoning_texts: Vec<String> = Vec::new();
@@ -521,26 +512,32 @@ impl AgentExecutor {
                 },
                 model: None,
                 stream: false,
-                tools: Some(filtered_tools.clone()),
+                tools: Some(filtered_tools.to_vec()),
             };
 
             self.send_thinking(
-                &agent.id,
-                execution_id,
-                step_num,
+                &agent.id, execution_id, step_num,
                 &format!("Tool execution round {} - calling LLM", round + 1),
-            )
-            .await;
+            ).await;
             step_num += 1;
 
-            let output = llm_runtime
-                .generate(input)
-                .await
-                .map_err(|e| NeoMindError::Llm(format!("LLM generation failed: {}", e)))?;
+            let output = match llm_runtime.generate(input).await {
+                Ok(o) => o,
+                Err(e) => {
+                    tracing::warn!(agent_id = %agent.id, error = %e, "LLM generation failed in tool loop");
+                    final_text = "LLM generation failed during tool execution.".to_string();
+                    break;
+                }
+            };
 
-            // Parse tool calls from response text
-            let (remaining_text, tool_calls) = parse_tool_calls(&output.text)
-                .map_err(|e| NeoMindError::Llm(format!("Failed to parse tool calls: {}", e)))?;
+            let (remaining_text, tool_calls) = match parse_tool_calls(&output.text) {
+                Ok(parsed) => parsed,
+                Err(e) => {
+                    tracing::warn!(agent_id = %agent.id, error = %e, "Failed to parse tool calls");
+                    final_text = output.text;
+                    break;
+                }
+            };
 
             if tool_calls.is_empty() {
                 final_text = remaining_text;
@@ -548,37 +545,22 @@ impl AgentExecutor {
             }
 
             tracing::info!(
-                agent_id = %agent.id,
-                round = round + 1,
-                tool_count = tool_calls.len(),
+                agent_id = %agent.id, round = round + 1, tool_count = tool_calls.len(),
                 "Tool calls received"
             );
 
             self.send_thinking(
-                &agent.id,
-                execution_id,
-                step_num,
+                &agent.id, execution_id, step_num,
                 &format!(
                     "Round {}: Executing {} tool(s): {}",
-                    round + 1,
-                    tool_calls.len(),
-                    tool_calls
-                        .iter()
-                        .map(|tc| tc.name.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    round + 1, tool_calls.len(),
+                    tool_calls.iter().map(|tc| tc.name.as_str()).collect::<Vec<_>>().join(", ")
                 ),
-            )
-            .await;
+            ).await;
             step_num += 1;
 
-            // Add assistant message
-            messages.push(neomind_core::message::Message::new(
-                neomind_core::message::MessageRole::Assistant,
-                neomind_core::message::Content::text(&output.text),
-            ));
+            messages.push(Message::new(MessageRole::Assistant, Content::text(&output.text)));
 
-            // Convert parsed tool calls to registry ToolCalls and execute
             let registry_calls: Vec<crate::toolkit::registry::ToolCall> = tool_calls
                 .iter()
                 .map(|tc| crate::toolkit::registry::ToolCall {
@@ -589,12 +571,10 @@ impl AgentExecutor {
                 .collect();
             let results = registry.execute_parallel(registry_calls).await;
 
-            // Capture reasoning text for this round
             if !remaining_text.is_empty() {
                 all_reasoning_texts.push(remaining_text.clone());
             }
 
-            // Collect tool info for this round
             let mut round_tool_calls: Vec<ToolCallRecord> = Vec::new();
             for (i, tc) in tool_calls.iter().enumerate() {
                 let result = results.get(i).cloned().unwrap_or_else(|| crate::toolkit::ToolResult {
@@ -608,13 +588,11 @@ impl AgentExecutor {
                 });
             }
 
-            // Save round data
             round_data_list.push(RoundData {
-                thought: if remaining_text.is_empty() { None } else { Some(remaining_text.clone()) },
+                thought: if remaining_text.is_empty() { None } else { Some(remaining_text) },
                 tool_calls: round_tool_calls,
             });
 
-            // Add results to conversation
             for result in &results {
                 all_tool_results.push(result.clone());
                 let result_text = match &result.result {
@@ -622,24 +600,19 @@ impl AgentExecutor {
                         .unwrap_or_else(|_| "Success".to_string()),
                     Err(e) => format!("Error: {}", e),
                 };
-                messages.push(neomind_core::message::Message::new(
-                    neomind_core::message::MessageRole::User,
-                    neomind_core::message::Content::text(&format!(
-                        "Tool '{}' result:\n{}",
-                        result.name, result_text
-                    )),
+                messages.push(Message::new(
+                    MessageRole::User,
+                    Content::text(&format!("Tool '{}' result:\n{}", result.name, result_text)),
                 ));
             }
         }
 
-        // If LLM exhausted all rounds without producing a final conclusion,
-        // make one extra LLM call to generate a proper summary
+        // If exhausted all rounds, request a summary
         let is_generic_fallback = final_text.is_empty();
         if is_generic_fallback && !messages.is_empty() {
-            // Ask the LLM to summarize what happened
-            messages.push(neomind_core::message::Message::new(
-                neomind_core::message::MessageRole::User,
-                neomind_core::message::Content::text(
+            messages.push(Message::new(
+                MessageRole::User,
+                Content::text(
                     "Based on all the tool results above, please provide a JSON summary in this exact format:\n\
                      ```json\n\
                      {\"situation_analysis\": \"brief analysis of what was found\", \"conclusion\": \"summary of findings and any actions taken\", \"confidence\": 0.85}\n\
@@ -657,7 +630,7 @@ impl AgentExecutor {
                 },
                 model: None,
                 stream: false,
-                tools: Some(filtered_tools.clone()),
+                tools: Some(filtered_tools.to_vec()),
             };
 
             match llm_runtime.generate(summary_input).await {
@@ -675,17 +648,43 @@ impl AgentExecutor {
             final_text = "Completed tool execution rounds.".to_string();
         }
 
-        // Parse final response for situation_analysis, conclusion, confidence
-        let (mut situation_analysis, mut conclusion, confidence) = parse_final_tool_response(&final_text);
+        ToolLoopOutput {
+            final_text,
+            is_generic_fallback,
+            all_tool_results,
+            all_reasoning_texts,
+            round_data_list_raw: round_data_list
+                .into_iter()
+                .map(|rd| (rd.thought, rd.tool_calls))
+                .collect(),
+            max_rounds,
+        }
+    }
 
-        // When the LLM exhausted all rounds without a clean conclusion,
-        // build meaningful analysis from accumulated reasoning and tool results
+    /// Build the final DecisionProcess and ExecutionResult from tool loop output.
+    fn build_tool_result(
+        agent: &AiAgent,
+        data_collected: &[DataCollected],
+        loop_output: ToolLoopOutput,
+    ) -> (DecisionProcess, neomind_storage::ExecutionResult) {
+        let ToolLoopOutput {
+            final_text,
+            is_generic_fallback,
+            all_tool_results,
+            all_reasoning_texts,
+            round_data_list_raw,
+            max_rounds,
+        } = loop_output;
+
+        let (mut situation_analysis, mut conclusion, confidence) =
+            parse_final_tool_response(&final_text);
+
         if is_generic_fallback || situation_analysis.is_empty() || situation_analysis == "Completed tool execution rounds." {
-            // Build situation analysis from reasoning texts
             situation_analysis = if !all_reasoning_texts.is_empty() {
                 let combined = all_reasoning_texts.join(" ");
                 if combined.len() > 500 {
-                    let end = combined[..500].rfind(|c: char| c == '.' || c == '!' || c == '?')
+                    let end = combined[..500]
+                        .rfind(|c: char| c == '.' || c == '!' || c == '?')
                         .map(|i| i + 1)
                         .unwrap_or(500);
                     format!("{}...", &combined[..end])
@@ -693,29 +692,17 @@ impl AgentExecutor {
                     combined
                 }
             } else {
-                format!("Agent executed {} tool operations across {} rounds.", all_tool_results.len(), max_rounds)
+                format!(
+                    "Agent executed {} tool operations across {} rounds.",
+                    all_tool_results.len(), max_rounds
+                )
             };
 
-            // Build conclusion from tool results summary
             conclusion = if !all_tool_results.is_empty() {
-                let tool_summary: Vec<String> = all_tool_results.iter()
+                let tool_summary: Vec<String> = all_tool_results
+                    .iter()
                     .filter_map(|r| match &r.result {
-                        Ok(output) => {
-                            let data = &output.data;
-                            if let Some(obj) = data.as_object() {
-                                if let Some(count) = obj.get("count") {
-                                    Some(format!("{} returned {} items", r.name, count))
-                                } else if let Some(msg) = obj.get("message").and_then(|m| m.as_str()) {
-                                    Some(format!("{}: {}", r.name, msg))
-                                } else if let Some(points) = obj.get("points").and_then(|p| p.as_array()) {
-                                    Some(format!("{} retrieved {} data points", r.name, points.len()))
-                                } else {
-                                    Some(format!("{} completed", r.name))
-                                }
-                            } else {
-                                Some(format!("{} completed", r.name))
-                            }
-                        }
+                        Ok(output) => Some(summarize_tool_output(&output.data, &r.name)),
                         Err(e) => Some(format!("{} failed: {}", r.name, e)),
                     })
                     .collect();
@@ -725,13 +712,12 @@ impl AgentExecutor {
             };
         }
 
-        // Build reasoning steps interleaved by round (thought -> tool_call)
+        // Build reasoning steps interleaved by round
         let mut reasoning_steps: Vec<ReasoningStep> = Vec::new();
         let mut step_counter = 0u32;
 
-        for round_data in &round_data_list {
-            // Add thought step if present
-            if let Some(thought) = &round_data.thought {
+        for (thought, tool_calls) in &round_data_list_raw {
+            if let Some(thought) = thought {
                 step_counter += 1;
                 reasoning_steps.push(ReasoningStep {
                     step_number: step_counter,
@@ -743,8 +729,7 @@ impl AgentExecutor {
                 });
             }
 
-            // Add tool call steps
-            for tc in &round_data.tool_calls {
+            for tc in tool_calls {
                 step_counter += 1;
                 let (desc, conf, step_type) = match &tc.result.result {
                     Ok(output) => (
@@ -758,9 +743,13 @@ impl AgentExecutor {
                 let input_str = serde_json::to_string(&tc.input).ok();
                 let output_str = match &tc.result.result {
                     Ok(output) => {
-                    let data_str = serde_json::to_string(&output.data).unwrap_or_default();
-                    if data_str.len() > 2000 { format!("{}...", &data_str[..2000]) } else { data_str }
-                },
+                        let data_str = serde_json::to_string(&output.data).unwrap_or_default();
+                        if data_str.len() > 2000 {
+                            format!("{}...", &data_str[..2000])
+                        } else {
+                            data_str
+                        }
+                    }
                     Err(e) => format!("Error: {}", e),
                 };
 
@@ -780,28 +769,9 @@ impl AgentExecutor {
             .map(|r| {
                 let (desc, action) = match &r.result {
                     Ok(output) => {
-                        let action_summary = {
-                            let data = &output.data;
-                            if let Some(obj) = data.as_object() {
-                                if let Some(count) = obj.get("count") {
-                                    format!("Returned {} items", count)
-                                } else if let Some(msg) = obj.get("message").and_then(|m| m.as_str()) {
-                                    msg.to_string()
-                                } else if let Some(points) = obj.get("points").and_then(|p| p.as_array()) {
-                                    format!("{} data points retrieved", points.len())
-                                } else if let Some(id) = obj.get("id").and_then(|v| v.as_str()) {
-                                    let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or(id);
-                                    format!("Retrieved: {} ({})", name, id)
-                                } else {
-                                    let keys: Vec<&str> = obj.keys().take(3).map(|s| s.as_str()).collect();
-                                    format!("Fields: {}", keys.join(", "))
-                                }
-                            } else {
-                                "Completed".to_string()
-                            }
-                        };
+                        let action_summary = summarize_tool_output(&output.data, &r.name);
                         (format!("Executed tool '{}'", r.name), action_summary)
-                    },
+                    }
                     Err(e) => (format!("Tool '{}' failed", r.name), format!("Error: {}", e)),
                 };
                 Decision {
@@ -823,7 +793,6 @@ impl AgentExecutor {
             confidence,
         };
 
-        // Build ExecutionResult
         let actions_executed: Vec<neomind_storage::ActionExecuted> = all_tool_results
             .iter()
             .map(|r| {
@@ -864,6 +833,32 @@ impl AgentExecutor {
             success_rate,
             "Tool execution completed"
         );
+
+        (decision_process, execution_result)
+    }
+
+    async fn execute_with_tools(
+        &self,
+        agent: &AiAgent,
+        data_collected: &[DataCollected],
+        llm_runtime: Arc<dyn LlmRuntime + Send + Sync>,
+        execution_id: &str,
+    ) -> AgentResult<(DecisionProcess, neomind_storage::ExecutionResult)> {
+        let registry = self
+            .tool_registry
+            .as_ref()
+            .ok_or_else(|| NeoMindError::Tool("Tool registry not available".to_string()))?;
+
+        let filtered_tools = Self::filter_tools(registry, &agent.tool_config);
+        let system_prompt = Self::build_tool_system_prompt(agent, data_collected);
+        let mut messages = Self::build_tool_messages(&system_prompt, data_collected);
+
+        let loop_output = self
+            .run_tool_loop(agent, registry, &llm_runtime, &filtered_tools, &mut messages, execution_id)
+            .await;
+
+        let (decision_process, execution_result) =
+            Self::build_tool_result(agent, data_collected, loop_output);
 
         Ok((decision_process, execution_result))
     }
@@ -953,19 +948,16 @@ impl AgentExecutor {
         stage_label: &str,
         details: Option<&str>,
     ) {
-        if let Some(ref bus) = self.event_bus {
-            let _ = bus
-                .publish(neomind_core::NeoMindEvent::AgentProgress {
-                    agent_id: agent_id.to_string(),
-                    execution_id: execution_id.to_string(),
-                    stage: stage.to_string(),
-                    stage_label: stage_label.to_string(),
-                    progress: None,
-                    details: details.map(|d| d.to_string()),
-                    timestamp: chrono::Utc::now().timestamp(),
-                })
-                .await;
-        }
+        self.publish_event(neomind_core::NeoMindEvent::AgentProgress {
+            agent_id: agent_id.to_string(),
+            execution_id: execution_id.to_string(),
+            stage: stage.to_string(),
+            stage_label: stage_label.to_string(),
+            progress: None,
+            details: details.map(|d| d.to_string()),
+            timestamp: chrono::Utc::now().timestamp(),
+        })
+        .await;
     }
 
     /// Send a thinking event for an agent execution.
@@ -976,24 +968,49 @@ impl AgentExecutor {
         step_number: u32,
         description: &str,
     ) {
-        if let Some(ref bus) = self.event_bus {
-            let _ = bus
-                .publish(neomind_core::NeoMindEvent::AgentThinking {
-                    agent_id: agent_id.to_string(),
-                    execution_id: execution_id.to_string(),
-                    step_number,
-                    step_type: "progress".to_string(),
-                    description: description.to_string(),
-                    details: None,
-                    timestamp: chrono::Utc::now().timestamp(),
-                })
-                .await;
-        }
+        self.publish_event(neomind_core::NeoMindEvent::AgentThinking {
+            agent_id: agent_id.to_string(),
+            execution_id: execution_id.to_string(),
+            step_number,
+            step_type: "progress".to_string(),
+            description: description.to_string(),
+            details: None,
+            timestamp: chrono::Utc::now().timestamp(),
+        })
+        .await;
     }
 
     /// Build a cache key for LLM runtime based on backend configuration.
     fn build_runtime_cache_key(backend_type: &str, endpoint: &str, model: &str) -> String {
         format!("{}|{}|{}", backend_type, endpoint, model)
+    }
+
+    /// Read a timeout value from an environment variable, falling back to the default.
+    fn env_timeout_secs(env_var: &str, default: u64) -> u64 {
+        std::env::var(env_var)
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(default)
+    }
+
+    /// Create a cloud LLM runtime from a pre-built `CloudConfig`.
+    ///
+    /// This deduplicates the common pattern across all cloud backend types:
+    /// create config -> build runtime -> override capabilities -> wrap in Arc.
+    #[cfg(feature = "cloud")]
+    fn create_cloud_runtime(
+        config: CloudConfig,
+        capabilities: &neomind_storage::BackendCapabilities,
+    ) -> Result<Arc<dyn LlmRuntime + Send + Sync>, neomind_core::LlmError> {
+        CloudRuntime::new(config).map(|runtime| {
+            let runtime = runtime.with_capabilities_override(
+                capabilities.supports_multimodal,
+                capabilities.supports_thinking,
+                capabilities.supports_tools,
+                capabilities.max_context,
+            );
+            Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
+        })
     }
 
     /// Get the LLM runtime for a specific agent.
@@ -1064,14 +1081,12 @@ impl AgentExecutor {
                                     .and_then(|s| s.parse().ok())
                                     .unwrap_or(120);
 
-                                // Create runtime with accurate capabilities from storage
                                 OllamaRuntime::new(
                                     OllamaConfig::new(&model)
                                         .with_endpoint(&endpoint)
                                         .with_timeout_secs(timeout),
                                 )
                                 .map(|runtime| {
-                                    // Override capabilities with accurate detection from storage
                                     let runtime = runtime.with_capabilities_override(
                                         backend.capabilities.supports_multimodal,
                                         backend.capabilities.supports_thinking,
@@ -1083,216 +1098,72 @@ impl AgentExecutor {
                             }
                             LlmBackendType::OpenAi => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
-                                let endpoint = backend
-                                    .endpoint
-                                    .clone()
-                                    .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-                                let model = backend.model.clone();
-                                let timeout = std::env::var("OPENAI_TIMEOUT_SECS")
-                                    .ok()
-                                    .and_then(|s| s.parse().ok())
-                                    .unwrap_or(60);
-                                CloudRuntime::new(
-                                    CloudConfig::custom(&api_key, &endpoint)
-                                        .with_model(&model)
-                                        .with_timeout_secs(timeout),
+                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+                                let timeout = Self::env_timeout_secs("OPENAI_TIMEOUT_SECS", 60);
+                                Self::create_cloud_runtime(
+                                    CloudConfig::custom(&api_key, &endpoint).with_model(&backend.model).with_timeout_secs(timeout),
+                                    &backend.capabilities,
                                 )
-                                .map(|runtime| {
-                                    // Override capabilities with accurate detection from storage
-                                    let runtime = runtime.with_capabilities_override(
-                                        backend.capabilities.supports_multimodal,
-                                        backend.capabilities.supports_thinking,
-                                        backend.capabilities.supports_tools,
-                                        backend.capabilities.max_context,
-                                    );
-                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
-                                })
                             }
                             LlmBackendType::Anthropic => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
-                                let _endpoint = backend
-                                    .endpoint
-                                    .clone()
-                                    .unwrap_or_else(|| "https://api.anthropic.com/v1".to_string());
-                                let model = backend.model.clone();
-                                let timeout = std::env::var("ANTHROPIC_TIMEOUT_SECS")
-                                    .ok()
-                                    .and_then(|s| s.parse().ok())
-                                    .unwrap_or(60);
-                                CloudRuntime::new(
-                                    CloudConfig::anthropic(&api_key)
-                                        .with_model(&model)
-                                        .with_timeout_secs(timeout),
+                                let timeout = Self::env_timeout_secs("ANTHROPIC_TIMEOUT_SECS", 60);
+                                Self::create_cloud_runtime(
+                                    CloudConfig::anthropic(&api_key).with_model(&backend.model).with_timeout_secs(timeout),
+                                    &backend.capabilities,
                                 )
-                                .map(|runtime| {
-                                    // Override capabilities with accurate detection from storage
-                                    let runtime = runtime.with_capabilities_override(
-                                        backend.capabilities.supports_multimodal,
-                                        backend.capabilities.supports_thinking,
-                                        backend.capabilities.supports_tools,
-                                        backend.capabilities.max_context,
-                                    );
-                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
-                                })
                             }
                             LlmBackendType::Google => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
-                                let _endpoint = backend.endpoint.clone().unwrap_or_else(|| {
-                                    "https://generativelanguage.googleapis.com/v1beta".to_string()
-                                });
-                                let model = backend.model.clone();
-                                let timeout = std::env::var("GOOGLE_TIMEOUT_SECS")
-                                    .ok()
-                                    .and_then(|s| s.parse().ok())
-                                    .unwrap_or(60);
-                                CloudRuntime::new(
-                                    CloudConfig::google(&api_key)
-                                        .with_model(&model)
-                                        .with_timeout_secs(timeout),
+                                let timeout = Self::env_timeout_secs("GOOGLE_TIMEOUT_SECS", 60);
+                                Self::create_cloud_runtime(
+                                    CloudConfig::google(&api_key).with_model(&backend.model).with_timeout_secs(timeout),
+                                    &backend.capabilities,
                                 )
-                                .map(|runtime| {
-                                    // Override capabilities with accurate detection from storage
-                                    let runtime = runtime.with_capabilities_override(
-                                        backend.capabilities.supports_multimodal,
-                                        backend.capabilities.supports_thinking,
-                                        backend.capabilities.supports_tools,
-                                        backend.capabilities.max_context,
-                                    );
-                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
-                                })
                             }
                             LlmBackendType::XAi => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
-                                let _endpoint = backend
-                                    .endpoint
-                                    .clone()
-                                    .unwrap_or_else(|| "https://api.x.ai/v1".to_string());
-                                let model = backend.model.clone();
-                                let timeout = std::env::var("XAI_TIMEOUT_SECS")
-                                    .ok()
-                                    .and_then(|s| s.parse().ok())
-                                    .unwrap_or(60);
-                                CloudRuntime::new(
-                                    CloudConfig::grok(&api_key)
-                                        .with_model(&model)
-                                        .with_timeout_secs(timeout),
+                                let timeout = Self::env_timeout_secs("XAI_TIMEOUT_SECS", 60);
+                                Self::create_cloud_runtime(
+                                    CloudConfig::grok(&api_key).with_model(&backend.model).with_timeout_secs(timeout),
+                                    &backend.capabilities,
                                 )
-                                .map(|runtime| {
-                                    // Override capabilities with accurate detection from storage
-                                    let runtime = runtime.with_capabilities_override(
-                                        backend.capabilities.supports_multimodal,
-                                        backend.capabilities.supports_thinking,
-                                        backend.capabilities.supports_tools,
-                                        backend.capabilities.max_context,
-                                    );
-                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
-                                })
                             }
                             LlmBackendType::Qwen => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
-                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| {
-                                    "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string()
-                                });
-                                let model = backend.model.clone();
-                                let timeout = std::env::var("QWEN_TIMEOUT_SECS")
-                                    .ok()
-                                    .and_then(|s| s.parse().ok())
-                                    .unwrap_or(60);
-                                CloudRuntime::new(
-                                    CloudConfig::custom(&api_key, &endpoint)
-                                        .with_model(&model)
-                                        .with_timeout_secs(timeout),
+                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string());
+                                let timeout = Self::env_timeout_secs("QWEN_TIMEOUT_SECS", 60);
+                                Self::create_cloud_runtime(
+                                    CloudConfig::custom(&api_key, &endpoint).with_model(&backend.model).with_timeout_secs(timeout),
+                                    &backend.capabilities,
                                 )
-                                .map(|runtime| {
-                                    // Override capabilities with accurate detection from storage
-                                    let runtime = runtime.with_capabilities_override(
-                                        backend.capabilities.supports_multimodal,
-                                        backend.capabilities.supports_thinking,
-                                        backend.capabilities.supports_tools,
-                                        backend.capabilities.max_context,
-                                    );
-                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
-                                })
                             }
                             LlmBackendType::DeepSeek => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
-                                let endpoint = backend
-                                    .endpoint
-                                    .clone()
-                                    .unwrap_or_else(|| "https://api.deepseek.com".to_string());
-                                let model = backend.model.clone();
-                                let timeout = std::env::var("DEEPSEEK_TIMEOUT_SECS")
-                                    .ok()
-                                    .and_then(|s| s.parse().ok())
-                                    .unwrap_or(60);
-                                CloudRuntime::new(
-                                    CloudConfig::custom(&api_key, &endpoint)
-                                        .with_model(&model)
-                                        .with_timeout_secs(timeout),
+                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://api.deepseek.com".to_string());
+                                let timeout = Self::env_timeout_secs("DEEPSEEK_TIMEOUT_SECS", 60);
+                                Self::create_cloud_runtime(
+                                    CloudConfig::custom(&api_key, &endpoint).with_model(&backend.model).with_timeout_secs(timeout),
+                                    &backend.capabilities,
                                 )
-                                .map(|runtime| {
-                                    // Override capabilities with accurate detection from storage
-                                    let runtime = runtime.with_capabilities_override(
-                                        backend.capabilities.supports_multimodal,
-                                        backend.capabilities.supports_thinking,
-                                        backend.capabilities.supports_tools,
-                                        backend.capabilities.max_context,
-                                    );
-                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
-                                })
                             }
                             LlmBackendType::GLM => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
-                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| {
-                                    "https://open.bigmodel.cn/api/paas/v4".to_string()
-                                });
-                                let model = backend.model.clone();
-                                let timeout = std::env::var("GLM_TIMEOUT_SECS")
-                                    .ok()
-                                    .and_then(|s| s.parse().ok())
-                                    .unwrap_or(60);
-                                CloudRuntime::new(
-                                    CloudConfig::custom(&api_key, &endpoint)
-                                        .with_model(&model)
-                                        .with_timeout_secs(timeout),
+                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://open.bigmodel.cn/api/paas/v4".to_string());
+                                let timeout = Self::env_timeout_secs("GLM_TIMEOUT_SECS", 60);
+                                Self::create_cloud_runtime(
+                                    CloudConfig::custom(&api_key, &endpoint).with_model(&backend.model).with_timeout_secs(timeout),
+                                    &backend.capabilities,
                                 )
-                                .map(|runtime| {
-                                    // Override capabilities with accurate detection from storage
-                                    let runtime = runtime.with_capabilities_override(
-                                        backend.capabilities.supports_multimodal,
-                                        backend.capabilities.supports_thinking,
-                                        backend.capabilities.supports_tools,
-                                        backend.capabilities.max_context,
-                                    );
-                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
-                                })
                             }
                             LlmBackendType::MiniMax => {
                                 let api_key = backend.api_key.clone().unwrap_or_default();
-                                let endpoint = backend
-                                    .endpoint
-                                    .clone()
-                                    .unwrap_or_else(|| "https://api.minimax.chat/v1".to_string());
-                                let model = backend.model.clone();
-                                let timeout = std::env::var("MINIMAX_TIMEOUT_SECS")
-                                    .ok()
-                                    .and_then(|s| s.parse().ok())
-                                    .unwrap_or(60);
-                                CloudRuntime::new(
-                                    CloudConfig::custom(&api_key, &endpoint)
-                                        .with_model(&model)
-                                        .with_timeout_secs(timeout),
+                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://api.minimax.chat/v1".to_string());
+                                let timeout = Self::env_timeout_secs("MINIMAX_TIMEOUT_SECS", 60);
+                                Self::create_cloud_runtime(
+                                    CloudConfig::custom(&api_key, &endpoint).with_model(&backend.model).with_timeout_secs(timeout),
+                                    &backend.capabilities,
                                 )
-                                .map(|runtime| {
-                                    // Override capabilities with accurate detection from storage
-                                    let runtime = runtime.with_capabilities_override(
-                                        backend.capabilities.supports_multimodal,
-                                        backend.capabilities.supports_thinking,
-                                        backend.capabilities.supports_tools,
-                                        backend.capabilities.max_context,
-                                    );
-                                    Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>
-                                })
                             }
                         };
 
@@ -1451,7 +1322,7 @@ impl AgentExecutor {
 
                                 // Execute the agent with event data (includes the triggering metric value directly)
                                 match executor
-                                    .execute_agent_with_event(agent_clone, event_trigger_data)
+                                    .execute_agent(agent_clone, Some(event_trigger_data))
                                     .await
                                 {
                                     Ok(record) => {
@@ -1603,7 +1474,11 @@ impl AgentExecutor {
     }
 
     /// Execute an agent and record the full decision process.
-    pub async fn execute_agent(&self, agent: AiAgent) -> AgentResult<AgentExecutionRecord> {
+    pub async fn execute_agent(
+        &self,
+        agent: AiAgent,
+        event_data: Option<EventTriggerData>,
+    ) -> AgentResult<AgentExecutionRecord> {
         let agent_id = agent.id.clone();
         let agent_name = agent.name.clone();
         let execution_id = uuid::Uuid::new_v4().to_string();
@@ -1616,11 +1491,26 @@ impl AgentExecutor {
             .await
             .map_err(|e| NeoMindError::Storage(format!("Failed to update status: {}", e)))?;
 
+        // Determine trigger type and context event_data based on whether we have event trigger
+        let trigger_type = match &event_data {
+            Some(ed) => format!("event:{}", ed.metric),
+            None => "manual".to_string(),
+        };
+
+        let context_event_data = event_data.as_ref().map(|ed| {
+            serde_json::json!({
+                "device_id": ed.device_id,
+                "metric": ed.metric,
+                "value": serde_json::to_value(&ed.value).unwrap_or_default(),
+                "timestamp": ed.timestamp,
+            })
+        });
+
         // Create execution context
         let context = ExecutionContext {
             agent: agent.clone(),
-            trigger_type: "manual".to_string(),
-            event_data: None,
+            trigger_type: trigger_type.clone(),
+            event_data: context_event_data,
             llm_backend: None,
             execution_id: execution_id.clone(),
         };
@@ -1629,27 +1519,22 @@ impl AgentExecutor {
         tracing::info!(
             agent_id = %agent_id,
             execution_id = %execution_id,
+            trigger_type = %trigger_type,
             has_event_bus = self.event_bus.is_some(),
             "Emitting AgentExecutionStarted event"
         );
-        if let Some(ref bus) = self.event_bus {
-            let _ = bus
-                .publish(NeoMindEvent::AgentExecutionStarted {
-                    agent_id: agent_id.clone(),
-                    agent_name: agent_name.clone(),
-                    execution_id: execution_id.clone(),
-                    trigger_type: "manual".to_string(),
-                    timestamp,
-                })
-                .await;
-            tracing::info!("AgentExecutionStarted event published");
-        } else {
-            tracing::warn!("No event_bus available, agent events will not be published");
-        }
+        self.publish_event(NeoMindEvent::AgentExecutionStarted {
+            agent_id: agent_id.clone(),
+            agent_name: agent_name.clone(),
+            execution_id: execution_id.clone(),
+            trigger_type: trigger_type.clone(),
+            timestamp,
+        })
+        .await;
 
         // Execute with error handling for stability
         // Use execute_with_chaining to support multi-round tool chaining
-        let execution_result = self.execute_with_chaining(context).await;
+        let execution_result = self.execute_with_chaining(context, event_data.clone()).await;
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
@@ -1671,7 +1556,7 @@ impl AgentExecutor {
                     id: execution_id.clone(),
                     agent_id: agent_id.clone(),
                     timestamp,
-                    trigger_type: "manual".to_string(),
+                    trigger_type: trigger_type.clone(),
                     status: ExecutionStatus::Completed,
                     decision_process,
                     result: Some(result),
@@ -1690,7 +1575,7 @@ impl AgentExecutor {
                     id: execution_id.clone(),
                     agent_id: agent_id.clone(),
                     timestamp,
-                    trigger_type: "manual".to_string(),
+                    trigger_type: trigger_type.clone(),
                     status: ExecutionStatus::Failed,
                     decision_process: DecisionProcess {
                         situation_analysis: format!("Execution failed: {}", e),
@@ -1725,11 +1610,19 @@ impl AgentExecutor {
                 decisions_count = dp.decisions.len(),
                 "Creating conversation turn from decision process"
             );
+            // Extract event info for conversation turn if available
+            let turn_event_data = event_data.as_ref().map(|ed| {
+                serde_json::json!({
+                    "device_id": ed.device_id,
+                    "metric": ed.metric,
+                    "value": serde_json::to_value(&ed.value).unwrap_or_default(),
+                })
+            });
             self.create_conversation_turn(
                 execution_id.clone(),
-                "manual".to_string(),
+                trigger_type.clone(),
                 dp.data_collected.clone(),
-                None, // event_data
+                turn_event_data,
                 dp,
                 duration_ms,
                 success,
@@ -1781,18 +1674,15 @@ impl AgentExecutor {
 
         // Emit agent execution completed event
         let completion_timestamp = chrono::Utc::now().timestamp();
-        if let Some(ref bus) = self.event_bus {
-            let _ = bus
-                .publish(NeoMindEvent::AgentExecutionCompleted {
-                    agent_id: agent_id.clone(),
-                    execution_id: execution_id.clone(),
-                    success: record.status == ExecutionStatus::Completed,
-                    duration_ms: record.duration_ms,
-                    error: record.error.clone(),
-                    timestamp: completion_timestamp,
-                })
-                .await;
-        }
+        self.publish_event(NeoMindEvent::AgentExecutionCompleted {
+            agent_id: agent_id.clone(),
+            execution_id: execution_id.clone(),
+            success: record.status == ExecutionStatus::Completed,
+            duration_ms: record.duration_ms,
+            error: record.error.clone(),
+            timestamp: completion_timestamp,
+        })
+        .await;
 
         tracing::info!(
             agent_id = %agent_id,
@@ -1801,204 +1691,6 @@ impl AgentExecutor {
             status = ?record.status,
             duration_ms = record.duration_ms,
             "Agent execution completed"
-        );
-
-        Ok(record)
-    }
-
-    /// Execute an agent with event trigger data.
-    /// This method passes the triggering event data directly to avoid storage delays.
-    pub async fn execute_agent_with_event(
-        &self,
-        agent: AiAgent,
-        event_data: EventTriggerData,
-    ) -> AgentResult<AgentExecutionRecord> {
-        let agent_id = agent.id.clone();
-        let agent_name = agent.name.clone();
-        let execution_id = uuid::Uuid::new_v4().to_string();
-        let start_time = std::time::Instant::now();
-        let timestamp = chrono::Utc::now().timestamp();
-
-        // Update agent status to executing
-        self.store
-            .update_agent_status(&agent_id, neomind_storage::AgentStatus::Executing, None)
-            .await
-            .map_err(|e| NeoMindError::Storage(format!("Failed to update status: {}", e)))?;
-
-        // Clone event data for later use (before moving)
-        let event_device_id = event_data.device_id.clone();
-        let event_metric_name = event_data.metric.clone();
-        let event_value_json = serde_json::to_value(&event_data.value).unwrap_or_default();
-        let event_timestamp = event_data.timestamp;
-
-        // Create execution context with event data
-        let context = ExecutionContext {
-            agent: agent.clone(),
-            trigger_type: format!("event:{}", event_metric_name),
-            event_data: Some(serde_json::json!({
-                "device_id": event_device_id,
-                "metric": event_metric_name,
-                "value": event_value_json,
-                "timestamp": event_timestamp,
-            })),
-            llm_backend: None,
-            execution_id: execution_id.clone(),
-        };
-
-        // Emit agent execution started event
-        tracing::info!(
-            agent_id = %agent_id,
-            execution_id = %execution_id,
-            trigger_device = %event_device_id,
-            trigger_metric = %event_metric_name,
-            has_event_bus = self.event_bus.is_some(),
-            "Emitting AgentExecutionStarted event (event-triggered)"
-        );
-        if let Some(ref bus) = self.event_bus {
-            let _ = bus
-                .publish(NeoMindEvent::AgentExecutionStarted {
-                    agent_id: agent_id.clone(),
-                    agent_name: agent_name.clone(),
-                    execution_id: execution_id.clone(),
-                    trigger_type: format!("event:{}", event_metric_name),
-                    timestamp,
-                })
-                .await;
-        }
-
-        // Execute with error handling for stability
-        // Use execute_with_chaining_and_event to support multi-round tool chaining
-        let execution_result = self
-            .execute_with_chaining_and_event(context, event_data)
-            .await;
-
-        let duration_ms = start_time.elapsed().as_millis() as u64;
-
-        // Build execution record
-        let (decision_process_for_turn, success) = match &execution_result {
-            Ok((dp, _)) => (Some(dp.clone()), true),
-            Err(_) => (None, false),
-        };
-
-        let record = match execution_result {
-            Ok((decision_process, result)) => {
-                // Update stats
-                let _ = self
-                    .store
-                    .update_agent_stats(&agent_id, true, duration_ms)
-                    .await;
-
-                AgentExecutionRecord {
-                    id: execution_id.clone(),
-                    agent_id: agent_id.clone(),
-                    timestamp,
-                    trigger_type: format!("event:{}", event_metric_name),
-                    status: ExecutionStatus::Completed,
-                    decision_process,
-                    result: Some(result),
-                    duration_ms,
-                    error: None,
-                }
-            }
-            Err(e) => {
-                // Update stats with failure
-                let _ = self
-                    .store
-                    .update_agent_stats(&agent_id, false, duration_ms)
-                    .await;
-
-                AgentExecutionRecord {
-                    id: execution_id.clone(),
-                    agent_id: agent_id.clone(),
-                    timestamp,
-                    trigger_type: format!("event:{}", event_metric_name),
-                    status: ExecutionStatus::Failed,
-                    decision_process: DecisionProcess {
-                        situation_analysis: format!("Execution failed: {}", e),
-                        data_collected: vec![],
-                        reasoning_steps: vec![],
-                        decisions: vec![],
-                        conclusion: format!("Failed: {}", e),
-                        confidence: 0.0,
-                    },
-                    result: None,
-                    duration_ms,
-                    error: Some(e.to_string()),
-                }
-            }
-        };
-
-        // Save execution record and conversation turn in a single transaction
-        let turn = decision_process_for_turn.as_ref().map(|dp| {
-            self.create_conversation_turn(
-                execution_id.clone(),
-                format!("event:{}", event_metric_name),
-                dp.data_collected.clone(),
-                Some(serde_json::json!({
-                    "device_id": event_device_id,
-                    "metric": event_metric_name,
-                    "value": event_value_json,
-                })),
-                dp,
-                duration_ms,
-                success,
-            )
-        });
-
-        self.store
-            .save_execution_with_conversation(&record, Some(&agent_id), turn.as_ref())
-            .await
-            .map_err(|e| NeoMindError::Storage(format!("Failed to save execution: {}", e)))?;
-
-        // Extract and persist memory from successful event-triggered execution
-        if record.status == ExecutionStatus::Completed {
-            if let Some(ref memory_store) = self.memory_store {
-                if let Err(e) = persist_agent_memory(memory_store, &record, &agent_name).await {
-                    tracing::warn!(
-                        agent_id = %agent_id,
-                        error = %e,
-                        "Failed to persist agent memory (non-blocking)"
-                    );
-                }
-            }
-        }
-
-        // Reset agent status based on result
-        let new_status = if record.status == ExecutionStatus::Completed {
-            neomind_storage::AgentStatus::Active
-        } else {
-            neomind_storage::AgentStatus::Error
-        };
-
-        let _ = self
-            .store
-            .update_agent_status(&agent_id, new_status, record.error.clone())
-            .await;
-
-        // Emit agent execution completed event
-        let completion_timestamp = chrono::Utc::now().timestamp();
-        if let Some(ref bus) = self.event_bus {
-            let _ = bus
-                .publish(NeoMindEvent::AgentExecutionCompleted {
-                    agent_id: agent_id.clone(),
-                    execution_id: execution_id.clone(),
-                    success: record.status == ExecutionStatus::Completed,
-                    duration_ms: record.duration_ms,
-                    error: record.error.clone(),
-                    timestamp: completion_timestamp,
-                })
-                .await;
-        }
-
-        tracing::info!(
-            agent_id = %agent_id,
-            agent_name = %agent_name,
-            execution_id = %execution_id,
-            trigger_device = %event_device_id,
-            trigger_metric = %event_metric_name,
-            status = ?record.status,
-            duration_ms = record.duration_ms,
-            "Event-triggered agent execution completed"
         );
 
         Ok(record)
@@ -2028,7 +1720,7 @@ impl AgentExecutor {
         let executor_ref = self;
         let futures: Vec<_> = sorted_agents
             .into_iter()
-            .map(|agent| executor_ref.execute_agent(agent))
+            .map(|agent| executor_ref.execute_agent(agent, None))
             .collect();
 
         let results = join_all(futures).await;
@@ -2188,6 +1880,7 @@ impl AgentExecutor {
     async fn execute_with_chaining(
         &self,
         mut context: ExecutionContext,
+        event_data: Option<EventTriggerData>,
     ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
         let agent = context.agent.clone();
         let max_depth = if agent.enable_tool_chaining {
@@ -2202,12 +1895,23 @@ impl AgentExecutor {
         let mut all_actions_executed: Vec<neomind_storage::ActionExecuted> = Vec::new();
         let mut all_notifications_sent: Vec<neomind_storage::NotificationSent> = Vec::new();
 
-        tracing::info!(
-            agent_id = %agent.id,
-            enable_chaining = agent.enable_tool_chaining,
-            max_depth = max_depth,
-            "Starting agent execution"
-        );
+        if let Some(ref ed) = event_data {
+            tracing::info!(
+                agent_id = %agent.id,
+                enable_chaining = agent.enable_tool_chaining,
+                max_depth = max_depth,
+                event_device = %ed.device_id,
+                event_metric = %ed.metric,
+                "Starting event-triggered agent execution"
+            );
+        } else {
+            tracing::info!(
+                agent_id = %agent.id,
+                enable_chaining = agent.enable_tool_chaining,
+                max_depth = max_depth,
+                "Starting agent execution"
+            );
+        }
 
         // Execute rounds until we reach max depth or no more chainable results
         loop {
@@ -2229,7 +1933,7 @@ impl AgentExecutor {
 
             // Execute one round with retry
             let (decision_process, execution_result) =
-                self.execute_with_retry(context.clone()).await?;
+                self.execute_with_retry(context.clone(), event_data.clone()).await?;
 
             // Collect results from this round
             all_actions_executed.extend(execution_result.actions_executed.clone());
@@ -2385,257 +2089,20 @@ impl AgentExecutor {
         Ok((merged_decision_process, merged_execution_result))
     }
 
-    /// Execute with tool chaining support (event-triggered variant)
-    async fn execute_with_chaining_and_event(
-        &self,
-        mut context: ExecutionContext,
-        event_data: EventTriggerData,
-    ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
-        let agent = context.agent.clone();
-        let max_depth = if agent.enable_tool_chaining {
-            agent.max_chain_depth
-        } else {
-            1 // No chaining, just single execution
-        };
-
-        let mut chain_state = ChainState::new(max_depth);
-        #[allow(unused_assignments)]
-        let mut final_decision_process: Option<DecisionProcess> = None;
-        let mut all_actions_executed: Vec<neomind_storage::ActionExecuted> = Vec::new();
-        let mut all_notifications_sent: Vec<neomind_storage::NotificationSent> = Vec::new();
-
-        tracing::info!(
-            agent_id = %agent.id,
-            enable_chaining = agent.enable_tool_chaining,
-            max_depth = max_depth,
-            event_device = %event_data.device_id,
-            event_metric = %event_data.metric,
-            "Starting event-triggered agent execution"
-        );
-
-        // Execute rounds until we reach max depth or no more chainable results
-        loop {
-            tracing::debug!(
-                agent_id = %agent.id,
-                current_depth = chain_state.depth,
-                max_depth = chain_state.max_depth,
-                "Execution round (event-triggered)"
-            );
-
-            // Update context with chain results if we have any
-            if chain_state.depth > 0 {
-                context.agent.user_prompt = format!(
-                    "{}{}",
-                    context.agent.user_prompt,
-                    chain_state.format_as_context()
-                );
-            }
-
-            // Execute one round with retry (event variant)
-            let (decision_process, execution_result) = self
-                .execute_with_retry_and_event(context.clone(), event_data.clone())
-                .await?;
-
-            // Collect results from this round
-            all_actions_executed.extend(execution_result.actions_executed.clone());
-            all_notifications_sent.extend(execution_result.notifications_sent.clone());
-
-            // Store the final decision process (last round takes precedence)
-            final_decision_process = Some(decision_process.clone());
-
-            // Check if we should continue chaining
-            if !agent.enable_tool_chaining || !chain_state.can_continue() {
-                tracing::debug!(
-                    agent_id = %agent.id,
-                    depth = chain_state.depth,
-                    "Chaining disabled or max depth reached, stopping"
-                );
-                break;
-            }
-
-            // Check if we have chainable results
-            let has_chainable = execution_result
-                .actions_executed
-                .iter()
-                .any(Self::is_chainable_action);
-
-            if !has_chainable {
-                tracing::debug!(
-                    agent_id = %agent.id,
-                    "No chainable results, stopping"
-                );
-                break;
-            }
-
-            // Check if decisions indicate more work needed
-            let needs_more_work = decision_process.decisions.iter().any(|d| {
-                d.decision_type == "needs_more_data"
-                    || d.action.to_lowercase().contains("continue")
-                    || d.action.to_lowercase().contains("further")
-                    || d.action.to_lowercase().contains("下一步")
-                    || d.action.to_lowercase().contains("继续")
-            });
-
-            if !needs_more_work {
-                tracing::debug!(
-                    agent_id = %agent.id,
-                    "Decisions indicate no more work needed, stopping"
-                );
-                break;
-            }
-
-            // Advance to next round
-            chain_state.advance(&execution_result.actions_executed);
-
-            // Send progress event for chaining
-            self.send_progress(
-                &context.agent.id,
-                &context.execution_id,
-                "chaining",
-                &format!("Tool chaining round {}", chain_state.depth + 1),
-                Some(&format!(
-                    "Continuing analysis with results from {} previous action(s)...",
-                    chain_state.previous_results.len()
-                )),
-            )
-            .await;
-        }
-
-        // Merge decision processes from all rounds
-        let merged_decision_process = if let Some(mut final_dp) = final_decision_process {
-            // Add chain info to situation analysis
-            if chain_state.depth > 1 {
-                final_dp.situation_analysis = format!(
-                    "{}\n\n[工具链式调用: 共执行 {} 轮]",
-                    final_dp.situation_analysis, chain_state.depth
-                );
-            }
-
-            // If conclusion is empty or meaningless, generate via LLM
-            if final_dp.conclusion.is_empty()
-                || final_dp.conclusion == "No conclusion"
-                || final_dp.conclusion == "Completed tool execution rounds."
-                || final_dp.conclusion.len() < 10
-            {
-                final_dp.conclusion = self
-                    .generate_conclusion_summary(
-                        &agent,
-                        &all_actions_executed,
-                        chain_state.depth,
-                        &agent.user_prompt,
-                    )
-                    .await?;
-            }
-
-            final_dp
-        } else {
-            // Fallback (shouldn't happen) - build from actions
-            let conclusion = if !all_actions_executed.is_empty() {
-                let success_count = all_actions_executed.iter().filter(|a| a.success).count();
-                let total_count = all_actions_executed.len();
-                format!(
-                    "执行完成: 共 {} 轮, {} / {} 操作成功",
-                    chain_state.depth,
-                    success_count,
-                    total_count
-                )
-            } else {
-                format!("执行完成: 共 {} 轮工具调用", chain_state.depth)
-            };
-
-            DecisionProcess {
-                situation_analysis: format!("Agent executed {} rounds via tool chaining", chain_state.depth),
-                data_collected: vec![],
-                reasoning_steps: vec![],
-                decisions: vec![],
-                conclusion,
-                confidence: 0.5,
-            }
-        };
-
-        // Extract conclusion for summary before moving
-        let summary_conclusion = merged_decision_process.conclusion.clone();
-
-        let success_rate = if all_actions_executed.is_empty() {
-            1.0
-        } else {
-            all_actions_executed.iter().filter(|a| a.success).count() as f32
-                / all_actions_executed.len() as f32
-        };
-
-        let total_actions = all_actions_executed.len();
-
-        let merged_execution_result = StorageExecutionResult {
-            actions_executed: all_actions_executed,
-            report: None, // Reports are generated per-round, not in chaining
-            notifications_sent: all_notifications_sent,
-            summary: if chain_state.depth > 1 {
-                format!(
-                    "Completed {} execution rounds via tool chaining",
-                    chain_state.depth
-                )
-            } else {
-                summary_conclusion
-            },
-            success_rate,
-        };
-
-        tracing::info!(
-            agent_id = %agent.id,
-            total_rounds = chain_state.depth,
-            total_actions = total_actions,
-            "Event-triggered tool chaining execution completed"
-        );
-
-        Ok((merged_decision_process, merged_execution_result))
-    }
-
     /// Execute with retry for stability.
     async fn execute_with_retry(
         &self,
         context: ExecutionContext,
+        event_data: Option<EventTriggerData>,
     ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
         let max_retries = 3u32;
         let mut last_error = None;
 
         for attempt in 0..=max_retries {
-            match self.execute_internal(context.clone()).await {
-                Ok(result) => return Ok(result),
-                Err(e) => {
-                    tracing::warn!(
-                        agent_id = %context.agent.id,
-                        attempt = attempt + 1,
-                        max_retries = max_retries + 1,
-                        error = %e,
-                        "Agent execution failed, retrying"
-                    );
-                    last_error = Some(e);
-
-                    if attempt < max_retries {
-                        let delay_ms = 100 * (2_u64.pow(attempt));
-                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                    }
-                }
-            }
-        }
-
-        Err(last_error.unwrap_or_else(|| NeoMindError::Llm("Max retries exceeded".to_string())))
-    }
-
-    /// Execute with retry for stability (with event data).
-    async fn execute_with_retry_and_event(
-        &self,
-        context: ExecutionContext,
-        event_data: EventTriggerData,
-    ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
-        let max_retries = 3u32;
-        let mut last_error = None;
-
-        for attempt in 0..=max_retries {
-            match self
-                .execute_internal_with_event(context.clone(), event_data.clone())
-                .await
-            {
+            let result = self
+                .execute_internal(context.clone(), event_data.clone())
+                .await;
+            match result {
                 Ok(result) => return Ok(result),
                 Err(e) => {
                     tracing::warn!(
@@ -2662,264 +2129,7 @@ impl AgentExecutor {
     async fn execute_internal(
         &self,
         context: ExecutionContext,
-    ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
-        let mut agent = context.agent;
-        let agent_id = agent.id.clone();
-        let execution_id = context.execution_id.clone();
-
-        // Progress: Collecting data
-        self.send_progress(
-            &agent_id,
-            &execution_id,
-            "collecting",
-            "Collecting data",
-            Some("Gathering sensor data..."),
-        )
-        .await;
-
-        // Step 1: Collect data
-        let data_collected = self.collect_data(&agent).await?;
-
-        // Send thinking events for each data source collected
-        let mut step_num = 1;
-        for data in &data_collected {
-            self.send_thinking(
-                &agent_id,
-                &execution_id,
-                step_num,
-                &format!("Collected data source: {}", data.source),
-            )
-            .await;
-            step_num += 1;
-            // Small delay for visual effect
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-
-        // Progress: Analyzing
-        self.send_progress(
-            &agent_id,
-            &execution_id,
-            "analyzing",
-            "Analyzing",
-            Some(&format!(
-                "Analyzing {} data points...",
-                data_collected.len()
-            )),
-        )
-        .await;
-
-        // Step 1.5: Parse intent if not already done
-        let parsed_intent = if agent.parsed_intent.is_none() {
-            match self.parse_intent(&agent.user_prompt).await {
-                Ok(intent) => {
-                    // Update agent with parsed intent
-                    if let Err(e) = self
-                        .store
-                        .update_agent_parsed_intent(&agent.id, Some(intent.clone()))
-                        .await
-                    {
-                        tracing::warn!(agent_id = %agent.id, error = %e, "Failed to store parsed intent");
-                    }
-                    Some(intent)
-                }
-                Err(e) => {
-                    tracing::warn!(agent_id = %agent.id, error = %e, "Failed to parse intent, using default");
-                    None
-                }
-            }
-        } else {
-            agent.parsed_intent.clone()
-        };
-
-        // Update agent reference with parsed intent
-        if let Some(ref intent) = parsed_intent {
-            agent.parsed_intent = Some(intent.clone());
-        }
-
-        // Step 2: Analyze situation with LLM
-        let (situation_analysis, reasoning_steps, decisions, conclusion) = self
-            .analyze_situation_with_intent(
-                &agent,
-                &data_collected,
-                parsed_intent.as_ref(),
-                &context.execution_id,
-            )
-            .await?;
-
-        // Send thinking event for analysis completion
-        self.send_thinking(
-            &agent_id,
-            &execution_id,
-            step_num,
-            &format!(
-                "Analysis completed: Generated {} decision(s)",
-                decisions.len()
-            ),
-        )
-        .await;
-        step_num += 1;
-
-        // Progress: Executing decisions
-        self.send_progress(
-            &agent_id,
-            &execution_id,
-            "executing",
-            "Executing decisions",
-            Some(&format!("Executing {} decision(s)...", decisions.len())),
-        )
-        .await;
-
-        // Send initial executing status
-        self.send_thinking(
-            &agent_id,
-            &execution_id,
-            step_num,
-            &format!("Starting execution of {} decision(s)", decisions.len()),
-        )
-        .await;
-        step_num += 1;
-
-        // Step 3: Execute decisions
-        let (actions_executed, notifications_sent) =
-            self.execute_decisions(&agent, &decisions).await?;
-
-        // Send thinking events for each action executed
-        for action in &actions_executed {
-            self.send_thinking(
-                &agent_id,
-                &execution_id,
-                step_num,
-                &format!("Executing: {} -> {}", action.action_type, action.target),
-            )
-            .await;
-            step_num += 1;
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-
-        // Send thinking events for notifications
-        for notification in &notifications_sent {
-            self.send_thinking(
-                &agent_id,
-                &execution_id,
-                step_num,
-                &format!("Sending notification: {}", notification.message),
-            )
-            .await;
-            step_num += 1;
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-
-        // Send completion event for executing stage
-        if actions_executed.is_empty() && notifications_sent.is_empty() {
-            self.send_thinking(
-                &agent_id,
-                &execution_id,
-                step_num,
-                "Execution completed: No additional actions required",
-            )
-            .await;
-        } else {
-            self.send_thinking(
-                &agent_id,
-                &execution_id,
-                step_num,
-                &format!(
-                    "Execution completed: {} action(s), {} notification(s)",
-                    actions_executed.len(),
-                    notifications_sent.len()
-                ),
-            )
-            .await;
-        }
-
-        // Step 4: Generate report if needed
-        let report = self.maybe_generate_report(&agent, &data_collected).await?;
-
-        // Step 5: Update memory with learnings
-        // Determine success based on whether we had any major errors
-        let memory_success = true; // We got here successfully, update_memory will store the result
-        let updated_memory = self
-            .update_memory(
-                &agent,
-                &data_collected,
-                &decisions,
-                &situation_analysis,
-                &conclusion,
-                &execution_id,
-                memory_success,
-            )
-            .await?;
-
-        // Save updated memory
-        self.store
-            .update_agent_memory(&agent.id, updated_memory.clone())
-            .await
-            .map_err(|e| NeoMindError::Storage(format!("Failed to update memory: {}", e)))?;
-
-        // Calculate confidence from reasoning
-        let confidence = if reasoning_steps.is_empty() {
-            0.5
-        } else {
-            reasoning_steps.iter().map(|s| s.confidence).sum::<f32>() / reasoning_steps.len() as f32
-        };
-
-        // Truncate text fields before storing in DecisionProcess
-        // This prevents unbounded growth in storage (execution records accumulate)
-        let cleaned_situation = clean_and_truncate_text(&situation_analysis, 500);
-        let cleaned_conclusion = clean_and_truncate_text(&conclusion, 200);
-
-        // Clean reasoning step descriptions
-        let cleaned_steps: Vec<neomind_storage::ReasoningStep> = reasoning_steps
-            .into_iter()
-            .map(|mut step| {
-                step.description = clean_and_truncate_text(&step.description, 150);
-                step
-            })
-            .collect();
-
-        // Clean decision fields
-        let cleaned_decisions: Vec<neomind_storage::Decision> = decisions
-            .into_iter()
-            .map(|mut dec| {
-                dec.description = clean_and_truncate_text(&dec.description, 150);
-                dec.rationale = clean_and_truncate_text(&dec.rationale, 150);
-                dec.expected_outcome = clean_and_truncate_text(&dec.expected_outcome, 150);
-                dec
-            })
-            .collect();
-
-        let decision_process = DecisionProcess {
-            situation_analysis: cleaned_situation,
-            data_collected,
-            reasoning_steps: cleaned_steps,
-            decisions: cleaned_decisions,
-            conclusion: cleaned_conclusion,
-            confidence,
-        };
-
-        let success_rate = if actions_executed.is_empty() {
-            1.0
-        } else {
-            let success_count = actions_executed.iter().filter(|a| a.success).count() as f32;
-            success_count / actions_executed.len() as f32
-        };
-
-        let execution_result = StorageExecutionResult {
-            actions_executed,
-            report,
-            notifications_sent,
-            summary: conclusion,
-            success_rate,
-        };
-
-        Ok((decision_process, execution_result))
-    }
-
-    /// Internal execution logic with event data.
-    async fn execute_internal_with_event(
-        &self,
-        context: ExecutionContext,
-        event_data: EventTriggerData,
+        event_data: Option<EventTriggerData>,
     ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
         let mut agent = context.agent;
         let agent_id = agent.id.clone();
@@ -2936,18 +2146,22 @@ impl AgentExecutor {
         )
         .await;
 
-        // Step 1: Collect data including event data
-        let data_collected = self.collect_data_with_event(&agent, &event_data).await?;
+        // Step 1: Collect data (with or without event data)
+        let data_collected = if let Some(ref ed) = event_data {
+            self.collect_data_with_event(&agent, ed).await?
+        } else {
+            self.collect_data(&agent).await?
+        };
 
         // Send thinking events for each data source collected
         for data in &data_collected {
-            self.send_thinking(
-                &agent_id,
-                &execution_id,
-                step_num,
-                &format!("📡 收集 {}: {} 个数据点", data.source, data.data_type),
-            )
-            .await;
+            let desc = if event_data.is_some() {
+                format!("📡 收集 {}: {} 个数据点", data.source, data.data_type)
+            } else {
+                format!("Collected data source: {}", data.source)
+            };
+            self.send_thinking(&agent_id, &execution_id, step_num, &desc)
+                .await;
             step_num += 1;
             // Small delay for visual effect
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -3094,8 +2308,7 @@ impl AgentExecutor {
         let report = self.maybe_generate_report(&agent, &data_collected).await?;
 
         // Step 5: Update memory with learnings
-        // Determine success based on whether we had any major errors
-        let memory_success = true; // We got here successfully, update_memory will store the result
+        let memory_success = true;
         let updated_memory = self
             .update_memory(
                 &agent,
@@ -3122,11 +2335,9 @@ impl AgentExecutor {
         };
 
         // Truncate text fields before storing in DecisionProcess
-        // This prevents unbounded growth in storage (execution records accumulate)
         let cleaned_situation = clean_and_truncate_text(&situation_analysis, 500);
         let cleaned_conclusion = clean_and_truncate_text(&conclusion, 200);
 
-        // Clean reasoning step descriptions
         let cleaned_steps: Vec<neomind_storage::ReasoningStep> = reasoning_steps
             .into_iter()
             .map(|mut step| {
@@ -3135,7 +2346,6 @@ impl AgentExecutor {
             })
             .collect();
 
-        // Clean decision fields
         let cleaned_decisions: Vec<neomind_storage::Decision> = decisions
             .into_iter()
             .map(|mut dec| {

@@ -6,7 +6,7 @@
 //!
 //! The toolkit uses an **action-based aggregated design** for token efficiency:
 //!
-//! - **5 Aggregated Tools**: device, agent, agent_history, rule, alert
+//! - **6 Aggregated Tools**: device, agent, agent_history, rule, alert, extension
 //! - Each tool supports multiple actions (list, get, create, control, etc.)
 //! - Reduces tool definition token usage by ~60% vs individual tools
 //!
@@ -80,7 +80,7 @@ pub use extension_tools::{
 
 pub use aggregated::{
     AgentHistoryTool, AgentTool, AggregatedAlertInfo, AggregatedAlertSeverity,
-    AggregatedToolsBuilder, AlertTool, DeviceTool, RuleTool,
+    AggregatedToolsBuilder, AlertTool, DeviceTool, ExtensionAggregatedTool, RuleTool,
 };
 
 /// Version information

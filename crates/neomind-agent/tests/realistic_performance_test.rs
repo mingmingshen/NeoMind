@@ -384,7 +384,7 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
     ctx.store.save_agent(&agent).await.ok();
 
     let start = Instant::now();
-    let record = executor.execute_agent(agent.clone()).await?;
+    let record = executor.execute_agent(agent.clone(), None).await?;
     let agent_time = start.elapsed().as_millis();
 
     println!("   执行时间: {}ms", agent_time);

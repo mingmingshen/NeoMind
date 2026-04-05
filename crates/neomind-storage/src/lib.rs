@@ -127,6 +127,7 @@ pub use agents::{
     AgentFilter,
     AgentMemory,
     AgentResource,
+    AgentToolConfig,
     AgentSchedule,
     AgentStats,
     AgentStatus,
