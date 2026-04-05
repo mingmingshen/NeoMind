@@ -10,7 +10,7 @@ import { useStore } from "@/store"
 import { shallow } from "zustand/shallow"
 import { generateId } from "@/lib/id"
 import { ws } from "@/lib/websocket"
-import type { Message, ServerMessage } from "@/types"
+import type { Message, ServerMessage, ExecutionPlan } from "@/types"
 import type { StreamProgress as StreamProgressType } from "@/types"
 import { filterPartialMessages } from "@/lib/messageUtils"
 import {
@@ -59,6 +59,8 @@ interface StreamState {
   streamingToolCalls: any[]
   streamProgress: StreamProgressType
   currentPlanStep: string
+  executionPlan: ExecutionPlan | null
+  planStepStates: Record<number, 'pending' | 'running' | 'completed' | 'failed'>
 }
 
 type StreamAction =
@@ -70,6 +72,9 @@ type StreamAction =
   | { type: 'PROGRESS'; progress: Partial<StreamProgressType> }
   | { type: 'PLAN'; step: string }
   | { type: 'WARNING'; message: string }
+  | { type: 'EXECUTION_PLAN'; plan: ExecutionPlan }
+  | { type: 'PLAN_STEP_STARTED'; stepId: number; description: string }
+  | { type: 'PLAN_STEP_COMPLETED'; stepId: number; success: boolean; summary: string }
   | { type: 'END_STREAM' }
   | { type: 'ERROR' }
   | { type: 'RESET' }
@@ -85,7 +90,9 @@ const initialStreamState: StreamState = {
     warnings: [],
     remainingTime: 300
   },
-  currentPlanStep: ""
+  currentPlanStep: "",
+  executionPlan: null,
+  planStepStates: {}
 }
 
 function streamReducer(state: StreamState, action: StreamAction): StreamState {
@@ -169,6 +176,15 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
           warnings: [...state.streamProgress.warnings, action.message]
         }
       }
+
+    case 'EXECUTION_PLAN':
+      return { ...state, executionPlan: action.plan, planStepStates: {} }
+
+    case 'PLAN_STEP_STARTED':
+      return { ...state, planStepStates: { ...state.planStepStates, [action.stepId]: 'running' } }
+
+    case 'PLAN_STEP_COMPLETED':
+      return { ...state, planStepStates: { ...state.planStepStates, [action.stepId]: action.success ? 'completed' : 'failed' } }
 
     case 'END_STREAM':
       return {
@@ -331,6 +347,18 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
 
         case "Plan":
           dispatch({ type: 'PLAN', step: data.step })
+          break
+
+        case "ExecutionPlanCreated":
+          dispatch({ type: 'EXECUTION_PLAN', plan: data.plan })
+          break
+
+        case "PlanStepStarted":
+          dispatch({ type: 'PLAN_STEP_STARTED', stepId: data.stepId, description: data.description })
+          break
+
+        case "PlanStepCompleted":
+          dispatch({ type: 'PLAN_STEP_COMPLETED', stepId: data.stepId, success: data.success ?? true, summary: data.summary ?? '' })
           break
 
         case "Warning":
@@ -561,6 +589,8 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
             streamingContent={streamState.streamingContent}
             streamingThinking={streamState.streamingThinking}
             streamingToolCalls={streamState.streamingToolCalls}
+            executionPlan={streamState.executionPlan}
+            planStepStates={streamState.planStepStates}
           />
 
           {/* Stream progress indicator - always show during streaming */}

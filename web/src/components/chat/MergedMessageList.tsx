@@ -1,8 +1,9 @@
-import { type Message } from "@/types"
+import { type Message, type ExecutionPlan } from "@/types"
 import { ThinkingBlock } from "./ThinkingBlock"
 import { ToolCallVisualization } from "./ToolCallVisualization"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { MessageItem } from "./MessageItem"
+import { ExecutionPlanPanel } from "./ExecutionPlanPanel"
 import { useStore } from "@/store"
 import { useMemo, useEffect, useState, useRef, useCallback } from "react"
 import { mergeMessagesForDisplay } from "@/lib/messageUtils"
@@ -15,6 +16,8 @@ interface MergedMessageListProps {
   streamingContent?: string
   streamingThinking?: string
   streamingToolCalls?: any[]
+  executionPlan?: ExecutionPlan | null
+  planStepStates?: Record<number, 'pending' | 'running' | 'completed' | 'failed'>
 }
 
 // Performance optimization: Limit rendered messages to avoid DOM bloat
@@ -29,6 +32,8 @@ export function MergedMessageList({
   streamingContent = "",
   streamingThinking = "",
   streamingToolCalls = [],
+  executionPlan,
+  planStepStates,
 }: MergedMessageListProps) {
   const { user } = useStore()
   const sessionId = useStore(selectSessionId)
@@ -168,6 +173,14 @@ export function MergedMessageList({
               <img src="/logo-square.png" alt="NeoMind" className="flex-shrink-0 w-8 h-8 rounded-lg animate-pulse" />
               <div className="max-w-[80%]">
                 <div className="rounded-2xl px-4 py-3 bg-[var(--msg-ai-bg)] text-[var(--msg-ai-text)]">
+                  {/* Execution plan */}
+                  {executionPlan && (
+                    <ExecutionPlanPanel
+                      plan={executionPlan}
+                      stepStates={planStepStates ?? {}}
+                    />
+                  )}
+
                   {/* Thinking */}
                   {streamingThinking && (
                     <ThinkingBlock thinking={streamingThinking} />
