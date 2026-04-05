@@ -21,6 +21,7 @@
 | `crates/neomind-agent/src/agent/planner/types.rs` | `ExecutionPlan`, `PlanStep`, `PlanningMode`, `StepId` |
 | `crates/neomind-agent/src/agent/planner/keyword.rs` | Keyword-based fast planner using `IntentCategory` |
 | `crates/neomind-agent/src/agent/planner/llm_planner.rs` | LLM-based deep planner with structured output |
+| `crates/neomind-agent/src/agent/planner/coordinator.rs` | `PlanningCoordinator` — path selection between keyword/LLM |
 | `web/src/components/chat/ExecutionPlanPanel.tsx` | Plan visualization component |
 
 ### Modified Files
@@ -228,7 +229,7 @@ pub mod types;
 use async_trait::async_trait;
 pub use types::{ExecutionPlan, PlanningConfig, PlanningMode, PlanStep, StepId};
 
-use crate::agent::context_selector::ContextBundle;
+use crate::context_selector::ContextBundle;
 use crate::agent::staged::IntentResult;
 
 /// Planner trait — produce an execution plan from intent + context.
@@ -426,7 +427,7 @@ use serde_json::json;
 use super::types::{ExecutionPlan, PlanningMode, PlanStep};
 use super::Planner;
 
-use crate::agent::context_selector::ContextBundle;
+use crate::context_selector::ContextBundle;
 use crate::agent::staged::{IntentCategory, IntentResult};
 
 /// Keyword-based planner using rule mapping.
@@ -602,7 +603,7 @@ use super::keyword::KeywordPlanner;
 use super::types::{ExecutionPlan, PlanningMode, PlanStep};
 use super::Planner;
 
-use crate::agent::context_selector::ContextBundle;
+use crate::context_selector::ContextBundle;
 use crate::agent::staged::IntentResult;
 use crate::llm::LlmInterface;
 
@@ -666,15 +667,15 @@ Respond with JSON only:
 
     async fn call_llm_plan(&self, user_message: &str, context: &ContextBundle) -> Option<ExecutionPlan> {
         let prompt = Self::build_planning_prompt(user_message, context);
-        let system = "You are a task planner. Output only valid JSON. No explanation.";
 
+        // LlmInterface::chat() takes a single message string and returns ChatResponse
         let result = tokio::time::timeout(
             self.timeout,
-            self.llm.chat(system, &prompt),
+            self.llm.chat_without_tools(&prompt),
         ).await.ok()?;
 
         let response = result.ok()?;
-        let cleaned = response
+        let cleaned = response.text
             .trim()
             .trim_start_matches("```json")
             .trim_start_matches("```")
@@ -824,31 +825,33 @@ git commit -m "feat(agent): add ExecutionPlanCreated, PlanStepStarted, PlanStepC
 
 ---
 
-## Task 5: Integrate Planner into Staged Pipeline
+## Task 5: PlanningCoordinator
 
 **Files:**
-- Modify: `crates/neomind-agent/src/agent/staged.rs` (integrate planner after intent classification)
+- Create: `crates/neomind-agent/src/agent/planner/coordinator.rs`
+- Modify: `crates/neomind-agent/src/agent/planner/mod.rs` (add `pub mod coordinator`)
 
-- [ ] **Step 1: Add planner integration to `staged.rs`**
-
-Add at the top of `staged.rs` (after existing imports):
-
-```rust
-use super::planner::keyword::KeywordPlanner;
-use super::planner::llm_planner::LLMPlanner;
-use super::planner::types::PlanningConfig;
-use super::planner::Planner;
-```
-
-Add a new struct that wraps the path selection logic:
+- [ ] **Step 1: Create `coordinator.rs`**
 
 ```rust
+// crates/neomind-agent/src/agent/planner/coordinator.rs
+//! Planning coordinator that selects between KeywordPlanner and LLMPlanner.
+
+use std::sync::Arc;
+
+use super::keyword::KeywordPlanner;
+use super::llm_planner::LLMPlanner;
+use super::types::{ExecutionPlan, PlanningConfig};
+use super::Planner;
+use crate::agent::staged::{IntentCategory, IntentResult};
+use crate::context_selector::ContextBundle;
+use crate::llm::LlmInterface;
+
 /// Planning coordinator that selects between KeywordPlanner and LLMPlanner.
 pub struct PlanningCoordinator {
     config: PlanningConfig,
     keyword_planner: KeywordPlanner,
-    // LLM planner created lazily when needed
-    llm_interface: Option<std::sync::Arc<crate::llm::LlmInterface>>,
+    llm_interface: Option<Arc<LlmInterface>>,
 }
 
 impl PlanningCoordinator {
@@ -860,7 +863,7 @@ impl PlanningCoordinator {
         }
     }
 
-    pub fn with_llm(mut self, llm: std::sync::Arc<crate::llm::LlmInterface>) -> Self {
+    pub fn with_llm(mut self, llm: Arc<LlmInterface>) -> Self {
         self.llm_interface = Some(llm);
         self
     }
@@ -876,9 +879,9 @@ impl PlanningCoordinator {
     pub async fn plan(
         &self,
         intent: &IntentResult,
-        context: &super::context_selector::ContextBundle,
+        context: &ContextBundle,
         user_message: &str,
-    ) -> Option<super::planner::types::ExecutionPlan> {
+    ) -> Option<ExecutionPlan> {
         if !self.config.enabled {
             return None;
         }
@@ -889,18 +892,13 @@ impl PlanningCoordinator {
             let llm_planner = LLMPlanner::new(llm.clone(), self.config.llm_timeout_secs);
             llm_planner.plan(intent, context, user_message).await
         } else {
-            // No LLM available, try keyword planner as fallback
             self.keyword_planner.plan(intent, context, user_message).await
         }
     }
 }
-```
 
-- [ ] **Step 2: Add tests for PlanningCoordinator**
-
-```rust
 #[cfg(test)]
-mod planning_coordinator_tests {
+mod tests {
     use super::*;
 
     #[test]
@@ -954,6 +952,14 @@ mod planning_coordinator_tests {
 }
 ```
 
+- [ ] **Step 2: Add `pub mod coordinator` to `planner/mod.rs`**
+
+Add to `planner/mod.rs`:
+```rust
+pub mod coordinator;
+pub use coordinator::PlanningCoordinator;
+```
+
 - [ ] **Step 3: Run tests**
 
 Run: `cd "/Users/shenmingming/CamThink Project/NeoMind" && cargo test -p neomind-agent planning_coordinator 2>&1 | tail -15`
@@ -963,7 +969,8 @@ Expected: All 4 coordinator tests PASS
 
 ```bash
 cd "/Users/shenmingming/CamThink Project/NeoMind"
-git add crates/neomind-agent/src/agent/staged.rs
+git add crates/neomind-agent/src/agent/planner/coordinator.rs
+git add crates/neomind-agent/src/agent/planner/mod.rs
 git commit -m "feat(agent): add PlanningCoordinator with path selection logic"
 ```
 
@@ -1092,7 +1099,7 @@ interface StreamState {
   currentPlanStep: string
   // NEW: execution plan state
   executionPlan: ExecutionPlan | null
-  planStepStates: Map<number, 'pending' | 'running' | 'completed' | 'failed'>
+  planStepStates: Record<number, 'pending' | 'running' | 'completed' | 'failed'>
 }
 ```
 
@@ -1159,7 +1166,7 @@ interface PlanStepState {
 
 interface ExecutionPlanPanelProps {
   plan: ExecutionPlan
-  stepStates: Map<number, PlanStepState>
+  stepStates: Record<number, PlanStepState>
 }
 
 export function ExecutionPlanPanel({ plan, stepStates }: ExecutionPlanPanelProps) {
@@ -1249,10 +1256,17 @@ git commit -m "feat(web): add ExecutionPlanPanel component with step progress"
 ```rust
 // crates/neomind-agent/tests/planning_integration.rs
 //! Integration tests for the planning system.
+//!
+//! These types must be re-exported from lib.rs for integration test access:
+//! - neomind_agent::agent::planner::types::{ExecutionPlan, PlanningConfig, PlanningMode, PlanStep}
+//! - neomind_agent::agent::planner::PlanningCoordinator
+//! - neomind_agent::agent::staged::{IntentCategory, IntentResult}
+//! - neomind_agent::context_selector::ContextBundle
 
 use neomind_agent::agent::planner::types::{ExecutionPlan, PlanningConfig, PlanningMode, PlanStep};
-use neomind_agent::agent::staged::{IntentCategory, IntentResult, PlanningCoordinator};
-use neomind_agent::agent::context_selector::ContextBundle;
+use neomind_agent::agent::planner::PlanningCoordinator;
+use neomind_agent::agent::staged::{IntentCategory, IntentResult};
+use neomind_agent::context_selector::ContextBundle;
 
 #[tokio::test]
 async fn test_keyword_planner_device_query() {
