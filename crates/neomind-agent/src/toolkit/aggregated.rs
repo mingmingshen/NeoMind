@@ -169,46 +169,22 @@ impl DeviceTool {
         args["response_format"].as_str() == Some("detailed")
     }
 
-    /// Resolve device_id with fuzzy matching support.
-    ///
-    /// Tries exact match first, then falls back to case-insensitive
-    /// substring matching on device_id or name.
+    /// Resolve device_id with fuzzy matching support using the generic EntityResolver.
     async fn resolve_device_id(&self, device_id: &str) -> Result<String> {
-        // 1. Try exact match first
+        // Fast path: exact ID match without listing all devices
         if self.device_service.get_device(device_id).await.is_some() {
             return Ok(device_id.to_string());
         }
 
-        // 2. Fuzzy match by id or name (case-insensitive substring)
+        // Slow path: fuzzy match via resolver
         let devices = self.device_service.list_devices().await;
-        let candidates: Vec<_> = devices
+        let candidates: Vec<(String, String)> = devices
             .iter()
-            .filter(|d| {
-                d.device_id
-                    .to_lowercase()
-                    .contains(&device_id.to_lowercase())
-                    || d.name.to_lowercase().contains(&device_id.to_lowercase())
-            })
+            .map(|d| (d.device_id.clone(), d.name.clone()))
             .collect();
 
-        match candidates.len() {
-            0 => Err(ToolError::Execution(format!(
-                "未找到设备 '{}'。请先调用 device(action: 'list') 查看可用设备。",
-                device_id
-            ))),
-            1 => Ok(candidates[0].device_id.clone()),
-            _ => {
-                let device_list: Vec<String> = candidates
-                    .iter()
-                    .map(|d| format!("{} ({})", d.name, d.device_id))
-                    .collect();
-                Err(ToolError::Execution(format!(
-                    "找到多个匹配 '{}' 的设备，请指定更明确的名称: {}",
-                    device_id,
-                    device_list.join(", ")
-                )))
-            }
-        }
+        super::resolver::EntityResolver::resolve(device_id, &candidates, "设备")
+            .map_err(ToolError::Execution)
     }
 
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
@@ -528,7 +504,7 @@ When creating agents:
                 },
                 "agent_id": {
                     "type": "string",
-                    "description": "Agent ID. Required for get/update/control/memory actions. Example: 'agent_1', or use the ID returned from list action"
+                    "description": "Agent ID or name. Supports fuzzy matching (e.g., 'Temperature Monitor' matches by name). Use list action to discover available agents. Examples: '550e8400-...', 'Temperature Monitor'"
                 },
                 "name": {
                     "type": "string",
@@ -609,6 +585,27 @@ impl AgentTool {
         args["response_format"].as_str() == Some("detailed")
     }
 
+    /// Resolve agent_id with fuzzy matching using EntityResolver.
+    async fn resolve_agent_id(&self, input: &str) -> Result<String> {
+        // Fast path: exact ID match
+        if let Ok(Some(_)) = self.agent_store.get_agent(input).await {
+            return Ok(input.to_string());
+        }
+
+        // Slow path: fuzzy match by name
+        let agents = self
+            .agent_store
+            .query_agents(neomind_storage::agents::AgentFilter::default())
+            .await
+            .map_err(|e| ToolError::Execution(e.to_string()))?;
+
+        let candidates: Vec<(String, String)> =
+            agents.iter().map(|a| (a.id.clone(), a.name.clone())).collect();
+
+        super::resolver::EntityResolver::resolve(input, &candidates, "agent")
+            .map_err(ToolError::Execution)
+    }
+
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
         use neomind_storage::agents::{AgentFilter, AgentStatus};
 
@@ -664,16 +661,18 @@ impl AgentTool {
     }
 
     async fn execute_get(&self, args: &Value) -> Result<ToolOutput> {
-        let agent_id = args["agent_id"]
+        let agent_id_input = args["agent_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("agent_id is required".into()))?;
 
+        let resolved_id = self.resolve_agent_id(agent_id_input).await?;
+
         let agent = self
             .agent_store
-            .get_agent(agent_id)
+            .get_agent(&resolved_id)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?
-            .ok_or_else(|| ToolError::Execution(format!("Agent not found: {}", agent_id)))?;
+            .ok_or_else(|| ToolError::Execution(format!("Agent not found: {}", resolved_id)))?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "id": agent.id,
@@ -761,16 +760,18 @@ impl AgentTool {
     }
 
     async fn execute_update(&self, args: &Value) -> Result<ToolOutput> {
-        let agent_id = args["agent_id"]
+        let agent_id_input = args["agent_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("agent_id is required".into()))?;
 
+        let resolved_id = self.resolve_agent_id(agent_id_input).await?;
+
         let mut agent = self
             .agent_store
-            .get_agent(agent_id)
+            .get_agent(&resolved_id)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?
-            .ok_or_else(|| ToolError::Execution(format!("Agent not found: {}", agent_id)))?;
+            .ok_or_else(|| ToolError::Execution(format!("Agent not found: {}", resolved_id)))?;
 
         if let Some(name) = args["name"].as_str() {
             agent.name = name.to_string();
@@ -788,15 +789,17 @@ impl AgentTool {
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
         Ok(ToolOutput::success(serde_json::json!({
-            "id": agent_id,
+            "id": resolved_id,
             "status": "updated"
         })))
     }
 
     async fn execute_control(&self, args: &Value) -> Result<ToolOutput> {
-        let agent_id = args["agent_id"]
+        let agent_id_input = args["agent_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("agent_id is required".into()))?;
+
+        let agent_id = self.resolve_agent_id(agent_id_input).await?;
 
         let control_action = args["control_action"]
             .as_str()
@@ -827,7 +830,7 @@ impl AgentTool {
         };
 
         self.agent_store
-            .update_agent_status(agent_id, status, error_msg)
+            .update_agent_status(&agent_id, status, error_msg)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
@@ -839,13 +842,15 @@ impl AgentTool {
     }
 
     async fn execute_memory(&self, args: &Value) -> Result<ToolOutput> {
-        let agent_id = args["agent_id"]
+        let agent_id_input = args["agent_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("agent_id is required".into()))?;
 
+        let agent_id = self.resolve_agent_id(agent_id_input).await?;
+
         let agent = self
             .agent_store
-            .get_agent(agent_id)
+            .get_agent(&agent_id)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?
             .ok_or_else(|| ToolError::Execution(format!("Agent not found: {}", agent_id)))?;
@@ -1072,7 +1077,7 @@ Actions: NOTIFY (send alert), CONTROL (send device command)"#
                 },
                 "rule_id": {
                     "type": "string",
-                    "description": "Rule ID. Required for get/update/delete. Use list action first to find the rule ID"
+                    "description": "Rule ID or name. Supports fuzzy matching (e.g., 'Low Battery Alert' matches by name). Use list action to discover available rules"
                 },
                 "dsl": {
                     "type": "string",
@@ -1137,6 +1142,26 @@ impl RuleTool {
         args["response_format"].as_str() == Some("detailed")
     }
 
+    /// Resolve rule_id with fuzzy matching using EntityResolver.
+    async fn resolve_rule_id(&self, input: &str) -> Result<String> {
+        // Try exact parse first
+        if let Ok(rule_id) = neomind_rules::RuleId::from_string(input) {
+            if self.rule_engine.get_rule(&rule_id).await.is_some() {
+                return Ok(input.to_string());
+            }
+        }
+
+        // Fuzzy match by name
+        let rules = self.rule_engine.list_rules().await;
+        let candidates: Vec<(String, String)> = rules
+            .iter()
+            .map(|r| (r.id.to_string(), r.name.clone()))
+            .collect();
+
+        super::resolver::EntityResolver::resolve(input, &candidates, "规则")
+            .map_err(ToolError::Execution)
+    }
+
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
         let rules = self.rule_engine.list_rules().await;
 
@@ -1179,18 +1204,20 @@ impl RuleTool {
     }
 
     async fn execute_get(&self, args: &Value) -> Result<ToolOutput> {
-        let rule_id_str = args["rule_id"]
+        let rule_id_input = args["rule_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("rule_id is required".into()))?;
 
-        let rule_id = neomind_rules::RuleId::from_string(rule_id_str)
+        let resolved_id = self.resolve_rule_id(rule_id_input).await?;
+
+        let rule_id = neomind_rules::RuleId::from_string(&resolved_id)
             .map_err(|e| ToolError::InvalidArguments(format!("Invalid rule_id: {}", e)))?;
 
         let rule = self
             .rule_engine
             .get_rule(&rule_id)
             .await
-            .ok_or_else(|| ToolError::Execution(format!("Rule not found: {}", rule_id_str)))?;
+            .ok_or_else(|| ToolError::Execution(format!("Rule not found: {}", resolved_id)))?;
 
         Ok(ToolOutput::success(serde_json::json!({
             "id": rule.id.to_string(),
@@ -1201,21 +1228,23 @@ impl RuleTool {
     }
 
     async fn execute_delete(&self, args: &Value) -> Result<ToolOutput> {
-        let rule_id_str = args["rule_id"]
+        let rule_id_input = args["rule_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("rule_id is required".into()))?;
+
+        let resolved_id = self.resolve_rule_id(rule_id_input).await?;
 
         // Confirmation check
         let confirm = args["confirm"].as_bool().unwrap_or(false);
         if !confirm {
             return Ok(ToolOutput::success(serde_json::json!({
                 "preview": true,
-                "rule_id": rule_id_str,
+                "rule_id": resolved_id,
                 "message": "This will permanently delete the rule. Set confirm=true to execute."
             })));
         }
 
-        let rule_id = neomind_rules::RuleId::from_string(rule_id_str)
+        let rule_id = neomind_rules::RuleId::from_string(&resolved_id)
             .map_err(|e| ToolError::InvalidArguments(format!("Invalid rule_id: {}", e)))?;
 
         self.rule_engine
@@ -1224,7 +1253,7 @@ impl RuleTool {
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
         Ok(ToolOutput::success(serde_json::json!({
-            "id": rule_id_str,
+            "id": resolved_id,
             "status": "deleted"
         })))
     }
@@ -1248,7 +1277,7 @@ impl RuleTool {
     }
 
     async fn execute_update(&self, args: &Value) -> Result<ToolOutput> {
-        let rule_id_str = args["rule_id"]
+        let rule_id_input = args["rule_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("rule_id is required".into()))?;
 
@@ -1256,18 +1285,20 @@ impl RuleTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("dsl is required".into()))?;
 
+        let resolved_id = self.resolve_rule_id(rule_id_input).await?;
+
         // Confirmation check
         let confirm = args["confirm"].as_bool().unwrap_or(false);
         if !confirm {
             return Ok(ToolOutput::success(serde_json::json!({
                 "preview": true,
-                "rule_id": rule_id_str,
+                "rule_id": resolved_id,
                 "new_dsl": dsl,
                 "message": "This will replace the rule definition. Set confirm=true to execute."
             })));
         }
 
-        let rule_id = neomind_rules::RuleId::from_string(rule_id_str)
+        let rule_id = neomind_rules::RuleId::from_string(&resolved_id)
             .map_err(|e| ToolError::InvalidArguments(format!("Invalid rule_id: {}", e)))?;
 
         // First remove the old rule to clean up dependencies
@@ -1284,7 +1315,7 @@ impl RuleTool {
 
         Ok(ToolOutput::success(serde_json::json!({
             "id": new_rule_id.to_string(),
-            "old_id": rule_id_str,
+            "old_id": resolved_id,
             "status": "updated",
             "message": "规则更新成功"
         })))
@@ -1415,7 +1446,7 @@ Tips:
                 },
                 "alert_id": {
                     "type": "string",
-                    "description": "Alert ID to acknowledge (acknowledge action). Use list action first to find the alert ID"
+                    "description": "Alert ID or title. Supports fuzzy matching on title (e.g., 'High Temperature' matches). Use list action to discover alerts"
                 },
                 "title": {
                     "type": "string",
@@ -1480,6 +1511,26 @@ Tips:
 impl AlertTool {
     fn is_detailed(args: &Value) -> bool {
         args["response_format"].as_str() == Some("detailed")
+    }
+
+    /// Resolve alert_id with fuzzy matching using EntityResolver.
+    async fn resolve_alert_id(&self, input: &str) -> Result<String> {
+        let alerts = self.alerts.read().await;
+
+        // Fast path: exact ID match
+        let exact_match = alerts.iter().find(|a| a.id == input);
+        if let Some(alert) = exact_match {
+            return Ok(alert.id.clone());
+        }
+
+        // Fuzzy match by title
+        let candidates: Vec<(String, String)> = alerts
+            .iter()
+            .map(|a| (a.id.clone(), a.title.clone()))
+            .collect();
+
+        super::resolver::EntityResolver::resolve(input, &candidates, "告警")
+            .map_err(ToolError::Execution)
     }
 
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
@@ -1596,11 +1647,14 @@ impl AlertTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("alert_id is required".into()))?;
 
+        // Resolve alert_id (supports fuzzy matching by title)
+        let resolved_id = self.resolve_alert_id(alert_id_str).await?;
+
         // Use message_manager if available
         if let Some(manager) = &self.message_manager {
             use neomind_messages::MessageId;
 
-            let alert_id = MessageId::from_string(alert_id_str)
+            let alert_id = MessageId::from_string(&resolved_id)
                 .map_err(|e| ToolError::InvalidArguments(format!("Invalid alert_id: {}", e)))?;
 
             let message = manager
@@ -1628,7 +1682,7 @@ impl AlertTool {
             let alerts = self.alerts.read().await;
             let alert = alerts
                 .iter()
-                .find(|a| a.id == alert_id_str)
+                .find(|a| a.id == resolved_id)
                 .ok_or_else(|| ToolError::Execution("Alert not found".into()))?;
 
             Ok(ToolOutput::success(serde_json::json!({
@@ -1718,11 +1772,14 @@ impl AlertTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("alert_id is required".into()))?;
 
+        // Resolve alert_id (supports fuzzy matching by title)
+        let resolved_id = self.resolve_alert_id(alert_id_str).await?;
+
         // Use message_manager if available
         if let Some(manager) = &self.message_manager {
             use neomind_messages::MessageId;
 
-            let alert_id = MessageId::from_string(alert_id_str)
+            let alert_id = MessageId::from_string(&resolved_id)
                 .map_err(|e| ToolError::InvalidArguments(format!("Invalid alert_id: {}", e)))?;
 
             manager
@@ -1731,20 +1788,20 @@ impl AlertTool {
                 .map_err(|e| ToolError::Execution(e.to_string()))?;
 
             Ok(ToolOutput::success(serde_json::json!({
-                "id": alert_id_str,
+                "id": resolved_id,
                 "status": "acknowledged"
             })))
         } else {
             let mut alerts = self.alerts.write().await;
             let alert = alerts
                 .iter_mut()
-                .find(|a| a.id == alert_id_str)
+                .find(|a| a.id == resolved_id)
                 .ok_or_else(|| ToolError::Execution("Alert not found".into()))?;
 
             alert.acknowledged = true;
 
             Ok(ToolOutput::success(serde_json::json!({
-                "id": alert_id_str,
+                "id": resolved_id,
                 "status": "acknowledged"
             })))
         }
@@ -1801,7 +1858,7 @@ Tips:
                 },
                 "extension_id": {
                     "type": "string",
-                    "description": "Extension ID (get/execute/status actions). Use list action first to discover available IDs. Example: 'weather-forecast-v2'"
+                    "description": "Extension ID or name. Supports fuzzy matching (e.g., 'weather' matches 'Weather Forecast'). Use list action to discover available extensions"
                 },
                 "command": {
                     "type": "string",
@@ -1848,6 +1905,24 @@ impl ExtensionAggregatedTool {
         args["response_format"].as_str() == Some("detailed")
     }
 
+    /// Resolve extension_id with fuzzy matching using EntityResolver.
+    async fn resolve_extension_id(&self, input: &str) -> Result<String> {
+        // Fast path: exact ID match
+        if self.registry.get_info(input).await.is_some() {
+            return Ok(input.to_string());
+        }
+
+        // Fuzzy match by name
+        let extensions = self.registry.list().await;
+        let candidates: Vec<(String, String)> = extensions
+            .iter()
+            .map(|e| (e.metadata.id.clone(), e.metadata.name.clone()))
+            .collect();
+
+        super::resolver::EntityResolver::resolve(input, &candidates, "扩展")
+            .map_err(ToolError::Execution)
+    }
+
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
         let detailed = Self::is_detailed(args);
         let extensions = self.registry.list().await;
@@ -1883,13 +1958,14 @@ impl ExtensionAggregatedTool {
     }
 
     async fn execute_get(&self, args: &Value) -> Result<ToolOutput> {
-        let extension_id = args["extension_id"]
+        let raw_id = args["extension_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("extension_id is required".into()))?;
+        let extension_id = self.resolve_extension_id(raw_id).await?;
 
         let info = self
             .registry
-            .get_info(extension_id)
+            .get_info(&extension_id)
             .await
             .ok_or_else(|| ToolError::Execution(format!("Extension '{}' not found", extension_id)))?;
 
@@ -1930,9 +2006,10 @@ impl ExtensionAggregatedTool {
     }
 
     async fn execute_command(&self, args: &Value) -> Result<ToolOutput> {
-        let extension_id = args["extension_id"]
+        let raw_id = args["extension_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("extension_id is required".into()))?;
+        let extension_id = self.resolve_extension_id(raw_id).await?;
         let command = args["command"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("command is required".into()))?;
@@ -1940,7 +2017,7 @@ impl ExtensionAggregatedTool {
 
         let result = self
             .registry
-            .execute_command(extension_id, command, &params)
+            .execute_command(&extension_id, command, &params)
             .await
             .map_err(|e| ToolError::Execution(format!("Extension command failed: {}", e)))?;
 
@@ -1952,19 +2029,20 @@ impl ExtensionAggregatedTool {
     }
 
     async fn execute_status(&self, args: &Value) -> Result<ToolOutput> {
-        let extension_id = args["extension_id"]
+        let raw_id = args["extension_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("extension_id is required".into()))?;
+        let extension_id = self.resolve_extension_id(raw_id).await?;
 
         let info = self
             .registry
-            .get_info(extension_id)
+            .get_info(&extension_id)
             .await
             .ok_or_else(|| ToolError::Execution(format!("Extension '{}' not found", extension_id)))?;
 
         let healthy = self
             .registry
-            .health_check(extension_id)
+            .health_check(&extension_id)
             .await
             .unwrap_or(false);
 

@@ -36,6 +36,7 @@ pub mod aggregated;
 pub mod error;
 pub mod extension_tools;
 pub mod registry;
+pub mod resolver;
 pub mod simplified;
 pub mod system_tools;
 pub mod tool;
