@@ -144,6 +144,30 @@ async fn process_stream_to_channel(
                             "sessionId": session_id,
                         })
                     }
+                    AgentEvent::ExecutionPlanCreated { plan, .. } => {
+                        json!({
+                            "type": "ExecutionPlanCreated",
+                            "plan": plan,
+                            "sessionId": session_id,
+                        })
+                    }
+                    AgentEvent::PlanStepStarted { step_id, description } => {
+                        json!({
+                            "type": "PlanStepStarted",
+                            "stepId": step_id,
+                            "description": description,
+                            "sessionId": session_id,
+                        })
+                    }
+                    AgentEvent::PlanStepCompleted { step_id, success, summary } => {
+                        json!({
+                            "type": "PlanStepCompleted",
+                            "stepId": step_id,
+                            "success": success,
+                            "summary": summary,
+                            "sessionId": session_id,
+                        })
+                    }
                     AgentEvent::IntermediateEnd => {
                         // Intermediate end - for multi-round tool calling
                         // This indicates the current round is complete but more processing is coming

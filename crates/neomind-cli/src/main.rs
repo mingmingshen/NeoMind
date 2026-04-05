@@ -405,6 +405,15 @@ async fn run_chat(session_id: Option<String>) -> Result<()> {
                         neomind_agent::AgentEvent::Plan { step, stage } => {
                             println!("[Plan: {} - {}]", stage, step);
                         }
+                        neomind_agent::AgentEvent::ExecutionPlanCreated { plan, .. } => {
+                            println!("[ExecutionPlan: {} steps ({:?})]", plan.steps.len(), plan.mode);
+                        }
+                        neomind_agent::AgentEvent::PlanStepStarted { step_id, description } => {
+                            println!("[PlanStep {} started: {}]", step_id, description);
+                        }
+                        neomind_agent::AgentEvent::PlanStepCompleted { step_id, success, summary } => {
+                            println!("[PlanStep {} {}: {}]", step_id, if success { "done" } else { "failed" }, summary);
+                        }
                         neomind_agent::AgentEvent::Progress { message, .. } => {
                             println!("[Progress: {}]", message);
                         }
