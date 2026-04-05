@@ -18,6 +18,7 @@ use tokio::sync::RwLock;
 use super::staged::{IntentCategory, IntentClassifier};
 use super::tool_parser::parse_tool_calls;
 use super::types::{AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, ToolCall};
+use super::planner::types::ExecutionPlan;
 use crate::error::{NeoMindError, Result};
 use crate::llm::LlmInterface;
 
@@ -1243,6 +1244,14 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
         preview
     );
     response
+}
+
+/// Emit plan events from an ExecutionPlan through the event channel.
+pub fn emit_plan_events(plan: &ExecutionPlan, tx: &tokio::sync::mpsc::UnboundedSender<super::types::AgentEvent>) {
+    let _ = tx.send(super::types::AgentEvent::ExecutionPlanCreated {
+        plan: plan.clone(),
+        session_id: None,
+    });
 }
 
 /// Result of a single tool execution with metadata
