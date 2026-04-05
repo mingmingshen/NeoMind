@@ -31,6 +31,7 @@ pub mod streaming;
 pub mod tokenizer;
 pub mod tool_parser;
 pub mod types;
+pub mod planner;
 
 use std::collections::HashMap;
 use std::pin::Pin;

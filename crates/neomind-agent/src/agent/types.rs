@@ -230,6 +230,9 @@ pub struct AgentConfig {
     /// Number of recent tool results to keep intact (default: 2)
     #[serde(default = "default_keep_tool_results")]
     pub keep_recent_tool_results: usize,
+    /// Planning configuration
+    #[serde(default)]
+    pub planning: crate::agent::planner::types::PlanningConfig,
 }
 
 /// Default value for max tool calls per request.
@@ -271,6 +274,7 @@ impl Default for AgentConfig {
             api_key: std::env::var("OPENAI_API_KEY").ok(),
             max_tool_calls: default_max_tool_calls(),
             keep_recent_tool_results: default_keep_tool_results(),
+            planning: crate::agent::planner::types::PlanningConfig::default(),
         }
     }
 }
