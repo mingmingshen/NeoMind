@@ -64,25 +64,25 @@ pub(crate) fn extract_symptom(situation_analysis: &str, decision: &Decision) -> 
     // Try to extract from situation analysis - use static strings for common cases
     if !situation_analysis.is_empty() {
         // Look for key phrases indicating conditions
-        if situation_analysis.contains("超过") || situation_analysis.contains("高于") {
-            return "数值超过阈值".to_string();
+        if situation_analysis.contains("超过") || situation_analysis.contains("高于") || situation_analysis.contains("exceeds") || situation_analysis.contains("above") {
+            return "Value exceeds threshold".to_string();
         }
-        if situation_analysis.contains("低于") {
-            return "数值低于阈值".to_string();
+        if situation_analysis.contains("低于") || situation_analysis.contains("below") {
+            return "Value below threshold".to_string();
         }
-        if situation_analysis.contains("异常") || situation_analysis.contains("不正常") {
-            return "检测到异常状态".to_string();
+        if situation_analysis.contains("异常") || situation_analysis.contains("不正常") || situation_analysis.contains("abnormal") {
+            return "Abnormal state detected".to_string();
         }
-        if situation_analysis.contains("正常") || situation_analysis.contains("稳定") {
-            return "状态正常".to_string();
+        if situation_analysis.contains("正常") || situation_analysis.contains("稳定") || situation_analysis.contains("normal") || situation_analysis.contains("stable") {
+            return "Status normal".to_string();
         }
     }
 
     // Fallback to decision type - use static strings
     match decision.decision_type.as_str() {
-        "alert" => "检测到需要告警的情况".to_string(),
-        "command" => "满足自动化执行条件".to_string(),
-        _ => "常规检查".to_string(),
+        "alert" => "Alert condition detected".to_string(),
+        "command" => "Automation trigger met".to_string(),
+        _ => "Routine check".to_string(),
     }
 }
 
@@ -124,15 +124,15 @@ pub(crate) fn extract_semantic_description(decision: &Decision, symptom: &str) -
     // Convert specific descriptions to abstract patterns
     let desc = &decision.description;
 
-    // Pattern: "温度传感器1显示25度" -> "温度异常触发告警"
+    // Pattern: "Temp sensor 1 shows 25 degrees" -> "Temp anomaly triggered alert"
     if desc.contains("温度") || desc.contains("temp") {
-        return format!("温度{} - {}", symptom, decision.action);
+        return format!("Temp {} - {}", symptom, decision.action);
     }
     if desc.contains("湿度") || desc.contains("humidity") {
-        return format!("湿度{} - {}", symptom, decision.action);
+        return format!("Humidity {} - {}", symptom, decision.action);
     }
     if desc.contains("压力") || desc.contains("pressure") {
-        return format!("压力{} - {}", symptom, decision.action);
+        return format!("Pressure {} - {}", symptom, decision.action);
     }
 
     // Generic abstract description

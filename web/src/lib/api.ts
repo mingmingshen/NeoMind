@@ -1932,13 +1932,13 @@ export const api = {
   /**
    * Trigger manual extraction
    * POST /api/memory/extract
-   * Note: This operation may take a long time, so we use a 5-minute timeout
+   * Note: Extraction runs in background on the server, so this returns quickly
    */
   triggerMemoryExtract: (sessionId?: string, force = true) => {
     // Create timeout signal with fallback for older browsers
     let signal: AbortSignal | undefined
     try {
-      signal = AbortSignal.timeout(5 * 60 * 1000) // 5 minutes timeout
+      signal = AbortSignal.timeout(30 * 1000) // 30 seconds - server returns immediately, extraction runs in background
     } catch (e) {
       console.warn('AbortSignal.timeout not supported, request will have no timeout', e)
       signal = undefined

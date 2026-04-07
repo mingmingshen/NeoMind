@@ -1412,7 +1412,7 @@ impl AgentExecutor {
                                             decisions
                                         },
                                         if conclusion.is_empty() {
-                                            "分析完成。".to_string()
+                                            "Analysis complete.".to_string()
                                         } else {
                                             conclusion
                                         },

@@ -175,9 +175,7 @@ interface MemoryPanelProps {
 export interface MemoryPanelRef {
   openConfig: () => void
   triggerExtract: () => void
-  triggerCompress: () => void
   isExtracting: boolean
-  isCompressing: boolean
 }
 
 export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function MemoryPanel({ refreshKey }, ref) {
@@ -204,7 +202,6 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   const [configSaving, setConfigSaving] = useState(false)
   const [llmBackends, setLlmBackends] = useState<LlmBackendInstance[]>([])
   const [extracting, setExtracting] = useState(false)
-  const [compressing, setCompressing] = useState(false)
 
   // Load configuration
   const loadConfig = useCallback(async () => {
@@ -263,10 +260,12 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
       const result = await api.triggerMemoryExtract()
       console.log('[MemoryPanel] Extraction result:', result)
       toast({
-        title: t("systemMemory.extractComplete", "Extraction Complete"),
-        description: result.message || t("systemMemory.extractCompleteDesc", "Successfully extracted memories"),
+        title: t("systemMemory.extractStarted", "Extraction Started"),
+        description: result.message || t("systemMemory.extractStartedDesc", "Extraction is running in the background. Check stats after a moment."),
       })
-      loadStats() // Refresh stats after extraction
+      loadStats() // Refresh stats immediately
+      // Schedule a delayed refresh for when background extraction finishes
+      setTimeout(() => loadStats(), 30000)
     } catch (error) {
       console.error('[MemoryPanel] Extraction error:', error)
       // Check for specific error types
@@ -289,27 +288,6 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
       }
     } finally {
       setExtracting(false)
-    }
-  }
-
-  // Trigger manual compression
-  const handleCompress = async () => {
-    setCompressing(true)
-    toast({
-      title: t("systemMemory.compressStarted", "Compression Started"),
-      description: t("systemMemory.compressStartedDesc", "Compressing and cleaning up memories..."),
-    })
-    try {
-      const result = await api.triggerMemoryCompress()
-      toast({
-        title: t("systemMemory.compressComplete", "Compression Complete"),
-        description: result.message || t("systemMemory.compressCompleteDesc", "Successfully compressed memories"),
-      })
-      loadStats() // Refresh stats after compression
-    } catch (error) {
-      handleError(error, { operation: "Trigger memory compression" })
-    } finally {
-      setCompressing(false)
     }
   }
 
@@ -405,10 +383,8 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
       loadLlmBackends() // Refresh backends when opening config
     },
     triggerExtract: handleExtract,
-    triggerCompress: handleCompress,
     isExtracting: extracting,
-    isCompressing: compressing,
-  }), [handleExtract, handleCompress, loadConfig, loadLlmBackends, extracting, compressing])
+  }), [handleExtract, loadConfig, loadLlmBackends, extracting])
 
   // Prepare table data
   const tableData: MemoryCategoryRow[] = categoryConfig.map((cat) => ({

@@ -11,6 +11,10 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Guard to prevent concurrent extraction tasks
+static EXTRACTION_RUNNING: AtomicBool = AtomicBool::new(false);
 
 use neomind_storage::{
     CategoryStats, MarkdownMemoryStore, MemoryCategory, MemoryConfig, MemoryFileInfo,
@@ -263,6 +267,16 @@ pub async fn trigger_extract(
         "Starting memory extraction request"
     );
 
+    // Prevent concurrent extraction tasks
+    if EXTRACTION_RUNNING.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+        return Json(ExtractionResponse {
+            success: true,
+            extracted: 0,
+            message: "Extraction already in progress. Please wait for it to finish.".to_string(),
+        })
+        .into_response();
+    }
+
     // Get the LLM backend
     let llm_manager = match neomind_agent::get_instance_manager() {
         Ok(manager) => {
@@ -329,14 +343,21 @@ pub async fn trigger_extract(
         .into_response();
     }
 
+    let session_count = session_ids.len();
     tracing::info!(
-        session_count = session_ids.len(),
+        session_count = session_count,
         sessions = ?session_ids,
-        "Found sessions for extraction"
+        "Spawning background extraction task"
     );
 
     // Get the memory store (wrapped in Arc<RwLock<>>)
-    let memory_store = Arc::new(RwLock::new(state.agents.system_memory_store.as_ref().clone()));
+    let memory_store = {
+        let store = (*state.agents.system_memory_store).clone();
+        if let Err(e) = store.init() {
+            tracing::warn!(error = %e, "Failed to init memory store for extraction");
+        }
+        Arc::new(RwLock::new(store))
+    };
 
     // Create extractor with custom config if force is set
     let config = if req.force {
@@ -350,57 +371,76 @@ pub async fn trigger_extract(
     };
 
     let extractor = MemoryExtractor::with_config(memory_store, llm_runtime, config);
-    tracing::debug!("Created MemoryExtractor");
 
-    // Extract from each session
-    let mut total_extracted = 0;
-    let mut processed_sessions = 0;
+    // Spawn background task to avoid HTTP timeout
+    tokio::spawn(async move {
+        let mut total_extracted = 0;
+        let mut processed_sessions = 0;
 
-    for session_id in session_ids {
-        // Load session history
-        let messages = match session_store.load_history(&session_id) {
-            Ok(msgs) => msgs,
-            Err(e) => {
-                tracing::warn!(
-                    session_id = %session_id,
-                    error = %e,
-                    "Failed to load session history, skipping"
-                );
+        for session_id in &session_ids {
+            let messages = match session_store.load_history(session_id) {
+                Ok(msgs) => msgs,
+                Err(e) => {
+                    tracing::warn!(session_id = %session_id, error = %e, "Failed to load session history, skipping");
+                    continue;
+                }
+            };
+
+            if messages.is_empty() {
                 continue;
             }
-        };
 
-        if messages.is_empty() {
-            continue;
-        }
-
-        // Perform extraction
-        match extractor.extract_from_chat(&messages).await {
-            Ok(count) => {
-                total_extracted += count;
-                processed_sessions += 1;
-                tracing::info!(
-                    session_id = %session_id,
-                    extracted = count,
-                    "Extraction completed for session"
-                );
-            }
-            Err(e) => {
-                tracing::error!(
-                    session_id = %session_id,
-                    error = %e,
-                    "Extraction failed for session"
-                );
+            match extractor.extract_from_chat(&messages).await {
+                Ok(count) => {
+                    total_extracted += count;
+                    processed_sessions += 1;
+                    tracing::info!(session_id = %session_id, extracted = count, "Extraction completed for session");
+                }
+                Err(e) => {
+                    tracing::error!(session_id = %session_id, error = %e, "Extraction failed for session");
+                }
             }
         }
-    }
 
+        // Run compression after extraction
+        if total_extracted > 0 {
+            use neomind_agent::memory::compressor::MemoryCompressor;
+
+            let compressor = MemoryCompressor::new(extractor.llm_clone());
+            for category in MemoryCategory::all() {
+                match compressor.compress(&extractor.store_clone(), category.clone()).await {
+                    Ok(result) => {
+                        tracing::info!(
+                            category = ?category,
+                            compressed = result.compressed,
+                            deleted = result.deleted,
+                            "Post-extraction compression done"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(category = ?category, error = %e, "Post-extraction compression failed");
+                    }
+                }
+            }
+        }
+
+        tracing::info!(
+            total_extracted = total_extracted,
+            processed_sessions = processed_sessions,
+            "Background memory extraction complete"
+        );
+
+        // Release the lock
+        EXTRACTION_RUNNING.store(false, Ordering::SeqCst);
+    });
+
+    // Return immediately - extraction runs in background
     Json(ExtractionResponse {
         success: true,
-        extracted: total_extracted,
+        extracted: 0,
         message: format!(
-            "Extracted {} memories from {} sessions",
-            total_extracted, processed_sessions
+            "Extraction started for {} session(s). Processing in background.",
+            session_count
         ),
     })
     .into_response()
@@ -506,8 +546,14 @@ pub async fn trigger_compress(State(state): State<ServerState>) -> Response {
         }
     };
 
-    // Get the memory store
-    let memory_store = Arc::new(RwLock::new(state.agents.system_memory_store.as_ref().clone()));
+    // Get the memory store (wrapped in Arc<RwLock<>>)
+    let memory_store = {
+        let store = (*state.agents.system_memory_store).clone();
+        if let Err(e) = store.init() {
+            tracing::warn!(error = %e, "Failed to init memory store for compression");
+        }
+        Arc::new(RwLock::new(store))
+    };
 
     // Create compressor
     let compressor = MemoryCompressor::new(llm_runtime);
@@ -541,18 +587,24 @@ pub async fn trigger_compress(State(state): State<ServerState>) -> Response {
         }
     }
 
+    let message = if total_result.total_before == 0 {
+        "No memory entries to compress. Extract memories first.".to_string()
+    } else {
+        format!(
+            "Compression completed: {} entries processed, {} compressed, {} deleted",
+            total_result.total_before,
+            total_result.compressed,
+            total_result.deleted
+        )
+    };
+
     Json(serde_json::json!({
         "success": true,
         "total_before": total_result.total_before,
         "kept": total_result.kept,
         "compressed": total_result.compressed,
         "deleted": total_result.deleted,
-        "message": format!(
-            "Compression completed: {} entries processed, {} compressed, {} deleted",
-            total_result.total_before,
-            total_result.compressed,
-            total_result.deleted
-        )
+        "message": message
     }))
     .into_response()
 }

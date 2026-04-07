@@ -64,24 +64,24 @@ impl ChainState {
             return String::new();
         }
 
-        let mut context = String::from("\n\n## 之前的工具执行结果 (Tool Chaining)\n\n");
-        context.push_str(&format!("当前是第 {} 轮执行。\n\n", self.depth));
+        let mut context = String::from("\n\n## Previous Tool Execution Results (Tool Chaining)\n\n");
+        context.push_str(&format!("Currently on round {}.\n\n", self.depth));
 
         for (i, result) in self.previous_results.iter().enumerate() {
             context.push_str(&format!(
-                "### 执行步骤 {} - {}\n",
+                "### Execution Step {} - {}\n",
                 i + 1,
                 result.action_type
             ));
-            context.push_str(&format!("- **目标**: {}\n", result.target));
+            context.push_str(&format!("- **Target**: {}\n", result.target));
             context.push_str(&format!(
-                "- **状态**: {}\n",
-                if result.success { "成功" } else { "失败" }
+                "- **Status**: {}\n",
+                if result.success { "Success" } else { "Failed" }
             ));
             if let Some(ref result_str) = result.result {
                 // Only include non-trivial results
                 if !result_str.is_empty() && result_str != "Command sent successfully" {
-                    context.push_str(&format!("- **结果**: {}\n", result_str));
+                    context.push_str(&format!("- **Result**: {}\n", result_str));
                 }
             }
             context.push('\n');
@@ -109,7 +109,7 @@ pub(crate) fn build_medium_term_summary(
     // Key metrics tracked
     if !memory.baselines.is_empty() {
         parts.push(format!(
-            "基线指标: {}",
+            "Baseline metrics: {}",
             memory
                 .baselines
                 .iter()
@@ -127,14 +127,14 @@ pub(crate) fn build_medium_term_summary(
             .map(|p| p.pattern_type.as_str())
             .collect();
         parts.push(format!(
-            "已识别模式: {}",
+            "Identified patterns: {}",
             pattern_types.into_iter().collect::<Vec<_>>().join(", ")
         ));
     }
 
     // Current status
     if !current_conclusion.is_empty() {
-        parts.push(format!("当前状态: {}", current_conclusion));
+        parts.push(format!("Current status: {}", current_conclusion));
     }
 
     parts.join("; ")
@@ -225,7 +225,7 @@ pub(crate) fn clean_and_truncate_text(text: &str, max_chars: usize) -> String {
             if streak > 50 {
                 // High repetition detected, truncate early
                 let truncated: String = chars.iter().take(i.saturating_sub(20)).collect();
-                return format!("{}...[内容过长，已截断]", truncated);
+                return format!("{}...[truncated]", truncated);
             }
         } else {
             streak = 1;
@@ -296,7 +296,7 @@ pub(crate) fn clean_and_truncate_text(text: &str, max_chars: usize) -> String {
 pub(crate) fn compact_history_context(_history_context: &str, memory: &AgentMemory) -> String {
     let mut parts = Vec::new();
 
-    // === STRATEGY 1: Recent trend (最简化的趋势) ===
+    // === STRATEGY 1: Recent trend ===
     // Instead of listing each execution, show the pattern
     if !memory.short_term.summaries.is_empty() {
         let last_3: Vec<_> = memory.short_term.summaries.iter().rev().take(3).collect();
@@ -307,17 +307,17 @@ pub(crate) fn compact_history_context(_history_context: &str, memory: &AgentMemo
 
         // Get most recent conclusion (most relevant)
         if let Some(latest) = last_3.first() {
-            // Ultra-compact: "最近: 3次执行, 2次成功, 最新结论: ..."
+            // Ultra-compact: "Recent: 3 runs, 2 success, latest: ..."
             parts.push(format!(
-                "最近{}次: {}成功, {}",
+                "Last{}: {}ok, {}",
                 total,
                 success_count,
-                truncate_to(&latest.conclusion, 30) // 只取前30字
+                truncate_to(&latest.conclusion, 30)
             ));
         }
     }
 
-    // === STRATEGY 2: Most important pattern (单一最重要模式) ===
+    // === STRATEGY 2: Most important pattern ===
     // Instead of all patterns, just show the highest confidence one
     let patterns = if !memory.long_term.patterns.is_empty() {
         &memory.long_term.patterns
@@ -331,16 +331,16 @@ pub(crate) fn compact_history_context(_history_context: &str, memory: &AgentMemo
                 .partial_cmp(&b.confidence)
                 .unwrap_or(std::cmp::Ordering::Equal)
         }) {
-            // Ultra-compact: "模式: 温度>30度告警 (80%)"
+            // Ultra-compact: "Pattern: temp>30 alert (80%)"
             parts.push(format!(
-                "模式: {} ({}%)",
+                "Pattern: {} ({}%)",
                 truncate_to(&best.description, 25),
                 (best.confidence * 100.0) as u32
             ));
         }
     }
 
-    // === STRATEGY 3: Key baseline (关键基线) ===
+    // === STRATEGY 3: Key baseline ===
     // Only show baselines that are relevant to common metrics
     if !memory.baselines.is_empty() {
         // Show at most 2 most relevant baselines
@@ -352,7 +352,7 @@ pub(crate) fn compact_history_context(_history_context: &str, memory: &AgentMemo
                 .map(|(k, v)| format!("{}={}", k, **v as i32))
                 .collect::<Vec<_>>()
                 .join(",");
-            parts.push(format!("基线: {}", baseline_str));
+            parts.push(format!("Baseline: {}", baseline_str));
         }
     }
 

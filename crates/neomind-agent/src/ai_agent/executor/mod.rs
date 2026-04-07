@@ -1165,6 +1165,28 @@ impl AgentExecutor {
                                     &backend.capabilities,
                                 )
                             }
+                            #[cfg(feature = "llamacpp")]
+                            LlmBackendType::LlamaCpp => {
+                                let endpoint = backend.endpoint.clone().unwrap_or_else(|| "http://127.0.0.1:8080".to_string());
+                                let timeout = Self::env_timeout_secs("LLAMACPP_TIMEOUT_SECS", 180);
+                                let config = crate::llm_backends::backends::llamacpp::LlamaCppConfig::new(&backend.model)
+                                    .with_endpoint(&endpoint)
+                                    .with_timeout_secs(timeout);
+                                crate::llm_backends::backends::llamacpp::LlamaCppRuntime::new(config)
+                                    .map(|rt| {
+                                        let rt = rt.with_capabilities_override(
+                                            backend.capabilities.supports_multimodal,
+                                            backend.capabilities.supports_thinking,
+                                            backend.capabilities.supports_tools,
+                                            backend.capabilities.max_context,
+                                        );
+                                        std::sync::Arc::new(rt) as std::sync::Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>
+                                    })
+                            }
+                            #[cfg(not(feature = "llamacpp"))]
+                            LlmBackendType::LlamaCpp => {
+                                Err(neomind_core::llm::backend::LlmError::BackendUnavailable("llama.cpp backend is not available (feature not enabled)".to_string()))
+                            }
                         };
 
                     match runtime {
@@ -1830,7 +1852,7 @@ impl AgentExecutor {
                 // Fallback to simple summary
                 let success_count = actions.iter().filter(|a| a.success).count();
                 return Ok(format!(
-                    "执行完成: 共 {} 轮, {} / {} 操作成功",
+                    "Execution complete: {} rounds, {} / {} actions succeeded",
                     chain_depth,
                     success_count,
                     actions.len()
@@ -1846,8 +1868,8 @@ impl AgentExecutor {
                     "- {} -> {}: {} ({})",
                     a.action_type,
                     a.target,
-                    if a.success { "成功" } else { "失败" },
-                    a.result.as_deref().unwrap_or("无结果").chars().take(100).collect::<String>()
+                    if a.success { "success" } else { "failed" },
+                    a.result.as_deref().unwrap_or("no result").chars().take(100).collect::<String>()
                 )
             })
             .collect();
@@ -1897,7 +1919,7 @@ impl AgentExecutor {
             Ok(output) => {
                 let conclusion = output.text.trim().to_string();
                 if conclusion.is_empty() {
-                    Ok(format!("执行完成: 共 {} 轮, 成功率 {:.0}%", chain_depth, success_rate * 100.0))
+                    Ok(format!("Execution complete: {} rounds, success rate {:.0}%", chain_depth, success_rate * 100.0))
                 } else {
                     Ok(conclusion)
                 }
@@ -1906,7 +1928,7 @@ impl AgentExecutor {
                 tracing::warn!(error = %e, "Failed to generate conclusion summary");
                 let success_count = actions.iter().filter(|a| a.success).count();
                 Ok(format!(
-                    "执行完成: 共 {} 轮, {} / {} 操作成功",
+                    "Execution complete: {} rounds, {} / {} actions succeeded",
                     chain_depth,
                     success_count,
                     actions.len()
@@ -2010,8 +2032,8 @@ impl AgentExecutor {
                 d.decision_type == "needs_more_data"
                     || d.action.to_lowercase().contains("continue")
                     || d.action.to_lowercase().contains("further")
-                    || d.action.to_lowercase().contains("下一步")
-                    || d.action.to_lowercase().contains("继续")
+                    || d.action.to_lowercase().contains("next step")
+                    || d.action.to_lowercase().contains("continue")
             });
 
             if !needs_more_work {
@@ -2044,7 +2066,7 @@ impl AgentExecutor {
             // Add chain info to situation analysis
             if chain_state.depth > 1 {
                 final_dp.situation_analysis = format!(
-                    "{}\n\n[工具链式调用: 共执行 {} 轮]",
+                    "{}\n\n[Tool chaining: {} rounds executed]",
                     final_dp.situation_analysis, chain_state.depth
                 );
             }
@@ -2072,13 +2094,13 @@ impl AgentExecutor {
                 let success_count = all_actions_executed.iter().filter(|a| a.success).count();
                 let total_count = all_actions_executed.len();
                 format!(
-                    "执行完成: 共 {} 轮, {} / {} 操作成功",
+                    "Execution complete: {} rounds, {} / {} actions succeeded",
                     chain_state.depth,
                     success_count,
                     total_count
                 )
             } else {
-                format!("执行完成: 共 {} 轮工具调用", chain_state.depth)
+                format!("Execution complete: {} tool call rounds", chain_state.depth)
             };
 
             DecisionProcess {
@@ -2195,7 +2217,7 @@ impl AgentExecutor {
         // Send thinking events for each data source collected
         for data in &data_collected {
             let desc = if event_data.is_some() {
-                format!("📡 收集 {}: {} 个数据点", data.source, data.data_type)
+                format!("Collecting {}: {} data points", data.source, data.data_type)
             } else {
                 format!("Collected data source: {}", data.source)
             };
