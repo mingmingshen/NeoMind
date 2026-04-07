@@ -160,6 +160,8 @@ pub use agents::{
     UserMessage,
     // Hierarchical memory types
     WorkingMemory,
+    // Execution mode
+    ExecutionMode,
 };
 
 pub use device_state::{

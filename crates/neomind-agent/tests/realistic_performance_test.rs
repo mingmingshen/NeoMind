@@ -13,8 +13,8 @@ use neomind_core::{
 };
 use neomind_storage::{
     AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
-    DataPoint, LongTermMemory, ResourceType, ScheduleType, ShortTermMemory, TimeSeriesStore,
-    WorkingMemory,
+    DataPoint, ExecutionMode, LongTermMemory, ResourceType, ScheduleType, ShortTermMemory,
+    TimeSeriesStore, WorkingMemory,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -151,6 +151,7 @@ impl RealPerfTestContext {
                 long_term: LongTermMemory::default(),
             },
             tool_config: None,
+            execution_mode: ExecutionMode::Chat,
             error_message: None,
             max_retries: 0,
             consecutive_failures: 0,
@@ -373,6 +374,7 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
             long_term: LongTermMemory::default(),
         },
         tool_config: None,
+        execution_mode: ExecutionMode::Chat,
         error_message: None,
             max_retries: 0,
             consecutive_failures: 0,

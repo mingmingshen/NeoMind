@@ -40,6 +40,7 @@ impl LlmProvider {
 /// 默认端点常量
 pub mod endpoints {
     pub const OLLAMA: &str = "http://localhost:11434";
+    pub const LLAMACPP: &str = "http://127.0.0.1:8080";
     pub const OPENAI: &str = "https://api.openai.com/v1";
     pub const ANTHROPIC: &str = "https://api.anthropic.com/v1";
     pub const GOOGLE: &str = "https://generativelanguage.googleapis.com";

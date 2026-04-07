@@ -365,6 +365,7 @@
       "deepseek": "DeepSeek",
       "glm": "GLM",
       "minimax": "MiniMax",
+      "llamacpp": "llama.cpp",
       "default": "Default Model"
     },
     "providerTypes": {

@@ -1075,7 +1075,7 @@ export default function MessagesPage() {
             <SheetClose asChild>
               <Button size="sm" className="gap-2">
                 <Check className="h-4 w-4" />
-                {t('common.apply')}
+                {t('apply')}
               </Button>
             </SheetClose>
           </div>

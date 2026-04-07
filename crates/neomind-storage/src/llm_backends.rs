@@ -253,6 +253,17 @@ impl LlmBackendInstance {
                     max_context: 128000,
                 },
             ),
+            LlmBackendType::LlamaCpp => (
+                Some("http://127.0.0.1:8080".to_string()),
+                "".to_string(), // Model loaded at server startup
+                BackendCapabilities {
+                    supports_streaming: true,
+                    supports_multimodal: false,
+                    supports_thinking: true,
+                    supports_tools: true,
+                    max_context: 4096,
+                },
+            ),
             LlmBackendType::MiniMax => (
                 Some("https://api.minimax.chat/v1".to_string()),
                 "abab6.5s-chat".to_string(),
@@ -292,6 +303,7 @@ impl LlmBackendInstance {
     /// Get the backend name as a string
     pub fn backend_name(&self) -> &'static str {
         match self.backend_type {
+            LlmBackendType::LlamaCpp => "llamacpp",
             LlmBackendType::Ollama => "ollama",
             LlmBackendType::OpenAi => "openai",
             LlmBackendType::Anthropic => "anthropic",
@@ -321,6 +333,13 @@ impl LlmBackendInstance {
     /// Get default capabilities for a backend type
     fn default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilities {
         match backend_type {
+            LlmBackendType::LlamaCpp => BackendCapabilities {
+                supports_streaming: true,
+                supports_multimodal: false,
+                supports_thinking: true,
+                supports_tools: true,
+                max_context: 4096,
+            },
             LlmBackendType::Ollama => BackendCapabilities {
                 supports_streaming: true,
                 supports_multimodal: true,
@@ -405,6 +424,12 @@ impl LlmBackendInstance {
             LlmBackendType::Ollama => {
                 if self.endpoint.as_ref().is_some_and(|e| e.is_empty()) {
                     return Err("Ollama endpoint must be specified".to_string());
+                }
+            }
+            LlmBackendType::LlamaCpp => {
+                // llama.cpp server — endpoint required, model optional (loaded at server startup)
+                if self.endpoint.as_ref().is_some_and(|e| e.is_empty()) {
+                    return Err("llama.cpp endpoint must be specified".to_string());
                 }
             }
             LlmBackendType::OpenAi

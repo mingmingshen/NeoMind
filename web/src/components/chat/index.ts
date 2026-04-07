@@ -27,6 +27,5 @@ export {
 // New chat components
 export { ChatContainer } from './ChatContainer'
 export { MergedMessageList } from './MergedMessageList'
-export { QuickActions } from './QuickActions'
 export { InputSuggestions } from './InputSuggestions'
 export { WelcomeArea } from './WelcomeArea'

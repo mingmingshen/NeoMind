@@ -290,6 +290,7 @@ export const PLUGIN_ICONS: Record<string, string> = {
   anthropic: 'BrainCircuit',
   google: 'Gem',
   xai: 'Zap',
+  llamacpp: 'Server',
 
   // Device Adapters
   builtin_mqtt: 'Server',

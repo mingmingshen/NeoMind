@@ -13,8 +13,8 @@ use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_core::{EventBus, MetricValue, NeoMindEvent};
 use neomind_storage::{
-    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, LongTermMemory,
-    ScheduleType, ShortTermMemory, WorkingMemory,
+    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, ExecutionMode,
+    LongTermMemory, ScheduleType, ShortTermMemory, WorkingMemory,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -229,6 +229,7 @@ impl LoadTestContext {
                 long_term: LongTermMemory::default(),
             },
             tool_config: None,
+            execution_mode: ExecutionMode::Chat,
             error_message: None,
             max_retries: 0,
             consecutive_failures: 0,

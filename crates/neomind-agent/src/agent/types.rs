@@ -810,6 +810,12 @@ pub enum LlmBackend {
         model: String,
         capabilities: Option<neomind_core::BackendCapabilities>,
     },
+    /// llama.cpp standalone server (local)
+    LlamaCpp {
+        endpoint: String,
+        model: String,
+        capabilities: Option<neomind_core::BackendCapabilities>,
+    },
 }
 
 #[cfg(test)]

@@ -229,7 +229,7 @@ pub async fn save_llm_config_handler(
     Json(req): Json<LlmConfigRequest>,
 ) -> Result<Json<serde_json::Value>, ErrorResponse> {
     // Validate provider
-    let valid_providers = ["ollama", "openai", "anthropic", "google", "xai"];
+    let valid_providers = ["ollama", "openai", "anthropic", "google", "xai", "llamacpp"];
     if !valid_providers.contains(&req.provider.as_str()) {
         return Err(ErrorResponse {
             status: StatusCode::BAD_REQUEST,
@@ -239,8 +239,8 @@ pub async fn save_llm_config_handler(
         });
     }
 
-    // Validate model
-    if req.model.is_empty() {
+    // Validate model (llama.cpp loads model at server startup, so model name is optional)
+    if req.model.is_empty() && req.provider != "llamacpp" {
         return Err(ErrorResponse {
             status: StatusCode::BAD_REQUEST,
             code: "INVALID_MODEL".to_string(),

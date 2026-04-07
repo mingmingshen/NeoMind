@@ -80,7 +80,7 @@ function mcSubscribe(email: string, username?: string): Promise<{ result: string
 }
 
 type SetupStep = 'welcome' | 'account' | 'timezone' | 'llm' | 'complete'
-type LlmProvider = 'ollama' | 'openai' | 'anthropic' | 'google' | 'xai'
+type LlmProvider = 'ollama' | 'openai' | 'anthropic' | 'google' | 'xai' | 'llamacpp'
 
 interface LlmProviderInfo {
   id: LlmProvider
@@ -120,6 +120,14 @@ const llmProviders: LlmProviderInfo[] = [
     description: 'Gemini models',
     defaultModel: 'gemini-1.5-flash',
     needsApiKey: true,
+  },
+  {
+    id: 'llamacpp',
+    name: 'llama.cpp',
+    description: 'Local LLM inference library',
+    defaultModel: '',
+    defaultEndpoint: 'http://localhost:8080',
+    needsApiKey: false,
   },
 ]
 
@@ -956,13 +964,13 @@ export function SetupPage() {
                     value={llmModel}
                     onChange={(e) => setLlmModel(e.target.value)}
                     placeholder={t('setup:modelPlaceholder')}
-                    required
+                    required={selectedProvider !== 'llamacpp'}
                     className="h-10 bg-background/70 dark:bg-background/30 border-border/50 dark:border-border/30 mt-1.5"
                   />
                 </div>
 
-                {/* Endpoint (for Ollama) */}
-                {selectedProvider === 'ollama' && (
+                {/* Endpoint (for Ollama and llama.cpp) */}
+                {(selectedProvider === 'ollama' || selectedProvider === 'llamacpp') && (
                   <div>
                     <Label htmlFor="endpoint" className="text-sm">{t('setup:endpoint')}</Label>
                     <Input
@@ -970,7 +978,7 @@ export function SetupPage() {
                       type="text"
                       value={llmEndpoint}
                       onChange={(e) => setLlmEndpoint(e.target.value)}
-                      placeholder="http://localhost:11434"
+                      placeholder={selectedProvider === 'llamacpp' ? 'http://localhost:8080' : 'http://localhost:11434'}
                       className="h-10 bg-background/70 dark:bg-background/30 border-border/50 dark:border-border/30 mt-1.5"
                     />
                   </div>

@@ -195,6 +195,17 @@ impl ConfigSource {
                     capabilities: None,
                 })
             }
+            LlmBackendType::LlamaCpp => {
+                let endpoint = settings
+                    .endpoint
+                    .unwrap_or_else(|| endpoints::LLAMACPP.to_string());
+                info!(category = "ai", backend = "llamacpp", endpoint = %endpoint, model = %settings.model, "DB config: llama.cpp");
+                Some(LlmBackend::LlamaCpp {
+                    endpoint,
+                    model: settings.model,
+                    capabilities: None,
+                })
+            }
         }
     }
 
@@ -395,7 +406,9 @@ impl LlmSettingsRequest {
             "qwen" => LlmBackendType::Qwen,
             "deepseek" => LlmBackendType::DeepSeek,
             "glm" => LlmBackendType::GLM,
+
             "minimax" => LlmBackendType::MiniMax,
+
             _ => LlmBackendType::Ollama, // default
         };
         let backend = LlmSettings {

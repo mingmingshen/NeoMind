@@ -79,6 +79,8 @@ static SETTINGS_STORE_SINGLETON: StdMutex<Option<Arc<SettingsStore>>> = StdMutex
 pub enum LlmBackendType {
     /// Ollama (local LLM runner).
     Ollama,
+    /// llama.cpp standalone server.
+    LlamaCpp,
     /// OpenAI API.
     OpenAi,
     /// Anthropic API.
@@ -194,6 +196,7 @@ impl LlmSettings {
     pub fn backend_name(&self) -> &'static str {
         match self.backend {
             LlmBackendType::Ollama => "ollama",
+            LlmBackendType::LlamaCpp => "llamacpp",
             LlmBackendType::OpenAi => "openai",
             LlmBackendType::Anthropic => "anthropic",
             LlmBackendType::Google => "google",
@@ -209,6 +212,7 @@ impl LlmSettings {
     pub fn from_backend_name(name: &str) -> Option<Self> {
         let backend = match name.to_lowercase().as_str() {
             "ollama" => LlmBackendType::Ollama,
+            "llamacpp" => LlmBackendType::LlamaCpp,
             "openai" => LlmBackendType::OpenAi,
             "anthropic" => LlmBackendType::Anthropic,
             "google" => LlmBackendType::Google,
@@ -838,6 +842,12 @@ impl SettingsStore {
                 // Ollama typically doesn't require an API key
                 if settings.endpoint.as_ref().is_some_and(|e| e.is_empty()) {
                     return Err("Ollama endpoint must be specified".to_string());
+                }
+            }
+            LlmBackendType::LlamaCpp => {
+                // llama.cpp standalone server — endpoint required, no API key needed
+                if settings.endpoint.as_ref().is_some_and(|e| e.is_empty()) {
+                    return Err("llama.cpp endpoint must be specified".to_string());
                 }
             }
             LlmBackendType::OpenAi

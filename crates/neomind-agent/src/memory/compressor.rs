@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 
 /// Default minimum entries before compression
-const DEFAULT_MIN_ENTRIES: usize = 10;
+const DEFAULT_MIN_ENTRIES: usize = 2;
 
 /// Result of compression operation
 #[derive(Debug, Clone, Default)]
@@ -248,27 +248,29 @@ impl MemoryCompressor {
         let today = chrono::Utc::now().format("%Y-%m-%d");
 
         format!(
-            r#"Compress the following memory entries for the {} category.
+            r#"Compress these memory entries for "{}". Merge redundant entries, keep unique facts. Max 120 chars per entry.
 
 ## Current Entries
 {}
 
-## Instructions
-1. Merge similar or redundant entries
-2. Keep unique, important information
-3. Remove entries with importance below {}
-4. Preserve timestamps (use today's date: {})
+## Rules
+1. **Merge** entries about the same topic into ONE concise fact
+2. **Drop** entries with importance below {}
+3. **Keep unique entries as-is** if they don't overlap with others
+4. Each output entry must be max 120 characters — split if needed
+5. Use today's date for merged entries: {}
 
-## Output Format (JSON only)
-{{"summaries":[{{"content":"merged content","importance":70}}]}}
+## Output Format (JSON only, no extra text)
+{{"summaries":[{{"content":"<one fact, max 120 chars>","importance":<number>}}]}}
 
-## Example
-If entries are:
+## Good Example
+Input:
 - [2026-04-01] User prefers Chinese [importance: 80]
-- [2026-04-01] User speaks Chinese [importance: 60]
+- [2026-04-02] User speaks Chinese [importance: 60]
+- [2026-04-03] User likes concise responses [importance: 70]
 
 Output:
-{{"summaries":[{{"content":"User prefers Chinese language","importance":80}}]}}
+{{"summaries":[{{"content":"User prefers Chinese language and concise responses","importance":80}}]}}
 
 Now generate the JSON response:"#,
             category.display_name(),
@@ -280,15 +282,23 @@ Now generate the JSON response:"#,
 
     /// Parse compression response from LLM
     fn parse_compression_response(&self, response: &str) -> Vec<CompressionSummary> {
+        // Strip markdown code fences
+        let cleaned = response
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+
         // Find JSON object
-        let start = match response.find('{') {
+        let start = match cleaned.find('{') {
             Some(s) => s,
             None => {
                 tracing::warn!("No JSON object found in compression response");
                 return Vec::new();
             }
         };
-        let end = match response.rfind('}') {
+        let end = match cleaned.rfind('}') {
             Some(e) => e,
             None => {
                 tracing::warn!("No closing brace in compression response");
@@ -296,7 +306,7 @@ Now generate the JSON response:"#,
             }
         };
 
-        let json = &response[start..=end];
+        let json = &cleaned[start..=end];
 
         match serde_json::from_str::<CompressionResponse>(json) {
             Ok(parsed) => parsed.summaries,

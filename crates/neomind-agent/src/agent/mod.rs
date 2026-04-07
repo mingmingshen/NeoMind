@@ -1044,6 +1044,47 @@ impl Agent {
                 )?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
+            #[cfg(feature = "llamacpp")]
+            LlmBackend::LlamaCpp {
+                endpoint,
+                model,
+                capabilities,
+            } => {
+                tracing::info!(
+                    endpoint = %endpoint, model = %model, timeout = ollama_timeout,
+                    capabilities = ?capabilities,
+                    "Creating LlamaCppRuntime"
+                );
+                let config = crate::llm_backends::backends::llamacpp::LlamaCppConfig::new(&model)
+                    .with_endpoint(&endpoint)
+                    .with_timeout_secs(ollama_timeout);
+                let mut runtime =
+                    crate::llm_backends::backends::llamacpp::LlamaCppRuntime::new(config)
+                        .map_err(|e| NeoMindError::llm(e.to_string()))?;
+
+                // Set capabilities override if provided
+                if let Some(caps) = capabilities {
+                    tracing::debug!(
+                        multimodal = %caps.multimodal,
+                        thinking_display = %caps.thinking_display,
+                        function_calling = %caps.function_calling,
+                        max_context = %caps.max_context.unwrap_or(4096),
+                        "Applying capabilities override to LlamaCppRuntime"
+                    );
+                    runtime = runtime.with_capabilities_override(
+                        caps.multimodal,
+                        caps.thinking_display,
+                        caps.function_calling,
+                        caps.max_context.unwrap_or(4096),
+                    );
+                }
+
+                (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
+            }
+            #[cfg(not(feature = "llamacpp"))]
+            LlmBackend::LlamaCpp { .. } => {
+                return Err(NeoMindError::llm("llama.cpp backend is not available (feature not enabled)".to_string()));
+            }
         };
 
         // Update model override

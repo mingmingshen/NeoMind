@@ -10,11 +10,12 @@ repository.workspace = true
 default = ["ollama", "cloud"]
 ollama = []
 cloud = []
+llamacpp = []
 openai = ["cloud"]
 anthropic = ["cloud"]
 google = ["cloud"]
 xai = ["cloud"]
-all = ["ollama", "cloud", "openai", "anthropic", "google", "xai"]
+all = ["ollama", "cloud", "llamacpp", "openai", "anthropic", "google", "xai"]
 
 [dependencies]
 neomind-core = { path = "../neomind-core" }

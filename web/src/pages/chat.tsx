@@ -18,7 +18,6 @@ import { WelcomeArea } from "@/components/chat/WelcomeArea"
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage"
 import { ThinkingBlock } from "@/components/chat/ThinkingBlock"
 import { ToolCallVisualization } from "@/components/chat/ToolCallVisualization"
-import { QuickActions } from "@/components/chat/QuickActions"
 import { ConnectionStatus } from "@/components/chat/ConnectionStatus"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ws, type ConnectionState } from "@/lib/websocket"
@@ -971,10 +970,6 @@ export function ChatPage() {
                       )}
                       </div>
                     </div>
-
-                    {message.role === "assistant" && (
-                      <QuickActions message={message} onActionClick={handleQuickAction} />
-                    )}
 
                     <p className="text-xs text-muted-foreground mt-1 px-1">
                       {formatTimestamp(message.timestamp, false)}

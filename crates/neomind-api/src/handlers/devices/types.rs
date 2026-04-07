@@ -526,6 +526,17 @@ fn instance_to_runtime(instance: &LlmBackendInstance) -> Result<Arc<dyn LlmRunti
                 .map(|runtime| Arc::new(runtime) as Arc<dyn LlmRuntime>)
                 .map_err(|e| format!("Failed to create MiniMax runtime: {}", e))
         }
+        LlmBackendType::LlamaCpp => {
+            neomind_agent::llm_backends::create_backend(
+                "llamacpp",
+                &serde_json::json!({
+                    "endpoint": instance.endpoint.clone().unwrap_or_else(|| "http://127.0.0.1:8080".to_string()),
+                    "model": instance.model.clone(),
+                    "timeout_secs": 180,
+                }),
+            )
+            .map_err(|e| format!("Failed to create llama.cpp runtime: {}", e))
+        }
     }
 }
 

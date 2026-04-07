@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.6.4] - 2025-04-06
+
+### Fixed
+
+- **Memory Scheduler Auto-Start** — Fixed memory scheduler never starting when LLM backend becomes available after server startup. Replaced one-shot startup attempt with background retry task that polls every 30 seconds for LLM runtime availability. Added idempotency protection to prevent duplicate scheduler instances.
+
+---
+
 ## [v0.6.3] - 2025-04-03
 
 ### Overview

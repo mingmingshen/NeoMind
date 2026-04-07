@@ -21,6 +21,9 @@ pub mod tokenizer;
 // (actual instantiation requires appropriate feature)
 pub use backends::ollama::{OllamaConfig, OllamaRuntime};
 
+#[cfg(feature = "llamacpp")]
+pub use backends::llamacpp::{LlamaCppConfig, LlamaCppRuntime};
+
 #[cfg(feature = "cloud")]
 pub use backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
 

@@ -18,7 +18,7 @@ import { confirm } from "@/hooks/use-confirm"
 import { useEvents } from "@/hooks/useEvents"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useIsMobile } from "@/hooks/useMobile"
-import { Loader2, Bot, Plus, Brain, Cpu, RefreshCw, Settings, Sparkles, Archive, Zap } from "lucide-react"
+import { Loader2, Bot, Plus, Brain, Cpu, RefreshCw, Settings, Sparkles, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/shared/EmptyState"
 import type { AiAgent, AiAgentDetail, Extension, ExtensionDataSourceInfo, TransformDataSourceInfo } from "@/types"
@@ -81,13 +81,10 @@ export function AgentsPage() {
   const [loading, setLoading] = useState(false)
   const [memoryRefreshKey, setMemoryRefreshKey] = useState(0)
   const [isExtracting, setIsExtracting] = useState(false)
-  const [isCompressing, setIsCompressing] = useState(false)
   const memoryPanelRef = useRef<{
     openConfig: () => void
     triggerExtract: () => void
-    triggerCompress: () => void
     isExtracting: boolean
-    isCompressing: boolean
   }>(null)
 
   // Track executing agents for real-time updates with timestamps for timeout
@@ -450,16 +447,6 @@ export function AgentsPage() {
     }
   }, [isExtracting])
 
-  const handleTriggerCompress = useCallback(async () => {
-    if (isCompressing) return
-    setIsCompressing(true)
-    try {
-      await memoryPanelRef.current?.triggerCompress()
-    } finally {
-      setIsCompressing(false)
-    }
-  }, [isCompressing])
-
   const tabs = [
     { value: 'agents', label: tAgent('tabs.agents'), icon: <Cpu className="h-4 w-4" /> },
     { value: 'memory', label: tAgent('tabs.memory'), icon: <Brain className="h-4 w-4" /> },
@@ -470,9 +457,8 @@ export function AgentsPage() {
     : activeTab === 'memory'
     ? [
         { label: tAgent('systemMemory.config.title', 'Config'), icon: <Settings className="h-4 w-4" />, onClick: () => memoryPanelRef.current?.openConfig() },
-        { label: tAgent('systemMemory.extract', 'Extract'), icon: isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />, onClick: handleTriggerExtract, loading: isExtracting, disabled: isExtracting || isCompressing },
-        { label: tAgent('systemMemory.compress', 'Compress'), icon: isCompressing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />, onClick: handleTriggerCompress, loading: isCompressing, disabled: isExtracting || isCompressing },
-        { label: tCommon('refresh'), icon: <RefreshCw className="h-4 w-4" />, onClick: () => setMemoryRefreshKey(k => k + 1), disabled: isExtracting || isCompressing },
+        { label: tAgent('systemMemory.extract', 'Extract'), icon: isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />, onClick: handleTriggerExtract, loading: isExtracting, disabled: isExtracting },
+        { label: tCommon('refresh'), icon: <RefreshCw className="h-4 w-4" />, onClick: () => setMemoryRefreshKey(k => k + 1), disabled: isExtracting },
       ]
     : []
 

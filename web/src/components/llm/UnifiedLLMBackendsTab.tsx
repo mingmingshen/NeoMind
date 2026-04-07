@@ -77,6 +77,10 @@ const LLM_PROVIDER_CONFIG: Record<string, {
     icon: <Server className="h-6 w-6" />,
     iconBg: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400',
   },
+  llamacpp: {
+    icon: <Server className="h-6 w-6" />,
+    iconBg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  },
 }
 
 /**

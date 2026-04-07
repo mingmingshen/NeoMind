@@ -240,23 +240,28 @@ impl MemoryEntry {
     }
 
     /// Format as markdown list item
+    ///
+    /// Format: `- [date] content [importance: N]`
     pub fn to_markdown(&self) -> String {
         let date = DateTime::from_timestamp(self.created_at, 0)
             .map(|dt| dt.format("%Y-%m-%d").to_string())
             .unwrap_or_else(|| "Unknown".to_string());
         format!(
-            "- {}: {} [importance: {}]",
+            "- [{}] {} [importance: {}]",
             date, self.content, self.importance
         )
     }
 
     /// Parse from markdown line
+    ///
+    /// Supports two formats:
+    /// - New: `- [2026-04-01] Content here [importance: 80]`
+    /// - Legacy: `- 2026-04-01: Content here [importance: 80]`
     pub fn from_markdown(
         line: &str,
         category: MemoryCategory,
         source: MemorySource,
     ) -> Option<Self> {
-        // Format: "- 2026-04-01: Content here [importance: 80]"
         let line = line.trim();
         if !line.starts_with('-') {
             return None;
@@ -264,11 +269,10 @@ impl MemoryEntry {
 
         let line = line[1..].trim();
 
-        // Extract importance
+        // Extract importance from trailing [importance: N]
         let (content, importance) = if let Some(idx) = line.rfind("[importance:") {
             let content_part = line[..idx].trim();
             let importance_part = &line[idx..];
-            // Extract number from "[importance: 80]"
             let importance = importance_part
                 .strip_prefix("[importance:")
                 .and_then(|s| s.strip_suffix(']'))
@@ -279,8 +283,16 @@ impl MemoryEntry {
             (line, 50)
         };
 
-        // Extract date and content
-        let content = if let Some(colon_idx) = content.find(':') {
+        // Extract content, handling both new `[date] content` and legacy `date: content`
+        let content = if let Some(rest) = content.strip_prefix('[') {
+            // New format: [2026-04-01] content
+            if let Some(bracket_end) = rest.find(']') {
+                rest[bracket_end + 1..].trim().to_string()
+            } else {
+                content.to_string()
+            }
+        } else if let Some(colon_idx) = content.find(':') {
+            // Legacy format: 2026-04-01: content
             content[colon_idx + 1..].trim().to_string()
         } else {
             content.to_string()
@@ -342,6 +354,21 @@ pub struct MemoryFileInfo {
 }
 
 /// Markdown-based memory store
+///
+/// This store provides two separate APIs that operate on different file sets:
+///
+/// 1. **Category API** (`read_category`/`write_category`): New simplified system.
+///    Stores data in 4 flat files: `user_profile.md`, `domain_knowledge.md`,
+///    `task_patterns.md`, `system_evolution.md`. Used by the extraction and
+///    compression pipeline (`MemoryExtractor`, `MemoryCompressor`).
+///
+/// 2. **File/Source API** (`read`/`append`/`write`): Legacy per-source system.
+///    Stores data in `system.md`, `agents/{id}.md`, `chat/{id}.md` with
+///    section headers (`## User Profile`, etc.). Used by the legacy UI and
+///    per-source memory management.
+///
+/// These two APIs are **independent** and do not sync with each other.
+/// The extraction pipeline writes to category files only.
 #[derive(Debug, Clone)]
 pub struct MarkdownMemoryStore {
     /// Base path for memory files

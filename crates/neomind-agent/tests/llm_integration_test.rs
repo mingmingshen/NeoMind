@@ -10,8 +10,8 @@ use neomind_agent::{OllamaConfig, OllamaRuntime};
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_core::EventBus;
 use neomind_storage::{
-    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, LongTermMemory,
-    ScheduleType, ShortTermMemory, WorkingMemory,
+    AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, ExecutionMode,
+    LongTermMemory, ScheduleType, ShortTermMemory, WorkingMemory,
 };
 use std::sync::Arc;
 
@@ -106,6 +106,7 @@ impl LlmTestContext {
             conversation_summary: None,
             context_window_size: 5,
             tool_config: None,
+            execution_mode: ExecutionMode::Chat,
             error_message: None,
             max_retries: 0,
             consecutive_failures: 0,

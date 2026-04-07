@@ -6,7 +6,7 @@ use neomind_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use neomind_core::EventBus;
 use neomind_storage::{
     AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent, ConversationTurn,
-    LongTermMemory, ScheduleType, ShortTermMemory, WorkingMemory,
+    ExecutionMode, LongTermMemory, ScheduleType, ShortTermMemory, WorkingMemory,
 };
 use std::sync::Arc;
 
@@ -85,6 +85,7 @@ impl TestContext {
                 long_term: LongTermMemory::default(),
             },
             tool_config: None,
+            execution_mode: ExecutionMode::Chat,
             error_message: None,
             max_retries: 0,
             consecutive_failures: 0,

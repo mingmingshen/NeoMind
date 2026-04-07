@@ -12,6 +12,12 @@ pub mod ollama;
 #[cfg(feature = "ollama")]
 pub use ollama::{OllamaConfig, OllamaRuntime};
 
+// llama.cpp standalone server backend
+#[cfg(feature = "llamacpp")]
+pub mod llamacpp;
+#[cfg(feature = "llamacpp")]
+pub use llamacpp::{LlamaCppConfig, LlamaCppRuntime};
+
 // OpenAI-compatible cloud backends (OpenAI, Anthropic, Google, xAI, etc.)
 #[cfg(feature = "cloud")]
 pub mod openai;
@@ -50,6 +56,13 @@ pub fn create_backend(
             let cfg: OllamaConfig = serde_json::from_value(config.clone())
                 .map_err(|e| anyhow::anyhow!("Invalid Ollama config: {}", e))?;
             Ok(std::sync::Arc::new(OllamaRuntime::new(cfg)?))
+        }
+
+        #[cfg(feature = "llamacpp")]
+        "llamacpp" => {
+            let cfg: LlamaCppConfig = serde_json::from_value(config.clone())
+                .map_err(|e| anyhow::anyhow!("Invalid llama.cpp config: {}", e))?;
+            Ok(std::sync::Arc::new(LlamaCppRuntime::new(cfg)?))
         }
 
         #[cfg(feature = "cloud")]
@@ -126,6 +139,9 @@ pub fn available_backends() -> Vec<&'static str> {
 
     #[cfg(feature = "ollama")]
     backends.push("ollama");
+
+    #[cfg(feature = "llamacpp")]
+    backends.push("llamacpp");
 
     #[cfg(feature = "cloud")]
     backends.push("openai");

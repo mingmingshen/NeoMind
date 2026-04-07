@@ -39,6 +39,7 @@ impl BackendId {
     pub const CANDLE: &'static str = "candle";
     pub const HAILO: &'static str = "hailo";
     pub const MOCK: &'static str = "mock";
+    pub const LLAMACPP: &'static str = "llamacpp";
 }
 
 impl AsRef<str> for BackendId {

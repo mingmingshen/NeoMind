@@ -2,7 +2,6 @@ import React from "react"
 import { type Message, type UserInfo } from "@/types"
 import { ThinkingBlock } from "./ThinkingBlock"
 import { ToolCallVisualization } from "./ToolCallVisualization"
-import { QuickActions } from "./QuickActions"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { formatTimestamp } from "@/lib/utils/format"
@@ -58,14 +57,6 @@ export const MessageItem = React.memo<MessageItemProps>(
               <MarkdownMessage content={message.content} variant={message.role as 'user' | 'assistant'} />
             )}
           </div>
-
-          {/* Quick actions for assistant messages */}
-          {message.role === "assistant" && (
-            <QuickActions
-              message={message}
-              onActionClick={() => {}}
-            />
-          )}
 
           {/* Timestamp */}
           <p className="text-xs text-muted-foreground mt-1 px-1">

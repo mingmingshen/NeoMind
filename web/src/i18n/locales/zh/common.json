@@ -361,6 +361,7 @@
       "deepseek": "DeepSeek",
       "glm": "智谱 GLM",
       "minimax": "MiniMax",
+      "llamacpp": "llama.cpp",
       "default": "默认模型"
     },
     "providerTypes": {

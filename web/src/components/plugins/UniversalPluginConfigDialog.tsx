@@ -207,6 +207,13 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
             supports_tools: true,
             max_context: 128000,
           })
+        } else if (pluginType.id === "llamacpp") {
+          setDetectedCapabilities({
+            supports_multimodal: false,
+            supports_thinking: true,
+            supports_tools: true,
+            max_context: 4096,
+          })
         } else {
           setDetectedCapabilities({
             supports_multimodal: false,

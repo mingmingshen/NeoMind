@@ -62,11 +62,21 @@ impl AgentState {
         }
     }
 
-    /// Start the memory scheduler with LLM runtime
+    /// Start the memory scheduler with LLM runtime.
+    /// Idempotent: if a scheduler is already running, returns Ok without creating a duplicate.
     pub async fn start_memory_scheduler(
         &self,
         llm: Arc<dyn LlmRuntime>,
     ) -> Result<(), String> {
+        // Idempotency check — avoid spawning duplicate background tasks
+        {
+            let guard = self.memory_scheduler.read().await;
+            if guard.is_some() {
+                tracing::debug!("Memory scheduler already running, skipping");
+                return Ok(());
+            }
+        }
+
         let config = MemoryConfig::load();
 
         if !config.enabled {

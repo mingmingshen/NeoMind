@@ -31,8 +31,8 @@ use neomind_core::{EventBus, MetricValue, NeoMindEvent};
 use neomind_messages::{MessageManager, MessageSeverity};
 use neomind_storage::{
     AgentMemory, AgentResource, AgentSchedule, AgentStats, AgentStatus, AgentStore, AiAgent,
-    DataPoint, LongTermMemory, ResourceType, ScheduleType, ShortTermMemory, TimeSeriesStore,
-    WorkingMemory,
+    DataPoint, ExecutionMode, LongTermMemory, ResourceType, ScheduleType, ShortTermMemory,
+    TimeSeriesStore, WorkingMemory,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -195,6 +195,7 @@ impl SimulationContext {
                 short_term: ShortTermMemory::default(),
                 long_term: LongTermMemory::default(),
             },
+            execution_mode: ExecutionMode::Chat,
             error_message: None,
             max_retries: 0,
             consecutive_failures: 0,

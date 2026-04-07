@@ -156,13 +156,12 @@ export function SessionSidebar({
       onClose()
     }
 
-    // Only switch if it's a different session
-    if (sessionId !== currentSessionId) {
-      // Navigate first - this will trigger URL-based session loading
-      // The chat page will handle calling switchSession via its useEffect
-      // This prevents double-switching and eliminates UI flicker
-      navigate(`/chat/${sessionId}`)
-    }
+    // Always navigate - React Router is a no-op for same-URL navigation.
+    // This fixes the case where the store's sessionId matches but the URL
+    // is /chat (no sessionId), which makes the session unclickable.
+    // The chat page handles calling switchSession via its URL-based useEffect,
+    // which guards against redundant loading.
+    navigate(`/chat/${sessionId}`)
   }
 
   // Handle delete session - show confirmation first

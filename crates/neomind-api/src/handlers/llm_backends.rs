@@ -690,6 +690,18 @@ pub async fn activate_backend_handler(
                 capabilities,
             }
         }
+        LlmBackendType::LlamaCpp => {
+            let endpoint = instance
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "http://127.0.0.1:8080".to_string());
+            let model = instance.model.clone();
+            LlmBackend::LlamaCpp {
+                endpoint,
+                model,
+                capabilities,
+            }
+        }
     };
 
     // Update existing chat sessions and set as default for new sessions.
@@ -758,6 +770,12 @@ pub async fn activate_backend_handler(
             model: instance.model.clone(),
             endpoint: instance.endpoint.clone(),
             api_key: instance.api_key.clone(),
+        },
+        LlmBackendType::LlamaCpp => crate::config::LlmSettingsRequest {
+            backend: "llamacpp".to_string(),
+            model: instance.model.clone(),
+            endpoint: instance.endpoint.clone(),
+            api_key: None,
         },
     };
 
@@ -1283,6 +1301,13 @@ fn get_default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilitie
             supports_thinking: false,
             supports_tools: true,
             max_context: 512000,
+        },
+        LlmBackendType::LlamaCpp => BackendCapabilities {
+            supports_streaming: true,
+            supports_multimodal: false,
+            supports_thinking: true,
+            supports_tools: true,
+            max_context: 4096,
         },
     }
 }

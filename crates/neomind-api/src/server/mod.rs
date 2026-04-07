@@ -107,17 +107,60 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     state.init_agent_events().await;
     startup.service("AI Agent events", ServiceStatus::Started);
 
-    // Start memory scheduler if LLM runtime is available
-    if let Ok(instance_manager) = neomind_agent::get_instance_manager() {
-        if let Ok(runtime) = instance_manager.get_active_runtime().await {
-            if let Err(e) = state.agents.start_memory_scheduler(runtime).await {
-                tracing::warn!(category = "memory", error = %e, "Failed to start memory scheduler on startup");
-            } else {
-                startup.service("Memory scheduler", ServiceStatus::Started);
+    // Start memory scheduler — spawns a background retry task that polls
+    // for LLM runtime availability. This ensures the scheduler starts even
+    // when the LLM backend becomes ready after the server has started.
+    {
+        let agents_state = state.agents.clone();
+        tokio::spawn(async move {
+            let mut retry_interval = tokio::time::interval(Duration::from_secs(30));
+            let mut attempts = 0u32;
+
+            loop {
+                retry_interval.tick().await;
+
+                let Ok(instance_manager) = neomind_agent::get_instance_manager() else {
+                    attempts += 1;
+                    if attempts % 10 == 1 {
+                        tracing::info!(
+                            attempts = attempts,
+                            "Waiting for LLM instance manager to initialize memory scheduler"
+                        );
+                    }
+                    continue;
+                };
+
+                let Ok(runtime) = instance_manager.get_active_runtime().await else {
+                    attempts += 1;
+                    if attempts % 10 == 1 {
+                        tracing::info!(
+                            attempts = attempts,
+                            "Waiting for LLM runtime to start memory scheduler"
+                        );
+                    }
+                    continue;
+                };
+
+                match agents_state.start_memory_scheduler(runtime).await {
+                    Ok(()) => {
+                        tracing::info!(
+                            category = "memory",
+                            "Memory scheduler started (attempt {})",
+                            attempts + 1
+                        );
+                        break; // Scheduler is running, no need to retry
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            category = "memory",
+                            error = %e,
+                            "Failed to start memory scheduler, will retry"
+                        );
+                        attempts += 1;
+                    }
+                }
             }
-        }
-    } else {
-        tracing::info!("No LLM runtime available yet, memory scheduler will start when LLM backend is added");
+        });
     }
 
     // Configuration phase

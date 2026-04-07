@@ -506,6 +506,17 @@ impl LlmBackendInstanceManager {
                 supports_thinking: false,
                 supports_multimodal: false,
             },
+            BackendTypeDefinition {
+                id: "llamacpp".to_string(),
+                name: "llama.cpp".to_string(),
+                description: "llama.cpp local LLM inference server".to_string(),
+                default_model: String::new(),
+                default_endpoint: Some("http://127.0.0.1:8080".to_string()),
+                requires_api_key: false,
+                supports_streaming: true,
+                supports_thinking: true,
+                supports_multimodal: false,
+            },
         ]
     }
 
@@ -542,7 +553,7 @@ impl LlmBackendInstanceManager {
                 "backend_type": {
                     "type": "string",
                     "title": "后端类型",
-                    "enum": ["ollama", "openai", "anthropic", "google", "xai", "qwen", "deepseek", "glm", "minimax"],
+                    "enum": ["ollama", "openai", "anthropic", "google", "xai", "qwen", "deepseek", "glm", "minimax", "llamacpp"],
                     "default": backend_type,
                 },
                 "endpoint": {
@@ -555,6 +566,7 @@ impl LlmBackendInstanceManager {
                         "anthropic" => "https://api.anthropic.com/v1",
                         "google" => "https://generativelanguage.googleapis.com/v1beta",
                         "xai" => "https://api.x.ai/v1",
+                        "llamacpp" => "http://127.0.0.1:8080",
                         _ => "",
                     },
                 },

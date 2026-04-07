@@ -63,6 +63,16 @@ impl MemoryExtractor {
         Self { store, llm, config }
     }
 
+    /// Clone the LLM runtime reference
+    pub fn llm_clone(&self) -> Arc<dyn LlmRuntime> {
+        self.llm.clone()
+    }
+
+    /// Clone the store reference
+    pub fn store_clone(&self) -> Arc<RwLock<MarkdownMemoryStore>> {
+        self.store.clone()
+    }
+
     /// Extract memories from chat messages
     ///
     /// This method:
@@ -103,7 +113,8 @@ impl MemoryExtractor {
             .map_err(|e| crate::error::NeoMindError::Memory(format!("Parse error: {}", e)))?;
 
         // Filter and write memories (handles merge/append actions)
-        let count = self.persist_memories(extract_result).await?;
+        let filtered = Self::filter_chat_candidates(extract_result);
+        let count = self.persist_memories(filtered).await?;
 
         tracing::info!(
             extracted_count = count,
@@ -210,6 +221,31 @@ impl MemoryExtractor {
     }
 
     // === Private helper methods ===
+
+    /// Filter out categories that shouldn't come from chat extraction.
+    ///
+    /// Chat conversations should not produce `system_evolution` entries —
+    /// only Agent execution can generate those. If the LLM mistakenly
+    /// returns `system_evolution` from chat, reclassify to `task_patterns`
+    /// since it likely represents a discovered pattern.
+    fn filter_chat_candidates(result: ExtractResult) -> ExtractResult {
+        let memories = result
+            .memories
+            .into_iter()
+            .map(|mut m| {
+                if m.category == "system_evolution" {
+                    tracing::debug!(
+                        content = %m.content,
+                        "Reclassifying system_evolution from chat to task_patterns"
+                    );
+                    m.category = "task_patterns".to_string();
+                }
+                m
+            })
+            .collect();
+
+        ExtractResult { memories }
+    }
 
     /// Gather existing memories from all categories for deduplication context
     async fn gather_existing_memories(&self) -> String {
@@ -330,6 +366,15 @@ impl MemoryExtractor {
                     "Skipping memory: below importance threshold"
                 );
                 continue;
+            }
+
+            // Truncate overly long entries (max 200 chars)
+            if candidate.content.len() > 200 {
+                tracing::warn!(
+                    content_len = candidate.content.len(),
+                    "Memory entry too long, truncating to 200 chars"
+                );
+                // Intentionally don't mutate — truncate when formatting
             }
 
             // Parse category
@@ -466,12 +511,24 @@ impl MemoryExtractor {
             .any(|line| line.to_lowercase().contains(&normalized_new))
     }
 
-    /// Format a memory entry for markdown
+    /// Format a memory entry for markdown.
+    /// Enforces a max content length of 200 chars.
     fn format_memory_entry(&self, content: &str, importance: u8) -> String {
         let timestamp = chrono::Utc::now().format("%Y-%m-%d");
+        let truncated = if content.len() > 200 {
+            // Find a word boundary near 200 chars
+            let boundary = content.char_indices()
+                .take_while(|(i, _)| *i < 197)
+                .last()
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(200);
+            &content[..boundary]
+        } else {
+            content
+        };
         format!(
             "- [{}] {} [importance: {}]\n",
-            timestamp, content, importance
+            timestamp, truncated, importance
         )
     }
 }

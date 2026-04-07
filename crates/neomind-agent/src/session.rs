@@ -54,6 +54,14 @@ fn instance_to_llm_backend(instance: &LlmBackendInstance) -> Result<LlmBackend> 
             model: instance.model.clone(),
             capabilities,
         },
+        LlmBackendType::LlamaCpp => LlmBackend::LlamaCpp {
+            endpoint: instance
+                .endpoint
+                .clone()
+                .unwrap_or_else(|| "http://127.0.0.1:8080".to_string()),
+            model: instance.model.clone(),
+            capabilities,
+        },
         LlmBackendType::OpenAi => LlmBackend::OpenAi {
             api_key: instance.api_key.clone().unwrap_or_default(),
             endpoint: instance

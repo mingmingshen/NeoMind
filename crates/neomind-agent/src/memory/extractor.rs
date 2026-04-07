@@ -6,6 +6,11 @@
 use neomind_storage::MemoryCategory;
 use serde::{Deserialize, Serialize};
 
+/// Default importance when LLM omits the field
+const fn default_importance() -> u8 {
+    50
+}
+
 /// Action to take when persisting a memory
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -29,8 +34,8 @@ pub struct MemoryCandidate {
     pub content: String,
     /// Target category
     pub category: String,
-    /// Importance score (0-100)
-    #[serde(default)]
+    /// Importance score (0-100), defaults to 50 when LLM omits it
+    #[serde(default = "default_importance")]
     pub importance: u8,
     /// Action to take (append or merge with existing)
     #[serde(default)]
@@ -57,7 +62,7 @@ impl ChatExtractor {
         };
 
         format!(
-            r#"Analyze the following conversation and extract valuable memories.
+            r#"Extract LONG-TERM memories from the conversation. Each memory must be ONE atomic fact (max 120 chars).
 
 ## Conversation
 {}
@@ -65,28 +70,33 @@ impl ChatExtractor {
 ## Existing Memories
 {}
 
-## Output Format (JSON only)
-{{"memories":[{{"content":"concise content","category":"user_profile|domain_knowledge|task_patterns","importance":50,"action":"append|merge"}},{{"content":"merged content","category":"...","importance":50,"action":{{"merge":{{"targets":["keyword1","keyword2"]}}}}}}]}}
+## Output Format (JSON only, no extra text)
+{{"memories":[{{"content":"<one fact, max 120 chars>","category":"<category>","importance":<0-100>,"action":"<append|merge>"}}]}}
 
-## CRITICAL Rules for Deduplication
-1. **CHECK EXISTING MEMORIES FIRST** - Before extracting, check if similar info already exists
-2. **MERGE when similar** - If new info relates to existing memory, use "action": {{"merge": {{"targets": ["unique keyword from existing memory"]}}}}
-3. **APPEND only when truly new** - Use "action": "append" only for genuinely new information
-4. **Be CONCISE** - Each memory should be ONE clear fact, not redundant details
+## Categories
+- user_profile: User preferences, habits, personal settings
+- domain_knowledge: Device info, protocols, environment facts
+- task_patterns: Successful approaches, common workflows
 
-## Content Rules
-- Skip small talk and greetings
-- Only extract information with long-term value
-- importance range: 0-100, higher means more important
-- Write content in English by default, but adapt to user's preferred language if detected
-- Categories:
-  - user_profile: User preferences, habits, settings
-  - domain_knowledge: Device info, protocols, environment facts
-  - task_patterns: Successful approaches, common workflows
+## Rules
+1. **ONE fact per entry**, max 120 characters. Never dump paragraphs.
+2. **Check existing first** — if similar info exists, use merge with targets:
+   "action": {{"merge": {{"targets": ["<keyword from existing>"]}}}}
+3. **Append only truly new info** — skip anything already covered
+4. **Skip**: greetings, small talk, temporary states, questions without answers
+5. **Importance**: 80-100 = critical/preference, 50-79 = useful, below 50 = minor context
+6. **Language**: match the user's detected language
 
-## Examples
-- If existing: "User has 2 IoT devices" and new info: "User's devices have 80% battery" → MERGE: "User has 2 IoT devices with battery levels at 80% and 70%"
-- If existing: "User prefers Chinese" and new info: "User likes Chinese food" → APPEND (different topics)
+## Good Examples
+Input: "I always want the lights dimmed after 9pm"
+→ {{"content":"Lights should be dimmed after 9pm","category":"user_profile","importance":85,"action":"append"}}
+
+Input: "My living room sensor reads 25°C" (existing: "Living room sensor reads 24°C")
+→ {{"content":"Living room sensor typically reads 24-25°C","category":"domain_knowledge","importance":60,"action":{{"merge":{{"targets":["Living room sensor"]}}}}}}
+
+## Bad Examples (DO NOT do this)
+- "The user has several IoT devices including temperature sensors, motion detectors, and smart lights in the living room and bedroom" (TOO LONG, should be split)
+- "User says hi" (no long-term value)
 "#,
             messages, existing_section
         )
@@ -94,10 +104,18 @@ impl ChatExtractor {
 
     /// Parse LLM response into ExtractResult
     pub fn parse_response(response: &str) -> Result<ExtractResult, String> {
+        // Strip markdown code fences (e.g., ```json ... ```)
+        let cleaned = response
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+
         // Find JSON object
-        let start = response.find('{').ok_or("No JSON object found")?;
-        let end = response.rfind('}').ok_or("No closing brace found")?;
-        let json = &response[start..=end];
+        let start = cleaned.find('{').ok_or("No JSON object found")?;
+        let end = cleaned.rfind('}').ok_or("No closing brace found")?;
+        let json = &cleaned[start..=end];
         serde_json::from_str(json).map_err(|e| format!("JSON parse error: {}", e))
     }
 }
@@ -121,14 +139,10 @@ impl AgentExtractor {
         };
 
         format!(
-            r#"Analyze the agent execution log and extract valuable memories.
+            r#"Extract LONG-TERM memories from this agent execution. Each memory must be ONE atomic fact (max 120 chars).
 
-## Agent Name
-{}
-
-## User Intent (Prompt)
-{}
-
+## Agent: {}
+## User Intent: {}
 ## Execution Process
 {}
 
@@ -138,26 +152,31 @@ impl AgentExtractor {
 ## Existing Memories
 {}
 
-## Output Format (JSON only)
-{{"memories":[{{"content":"concise content","category":"user_profile|domain_knowledge|task_patterns|system_evolution","importance":50,"action":"append"}},{{"content":"merged content","category":"...","importance":50,"action":{{"merge":{{"targets":["keyword1"]}}}}}}]}}
+## Output Format (JSON only, no extra text)
+{{"memories":[{{"content":"<one fact, max 120 chars>","category":"<category>","importance":<0-100>,"action":"<append|merge>"}}]}}
 
-## CRITICAL Rules for Deduplication
-1. **CHECK EXISTING MEMORIES FIRST** - Before extracting, check if similar info already exists
-2. **MERGE when similar** - If new info relates to existing memory, use "action": {{"merge": {{"targets": ["unique keyword from existing memory"]}}}}
-3. **APPEND only when truly new** - Use "action": "append" only for genuinely new information
-4. **Be CONCISE** - Each memory should be ONE clear fact, not redundant details
+## Categories
+- user_profile: User preferences revealed during execution
+- domain_knowledge: Device states, environment facts discovered
+- task_patterns: Successful/failed approaches, workflow patterns
+- system_evolution: Agent's own learnings, self-improvement insights
 
-## Content Rules
-- User preferences and habits -> user_profile
-- Device states, environment patterns discovered -> domain_knowledge
-- Successful task patterns, failure reasons -> task_patterns
-- Lessons learned by the agent -> system_evolution
-- Write content in English by default, but adapt to user's preferred language if detected
-- importance range: 0-100, higher means more important
+## Rules
+1. **ONE fact per entry**, max 120 characters. Never dump paragraphs.
+2. **Check existing** — if similar info exists, use merge:
+   "action": {{"merge": {{"targets": ["<keyword from existing>"]}}}}
+3. **Append only truly new info**
+4. **system_evolution is ONLY for agent self-learning** (e.g. "Threshold 30°C works better than 25°C for this room")
+5. **Importance**: 80-100 = critical, 50-79 = useful, below 50 = minor
+6. **Language**: match the user's detected language
 
-## Examples
-- If existing: "Temperature sensor reads 25C" and new: "Temperature is 26C now" → MERGE: "Temperature sensor typically reads 25-26C"
-- If existing: "Agent controls lights" and new: "Agent turned off lights" → MERGE with targets: ["controls lights"]
+## Good Examples
+→ {{"content":"Living room temp threshold 26°C triggers cooling","category":"task_patterns","importance":75,"action":"append"}}
+→ {{"content":"Agent learned MQTT timeout should be 5s not 10s","category":"system_evolution","importance":85,"action":"append"}}
+→ {{"content":"Living room sensor reads 25-26°C range","category":"domain_knowledge","importance":60,"action":{{"merge":{{"targets":["Living room sensor"]}}}}}}
+
+## Bad Examples (DO NOT)
+- "The agent checked the temperature sensor, found it was 26°C, compared against threshold of 25°C, and decided to turn on the AC" (TOO LONG)
 "#,
             agent_name,
             user_prompt.unwrap_or("(none)"),
@@ -173,14 +192,22 @@ impl AgentExtractor {
     }
 }
 
-/// Parse category string into enum
+/// Parse category string into enum.
+/// Unknown categories are mapped to DomainKnowledge as the safest default
+/// (it has the highest capacity and is the least likely to pollute user-specific data).
 pub fn parse_category(s: &str) -> MemoryCategory {
     match s.to_lowercase().as_str() {
         "user_profile" => MemoryCategory::UserProfile,
         "domain_knowledge" => MemoryCategory::DomainKnowledge,
         "task_patterns" => MemoryCategory::TaskPatterns,
         "system_evolution" => MemoryCategory::SystemEvolution,
-        _ => MemoryCategory::UserProfile, // Default fallback
+        other => {
+            tracing::warn!(
+                category = other,
+                "Unknown memory category, falling back to DomainKnowledge"
+            );
+            MemoryCategory::DomainKnowledge
+        }
     }
 }
 
@@ -289,6 +316,6 @@ That's all.
             parse_category("system_evolution"),
             MemoryCategory::SystemEvolution
         );
-        assert_eq!(parse_category("unknown"), MemoryCategory::UserProfile);
+        assert_eq!(parse_category("unknown"), MemoryCategory::DomainKnowledge);
     }
 }

@@ -1,7 +1,7 @@
 # Memory Module
 
 **Package**: `neomind-agent` (memory submodule)
-**Version**: 0.6.3
+**Version**: 0.6.4
 **Completion**: 95%
 **Purpose**: Category-based memory system with LLM-powered extraction and compression
 

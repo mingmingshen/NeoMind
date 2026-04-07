@@ -1448,7 +1448,7 @@ export interface EventSubscription {
 
 // ========== LLM Backend Management Types ==========
 
-export type LlmBackendType = 'ollama' | 'openai' | 'anthropic' | 'google' | 'xai'
+export type LlmBackendType = 'ollama' | 'openai' | 'anthropic' | 'google' | 'xai' | 'llamacpp'
 
 export interface BackendCapabilities {
   supports_streaming: boolean
