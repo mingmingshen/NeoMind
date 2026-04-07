@@ -646,10 +646,41 @@ impl ExtensionPackage {
                 ))
             })?;
 
-        // Extract binary
         // Extract binary and preserve directory structure
         let binary_file = ext_dir.join(&binary_rel_path);
         Self::extract_file_sync(&mut archive, &binary_rel_path, &binary_file)?;
+
+        // Extract all sibling files in the same directory as the binary
+        // These are bundled shared libraries (e.g. libonnxruntime.dylib)
+        if let Some(binary_dir) = std::path::Path::new(&binary_rel_path).parent() {
+            let dir_prefix = if binary_dir.as_os_str().is_empty() {
+                "".to_string()
+            } else {
+                format!("{}/", binary_dir.to_string_lossy())
+            };
+            let dest_dir = ext_dir.join(binary_dir);
+
+            for i in 0..archive.len() {
+                if let Ok(mut file) = archive.by_index(i) {
+                    let name = file.name().to_string();
+                    // Same directory, not the binary itself, not a directory entry
+                    if name.starts_with(&dir_prefix)
+                        && !name.ends_with('/')
+                        && name != binary_rel_path
+                        && !name[name.len() - 1..].starts_with('/')
+                        && name.matches('/').count() == binary_rel_path.matches('/').count()
+                    {
+                        let dest = dest_dir.join(name.trim_start_matches(&dir_prefix));
+                        if let Some(parent) = dest.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        let mut out = std::fs::File::create(&dest)?;
+                        std::io::copy(&mut file, &mut out)?;
+                        tracing::info!("Extracted bundled library: {}", name);
+                    }
+                }
+            }
+        }
 
         // Create sidecar JSON file for all extension types (WASM and native)
         // This allows safe discovery without loading native libraries
