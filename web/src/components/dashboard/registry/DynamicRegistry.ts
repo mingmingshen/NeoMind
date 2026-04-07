@@ -7,6 +7,7 @@
 
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
+import * as jsxRuntime from 'react/jsx-runtime'
 import * as lucideReact from 'lucide-react'
 import { ComponentMeta } from './types'
 import type { DashboardComponentDto, DashboardComponentsResponse } from '@/types'
@@ -17,6 +18,7 @@ import { isTauriEnv } from '@/lib/api'
 if (typeof window !== 'undefined') {
   (window as any).React = React
   ;(window as any).ReactDOM = ReactDOM
+  ;(window as any).jsxRuntime = jsxRuntime
 }
 
 /**
