@@ -19,18 +19,30 @@ crates/neomind-agent/src/
 │   ├── types.rs                # Agent type definitions
 │   ├── cache.rs                # Cache management
 │   ├── fallback.rs             # Fallback rules
+│   ├── planner/                # Execution plan generation (v0.6.4)
+│   │   ├── mod.rs              #   Planner module entry
+│   │   ├── types.rs            #   PlanStep, ExecutionPlan, PlanningConfig
+│   │   ├── keyword.rs          #   KeywordPlanner (rule-based, zero LLM cost)
+│   │   ├── llm_planner.rs      #   LLMPlanner (structured output parsing)
+│   │   └── coordinator.rs      #   PlanningCoordinator (routes between planners)
 │   ├── scheduler.rs            # Scheduler
 │   ├── streaming.rs            # Streaming response
 │   └── tokenizer.rs            # Tokenizer
 ├── ai_agent/
 │   ├── mod.rs                  # Autonomous Agent
-│   ├── executor.rs             # Executor (supports device/extension metrics collection)
+│   ├── executor/               # Executor module
+│   │   ├── mod.rs              #   Executor core (supports device/extension metrics collection)
+│   │   └── memory.rs           #   Memory integration for executor
 │   └── intent_parser.rs        # Intent parser
 ├── tools/
 │   ├── mod.rs                  # Agent tools
 │   ├── dsl.rs                  # DSL tools
 │   ├── mapper.rs               # Mapping tools
 │   └── rule_gen.rs             # Rule generation
+├── toolkit/
+│   ├── mod.rs                  # Toolkit module
+│   ├── resolver.rs             # EntityResolver (fuzzy name/ID matching) (v0.6.4)
+│   └── simplified.rs           # Simplified tool definitions for prompts
 ├── prompts/
 │   └── builder.rs              # Prompt builder
 ├── config/
@@ -102,6 +114,105 @@ Agent LLM backends are now **decoupled** from chat model selection:
 - **Extension Metrics Support**: executor.rs now collects extension (Extension) metrics
 - **DataSourceId Integration**: Uses type-safe DataSourceId for metrics queries
 - **Unified Time-Series Database**: Uses `data/telemetry.redb` unified storage for device and extension metrics
+
+### Planning System (v0.6.4)
+
+The agent planner generates structured execution plans before tool calls, enabling parallel execution of independent steps.
+
+```rust
+pub enum PlanningMode {
+    /// Rule-based mapping from IntentCategory (fast, zero LLM cost)
+    Keyword,
+    /// LLM-generated plan for complex multi-step tasks
+    LLM,
+}
+
+pub struct ExecutionPlan {
+    /// Steps in the plan, ordered by intended execution sequence.
+    pub steps: Vec<PlanStep>,
+    /// How the plan was generated.
+    pub mode: PlanningMode,
+}
+
+pub struct PlanStep {
+    /// Unique step identifier.
+    pub id: StepId,
+    /// Tool name: "device", "agent", "rule", "alert", "extension"
+    pub tool_name: String,
+    /// Action within the tool: "list", "get", "query", "control"
+    pub action: String,
+    /// Parameters for the tool call.
+    pub params: serde_json::Value,
+    /// Steps that must complete before this one. Empty = parallelizable.
+    pub depends_on: Vec<StepId>,
+    /// Human-readable description for frontend display.
+    pub description: String,
+}
+```
+
+**Planners**:
+
+| Planner | Speed | LLM Cost | Best For |
+|---------|-------|----------|----------|
+| `KeywordPlanner` | Instant | Zero | Simple device/rule/agent queries |
+| `LLMPlanner` | ~2s timeout | 1 LLM call | Complex multi-step tasks |
+
+**PlanningCoordinator** routes between planners:
+1. If confidence > `keyword_threshold` (0.8) → `KeywordPlanner`
+2. If entities ≤ `max_entities_for_keyword` (3) → `KeywordPlanner`
+3. Otherwise → `LLMPlanner` with structured output parsing
+
+**WebSocket Events** for plan progress:
+```rust
+AgentEvent::ExecutionPlanCreated { plan }
+AgentEvent::PlanStepStarted { step_id, description }
+AgentEvent::PlanStepCompleted { step_id, result }
+```
+
+**Configuration**:
+```rust
+pub struct PlanningConfig {
+    /// Enable planning stage (default: true)
+    pub enabled: bool,
+    /// Confidence threshold for KeywordPlanner (default: 0.8)
+    pub keyword_threshold: f32,
+    /// Max entities before falling back to LLM (default: 3)
+    pub max_entities_for_keyword: usize,
+    /// Timeout for LLM planner call in seconds (default: 2)
+    pub llm_timeout_secs: u64,
+}
+```
+
+### EntityResolver (v0.6.4)
+
+Fuzzy entity name/ID matching for all LLM tool parameters. Reduces tool round-trips by resolving human-readable names to internal IDs.
+
+```rust
+use crate::toolkit::resolver::EntityResolver;
+
+// Resolve a user-provided name to an entity ID
+let device_id = EntityResolver::resolve(
+    "temperature sensor",           // user input
+    &candidates,                    // Vec<(id, name)>
+    "device"                        // entity type for error messages
+)?;
+```
+
+**Matching strategy** (in order):
+1. **Exact ID match** — input matches a candidate ID
+2. **Exact name match** — case-insensitive name comparison
+3. **Substring match** — input is a substring of name or ID
+
+Returns the matched ID, or an error with helpful suggestions if ambiguous.
+
+### Device Info Enrichment (v0.6.4)
+
+Device query results now include:
+- **Live metrics** — latest telemetry values embedded in device info
+- **Available commands** — device-specific control options
+- **Metric name resolution** — user-friendly aliases mapped to internal metric names
+
+This reduces the need for follow-up tool calls to get device details.
 
 ## Core Components
 

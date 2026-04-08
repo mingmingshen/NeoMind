@@ -1376,6 +1376,37 @@ impl Drop for MyExtension {
 }
 ```
 
+### 10.7 前端 JSX Runtime（UMD 包）
+
+使用 Vite 构建扩展前端组件为 UMD 包时，必须暴露 `jsxRuntime` 全局变量以使 React JSX 正常工作。Vite 模板默认包含此配置：
+
+```typescript
+// vite.config.ts（模板）
+export default defineConfig({
+  plugins: [react()],
+  build: {
+    lib: {
+      entry: 'src/index.tsx',
+      formats: ['umd'],
+      name: 'ExtensionComponent',
+    },
+    rollupOptions: {
+      external: ['react', 'react-dom', 'react/jsx-runtime'],
+      output: {
+        globals: {
+          react: 'React',
+          'react-dom': 'ReactDOM',
+          'react/jsx-runtime': 'jsxRuntime',  // UMD 中 JSX 必需
+        },
+      },
+    },
+  },
+});
+```
+
+NeoMind 运行时在加载扩展 UMD 包时自动提供 `React`、`ReactDOM` 和 `jsxRuntime` 作为全局变量。
+```
+
 ---
 
 ## 11. 故障排除

@@ -1376,6 +1376,36 @@ impl Drop for MyExtension {
 }
 ```
 
+### 10.7 Frontend JSX Runtime (UMD Bundles)
+
+When building extension frontend components as UMD bundles with Vite, the `jsxRuntime` global must be exposed for React JSX to work correctly. The Vite template includes this by default:
+
+```typescript
+// vite.config.ts (template)
+export default defineConfig({
+  plugins: [react()],
+  build: {
+    lib: {
+      entry: 'src/index.tsx',
+      formats: ['umd'],
+      name: 'ExtensionComponent',
+    },
+    rollupOptions: {
+      external: ['react', 'react-dom', 'react/jsx-runtime'],
+      output: {
+        globals: {
+          react: 'React',
+          'react-dom': 'ReactDOM',
+          'react/jsx-runtime': 'jsxRuntime',  // Required for JSX in UMD
+        },
+      },
+    },
+  },
+});
+```
+
+The NeoMind runtime automatically provides `React`, `ReactDOM`, and `jsxRuntime` as global variables when loading extension UMD bundles.
+
 ---
 
 ## 11. Troubleshooting

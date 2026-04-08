@@ -19,18 +19,30 @@ crates/neomind-agent/src/
 │   ├── types.rs                # Agent类型定义
 │   ├── cache.rs                # 缓存管理
 │   ├── fallback.rs             # 降级规则
+│   ├── planner/                # 执行计划生成 (v0.6.4)
+│   │   ├── mod.rs              #   规划模块入口
+│   │   ├── types.rs            #   PlanStep, ExecutionPlan, PlanningConfig
+│   │   ├── keyword.rs          #   KeywordPlanner（基于规则，零LLM开销）
+│   │   ├── llm_planner.rs      #   LLMPlanner（结构化输出解析）
+│   │   └── coordinator.rs      #   PlanningCoordinator（路由选择规划器）
 │   ├── scheduler.rs            # 调度器
 │   ├── streaming.rs            # 流式响应
 │   └── tokenizer.rs            # 分词器
 ├── ai_agent/
 │   ├── mod.rs                  # 自主Agent
-│   ├── executor.rs             # 执行器（支持设备/扩展指标采集）
+│   ├── executor/               # 执行器模块
+│   │   ├── mod.rs              #   执行器核心（支持设备/扩展指标采集）
+│   │   └── memory.rs           #   执行器内存集成
 │   └── intent_parser.rs        # 意图解析
 ├── tools/
 │   ├── mod.rs                  # Agent工具
 │   ├── dsl.rs                  # DSL工具
 │   ├── mapper.rs               # 映射工具
 │   └── rule_gen.rs             # 规则生成
+├── toolkit/
+│   ├── mod.rs                  # 工具包模块
+│   ├── resolver.rs             # EntityResolver（模糊名称/ID匹配）(v0.6.4)
+│   └── simplified.rs           # 简化工具定义（用于提示词）
 ├── prompts/
 │   └── builder.rs              # 提示词构建器
 ├── config/
@@ -102,6 +114,105 @@ pub struct StepResult {
 - **扩展指标支持**: executor.rs现在可以采集扩展(Extension)指标
 - **DataSourceId集成**: 使用类型安全的DataSourceId进行指标查询
 - **统一时序数据库**: 使用`data/telemetry.redb`统一存储设备和扩展指标
+
+### 规划系统 (v0.6.4)
+
+Agent规划器在工具调用前生成结构化执行计划，支持独立步骤的并行执行。
+
+```rust
+pub enum PlanningMode {
+    /// 基于IntentCategory的规则映射（快速，零LLM开销）
+    Keyword,
+    /// LLM生成的计划，用于复杂多步任务
+    LLM,
+}
+
+pub struct ExecutionPlan {
+    /// 计划中的步骤，按预期执行顺序排列
+    pub steps: Vec<PlanStep>,
+    /// 计划的生成方式
+    pub mode: PlanningMode,
+}
+
+pub struct PlanStep {
+    /// 唯一步骤标识符
+    pub id: StepId,
+    /// 工具名称："device", "agent", "rule", "alert", "extension"
+    pub tool_name: String,
+    /// 工具内的动作："list", "get", "query", "control"
+    pub action: String,
+    /// 工具调用参数
+    pub params: serde_json::Value,
+    /// 必须在此之前完成的步骤。空 = 可并行
+    pub depends_on: Vec<StepId>,
+    /// 人类可读的描述，用于前端显示
+    pub description: String,
+}
+```
+
+**规划器**:
+
+| 规划器 | 速度 | LLM开销 | 适用场景 |
+|--------|------|---------|----------|
+| `KeywordPlanner` | 即时 | 零 | 简单的设备/规则/Agent查询 |
+| `LLMPlanner` | ~2秒超时 | 1次LLM调用 | 复杂的多步任务 |
+
+**PlanningCoordinator** 路由逻辑：
+1. 置信度 > `keyword_threshold`（0.8）→ `KeywordPlanner`
+2. 实体数 ≤ `max_entities_for_keyword`（3）→ `KeywordPlanner`
+3. 否则 → `LLMPlanner` 结构化输出解析
+
+**WebSocket事件** 用于计划进度：
+```rust
+AgentEvent::ExecutionPlanCreated { plan }
+AgentEvent::PlanStepStarted { step_id, description }
+AgentEvent::PlanStepCompleted { step_id, result }
+```
+
+**配置**:
+```rust
+pub struct PlanningConfig {
+    /// 启用规划阶段（默认：true）
+    pub enabled: bool,
+    /// KeywordPlanner的置信度阈值（默认：0.8）
+    pub keyword_threshold: f32,
+    /// 回退到LLM规划器前的最大实体数（默认：3）
+    pub max_entities_for_keyword: usize,
+    /// LLM规划器调用超时（秒，默认：2）
+    pub llm_timeout_secs: u64,
+}
+```
+
+### EntityResolver 实体解析器 (v0.6.4)
+
+所有LLM工具参数的模糊实体名称/ID匹配。通过将人类可读名称解析为内部ID，减少工具往返次数。
+
+```rust
+use crate::toolkit::resolver::EntityResolver;
+
+// 将用户提供的名称解析为实体ID
+let device_id = EntityResolver::resolve(
+    "温度传感器",                   // 用户输入
+    &candidates,                    // Vec<(id, name)>
+    "device"                        // 实体类型（用于错误信息）
+)?;
+```
+
+**匹配策略**（按顺序）：
+1. **精确ID匹配** — 输入与候选ID完全匹配
+2. **精确名称匹配** — 不区分大小写的名称比较
+3. **子串匹配** — 输入是名称或ID的子串
+
+返回匹配的ID，如果存在歧义则返回带有建议的错误信息。
+
+### 设备信息增强 (v0.6.4)
+
+设备查询结果现在包含：
+- **实时指标** — 最新遥测值嵌入设备信息中
+- **可用命令** — 设备特定的控制选项
+- **指标名称解析** — 用户友好的别名映射到内部指标名称
+
+这减少了获取设备详情所需的后续工具调用。
 
 ## 核心组件
 

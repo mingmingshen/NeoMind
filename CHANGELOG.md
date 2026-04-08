@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v0.6.4] - 2025-04-08
 
+### New Features
+
+- **Planning System** — New execution plan generation module (`agent/planner/`) with two planners: `KeywordPlanner` (fast, rule-based, zero LLM cost) and `LLMPlanner` (deep, LLM-generated for complex tasks). `PlanningCoordinator` routes between them based on intent confidence. Includes `ExecutionPlanCreated`, `PlanStepStarted`, `PlanStepCompleted` WebSocket events and `ExecutionPlanPanel` UI component.
+- **EntityResolver** — Fuzzy entity name/ID matching for all LLM tool parameters. Resolves human-readable names to internal IDs using progressive matching: exact ID → exact name (case-insensitive) → substring match. Reduces tool round-trips by handling ambiguous references.
+- **Device Info Enrichment** — Device query results now include live metrics and available commands alongside basic device info. Metric names are automatically resolved from user-friendly aliases.
+- **AlertTool Get Action** — Added `get` action to `AlertTool` for retrieving individual alert details by ID.
+
+### Changed
+
+- **Aggregated Tools Refactor** — Optimized tool descriptions and prompts for the aggregated tool architecture (~8 tools instead of ~50), reducing token usage by 60%+.
+- **Memory Extraction** — Memory extraction now runs as a background task instead of blocking the response pipeline. Chinese-language extraction prompts localized to English.
+- **Version Bump** — Bumped version to 0.6.4 with UI refinements.
+
 ### Fixed
 
 - **llama.cpp Multimodal Auto-Detection** — Automatically detect multimodal (vision), tool calling, and context size capabilities from llama.cpp server's `/props` endpoint. Capabilities are persisted to storage and updated at startup. Previously, llama.cpp backends always reported `supports_multimodal: false`.
@@ -17,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tool Loop Detection False Positive** — Tool loop detection now only blocks exact duplicate calls (same tool name + same arguments). Previously, calling the same tool 3+ times with different arguments (e.g., querying different devices) was incorrectly blocked as a loop.
 - **Tool Loop Detection Non-Blocking** — Changed loop detection event from `Error` to `Warning` so it no longer interrupts the conversation flow. The LLM continues generating a text response when a duplicate tool call is skipped.
 - **Memory Scheduler Auto-Start** — Fixed memory scheduler never starting when LLM backend becomes available after server startup. Replaced one-shot startup attempt with background retry task that polls every 30 seconds for LLM runtime availability. Added idempotency protection to prevent duplicate scheduler instances.
+- **Scheduler Concurrency Bug** — Fixed race condition in agent scheduler that could cause duplicate executions. Added status reset retry, health check, and execution retry logic.
+- **False Alert Notifications** — Prevented false alert notifications from being sent. LLM thinking tokens are now stripped from agent conclusions. Reduced redundant tool rounds.
+- **Extension jsxRuntime** — Exposed `jsxRuntime` global for extension UMD bundles, fixing React JSX runtime resolution in frontend components.
+- **Extension .nep Extraction** — Fixed extraction of bundled native libraries from `.nep` extension packages.
 
 ---
 
