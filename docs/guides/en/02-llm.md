@@ -14,6 +14,7 @@ The LLM module implements a unified LLM runtime interface, supporting multiple l
 | Backend | Feature | Status | Default Model |
 |------|---------|------|----------|
 | **Ollama** | `ollama` | ✅ Default | `qwen3-vl:2b` |
+| **llama.cpp** | `llamacpp` | ✅ | (loaded at server startup) |
 | **OpenAI** | `openai` | ✅ | `gpt-4o-mini` |
 | **Anthropic** | `anthropic` | ✅ | `claude-3-5-sonnet-20241022` |
 | **Google** | `google` | ✅ | `gemini-1.5-flash` |
@@ -33,6 +34,7 @@ crates/neomind-agent/src/llm_backends/
 ├── backends/
 │   ├── mod.rs                  # Backend factory
 │   ├── ollama.rs               # Ollama backend
+│   ├── llamacpp.rs             # llama.cpp backend (auto-detect capabilities via /props)
 │   └── openai.rs               # Cloud backends (OpenAI/Anthropic/Google/xAI/Qwen/DeepSeek/GLM/MiniMax)
 ├── backend_plugin.rs           # Backend plugin system
 ├── config.rs                   # Configuration definitions
@@ -90,6 +92,59 @@ Content-Type: application/json
         "num_predict": 2000
     }
 }
+```
+
+## llama.cpp Backend (LlamaCppRuntime)
+
+Direct integration with llama.cpp standalone server (llama-server). Capabilities (multimodal, tools, context size) are auto-detected via the `/props` endpoint.
+
+### Features
+
+- Uses OpenAI-compatible `/v1/chat/completions` endpoint
+- Auto-detects multimodal support, tool calling, and context size from `/props`
+- Supports streaming output
+- Supports multi-modal input (vision models like llava, gemma-4, etc.)
+- No API key required for local instances
+
+### Configuration
+
+```rust
+pub struct LlamaCppConfig {
+    /// Server endpoint (default: http://127.0.0.1:8080)
+    pub endpoint: String,
+
+    /// Model name (optional — model is loaded at server startup)
+    pub model: String,
+
+    /// Request timeout in seconds (default: 180, used for non-streaming only)
+    pub timeout_secs: u64,
+
+    /// Optional Bearer token for --api-key authentication
+    pub api_key: Option<String>,
+
+    /// Enable KV cache reuse via cache_prompt (default: true)
+    pub cache_prompt: bool,
+}
+```
+
+### Auto-Detection
+
+On startup, NeoMind queries each llama.cpp instance's `/props` endpoint to detect:
+
+| Property | Source | Fallback |
+|----------|--------|----------|
+| Multimodal (vision) | `modalities.vision` | Model name patterns (`vl`, `llava`, `vision`) |
+| Tool calling | `chat_template_caps.supports_tools` | `true` |
+| Context size | `default_generation_settings.n_ctx` | `4096` |
+
+Detected capabilities are persisted to storage and kept in sync.
+
+### Recommended Server Settings
+
+For multimodal inference, use a larger context window:
+
+```bash
+llama-server -m model.gguf --ctx-size 32768 --port 8080
 ```
 
 ## Cloud Backend (CloudRuntime)
