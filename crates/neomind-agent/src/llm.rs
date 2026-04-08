@@ -1041,7 +1041,9 @@ impl LlmInterface {
         user_message: impl Into<String>,
         history: Option<&[Message]>,
     ) -> AgentResult<ChatResponse> {
-        let user_message = user_message.into();
+        let user_message: String = user_message.into();
+        let max_ctx = self.max_context_length().await;
+        let prompt_budget = (max_ctx * 70) / 100;
 
         // === FAST PATH: Simple greetings ===
         // Bypass LLM for simple greetings to improve response time
@@ -1155,17 +1157,51 @@ impl LlmInterface {
         };
 
         let system_msg = Message::system(&system_prompt);
-        let user_msg = Message::user(user_message);
+        let user_msg = Message::user(&user_message);
 
-        // Build messages with history if provided
+        // Build messages with history if provided, truncated to fit context window
         let messages = if let Some(hist) = history {
             let mut msgs = vec![system_msg];
-            // Add historical messages (excluding system prompts from history)
-            for msg in hist {
-                if msg.role != neomind_core::MessageRole::System {
-                    msgs.push(msg.clone());
+
+            let history_msgs: Vec<&Message> = hist
+                .iter()
+                .filter(|msg| msg.role != neomind_core::MessageRole::System)
+                .collect();
+
+            let reserved_chars = system_prompt.len() + user_message.len() + 500;
+            let budget_chars = prompt_budget.saturating_mul(4);
+            let available_chars = budget_chars.saturating_sub(reserved_chars);
+
+            let total_history_chars: usize = history_msgs
+                .iter()
+                .map(|m| m.content.as_text().len())
+                .sum();
+
+            if total_history_chars <= available_chars {
+                for msg in &history_msgs {
+                    msgs.push((*msg).clone());
                 }
+            } else {
+                let mut used = 0usize;
+                let mut kept = Vec::new();
+                for msg in history_msgs.iter().rev() {
+                    let size = msg.content.as_text().len();
+                    if used + size > available_chars {
+                        break;
+                    }
+                    used += size;
+                    kept.push((*msg).clone());
+                }
+                kept.reverse();
+                tracing::info!(
+                    total_history_chars,
+                    kept_messages = kept.len(),
+                    total_messages = history_msgs.len(),
+                    "Truncated conversation history to fit context window"
+                );
+                msgs.extend(kept);
             }
+
             msgs.push(user_msg);
             msgs
         } else {
@@ -1223,6 +1259,9 @@ impl LlmInterface {
         user_message: Message, // Can contain text + images
         history: Option<&[Message]>,
     ) -> AgentResult<ChatResponse> {
+        let max_ctx = self.max_context_length().await;
+        let prompt_budget = (max_ctx * 70) / 100;
+
         // Acquire permit for concurrency limiting
         let _permit = self.limiter.acquire().await;
 
@@ -1306,16 +1345,49 @@ impl LlmInterface {
             }
         }
 
-        // Build messages with history if provided
+        // Build messages with history if provided, truncated to fit context window
         let messages = if let Some(hist) = history {
             let mut msgs = vec![system_msg];
-            // Add historical messages (excluding system prompts from history)
-            for msg in hist {
-                if msg.role != neomind_core::MessageRole::System {
-                    msgs.push(msg.clone());
+
+            let history_msgs: Vec<&Message> = hist
+                .iter()
+                .filter(|msg| msg.role != neomind_core::MessageRole::System)
+                .collect();
+
+            let reserved_chars = system_prompt.len() + user_message.content.as_text().len() + 500;
+            let budget_chars = prompt_budget.saturating_mul(4);
+            let available_chars = budget_chars.saturating_sub(reserved_chars);
+
+            let total_history_chars: usize = history_msgs
+                .iter()
+                .map(|m| m.content.as_text().len())
+                .sum();
+
+            if total_history_chars <= available_chars {
+                for msg in &history_msgs {
+                    msgs.push((*msg).clone());
                 }
+            } else {
+                let mut used = 0usize;
+                let mut kept = Vec::new();
+                for msg in history_msgs.iter().rev() {
+                    let size = msg.content.as_text().len();
+                    if used + size > available_chars {
+                        break;
+                    }
+                    used += size;
+                    kept.push((*msg).clone());
+                }
+                kept.reverse();
+                tracing::info!(
+                    total_history_chars,
+                    kept_messages = kept.len(),
+                    total_messages = history_msgs.len(),
+                    "Truncated conversation history to fit context window"
+                );
+                msgs.extend(kept);
             }
-            // Only add user message if it's not empty (Phase 2 may use empty string)
+
             if !is_message_empty(&user_message) {
                 msgs.push(user_message);
             }
@@ -1476,6 +1548,8 @@ impl LlmInterface {
         _restore_thinking: bool,
     ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         let model_arc = Arc::clone(&self.model);
+        let max_ctx = self.max_context_length().await;
+        let prompt_budget = (max_ctx * 70) / 100;
 
         // Build system prompt (with or without tools based on phase)
         let system_prompt = if include_tools {
@@ -1596,16 +1670,49 @@ impl LlmInterface {
             }
         }
 
-        // Build messages with history if provided
+        // Build messages with history if provided, truncated to fit context window
         let messages = if let Some(hist) = history {
             let mut msgs = vec![system_msg];
-            // Add historical messages (excluding system prompts from history)
-            for msg in hist {
-                if msg.role != neomind_core::MessageRole::System {
-                    msgs.push(msg.clone());
+
+            let history_msgs: Vec<&Message> = hist
+                .iter()
+                .filter(|msg| msg.role != neomind_core::MessageRole::System)
+                .collect();
+
+            let reserved_chars = system_prompt.len() + user_message.content.as_text().len() + 500;
+            let budget_chars = prompt_budget.saturating_mul(4);
+            let available_chars = budget_chars.saturating_sub(reserved_chars);
+
+            let total_history_chars: usize = history_msgs
+                .iter()
+                .map(|m| m.content.as_text().len())
+                .sum();
+
+            if total_history_chars <= available_chars {
+                for msg in &history_msgs {
+                    msgs.push((*msg).clone());
                 }
+            } else {
+                let mut used = 0usize;
+                let mut kept = Vec::new();
+                for msg in history_msgs.iter().rev() {
+                    let size = msg.content.as_text().len();
+                    if used + size > available_chars {
+                        break;
+                    }
+                    used += size;
+                    kept.push((*msg).clone());
+                }
+                kept.reverse();
+                tracing::info!(
+                    total_history_chars,
+                    kept_messages = kept.len(),
+                    total_messages = history_msgs.len(),
+                    "Truncated conversation history to fit context window (multimodal stream)"
+                );
+                msgs.extend(kept);
             }
-            // Only add user message if it's not empty (Phase 2 may use empty string)
+
             if !is_message_empty(&user_message) {
                 msgs.push(user_message);
             }
@@ -1666,10 +1773,35 @@ impl LlmInterface {
 
         let model_arc = Arc::clone(&self.model);
 
+        // Check model context capacity for adaptive prompt sizing
+        let max_ctx = self.max_context_length().await;
+        // Reserve ~30% for generation, 70% available for prompt
+        let prompt_budget = (max_ctx * 70) / 100;
+
+        let use_compact_prompt = prompt_budget < 3000; // < ~3000 tokens → use compact prompt
+        let skip_history = prompt_budget < 1500;       // < ~1500 tokens → skip history entirely
+        let skip_tools = prompt_budget < 2000;         // < ~2000 tokens → no tool definitions
+
+        tracing::info!(
+            max_ctx = max_ctx,
+            prompt_budget = prompt_budget,
+            use_compact = use_compact_prompt,
+            skip_history = skip_history,
+            skip_tools = skip_tools,
+            "Adaptive prompt sizing for chat_stream_internal"
+        );
+
         // Build system prompt (with or without tools based on phase)
         let system_prompt = if include_tools {
-            self.build_system_prompt_with_tools(Some(&user_message))
-                .await
+            if use_compact_prompt {
+                // Compact prompt for small context models (< 4096)
+                "You are NeoMind, a helpful IoT assistant. Answer questions concisely. \
+                 You can help with device management, data queries, and automation rules. \
+                 Keep responses brief.".to_string()
+            } else {
+                self.build_system_prompt_with_tools(Some(&user_message))
+                    .await
+            }
         } else {
             // Phase 2 system prompt - NO tool calling, just generate response based on tool results
             // Tool execution is already complete, this phase is for summarizing results
@@ -1776,17 +1908,55 @@ impl LlmInterface {
         };
 
         let system_msg = Message::system(&system_prompt);
-        let user_msg = Message::user(user_message);
+        let user_msg = Message::user(&user_message);
 
-        // Build messages with history if provided
+        // Build messages with history if provided, truncated to fit context window
         let messages = if let Some(hist) = history {
             let mut msgs = vec![system_msg];
-            // Add historical messages (excluding system prompts from history)
-            for msg in hist {
-                if msg.role != neomind_core::MessageRole::System {
-                    msgs.push(msg.clone());
+
+            // Collect non-system history messages
+            let history_msgs: Vec<&Message> = hist
+                .iter()
+                .filter(|msg| msg.role != neomind_core::MessageRole::System)
+                .collect();
+
+            // Estimate character budget for history (~4 chars per token)
+            let reserved_chars = system_prompt.len() + user_message.len() + 500;
+            let budget_chars = prompt_budget.saturating_mul(4);
+            let available_chars = budget_chars.saturating_sub(reserved_chars);
+
+            let total_history_chars: usize = history_msgs
+                .iter()
+                .map(|m| m.content.as_text().len())
+                .sum();
+
+            if total_history_chars <= available_chars {
+                for msg in &history_msgs {
+                    msgs.push((*msg).clone());
                 }
+            } else {
+                // Keep most recent messages that fit within budget
+                let mut used = 0usize;
+                let mut kept = Vec::new();
+                for msg in history_msgs.iter().rev() {
+                    let size = msg.content.as_text().len();
+                    if used + size > available_chars {
+                        break;
+                    }
+                    used += size;
+                    kept.push((*msg).clone());
+                }
+                kept.reverse();
+                tracing::info!(
+                    total_history_chars,
+                    kept_messages = kept.len(),
+                    total_messages = history_msgs.len(),
+                    budget_chars = available_chars,
+                    "Truncated conversation history to fit context window"
+                );
+                msgs.extend(kept);
             }
+
             msgs.push(user_msg);
             msgs
         } else {

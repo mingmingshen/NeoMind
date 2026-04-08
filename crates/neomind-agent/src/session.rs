@@ -1018,9 +1018,14 @@ impl SessionManager {
     ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
         // If a specific backend is requested, configure the agent with it
         if let Some(backend) = backend_id {
-            let _ = self
-                .configure_agent_by_backend_id(session_id, backend)
-                .await;
+            if let Err(e) = self.configure_agent_by_backend_id(session_id, backend).await {
+                tracing::error!(
+                    session_id = %session_id,
+                    backend_id = %backend,
+                    error = %e,
+                    "Failed to configure agent backend for streaming — falling back to current runtime"
+                );
+            }
         }
         self.process_message_events(session_id, message).await
     }

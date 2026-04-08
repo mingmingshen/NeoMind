@@ -892,6 +892,34 @@ export const api = {
       count: number
     }>(`/llm-backends/ollama/models${endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : ''}`),
 
+  /**
+   * Fetch server info from a llama.cpp server
+   * GET /api/llm-backends/llamacpp/server-info?endpoint=http://127.0.0.1:8080
+   */
+  listLlamaCppServerInfo: (endpoint?: string, apiKey?: string) => {
+    const params = new URLSearchParams()
+    if (endpoint) params.set('endpoint', endpoint)
+    if (apiKey) params.set('api_key', apiKey)
+    const qs = params.toString()
+    return fetchAPI<{
+      status: string
+      health: { status: string; latency_ms: number }
+      server: {
+        model_name?: string
+        n_ctx?: number
+        total_slots?: number
+        version?: string
+      }
+      capabilities: {
+        supports_streaming: boolean
+        supports_multimodal: boolean
+        supports_thinking: boolean
+        supports_tools: boolean
+        max_context: number
+      }
+    }>(`/llm-backends/llamacpp/server-info${qs ? `?${qs}` : ''}`)
+  },
+
   // ========== MQTT / Brokers API ==========
   // Used by UnifiedDeviceConnectionsTab to display connection status
 

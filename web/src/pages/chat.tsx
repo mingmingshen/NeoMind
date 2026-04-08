@@ -356,6 +356,11 @@ export function ChatPage() {
     }
   }, [sessionId])
 
+  // Sync active backend ID to WebSocket so messages are routed to the correct LLM
+  useEffect(() => {
+    ws.setActiveBackend(activeBackendId)
+  }, [activeBackendId])
+
   // Determine mode: welcome mode (no sessionId in URL) or chat mode (has sessionId in URL)
   const isWelcomeMode = !urlSessionId
 

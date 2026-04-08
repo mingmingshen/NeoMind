@@ -11,6 +11,7 @@ use neomind_storage::{MarkdownMemoryStore, MemoryCategory, SessionMessage};
 
 use crate::error::Result;
 use crate::memory::compressor::MemoryCompressor;
+use crate::memory::dedup::DedupProcessor;
 use crate::memory::extractor::{parse_category, AgentExtractor, ChatExtractor, ExtractResult, MemoryAction};
 
 /// Memory extraction configuration
@@ -24,6 +25,8 @@ pub struct ExtractionConfig {
     pub min_importance: u8,
     /// Whether to deduplicate extracted memories
     pub dedup_enabled: bool,
+    /// Similarity threshold for dedup (0.0-1.0)
+    pub similarity_threshold: f32,
 }
 
 impl Default for ExtractionConfig {
@@ -33,6 +36,7 @@ impl Default for ExtractionConfig {
             max_messages: 50,
             min_importance: 30,
             dedup_enabled: true,
+            similarity_threshold: 0.85,
         }
     }
 }
@@ -42,15 +46,18 @@ pub struct MemoryExtractor {
     store: Arc<RwLock<MarkdownMemoryStore>>,
     llm: Arc<dyn LlmRuntime>,
     config: ExtractionConfig,
+    dedup: DedupProcessor,
 }
 
 impl MemoryExtractor {
     /// Create a new memory extractor
     pub fn new(store: Arc<RwLock<MarkdownMemoryStore>>, llm: Arc<dyn LlmRuntime>) -> Self {
+        let dedup_threshold = 0.85;
         Self {
             store,
             llm,
             config: ExtractionConfig::default(),
+            dedup: DedupProcessor::new(dedup_threshold),
         }
     }
 
@@ -60,7 +67,8 @@ impl MemoryExtractor {
         llm: Arc<dyn LlmRuntime>,
         config: ExtractionConfig,
     ) -> Self {
-        Self { store, llm, config }
+        let dedup = DedupProcessor::new(config.similarity_threshold);
+        Self { store, llm, config, dedup }
     }
 
     /// Clone the LLM runtime reference
@@ -449,8 +457,9 @@ impl MemoryExtractor {
         Ok(count)
     }
 
-    /// Merge new content with existing entries matching targets
+    /// Merge new content with existing entries using similarity matching
     ///
+    /// Falls back to keyword target matching if no similar entries found via n-gram.
     /// Returns true if merge was performed, false otherwise
     fn merge_with_targets(
         &self,
@@ -465,17 +474,43 @@ impl MemoryExtractor {
         let timestamp = chrono::Utc::now().format("%Y-%m-%d");
 
         for line in lines {
-            let line_lower = line.to_lowercase();
-            let matches_any = targets.iter().any(|t| {
-                let target_lower = t.to_lowercase();
-                // Check if target keyword appears in the line
-                line_lower.contains(&target_lower) ||
-                // Also check without the target to see if it's semantically related
-                (target_lower.len() > 5 && line_lower.chars().take(50).collect::<String>().contains(&target_lower.chars().take(20).collect::<String>()))
+            if merged {
+                new_lines.push(line.to_string());
+                continue;
+            }
+
+            let line_trimmed = line.trim();
+            if !line_trimmed.starts_with("- [") {
+                new_lines.push(line.to_string());
+                continue;
+            }
+
+            // Strategy 1: N-gram similarity (primary)
+            if let Some(entry_content) = Self::extract_entry_content(line_trimmed) {
+                let sim = DedupProcessor::jaccard_similarity(&entry_content, new_content);
+                if sim >= 0.6 {
+                    new_lines.push(format!(
+                        "- [{}] {} [importance: {}]",
+                        timestamp, new_content, importance
+                    ));
+                    merged = true;
+                    tracing::debug!(
+                        old_line = %line,
+                        new_content = %new_content,
+                        similarity = sim,
+                        "Merged memory via n-gram similarity"
+                    );
+                    continue;
+                }
+            }
+
+            // Strategy 2: Keyword target matching (fallback)
+            let line_lower = line_trimmed.to_lowercase();
+            let matches_target = targets.iter().any(|t| {
+                line_lower.contains(&t.to_lowercase())
             });
 
-            if matches_any && !merged {
-                // Replace this line with merged content
+            if matches_target {
                 new_lines.push(format!(
                     "- [{}] {} [importance: {}]",
                     timestamp, new_content, importance
@@ -484,11 +519,13 @@ impl MemoryExtractor {
                 tracing::debug!(
                     old_line = %line,
                     new_content = %new_content,
-                    "Merged memory line"
+                    targets = ?targets,
+                    "Merged memory via keyword target"
                 );
-            } else {
-                new_lines.push(line.to_string());
+                continue;
             }
+
+            new_lines.push(line.to_string());
         }
 
         if merged {
@@ -501,14 +538,44 @@ impl MemoryExtractor {
         merged
     }
 
-    /// Check if content already exists (simple duplicate detection)
+    /// Check if content already exists using n-gram Jaccard similarity
     fn is_duplicate(&self, existing_content: &str, new_content: &str) -> bool {
-        // Simple check: if the new content appears verbatim
-        let normalized_new = new_content.to_lowercase().trim().to_string();
+        if !self.config.dedup_enabled {
+            return false;
+        }
 
-        existing_content
+        // Extract content parts from existing entries (strip markdown formatting)
+        let existing_entries: Vec<String> = existing_content
             .lines()
-            .any(|line| line.to_lowercase().contains(&normalized_new))
+            .filter(|l| l.trim().starts_with("- ["))
+            .map(|l| {
+                // Extract just the content part between date and importance
+                if let Some(content) = Self::extract_entry_content(l) {
+                    content
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect();
+
+        self.dedup.find_similar(new_content, &existing_entries).is_some()
+    }
+
+    /// Extract the text content from a markdown memory entry line
+    /// Format: "- [2026-04-08] Some content here [importance: 80]"
+    fn extract_entry_content(line: &str) -> Option<String> {
+        let line = line.trim();
+        // Skip the "- [date] " prefix
+        let after_date = line.strip_prefix("- [")?;
+        let close_bracket = after_date.find(']')?;
+        let content_with_importance = &after_date[close_bracket + 1..];
+        // Remove the " [importance: NN]" suffix
+        let content = if let Some(idx) = content_with_importance.rfind(" [importance:") {
+            &content_with_importance[..idx]
+        } else {
+            content_with_importance
+        };
+        Some(content.trim().to_string())
     }
 
     /// Format a memory entry for markdown.

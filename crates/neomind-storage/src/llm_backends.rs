@@ -416,7 +416,7 @@ impl LlmBackendInstance {
             return Err("Name cannot be empty".to_string());
         }
 
-        if self.model.is_empty() {
+        if self.model.is_empty() && !matches!(self.backend_type, LlmBackendType::LlamaCpp) {
             return Err("Model name cannot be empty".to_string());
         }
 

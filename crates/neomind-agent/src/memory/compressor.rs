@@ -107,7 +107,7 @@ impl MemoryCompressor {
             .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
 
         // Parse entries
-        let entries = self.parse_entries(&content);
+        let mut entries = self.parse_entries(&content);
         let original_count = entries.len();
 
         let min_entries = self.min_entries(&category);
@@ -121,15 +121,70 @@ impl MemoryCompressor {
             return Ok(CompressionResult::default());
         }
 
+        // === Apply importance decay ===
+        let now = chrono::Utc::now();
+        let mut decayed_count = 0;
+        for entry in &mut entries {
+            if let Ok(entry_date) = chrono::NaiveDate::parse_from_str(&entry.timestamp, "%Y-%m-%d") {
+                let entry_datetime = entry_date.and_hms_opt(0, 0, 0).unwrap();
+                let days_since = (now.date_naive() - entry_datetime.date()).num_days().max(0) as u64;
+                let original_importance = entry.importance;
+                entry.importance = self.decay_importance(entry.importance, days_since);
+                if entry.importance != original_importance {
+                    decayed_count += 1;
+                }
+            }
+        }
+
+        if decayed_count > 0 {
+            tracing::info!(
+                category = ?category,
+                decayed = decayed_count,
+                "Applied importance decay to entries"
+            );
+        }
+
         let min_importance = self.min_importance();
 
+        // Filter out entries below threshold (deleted by decay)
+        let before_filter = entries.len();
+        let entries_to_compress: Vec<MemoryEntry> = entries
+            .into_iter()
+            .filter(|e| e.importance >= min_importance)
+            .collect();
+        let deleted_count = before_filter - entries_to_compress.len();
+
+        if entries_to_compress.is_empty() {
+            tracing::info!(
+                category = ?category,
+                deleted = deleted_count,
+                "All entries below importance threshold after decay"
+            );
+
+            // Write empty content
+            drop(store_guard);
+            let store_guard = store.write().await;
+            store_guard
+                .write_category(&category, "")
+                .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
+
+            return Ok(CompressionResult {
+                total_before: original_count,
+                kept: 0,
+                compressed: 0,
+                deleted: deleted_count,
+            });
+        }
+
         // Build compression prompt
-        let prompt = self.build_compression_prompt(&entries, &category, min_importance);
+        let prompt = self.build_compression_prompt(&entries_to_compress, &category, min_importance);
 
         tracing::info!(
             category = ?category,
             model = %self.llm.model_name(),
-            entry_count = entries.len(),
+            entry_count = entries_to_compress.len(),
+            decayed = decayed_count,
+            deleted_by_decay = deleted_count,
             "Calling LLM for memory compression"
         );
 
@@ -158,27 +213,27 @@ impl MemoryCompressor {
         // Parse response
         let summaries = self.parse_compression_response(&response.text);
 
-        // Write back
+        // Write back - try to preserve original timestamps for merged entries
         let store_guard = store.write().await;
         let mut new_content = String::new();
         let mut compressed_count = 0;
 
         for summary in &summaries {
+            // Find the earliest timestamp from source entries that contributed to this summary
+            let today_str = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            let preserved_date = summary.source_dates.iter().min()
+                .map(|d| d.as_str())
+                .unwrap_or(today_str.as_str());
+
             let entry = format!(
                 "- [{}] {} [importance: {}]\n",
-                chrono::Utc::now().format("%Y-%m-%d"),
+                preserved_date,
                 summary.content,
                 summary.importance
             );
             new_content.push_str(&entry);
             compressed_count += 1;
         }
-
-        // Calculate deleted count (entries removed due to low importance)
-        let deleted_count = entries
-            .iter()
-            .filter(|e| e.importance < min_importance)
-            .count();
 
         store_guard
             .write_category(&category, &new_content)
@@ -245,8 +300,6 @@ impl MemoryCompressor {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let today = chrono::Utc::now().format("%Y-%m-%d");
-
         format!(
             r#"Compress these memory entries for "{}". Merge redundant entries, keep unique facts. Max 120 chars per entry.
 
@@ -258,10 +311,11 @@ impl MemoryCompressor {
 2. **Drop** entries with importance below {}
 3. **Keep unique entries as-is** if they don't overlap with others
 4. Each output entry must be max 120 characters — split if needed
-5. Use today's date for merged entries: {}
+5. **Preserve earliest date** — when merging entries, use the earliest date from the source entries
+6. For merged entries, list ALL source entry dates in source_dates array
 
 ## Output Format (JSON only, no extra text)
-{{"summaries":[{{"content":"<one fact, max 120 chars>","importance":<number>}}]}}
+{{"summaries":[{{"content":"<one fact, max 120 chars>","importance":<number>,"source_dates":["<date1>","<date2>"]}}]}}
 
 ## Good Example
 Input:
@@ -270,13 +324,12 @@ Input:
 - [2026-04-03] User likes concise responses [importance: 70]
 
 Output:
-{{"summaries":[{{"content":"User prefers Chinese language and concise responses","importance":80}}]}}
+{{"summaries":[{{"content":"User prefers Chinese language and concise responses","importance":80,"source_dates":["2026-04-01","2026-04-02","2026-04-03"]}}]}}
 
 Now generate the JSON response:"#,
             category.display_name(),
             entries_text,
             min_importance,
-            today
         )
     }
 
@@ -338,6 +391,7 @@ Now generate the JSON response:"#,
             summaries.push(CompressionSummary {
                 content: content.to_string(),
                 importance,
+                source_dates: Vec::new(),
             });
         }
 
@@ -348,33 +402,6 @@ Now generate the JSON response:"#,
         }
 
         summaries
-    }
-
-    /// Build LLM prompt for compression (static helper)
-    pub fn build_prompt(entries: &str, category: &MemoryCategory) -> String {
-        format!(
-            r#"Compress the following memory entries.
-
-## Category: {}
-
-## Entries
-{}
-
-## Compression Rules
-1. Merge similar content
-2. Extract general patterns
-3. Keep key values and thresholds
-4. Remove redundancy
-5. Write in English by default, adapt to detected language if needed
-
-## Output
-Output Markdown formatted summary containing:
-- Brief title
-- Key points list
-"#,
-            category.display_name(),
-            entries
-        )
     }
 
     /// Get configuration
@@ -396,6 +423,9 @@ struct MemoryEntry {
 struct CompressionSummary {
     content: String,
     importance: u8,
+    /// Source entry dates preserved for merged entries
+    #[serde(default)]
+    source_dates: Vec<String>,
 }
 
 /// Parsed compression response
@@ -421,11 +451,92 @@ mod tests {
     }
 
     #[test]
-    fn test_build_prompt() {
-        let entries =
-            "- [2026-04-01] User prefers Chinese\n- [2026-04-02] User likes concise responses";
-        let prompt = MemoryCompressor::build_prompt(entries, &MemoryCategory::UserProfile);
-        assert!(prompt.contains("User Profile"));
-        assert!(prompt.contains(entries));
+    fn test_decay_importance() {
+        let llm = MockLlm;
+        let compressor = MemoryCompressor::new(Arc::new(llm));
+
+        // No decay for recent entries
+        assert_eq!(compressor.decay_importance(80, 0), 80);
+
+        // Decay over time: 0.9^1 = 0.9, so 80 * 0.9 = 72
+        let decayed = compressor.decay_importance(80, 30);
+        assert_eq!(decayed, 72);
+
+        // More decay over longer time: 0.9^2 = 0.81, so 80 * 0.81 = 64.8 -> 64
+        let decayed2 = compressor.decay_importance(80, 60);
+        assert_eq!(decayed2, 64);
+    }
+
+    #[test]
+    fn test_should_delete() {
+        let llm = MockLlm;
+        let compressor = MemoryCompressor::new(Arc::new(llm));
+        // Default min_importance is 20, so < 20 gets deleted
+        assert!(!compressor.should_delete(30));
+        assert!(!compressor.should_delete(20)); // Equal to threshold, not deleted
+        assert!(compressor.should_delete(10));  // Below threshold, deleted
+        assert!(compressor.should_delete(0));   // Zero importance, deleted
+    }
+
+    #[test]
+    fn test_parse_entries() {
+        let llm = MockLlm;
+        let compressor = MemoryCompressor::new(Arc::new(llm));
+
+        let content = "# Title\n\n- [2026-04-01] User prefers Chinese [importance: 80]\n- [2026-04-02] Temperature 25C [importance: 60]\n";
+        let entries = compressor.parse_entries(content);
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].timestamp, "2026-04-01");
+        assert_eq!(entries[0].content, "User prefers Chinese");
+        assert_eq!(entries[0].importance, 80);
+    }
+
+    #[test]
+    fn test_compression_summary_source_dates() {
+        let json = r#"{"summaries":[{"content":"User prefers Chinese","importance":80,"source_dates":["2026-04-01","2026-04-02"]}]}"#;
+        let response: CompressionResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.summaries.len(), 1);
+        assert_eq!(response.summaries[0].source_dates, vec!["2026-04-01", "2026-04-02"]);
+    }
+
+    // Mock LLM for testing
+    struct MockLlm;
+
+    #[async_trait::async_trait]
+    impl LlmRuntime for MockLlm {
+        fn backend_id(&self) -> neomind_core::llm::backend::BackendId {
+            neomind_core::llm::backend::BackendId::new("mock")
+        }
+
+        fn model_name(&self) -> &str {
+            "mock-model"
+        }
+
+        async fn generate(
+            &self,
+            _input: neomind_core::llm::backend::LlmInput,
+        ) -> std::result::Result<neomind_core::llm::backend::LlmOutput, neomind_core::llm::backend::LlmError> {
+            Ok(neomind_core::llm::backend::LlmOutput {
+                text: r#"{"summaries":[{"content":"Test summary","importance":70,"source_dates":[]}]}"#.to_string(),
+                finish_reason: neomind_core::llm::backend::FinishReason::Stop,
+                usage: None,
+                thinking: None,
+            })
+        }
+
+        async fn generate_stream(
+            &self,
+            _input: neomind_core::llm::backend::LlmInput,
+        ) -> std::result::Result<
+            std::pin::Pin<Box<dyn futures::Stream<Item = neomind_core::llm::backend::StreamChunk> + Send>>,
+            neomind_core::llm::backend::LlmError,
+        > {
+            unimplemented!()
+        }
+
+        fn max_context_length(&self) -> usize {
+            4096
+        }
     }
 }

@@ -205,8 +205,17 @@ export class ChatWebSocket {
         }
 
         // Handle auth error message from server
+        // IMPORTANT: Only trigger reload for actual auth errors, NOT for LLM errors
+        // that happen to contain "token" (e.g., "request exceeds context size, 8225 tokens")
         if (data.type === 'Error') {
-          if (data.message?.includes('token') || data.message?.includes('Authentication')) {
+          const msg = (data.message || '').toLowerCase()
+          const isAuthError = msg.includes('authentication') ||
+            msg.includes('unauthorized') ||
+            msg.includes('invalid api key') ||
+            msg.includes('access denied') ||
+            msg.includes('jwt') ||
+            (msg.includes('token') && (msg.includes('expired') || msg.includes('invalid')))
+          if (isAuthError) {
             // Stop reconnecting on auth failure
             this.disconnect()
             // Trigger a page reload to show login screen

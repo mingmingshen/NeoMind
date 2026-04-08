@@ -595,4 +595,85 @@ impl AgentExecutor {
         }
 
 }
+
+    /// Bridge agent execution results into system memory
+    ///
+    /// When an agent discovers useful patterns (high-confidence decisions, device states,
+    /// threshold learnings), extract them into the shared system memory so other agents
+    /// and chat sessions can benefit from the knowledge.
+    pub(crate) async fn extract_to_system_memory(
+        &self,
+        agent: &AiAgent,
+        situation_analysis: &str,
+        conclusion: &str,
+        decisions: &[Decision],
+    ) {
+        use crate::memory_extraction::MemoryExtractor;
+
+        let Some(memory_store) = &self.memory_store else {
+            return;
+        };
+
+        // Get LLM runtime for extraction (use the agent's configured backend or default)
+        let llm: Arc<dyn neomind_core::llm::backend::LlmRuntime> = match &self.llm_runtime {
+            Some(runtime) => runtime.clone(),
+            None => {
+                tracing::debug!(
+                    agent_id = %agent.id,
+                    "No LLM runtime available for system memory extraction"
+                );
+                return;
+            }
+        };
+
+        // Only extract if there are meaningful decisions
+        let has_high_importance = decisions.iter().any(|d| {
+            matches!(d.decision_type.as_str(), "alert" | "command")
+        });
+
+        if !has_high_importance && situation_analysis.len() < 50 {
+            tracing::debug!(
+                agent_id = %agent.id,
+                "Skipping system memory extraction: no high-importance decisions"
+            );
+            return;
+        }
+
+        // Build reasoning summary from decisions
+        let reasoning_steps: String = decisions
+            .iter()
+            .map(|d| format!("- [{}] {} (action: {})", d.decision_type, d.description, d.action))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Wrap store in RwLock as required by MemoryExtractor
+        let store: Arc<tokio::sync::RwLock<MarkdownMemoryStore>> =
+            Arc::new(tokio::sync::RwLock::new(MarkdownMemoryStore::clone(memory_store)));
+        let extractor = MemoryExtractor::new(store, llm);
+
+        match extractor.extract_from_agent(
+            &agent.name,
+            Some(&agent.user_prompt),
+            &reasoning_steps,
+            conclusion,
+        ).await {
+            Ok(count) => {
+                if count > 0 {
+                    tracing::info!(
+                        agent_id = %agent.id,
+                        agent_name = %agent.name,
+                        memories_extracted = count,
+                        "Bridged agent learnings to system memory"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::debug!(
+                    agent_id = %agent.id,
+                    error = %e,
+                    "Failed to extract agent results to system memory"
+                );
+            }
+        }
+    }
 }

@@ -1873,20 +1873,13 @@ pub async fn process_stream_events_with_safeguards(
             args_hash: u64,
             recent: &VecDeque<(String, u64)>,
         ) -> bool {
-            // First check exact same tool with same args
+            // Only block exact duplicates: same tool name + same arguments.
+            // Different arguments are legitimate (e.g., querying different devices).
             for (recent_name, recent_hash) in recent.iter() {
                 if recent_name == name && *recent_hash == args_hash {
-                    return true; // Exact duplicate
+                    return true; // Exact duplicate: same tool, same args
                 }
             }
-
-            // Then check for same tool called multiple times recently
-            // (even with different args, calling the same tool 3+ times is suspicious)
-            let same_tool_count = recent.iter().filter(|(n, _)| n == name).count();
-            if same_tool_count >= 3 {
-                return true; // Same tool called 3+ times
-            }
-
             false
         }
 
@@ -2102,8 +2095,8 @@ pub async fn process_stream_events_with_safeguards(
                                                     "Tool '{}' was recently executed - potential loop detected",
                                                     call.name
                                                 );
-                                                yield AgentEvent::error(format!(
-                                                    "Tool '{}' was recently executed. To prevent infinite loops, please try a different approach.",
+                                                yield AgentEvent::warning(format!(
+                                                    "Skipping repeated tool call '{}' to avoid loops.",
                                                     call.name
                                                 ));
                                                 duplicate_found = true;
@@ -2247,8 +2240,8 @@ pub async fn process_stream_events_with_safeguards(
                                                     "Tool '{}' was recently executed - potential loop detected",
                                                     call.name
                                                 );
-                                                yield AgentEvent::error(format!(
-                                                    "Tool '{}' was recently executed. To prevent infinite loops, please try a different approach.",
+                                                yield AgentEvent::warning(format!(
+                                                    "Skipping repeated tool call '{}' to avoid loops.",
                                                     call.name
                                                 ));
                                                 duplicate_found = true;

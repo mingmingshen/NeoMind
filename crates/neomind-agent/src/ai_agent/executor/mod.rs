@@ -2388,6 +2388,16 @@ impl AgentExecutor {
             .await
             .map_err(|e| NeoMindError::Storage(format!("Failed to update memory: {}", e)))?;
 
+        // Bridge: extract learned patterns into system memory
+        if !decisions.is_empty() || !situation_analysis.is_empty() {
+            self.extract_to_system_memory(
+                &agent,
+                &situation_analysis,
+                &conclusion,
+                &decisions,
+            ).await;
+        }
+
         // Calculate confidence from reasoning
         let confidence = if reasoning_steps.is_empty() {
             0.5

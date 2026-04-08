@@ -120,11 +120,11 @@ impl Default for LlamaCppConfig {
 
 /// Capabilities override detected from server or storage.
 #[derive(Debug, Clone)]
-struct LlamaCppCapabilities {
-    supports_multimodal: bool,
-    supports_thinking: bool,
-    supports_tools: bool,
-    max_context: usize,
+pub struct LlamaCppCapabilities {
+    pub supports_multimodal: bool,
+    pub supports_thinking: bool,
+    pub supports_tools: bool,
+    pub max_context: usize,
 }
 
 /// llama.cpp runtime backend.
@@ -145,10 +145,11 @@ impl LlamaCppRuntime {
         );
 
         let client = Client::builder()
-            .timeout(config.timeout())
+            // Don't set a global timeout — it kills streaming responses.
+            // The timeout field is only used for non-streaming requests via per-request timeout.
             .pool_max_idle_per_host(10)
             .pool_idle_timeout(Duration::from_secs(120))
-            .connect_timeout(Duration::from_secs(5))
+            .connect_timeout(Duration::from_secs(10))
             .build()
             .map_err(|e| LlmError::Network(e.to_string()))?;
 
@@ -193,6 +194,57 @@ impl LlamaCppRuntime {
             Ok(resp) if resp.status().is_success() => resp.json::<LlamaCppProps>().await.ok(),
             _ => None,
         }
+    }
+
+    /// Detect capabilities from llama.cpp server `/props` endpoint.
+    ///
+    /// Queries the server for model modalities, context size, and tool support.
+    /// Returns `LlamaCppCapabilities` if detection succeeds.
+    pub async fn detect_capabilities(&self) -> Option<LlamaCppCapabilities> {
+        let props = self.fetch_props().await?;
+        let n_ctx = props
+            .default_generation_settings
+            .as_ref()
+            .and_then(|s| s.n_ctx)
+            .unwrap_or(4096);
+
+        let supports_multimodal = props
+            .modalities
+            .as_ref()
+            .map(|m| m.vision)
+            .unwrap_or(false);
+
+        let supports_tools = props
+            .chat_template_caps
+            .as_ref()
+            .map(|c| c.supports_tools)
+            .unwrap_or(true);
+
+        // Thinking support: detect from model name or chat template
+        let model_name = props
+            .model_alias
+            .as_deref()
+            .or(props.model_path.as_deref())
+            .unwrap_or("");
+        let supports_thinking = model_name.to_lowercase().contains("thinking")
+            || model_name.to_lowercase().contains("deepseek-r1")
+            || model_name.to_lowercase().contains("qwen3");
+
+        tracing::info!(
+            model = model_name,
+            n_ctx,
+            supports_multimodal,
+            supports_tools,
+            supports_thinking,
+            "Detected llama.cpp capabilities from /props"
+        );
+
+        Some(LlamaCppCapabilities {
+            supports_multimodal,
+            supports_thinking,
+            supports_tools,
+            max_context: n_ctx,
+        })
     }
 
     /// Convert messages to OpenAI-compatible format.
@@ -279,11 +331,19 @@ impl LlmRuntime for LlamaCppRuntime {
         let model = input.model.unwrap_or_else(|| self.model.clone());
         let url = format!("{}/v1/chat/completions", self.config.base_url());
 
-        // Handle max_tokens
-        const MAX_TOKENS_CAP: u32 = 32768;
+        // Handle max_tokens: llama.cpp will error if max_tokens exceeds the model's
+        // context window. When the caller sends a sentinel value (usize::MAX), omit
+        // max_tokens entirely and let the server use its own default.
         let max_tokens = match input.params.max_tokens {
-            Some(v) if v >= usize::MAX - 1000 => Some(MAX_TOKENS_CAP),
-            Some(v) => Some((v as u32).min(MAX_TOKENS_CAP)),
+            Some(v) if v >= usize::MAX - 1000 => None, // sentinel → omit
+            Some(v) => {
+                let cap = self.max_context_length() as u32;
+                if cap > 0 && (v as u32) > cap {
+                    None // would exceed context → omit
+                } else {
+                    Some((v as u32).min(cap))
+                }
+            }
             None => None,
         };
 
@@ -321,6 +381,7 @@ impl LlmRuntime for LlamaCppRuntime {
         let response = self
             .auth_request(reqwest::Method::POST, &url)
             .json(&req_body)
+            .timeout(self.config.timeout())
             .send()
             .await
             .map_err(|e| LlmError::Network(e.to_string()))?;
@@ -429,19 +490,38 @@ impl LlmRuntime for LlamaCppRuntime {
         let client = self.client.clone();
         let cache_prompt = self.config.cache_prompt;
 
-        // Handle max_tokens
-        const MAX_TOKENS_CAP: u32 = 32768;
+        // Handle max_tokens: llama.cpp will error if max_tokens exceeds the model's
+        // context window. When the caller sends a sentinel value (usize::MAX), omit
+        // max_tokens entirely and let the server use its own default.
+        let max_context = self.max_context_length() as u32;
         let max_tokens = match input.params.max_tokens {
-            Some(v) if v >= usize::MAX - 1000 => Some(MAX_TOKENS_CAP),
-            Some(v) => Some((v as u32).min(MAX_TOKENS_CAP)),
+            Some(v) if v >= usize::MAX - 1000 => None, // sentinel → omit
+            Some(v) => {
+                if max_context > 0 && (v as u32) > max_context {
+                    None // would exceed context → omit
+                } else {
+                    Some((v as u32).min(max_context))
+                }
+            }
             None => None,
         };
 
+        let api_messages = self.messages_to_api(&input.messages);
+        let msg_count = api_messages.len();
+
         let mut req_body = serde_json::json!({
-            "messages": self.messages_to_api(&input.messages),
+            "messages": api_messages,
             "stream": true,
             "cache_prompt": cache_prompt,
         });
+
+        tracing::info!(
+            endpoint = %url,
+            model = %model,
+            message_count = msg_count,
+            has_tools = input.tools.as_ref().is_some_and(|t| !t.is_empty()),
+            "llama.cpp generate_stream: sending request"
+        );
 
         if !model.is_empty() {
             req_body["model"] = serde_json::json!(model);
@@ -476,6 +556,10 @@ impl LlmRuntime for LlamaCppRuntime {
             match result {
                 Ok(response) => {
                     let status = response.status();
+                    tracing::info!(
+                        status = %status.as_u16(),
+                        "llama.cpp generate_stream: received response"
+                    );
 
                     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                         let _ = tx
@@ -661,6 +745,10 @@ impl LlmRuntime for LlamaCppRuntime {
                     }
                 }
                 Err(e) => {
+                    tracing::error!(
+                        error = %e,
+                        "llama.cpp generate_stream: HTTP request failed"
+                    );
                     let _ = tx.send(Err(LlmError::Network(e.to_string()))).await;
                 }
             }
@@ -733,6 +821,47 @@ pub struct LlamaCppProps {
     /// Server software version
     #[serde(default)]
     pub version: Option<String>,
+    /// Model alias (display name)
+    #[serde(default)]
+    pub model_alias: Option<String>,
+    /// Model file path
+    #[serde(default)]
+    pub model_path: Option<String>,
+    /// Supported modalities
+    #[serde(default)]
+    pub modalities: Option<Modalities>,
+    /// Chat template capabilities
+    #[serde(default)]
+    pub chat_template_caps: Option<ChatTemplateCaps>,
+}
+
+/// Supported modalities reported by llama.cpp server.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Modalities {
+    /// Whether the model supports vision/image input
+    #[serde(default)]
+    pub vision: bool,
+    /// Whether the model supports audio input
+    #[serde(default)]
+    pub audio: bool,
+}
+
+/// Chat template capabilities reported by llama.cpp server.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ChatTemplateCaps {
+    /// Whether the template supports tool calls
+    #[serde(default)]
+    pub supports_tool_calls: bool,
+    /// Whether the template supports tools
+    #[serde(default)]
+    pub supports_tools: bool,
+    /// Whether the template supports parallel tool calls
+    #[serde(default)]
+    pub supports_parallel_tool_calls: bool,
+    /// Whether the template supports system role
+    #[serde(default)]
+    pub supports_system_role: bool,
 }
 
 /// Generation settings from server props.
@@ -744,26 +873,6 @@ pub struct GenerationSettings {
     /// Context size
     #[serde(default)]
     pub n_ctx: Option<usize>,
-}
-
-/// OpenAI-compatible chat completion request (built dynamically via serde_json).
-#[derive(Debug, Serialize)]
-struct ChatCompletionRequest {
-    model: String,
-    messages: Vec<ApiMessage>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    temperature: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    top_p: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_tokens: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    stop: Option<Vec<String>>,
-    stream: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cache_prompt: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tools: Option<Vec<OpenAiTool>>,
 }
 
 #[derive(Debug, Serialize)]

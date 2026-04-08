@@ -107,6 +107,21 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     state.init_agent_events().await;
     startup.service("AI Agent events", ServiceStatus::Started);
 
+    // Detect llama.cpp backend capabilities from /props endpoint
+    {
+        tokio::spawn(async move {
+            // Wait for instance manager to be ready
+            let mut retry_interval = tokio::time::interval(Duration::from_secs(5));
+            for _ in 0..12 {
+                retry_interval.tick().await;
+                if let Ok(instance_manager) = neomind_agent::get_instance_manager() {
+                    instance_manager.detect_llamacpp_capabilities().await;
+                    break;
+                }
+            }
+        });
+    }
+
     // Start memory scheduler — spawns a background retry task that polls
     // for LLM runtime availability. This ensures the scheduler starts even
     // when the LLM backend becomes ready after the server has started.

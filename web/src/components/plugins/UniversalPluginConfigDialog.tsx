@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
-import { X, RefreshCw, Eye, Brain, Wrench, Loader2 } from "lucide-react"
+import { X, RefreshCw, Eye, Brain, Wrench, Loader2, Server } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -122,6 +122,28 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
   const [selectedModel, setSelectedModel] = useState("")
   const [ollamaEndpoint, setOllamaEndpoint] = useState("http://localhost:11434")
 
+  // llama.cpp server info state
+  const [llamacppEndpoint, setLlamacppEndpoint] = useState("http://127.0.0.1:8080")
+  const [llamacppApiKey, setLlamacppApiKey] = useState("")
+  const [llamacppServerInfo, setLlamacppServerInfo] = useState<{
+    status: string
+    health: { status: string; latency_ms: number }
+    server: {
+      model_name?: string
+      n_ctx?: number
+      total_slots?: number
+      version?: string
+    }
+    capabilities: {
+      supports_streaming: boolean
+      supports_multimodal: boolean
+      supports_thinking: boolean
+      supports_tools: boolean
+      max_context: number
+    }
+  } | null>(null)
+  const [loadingLlamacppInfo, setLoadingLlamacppInfo] = useState(false)
+
   // Auto-detected capabilities state
   const [detectedCapabilities, setDetectedCapabilities] = useState({
     supports_multimodal: false,
@@ -136,6 +158,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
   const testResults = externalTestResults ?? internalTestResults
   const setTestResults = setExternalTestResults ?? setInternalTestResults
   const isOllamaBackend = pluginType.type === "llm_backend" && pluginType.id === "ollama"
+  const isLlamaCppBackend = pluginType.type === "llm_backend" && pluginType.id === "llamacpp"
 
   const fetchOllamaModels = useCallback(async (endpoint?: string) => {
     if (!isOllamaBackend) return
@@ -165,6 +188,29 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     }
   }, [isOllamaBackend, editingInstance, handleError])
 
+  const fetchLlamacppServerInfo = useCallback(async (endpoint?: string, apiKey?: string) => {
+    if (!isLlamaCppBackend) return
+
+    setLoadingLlamacppInfo(true)
+    try {
+      const response = await api.listLlamaCppServerInfo(endpoint, apiKey)
+      setLlamacppServerInfo(response)
+      if (response.status === "ok") {
+        setDetectedCapabilities({
+          supports_multimodal: response.capabilities.supports_multimodal,
+          supports_thinking: response.capabilities.supports_thinking,
+          supports_tools: response.capabilities.supports_tools,
+          max_context: response.capabilities.max_context,
+        })
+      }
+    } catch (error) {
+      handleError(error, { operation: 'Fetch llama.cpp server info', showToast: false })
+      setLlamacppServerInfo(null)
+    } finally {
+      setLoadingLlamacppInfo(false)
+    }
+  }, [isLlamaCppBackend, handleError])
+
   // Track previous open state to detect dialog open transitions
   const prevOpenRef = useRef(open)
 
@@ -191,6 +237,17 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
             setOllamaEndpoint(instanceEndpoint)
           }
         }
+        if (pluginType.id === "llamacpp") {
+          const instanceEndpoint = editingInstance?.config?.endpoint as string | undefined
+          const instanceApiKey = editingInstance?.config?.api_key as string | undefined
+          if (instanceEndpoint) {
+            setLlamacppEndpoint(instanceEndpoint)
+          }
+          if (instanceApiKey) {
+            setLlamacppApiKey(instanceApiKey)
+          }
+          fetchLlamacppServerInfo(instanceEndpoint, instanceApiKey)
+        }
       } else if (pluginType.type === "llm_backend") {
         if (pluginType.id === "ollama") {
           setDetectedCapabilities({
@@ -214,6 +271,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
             supports_tools: true,
             max_context: 4096,
           })
+          setLlamacppServerInfo(null)
         } else {
           setDetectedCapabilities({
             supports_multimodal: false,
@@ -226,7 +284,7 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
     }
     // Update ref for next render
     prevOpenRef.current = open
-  }, [open, pluginType.id, pluginType.type, fetchOllamaModels, editingInstance])
+  }, [open, pluginType.id, pluginType.type, fetchOllamaModels, fetchLlamacppServerInfo, editingInstance])
 
   const handleModelChange = (modelName: string) => {
     setSelectedModel(modelName)
@@ -262,6 +320,9 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
           capabilities: detectedCapabilities,
           ...(isOllamaBackend && selectedModel ? { model: selectedModel } : {}),
           ...(isOllamaBackend ? { endpoint: ollamaEndpoint } : {}),
+          ...(isLlamaCppBackend ? { endpoint: llamacppEndpoint } : {}),
+          ...(isLlamaCppBackend && llamacppApiKey ? { api_key: llamacppApiKey } : {}),
+          ...(isLlamaCppBackend && llamacppServerInfo?.server?.model_name ? { model: llamacppServerInfo.server.model_name } : {}),
         }
       }
 
@@ -297,6 +358,9 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
           capabilities: detectedCapabilities,
           ...(isOllamaBackend && selectedModel ? { model: selectedModel } : {}),
           ...(isOllamaBackend ? { endpoint: ollamaEndpoint } : {}),
+          ...(isLlamaCppBackend ? { endpoint: llamacppEndpoint } : {}),
+          ...(isLlamaCppBackend && llamacppApiKey ? { api_key: llamacppApiKey } : {}),
+          ...(isLlamaCppBackend && llamacppServerInfo?.server?.model_name ? { model: llamacppServerInfo.server.model_name } : {}),
         }
       }
 
@@ -330,6 +394,18 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
       }
       if (schema.ui_hints?.field_order) {
         schema.ui_hints.field_order = schema.ui_hints.field_order.filter((field: string) => field !== 'model' && field !== 'endpoint')
+      }
+    }
+
+    // For llama.cpp backends, exclude endpoint and model fields since they're handled by the server info UI
+    if (isLlamaCppBackend && schema.properties) {
+      const { endpoint, model, ...restProperties } = schema.properties
+      schema.properties = restProperties
+      if (schema.required) {
+        schema.required = schema.required.filter((field: string) => field !== 'endpoint' && field !== 'model')
+      }
+      if (schema.ui_hints?.field_order) {
+        schema.ui_hints.field_order = schema.ui_hints.field_order.filter((field: string) => field !== 'endpoint' && field !== 'model')
       }
     }
 
@@ -502,12 +578,111 @@ export function UniversalPluginConfigDialog(props: UniversalPluginConfigDialogPr
         </div>
       )}
 
-      {/* Capability display for non-Ollama LLM backends */}
-      {pluginType.type === "llm_backend" && !isOllamaBackend && (
+      {/* Capability display for non-Ollama, non-llama.cpp LLM backends */}
+      {pluginType.type === "llm_backend" && !isOllamaBackend && !isLlamaCppBackend && (
         <div className="space-y-2">
           <label className="text-sm font-medium">{t("plugins:llm.capabilities", { defaultValue: "Capabilities" })}</label>
           {renderCapabilityBadges()}
         </div>
+      )}
+
+      {/* llama.cpp endpoint check + server info */}
+      {isLlamaCppBackend && (
+        <FormField label={t("plugins:llm.llamacppEndpoint", { defaultValue: "llama.cpp Endpoint" })}>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Input
+                value={llamacppEndpoint}
+                onChange={(e) => setLlamacppEndpoint(e.target.value)}
+                placeholder="http://127.0.0.1:8080"
+                disabled={saving}
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => fetchLlamacppServerInfo(llamacppEndpoint, llamacppApiKey || undefined)}
+                disabled={loadingLlamacppInfo}
+              >
+                <RefreshCw className={cn("h-4 w-4", loadingLlamacppInfo && "animate-spin")} />
+              </Button>
+            </div>
+
+            {/* Model name - always visible when available */}
+            {(() => {
+              // Priority: live server info > saved config
+              const liveModel = llamacppServerInfo?.status === "ok" ? llamacppServerInfo.server.model_name : undefined
+              const savedModel = editingInstance?.config?.model as string | undefined
+              const modelName = liveModel || savedModel
+
+              if (!modelName) return (
+                <div className="p-2 bg-muted/30 rounded-md text-xs text-muted-foreground">
+                  {t("plugins:llm.clickToDetectModel", { defaultValue: "Click the check button to detect the loaded model from the server." })}
+                </div>
+              )
+
+              return (
+                <div className="flex items-center gap-2 p-2 bg-background rounded-md border">
+                  <Brain className="h-4 w-4 text-blue-500 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs text-muted-foreground">{t("plugins:llm.loadedModel", { defaultValue: "Loaded Model" })}</div>
+                    <div className="font-medium text-sm truncate">{modelName}</div>
+                  </div>
+                  {!liveModel && savedModel && (
+                    <Badge variant="outline" className="text-xs shrink-0">
+                      {t("plugins:llm.saved", { defaultValue: "saved" })}
+                    </Badge>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* Server info display (live details) */}
+            {llamacppServerInfo && llamacppServerInfo.status === "ok" && (
+              <div className="p-3 bg-muted/30 rounded-lg space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <Server className="h-4 w-4 text-green-500" />
+                  <span className="font-medium text-green-600">
+                    {t("plugins:llm.serverConnected", { defaultValue: "Server connected" })}
+                  </span>
+                  <span className="text-muted-foreground">
+                    ({llamacppServerInfo.health.latency_ms}ms)
+                  </span>
+                </div>
+
+                {/* Server properties */}
+                {(llamacppServerInfo.server.n_ctx || llamacppServerInfo.server.total_slots || llamacppServerInfo.server.version) && (
+                  <div className="flex flex-wrap gap-2">
+                    {llamacppServerInfo.server.n_ctx && (
+                      <Badge variant="secondary" className="text-xs">
+                        {llamacppServerInfo.server.n_ctx >= 100000
+                          ? `${Math.round(llamacppServerInfo.server.n_ctx / 1000)}k ctx`
+                          : `${llamacppServerInfo.server.n_ctx} ctx`}
+                      </Badge>
+                    )}
+                    {llamacppServerInfo.server.total_slots && (
+                      <Badge variant="secondary" className="text-xs">
+                        {llamacppServerInfo.server.total_slots} slots
+                      </Badge>
+                    )}
+                    {llamacppServerInfo.server.version && (
+                      <Badge variant="secondary" className="text-xs">
+                        v{llamacppServerInfo.server.version}
+                      </Badge>
+                    )}
+                  </div>
+                )}
+                {renderCapabilityBadges()}
+              </div>
+            )}
+
+            {/* Error state */}
+            {llamacppServerInfo && llamacppServerInfo.status !== "ok" && (
+              <div className="p-3 bg-destructive/10 rounded-lg text-sm text-destructive">
+                {t("plugins:llm.serverUnreachable", { defaultValue: "Server unreachable" })}: {llamacppServerInfo.health.status}
+              </div>
+            )}
+          </div>
+        </FormField>
       )}
 
       {/* Config Form - Embedded directly */}

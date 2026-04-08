@@ -3,6 +3,8 @@
 //! Runs periodic tasks for memory extraction from Chat/Agent sources
 //! and memory compression for importance decay and summarization.
 
+use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
@@ -13,6 +15,18 @@ use super::manager::MemoryManager;
 use crate::memory_extraction::MemoryExtractor;
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_storage::{MarkdownMemoryStore, MemoryCategory, MemoryConfig, SessionStore};
+
+/// Extraction state file for tracking which sessions have been processed
+const EXTRACTION_STATE_FILE: &str = ".extraction_state.json";
+
+/// State tracking for incremental extraction
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+struct ExtractionState {
+    /// Set of session IDs that have been extracted
+    extracted_sessions: HashSet<String>,
+    /// Timestamp of last extraction run
+    last_extraction: Option<String>,
+}
 
 /// Memory scheduler for background tasks
 pub struct MemoryScheduler {
@@ -154,7 +168,7 @@ impl MemoryScheduler {
         }
     }
 
-    /// Run extraction on all sessions
+    /// Run extraction on sessions (incremental — skips already processed sessions)
     async fn run_extraction(
         _manager: &Arc<RwLock<MemoryManager>>,
         store: &Arc<RwLock<MarkdownMemoryStore>>,
@@ -176,7 +190,29 @@ impl MemoryScheduler {
             return Ok(0);
         }
 
-        info!(session_count = sessions.len(), "Starting memory extraction from sessions");
+        // Load extraction state for incremental processing
+        let state_path = {
+            let store_guard = store.read().await;
+            store_guard.base_path().join(EXTRACTION_STATE_FILE)
+        };
+        let mut state = Self::load_extraction_state(&state_path);
+
+        // Filter to only new sessions
+        let new_sessions: Vec<String> = sessions
+            .into_iter()
+            .filter(|s| !state.extracted_sessions.contains(s))
+            .collect();
+
+        if new_sessions.is_empty() {
+            info!("No new sessions to extract (all already processed)");
+            return Ok(0);
+        }
+
+        info!(
+            total_sessions = new_sessions.len(),
+            previously_extracted = state.extracted_sessions.len(),
+            "Starting incremental memory extraction"
+        );
 
         // Create extractor
         let extractor = MemoryExtractor::new(store.clone(), llm.clone());
@@ -186,13 +222,14 @@ impl MemoryScheduler {
         let mut skipped_no_messages = 0;
         let mut errors = 0;
 
-        for session_id in sessions {
+        for session_id in new_sessions {
             // Load session history
             match session_store.load_history(&session_id) {
                 Ok(messages) => {
                     if messages.len() < 3 {
-                        // Skip sessions with too few messages
+                        // Skip sessions with too few messages but still mark as processed
                         skipped_no_messages += 1;
+                        state.extracted_sessions.insert(session_id);
                         continue;
                     }
 
@@ -202,6 +239,7 @@ impl MemoryScheduler {
                     match extractor.extract_from_chat(&messages).await {
                         Ok(count) => {
                             total_extracted += count;
+                            state.extracted_sessions.insert(session_id.clone());
                             info!(
                                 session_id = %session_id,
                                 extracted = count,
@@ -229,15 +267,44 @@ impl MemoryScheduler {
             }
         }
 
+        // Update and save extraction state
+        state.last_extraction = Some(chrono::Utc::now().to_rfc3339());
+        if let Err(e) = Self::save_extraction_state(&state_path, &state) {
+            warn!(error = %e, "Failed to save extraction state");
+        }
+
         info!(
             total_extracted = total_extracted,
             sessions_processed = processed,
             sessions_skipped = skipped_no_messages,
             errors = errors,
+            total_extracted_sessions = state.extracted_sessions.len(),
             "Memory extraction completed"
         );
 
         Ok(total_extracted)
+    }
+
+    /// Load extraction state from file
+    fn load_extraction_state(path: &PathBuf) -> ExtractionState {
+        match std::fs::read_to_string(path) {
+            Ok(content) => {
+                match serde_json::from_str(&content) {
+                    Ok(state) => state,
+                    Err(e) => {
+                        warn!(error = %e, "Failed to parse extraction state, starting fresh");
+                        ExtractionState::default()
+                    }
+                }
+            }
+            Err(_) => ExtractionState::default(),
+        }
+    }
+
+    /// Save extraction state to file
+    fn save_extraction_state(path: &PathBuf, state: &ExtractionState) -> std::io::Result<()> {
+        let content = serde_json::to_string_pretty(state)?;
+        std::fs::write(path, content)
     }
 
     /// Run compression on all categories

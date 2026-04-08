@@ -1090,6 +1090,12 @@ impl Agent {
         // Update model override
         self.llm_interface.update_model(model_name).await;
 
+        tracing::info!(
+            backend_id = %llm.backend_id().as_str(),
+            model = %llm.model_name(),
+            "Setting LLM runtime on interface"
+        );
+
         self.llm_interface.set_llm(llm).await;
         self.internal_state.write().await.set_llm_ready(true);
 

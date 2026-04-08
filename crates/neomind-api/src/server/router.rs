@@ -78,6 +78,11 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/llm-backends/ollama/models",
             get(llm_backends::list_ollama_models_handler),
         )
+        // llama.cpp server info API (public - health check + server props)
+        .route(
+            "/api/llm-backends/llamacpp/server-info",
+            get(llm_backends::list_llamacpp_server_info_handler),
+        )
         // Messages Channel Types API (public - read-only metadata)
         .route(
             "/api/messages/channels/types",

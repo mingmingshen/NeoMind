@@ -974,9 +974,9 @@ async fn handle_ws_socket(
                                             }
                                             new_id
                                         } else {
-                                            // Use current session - send history if this is a reconnection
+                                            // Use current session - no need to resend history
+                                            // History is already sent on initial connection and session switches
                                             let id = current.to_string();
-                                            let _ = send_session_history(&mut socket, &id, &state).await;
                                             id
                                         }
                                     };

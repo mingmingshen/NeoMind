@@ -319,6 +319,7 @@ pub async fn create_backend_handler(
     // Parse backend type
     let backend_type = match req.backend_type.as_str() {
         "ollama" => LlmBackendType::Ollama,
+        "llamacpp" => LlmBackendType::LlamaCpp,
         "openai" => LlmBackendType::OpenAi,
         "anthropic" => LlmBackendType::Anthropic,
         "google" => LlmBackendType::Google,
@@ -1339,4 +1340,265 @@ fn adjust_capabilities_for_model(model_name: &str, capabilities: &mut BackendCap
 
     // Detect max context from model name
     capabilities.max_context = detect_model_context(model_name);
+}
+
+// ---------------------------------------------------------------------------
+// llama.cpp server info endpoint
+// ---------------------------------------------------------------------------
+
+/// Lightweight /props response — only fields we need, ignores the huge chat_template.
+#[derive(Debug, Deserialize)]
+struct LlamaCppPropsLight {
+    #[serde(default)]
+    model_alias: Option<String>,
+    #[serde(default)]
+    model_path: Option<String>,
+    #[serde(default)]
+    default_generation_settings: Option<LlamaCppPropsGenSettings>,
+    #[serde(default)]
+    total_slots: Option<usize>,
+    #[serde(default)]
+    modalities: Option<LlamaCppModalities>,
+    #[serde(default)]
+    build_info: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LlamaCppPropsGenSettings {
+    #[serde(default)]
+    n_ctx: Option<usize>,
+    #[serde(default)]
+    params: Option<LlamaCppPropsParams>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LlamaCppPropsParams {
+    #[serde(default)]
+    n_ctx: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LlamaCppModalities {
+    #[serde(default)]
+    vision: Option<bool>,
+}
+
+impl LlamaCppPropsLight {
+    fn n_ctx(&self) -> Option<usize> {
+        self.default_generation_settings
+            .as_ref()
+            .and_then(|s| s.n_ctx.or_else(|| s.params.as_ref().and_then(|p| p.n_ctx)))
+    }
+}
+
+/// Query parameters for fetching llama.cpp server info
+#[derive(Debug, Deserialize)]
+pub struct LlamaCppServerInfoQuery {
+    /// llama.cpp server endpoint (default: http://127.0.0.1:8080)
+    pub endpoint: Option<String>,
+    /// Optional API key for --api-key authentication
+    pub api_key: Option<String>,
+}
+
+/// llama.cpp server health response
+#[derive(Debug, Serialize)]
+struct LlamaCppHealthInfo {
+    status: String,
+    latency_ms: u64,
+}
+
+/// llama.cpp server properties info
+#[derive(Debug, Serialize)]
+struct LlamaCppServerDetails {
+    /// Loaded model file name (extracted from full path)
+    model_name: Option<String>,
+    /// Context window size
+    n_ctx: Option<usize>,
+    /// Number of total slots
+    total_slots: Option<usize>,
+    /// Server version
+    version: Option<String>,
+}
+
+/// Combined llama.cpp server info response
+#[derive(Debug, Serialize)]
+struct LlamaCppServerInfoResponse {
+    status: String,
+    health: LlamaCppHealthInfo,
+    server: LlamaCppServerDetails,
+    capabilities: BackendCapabilities,
+}
+
+/// GET /api/llm-backends/llamacpp/server-info?endpoint=http://127.0.0.1:8080
+///
+/// Fetches health check and server properties from a llama.cpp server,
+/// returns combined info with auto-detected capabilities.
+pub async fn list_llamacpp_server_info_handler(
+    Query(params): Query<LlamaCppServerInfoQuery>,
+) -> HandlerResult<serde_json::Value> {
+    use reqwest::Client;
+
+    let endpoint = params
+        .endpoint
+        .unwrap_or_else(|| "http://127.0.0.1:8080".to_string());
+    let base_url = endpoint.trim_end_matches('/');
+
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| ErrorResponse::internal(format!("Failed to create HTTP client: {}", e)))?;
+
+    // 1. Health check
+    let health_url = format!("{}/health", base_url);
+    let mut req = client.get(&health_url);
+    if let Some(ref key) = params.api_key {
+        req = req.bearer_auth(key);
+    }
+
+    let start = std::time::Instant::now();
+    let health_resp = req.send().await;
+    let latency_ms = start.elapsed().as_millis() as u64;
+
+    let health_info = match health_resp {
+        Ok(resp) if resp.status().is_success() => LlamaCppHealthInfo {
+            status: "ok".to_string(),
+            latency_ms,
+        },
+        Ok(resp) => LlamaCppHealthInfo {
+            status: format!("error: HTTP {}", resp.status()),
+            latency_ms,
+        },
+        Err(e) => LlamaCppHealthInfo {
+            status: format!("unreachable: {}", e),
+            latency_ms,
+        },
+    };
+
+    let is_healthy = health_info.status == "ok";
+
+    // 2. Fetch server props (only if healthy)
+    let mut server_details = LlamaCppServerDetails {
+        model_name: None,
+        n_ctx: None,
+        total_slots: None,
+        version: None,
+    };
+
+    let mut capabilities = BackendCapabilities {
+        supports_streaming: true,
+        supports_multimodal: false,
+        supports_thinking: true,
+        supports_tools: true,
+        max_context: 4096,
+    };
+
+    if is_healthy {
+        // 1. Fetch /v1/models FIRST — small, clean response for model name and n_ctx_train
+        let models_url = format!("{}/v1/models", base_url);
+        let mut req = client.get(&models_url);
+        if let Some(ref key) = params.api_key {
+            req = req.bearer_auth(key);
+        }
+
+        if let Ok(resp) = req.send().await {
+            if resp.status().is_success() {
+                if let Ok(body) = resp.text().await {
+                    if let Ok(models_resp) = serde_json::from_str::<serde_json::Value>(&body) {
+                        // Model name from data[0].id
+                        if let Some(model_id) = models_resp
+                            .get("data")
+                            .and_then(|d| d.as_array())
+                            .and_then(|arr| arr.first())
+                            .and_then(|m| m.get("id"))
+                            .and_then(|v| v.as_str())
+                        {
+                            if !model_id.is_empty() {
+                                server_details.model_name = Some(model_id.to_string());
+                                adjust_capabilities_for_model(model_id, &mut capabilities);
+                            }
+                        }
+
+                        // n_ctx_train from /v1/models is the model's trained context (more accurate)
+                        if let Some(n_ctx_train) = models_resp
+                            .get("data")
+                            .and_then(|d| d.as_array())
+                            .and_then(|arr| arr.first())
+                            .and_then(|m| m.get("meta"))
+                            .and_then(|m| m.get("n_ctx_train"))
+                            .and_then(|v| v.as_u64())
+                        {
+                            capabilities.max_context = n_ctx_train as usize;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Fetch /props for runtime n_ctx, total_slots, modalities, and version
+        // Use lightweight struct deserialization to avoid issues with the very large
+        // chat_template field that can cause serde_json::Value parsing to fail.
+        let props_url = format!("{}/props", base_url);
+        let mut req = client.get(&props_url);
+        if let Some(ref key) = params.api_key {
+            req = req.bearer_auth(key);
+        }
+
+        if let Ok(resp) = req.send().await {
+            if resp.status().is_success() {
+                if let Ok(body) = resp.text().await {
+                    // Try typed deserialization first (ignores chat_template)
+                    if let Ok(props) = serde_json::from_str::<LlamaCppPropsLight>(&body) {
+                        // Fallback model name from model_alias or model_path
+                        if server_details.model_name.is_none() {
+                            if let Some(alias) = &props.model_alias {
+                                if !alias.is_empty() {
+                                    server_details.model_name = Some(alias.clone());
+                                    adjust_capabilities_for_model(alias, &mut capabilities);
+                                }
+                            }
+                        }
+                        if server_details.model_name.is_none() {
+                            if let Some(path) = &props.model_path {
+                                if !path.is_empty() {
+                                    let name =
+                                        path.rsplit('/').next().unwrap_or(path).to_string();
+                                    server_details.model_name = Some(name.clone());
+                                    adjust_capabilities_for_model(&name, &mut capabilities);
+                                }
+                            }
+                        }
+
+                        // n_ctx from runtime settings
+                        server_details.n_ctx = props.n_ctx();
+
+                        // Use runtime n_ctx as fallback if no n_ctx_train
+                        if capabilities.max_context == 4096 {
+                            if let Some(n_ctx) = server_details.n_ctx {
+                                capabilities.max_context = n_ctx;
+                            }
+                        }
+
+                        server_details.total_slots = props.total_slots;
+
+                        // Multimodal from modalities field
+                        if let Some(vision) = props.modalities.as_ref().and_then(|m| m.vision) {
+                            capabilities.supports_multimodal = vision;
+                        }
+
+                        // Version from build_info
+                        server_details.version = props.build_info.clone();
+                    }
+                }
+            }
+        }
+    }
+
+    let response = LlamaCppServerInfoResponse {
+        status: if is_healthy { "ok" } else { "error" }.to_string(),
+        health: health_info,
+        server: server_details,
+        capabilities,
+    };
+
+    ok(json!(response))
 }

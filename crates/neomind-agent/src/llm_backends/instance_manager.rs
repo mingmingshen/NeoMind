@@ -16,6 +16,8 @@ use neomind_storage::{
 
 use super::backends::create_backend;
 use super::backends::ollama::{OllamaConfig, OllamaRuntime};
+#[cfg(feature = "llamacpp")]
+use super::backends::llamacpp::{LlamaCppConfig, LlamaCppRuntime};
 
 /// Detect model capabilities from model name (for Ollama instances)
 fn detect_ollama_capabilities(model_name: &str) -> BackendCapabilities {
@@ -57,6 +59,21 @@ fn ensure_instance_capabilities(mut instance: LlmBackendInstance) -> LlmBackendI
         let detected = detect_ollama_capabilities(&instance.model);
         if !instance.capabilities.supports_tools && detected.supports_tools {
             instance.capabilities = detected;
+        }
+    } else if matches!(instance.backend_type, LlmBackendType::LlamaCpp) {
+        // For llama.cpp backends, detect multimodal from model name as fallback.
+        // The primary detection happens at startup via /props endpoint.
+        // Only upgrade from false to true here — never downgrade, as /props is authoritative.
+        if !instance.capabilities.supports_multimodal {
+            let detected_multimodal = detect_vision_capability(&instance.model);
+            if detected_multimodal {
+                tracing::info!(
+                    backend_id = %instance.id,
+                    model = %instance.model,
+                    "Upgrading llama.cpp multimodal capability from model name"
+                );
+                instance.capabilities.supports_multimodal = true;
+            }
         }
     } else {
         // For cloud backends (OpenAI, Anthropic, etc.), correct the vision capability
@@ -216,6 +233,87 @@ impl LlmBackendInstanceManager {
                 );
 
                 Arc::new(ollama_runtime) as Arc<dyn LlmRuntime>
+            } else if matches!(instance.backend_type, LlmBackendType::LlamaCpp) {
+                #[cfg(feature = "llamacpp")]
+                {
+                    // For llama.cpp, create runtime with proper config and capabilities override
+                    let mut config = LlamaCppConfig::new(&instance.model)
+                        .with_endpoint(
+                            instance
+                                .endpoint
+                                .as_deref()
+                                .unwrap_or("http://127.0.0.1:8080"),
+                        )
+                        .with_timeout_secs(600);
+
+                    if let Some(ref key) = instance.api_key {
+                        config = config.with_api_key(key);
+                    }
+
+                    let llamacpp_runtime = LlamaCppRuntime::new(config)
+                        .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?;
+
+                    // Try to detect capabilities from /props endpoint first,
+                    // fall back to stored capabilities
+                    let detected = llamacpp_runtime.detect_capabilities().await;
+
+                    let (multimodal, thinking, tools, max_ctx) = match &detected {
+                        Some(caps) => {
+                            // Update stored capabilities if detection succeeded and values differ
+                            let changed = instance.capabilities.supports_multimodal != caps.supports_multimodal
+                                || instance.capabilities.max_context != caps.max_context
+                                || instance.capabilities.supports_tools != caps.supports_tools;
+                            if changed {
+                                tracing::info!(
+                                    backend_id = %instance.id,
+                                    old_multimodal = instance.capabilities.supports_multimodal,
+                                    new_multimodal = caps.supports_multimodal,
+                                    old_ctx = instance.capabilities.max_context,
+                                    new_ctx = caps.max_context,
+                                    "Updated llama.cpp capabilities from /props detection"
+                                );
+                                // Write back to storage and in-memory cache
+                                let mut updated = instance.clone();
+                                updated.capabilities.supports_multimodal = caps.supports_multimodal;
+                                updated.capabilities.supports_thinking = caps.supports_thinking;
+                                updated.capabilities.supports_tools = caps.supports_tools;
+                                updated.capabilities.max_context = caps.max_context;
+                                let _ = self.storage.save_instance(&updated);
+                                self.instances.insert(instance.id.clone(), updated);
+                            }
+                            (
+                                caps.supports_multimodal,
+                                caps.supports_thinking,
+                                caps.supports_tools,
+                                caps.max_context,
+                            )
+                        }
+                        None => {
+                            tracing::debug!(
+                                backend_id = %instance.id,
+                                "Could not detect llama.cpp capabilities from /props, using stored values"
+                            );
+                            let caps = &instance.capabilities;
+                            (
+                                caps.supports_multimodal,
+                                caps.supports_thinking,
+                                caps.supports_tools,
+                                caps.max_context,
+                            )
+                        }
+                    };
+
+                    let llamacpp_runtime =
+                        llamacpp_runtime.with_capabilities_override(multimodal, thinking, tools, max_ctx);
+
+                    Arc::new(llamacpp_runtime) as Arc<dyn LlmRuntime>
+                }
+                #[cfg(not(feature = "llamacpp"))]
+                {
+                    return Err(LlmError::BackendUnavailable(
+                        "llamacpp feature not enabled".to_string(),
+                    ));
+                }
             } else {
                 // For cloud backends, use the generic create_backend
                 let config = serde_json::json!({
@@ -400,6 +498,58 @@ impl LlmBackendInstanceManager {
         Ok(())
     }
 
+    /// Detect capabilities for all llama.cpp backends via /props endpoint.
+    /// Call this once at startup to ensure capabilities are up-to-date.
+    #[cfg(feature = "llamacpp")]
+    pub async fn detect_llamacpp_capabilities(&self) {
+        let llamacpp_instances: Vec<LlmBackendInstance> = self
+            .instances
+            .iter()
+            .filter(|item| matches!(item.value().backend_type, LlmBackendType::LlamaCpp))
+            .map(|item| item.value().clone())
+            .collect();
+
+        for instance in llamacpp_instances {
+            let config = LlamaCppConfig::new(&instance.model)
+                .with_endpoint(
+                    instance.endpoint.as_deref().unwrap_or("http://127.0.0.1:8080"),
+                )
+                .with_timeout_secs(10);
+
+            let runtime = match LlamaCppRuntime::new(config) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+
+            if let Some(caps) = runtime.detect_capabilities().await {
+                let changed = instance.capabilities.supports_multimodal != caps.supports_multimodal
+                    || instance.capabilities.max_context != caps.max_context
+                    || instance.capabilities.supports_tools != caps.supports_tools;
+                if changed {
+                    tracing::info!(
+                        backend_id = %instance.id,
+                        model = %instance.model,
+                        old_multimodal = instance.capabilities.supports_multimodal,
+                        new_multimodal = caps.supports_multimodal,
+                        old_ctx = instance.capabilities.max_context,
+                        new_ctx = caps.max_context,
+                        "Startup: updated llama.cpp capabilities from /props"
+                    );
+                    let mut updated = instance.clone();
+                    updated.capabilities.supports_multimodal = caps.supports_multimodal;
+                    updated.capabilities.supports_thinking = caps.supports_thinking;
+                    updated.capabilities.supports_tools = caps.supports_tools;
+                    updated.capabilities.max_context = caps.max_context;
+                    let _ = self.storage.save_instance(&updated);
+                    self.instances.insert(instance.id.clone(), updated);
+                }
+            }
+        }
+    }
+
+    #[cfg(not(feature = "llamacpp"))]
+    pub async fn detect_llamacpp_capabilities(&self) {}
+
     /// Get available backend types with their default configurations
     pub fn get_available_types(&self) -> Vec<BackendTypeDefinition> {
         vec![
@@ -515,7 +665,7 @@ impl LlmBackendInstanceManager {
                 requires_api_key: false,
                 supports_streaming: true,
                 supports_thinking: true,
-                supports_multimodal: false,
+                supports_multimodal: true, // Detected at runtime via /props endpoint
             },
         ]
     }
