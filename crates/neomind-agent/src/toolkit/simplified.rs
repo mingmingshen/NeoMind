@@ -336,10 +336,10 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             ],
         },
 
-        // === Agent Tool (aggregates 6 agent operations) ===
+        // === Agent Tool (aggregates 7 agent operations) ===
         LlmToolDefinition {
             name: "agent".to_string(),
-            description: "AI Agent management tool for creating and managing automated monitoring/control agents. Actions: list, get, create, update, control (pause/resume), memory (view learned patterns).".to_string(),
+            description: "AI Agent management tool for creating and managing automated monitoring/control agents. Actions: list, get, create, update, control (pause/resume), memory (view learned patterns), send_message (send instruction to agent).".to_string(),
             aliases: vec!["agent".to_string(), "automation".to_string(), "monitor".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
@@ -383,6 +383,16 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     default: serde_json::json!("concise"),
                     examples: vec!["concise".to_string(), "detailed".to_string()],
                 }),
+                ("message".to_string(), ParameterInfo {
+                    description: "Message content to send to the agent (send_message action). The agent will see this in its next execution. Example: 'Focus on monitoring the front door area'".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["Focus on monitoring the front door area".to_string(), "Switch to monitoring humidity instead".to_string()],
+                }),
+                ("message_type".to_string(), ParameterInfo {
+                    description: "Optional message type/tag for categorization (send_message action). Example: 'instruction', 'correction', 'update'".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["instruction".to_string(), "correction".to_string(), "update".to_string()],
+                }),
                 ("confirm".to_string(), ParameterInfo {
                     description: "Set to true after user confirms (control action). Returns preview without confirmation".to_string(),
                     default: serde_json::json!(false),
@@ -410,13 +420,15 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 "User asks about agents or automations".to_string(),
                 "User wants to create a monitoring or control agent".to_string(),
                 "User wants to pause/resume agent execution".to_string(),
+                "User wants to send an instruction or message to an agent".to_string(),
+                "User wants to guide, correct, or update an agent's behavior".to_string(),
             ],
         },
 
         // === Agent History Tool ===
         LlmToolDefinition {
             name: "agent_history".to_string(),
-            description: "Agent execution history tool. View execution stats (success rate, run count) or conversation logs (what agent did and decided). Useful for debugging agent behavior.".to_string(),
+            description: "Agent execution history tool. View execution stats (success rate, run count), conversation logs (what agent did and decided), or the latest execution with full details (analysis, reasoning, decisions). Useful for debugging agent behavior and checking execution results.".to_string(),
             aliases: vec!["agent history".to_string(), "agent logs".to_string(), "execution history".to_string()],
             required: vec!["action".to_string(), "agent_id".to_string()],
             optional: HashMap::from_iter(vec![
@@ -442,11 +454,17 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     tool_call: r#"agent_history(action="conversation", agent_id="agent_1", limit=5)"#.to_string(),
                     explanation: "View recent conversation history".to_string(),
                 },
+                Example {
+                    user_query: "How did the temperature monitor's last execution go?".to_string(),
+                    tool_call: r#"agent_history(action="latest_execution", agent_id="agent_1")"#.to_string(),
+                    explanation: "View the most recent execution with full details including analysis, reasoning, and conclusion".to_string(),
+                },
             ],
             use_when: vec![
                 "User asks about agent execution history or performance".to_string(),
                 "User wants to debug why an agent made a decision".to_string(),
                 "User asks what an agent has been doing".to_string(),
+                "User asks about the latest execution result or whether it succeeded".to_string(),
             ],
         },
 
@@ -637,8 +655,8 @@ pub fn format_tools_for_llm() -> String {
     prompt.push_str("### Usage\n\n");
     prompt.push_str("All tools use an `action` parameter to differentiate operations:\n");
     prompt.push_str("- device(action=\"list|get|query|control\", ...)\n");
-    prompt.push_str("- agent(action=\"list|get|create|update|control|memory\", ...)\n");
-    prompt.push_str("- agent_history(action=\"executions|conversation\", agent_id=\"...\")\n");
+    prompt.push_str("- agent(action=\"list|get|create|update|control|memory|send_message\", ...)\n");
+    prompt.push_str("- agent_history(action=\"executions|conversation|latest_execution\", agent_id=\"...\")\n");
     prompt.push_str("- rule(action=\"list|get|create|delete|history\", ...)\n");
     prompt.push_str("- alert(action=\"list|create|acknowledge\", ...)\n");
     prompt.push_str("- extension(action=\"list|get|execute|status\", ...)\n\n");

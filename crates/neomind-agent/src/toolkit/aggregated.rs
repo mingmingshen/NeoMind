@@ -487,6 +487,7 @@ Actions:
 - update: Modify an existing agent's configuration (name, description, user_prompt). Use when user wants to change agent behavior.
 - control: Pause or resume agent execution (control_action: pause/resume). WARNING: This affects running agents.
 - memory: View agent's learned patterns and intent understanding. Use when debugging agent behavior.
+- send_message: Send a message or instruction to the agent. The agent will see it in its next execution. Use when user wants to guide, correct, or update an agent's behavior through natural language.
 
 When creating agents:
 - schedule_type: 'event' (triggered by device events), 'cron' (cron schedule), 'interval' (periodic, e.g., every 5 minutes)
@@ -499,12 +500,20 @@ When creating agents:
             serde_json::json!({
                 "action": {
                     "type": "string",
-                    "enum": ["list", "get", "create", "update", "control", "memory"],
-                    "description": "Operation type: 'list' (all agents), 'get' (agent details), 'create' (new agent), 'update' (modify agent), 'control' (pause/resume), 'memory' (view learned patterns)"
+                    "enum": ["list", "get", "create", "update", "control", "memory", "send_message"],
+                    "description": "Operation type: 'list' (all agents), 'get' (agent details), 'create' (new agent), 'update' (modify agent), 'control' (pause/resume), 'memory' (view learned patterns), 'send_message' (send message to agent)"
                 },
                 "agent_id": {
                     "type": "string",
                     "description": "Agent ID or name. Supports fuzzy matching (e.g., 'Temperature Monitor' matches by name). Use list action to discover available agents. Examples: '550e8400-...', 'Temperature Monitor'"
+                },
+                "message": {
+                    "type": "string",
+                    "description": "Message content to send to the agent (send_message action). The agent will see this in its next execution. Example: 'Focus on monitoring the front door area'"
+                },
+                "message_type": {
+                    "type": "string",
+                    "description": "Optional message type/tag for categorization (send_message action). Example: 'instruction', 'correction', 'update'"
                 },
                 "name": {
                     "type": "string",
@@ -572,6 +581,7 @@ When creating agents:
             "update" => self.execute_update(&args).await,
             "control" => self.execute_control(&args).await,
             "memory" => self.execute_memory(&args).await,
+            "send_message" => self.execute_send_message(&args).await,
             _ => Err(ToolError::InvalidArguments(format!(
                 "Unknown action: {}",
                 action
@@ -875,6 +885,33 @@ impl AgentTool {
             ))),
         }
     }
+
+    async fn execute_send_message(&self, args: &Value) -> Result<ToolOutput> {
+        let agent_id_input = args["agent_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("agent_id is required".into()))?;
+
+        let agent_id = self.resolve_agent_id(agent_id_input).await?;
+
+        let content = args["message"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("message is required".into()))?;
+
+        let message_type = args["message_type"].as_str().map(|s| s.to_string());
+
+        let user_msg = self
+            .agent_store
+            .add_user_message(&agent_id, content.to_string(), message_type)
+            .await
+            .map_err(|e| ToolError::Execution(e.to_string()))?;
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "agent_id": agent_id,
+            "message_id": user_msg.id,
+            "status": "delivered",
+            "note": "Message will be included in the agent's next execution context"
+        })))
+    }
 }
 
 // ============================================================================
@@ -905,11 +942,13 @@ impl Tool for AgentHistoryTool {
 Actions:
 - executions: View agent execution statistics (total runs, success rate, last execution time). Use when user asks about agent performance or reliability.
 - conversation: View agent's conversation history (inputs and outputs from past runs). Use when debugging agent behavior or reviewing what an agent did.
+- latest_execution: View the most recent execution with full details (analysis, reasoning, decisions, conclusion). Use when user asks about execution results or completion status.
 
 Use cases:
 - Check if an agent is running correctly: executions action
 - Debug why an agent made a decision: conversation action
-- Review recent agent activity: conversation with limit"#
+- Review recent agent activity: conversation with limit
+- Check last execution result or success/failure: latest_execution action"#
     }
 
     fn parameters(&self) -> Value {
@@ -917,8 +956,8 @@ Use cases:
             serde_json::json!({
                 "action": {
                     "type": "string",
-                    "enum": ["executions", "conversation"],
-                    "description": "Operation type: 'executions' (execution statistics), 'conversation' (conversation log)"
+                    "enum": ["executions", "conversation", "latest_execution"],
+                    "description": "Operation type: 'executions' (execution statistics), 'conversation' (conversation log), 'latest_execution' (most recent execution with full details)"
                 },
                 "agent_id": {
                     "type": "string",
@@ -950,6 +989,7 @@ Use cases:
         match action {
             "executions" => self.execute_executions(&args).await,
             "conversation" => self.execute_conversation(&args).await,
+            "latest_execution" => self.execute_latest_execution(&args).await,
             _ => Err(ToolError::InvalidArguments(format!(
                 "Unknown action: {}",
                 action
@@ -1009,6 +1049,56 @@ impl AgentHistoryTool {
         Ok(ToolOutput::success(serde_json::json!({
             "agent_id": agent_id,
             "messages": conversation
+        })))
+    }
+
+    async fn execute_latest_execution(&self, args: &Value) -> Result<ToolOutput> {
+        let agent_id_input = args["agent_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("agent_id is required".into()))?;
+
+        let agent = self
+            .agent_store
+            .get_agent(agent_id_input)
+            .await
+            .map_err(|e| ToolError::Execution(e.to_string()))?
+            .ok_or_else(|| {
+                ToolError::Execution(format!("Agent not found: {}", agent_id_input))
+            })?;
+
+        let last_turn = agent.conversation_history.first();
+
+        let stats_summary = serde_json::json!({
+            "total_executions": agent.stats.total_executions,
+            "successful_executions": agent.stats.successful_executions,
+            "failed_executions": agent.stats.failed_executions,
+            "success_rate": if agent.stats.total_executions > 0 {
+                format!("{:.0}%", (agent.stats.successful_executions as f64 / agent.stats.total_executions as f64) * 100.0)
+            } else {
+                "N/A".to_string()
+            },
+            "last_duration_ms": last_turn.map(|t| t.duration_ms),
+        });
+
+        let last_execution = last_turn.map(|turn| {
+            serde_json::json!({
+                "execution_id": turn.execution_id,
+                "timestamp": turn.timestamp,
+                "trigger_type": turn.trigger_type,
+                "success": turn.success,
+                "duration_ms": turn.duration_ms,
+                "input": turn.input,
+                "output": turn.output
+            })
+        });
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "agent_id": agent_id_input,
+            "agent_name": agent.name,
+            "agent_status": format!("{:?}", agent.status).to_lowercase(),
+            "last_execution": last_execution,
+            "pending_user_messages": agent.user_messages.len(),
+            "stats_summary": stats_summary
         })))
     }
 }
