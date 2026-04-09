@@ -549,7 +549,7 @@ export function BarChart({
         {title && (
           <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
         )}
-        <Skeleton className={cn('w-full', size === 'sm' ? 'h-[120px]' : size === 'md' ? 'h-[180px]' : 'h-[240px]')} />
+        <Skeleton className={cn('w-full', 'flex-1 min-h-0')} />
       </div>
     )
   }
@@ -563,7 +563,7 @@ export function BarChart({
       {title && (
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
-      <div className={cn('w-full', size === 'sm' ? 'h-[120px]' : size === 'md' ? 'h-[180px]' : 'h-[240px]')}>
+      <div className={cn('w-full', 'flex-1 min-h-0')}>
         <ResponsiveContainer width="100%" height="100%">
           <RechartsBarChart
             data={chartData}

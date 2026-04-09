@@ -1840,7 +1840,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         ),
       }
     }) ?? []
-  }, [componentsStableKey, editMode, devices.length, isMobile])
+  }, [componentsStableKey, configVersion, editMode, devices.length, isMobile])
 
   // Track initial config load to avoid unnecessary updates
   const initialConfigRef = useRef<any>(null)

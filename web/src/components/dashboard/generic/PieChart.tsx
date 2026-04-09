@@ -484,7 +484,7 @@ export function PieChart({
         {title && (
           <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
         )}
-        <Skeleton className={cn('w-full', size === 'sm' ? 'h-[120px]' : size === 'md' ? 'h-[180px]' : 'h-[240px]')} />
+        <Skeleton className={cn('w-full', 'flex-1 min-h-0')} />
       </div>
     )
   }
@@ -500,7 +500,7 @@ export function PieChart({
       {title && (
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
-      <div className={cn('w-full', size === 'sm' ? 'h-[120px]' : size === 'md' ? 'h-[180px]' : 'h-[240px]')}>
+      <div className={cn('w-full', 'flex-1 min-h-0')}>
         <ResponsiveContainer width="100%" height="100%">
           <RechartsPieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
             <Pie

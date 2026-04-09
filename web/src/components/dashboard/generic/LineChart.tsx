@@ -508,7 +508,7 @@ export function LineChart({
         {title && (
           <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
         )}
-        <Skeleton className={cn('w-full', size === 'sm' ? 'h-[120px]' : size === 'md' ? 'h-[180px]' : 'h-[240px]')} />
+        <Skeleton className={cn('w-full', 'flex-1 min-h-0')} />
       </div>
     )
   }
@@ -528,7 +528,7 @@ export function LineChart({
       {title && (
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
-      <div className={cn('w-full', size === 'sm' ? 'h-[120px]' : size === 'md' ? 'h-[180px]' : 'h-[240px]')}>
+      <div className={cn('w-full', 'flex-1 min-h-0')}>
         <ResponsiveContainer width="100%" height="100%">
           <RechartsLineChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: 0 }} accessibilityLayer>
             <defs>
@@ -862,7 +862,7 @@ export function AreaChart({
         {title && (
           <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
         )}
-        <Skeleton className={cn('w-full', size === 'sm' ? 'h-[120px]' : size === 'md' ? 'h-[180px]' : 'h-[240px]')} />
+        <Skeleton className={cn('w-full', 'flex-1 min-h-0')} />
       </div>
     )
   }
@@ -882,7 +882,7 @@ export function AreaChart({
       {title && (
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
-      <div className={cn('w-full', size === 'sm' ? 'h-[120px]' : size === 'md' ? 'h-[180px]' : 'h-[240px]')}>
+      <div className={cn('w-full', 'flex-1 min-h-0')}>
         <ResponsiveContainer width="100%" height="100%">
           <RechartsAreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: 0 }} accessibilityLayer>
             {showGrid && <CartesianGrid vertical={false} strokeDasharray="4 4" className="stroke-muted" />}
