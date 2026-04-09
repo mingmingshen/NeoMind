@@ -1679,13 +1679,20 @@ pub async fn process_stream_events_with_safeguards(
 
     // === DYNAMIC CONTEXT WINDOW: Get model's actual capacity ===
     let max_context = llm_interface.max_context_length().await;
-    // Use 90% of model capacity for history, reserve 10% for generation
-    // This allows us to use the full capability of models like qwen3-vl:2b (32k)
-    // without artificial limits while ensuring space for response generation
-    let effective_max = (max_context * 90) / 100;
+    // Use more conservative limits for small context windows:
+    // - Small contexts (< 8k): 60% for history (system prompt + tools take a large share)
+    // - Medium contexts (< 16k): 70%
+    // - Large contexts (>= 16k): 90%
+    let effective_max = if max_context < 8192 {
+        (max_context * 60) / 100
+    } else if max_context < 16384 {
+        (max_context * 70) / 100
+    } else {
+        (max_context * 90) / 100
+    };
 
     tracing::debug!(
-        "Context window: model_capacity={}, effective_max={} (90% for history)",
+        "Context window: model_capacity={}, effective_max={} for history",
         max_context,
         effective_max
     );
@@ -1902,21 +1909,18 @@ pub async fn process_stream_events_with_safeguards(
             if tool_iteration_count > 0 {
                 tracing::info!("Starting tool iteration round {}", tool_iteration_count + 1);
 
-                // For subsequent rounds, we need a new LLM call with tools enabled
-                // Use the same dynamic context limit for consistency
+                // For subsequent rounds, we need a new LLM call with tools enabled.
+                // Apply tool result compaction to prevent context bloat from accumulated
+                // tool JSON results. compact_tool_results keeps the 2 most recent tool
+                // rounds intact and compresses older ones to brief summaries.
                 let state_guard = internal_state.read().await;
 
-                let max_context = llm_interface.max_context_length().await;
-                // Use 90% of model capacity for history
-                let effective_max = (max_context * 90) / 100;
-
-                let history_for_round = build_context_window(&state_guard.memory, effective_max);
+                let history_for_llm: Vec<neomind_core::Message> = {
+                    // Compact tool results: keep 2 most recent rounds, summarize older ones
+                    let compacted = super::compact_tool_results(&state_guard.memory, 2);
+                    compacted.iter().map(|msg| msg.to_core()).collect::<Vec<_>>()
+                };
                 drop(state_guard);
-
-                let history_for_llm: Vec<neomind_core::Message> = history_for_round
-                    .iter()
-                    .map(|msg| msg.to_core())
-                    .collect::<Vec<_>>();
 
                 // Build context for subsequent rounds - tell LLM what happened before
                 let recently_executed: Vec<&str> = recently_executed_tools.iter().map(|(name, _)| name.as_str()).collect();
@@ -2756,8 +2760,14 @@ pub async fn process_multimodal_stream_events_with_safeguards(
 
     // Build context window
     let max_context = llm_interface.max_context_length().await;
-    // Use 90% of model capacity for history
-    let effective_max = (max_context * 90) / 100;
+    // Use conservative context limits
+    let effective_max = if max_context < 8192 {
+        (max_context * 60) / 100
+    } else if max_context < 16384 {
+        (max_context * 70) / 100
+    } else {
+        (max_context * 90) / 100
+    };
 
     let history_for_llm: Vec<neomind_core::Message> =
         build_context_window(&history_messages, effective_max)

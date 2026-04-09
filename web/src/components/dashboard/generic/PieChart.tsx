@@ -331,6 +331,28 @@ export function PieChart({
     return propertyNames[property] || property.replace(/[-_]/g, ' ')
   }
 
+  // Get series display name from data source, handling extension sources
+  const getSeriesName = (ds: DataSource, idx: number): string => {
+    if (ds.type === 'extension' || ds.type === 'extension-metric') {
+      const extName = ds.extensionDisplayName || ds.extensionId || ''
+      const metricPart = ds.extensionMetric
+        ? getPropertyDisplayName(ds.extensionMetric.includes(':') ? ds.extensionMetric.split(':').pop()! : ds.extensionMetric)
+        : ''
+      if (extName && metricPart) return `${extName} · ${metricPart}`
+      if (extName) return extName
+      if (metricPart) return metricPart
+      return t('chart.series', { count: idx + 1 })
+    }
+    const metricName = ds.metricId || ds.property
+    if (ds.deviceId) {
+      return `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
+    }
+    if (metricName) {
+      return getPropertyDisplayName(metricName.includes(':') ? metricName.split(':').pop()! : metricName)
+    }
+    return t('chart.series', { count: idx + 1 })
+  }
+
   // Check if data is multi-source (array of arrays)
   const isMultiSource = (data: unknown): boolean => {
     return Array.isArray(data) && data.length > 0 && Array.isArray(data[0])
@@ -346,11 +368,10 @@ export function PieChart({
     if (sources.length > 1 && Array.isArray(data) && data.length === sources.length) {
       return sources.map((ds, i) => {
         const arr = data[i]
+        const seriesLabel = getSeriesName(ds, i)
         if (!Array.isArray(arr)) {
           return {
-            name: ds.deviceId
-              ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-              : t('chart.series', { count: i + 1 }),
+            name: seriesLabel,
             value: 0,
             color: chartColors[i % chartColors.length],
           }
@@ -377,9 +398,7 @@ export function PieChart({
 
             const aggregatedValue = aggregateData(timePoints, effectiveAggregate)
             return {
-              name: ds.deviceId
-                ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-                : t('chart.series', { count: i + 1 }),
+              name: seriesLabel,
               value: aggregatedValue ?? 0,
               color: chartColors[i % chartColors.length],
             }
@@ -396,18 +415,14 @@ export function PieChart({
           }))
           const aggregatedValue = aggregateData(timePoints, effectiveAggregate)
           return {
-            name: ds.deviceId
-              ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-              : t('chart.series', { count: i + 1 }),
+            name: seriesLabel,
             value: aggregatedValue ?? 0,
             color: chartColors[i % chartColors.length],
           }
         }
 
         return {
-          name: ds.deviceId
-            ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-            : t('chart.series', { count: i + 1 }),
+          name: seriesLabel,
           value: 0,
           color: chartColors[i % chartColors.length],
         }

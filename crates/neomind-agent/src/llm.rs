@@ -13,9 +13,11 @@ use tokio::sync::RwLock;
 
 use neomind_core::{
     config::agent_env_vars,
-    llm::backend::{LlmInput, LlmRuntime},
+    llm::backend::{LlmError, LlmInput, LlmRuntime},
     Message,
 };
+
+use crate::agent::tokenizer::estimate_tokens;
 
 // Import intent classifier for staged processing
 use crate::agent::staged::{IntentCategory, IntentClassifier, IntentResult, ToolFilter};
@@ -412,6 +414,84 @@ impl LlmInterface {
         }
 
         Err(NeoMindError::Llm("LLM backend not ready".to_string()))
+    }
+
+    /// Compute the token budget for conversation history given the model's context window.
+    ///
+    /// Uses `estimate_tokens` for accurate token counting that handles Chinese (~1.8 tokens/char),
+    /// English (~0.25 tokens/char), and mixed content correctly.
+    ///
+    /// Returns `(available_tokens, prompt_budget_tokens)` where `available_tokens` is the
+    /// token budget for history messages after reserving space for everything else.
+    async fn compute_history_budget(
+        &self,
+        max_ctx: usize,
+        system_prompt: &str,
+        user_message: &str,
+        history_msg_count: usize,
+        include_tools: bool,
+    ) -> (usize, usize) {
+        // Use more conservative budget for small contexts
+        // < 8k: 50% for prompt, 50% for generation + overhead
+        // < 16k: 60%, >= 16k: 70%
+        let prompt_ratio = if max_ctx < 8192 {
+            50
+        } else if max_ctx < 16384 {
+            60
+        } else {
+            70
+        };
+        let prompt_budget = (max_ctx * prompt_ratio) / 100;
+
+        // Estimate tool definition overhead in tokens using estimate_tokens
+        let tool_overhead_tokens = if include_tools {
+            let tools = self.tool_definitions.read().await;
+            if tools.is_empty() {
+                0
+            } else {
+                tools
+                    .iter()
+                    .map(|t| {
+                        estimate_tokens(&t.name)
+                            + estimate_tokens(&t.description)
+                            + estimate_tokens(&t.parameters.to_string())
+                            + 10 // formatting overhead per tool
+                    })
+                    .sum::<usize>()
+            }
+        } else {
+            0
+        };
+
+        // Chat template overhead: ~10 tokens per message for role markers and special tokens
+        let template_overhead_tokens = 10 * (history_msg_count + 2);
+
+        // Use estimate_tokens for accurate Chinese/English token counting
+        let system_tokens = estimate_tokens(system_prompt);
+        let user_tokens = estimate_tokens(user_message);
+
+        let reserved = system_tokens
+            + user_tokens
+            + tool_overhead_tokens
+            + template_overhead_tokens
+            + 200; // additional safety margin
+
+        let available_tokens = prompt_budget.saturating_sub(reserved);
+
+        tracing::debug!(
+            max_ctx,
+            prompt_ratio,
+            prompt_budget,
+            reserved,
+            available_tokens,
+            tool_overhead_tokens,
+            template_overhead_tokens,
+            system_tokens,
+            user_tokens,
+            "Computed history budget (token-based)"
+        );
+
+        (available_tokens, prompt_budget)
     }
 
     /// Get effective generation parameters.
@@ -1043,7 +1123,6 @@ impl LlmInterface {
     ) -> AgentResult<ChatResponse> {
         let user_message: String = user_message.into();
         let max_ctx = self.max_context_length().await;
-        let prompt_budget = (max_ctx * 70) / 100;
 
         // === FAST PATH: Simple greetings ===
         // Bypass LLM for simple greetings to improve response time
@@ -1168,16 +1247,25 @@ impl LlmInterface {
                 .filter(|msg| msg.role != neomind_core::MessageRole::System)
                 .collect();
 
-            let reserved_chars = system_prompt.len() + user_message.len() + 500;
-            let budget_chars = prompt_budget.saturating_mul(4);
-            let available_chars = budget_chars.saturating_sub(reserved_chars);
+            let (available_tokens, _prompt_budget) = self
+                .compute_history_budget(
+                    max_ctx,
+                    &system_prompt,
+                    &user_message,
+                    history_msgs.len(),
+                    has_tools,
+                )
+                .await;
 
-            let total_history_chars: usize = history_msgs
+            let total_history_tokens: usize = history_msgs
                 .iter()
-                .map(|m| m.content.as_text().len())
+                .map(|m| {
+                    let text = m.content.as_text();
+                    estimate_tokens(&text)
+                })
                 .sum();
 
-            if total_history_chars <= available_chars {
+            if total_history_tokens <= available_tokens {
                 for msg in &history_msgs {
                     msgs.push((*msg).clone());
                 }
@@ -1185,18 +1273,20 @@ impl LlmInterface {
                 let mut used = 0usize;
                 let mut kept = Vec::new();
                 for msg in history_msgs.iter().rev() {
-                    let size = msg.content.as_text().len();
-                    if used + size > available_chars {
+                    let text = msg.content.as_text();
+                    let tokens = estimate_tokens(&text);
+                    if used + tokens > available_tokens {
                         break;
                     }
-                    used += size;
+                    used += tokens;
                     kept.push((*msg).clone());
                 }
                 kept.reverse();
                 tracing::info!(
-                    total_history_chars,
+                    total_history_tokens,
                     kept_messages = kept.len(),
                     total_messages = history_msgs.len(),
+                    available_tokens,
                     "Truncated conversation history to fit context window"
                 );
                 msgs.extend(kept);
@@ -1260,7 +1350,6 @@ impl LlmInterface {
         history: Option<&[Message]>,
     ) -> AgentResult<ChatResponse> {
         let max_ctx = self.max_context_length().await;
-        let prompt_budget = (max_ctx * 70) / 100;
 
         // Acquire permit for concurrency limiting
         let _permit = self.limiter.acquire().await;
@@ -1354,16 +1443,26 @@ impl LlmInterface {
                 .filter(|msg| msg.role != neomind_core::MessageRole::System)
                 .collect();
 
-            let reserved_chars = system_prompt.len() + user_message.content.as_text().len() + 500;
-            let budget_chars = prompt_budget.saturating_mul(4);
-            let available_chars = budget_chars.saturating_sub(reserved_chars);
+            let user_text = user_message.content.as_text();
+            let (available_tokens, _prompt_budget) = self
+                .compute_history_budget(
+                    max_ctx,
+                    &system_prompt,
+                    &user_text,
+                    history_msgs.len(),
+                    has_tools,
+                )
+                .await;
 
-            let total_history_chars: usize = history_msgs
+            let total_history_tokens: usize = history_msgs
                 .iter()
-                .map(|m| m.content.as_text().len())
+                .map(|m| {
+                    let text = m.content.as_text();
+                    estimate_tokens(&text)
+                })
                 .sum();
 
-            if total_history_chars <= available_chars {
+            if total_history_tokens <= available_tokens {
                 for msg in &history_msgs {
                     msgs.push((*msg).clone());
                 }
@@ -1371,18 +1470,20 @@ impl LlmInterface {
                 let mut used = 0usize;
                 let mut kept = Vec::new();
                 for msg in history_msgs.iter().rev() {
-                    let size = msg.content.as_text().len();
-                    if used + size > available_chars {
+                    let text = msg.content.as_text();
+                    let tokens = estimate_tokens(&text);
+                    if used + tokens > available_tokens {
                         break;
                     }
-                    used += size;
+                    used += tokens;
                     kept.push((*msg).clone());
                 }
                 kept.reverse();
                 tracing::info!(
-                    total_history_chars,
+                    total_history_tokens,
                     kept_messages = kept.len(),
                     total_messages = history_msgs.len(),
+                    available_tokens,
                     "Truncated conversation history to fit context window"
                 );
                 msgs.extend(kept);
@@ -1549,7 +1650,7 @@ impl LlmInterface {
     ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         let model_arc = Arc::clone(&self.model);
         let max_ctx = self.max_context_length().await;
-        let prompt_budget = (max_ctx * 70) / 100;
+        let _prompt_budget = (max_ctx * 50) / 100;
 
         // Build system prompt (with or without tools based on phase)
         let system_prompt = if include_tools {
@@ -1679,16 +1780,26 @@ impl LlmInterface {
                 .filter(|msg| msg.role != neomind_core::MessageRole::System)
                 .collect();
 
-            let reserved_chars = system_prompt.len() + user_message.content.as_text().len() + 500;
-            let budget_chars = prompt_budget.saturating_mul(4);
-            let available_chars = budget_chars.saturating_sub(reserved_chars);
+            let user_text = user_message.content.as_text();
+            let (available_tokens, _prompt_budget) = self
+                .compute_history_budget(
+                    max_ctx,
+                    &system_prompt,
+                    &user_text,
+                    history_msgs.len(),
+                    include_tools,
+                )
+                .await;
 
-            let total_history_chars: usize = history_msgs
+            let total_history_tokens: usize = history_msgs
                 .iter()
-                .map(|m| m.content.as_text().len())
+                .map(|m| {
+                    let text = m.content.as_text();
+                    estimate_tokens(&text)
+                })
                 .sum();
 
-            if total_history_chars <= available_chars {
+            if total_history_tokens <= available_tokens {
                 for msg in &history_msgs {
                     msgs.push((*msg).clone());
                 }
@@ -1696,18 +1807,20 @@ impl LlmInterface {
                 let mut used = 0usize;
                 let mut kept = Vec::new();
                 for msg in history_msgs.iter().rev() {
-                    let size = msg.content.as_text().len();
-                    if used + size > available_chars {
+                    let text = msg.content.as_text();
+                    let tokens = estimate_tokens(&text);
+                    if used + tokens > available_tokens {
                         break;
                     }
-                    used += size;
+                    used += tokens;
                     kept.push((*msg).clone());
                 }
                 kept.reverse();
                 tracing::info!(
-                    total_history_chars,
+                    total_history_tokens,
                     kept_messages = kept.len(),
                     total_messages = history_msgs.len(),
+                    available_tokens,
                     "Truncated conversation history to fit context window (multimodal stream)"
                 );
                 msgs.extend(kept);
@@ -1775,8 +1888,14 @@ impl LlmInterface {
 
         // Check model context capacity for adaptive prompt sizing
         let max_ctx = self.max_context_length().await;
-        // Reserve ~30% for generation, 70% available for prompt
-        let prompt_budget = (max_ctx * 70) / 100;
+        // Use more conservative budget for small contexts
+        let prompt_budget = if max_ctx < 8192 {
+            (max_ctx * 50) / 100
+        } else if max_ctx < 16384 {
+            (max_ctx * 60) / 100
+        } else {
+            (max_ctx * 70) / 100
+        };
 
         let use_compact_prompt = prompt_budget < 3000; // < ~3000 tokens → use compact prompt
         let skip_history = prompt_budget < 1500;       // < ~1500 tokens → skip history entirely
@@ -1910,6 +2029,36 @@ impl LlmInterface {
         let system_msg = Message::system(&system_prompt);
         let user_msg = Message::user(&user_message);
 
+        // Prepare fallback strategies for context overflow retry
+        // Strategy 1: Compact fallback - keep user message + last tool round (if any)
+        // Strategy 2: Minimal fallback - system prompt + user message only
+        let compact_fallback_system = "You are NeoMind IoT assistant. Summarize results concisely based on the tool results shown.".to_string();
+        let compact_fallback_messages = if let Some(hist) = history {
+            let mut compact = vec![Message::system(&compact_fallback_system)];
+            // Keep only the last few messages (most recent tool round + user message)
+            let non_system: Vec<&Message> = hist.iter()
+                .filter(|m| m.role != neomind_core::MessageRole::System)
+                .collect();
+            // Take last 4 messages max (covers: user → assistant tool_call → tool result → assistant response)
+            let keep = non_system.len().saturating_sub(4);
+            for msg in &non_system[keep..] {
+                compact.push((*msg).clone());
+            }
+            // Add current user message if not already present
+            compact.push(Message::user(&user_message));
+            compact
+        } else {
+            vec![
+                Message::system(&compact_fallback_system),
+                Message::user(&user_message),
+            ]
+        };
+        // Strategy 2: Minimal fallback
+        let minimal_fallback_messages = vec![
+            Message::system(&compact_fallback_system),
+            Message::user(&user_message),
+        ];
+
         // Build messages with history if provided, truncated to fit context window
         let messages = if let Some(hist) = history {
             let mut msgs = vec![system_msg];
@@ -1920,17 +2069,26 @@ impl LlmInterface {
                 .filter(|msg| msg.role != neomind_core::MessageRole::System)
                 .collect();
 
-            // Estimate character budget for history (~4 chars per token)
-            let reserved_chars = system_prompt.len() + user_message.len() + 500;
-            let budget_chars = prompt_budget.saturating_mul(4);
-            let available_chars = budget_chars.saturating_sub(reserved_chars);
+            // Use token-based budget calculation accounting for tools and template overhead
+            let (available_tokens, _prompt_budget) = self
+                .compute_history_budget(
+                    max_ctx,
+                    &system_prompt,
+                    &user_message,
+                    history_msgs.len(),
+                    include_tools,
+                )
+                .await;
 
-            let total_history_chars: usize = history_msgs
+            let total_history_tokens: usize = history_msgs
                 .iter()
-                .map(|m| m.content.as_text().len())
+                .map(|m| {
+                    let text = m.content.as_text();
+                    estimate_tokens(&text)
+                })
                 .sum();
 
-            if total_history_chars <= available_chars {
+            if total_history_tokens <= available_tokens {
                 for msg in &history_msgs {
                     msgs.push((*msg).clone());
                 }
@@ -1939,19 +2097,20 @@ impl LlmInterface {
                 let mut used = 0usize;
                 let mut kept = Vec::new();
                 for msg in history_msgs.iter().rev() {
-                    let size = msg.content.as_text().len();
-                    if used + size > available_chars {
+                    let text = msg.content.as_text();
+                    let tokens = estimate_tokens(&text);
+                    if used + tokens > available_tokens {
                         break;
                     }
-                    used += size;
+                    used += tokens;
                     kept.push((*msg).clone());
                 }
                 kept.reverse();
                 tracing::info!(
-                    total_history_chars,
+                    total_history_tokens,
                     kept_messages = kept.len(),
                     total_messages = history_msgs.len(),
-                    budget_chars = available_chars,
+                    available_tokens,
                     "Truncated conversation history to fit context window"
                 );
                 msgs.extend(kept);
@@ -1975,7 +2134,7 @@ impl LlmInterface {
         let input = LlmInput {
             messages,
             params,
-            model: Some(model),
+            model: Some(model.clone()),
             stream: true,
             tools: tools_input,
         };
@@ -1992,12 +2151,73 @@ impl LlmInterface {
         let permit = self.limiter.acquire().await;
         let wrapped_stream = PermitStream::new(stream, permit);
 
-        // Convert stream
+        // Prepare retry data for tiered context overflow retry
+        let llm_retry = llm.clone();
+        let limiter_retry = self.limiter.clone();
+
+        // Convert stream with tiered context overflow retry
         Ok(Box::pin(async_stream::stream! {
             let mut stream = wrapped_stream;
+            let mut retry_stage: u8 = 0; // 0=initial, 1=compact retry, 2=minimal retry
             while let Some(result) = futures::StreamExt::next(&mut stream).await {
                 match result {
                     Ok(chunk) => yield Ok(chunk),
+                    Err(LlmError::ContextOverflow { prompt_tokens, max_context }) => {
+                        retry_stage += 1;
+                        if retry_stage <= 2 {
+                            let (retry_messages, retry_label) = if retry_stage == 1 {
+                                // Strategy 1: Compact - keep recent tool round
+                                (compact_fallback_messages.clone(), "compact (recent tool round)")
+                            } else {
+                                // Strategy 2: Minimal - system + user only
+                                (minimal_fallback_messages.clone(), "minimal (no history)")
+                            };
+                            tracing::warn!(
+                                prompt_tokens,
+                                max_context,
+                                retry_stage,
+                                %retry_label,
+                                "Context overflow, retrying with {} strategy", retry_label
+                            );
+                            drop(stream);
+                            let retry_input = LlmInput {
+                                messages: retry_messages,
+                                params: neomind_core::llm::backend::GenerationParams {
+                                    temperature: Some(eff_temp),
+                                    top_p: Some(eff_top_p),
+                                    top_k: Some(eff_top_k as u32),
+                                    max_tokens: Some(eff_max_tokens),
+                                    stop: None,
+                                    frequency_penalty: None,
+                                    presence_penalty: None,
+                                    thinking_enabled: None, // Disable thinking on retry
+                                    max_context: None,
+                                },
+                                model: Some(model.clone()),
+                                stream: true,
+                                tools: None, // Strip tools from retry to save context
+                            };
+                            let permit2 = limiter_retry.acquire().await;
+                            match llm_retry.generate_stream(retry_input).await {
+                                Ok(fallback_stream) => {
+                                    stream = PermitStream::new(fallback_stream, permit2);
+                                    continue;
+                                }
+                                Err(e) => {
+                                    yield Err(NeoMindError::Llm(format!(
+                                        "Context overflow retry ({}): {}", retry_label, e
+                                    )));
+                                    return;
+                                }
+                            }
+                        } else {
+                            yield Err(NeoMindError::Llm(format!(
+                                "Context exceeds model limit ({} > {}) after all retries, please shorten the conversation",
+                                prompt_tokens, max_context
+                            )));
+                            return;
+                        }
+                    }
                     Err(e) => yield Err(NeoMindError::Llm(e.to_string())),
                 }
             }

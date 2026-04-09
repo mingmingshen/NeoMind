@@ -455,6 +455,15 @@ pub enum LlmError {
     #[error("Generation error: {0}")]
     Generation(String),
 
+    /// Context window exceeded - request too large for model's context
+    #[error("Context overflow: {prompt_tokens} prompt tokens exceed {max_context} context limit")]
+    ContextOverflow {
+        /// Number of prompt tokens in the failed request
+        prompt_tokens: usize,
+        /// Maximum context size of the model
+        max_context: usize,
+    },
+
     /// Network error (for cloud/remote backends)
     #[error("Network error: {0}")]
     Network(String),

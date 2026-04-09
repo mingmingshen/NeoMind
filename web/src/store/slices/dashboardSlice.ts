@@ -69,6 +69,7 @@ export interface DashboardState {
   // Component management
   addComponent: (component: Omit<DashboardComponent, 'id'>) => void
   updateComponent: (id: string, updates: Partial<DashboardComponent>, persist?: boolean) => void
+  batchUpdatePositions: (positions: Array<{ id: string; position: ComponentPosition }>) => void
   removeComponent: (id: string) => void
   removeComponentsByExtension: (extensionId: string) => void
   moveComponent: (id: string, position: ComponentPosition) => void
@@ -556,6 +557,36 @@ export const createDashboardSlice: StateCreator<
           console.warn('[DashboardSlice] Failed to sync after updateComponent:', err)
         })
       }
+    },
+
+    batchUpdatePositions(positions) {
+      const { currentDashboard, dashboards } = get()
+      if (!currentDashboard || positions.length === 0) return
+
+      const posMap = new Map(positions.map(p => [p.id, p.position]))
+      const updatedComponents = currentDashboard.components.map((c) => {
+        const newPos = posMap.get(c.id)
+        return newPos ? { ...c, position: newPos } : c
+      })
+
+      const updatedDashboard = {
+        ...currentDashboard,
+        components: updatedComponents,
+        updatedAt: Date.now(),
+      }
+
+      const updatedDashboards = dashboards.map((d) =>
+        d.id === currentDashboard.id ? updatedDashboard : d
+      )
+
+      set({
+        dashboards: updatedDashboards,
+        currentDashboard: updatedDashboard,
+      })
+
+      storage.sync(updatedDashboard).catch((err) => {
+        console.warn('[DashboardSlice] Failed to sync after batchUpdatePositions:', err)
+      })
     },
 
     removeComponent(id) {

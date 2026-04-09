@@ -342,6 +342,30 @@ export function LineChart({
     return propertyNames[property] || property.replace(/[-_]/g, ' ')
   }, [t])
 
+  // Get series display name from data source, handling extension sources
+  const getSeriesName = useCallback((ds: DataSource, idx: number): string => {
+    // Extension data sources use extensionDisplayName / extensionId + extensionMetric
+    if (ds.type === 'extension' || ds.type === 'extension-metric') {
+      const extName = ds.extensionDisplayName || ds.extensionId || ''
+      const metricPart = ds.extensionMetric
+        ? getPropertyDisplayName(ds.extensionMetric.includes(':') ? ds.extensionMetric.split(':').pop()! : ds.extensionMetric)
+        : ''
+      if (extName && metricPart) return `${extName} · ${metricPart}`
+      if (extName) return extName
+      if (metricPart) return metricPart
+      return t('chart.series', { count: idx + 1 })
+    }
+    // Standard data sources
+    const metricName = ds.metricId || ds.property
+    if (ds.deviceId) {
+      return `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
+    }
+    if (metricName) {
+      return getPropertyDisplayName(metricName.includes(':') ? metricName.split(':').pop()! : metricName)
+    }
+    return t('chart.series', { count: idx + 1 })
+  }, [getDeviceName, getPropertyDisplayName, t])
+
   // Transform data to series format
   const normalizedSeries: SeriesData[] = useMemo(() => {
 
@@ -361,9 +385,7 @@ export function LineChart({
           }
         }
 
-        const seriesName = ds.deviceId
-          ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-          : t('chart.series', { count: idx + 1 })
+        const seriesName = getSeriesName(ds, idx)
         return {
           name: seriesName,
           data: values,
@@ -384,9 +406,7 @@ export function LineChart({
       const { labels, values } = transformTelemetryToChartData(data, dataMapping)
       if (values.length > 0) {
         const singleSource = sources[0]
-        const seriesName = singleSource?.deviceId
-          ? `${getDeviceName(singleSource.deviceId)} · ${getPropertyDisplayName(singleSource.metricId || singleSource.property)}`
-          : 'Value'
+        const seriesName = singleSource ? getSeriesName(singleSource, 0) : 'Value'
         return [{ name: seriesName, data: values, color: undefined } as SeriesData]
       }
     }
@@ -691,6 +711,28 @@ export function AreaChart({
     return propertyNames[property] || property.replace(/[-_]/g, ' ')
   }, [t])
 
+  // Get series display name from data source, handling extension sources
+  const getSeriesName = useCallback((ds: DataSource, idx: number): string => {
+    if (ds.type === 'extension' || ds.type === 'extension-metric') {
+      const extName = ds.extensionDisplayName || ds.extensionId || ''
+      const metricPart = ds.extensionMetric
+        ? getPropertyDisplayName(ds.extensionMetric.includes(':') ? ds.extensionMetric.split(':').pop()! : ds.extensionMetric)
+        : ''
+      if (extName && metricPart) return `${extName} · ${metricPart}`
+      if (extName) return extName
+      if (metricPart) return metricPart
+      return t('chart.series', { count: idx + 1 })
+    }
+    const metricName = ds.metricId || ds.property
+    if (ds.deviceId) {
+      return `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.property)}`
+    }
+    if (metricName) {
+      return getPropertyDisplayName(metricName.includes(':') ? metricName.split(':').pop()! : metricName)
+    }
+    return t('chart.series', { count: idx + 1 })
+  }, [getDeviceName, getPropertyDisplayName, t])
+
   const normalizedSeries: SeriesData[] = useMemo(() => {
     // Multi-source case - data should be array of arrays from useDataSource with preserveMultiple
     if (sources.length > 1 && Array.isArray(rawData) && rawData.length === sources.length) {
@@ -708,9 +750,7 @@ export function AreaChart({
           }
         }
 
-        const seriesName = ds.deviceId
-          ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.property)}`
-          : t('chart.series', { count: idx + 1 })
+        const seriesName = getSeriesName(ds, idx)
         return {
           name: seriesName,
           data: values,
@@ -729,9 +769,7 @@ export function AreaChart({
       // Transform telemetry points
       const { values } = transformTelemetryToChartData(rawData, dataMapping)
       if (values.length > 0) {
-        const seriesName = sources[0]?.deviceId
-          ? `${getDeviceName(sources[0].deviceId)} · ${getPropertyDisplayName(sources[0].property)}`
-          : 'Value'
+        const seriesName = sources[0] ? getSeriesName(sources[0], 0) : 'Value'
         return [{ name: seriesName, data: values, color: undefined } as SeriesData]
       }
     }

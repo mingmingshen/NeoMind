@@ -394,6 +394,22 @@ impl LlmRuntime for LlamaCppRuntime {
 
         if !status.is_success() {
             self.metrics.write().unwrap().record_failure();
+
+            // Check for context overflow and return specific error for retry
+            if body.contains("exceed_context_size_error") {
+                let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
+                let prompt_tokens = parsed
+                    .as_ref()
+                    .and_then(|v| v.get("error"))
+                    .and_then(|e| e.get("n_prompt_tokens"))
+                    .and_then(|t| t.as_u64())
+                    .unwrap_or(0) as usize;
+                return Err(LlmError::ContextOverflow {
+                    prompt_tokens,
+                    max_context: self.max_context_length(),
+                });
+            }
+
             return Err(LlmError::Generation(format!(
                 "llama.cpp API error {}: {}",
                 status.as_u16(),
@@ -545,6 +561,9 @@ impl LlmRuntime for LlamaCppRuntime {
             }
         }
 
+        // Capture max_context for error reporting inside spawned task
+        let max_context_capture = self.max_context_length();
+
         tokio::spawn(async move {
             let mut req_builder = client.post(&url).json(&req_body);
             if let Some(ref key) = api_key {
@@ -570,6 +589,25 @@ impl LlmRuntime for LlamaCppRuntime {
 
                     if !status.is_success() {
                         let body = response.text().await.unwrap_or_default();
+
+                        // Check for context overflow and return specific error for retry
+                        if body.contains("exceed_context_size_error") {
+                            let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
+                            let prompt_tokens = parsed
+                                .as_ref()
+                                .and_then(|v| v.get("error"))
+                                .and_then(|e| e.get("n_prompt_tokens"))
+                                .and_then(|t| t.as_u64())
+                                .unwrap_or(0) as usize;
+                            let _ = tx
+                                .send(Err(LlmError::ContextOverflow {
+                                    prompt_tokens,
+                                    max_context: max_context_capture,
+                                }))
+                                .await;
+                            return;
+                        }
+
                         let _ = tx
                             .send(Err(LlmError::Generation(format!(
                                 "llama.cpp API error {}: {}",

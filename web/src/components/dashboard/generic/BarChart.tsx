@@ -362,6 +362,28 @@ export function BarChart({
     return propertyNames[property] || property.replace(/[-_]/g, ' ')
   }
 
+  // Get series display name from data source, handling extension sources
+  const getSeriesName = (ds: DataSource, idx: number): string => {
+    if (ds.type === 'extension' || ds.type === 'extension-metric') {
+      const extName = ds.extensionDisplayName || ds.extensionId || ''
+      const metricPart = ds.extensionMetric
+        ? getPropertyDisplayName(ds.extensionMetric.includes(':') ? ds.extensionMetric.split(':').pop()! : ds.extensionMetric)
+        : ''
+      if (extName && metricPart) return `${extName} · ${metricPart}`
+      if (extName) return extName
+      if (metricPart) return metricPart
+      return t('chart.series', { count: idx + 1 })
+    }
+    const metricName = ds.metricId || ds.property
+    if (ds.deviceId) {
+      return `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
+    }
+    if (metricName) {
+      return getPropertyDisplayName(metricName.includes(':') ? metricName.split(':').pop()! : metricName)
+    }
+    return t('chart.series', { count: idx + 1 })
+  }
+
   // Check if data is multi-source (array of arrays)
   const isMultiSource = (data: unknown): boolean => {
     return Array.isArray(data) && data.length > 0 && Array.isArray(data[0])
@@ -452,11 +474,7 @@ export function BarChart({
               point.name = `${idx + 1}`
             }
             // Store series names for legend
-            point.seriesNames = sources.map((ds, si) => {
-              return ds.deviceId
-                ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-                : t('chart.series', { count: si + 1 })
-            })
+            point.seriesNames = sources.map((ds, si) => getSeriesName(ds, si))
           }
 
           point[`series${i}`] = arrValue
@@ -514,13 +532,12 @@ export function BarChart({
   const seriesInfo = useMemo(() => {
     const sources = normalizeDataSource(dataSource)
     if (sources.length > 1 && Array.isArray(data) && data.length === sources.length) {
-      return sources.map((ds, i) => ({
+      return sources.map((ds, i) => {
+        return {
         dataKey: `series${i}`,
-        name: ds.deviceId
-          ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-          : t('chart.series', { count: i + 1 }),
+        name: getSeriesName(ds, i),
         color: color || fallbackColors[i % fallbackColors.length],
-      }))
+      }})
     }
     return null
   }, [dataSource, data, color, t])

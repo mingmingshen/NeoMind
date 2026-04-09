@@ -97,7 +97,7 @@ export function ResponsiveTable({
             "[&_tr]:border-b",
             stickyHeader && "sticky top-0 z-10 bg-card"
           )}>
-            <tr className="bg-muted/30">
+            <tr className="bg-muted/30 rounded-t-xl">
               {columns.map((column) => (
                 <th
                   key={column.key}

@@ -1072,6 +1072,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     setEditMode,
     addComponent,
     updateComponent,
+    batchUpdatePositions,
     removeComponent,
     duplicateComponent,
     createDashboard,
@@ -1571,57 +1572,18 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         }
     }
 
-    // Calculate position for new component to avoid overlap
-    // Find the next available position using a simple grid packing algorithm
-    const components = currentDashboard?.components ?? []
+    // Use a large y value so react-grid-layout's compact algorithm
+    // automatically places the component at the correct position.
+    // This avoids miscalculating positions based on stale store data
+    // (store positions may differ from react-grid-layout's compact-adjusted positions).
     const w = constraints?.defaultW ?? 4
     const h = constraints?.defaultH ?? 3
-
-    // Simple grid packing: place components row by row
-    let x = 0
-    let y = 0
-    const maxCols = 12  // Base grid columns
-
-    // Build a simple map of occupied positions
-    const occupied = new Set<string>()
-    components.forEach(c => {
-      for (let dy = 0; dy < c.position.h; dy++) {
-        for (let dx = 0; dx < c.position.w; dx++) {
-          occupied.add(`${c.position.x + dx},${c.position.y + dy}`)
-        }
-      }
-    })
-
-    // Find first available position
-    let found = false
-    while (!found) {
-      // Check if current position is free
-      let canFit = true
-      for (let dy = 0; dy < h && canFit; dy++) {
-        for (let dx = 0; dx < w && canFit; dx++) {
-          if (occupied.has(`${x + dx},${y + dy}`)) {
-            canFit = false
-          }
-        }
-      }
-
-      if (canFit) {
-        found = true
-      } else {
-        // Move to next position
-        x += w
-        if (x + w > maxCols) {
-          x = 0
-          y += 1
-        }
-      }
-    }
 
     const newComponent: Omit<DashboardComponent, 'id'> = {
       type: componentType as any,
       position: {
-        x,
-        y,
+        x: 0,
+        y: 9999,  // compact will move this to the first free row
         w,
         h,
         minW: constraints?.minW,
@@ -1638,19 +1600,32 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     setComponentLibraryOpen(false)
   }
 
-  // Handle layout change
-  const handleLayoutChange = (layout: readonly any[]) => {
-    layout.forEach((item) => {
-      updateComponent(item.i, {
-        position: {
-          x: item.x,
-          y: item.y,
-          w: item.w,
-          h: item.h,
-        },
-      })
-    })
-  }
+  // Handle layout change - batch update all changed positions in a single store update
+  // to prevent infinite re-render loops (store update → grid recalc → onLayoutChange → ...)
+  const handleLayoutChange = useCallback((layout: readonly any[]) => {
+    const components = currentDashboard?.components ?? []
+    const changed: Array<{ id: string; position: { x: number; y: number; w: number; h: number } }> = []
+
+    for (const item of layout) {
+      const existing = components.find(c => c.id === item.i)
+      if (!existing) continue
+      if (
+        existing.position.x !== item.x ||
+        existing.position.y !== item.y ||
+        existing.position.w !== item.w ||
+        existing.position.h !== item.h
+      ) {
+        changed.push({
+          id: item.i,
+          position: { x: item.x, y: item.y, w: item.w, h: item.h },
+        })
+      }
+    }
+
+    if (changed.length > 0) {
+      batchUpdatePositions(changed)
+    }
+  }, [currentDashboard?.components, batchUpdatePositions])
 
   // Handle opening config dialog
   const handleOpenConfig = useCallback((componentId: string) => {
@@ -1865,7 +1840,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         ),
       }
     }) ?? []
-  }, [componentsStableKey, editMode, devices.length, currentDashboard, isMobile])
+  }, [componentsStableKey, editMode, devices.length, isMobile])
 
   // Track initial config load to avoid unnecessary updates
   const initialConfigRef = useRef<any>(null)
@@ -5160,8 +5135,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
         {/* Dashboard Grid */}
         <div className={cn(
-          "flex-1 overflow-auto p-4 relative",
-          editMode && "pb-48"
+          "flex-1 overflow-auto p-4 relative"
         )}>
           {/* Fullscreen exit button - floating */}
           {isFullscreen && (
