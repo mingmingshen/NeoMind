@@ -1572,18 +1572,24 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         }
     }
 
-    // Use a large y value so react-grid-layout's compact algorithm
-    // automatically places the component at the correct position.
-    // This avoids miscalculating positions based on stale store data
-    // (store positions may differ from react-grid-layout's compact-adjusted positions).
     const w = constraints?.defaultW ?? 4
     const h = constraints?.defaultH ?? 3
+
+    // Calculate y position based on existing components.
+    // We use the bottom edge of the lowest existing component to place
+    // the new component below everything currently visible.
+    const existingComponents = currentDashboard?.components ?? []
+    let maxY = 0
+    for (const c of existingComponents) {
+      const bottom = (c.position?.y ?? 0) + (c.position?.h ?? 1)
+      if (bottom > maxY) maxY = bottom
+    }
 
     const newComponent: Omit<DashboardComponent, 'id'> = {
       type: componentType as any,
       position: {
         x: 0,
-        y: 9999,  // compact will move this to the first free row
+        y: maxY,
         w,
         h,
         minW: constraints?.minW,

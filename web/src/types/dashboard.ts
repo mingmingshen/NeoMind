@@ -335,30 +335,30 @@ export const COMPONENT_SIZE_CONSTRAINTS: Partial<Record<ImplementedComponentType
   'led-indicator': { minW: 1, minH: 1, defaultW: 2, defaultH: 1, maxW: 3, maxH: 2, preserveAspect: true },
   'sparkline': { minW: 2, minH: 1, defaultW: 4, defaultH: 2, maxW: 8, maxH: 3 },
   'progress-bar': { minW: 2, minH: 1, defaultW: 4, defaultH: 1, maxW: 12, maxH: 3 },
-  'agent-status-card': { minW: 2, minH: 2, defaultW: 3, defaultH: 3, maxW: 6, maxH: 5 },
+  'agent-status-card': { minW: 3, minH: 2, defaultW: 4, defaultH: 3, maxW: 6, maxH: 5 },
 
-  // Charts - slightly larger minimum for readability
-  'line-chart': { minW: 3, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 8 },
-  'area-chart': { minW: 3, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 8 },
-  'bar-chart': { minW: 3, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 8 },
-  'pie-chart': { minW: 2, minH: 2, defaultW: 4, defaultH: 4, maxW: 8, maxH: 8, preserveAspect: true },
+  // Charts - need enough space for axes and legend
+  'line-chart': { minW: 4, minH: 3, defaultW: 6, defaultH: 4, maxW: 12, maxH: 8 },
+  'area-chart': { minW: 4, minH: 3, defaultW: 6, defaultH: 4, maxW: 12, maxH: 8 },
+  'bar-chart': { minW: 4, minH: 3, defaultW: 6, defaultH: 4, maxW: 12, maxH: 8 },
+  'pie-chart': { minW: 3, minH: 3, defaultW: 4, defaultH: 4, maxW: 8, maxH: 8, preserveAspect: true },
 
   // Controls - very compact
   'toggle-switch': { minW: 1, minH: 1, defaultW: 2, defaultH: 1, maxW: 4, maxH: 2 },
 
   // Display & Content
   'image-display': { minW: 2, minH: 2, defaultW: 4, defaultH: 3, maxW: 12, maxH: 12 },
-  'image-history': { minW: 3, minH: 3, defaultW: 6, defaultH: 4, maxW: 12, maxH: 12 },
+  'image-history': { minW: 4, minH: 3, defaultW: 6, defaultH: 5, maxW: 12, maxH: 12 },
   'web-display': { minW: 3, minH: 3, defaultW: 6, defaultH: 4, maxW: 12, maxH: 12 },
   'markdown-display': { minW: 2, minH: 2, defaultW: 4, defaultH: 3, maxW: 12, maxH: 12 },
 
   // Spatial & Media
-  'map-display': { minW: 3, minH: 2, defaultW: 4, defaultH: 3, maxW: 12, maxH: 12 },
+  'map-display': { minW: 4, minH: 3, defaultW: 6, defaultH: 4, maxW: 12, maxH: 12 },
   'video-display': { minW: 3, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 12 },
   'custom-layer': { minW: 2, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 12 },
 
   // Business Components
-  'agent-monitor-widget': { minW: 3, minH: 3, defaultW: 4, defaultH: 4, maxW: 8, maxH: 6 },
+  'agent-monitor-widget': { minW: 4, minH: 4, defaultW: 6, defaultH: 5, maxW: 12, maxH: 8 },
 }
 
 // ============================================================================

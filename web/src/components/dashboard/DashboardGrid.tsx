@@ -65,30 +65,39 @@ export function DashboardGrid({
   // Stable component ID string — only changes when components are added/removed
   const componentIdKey = useMemo(() => components.map(c => c.id).join(','), [components])
 
-  // Snapshot of component data (position, constraints) captured when components change.
-  // This ensures the layouts memo always has correct data even though `components`
-  // is not in its dependency array (preventing jitter from reference changes).
-  const componentsSnapshotRef = useRef(components)
-  useEffect(() => {
-    componentsSnapshotRef.current = components
-  }, [components])
+  // Keep a synchronous ref to components for use in the layouts memo.
+  // Updated during render (before useMemo check), so it's always current
+  // when the memo callback runs. This avoids putting `components` in memo deps,
+  // which would cause jitter from frequent reference changes.
+  const componentsRef = useRef(components)
+  componentsRef.current = components
 
-  // "Settle" mechanism: after new components are added, react-grid-layout compacts
-  // them (moving y:9999 to correct position). We need ONE layouts recalculation
-  // after compact to bake in the correct positions, then never again.
+  // "Settle" mechanism: after new components are added, react-grid-layout may
+  // compact them (e.g., remove gaps). We need ONE layouts recalculation after
+  // compact to bake in the corrected positions, then never again.
   const needsSettleRef = useRef(false)
   const [settleVersion, setSettleVersion] = useState(0)
 
+  // Detect new components SYNCHRONOUSLY during render (not in useEffect).
+  // This must happen before handleLayoutChange fires, otherwise settle never triggers.
+  const prevComponentIdKeyRef = useRef(componentIdKey)
+  if (componentIdKey !== prevComponentIdKeyRef.current) {
+    prevComponentIdKeyRef.current = componentIdKey
+    needsSettleRef.current = true
+  }
+
   // Build layouts using latestLayoutRef for settled positions.
-  // For new components not yet in ref, use parent's position (e.g., y:9999).
+  // Deps: only recalculate when components are added/removed (componentIdKey)
+  // or after compact settle. Uses componentsRef for latest default sizes.
   const layouts = useMemo(() => {
-    const snapshot = componentsSnapshotRef.current
-    const layout = snapshot.map((c) => {
+    const layout = componentsRef.current.map((c) => {
       const current = latestLayoutRef.current[c.id]
       const pos = current || c.position
       return {
         i: c.id,
-        x: pos.x, y: pos.y, w: pos.w, h: pos.h,
+        x: pos.x ?? 0, y: pos.y ?? 0,
+        w: pos.w ?? c.position.w ?? 4,
+        h: pos.h ?? c.position.h ?? 3,
         minW: c.position.minW ?? 1,
         minH: c.position.minH ?? 1,
         maxW: c.position.maxW,
@@ -98,15 +107,6 @@ export function DashboardGrid({
     })
     return { lg: layout, md: layout, sm: layout, xs: layout }
   }, [componentIdKey, settleVersion])
-
-  // Detect new components → mark for settling
-  const prevComponentIdKeyRef = useRef(componentIdKey)
-  useEffect(() => {
-    if (componentIdKey !== prevComponentIdKeyRef.current) {
-      prevComponentIdKeyRef.current = componentIdKey
-      needsSettleRef.current = true
-    }
-  }, [componentIdKey])
 
   // Handle layout changes from react-grid-layout.
   const handleLayoutChange = useCallback((currentLayout: any) => {
@@ -281,7 +281,20 @@ export function DashboardGrid({
           onResizeStop={handleResizeStop}
         >
           {components.map((component) => (
-            <div key={component.id} className="dashboard-item h-full">
+            <div
+              key={component.id}
+              className="dashboard-item h-full"
+              data-grid={{
+                x: component.position.x ?? 0,
+                y: component.position.y ?? 0,
+                w: component.position.w ?? 4,
+                h: component.position.h ?? 3,
+                minW: component.position.minW,
+                maxW: component.position.maxW,
+                minH: component.position.minH,
+                maxH: component.position.maxH,
+              }}
+            >
               {component.children}
             </div>
           ))}

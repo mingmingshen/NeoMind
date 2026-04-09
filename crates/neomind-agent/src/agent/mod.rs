@@ -116,6 +116,27 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
             continue;
         }
 
+        // Handle role:tool messages (tool result messages from LargeDataCache)
+        if msg.role == "tool" {
+            tool_result_count += 1;
+            if tool_result_count <= keep_recent && msg.content.len() <= 4000 {
+                result.push(msg.clone());
+            } else {
+                // Compress tool result — may already be a cache summary
+                let summary = if msg.content.len() > 1000 {
+                    let name = msg.tool_call_name.as_deref().unwrap_or("unknown");
+                    format!("[Tool: {} returned data (see cache)]", name)
+                } else {
+                    msg.content.clone()
+                };
+                result.push(AgentMessage {
+                    content: summary,
+                    ..msg.clone()
+                });
+            }
+            continue;
+        }
+
         // Check if this is a tool result message (has tool_calls)
         if msg.tool_calls.is_some() && msg.tool_calls.as_ref().is_some_and(|t| !t.is_empty()) {
             tool_result_count += 1;

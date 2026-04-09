@@ -642,6 +642,136 @@ impl SessionState {
     }
 }
 
+/// Cached large tool result data (images, big base64 blobs, etc.).
+/// This data is stored outside LLM message history to prevent token bloat.
+#[derive(Debug, Clone)]
+pub struct CachedLargeResult {
+    /// MIME type or content description (e.g., "image/jpeg", "application/json")
+    pub content_type: String,
+    /// Full data (base64 for images, raw string for JSON/text)
+    pub data: String,
+    /// Size of the data in bytes
+    pub size_bytes: usize,
+    /// Timestamp when cached
+    pub cached_at: i64,
+}
+
+/// Cache for large tool results that must not enter LLM context.
+/// Stores full data keyed by tool_name. Data is retrieved only when
+/// needed — for tool calls that accept base64 or multimodal LLM calls.
+#[derive(Debug, Clone, Default)]
+pub struct LargeDataCache {
+    entries: std::collections::HashMap<String, CachedLargeResult>,
+}
+
+/// Threshold below which we don't cache — just pass through.
+const CACHE_THRESHOLD_BYTES: usize = 4 * 1024;
+
+impl LargeDataCache {
+    /// Create a new empty cache.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Store a tool result. Returns a summary string to use in message history.
+    /// - Small results (<4KB): not cached, returned as-is
+    /// - Large/image/base64 results: cached, returns summary with reference key
+    pub fn store(&mut self, tool_name: &str, result: &str) -> String {
+        let size_bytes = result.len();
+
+        // Small results: pass through unchanged
+        if size_bytes < CACHE_THRESHOLD_BYTES {
+            return result.to_string();
+        }
+
+        // Detect content type
+        let content_type = Self::detect_content_type(result);
+
+        let cached = CachedLargeResult {
+            content_type: content_type.clone(),
+            data: result.to_string(),
+            size_bytes,
+            cached_at: chrono::Utc::now().timestamp(),
+        };
+        self.entries.insert(tool_name.to_string(), cached);
+
+        // Return a concise summary for message history
+        let human_size = Self::humanize_bytes(size_bytes);
+        if content_type.starts_with("image/") {
+            format!("[Image: {}, {}. Cached. Reference: \"{}\"]", content_type, human_size, tool_name)
+        } else if content_type == "application/json+base64" {
+            // JSON with embedded base64 — show truncated structure
+            let preview: String = result.chars().take(200).collect();
+            format!("[JSON with embedded image data, {}. Cached. Reference: \"{}\"]\n{}", human_size, tool_name, preview)
+        } else {
+            let preview: String = result.chars().take(300).collect();
+            format!("[Data: {}, {}. Cached. Reference: \"{}\"]\n{}", content_type, human_size, tool_name, preview)
+        }
+    }
+
+    /// Retrieve cached data by tool name.
+    pub fn get(&self, tool_name: &str) -> Option<&CachedLargeResult> {
+        self.entries.get(tool_name)
+    }
+
+    /// Check if a tool name has cached data.
+    pub fn has(&self, tool_name: &str) -> bool {
+        self.entries.contains_key(tool_name)
+    }
+
+    /// Clear all cached entries.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    /// Iterate over all cached entries.
+    pub fn entries(&self) -> impl Iterator<Item = (&String, &CachedLargeResult)> {
+        self.entries.iter()
+    }
+
+    /// Detect content type from content heuristics.
+    fn detect_content_type(content: &str) -> String {
+        // Check for data URL images (data:image/png;base64,...)
+        if content.starts_with("data:image/") {
+            // Extract MIME from data URL
+            let end = content.find(';').unwrap_or(15);
+            return content[..end].trim_start_matches("data:").to_string();
+        }
+        // Check for raw base64 image data (long string of base64 chars)
+        if content.len() > 10_000 && Self::looks_like_base64(content) {
+            return "image/base64".to_string();
+        }
+        // Check for JSON with embedded base64 image
+        if content.starts_with('{') || content.starts_with('[') {
+            if content.contains("base64,") || content.contains("\"data:image/") {
+                return "application/json+base64".to_string();
+            }
+            return "application/json".to_string();
+        }
+        "text/plain".to_string()
+    }
+
+    /// Quick heuristic: does this look like base64 data?
+    fn looks_like_base64(s: &str) -> bool {
+        let sample_len = s.len().min(200);
+        let sample = &s[..sample_len];
+        sample.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' || c == '\n' || c == '\r')
+    }
+
+    /// Format bytes as human-readable string.
+    fn humanize_bytes(bytes: usize) -> String {
+        const KB: usize = 1024;
+        const MB: usize = 1024 * KB;
+        if bytes >= MB {
+            format!("{:.1}MB", bytes as f64 / MB as f64)
+        } else if bytes >= KB {
+            format!("{:.1}KB", bytes as f64 / KB as f64)
+        } else {
+            format!("{}B", bytes)
+        }
+    }
+}
+
 /// Unified internal state for the agent.
 /// Combines session state with LLM readiness and other runtime state.
 #[derive(Debug, Clone)]
@@ -656,6 +786,8 @@ pub struct AgentInternalState {
     pub memory: Vec<AgentMessage>,
     /// Recent assistant response hashes (for cross-turn repetition detection)
     pub recent_response_hashes: Vec<u64>,
+    /// Cache for large tool results (images, base64) that must not enter LLM context
+    pub large_data_cache: LargeDataCache,
 }
 
 impl AgentInternalState {
@@ -668,6 +800,7 @@ impl AgentInternalState {
             session,
             memory: Vec::new(),
             recent_response_hashes: Vec::new(),
+            large_data_cache: LargeDataCache::new(),
         }
     }
 

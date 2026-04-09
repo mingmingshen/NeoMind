@@ -2093,25 +2093,43 @@ impl LlmInterface {
                     msgs.push((*msg).clone());
                 }
             } else {
-                // Keep most recent messages that fit within budget
+                // Find the first user message index (original question) — always preserve it
+                let original_user_idx = history_msgs.iter()
+                    .position(|m| m.role == neomind_core::MessageRole::User);
+                let user_msg_tokens = original_user_idx
+                    .map(|idx| estimate_tokens(&history_msgs[idx].content.as_text()))
+                    .unwrap_or(0);
+                let budget_for_others = available_tokens.saturating_sub(user_msg_tokens);
+
+                // Keep most recent messages that fit within remaining budget
                 let mut used = 0usize;
                 let mut kept = Vec::new();
-                for msg in history_msgs.iter().rev() {
+                for (i, msg) in history_msgs.iter().enumerate().rev() {
+                    // Skip the original user message — we'll add it separately
+                    if original_user_idx == Some(i) {
+                        continue;
+                    }
                     let text = msg.content.as_text();
                     let tokens = estimate_tokens(&text);
-                    if used + tokens > available_tokens {
+                    if used + tokens > budget_for_others {
                         break;
                     }
                     used += tokens;
                     kept.push((*msg).clone());
                 }
                 kept.reverse();
+
+                // Always prepend the original user message
+                if let Some(idx) = original_user_idx {
+                    kept.insert(0, history_msgs[idx].clone());
+                }
+
                 tracing::info!(
                     total_history_tokens,
                     kept_messages = kept.len(),
                     total_messages = history_msgs.len(),
                     available_tokens,
-                    "Truncated conversation history to fit context window"
+                    "Truncated conversation history to fit context window (original user message preserved)"
                 );
                 msgs.extend(kept);
             }

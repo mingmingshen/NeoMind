@@ -1920,23 +1920,42 @@ pub async fn process_stream_events_with_safeguards(
                     let compacted = super::compact_tool_results(&state_guard.memory, 2);
                     compacted.iter().map(|msg| msg.to_core()).collect::<Vec<_>>()
                 };
-                drop(state_guard);
 
                 // Build context for subsequent rounds - tell LLM what happened before
                 let recently_executed: Vec<&str> = recently_executed_tools.iter().map(|(name, _)| name.as_str()).collect();
+                let cached_refs: Vec<String> = {
+                    state_guard.large_data_cache.entries().map(|(name, cr)| {
+                        let size_str = if cr.size_bytes >= 1024 * 1024 {
+                            format!("{:.1}MB", cr.size_bytes as f64 / (1024.0 * 1024.0))
+                        } else {
+                            format!("{:.1}KB", cr.size_bytes as f64 / 1024.0)
+                        };
+                        format!("- {} ({}, {})", name, cr.content_type, size_str)
+                    }).collect()
+                };
+                drop(state_guard);
+
                 let context_msg = if recently_executed.is_empty() {
                     format!(
-                        "这是处理用户请求的第 {} 轮。请继续处理，如果需要更多信息请使用工具，如果已完成请给出最终回复。",
+                        "Round {} of processing. Continue. Use tools if more information is needed, or give the final response.",
                         tool_iteration_count + 1
+                    )
+                } else if cached_refs.is_empty() {
+                    format!(
+                        "Round {} of processing. Previously executed tools: {}.\n\
+                        Analyze the results and decide: call more tools if needed, or give the final response.",
+                        tool_iteration_count + 1,
+                        recently_executed.join(", ")
                     )
                 } else {
                     format!(
-                        "这是处理用户请求的第 {} 轮。之前已执行的工具有: {}。\n\
-                        请分析这些工具的结果，决定是否需要:\n\
-                        1. 继续调用其他工具（如果还需要更多信息）\n\
-                        2. 给出最终回复（如果已有足够信息完成任务）",
+                        "Round {} of processing. Previously executed tools: {}.\n\
+                        Cached results available:\n{}\n\
+                        To pass cached data to a tool, include \"_cached_input\": \"<tool_name>\" in parameters.\n\
+                        Decide: call more tools if needed, or give the final response.",
                         tool_iteration_count + 1,
-                        recently_executed.join(", ")
+                        recently_executed.join(", "),
+                        cached_refs.join("\n")
                     )
                 };
 
@@ -2428,10 +2447,12 @@ pub async fn process_stream_events_with_safeguards(
                     tracing::info!("Complex intent: Checking if more tool calls needed (iteration {}/{})",
                         tool_iteration_count + 1, MAX_TOOL_ITERATIONS);
 
-                    // Save results to memory
+                    // Save results to memory (large results go through cache → summary)
                     for (tool_name, result_str) in &tool_call_results {
-                        let tool_result_msg = AgentMessage::tool_result(tool_name, result_str);
-                        internal_state.write().await.push_message(tool_result_msg);
+                        let mut state = internal_state.write().await;
+                        let history_content = state.large_data_cache.store(tool_name, result_str);
+                        let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
+                        state.push_message(tool_result_msg);
                     }
 
                     // Increment iteration count and loop back
@@ -2465,10 +2486,12 @@ pub async fn process_stream_events_with_safeguards(
                 tracing::debug!("[streaming] Saving initial assistant message with {} tool_calls", initial_msg.tool_calls.as_ref().map_or(0, |c| c.len()));
                 internal_state.write().await.push_message(initial_msg);
 
-                // Add tool result messages to history
+                // Add tool result messages to history (large results go through cache → summary)
                 for (tool_name, result_str) in &tool_call_results {
-                    let tool_result_msg = AgentMessage::tool_result(tool_name, result_str);
-                    internal_state.write().await.push_message(tool_result_msg);
+                    let mut state = internal_state.write().await;
+                    let history_content = state.large_data_cache.store(tool_name, result_str);
+                    let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
+                    state.push_message(tool_result_msg);
                 }
 
                 // Trim history
@@ -3023,10 +3046,12 @@ pub async fn process_multimodal_stream_events_with_safeguards(
             let initial_msg = AgentMessage::assistant_with_tools(&response_to_save, tool_calls_with_results.clone());
             internal_state.write().await.push_message(initial_msg);
 
-            // Add tool result messages
+            // Add tool result messages (large results go through cache → summary)
             for (tool_name, result_str) in &tool_call_results {
-                let tool_result_msg = AgentMessage::tool_result(tool_name, result_str);
-                internal_state.write().await.push_message(tool_result_msg);
+                let mut state = internal_state.write().await;
+                let history_content = state.large_data_cache.store(tool_name, result_str);
+                let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
+                state.push_message(tool_result_msg);
             }
 
             // Get updated history for Phase 2
