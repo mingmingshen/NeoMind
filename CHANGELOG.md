@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.6.5] - 2025-04-09
+
+### Changed
+
+- **Token-Based Context Management** — Conversation history is now managed using token counting instead of message count, providing more accurate context window utilization and preventing overflow across different LLM backends.
+- **Context Overflow Retry** — When a request fails due to context window overflow, the system automatically retries with progressively shorter context, improving resilience without user intervention.
+- **Dashboard Grid Rewrite** — Replaced the controlled-mode `react-grid-layout` integration with a ref-based approach that avoids the feedback loop between layout state and component re-renders, eliminating jitter and positioning bugs.
+- **Aggregated Tool Enhancements** — Improved tool descriptions and added `latest_execution` and `send_message` actions for better agent execution monitoring and control.
+
+### Fixed
+
+- **New Component Default Size** — Newly added dashboard components now appear at correct default sizes instead of minimum (1×1). Root cause: RGL v2's `synchronizeLayoutWithChildren` created `w:1, h:1` defaults for children not yet in internal layout state. Fixed by calculating actual y position instead of relying on `y:9999` compact, and adding `data-grid` props as safety fallback.
+- **Config Data Refresh** — Component data now updates immediately when editing data binding in the config dialog, instead of requiring save and exit. Added `configVersion` tracking to force grid re-render on live config changes.
+- **Chart Responsive Resize** — Chart components (LineChart, BarChart, PieChart, AreaChart) now properly fill their container when resized via drag handles. Replaced fixed pixel heights with flex-based layout (`flex-1 min-h-0`).
+- **llama.cpp Multimodal Detection** — Automatically detect vision, tool calling, and context size capabilities from llama.cpp server's `/props` endpoint.
+
+---
+
 ## [v0.6.4] - 2025-04-08
 
 ### New Features

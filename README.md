@@ -10,7 +10,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 
 [![Build Status](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml/badge.svg)](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.6.4](https://img.shields.io/badge/v-0.6.4-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
+[![Version: 0.6.5](https://img.shields.io/badge/v-0.6.5-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.85+-orange.svg)](https://www.rust-lang.org)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](https://github.com/camthink-ai/NeoMind/releases)
 
@@ -166,7 +166,7 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 **Install specific version:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.6.4 sh
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.6.5 sh
 ```
 
 **Custom installation:**
@@ -195,7 +195,7 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 ```bash
 # 1. Download binary (replace VERSION and PLATFORM)
 # PLATFORM: linux-amd64, linux-arm64, darwin-amd64, darwin-arm64
-wget https://github.com/camthink-ai/NeoMind/releases/download/v0.6.4/neomind-server-linux-amd64.tar.gz
+wget https://github.com/camthink-ai/NeoMind/releases/download/v0.6.5/neomind-server-linux-amd64.tar.gz
 
 # 2. Extract package (contains neomind + neomind-extension-runner)
 tar xzf neomind-server-linux-amd64.tar.gz
