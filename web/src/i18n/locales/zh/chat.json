@@ -51,7 +51,10 @@
       "completed": "完成"
     },
     "arguments": "参数",
-    "result": "结果"
+    "result": "结果",
+    "roundTitle": "第 {{round}} 轮",
+    "multiRoundTitle": "工具调用",
+    "rounds": "轮"
   },
   "connection": {
     "connected": "已连接",

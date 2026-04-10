@@ -195,6 +195,39 @@ impl ExtensionTool {
             "description": "Command execution result"
         })
     }
+
+    /// Normalize image-related arguments by stripping data URI prefixes.
+    ///
+    /// Device tools return image metrics as `data:image/jpeg;base64,<base64data>` data URIs.
+    /// Extensions expect raw base64 data. This function strips the prefix from all string
+    /// parameters that contain data URIs, ensuring compatibility.
+    ///
+    /// Handles both direct string values and strings nested in objects/arrays.
+    fn normalize_image_args(args: &Value) -> Value {
+        match args {
+            Value::String(s) => {
+                // Strip data URI prefix: "data:image/jpeg;base64,<data>" → "<data>"
+                if let Some(comma_pos) = s.find(";base64,") {
+                    let base64_data = &s[comma_pos + 8..]; // skip ";base64,"
+                    if !base64_data.is_empty() {
+                        return Value::String(base64_data.to_string());
+                    }
+                }
+                args.clone()
+            }
+            Value::Object(map) => {
+                let normalized: serde_json::Map<String, Value> = map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Self::normalize_image_args(v)))
+                    .collect();
+                Value::Object(normalized)
+            }
+            Value::Array(arr) => {
+                Value::Array(arr.iter().map(|v| Self::normalize_image_args(v)).collect())
+            }
+            _ => args.clone(),
+        }
+    }
 }
 
 #[async_trait]
@@ -218,10 +251,16 @@ impl Tool for ExtensionTool {
     }
 
     async fn execute(&self, args: Value) -> ToolResult<ToolOutput> {
+        // Normalize image data in parameters: strip data URI prefix so extensions
+        // receive raw base64 data instead of "data:image/jpeg;base64,..." strings.
+        // Extensions (image analyzers, YOLO, etc.) expect raw base64 and fail with
+        // "Invalid base64: Invalid symbol 58" when they receive the data URI prefix.
+        let normalized_args = Self::normalize_image_args(&args);
+
         // Execute with a 30-second timeout to avoid hanging the agent on slow extensions
         let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
             let ext = self.extension.read().await;
-            ext.execute_command(&self.command.name, &args).await
+            ext.execute_command(&self.command.name, &normalized_args).await
         })
         .await;
 
@@ -570,5 +609,70 @@ mod tests {
             first_tool["function"]["name"],
             "test.extension:test_command"
         );
+    }
+
+    #[test]
+    fn test_normalize_image_args_strips_data_uri() {
+        // Data URI should be stripped to raw base64
+        let args = json!({
+            "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==",
+            "prompt": "Analyze this image"
+        });
+        let normalized = ExtensionTool::normalize_image_args(&args);
+        assert_eq!(normalized["image"], "/9j/4AAQSkZJRgABAQ==");
+        assert_eq!(normalized["prompt"], "Analyze this image"); // unchanged
+    }
+
+    #[test]
+    fn test_normalize_image_args_plain_base64_unchanged() {
+        // Plain base64 (no data URI prefix) should pass through unchanged
+        let args = json!({
+            "image": "/9j/4AAQSkZJRgABAQ==",
+            "prompt": "Analyze"
+        });
+        let normalized = ExtensionTool::normalize_image_args(&args);
+        assert_eq!(normalized["image"], "/9j/4AAQSkZJRgABAQ==");
+    }
+
+    #[test]
+    fn test_normalize_image_args_nested_object() {
+        // Data URI in nested object should be stripped
+        let args = json!({
+            "params": {
+                "image": "data:image/png;base64,iVBORw0KGgo=",
+                "model": "yolov8"
+            }
+        });
+        let normalized = ExtensionTool::normalize_image_args(&args);
+        assert_eq!(normalized["params"]["image"], "iVBORw0KGgo=");
+        assert_eq!(normalized["params"]["model"], "yolov8");
+    }
+
+    #[test]
+    fn test_normalize_image_args_array() {
+        // Data URI in array should be stripped
+        let args = json!({
+            "images": [
+                "data:image/jpeg;base64,/9j/AAA==",
+                "data:image/png;base64,iVBORw0K=="
+            ]
+        });
+        let normalized = ExtensionTool::normalize_image_args(&args);
+        assert_eq!(normalized["images"][0], "/9j/AAA==");
+        assert_eq!(normalized["images"][1], "iVBORw0K==");
+    }
+
+    #[test]
+    fn test_normalize_image_args_non_image_unchanged() {
+        // Non-image arguments should pass through unchanged
+        let args = json!({
+            "city": "Beijing",
+            "count": 42,
+            "enabled": true
+        });
+        let normalized = ExtensionTool::normalize_image_args(&args);
+        assert_eq!(normalized["city"], "Beijing");
+        assert_eq!(normalized["count"], 42);
+        assert_eq!(normalized["enabled"], true);
     }
 }

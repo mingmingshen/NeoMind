@@ -168,6 +168,7 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
                     tool_call_name: None,
                     thinking: None, // Never keep thinking in compacted messages
                     images: None,
+                    round_contents: None,
                     timestamp: msg.timestamp,
                 });
             }
@@ -295,6 +296,7 @@ pub fn compact_conversation(
             tool_call_name: None,
             thinking: None,
             images: None,
+            round_contents: None,
             timestamp,
         });
     }
@@ -2542,6 +2544,7 @@ impl Agent {
                             id,
                             arguments,
                             result: Some(serde_json::json!(ok_result)),
+                            round: None,
                         });
                     }
                     Err(e) => {
@@ -2552,6 +2555,7 @@ impl Agent {
                             id,
                             arguments,
                             result: Some(serde_json::json!({ "error": error_msg })),
+                            round: None,
                         });
                     }
                 }

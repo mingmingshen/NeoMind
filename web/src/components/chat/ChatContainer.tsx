@@ -61,13 +61,15 @@ interface StreamState {
   currentPlanStep: string
   executionPlan: ExecutionPlan | null
   planStepStates: Record<number, 'pending' | 'running' | 'completed' | 'failed'>
+  roundContents: Record<number, string>
+  currentRound: number
 }
 
 type StreamAction =
   | { type: 'START_STREAM' }
   | { type: 'THINKING'; content: string }
   | { type: 'CONTENT'; content: string }
-  | { type: 'TOOL_START'; tool: string; arguments?: any }
+  | { type: 'TOOL_START'; tool: string; arguments?: any; round?: number }
   | { type: 'TOOL_END'; tool: string; result: any }
   | { type: 'PROGRESS'; progress: Partial<StreamProgressType> }
   | { type: 'PLAN'; step: string }
@@ -75,6 +77,7 @@ type StreamAction =
   | { type: 'EXECUTION_PLAN'; plan: ExecutionPlan }
   | { type: 'PLAN_STEP_STARTED'; stepId: number; description: string }
   | { type: 'PLAN_STEP_COMPLETED'; stepId: number; success: boolean; summary: string }
+  | { type: 'ROUND_END' }
   | { type: 'END_STREAM' }
   | { type: 'ERROR' }
   | { type: 'RESET' }
@@ -92,7 +95,9 @@ const initialStreamState: StreamState = {
   },
   currentPlanStep: "",
   executionPlan: null,
-  planStepStates: {}
+  planStepStates: {},
+  roundContents: {},
+  currentRound: 1,
 }
 
 function streamReducer(state: StreamState, action: StreamAction): StreamState {
@@ -133,7 +138,8 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
             id: generateId(),
             name: action.tool,
             arguments: action.arguments,
-            result: null
+            result: null,
+            round: action.round
           }
         ],
         streamProgress: {
@@ -145,11 +151,16 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
     case 'TOOL_END':
       return {
         ...state,
-        streamingToolCalls: state.streamingToolCalls.map(tc =>
-          tc.name === action.tool
-            ? { ...tc, result: action.result }
-            : tc
-        )
+        streamingToolCalls: (() => {
+          // Match FIRST unresolved tool call with same name
+          const idx = state.streamingToolCalls.findIndex(
+            tc => tc.name === action.tool && tc.result === null
+          )
+          if (idx === -1) return state.streamingToolCalls
+          const updated = [...state.streamingToolCalls]
+          updated[idx] = { ...updated[idx], result: action.result }
+          return updated
+        })()
       }
 
     case 'PROGRESS':
@@ -175,6 +186,18 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
           ...state.streamProgress,
           warnings: [...state.streamProgress.warnings, action.message]
         }
+      }
+
+    case 'ROUND_END':
+      return {
+        ...state,
+        roundContents: {
+          ...state.roundContents,
+          [state.currentRound]: state.streamingContent,
+        },
+        streamingContent: "",
+        streamingThinking: "",
+        currentRound: state.currentRound + 1,
       }
 
     case 'EXECUTION_PLAN':
@@ -283,6 +306,8 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     let streamingContentAccumulator = ""
     let streamingThinkingAccumulator = ""
     let streamingToolCallsAccumulator: any[] = []
+    let roundContentsAccumulator: Record<number, string> = {}
+    let currentRound = 1
 
     const handleMessage = (data: ServerMessage) => {
       switch (data.type) {
@@ -297,21 +322,30 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
           break
 
         case "ToolCallStart":
-          dispatch({ type: 'TOOL_START', tool: data.tool, arguments: data.arguments })
+          dispatch({ type: 'TOOL_START', tool: data.tool, arguments: data.arguments, round: data.round ?? currentRound })
           // Track locally for message assembly
           streamingToolCallsAccumulator.push({
             id: generateId(),
             name: data.tool,
             arguments: data.arguments,
-            result: null
+            result: null,
+            round: data.round ?? currentRound
           })
           break
 
         case "ToolCallEnd":
-          // Update local tracking
-          streamingToolCallsAccumulator = streamingToolCallsAccumulator.map(tc =>
-            tc.name === data.tool ? { ...tc, result: data.result } : tc
-          )
+          // Update local tracking - match FIRST unresolved tool call with same name
+          {
+            const idx = streamingToolCallsAccumulator.findIndex(
+              tc => tc.name === data.tool && tc.result === null
+            )
+            if (idx !== -1) {
+              streamingToolCallsAccumulator[idx] = {
+                ...streamingToolCallsAccumulator[idx],
+                result: data.result
+              }
+            }
+          }
           dispatch({ type: 'TOOL_END', tool: data.tool, result: data.result })
 
           // If not streaming (stream ended before tool execution),
@@ -319,15 +353,31 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
           if (!isStreamingRef.current && lastAssistantMessageId) {
             const lastMessage = messagesRef.current.find(m => m.id === lastAssistantMessageId)
             if (lastMessage && lastMessage.role === "assistant" && lastMessage.tool_calls) {
-              const updatedToolCalls = lastMessage.tool_calls.map(tc =>
-                tc.name === data.tool ? { ...tc, result: data.result } : tc
+              const tcIdx = lastMessage.tool_calls.findIndex(
+                tc => tc.name === data.tool && tc.result === undefined
               )
-              addMessage({
-                ...lastMessage,
-                tool_calls: updatedToolCalls
-              })
+              if (tcIdx !== -1) {
+                const updatedToolCalls = [...lastMessage.tool_calls]
+                updatedToolCalls[tcIdx] = { ...updatedToolCalls[tcIdx], result: data.result }
+                addMessage({
+                  ...lastMessage,
+                  tool_calls: updatedToolCalls
+                })
+              }
             }
           }
+          break
+
+        case "IntermediateEnd":
+        case "intermediate_end":
+          // Save current round's content before clearing
+          if (streamingContentAccumulator) {
+            roundContentsAccumulator[currentRound] = streamingContentAccumulator
+          }
+          streamingContentAccumulator = ""
+          streamingThinkingAccumulator = ""
+          currentRound += 1
+          dispatch({ type: 'ROUND_END' })
           break
 
         case "Progress":
@@ -366,9 +416,22 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
           break
 
         case "end":
-          // Save the complete message using the ID generated at stream start
+          // IMPORTANT: Clear streaming state FIRST to prevent duplicate display.
+          // isStreamingRef updates synchronously, preventing the intermediate render
+          // where both stored message and streaming preview are visible.
+          isStreamingRef.current = false
+          setCurrentStreamMessageId(null)
+          dispatch({ type: 'END_STREAM' })
+
+          // Now save the complete message to store
           if (streamingContentAccumulator || streamingThinkingAccumulator || streamingToolCallsAccumulator.length > 0) {
             const messageId = currentStreamMessageId || generateId()
+            // Save last round's content to roundContents
+            if (streamingContentAccumulator) {
+              roundContentsAccumulator[currentRound] = streamingContentAccumulator
+            }
+            // Only include round_contents if there were multiple rounds
+            const hasMultipleRounds = Object.keys(roundContentsAccumulator).length > 1
             const completeMessage: Message = {
               id: messageId,
               role: "assistant",
@@ -376,6 +439,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
               timestamp: Math.floor(Date.now() / 1000),
               thinking: streamingThinkingAccumulator || undefined,
               tool_calls: streamingToolCallsAccumulator.length > 0 ? streamingToolCallsAccumulator : undefined,
+              round_contents: hasMultipleRounds ? roundContentsAccumulator : undefined,
             }
             addMessage(completeMessage)
             setLastAssistantMessageId(messageId)
@@ -384,8 +448,8 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
           streamingContentAccumulator = ""
           streamingThinkingAccumulator = ""
           streamingToolCallsAccumulator = []
-          setCurrentStreamMessageId(null)
-          dispatch({ type: 'END_STREAM' })
+          roundContentsAccumulator = {}
+          currentRound = 1
           break
 
         case "Error":
@@ -585,12 +649,13 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
           {/* Messages - with automatic merging at render time */}
           <MergedMessageList
             messages={filteredMessages}
-            isStreaming={streamState.isStreaming}
+            isStreaming={streamState.isStreaming && !(currentStreamMessageId && filteredMessages.some(m => m.id === currentStreamMessageId))}
             streamingContent={streamState.streamingContent}
             streamingThinking={streamState.streamingThinking}
             streamingToolCalls={streamState.streamingToolCalls}
             executionPlan={streamState.executionPlan}
             planStepStates={streamState.planStepStates}
+            roundContents={streamState.roundContents}
           />
 
           {/* Stream progress indicator - always show during streaming */}

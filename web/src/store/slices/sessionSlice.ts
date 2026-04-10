@@ -22,65 +22,90 @@ import { logError } from '@/lib/errors'
  */
 function mergeAssistantMessages(messages: Message[]): Message[] {
   const result: Message[] = []
+  let i = 0
 
-  for (let i = 0; i < messages.length; i++) {
+  while (i < messages.length) {
     const msg = messages[i]
 
     // Skip tool role messages (internal LLM context)
     if (isToolMessage(msg)) {
+      i++
       continue
     }
 
-    // Check if this is an assistant message that might need merging with the next one
-    if (msg.role === 'assistant' && i + 1 < messages.length) {
-      const nextMsg = messages[i + 1]
+    // If not an assistant message, keep as-is
+    if (msg.role !== 'assistant') {
+      result.push(msg)
+      i++
+      continue
+    }
 
-      // Skip if next message is a tool message
+    // Collect consecutive assistant messages that should be merged
+    // (skipping any tool messages in between)
+    const mergedAssistant: Message = {
+      ...msg,
+      content: msg.content || '',
+    }
+    const contentParts: string[] = []
+    if (msg.content) contentParts.push(msg.content)
+
+    let j = i + 1
+    while (j < messages.length) {
+      const nextMsg = messages[j]
+
+      // Skip tool messages between assistant messages
       if (isToolMessage(nextMsg)) {
-        result.push(msg)
+        j++
         continue
       }
 
-      // Check if next message is also an assistant message
-      if (nextMsg.role === 'assistant') {
-        // Merge logic: if they should be merged based on content structure
-        if (shouldMergeMessages(msg, nextMsg)) {
-          // Merge the two messages - combine content without duplicating when backend sent same content twice
-          const mergedContent = dedupeContentConcat(msg.content || '', nextMsg.content || '') || ''
-          result.push({
-            ...msg,
-            content: mergedContent,
-            // Keep tool_calls, thinking from the first message (it usually has them)
-            tool_calls: msg.tool_calls || nextMsg.tool_calls,
-            thinking: msg.thinking || nextMsg.thinking,
-            // Use the earlier timestamp
-            timestamp: msg.timestamp,
-            id: msg.id, // Keep the first message's ID
-          })
-          // Skip the next message since we merged it
-          i++
-          continue
-        } else if (msg.content && !msg.tool_calls && !msg.thinking) {
-          // Special case: first message is plain content without tools/thinking
-          // If next message has tools/thinking, this is a split response - merge them
-          if (nextMsg.tool_calls || nextMsg.thinking) {
-            const mergedContent = dedupeContentConcat(msg.content || '', nextMsg.content || '') || ''
-            result.push({
-              ...msg,
-              content: mergedContent,
-              tool_calls: nextMsg.tool_calls,
-              thinking: nextMsg.thinking,
-              timestamp: msg.timestamp,
-              id: msg.id,
-            })
-            i++
-            continue
-          }
+      // Stop if not an assistant message
+      if (nextMsg.role !== 'assistant') break
+
+      // Only merge if the messages are related (one has tools/thinking)
+      if (!shouldMergeMessages(mergedAssistant, nextMsg) &&
+          !(nextMsg.tool_calls || nextMsg.thinking) &&
+          !(msg.tool_calls || msg.thinking)) {
+        break
+      }
+
+      // Merge content
+      if (nextMsg.content) contentParts.push(nextMsg.content)
+
+      // Merge thinking (keep first non-empty)
+      if (!mergedAssistant.thinking && nextMsg.thinking) {
+        mergedAssistant.thinking = nextMsg.thinking
+      }
+
+      // Merge tool_calls from all messages (multi-round tool calls)
+      if (nextMsg.tool_calls && nextMsg.tool_calls.length > 0) {
+        if (!mergedAssistant.tool_calls) {
+          mergedAssistant.tool_calls = [...nextMsg.tool_calls]
+        } else {
+          mergedAssistant.tool_calls = [...mergedAssistant.tool_calls, ...nextMsg.tool_calls]
         }
       }
+
+      // Merge round_contents
+      if (nextMsg.round_contents) {
+        if (!mergedAssistant.round_contents) {
+          mergedAssistant.round_contents = nextMsg.round_contents
+        } else {
+          mergedAssistant.round_contents = { ...mergedAssistant.round_contents, ...nextMsg.round_contents }
+        }
+      }
+
+      j++
     }
 
-    result.push(msg)
+    // Set merged content, deduplicating
+    mergedAssistant.content = contentParts.reduce(
+      (acc, part) => dedupeContentConcat(acc, part),
+      ''
+    )
+
+    result.push(mergedAssistant)
+    i = j
   }
 
   return result
@@ -250,9 +275,10 @@ export const createSessionSlice: StateCreator<
   },
 
   switchSession: async (sessionId: string) => {
-    // Check if we're already on this session to avoid unnecessary API calls
-    const currentSessionId = get().sessionId
-    if (sessionId === currentSessionId) {
+    // Check if we're already on this session WITH loaded messages
+    // If sessionId matches but messages are empty, we still need to load (e.g. sidebar click)
+    const state = get()
+    if (sessionId === state.sessionId && state.messages.length > 0 && !state.isLoadingSession) {
       return
     }
 

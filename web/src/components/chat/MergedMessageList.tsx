@@ -18,6 +18,7 @@ interface MergedMessageListProps {
   streamingToolCalls?: any[]
   executionPlan?: ExecutionPlan | null
   planStepStates?: Record<number, 'pending' | 'running' | 'completed' | 'failed'>
+  roundContents?: Record<number, string>
 }
 
 // Performance optimization: Limit rendered messages to avoid DOM bloat
@@ -34,6 +35,7 @@ export function MergedMessageList({
   streamingToolCalls = [],
   executionPlan,
   planStepStates,
+  roundContents = {},
 }: MergedMessageListProps) {
   const { user } = useStore()
   const sessionId = useStore(selectSessionId)
@@ -186,37 +188,22 @@ export function MergedMessageList({
                     <ThinkingBlock thinking={streamingThinking} />
                   )}
 
-                  {/* Tool calls */}
+                  {/* Tool calls with per-round intermediate text */}
                   {streamingToolCalls.length > 0 && (
                     <ToolCallVisualization
                       toolCalls={streamingToolCalls}
                       isStreaming={true}
+                      roundContents={roundContents}
                     />
                   )}
 
-                  {/* Content with blinking cursor when streaming */}
-                  {(streamingContent || streamingThinking || streamingToolCalls.length > 0) ? (
-                    <>
-                      {streamingThinking && (
-                        <ThinkingBlock thinking={streamingThinking} />
-                      )}
-
-                      {streamingToolCalls.length > 0 && (
-                        <ToolCallVisualization
-                          toolCalls={streamingToolCalls}
-                          isStreaming={true}
-                        />
-                      )}
-
-                      {streamingContent && (
-                        <div className="relative inline">
-                          <MarkdownMessage content={streamingContent} />
-                          {/* Blinking cursor at end of streaming content */}
-                          <span className="inline-block w-0.5 h-4 ml-0.5 bg-current align-middle animate-pulse" />
-                        </div>
-                      )}
-                    </>
-                  ) : (
+                  {/* Streaming content with blinking cursor */}
+                  {streamingContent ? (
+                    <div className="relative inline">
+                      <MarkdownMessage content={streamingContent} />
+                      <span className="inline-block w-0.5 h-4 ml-0.5 bg-current align-middle animate-pulse" />
+                    </div>
+                  ) : !streamingThinking && streamingToolCalls.length === 0 && (
                     /* Loading indicator - shown when waiting for first response */
                     <div className="flex items-center gap-3 py-2">
                       <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />

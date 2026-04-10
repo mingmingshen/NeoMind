@@ -171,6 +171,7 @@ fn extract_tool_call_from_json(value: &Value) -> Option<ToolCall> {
         id,
         arguments,
         result: None,
+        round: None,
     })
 }
 
@@ -271,6 +272,7 @@ fn parse_invoke_element(invoke_section: &str) -> Option<ToolCall> {
         id: Uuid::new_v4().to_string(), // XML format doesn't have IDs
         arguments: Value::Object(arguments),
         result: None,
+        round: None,
     })
 }
 

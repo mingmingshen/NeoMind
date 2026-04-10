@@ -225,6 +225,7 @@ export function ChatPage() {
   const activateBackend = useStore((state) => state.activateBackend)
   const loadBackends = useStore((state) => state.loadBackends)
   const hasLoadedBackends = useRef(false)
+  const [sessionsLoaded, setSessionsLoaded] = useState(false)
 
   // Chat state from store
   const {
@@ -274,13 +275,17 @@ export function ChatPage() {
   const streamingMessageIdRef = useRef<string | null>(null)
   // Captured streaming state for use in end event (state updates are async)
   const capturedStreamingRef = useRef({ content: "", thinking: "", toolCalls: [] as any[] })
+  // Round tracking for multi-round tool calling
+  const [roundContents, setRoundContents] = useState<Record<number, string>>({})
+  const currentRoundRef = useRef(1)
+  const roundContentsAccumulatorRef = useRef<Record<number, string>>({})
 
   // Load LLM backends and sessions on mount
   useEffect(() => {
     if (!hasLoadedBackends.current) {
       hasLoadedBackends.current = true
       loadBackends()
-      loadSessions()
+      loadSessions().then(() => setSessionsLoaded(true))
     }
   }, [loadBackends, loadSessions])
 
@@ -302,24 +307,21 @@ export function ChatPage() {
   // - Browser back/forward navigation
   // - Click events in SessionSidebar (which navigate to the URL)
   useEffect(() => {
-    if (urlSessionId && urlSessionId !== sessionId) {
-      // Only switch if it's a different session
+    if (urlSessionId) {
       switchSession(urlSessionId).catch((err) => {
         handleError(err, { operation: 'Load session from URL', showToast: false })
       })
     }
-  }, [urlSessionId, sessionId, switchSession, handleError])
+  }, [urlSessionId, switchSession, handleError])
 
-  // Auto-navigate to latest session when on /chat without sessionId
-  // Also redirect to /chat when current session is deleted or no sessions exist
+  // Handle deleted session redirects and root path
   useEffect(() => {
-    // Only run this after sessions are loaded
-    if (!hasLoadedBackends.current) return
+    if (!sessionsLoaded) return
 
     const currentPath = window.location.pathname
 
     // If current sessionId in URL is not in sessions list (session was deleted)
-    // redirect to /chat
+    // redirect to /chat (welcome mode)
     if (urlSessionId && sessions.length > 0 && !sessions.find(s => s.sessionId === urlSessionId)) {
       navigate('/chat', { replace: true })
       return
@@ -331,23 +333,11 @@ export function ChatPage() {
       return
     }
 
-    const isOnChatPath = currentPath === '/chat' || currentPath === '/'
-
-    // If on /chat or / with no sessionId in URL, and we have sessions
-    if (isOnChatPath && !urlSessionId && sessions.length > 0) {
-      // Navigate to the most recent session
-      const latestSession = sessions[0] // sessions are sorted by updatedAt desc
-      if (latestSession?.sessionId) {
-        navigate(`/chat/${latestSession.sessionId}`, { replace: true })
-        return
-      }
-    }
-
     // Redirect root path to /chat
     if (currentPath === '/') {
       navigate('/chat', { replace: true })
     }
-  }, [urlSessionId, sessions, navigate])
+  }, [urlSessionId, sessions, navigate, sessionsLoaded])
 
   // Sync WebSocket sessionId when store sessionId changes
   useEffect(() => {
@@ -362,11 +352,20 @@ export function ChatPage() {
   }, [activeBackendId])
 
   // Determine mode: welcome mode (no sessionId in URL) or chat mode (has sessionId in URL)
+  // While sessions are loading, treat as welcome mode but show loading instead of welcome content
   const isWelcomeMode = !urlSessionId
 
-  // Auto-scroll to bottom with debouncing for better performance
+  // Ref for the scrollable message container
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll to bottom by directly setting scrollTop on the scroll container
+  // Using scrollIntoView is unreliable when sibling elements (like sidebar) have CSS transitions,
+  // as it scrolls based on viewport position which shifts during layout reflow.
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    const container = scrollContainerRef.current
+    if (container) {
+      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" })
+    }
   }, [])
 
   // Debounced scroll to reduce excessive scrolling during streaming
@@ -414,7 +413,8 @@ export function ChatPage() {
             id: generateId(),
             name: data.tool,
             arguments: data.arguments,
-            result: null
+            result: null,
+            round: data.round ?? currentRoundRef.current
           }
           // Immediately update ref synchronously before setState
           capturedStreamingRef.current.toolCalls = [...capturedStreamingRef.current.toolCalls, toolCall]
@@ -423,66 +423,79 @@ export function ChatPage() {
         }
 
         case "ToolCallEnd": {
-          // Immediately update ref synchronously before setState
-          capturedStreamingRef.current.toolCalls = capturedStreamingRef.current.toolCalls.map(tc =>
-            tc.name === data.tool
-              ? { ...tc, result: data.result }
-              : tc
+          // Match FIRST unresolved tool call with same name (not all)
+          const tcIdx = capturedStreamingRef.current.toolCalls.findIndex(
+            tc => tc.name === data.tool && tc.result === null
           )
-          setStreamingToolCalls(prev => prev.map(tc =>
-            tc.name === data.tool
-              ? { ...tc, result: data.result }
-              : tc
-          ))
+          if (tcIdx !== -1) {
+            const updated = [...capturedStreamingRef.current.toolCalls]
+            updated[tcIdx] = { ...updated[tcIdx], result: data.result }
+            capturedStreamingRef.current.toolCalls = updated
+          }
+          setStreamingToolCalls(prev => {
+            const idx = prev.findIndex(
+              tc => tc.name === data.tool && tc.result === null
+            )
+            if (idx === -1) return prev
+            const updated = [...prev]
+            updated[idx] = { ...updated[idx], result: data.result }
+            return updated
+          })
           break
         }
 
         case "end": {
-          const { content, thinking, toolCalls } = capturedStreamingRef.current
-          if (content || thinking || toolCalls.length > 0) {
+          const { thinking, toolCalls } = capturedStreamingRef.current
+          // Last round's content is the current captured content
+          const lastRoundContent = capturedStreamingRef.current.content
+          // Save last round's content to round contents
+          if (lastRoundContent) {
+            roundContentsAccumulatorRef.current[currentRoundRef.current] = lastRoundContent
+          }
+          const hasMultipleRounds = Object.keys(roundContentsAccumulatorRef.current).length > 1
+          // For multi-round: message.content = last round's content, earlier rounds in round_contents
+          // For single-round: message.content = the only content (no round_contents needed)
+          const messageContent = lastRoundContent
+          if (messageContent || thinking || toolCalls.length > 0) {
             const messageId = streamingMessageIdRef.current || generateId()
             const completeMessage: Message = {
               id: messageId,
               role: "assistant",
-              content,
+              content: messageContent,
               timestamp: Date.now(),
               thinking: thinking || undefined,
               tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+              round_contents: hasMultipleRounds ? roundContentsAccumulatorRef.current : undefined,
             }
             addMessage(completeMessage)
-            // Track this message for potential tool call result updates
             setLastAssistantMessageId(messageId)
           }
           setIsStreaming(false)
           setStreamingContent("")
           setStreamingThinking("")
           setStreamingToolCalls([])
+          setRoundContents({})
           // Reset captured ref
           capturedStreamingRef.current = { content: "", thinking: "", toolCalls: [] }
           streamingMessageIdRef.current = null
+          currentRoundRef.current = 1
+          roundContentsAccumulatorRef.current = {}
           break
         }
 
+        case "IntermediateEnd":
         case "intermediate_end": {
-          // Intermediate end for multi-round tool calling
-          // Save the current progress but keep streaming state active
-          const { content, thinking, toolCalls } = capturedStreamingRef.current
-          if (content || thinking || toolCalls.length > 0) {
-            const messageId = streamingMessageIdRef.current || generateId()
-            const intermediateMessage: Message = {
-              id: messageId,
-              role: "assistant",
-              content,
-              timestamp: Date.now(),
-              thinking: thinking || undefined,
-              tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-            }
-            // Always add the message (store will handle deduplication by id)
-            addMessage(intermediateMessage)
-            // Keep track of this message for further updates
-            streamingMessageIdRef.current = messageId
+          // Save current round's content to roundContents
+          if (capturedStreamingRef.current.content) {
+            roundContentsAccumulatorRef.current[currentRoundRef.current] = capturedStreamingRef.current.content
           }
-          // Don't reset streaming state - more content is coming
+          // Reset captured content for next round - only keep toolCalls across rounds
+          capturedStreamingRef.current.content = ""
+          capturedStreamingRef.current.thinking = ""
+          currentRoundRef.current += 1
+          setRoundContents({ ...roundContentsAccumulatorRef.current })
+          setStreamingContent("")
+          setStreamingThinking("")
           break
         }
 
@@ -564,7 +577,7 @@ export function ChatPage() {
   // Send message - in welcome mode, create session and navigate
   const handleSend = async (e?: React.MouseEvent | React.KeyboardEvent) => {
     const trimmedInput = input.trim()
-    if ((!trimmedInput && attachedImages.length === 0) || isStreaming) return
+    if ((!trimmedInput && attachedImages.length === 0) || isStreaming || isLoadingSession) return
 
     // Check if images are attached but current model doesn't support vision
     if (attachedImages.length > 0 && !supportsMultimodal) {
@@ -614,6 +627,10 @@ export function ChatPage() {
     setIsStreaming(true)
     streamingMessageIdRef.current = generateId()
     setLastAssistantMessageId(null)
+    // Reset round tracking
+    currentRoundRef.current = 1
+    roundContentsAccumulatorRef.current = {}
+    setRoundContents({})
 
     ws.sendMessage(trimmedInput, attachedImages.length > 0 ? attachedImages : undefined)
 
@@ -881,7 +898,15 @@ export function ChatPage() {
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {/* Chat Content Area */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {isWelcomeMode ? (
+        {isWelcomeMode && !sessionsLoaded ? (
+          /* Loading state while sessions are being loaded - prevents race condition */
+          <div className="flex-1 min-h-0 flex items-center justify-center">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-sm">{t('common:loading')}</span>
+            </div>
+          </div>
+        ) : isWelcomeMode ? (
           /* Welcome Area - shown on /chat (no sessionId), scrollable on mobile */
           <div
             className="touch-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-4 sm:px-6 py-4 sm:py-6 pb-32 sm:pb-6"
@@ -933,6 +958,7 @@ export function ChatPage() {
         ) : hasMessages ? (
           /* Chat Messages - shown on /chat/:sessionId with messages */
           <div
+            ref={scrollContainerRef}
             className="touch-scroll flex-1 min-h-0 overflow-y-auto px-2 sm:px-4 py-2 sm:py-4 pb-32 sm:pb-2"
             onClick={(e) => {
               // If clicking outside interactive elements, dismiss keyboard
@@ -968,7 +994,7 @@ export function ChatPage() {
                       )}
                       {message.thinking && <ThinkingBlock thinking={message.thinking} />}
                       {message.tool_calls && message.tool_calls.length > 0 && (
-                        <ToolCallVisualization toolCalls={message.tool_calls} isStreaming={false} />
+                        <ToolCallVisualization toolCalls={message.tool_calls} isStreaming={false} roundContents={message.round_contents} />
                       )}
                       {message.content && (
                         <MarkdownMessage content={message.content} variant={message.role as 'user' | 'assistant'} />
@@ -1005,7 +1031,7 @@ export function ChatPage() {
 
                       {/* Tool calls with loading indicator */}
                       {streamingToolCalls.length > 0 && (
-                        <ToolCallVisualization toolCalls={streamingToolCalls} isStreaming={true} />
+                        <ToolCallVisualization toolCalls={streamingToolCalls} isStreaming={true} roundContents={roundContents} />
                       )}
 
                       {/* Content */}
@@ -1056,7 +1082,12 @@ export function ChatPage() {
         </div>
 
         {/* Input Area - fixed on mobile, normal flex on desktop */}
-        <div className="bg-background sm:static fixed bottom-0 left-0 right-0 z-40 px-2.5 sm:px-4 py-3 sm:py-3 pb-8 sm:pb-4 safe-bottom border-t border-border/30 sm:border-0" style={{paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))'}}>
+        <div className={cn(
+          "bg-background px-2.5 sm:px-4 pt-3 pb-5 sm:pt-3 sm:pb-6 safe-bottom",
+          isDesktop
+            ? "border-0"
+            : "fixed bottom-0 left-0 right-0 z-40 border-t border-border/30"
+        )} style={isDesktop ? undefined : { paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 12px))' }}>
           <div className="max-w-3xl mx-auto">
             {/* Connection status - show on mobile when not connected */}
             {!isDesktop && (connectionState.status === 'reconnecting' || connectionState.status === 'error') && (

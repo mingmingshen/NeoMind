@@ -243,6 +243,7 @@ mod tests {
             id: "".to_string(),
             arguments: args,
             result: None,
+            round: None,
         }
     }
 

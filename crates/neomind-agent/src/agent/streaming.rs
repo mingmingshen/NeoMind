@@ -17,7 +17,7 @@ use tokio::sync::RwLock;
 
 use super::staged::{IntentCategory, IntentClassifier};
 use super::tool_parser::parse_tool_calls;
-use super::types::{AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, ToolCall};
+use super::types::{AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, LargeDataCache, ToolCall};
 use super::planner::types::ExecutionPlan;
 use crate::error::{NeoMindError, Result};
 use crate::llm::LlmInterface;
@@ -508,6 +508,7 @@ const NON_CACHEABLE_TOOLS: &[&str] = &[
 /// - AutoGen: `reflect_on_tool_use=False` returns tool results directly
 /// - LangChain: `return_direct=True` stops agent loop after tool execution
 const SIMPLE_QUERY_TOOLS: &[&str] = &[
+    "device",                // Aggregated device tool (list/query/get/control)
     "device_discover",       // Device discovery - returns device list
     "list_devices",          // List all devices
     "list_rules",            // List automation rules
@@ -1257,6 +1258,7 @@ pub fn emit_plan_events(plan: &ExecutionPlan, tx: &tokio::sync::mpsc::UnboundedS
 /// Result of a single tool execution with metadata
 struct ToolExecutionResult {
     _name: String,
+    arguments: serde_json::Value,
     result: std::result::Result<crate::toolkit::ToolOutput, crate::toolkit::ToolError>,
 }
 
@@ -1319,6 +1321,7 @@ fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
                     tool_call_name: None,
                     thinking: None, // Never keep thinking in compacted messages
                     images: None,
+                    round_contents: None,
                     timestamp: msg.timestamp,
                 });
             }
@@ -1500,6 +1503,7 @@ fn compact_tool_results_stream_with_config(
                     tool_call_name: None,
                     thinking: None,
                     images: None,
+                    round_contents: None,
                     timestamp: msg.timestamp,
                 };
                 result.push(summary_msg);
@@ -1814,6 +1818,7 @@ pub async fn process_stream_events_with_safeguards(
     Ok(Box::pin(async_stream::stream! {
         let mut stream = stream;
         let mut buffer = String::new();
+        let mut yielded_up_to: usize = 0; // Track how much of buffer has been yielded to prevent duplication
         let mut tool_calls_detected = false;
         let mut tool_calls: Vec<ToolCall> = Vec::new();
         let mut content_before_tools = String::new();
@@ -1843,56 +1848,14 @@ pub async fn process_stream_events_with_safeguards(
         let mut thinking_timeout_warned = false;
         const THINKING_TIMEOUT_SECS: u64 = 120;
 
-        // === SAFEGUARD: Track recently executed tools to prevent loops ===
-        // Store both tool name and a hash of arguments for better loop detection
-        let mut recently_executed_tools: VecDeque<(String, u64)> = VecDeque::new();
-
-        /// Calculate a simple hash of tool arguments for similarity detection
-        fn hash_tool_args(args: &serde_json::Value) -> u64 {
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::{Hash, Hasher};
-
-            let mut h = DefaultHasher::new();
-            // Normalize the arguments for hashing:
-            // - Sort object keys for consistent hashing
-            // - Skip values that might vary (like timestamps)
-            if let Some(obj) = args.as_object() {
-                let mut sorted_pairs: Vec<_> = obj.iter().collect();
-                sorted_pairs.sort_by(|a, b| a.0.cmp(b.0));
-
-                for (key, value) in sorted_pairs {
-                    // Skip dynamic fields that change every call
-                    if key.contains("time") || key.contains("timestamp") || key.contains("id") {
-                        continue;
-                    }
-                    key.hash(&mut h);
-                    value.to_string().hash(&mut h);
-                }
-            } else {
-                args.to_string().hash(&mut h);
-            }
-            h.finish()
-        }
-
-        /// Check if a tool call is too similar to a recent one (potential loop)
-        fn is_tool_call_similar(
-            name: &str,
-            args_hash: u64,
-            recent: &VecDeque<(String, u64)>,
-        ) -> bool {
-            // Only block exact duplicates: same tool name + same arguments.
-            // Different arguments are legitimate (e.g., querying different devices).
-            for (recent_name, recent_hash) in recent.iter() {
-                if recent_name == name && *recent_hash == args_hash {
-                    return true; // Exact duplicate: same tool, same args
-                }
-            }
-            false
-        }
+        // === SAFEGUARD: Track recently executed tools for multi-round context ===
+        let mut recently_executed_tools: VecDeque<String> = VecDeque::new();
+        // Track (tool_name, arguments_hash) to detect duplicate calls across rounds
+        let mut executed_tool_signatures: Vec<(String, String)> = Vec::new();
 
         // === SAFEGUARD: Track multi-round tool calling iterations ===
         let mut tool_iteration_count = 0usize;
-        const MAX_TOOL_ITERATIONS: usize = 10;
+        const MAX_TOOL_ITERATIONS: usize = 5;
 
         // === INTENT & PLAN VISUALIZATION ===
         // Send intent and plan events first to show user what's happening
@@ -1922,17 +1885,7 @@ pub async fn process_stream_events_with_safeguards(
                 };
 
                 // Build context for subsequent rounds - tell LLM what happened before
-                let recently_executed: Vec<&str> = recently_executed_tools.iter().map(|(name, _)| name.as_str()).collect();
-                let cached_refs: Vec<String> = {
-                    state_guard.large_data_cache.entries().map(|(name, cr)| {
-                        let size_str = if cr.size_bytes >= 1024 * 1024 {
-                            format!("{:.1}MB", cr.size_bytes as f64 / (1024.0 * 1024.0))
-                        } else {
-                            format!("{:.1}KB", cr.size_bytes as f64 / 1024.0)
-                        };
-                        format!("- {} ({}, {})", name, cr.content_type, size_str)
-                    }).collect()
-                };
+                let recently_executed: Vec<&str> = recently_executed_tools.iter().map(|s| s.as_str()).collect();
                 drop(state_guard);
 
                 let context_msg = if recently_executed.is_empty() {
@@ -1940,22 +1893,19 @@ pub async fn process_stream_events_with_safeguards(
                         "Round {} of processing. Continue. Use tools if more information is needed, or give the final response.",
                         tool_iteration_count + 1
                     )
-                } else if cached_refs.is_empty() {
-                    format!(
-                        "Round {} of processing. Previously executed tools: {}.\n\
-                        Analyze the results and decide: call more tools if needed, or give the final response.",
-                        tool_iteration_count + 1,
-                        recently_executed.join(", ")
-                    )
                 } else {
+                    let executed_summary = recently_executed.iter()
+                        .map(|s| format!("- {}", s))
+                        .collect::<Vec<_>>()
+                        .join("\n");
                     format!(
-                        "Round {} of processing. Previously executed tools: {}.\n\
-                        Cached results available:\n{}\n\
-                        To pass cached data to a tool, include \"_cached_input\": \"<tool_name>\" in parameters.\n\
-                        Decide: call more tools if needed, or give the final response.",
+                        "Round {} of processing.\n\n\
+                        Previously executed tools:\n{}\n\n\
+                        IMPORTANT: Do NOT repeat tools that were already executed. If you already called a tool, use its results from context.\n\
+                        Only call NEW tools with DIFFERENT parameters if more data is needed.\n\
+                        If you have enough data to answer the user's question, give the final response now.",
                         tool_iteration_count + 1,
-                        recently_executed.join(", "),
-                        cached_refs.join("\n")
+                        executed_summary
                     )
                 };
 
@@ -1978,8 +1928,12 @@ pub async fn process_stream_events_with_safeguards(
 
                 stream = Box::pin(round_stream);
                 buffer = String::new();
+                yielded_up_to = 0;
                 tool_calls.clear();
                 content_before_tools = String::new();
+                // Reset repetition tracking for the new round to prevent
+                // carry-over from previous rounds causing false positives
+                recent_chunks.clear();
             }
 
             // === PHASE 1: Stream initial response (thinking + content + tool calls) ===
@@ -2065,6 +2019,11 @@ pub async fn process_stream_events_with_safeguards(
                         }
 
                         if detect_repetition(&recent_chunks, &text, safeguards.max_repetition_count) {
+                            if tool_calls_detected {
+                                // Tool calls already detected - don't abort, let them execute
+                                tracing::warn!("Repetition detected but tool calls pending, proceeding to execution");
+                                break;
+                            }
                             tracing::warn!("Repetition detected, stopping stream");
                             yield AgentEvent::error("Repetitive content detected, completing processing...".to_string());
                             break;
@@ -2110,25 +2069,7 @@ pub async fn process_stream_events_with_safeguards(
 
                                     // Parse the tool calls from thinking
                                     if let Ok((_, calls)) = parse_tool_calls(&tool_content) {
-                                        let mut duplicate_found = false;
-                                        for call in &calls {
-                                            let args_hash = hash_tool_args(&call.arguments);
-                                            if is_tool_call_similar(&call.name, args_hash, &recently_executed_tools) {
-                                                tracing::warn!(
-                                                    "Tool '{}' was recently executed - potential loop detected",
-                                                    call.name
-                                                );
-                                                yield AgentEvent::warning(format!(
-                                                    "Skipping repeated tool call '{}' to avoid loops.",
-                                                    call.name
-                                                ));
-                                                duplicate_found = true;
-                                                tool_calls.clear();
-                                                break;
-                                            }
-                                        }
-
-                                        if !duplicate_found {
+                                        if !calls.is_empty() {
                                             tool_calls_detected = true;
                                             tool_calls.extend(calls);
                                             had_tool_calls = true;
@@ -2144,25 +2085,7 @@ pub async fn process_stream_events_with_safeguards(
                             // Also check for JSON tool calls in thinking
                             else if let Some((json_start, tool_json, remaining)) = detect_json_tool_calls(thinking_with_new) {
                                 if let Ok((_, calls)) = parse_tool_calls(&tool_json) {
-                                    let mut duplicate_found = false;
-                                    for call in &calls {
-                                        let args_hash = hash_tool_args(&call.arguments);
-                                        if is_tool_call_similar(&call.name, args_hash, &recently_executed_tools) {
-                                            tracing::warn!(
-                                                "Tool '{}' was recently executed - potential loop detected",
-                                                call.name
-                                            );
-                                            yield AgentEvent::error(format!(
-                                                "Tool '{}' was recently executed. To prevent infinite loops, please try a different approach.",
-                                                call.name
-                                            ));
-                                            duplicate_found = true;
-                                            tool_calls.clear();
-                                            break;
-                                        }
-                                    }
-
-                                    if !duplicate_found {
+                                    if !calls.is_empty() {
                                         tool_calls_detected = true;
                                         tool_calls.extend(calls);
                                         had_tool_calls = true;
@@ -2206,34 +2129,23 @@ pub async fn process_stream_events_with_safeguards(
                         // Try JSON format first: [{"name": "tool", "arguments": {...}}]
                         let json_tool_check = detect_json_tool_calls(&buffer);
                         if let Some((json_start, tool_json, remaining)) = json_tool_check {
-                            // Found JSON tool calls - split buffer into before, tool, and remaining
+                            // Found JSON tool calls - only yield content NOT already yielded
+                            if json_start > yielded_up_to {
+                                let new_content = &buffer[yielded_up_to..json_start];
+                                if !new_content.is_empty() {
+                                    content_before_tools.push_str(new_content);
+                                    yield AgentEvent::content(new_content.to_string());
+                                }
+                            }
+                            // Still track ALL content before tools for memory saving
                             let before_tool = &buffer[..json_start];
-                            if !before_tool.is_empty() {
-                                content_before_tools.push_str(before_tool);
-                                yield AgentEvent::content(before_tool.to_string());
+                            if before_tool.len() > content_before_tools.len() {
+                                content_before_tools = before_tool.to_string();
                             }
 
                             // Parse the JSON tool calls
                             if let Ok((_, calls)) = parse_tool_calls(&tool_json) {
-                                let mut duplicate_found = false;
-                                for call in &calls {
-                                    let args_hash = hash_tool_args(&call.arguments);
-                                    if is_tool_call_similar(&call.name, args_hash, &recently_executed_tools) {
-                                        tracing::warn!(
-                                            "Tool '{}' was recently executed - potential loop detected",
-                                            call.name
-                                        );
-                                        yield AgentEvent::error(format!(
-                                            "Tool '{}' was recently executed. To prevent infinite loops, please try a different approach.",
-                                            call.name
-                                        ));
-                                        duplicate_found = true;
-                                        tool_calls.clear();
-                                        break;
-                                    }
-                                }
-
-                                if !duplicate_found {
+                                if !calls.is_empty() {
                                     tool_calls_detected = true;
                                     tool_calls.extend(calls);
                                 }
@@ -2241,39 +2153,30 @@ pub async fn process_stream_events_with_safeguards(
 
                             // Update buffer with remaining content
                             buffer = remaining.to_string();
+                            yielded_up_to = 0; // Reset for new buffer
                         } else {
                             // No JSON tool calls detected - check for XML format
                             if let Some(tool_start) = buffer.find("<tool_calls>") {
+                                // Only yield content NOT already yielded
+                                if tool_start > yielded_up_to {
+                                    let new_content = &buffer[yielded_up_to..tool_start];
+                                    if !new_content.is_empty() {
+                                        content_before_tools.push_str(new_content);
+                                        yield AgentEvent::content(new_content.to_string());
+                                    }
+                                }
                                 let before_tool = &buffer[..tool_start];
-                                if !before_tool.is_empty() {
-                                    content_before_tools.push_str(before_tool);
-                                    yield AgentEvent::content(before_tool.to_string());
+                                if before_tool.len() > content_before_tools.len() {
+                                    content_before_tools = before_tool.to_string();
                                 }
 
                                 if let Some(tool_end) = buffer.find("</tool_calls>") {
                                     let tool_content = buffer[tool_start..tool_end + 13].to_string();
                                     buffer = buffer[tool_end + 13..].to_string();
+                                    yielded_up_to = 0; // Reset for new buffer
 
                                     if let Ok((_, calls)) = parse_tool_calls(&tool_content) {
-                                        let mut duplicate_found = false;
-                                        for call in &calls {
-                                            let args_hash = hash_tool_args(&call.arguments);
-                                            if is_tool_call_similar(&call.name, args_hash, &recently_executed_tools) {
-                                                tracing::warn!(
-                                                    "Tool '{}' was recently executed - potential loop detected",
-                                                    call.name
-                                                );
-                                                yield AgentEvent::warning(format!(
-                                                    "Skipping repeated tool call '{}' to avoid loops.",
-                                                    call.name
-                                                ));
-                                                duplicate_found = true;
-                                                tool_calls.clear();
-                                                break;
-                                            }
-                                        }
-
-                                        if !duplicate_found {
+                                        if !calls.is_empty() {
                                             tool_calls_detected = true;
                                             tool_calls.extend(calls);
                                         }
@@ -2285,6 +2188,7 @@ pub async fn process_stream_events_with_safeguards(
                                 if !text.is_empty() {
                                     yield AgentEvent::content(text.clone());
                                 }
+                                yielded_up_to = buffer.len(); // Mark all buffer content as yielded
                             }
                         }
                     }
@@ -2350,11 +2254,11 @@ pub async fn process_stream_events_with_safeguards(
                     let cache_clone = cache.clone();
                     let name = tool_call.name.clone();
                     let arguments = tool_call.arguments.clone();
-                    let name_clone = name.clone();
 
                     async move {
                         (name.clone(), ToolExecutionResult {
-                            _name: name_clone,
+                            _name: name.clone(),
+                            arguments: arguments.clone(),
                             result: execute_tool_with_retry(&tools_clone, &cache_clone, &name, arguments.clone()).await,
                         })
                     }
@@ -2367,7 +2271,9 @@ pub async fn process_stream_events_with_safeguards(
                 let mut tool_call_results: Vec<(String, String)> = Vec::new();
 
                 for (name, execution) in tool_results_executed {
-                    yield AgentEvent::tool_call_start(&name, tool_calls.iter().find(|t| t.name == name).map(|t| t.arguments.clone()).unwrap_or_default());
+                    // Use arguments from the execution result (preserves per-call arguments for same-name tools)
+                    let exec_arguments = execution.arguments.clone();
+                    yield AgentEvent::tool_call_start_round(&name, exec_arguments.clone(), tool_iteration_count + 1);
 
                     match execution.result {
                         Ok(output) => {
@@ -2383,57 +2289,39 @@ pub async fn process_stream_events_with_safeguards(
                                 output.error.clone().unwrap_or_else(|| "Error".to_string())
                             };
 
-                            for tc in &tool_calls {
-                                if tc.name == name {
-                                    tool_calls_with_results.push(ToolCall {
-                                        name: tc.name.clone(),
-                                        id: tc.id.clone(),
-                                        arguments: tc.arguments.clone(),
-                                        result: Some(result_value.clone()),
-                                    });
-                                    break;
-                                }
-                            }
+                            tool_calls_with_results.push(ToolCall {
+                                name: name.clone(),
+                                id: String::new(),
+                                arguments: exec_arguments,
+                                result: Some(result_value.clone()),
+                                round: Some(tool_iteration_count + 1),
+                            });
 
-                            yield AgentEvent::tool_call_end(&name, &result_str, output.success);
+                            yield AgentEvent::tool_call_end_round(&name, &result_str, output.success, tool_iteration_count + 1);
                             tool_call_results.push((name.clone(), result_str));
                         }
                         Err(e) => {
                             let error_msg = format!("Tool execution failed: {}", e);
                             let error_value = serde_json::json!({"error": error_msg});
 
-                            for tc in &tool_calls {
-                                if tc.name == name {
-                                    tool_calls_with_results.push(ToolCall {
-                                        name: tc.name.clone(),
-                                        id: tc.id.clone(),
-                                        arguments: tc.arguments.clone(),
-                                        result: Some(error_value.clone()),
-                                    });
-                                    break;
-                                }
-                            }
+                            tool_calls_with_results.push(ToolCall {
+                                name: name.clone(),
+                                id: String::new(),
+                                arguments: exec_arguments,
+                                result: Some(error_value.clone()),
+                                round: Some(tool_iteration_count + 1),
+                            });
 
-                            yield AgentEvent::tool_call_end(&name, &error_msg, false);
+                            yield AgentEvent::tool_call_end_round(&name, &error_msg, false, tool_iteration_count + 1);
                             tool_call_results.push((name.clone(), error_msg));
                         }
                     }
                 }
 
-                // Update recently executed tools list (with argument hashes for better loop detection)
+                // Update recently executed tools list (for multi-round context)
                 for (name, _result) in &tool_call_results {
-                    // Get the arguments hash from the original tool calls
-                    let args_hash = tool_calls_with_results
-                        .iter()
-                        .find(|tc| &tc.name == name)
-                        .map(|tc| hash_tool_args(&tc.arguments))
-                        .unwrap_or(0);
-
-                    let tool_entry = (name.clone(), args_hash);
-
-                    // Check if this exact tool+args combination is already tracked
-                    if !recently_executed_tools.iter().any(|(n, h)| n == name && h == &args_hash) {
-                        recently_executed_tools.push_back(tool_entry);
+                    if !recently_executed_tools.iter().any(|n| n == name) {
+                        recently_executed_tools.push_back(name.clone());
                         if recently_executed_tools.len() > 10 {
                             recently_executed_tools.pop_front();
                         }
@@ -2447,21 +2335,79 @@ pub async fn process_stream_events_with_safeguards(
                     tracing::info!("Complex intent: Checking if more tool calls needed (iteration {}/{})",
                         tool_iteration_count + 1, MAX_TOOL_ITERATIONS);
 
-                    // Save results to memory (large results go through cache → summary)
-                    for (tool_name, result_str) in &tool_call_results {
-                        let mut state = internal_state.write().await;
-                        let history_content = state.large_data_cache.store(tool_name, result_str);
-                        let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
-                        state.push_message(tool_result_msg);
+                    // === DUPLICATE DETECTION: Check if all tools in this round are duplicates ===
+                    // Signature = (tool_name, action_or_empty) to distinguish
+                    // device(list) from device(query, device_id="x").
+                    let mut all_duplicates = true;
+                    let mut new_tool_signatures: Vec<(String, String)> = Vec::new();
+                    for tc in &tool_calls_to_execute {
+                        let action_key = tc.arguments.get("action")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let sig = (tc.name.clone(), action_key);
+                        new_tool_signatures.push(sig);
+                    }
+                    // Check against previously executed signatures
+                    for sig in &new_tool_signatures {
+                        let is_dup = executed_tool_signatures.iter()
+                            .any(|prev| prev == sig);
+                        if !is_dup {
+                            all_duplicates = false;
+                        }
                     }
 
-                    // Increment iteration count and loop back
-                    tool_iteration_count += 1;
-                    tool_calls_detected = false;
-                    tool_calls.clear();
+                    if all_duplicates && tool_iteration_count > 0 {
+                        tracing::warn!(
+                            "All tools in round {} are duplicates of previous rounds (tools: {:?}). Stopping multi-round loop.",
+                            tool_iteration_count + 1,
+                            tool_call_results.iter().map(|(n, _)| n).collect::<Vec<_>>()
+                        );
+                        // Fall through to final response instead of looping
+                    } else {
+                        // Track tool signatures for future duplicate detection
+                        executed_tool_signatures.extend(new_tool_signatures);
 
-                    // Continue the loop to make another LLM call with tools
-                    continue 'multi_round_loop;
+                        // === CRITICAL: Save assistant message with tool_calls BEFORE tool results ===
+                        // Without this, tool_calls are lost when switching sessions because
+                        // the assistant message is never persisted in the multi-round path.
+                        let response_to_save = if content_before_tools.is_empty() {
+                            String::new()
+                        } else {
+                            content_before_tools.clone()
+                        };
+                        let initial_msg = if !thinking_content.is_empty() {
+                            let cleaned_thinking = cleanup_thinking_content(&thinking_content);
+                            AgentMessage::assistant_with_tools_and_thinking(
+                                &response_to_save,
+                                tool_calls_with_results.clone(),
+                                &cleaned_thinking,
+                            )
+                        } else {
+                            AgentMessage::assistant_with_tools(&response_to_save, tool_calls_with_results.clone())
+                        };
+                        internal_state.write().await.push_message(initial_msg);
+
+                        // Save tool results to memory (large results go through cache → summary)
+                        for (tool_name, result_str) in &tool_call_results {
+                            let mut state = internal_state.write().await;
+                            let history_content = state.large_data_cache.store(tool_name, result_str);
+                            let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
+                            state.push_message(tool_result_msg);
+                        }
+
+                        // Increment iteration count and loop back
+                        tool_iteration_count += 1;
+                        tool_calls_detected = false;
+                        tool_calls.clear();
+                        content_before_tools.clear();
+
+                        // Signal end of current round before continuing
+                        yield AgentEvent::IntermediateEnd;
+
+                        // Continue the loop to make another LLM call with tools
+                        continue 'multi_round_loop;
+                    }
                 }
 
                 // === SIMPLE INTENT OR MAX ITERATIONS REACHED: Final response ===
@@ -2703,9 +2649,12 @@ pub async fn process_stream_events_with_safeguards(
                     state.push_message(initial_msg);
                 }
 
-                // Yield any remaining content
-                if !buffer.is_empty() {
-                    yield AgentEvent::content(buffer.clone());
+                // Yield any remaining un-yielded content from buffer
+                if buffer.len() > yielded_up_to {
+                    let remaining = buffer[yielded_up_to..].to_string();
+                    if !remaining.is_empty() {
+                        yield AgentEvent::content(remaining);
+                    }
                 }
             }
 
@@ -2966,12 +2915,13 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                 let tools_clone = tools.clone();
                 let cache_clone = cache.clone();
                 let name = tool_call.name.clone();
-                let name_clone = name.clone();
+                let arguments = tool_call.arguments.clone();
 
                 async move {
                     (name.clone(), ToolExecutionResult {
-                        _name: name_clone,
-                        result: execute_tool_with_retry(&tools_clone, &cache_clone, &name, tool_call.arguments.clone()).await,
+                        _name: name.clone(),
+                        arguments: arguments.clone(),
+                        result: execute_tool_with_retry(&tools_clone, &cache_clone, &name, arguments.clone()).await,
                     })
                 }
             }).collect();
@@ -2983,7 +2933,9 @@ pub async fn process_multimodal_stream_events_with_safeguards(
             let mut tool_call_results: Vec<(String, String)> = Vec::new();
 
             for (name, execution) in tool_results_executed {
-                yield AgentEvent::tool_call_start(&name, tool_calls.iter().find(|t| t.name == name).map(|t| t.arguments.clone()).unwrap_or_default());
+                // Use arguments from the execution result (preserves per-call arguments for same-name tools)
+                let exec_arguments = execution.arguments.clone();
+                yield AgentEvent::tool_call_start(&name, exec_arguments.clone());
 
                 match execution.result {
                     Ok(output) => {
@@ -2999,17 +2951,13 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                             output.error.clone().unwrap_or_else(|| "Error".to_string())
                         };
 
-                        for tc in &tool_calls {
-                            if tc.name == name {
-                                tool_calls_with_results.push(ToolCall {
-                                    name: tc.name.clone(),
-                                    id: tc.id.clone(),
-                                    arguments: tc.arguments.clone(),
-                                    result: Some(result_value.clone()),
-                                });
-                                break;
-                            }
-                        }
+                        tool_calls_with_results.push(ToolCall {
+                            name: name.clone(),
+                            id: String::new(),
+                            arguments: exec_arguments,
+                            result: Some(result_value.clone()),
+                            round: Some(1),
+                        });
 
                         yield AgentEvent::tool_call_end(&name, &result_str, output.success);
                         tool_call_results.push((name.clone(), result_str));
@@ -3018,17 +2966,13 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                         let error_msg = format!("Tool execution failed: {}", e);
                         let error_value = serde_json::json!({"error": error_msg});
 
-                        for tc in &tool_calls {
-                            if tc.name == name {
-                                tool_calls_with_results.push(ToolCall {
-                                    name: tc.name.clone(),
-                                    id: tc.id.clone(),
-                                    arguments: tc.arguments.clone(),
-                                    result: Some(error_value.clone()),
-                                });
-                                break;
-                            }
-                        }
+                        tool_calls_with_results.push(ToolCall {
+                            name: name.clone(),
+                            id: String::new(),
+                            arguments: exec_arguments,
+                            result: Some(error_value.clone()),
+                            round: Some(1),
+                        });
 
                         yield AgentEvent::tool_call_end(&name, &error_msg, false);
                         tool_call_results.push((name.clone(), error_msg));

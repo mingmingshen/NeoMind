@@ -25,6 +25,9 @@ pub enum AgentEvent {
         tool: String,
         /// Tool arguments
         arguments: Value,
+        /// Round number (1-based) for multi-round tool calling
+        #[serde(skip_serializing_if = "Option::is_none")]
+        round: Option<usize>,
     },
     /// Tool call completed with result
     ToolCallEnd {
@@ -34,6 +37,9 @@ pub enum AgentEvent {
         result: String,
         /// Whether it succeeded
         success: bool,
+        /// Round number (1-based) for multi-round tool calling
+        #[serde(skip_serializing_if = "Option::is_none")]
+        round: Option<usize>,
     },
     /// Error occurred
     Error {
@@ -132,6 +138,7 @@ impl AgentEvent {
         Self::ToolCallStart {
             tool: tool.into(),
             arguments,
+            round: None,
         }
     }
 
@@ -145,6 +152,31 @@ impl AgentEvent {
             tool: tool.into(),
             result: result.into(),
             success,
+            round: None,
+        }
+    }
+
+    /// Create a tool call start event with round number.
+    pub fn tool_call_start_round(tool: impl Into<String>, arguments: Value, round: usize) -> Self {
+        Self::ToolCallStart {
+            tool: tool.into(),
+            arguments,
+            round: Some(round),
+        }
+    }
+
+    /// Create a tool call end event with round number.
+    pub fn tool_call_end_round(
+        tool: impl Into<String>,
+        result: impl Into<String>,
+        success: bool,
+        round: usize,
+    ) -> Self {
+        Self::ToolCallEnd {
+            tool: tool.into(),
+            result: result.into(),
+            success,
+            round: Some(round),
         }
     }
 
@@ -348,6 +380,9 @@ pub struct AgentMessage {
     /// Images attached to the message (base64 data URLs)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<AgentMessageImage>>,
+    /// Per-round intermediate text for multi-round tool calling
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub round_contents: Option<Value>,
     /// Timestamp
     pub timestamp: i64,
 }
@@ -373,6 +408,7 @@ impl AgentMessage {
             tool_call_name: None,
             thinking: None,
             images: None,
+            round_contents: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -387,6 +423,7 @@ impl AgentMessage {
             tool_call_name: None,
             thinking: None,
             images: Some(images),
+            round_contents: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -401,6 +438,7 @@ impl AgentMessage {
             tool_call_name: None,
             thinking: None,
             images: None,
+            round_contents: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -418,6 +456,7 @@ impl AgentMessage {
             tool_call_name: None,
             thinking: Some(thinking.into()),
             images: None,
+            round_contents: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -432,6 +471,7 @@ impl AgentMessage {
             tool_call_name: None,
             thinking: None,
             images: None,
+            round_contents: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -446,6 +486,7 @@ impl AgentMessage {
             tool_call_name: Some(tool_name.into()),
             thinking: None,
             images: None,
+            round_contents: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -460,6 +501,7 @@ impl AgentMessage {
             tool_call_name: None,
             thinking: None,
             images: None,
+            round_contents: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -478,6 +520,7 @@ impl AgentMessage {
             tool_call_name: None,
             thinking: Some(thinking.into()),
             images: None,
+            round_contents: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -568,6 +611,7 @@ impl AgentMessage {
             tool_call_name: None,
             thinking: None,
             images: None,
+            round_contents: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -585,6 +629,9 @@ pub struct ToolCall {
     /// Execution result (populated after tool execution)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
+    /// Round number for multi-round tool calling (1-based)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub round: Option<usize>,
 }
 
 /// Agent response.
@@ -695,17 +742,19 @@ impl LargeDataCache {
         };
         self.entries.insert(tool_name.to_string(), cached);
 
-        // Return a concise summary for message history
+        // Return a concise summary for message history — NO raw base64 preview
         let human_size = Self::humanize_bytes(size_bytes);
-        if content_type.starts_with("image/") {
-            format!("[Image: {}, {}. Cached. Reference: \"{}\"]", content_type, human_size, tool_name)
-        } else if content_type == "application/json+base64" {
-            // JSON with embedded base64 — show truncated structure
-            let preview: String = result.chars().take(200).collect();
-            format!("[JSON with embedded image data, {}. Cached. Reference: \"{}\"]\n{}", human_size, tool_name, preview)
+        let cached_ref = format!("$cached:{}", tool_name);
+        if content_type.starts_with("image/") || content_type == "application/json+base64" {
+            // Show JSON structure without base64 content
+            let structure_preview = Self::describe_structure(result);
+            format!(
+                "[Image data, {}. Use \"{}\" to reference this data in subsequent tool calls. Structure: {}]",
+                human_size, cached_ref, structure_preview
+            )
         } else {
             let preview: String = result.chars().take(300).collect();
-            format!("[Data: {}, {}. Cached. Reference: \"{}\"]\n{}", content_type, human_size, tool_name, preview)
+            format!("[Data: {}, {}. Use \"{}\" to reference. Preview: {}]", content_type, human_size, cached_ref, preview)
         }
     }
 
@@ -756,6 +805,100 @@ impl LargeDataCache {
         let sample_len = s.len().min(200);
         let sample = &s[..sample_len];
         sample.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' || c == '\n' || c == '\r')
+    }
+
+    /// Resolve a $cached reference to the actual data.
+    /// Format: "$cached:tool_name" — extracts the relevant image/base64 data
+    /// from the cached tool result. Returns the full cached data as fallback.
+    pub fn resolve_reference(&self, reference: &str) -> Option<String> {
+        let tool_name = reference.strip_prefix("$cached:")?;
+        let cached = self.entries.get(tool_name)?;
+        Some(Self::extract_image_data(&cached.data))
+    }
+
+    /// Extract image/base64 data from a cached result string.
+    /// Tries common JSON patterns first, falls back to raw data.
+    fn extract_image_data(data: &str) -> String {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+            // Pattern 1: {"points": [{"base64_data": "..."}]}
+            if let Some(points) = json.get("points").and_then(|p| p.as_array()) {
+                for point in points {
+                    if let Some(b64) = point.get("base64_data").and_then(|v| v.as_str()) {
+                        return b64.to_string();
+                    }
+                }
+            }
+            // Pattern 2: {"base64_data": "..."}
+            if let Some(b64) = json.get("base64_data").and_then(|v| v.as_str()) {
+                return b64.to_string();
+            }
+            // Pattern 3: {"data": "..."} or {"image": "..."} — large string fields
+            for key in &["data", "image", "content"] {
+                if let Some(val) = json.get(*key).and_then(|v| v.as_str()) {
+                    if val.len() > 500 {
+                        return val.to_string();
+                    }
+                }
+            }
+        }
+        // Fallback: return raw data (works for pure base64)
+        data.to_string()
+    }
+
+    /// Describe JSON structure without exposing raw base64 content.
+    /// Shows field names, types, and sizes instead of actual data.
+    fn describe_structure(data: &str) -> String {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+            Self::describe_value(&json, 0)
+        } else {
+            format!("<{} bytes>", data.len())
+        }
+    }
+
+    /// Recursively describe a JSON value's structure.
+    fn describe_value(value: &serde_json::Value, depth: usize) -> String {
+        if depth > 3 {
+            return "{...}".to_string();
+        }
+        match value {
+            serde_json::Value::Object(map) => {
+                let fields: Vec<String> = map.iter().map(|(k, v)| {
+                    let val_desc = match v {
+                        serde_json::Value::String(s) if s.len() > 100 => {
+                            format!("String({} bytes)", s.len())
+                        }
+                        serde_json::Value::Array(arr) => {
+                            format!("Array({} items)", arr.len())
+                        }
+                        serde_json::Value::Object(_) => {
+                            Self::describe_value(v, depth + 1)
+                        }
+                        other => {
+                            let s = other.to_string();
+                            if s.len() > 50 {
+                                format!("{}...", &s[..50])
+                            } else {
+                                s
+                            }
+                        }
+                    };
+                    format!("\"{}\": {}", k, val_desc)
+                }).collect();
+                format!("{{{}}}", fields.join(", "))
+            }
+            serde_json::Value::Array(arr) => {
+                if arr.is_empty() {
+                    "[]".to_string()
+                } else {
+                    let first = Self::describe_value(&arr[0], depth + 1);
+                    format!("[{}... ({} items)]", first, arr.len())
+                }
+            }
+            serde_json::Value::String(s) if s.len() > 100 => {
+                format!("String({} bytes)", s.len())
+            }
+            other => other.to_string(),
+        }
     }
 
     /// Format bytes as human-readable string.

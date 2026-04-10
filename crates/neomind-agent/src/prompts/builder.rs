@@ -252,10 +252,18 @@ agent(action="create", name="电量监控", user_prompt="监控ne101设备的电
 所有操作通过 5 个聚合工具的 `action` 参数区分：
 
 **`device`** - 设备管理（聚合4个操作）：
-- `device(action="list")` → 用户询问有哪些设备
-- `device(action="get", device_id="xxx")` → 用户询问某个设备详情
-- `device(action="query", device_id="xxx", metric="xxx")` → 用户查询传感器数据/历史趋势
+- `device(action="list", response_format="detailed")` → 一次性获取所有设备+可用指标
+- `device(action="query", device_id="xxx", metric="xxx")` → 查询特定设备的指标数据
 - `device(action="control", device_id="xxx", command="xxx", confirm=true)` → 用户要求控制设备
+
+高效查询模式（如"分析所有设备电池"）：
+1. `device(action="list", response_format="detailed")` — 获取所有设备和指标名称
+2. 从返回结果中记录每台设备的 "id" 字段（如 "ne101-office", "ne301", "sensor_1"）
+3. 从 type_templates 中找到电池指标名（如 "values.battery"）
+4. 对每台设备调用 `device(action="query", device_id="<list返回的准确id>", metric="values.battery")` — 全部在同一批次并行调用
+关键：每次查询必须使用不同的 device_id，不能重复使用同一个 ID。
+
+避免：反复调用 `device(action="get")`，用 `list(detailed)` 替代。
 
 **`agent`** - Agent管理（聚合6个操作）：
 - `agent(action="list")` → 用户询问有哪些Agent
@@ -281,6 +289,15 @@ agent(action="create", name="电量监控", user_prompt="监控ne101设备的电
 - `alert(action="list")` → 查看告警列表
 - `alert(action="create", title="xxx", message="xxx")` → 创建告警
 - `alert(action="acknowledge", alert_id="xxx")` → 确认告警
+
+### 图像分析工作流
+当用户要求分析设备图像时：
+1. `device(action="query", device_id="xxx", metric="values.image")` → 获取图像数据
+   - 图像返回格式为 `{data_type: "image", points: [{base64_data: "...", mime_type: "image/jpeg"}]}`
+2. 将 `base64_data` 字段直接传给扩展工具分析（系统自动处理数据格式）
+   - 例: `image-analyzer-v2:analyze_image(image="<base64_data>")`
+   - 例: `yolo-device-inference:detect(image="<base64_data>")`
+3. **不要**尝试截断或修改 base64 数据，直接传递完整数据
 
 ### 无需调用工具的场景
 - **社交对话**: 问候、感谢、道歉等
@@ -481,10 +498,18 @@ agent(action="create", name="Daily Report", user_prompt="Analyze all temperature
 All operations use 5 aggregated tools, differentiated by the `action` parameter:
 
 **`device`** - Device management (4 actions):
-- `device(action="list")` → User asks what devices exist or their status
-- `device(action="get", device_id="xxx")` → User asks about a specific device's details/capabilities
-- `device(action="query", device_id="xxx", metric="xxx")` → User asks for current or historical readings
+- `device(action="list", response_format="detailed")` → Get ALL devices + available metrics in ONE call
+- `device(action="query", device_id="xxx", metric="xxx")` → Query specific metric for a device
 - `device(action="control", device_id="xxx", command="xxx", confirm=true)` → User wants to control a device
+
+Efficient pattern for "analyze all devices' battery":
+1. `device(action="list", response_format="detailed")` — get all devices & metric names
+2. From the response, note each device's "id" field (e.g., "ne101-office", "ne301", "sensor_1")
+3. From type_templates, find the battery metric name (e.g., "values.battery")
+4. Call `device(action="query", device_id="<exact_id_from_list>", metric="values.battery")` for EACH device using its UNIQUE id — ALL in ONE batch
+CRITICAL: Each query MUST use a DIFFERENT device_id from the list response. Do NOT reuse the same device_id.
+
+Avoid: calling `device(action="get")` repeatedly. Use `list(detailed)` instead.
 
 **`agent`** - Agent management (6 actions):
 - `agent(action="list")` → User asks about existing agents
@@ -510,6 +535,15 @@ All operations use 5 aggregated tools, differentiated by the `action` parameter:
 - `alert(action="list")` → View alerts
 - `alert(action="create", title="xxx", message="xxx")` → Create an alert
 - `alert(action="acknowledge", alert_id="xxx")` → Mark alert as resolved
+
+### Image Analysis Workflow
+When user asks to analyze device images:
+1. `device(action="query", device_id="xxx", metric="values.image")` → Get image data
+   - Image returns as `{data_type: "image", points: [{base64_data: "...", mime_type: "image/jpeg"}]}`
+2. Pass the `base64_data` field directly to extension tools for analysis (data format is handled automatically)
+   - Example: `image-analyzer-v2:analyze_image(image="<base64_data>")`
+   - Example: `yolo-device-inference:detect(image="<base64_data>")`
+3. Do NOT truncate or modify the base64 data — pass the complete data as-is
 
 ### Scenarios NOT requiring tools
 - **Social conversation**: Greetings, thanks, apologies

@@ -80,6 +80,7 @@ impl SimulationContext {
             extension_registry: None,
             tool_registry: None,
             memory_store: None,
+            backend_semaphores: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;

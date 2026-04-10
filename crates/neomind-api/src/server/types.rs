@@ -1813,6 +1813,7 @@ impl ServerState {
             llm_backend_store,
             tool_registry: self.agents.session_manager.get_tool_registry().await,
             memory_store: Some(self.agents.system_memory_store.clone()),
+            backend_semaphores: None,
         };
 
         let manager = neomind_agent::ai_agent::AiAgentManager::new(executor_config)

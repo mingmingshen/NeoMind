@@ -481,6 +481,8 @@ export interface Message {
   images?: ChatImage[]  // Images sent with user messages (multimodal)
   // Indicates if this message is still being streamed (partial)
   isPartial?: boolean
+  // Per-round intermediate text for multi-round tool calling
+  round_contents?: Record<number, string>
 }
 
 /**
@@ -501,6 +503,7 @@ export interface ToolCall {
   name: string
   arguments: Record<string, unknown>
   result?: unknown
+  round?: number // 1-based round number for multi-round tool calling
 }
 
 // Session Types
@@ -563,9 +566,11 @@ export type ServerMessage =
   // Actual response content
   | { type: 'Content'; content: string; sessionId: string }
   // Tool call starting
-  | { type: 'ToolCallStart'; tool: string; arguments: Record<string, unknown>; sessionId: string }
+  | { type: 'ToolCallStart'; tool: string; arguments: Record<string, unknown>; sessionId: string; round?: number }
   // Tool call completed - result is a string (JSON or plain text)
-  | { type: 'ToolCallEnd'; tool: string; result: string; sessionId: string; success?: boolean }
+  | { type: 'ToolCallEnd'; tool: string; result: string; sessionId: string; success?: boolean; round?: number }
+  // Intermediate end for multi-round tool calling
+  | { type: 'IntermediateEnd'; sessionId: string }
   // Progress event during long-running operations
   // Note: stage is optional and can be any string (collecting, analyzing, executing, etc.)
   | { type: 'Progress'; elapsed: number; stage?: string; message?: string; remainingTime?: number; sessionId: string }

@@ -364,6 +364,7 @@ mod tests {
             tool_call_name: None,
             thinking: None,
             images: None,
+            round_contents: None,
             timestamp,
         }
     }

@@ -13,13 +13,53 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
 
+/// Shared per-LLM-backend concurrency limiter.
+///
+/// Maps a backend ID (e.g. "ollama-local") to a semaphore that limits how many
+/// agents can use that backend concurrently. Both the scheduler (interval/cron)
+/// and the executor (event-triggered) share the same instance so that all
+/// execution paths are throttled uniformly.
+#[derive(Clone)]
+pub struct BackendSemaphores {
+    inner: Arc<RwLock<HashMap<String, Arc<tokio::sync::Semaphore>>>>,
+    permits_per_backend: usize,
+}
+
+impl BackendSemaphores {
+    pub fn new(permits_per_backend: usize) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(HashMap::new())),
+            permits_per_backend,
+        }
+    }
+
+    /// Get or create the semaphore for a given backend ID.
+    pub async fn get(&self, backend_id: &str) -> Arc<tokio::sync::Semaphore> {
+        // Fast path: read lock
+        {
+            let guard = self.inner.read().await;
+            if let Some(sem) = guard.get(backend_id) {
+                return Arc::clone(sem);
+            }
+        }
+        // Slow path: write lock
+        let mut guard = self.inner.write().await;
+        guard
+            .entry(backend_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Semaphore::new(self.permits_per_backend)))
+            .clone()
+    }
+}
+
 /// Scheduler configuration.
 #[derive(Debug, Clone)]
 pub struct SchedulerConfig {
     /// Tick interval for checking scheduled tasks (milliseconds)
     pub tick_interval_ms: u64,
-    /// Maximum concurrent executions
+    /// Maximum concurrent executions (global limit)
     pub max_concurrent: usize,
+    /// Maximum concurrent executions per LLM backend
+    pub max_concurrent_per_backend: usize,
     /// Default timezone for cron expressions (IANA format, e.g., "Asia/Shanghai")
     pub default_timezone: Option<String>,
 }
@@ -29,6 +69,7 @@ impl Default for SchedulerConfig {
         Self {
             tick_interval_ms: 1000, // Check every second
             max_concurrent: 10,
+            max_concurrent_per_backend: 2,
             default_timezone: Some("Asia/Shanghai".to_string()),
         }
     }
@@ -94,6 +135,8 @@ pub struct AgentScheduler {
     default_tz: Arc<RwLock<Option<Tz>>>,
     /// Semaphore for limiting concurrent executions
     execution_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Per-LLM-backend semaphores (shared with executor for event-triggered path)
+    backend_semaphores: BackendSemaphores,
     /// Timestamp of the last successful tick (for health monitoring)
     last_tick: Arc<AtomicI64>,
 }
@@ -119,6 +162,7 @@ impl AgentScheduler {
 
         // Max concurrent executions from config (default 10)
         let max_concurrent = config.max_concurrent;
+        let max_concurrent_per_backend = config.max_concurrent_per_backend;
 
         Ok(Self {
             tasks: Arc::new(RwLock::new(HashMap::new())),
@@ -127,8 +171,14 @@ impl AgentScheduler {
             running_executions: Arc::new(RwLock::new(std::collections::HashSet::new())),
             default_tz: Arc::new(RwLock::new(default_tz)),
             execution_semaphore: Arc::new(tokio::sync::Semaphore::new(max_concurrent)),
+            backend_semaphores: BackendSemaphores::new(max_concurrent_per_backend),
             last_tick: Arc::new(AtomicI64::new(0)),
         })
+    }
+
+    /// Get a reference to the shared backend semaphores (for wiring into executor).
+    pub fn backend_semaphores(&self) -> &BackendSemaphores {
+        &self.backend_semaphores
     }
 
     /// Set the global default timezone.
@@ -217,6 +267,7 @@ impl AgentScheduler {
         let running_executions = self.running_executions.clone();
         let executor_ref = executor;
         let semaphore = self.execution_semaphore.clone();
+        let backend_semaphores = self.backend_semaphores.clone();
         let last_tick = self.last_tick.clone();
 
         tokio::spawn(async move {
@@ -293,6 +344,7 @@ impl AgentScheduler {
                     let executor = executor_ref.clone();
                     let running_executions_clone = running_executions.clone();
                     let semaphore_clone = semaphore.clone();
+                    let backend_sems = backend_semaphores.clone();
 
                     // Mark as running
                     running_executions_clone
@@ -316,6 +368,26 @@ impl AgentScheduler {
 
                         match executor.store().get_agent(&agent_id).await {
                             Ok(Some(agent)) => {
+                                // Acquire per-backend semaphore (WAIT, not fail)
+                                let backend_id = agent.llm_backend_id
+                                    .clone()
+                                    .unwrap_or_else(|| "default".to_string());
+                                let backend_sem = backend_sems.get(&backend_id).await;
+                                let available = backend_sem.available_permits();
+                                if available == 0 {
+                                    tracing::debug!(
+                                        agent_id = %agent_id,
+                                        backend_id = %backend_id,
+                                        "Waiting for backend permit"
+                                    );
+                                }
+                                let _backend_permit = backend_sem.acquire().await.unwrap();
+                                tracing::debug!(
+                                    agent_id = %agent_id,
+                                    backend_id = %backend_id,
+                                    "Acquired backend permit"
+                                );
+
                                 let max_retries = agent.max_retries;
                                 let consecutive = agent.consecutive_failures;
 

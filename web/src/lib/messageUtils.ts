@@ -110,9 +110,13 @@ export function mergeMessagesForDisplay(messages: Message[]): Message[] {
         mergedAssistant.thinking = nextMsg.thinking
       }
 
-      // Use tool_calls from first message that has them
-      if (!mergedAssistant.tool_calls && nextMsg.tool_calls) {
-        mergedAssistant.tool_calls = nextMsg.tool_calls
+      // Merge tool_calls from all messages (multi-round tool calls may span multiple messages)
+      if (nextMsg.tool_calls && nextMsg.tool_calls.length > 0) {
+        if (!mergedAssistant.tool_calls) {
+          mergedAssistant.tool_calls = [...nextMsg.tool_calls]
+        } else {
+          mergedAssistant.tool_calls = [...mergedAssistant.tool_calls, ...nextMsg.tool_calls]
+        }
       }
 
       j++

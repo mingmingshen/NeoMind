@@ -93,26 +93,35 @@ async fn process_stream_to_channel(
                             "sessionId": session_id,
                         })
                     }
-                    AgentEvent::ToolCallStart { tool, arguments } => {
-                        json!({
+                    AgentEvent::ToolCallStart { tool, arguments, round } => {
+                        let mut json = json!({
                             "type": "ToolCallStart",
                             "tool": tool,
                             "arguments": arguments,
                             "sessionId": session_id,
-                        })
+                        });
+                        if let Some(r) = round {
+                            json["round"] = json!(r);
+                        }
+                        json
                     }
                     AgentEvent::ToolCallEnd {
                         tool,
                         result,
                         success,
+                        round,
                     } => {
-                        json!({
+                        let mut json = json!({
                             "type": "ToolCallEnd",
                             "tool": tool,
                             "result": result,
                             "success": success,
                             "sessionId": session_id,
-                        })
+                        });
+                        if let Some(r) = round {
+                            json["round"] = json!(r);
+                        }
+                        json
                     }
                     AgentEvent::Error { message } => {
                         json!({
@@ -784,7 +793,7 @@ async fn send_session_history(
 
                 // Send each message as a separate event
                 for msg in &messages {
-                    let history_msg = json!({
+                    let mut history_json = json!({
                         "type": "history",
                         "sessionId": session_id,
                         "role": msg.role,
@@ -792,8 +801,12 @@ async fn send_session_history(
                         "thinking": msg.thinking,
                         "toolCalls": msg.tool_calls,
                         "timestamp": msg.timestamp,
-                    })
-                    .to_string();
+                    });
+                    // Include round_contents if present (for multi-step tool call display)
+                    if let Some(ref rc) = msg.round_contents {
+                        history_json.as_object_mut().unwrap().insert("round_contents".to_string(), rc.clone());
+                    }
+                    let history_msg = history_json.to_string();
 
                     if socket.send(AxumMessage::Text(history_msg)).await.is_err() {
                         return Err("Failed to send history message".into());

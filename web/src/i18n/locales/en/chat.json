@@ -51,7 +51,10 @@
       "completed": "Completed"
     },
     "arguments": "Arguments",
-    "result": "Result"
+    "result": "Result",
+    "roundTitle": "Round {{round}}",
+    "multiRoundTitle": "Tool Calls",
+    "rounds": "rounds"
   },
   "connection": {
     "connected": "Connected",

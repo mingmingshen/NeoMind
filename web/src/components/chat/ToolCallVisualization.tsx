@@ -1,6 +1,6 @@
 /**
  * ToolCallVisualization - Displays AI tool/function calls
- * Clean, modern design
+ * Supports multi-round grouping with collapsible sections
  */
 
 import { useState } from "react"
@@ -12,6 +12,7 @@ import type { ToolCall } from "@/types"
 interface ToolCallVisualizationProps {
   toolCalls: ToolCall[]
   isStreaming?: boolean
+  roundContents?: Record<number, string>
 }
 
 interface ToolCallWithDuration extends ToolCall {
@@ -32,6 +33,23 @@ function formatDuration(ms?: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+/** Extract a descriptive display name from tool call name + arguments */
+function getToolDisplayName(name: string, args?: unknown): string {
+  if (!args || typeof args !== 'object') return name
+  const a = args as Record<string, unknown>
+  const action = typeof a.action === 'string' ? a.action : ''
+  if (!action) return name
+
+  // Build "tool(action)" display name with contextual info
+  const extras: string[] = []
+  if (typeof a.device_id === 'string') extras.push(a.device_id)
+  if (typeof a.metric === 'string') extras.push(a.metric)
+  if (typeof a.command === 'string') extras.push(a.command)
+
+  const suffix = extras.length > 0 ? ` ${extras.join(' · ')}` : ''
+  return `${name}(${action})${suffix}`
+}
+
 function formatJson(data: unknown): string {
   if (typeof data === "string") {
     try {
@@ -42,6 +60,16 @@ function formatJson(data: unknown): string {
     }
   }
   return JSON.stringify(data, null, 2)
+}
+
+function groupByRound(toolCalls: ToolCall[]): Map<number, ToolCall[]> {
+  const groups = new Map<number, ToolCall[]>()
+  for (const tc of toolCalls) {
+    const round = tc.round ?? 1
+    if (!groups.has(round)) groups.set(round, [])
+    groups.get(round)!.push(tc)
+  }
+  return groups
 }
 
 function ToolCallItem({
@@ -89,8 +117,8 @@ function ToolCallItem({
           )}
         </div>
 
-        {/* Tool name */}
-        <span className="font-mono text-sm">{toolCall.name}</span>
+        {/* Tool name with action context */}
+        <span className="font-mono text-sm">{getToolDisplayName(toolCall.name, toolCall.arguments)}</span>
 
         {/* Status badge */}
         <span className={cn(
@@ -157,14 +185,99 @@ function ToolCallItem({
   )
 }
 
+function RoundGroup({
+  round,
+  toolCalls,
+  isStreaming,
+  roundContent,
+  t
+}: {
+  round: number
+  toolCalls: ToolCall[]
+  isStreaming: boolean
+  roundContent?: string
+  t: (key: string, options?: Record<string, unknown>) => string
+}) {
+  const [collapsed, setCollapsed] = useState(false)
+  const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set())
+
+  const toggleItem = (index: number) => {
+    setExpandedItems(prev => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  const completedCount = toolCalls.filter(
+    tc => tc.result !== undefined && tc.result !== null
+  ).length
+  const isCurrentRound = completedCount < toolCalls.length
+  const isCompleted = completedCount === toolCalls.length
+
+  return (
+    <div className="border-b border-border/40 last:border-b-0">
+      {/* Round header */}
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className="flex items-center gap-2 w-full px-4 py-2 text-sm hover:bg-muted/30 transition-colors"
+      >
+        <ChevronDown className={cn(
+          "h-3.5 w-3.5 text-muted-foreground transition-transform",
+          collapsed && "-rotate-90"
+        )} />
+        <span className="text-muted-foreground font-medium">
+          {t("toolCall.roundTitle", { round })}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {completedCount}/{toolCalls.length}
+        </span>
+        {isCurrentRound && isStreaming && (
+          <Loader2 className="h-3 w-3 text-amber-600 animate-spin ml-1" />
+        )}
+        {isCompleted && (
+          <CheckCircle2 className="h-3 w-3 text-emerald-600 ml-1" />
+        )}
+      </button>
+
+      {/* Tool calls in this round */}
+      {!collapsed && (
+        <div>
+          {/* Intermediate text for this round (ChatGPT Deep Research pattern) */}
+          {roundContent && (
+            <div className="px-4 py-1.5 text-xs text-muted-foreground italic border-b border-border/20">
+              {roundContent.length > 120 ? roundContent.slice(0, 120) + '...' : roundContent}
+            </div>
+          )}
+          {toolCalls.map((tc, i) => (
+            <ToolCallItem
+              key={`${round}-${i}`}
+              toolCall={tc}
+              isExpanded={expandedItems.has(i)}
+              isStreaming={isStreaming && isCurrentRound}
+              onToggle={() => toggleItem(i)}
+              t={t as (key: string) => string}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ToolCallVisualization({
   toolCalls,
-  isStreaming = false
+  isStreaming = false,
+  roundContents = {},
 }: ToolCallVisualizationProps) {
   const { t } = useTranslation("chat")
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set())
 
   if (!toolCalls || toolCalls.length === 0) return null
+
+  const roundGroups = groupByRound(toolCalls)
+  const totalRounds = roundGroups.size
 
   const toggleItem = (index: number) => {
     setExpandedItems(prev => {
@@ -182,26 +295,72 @@ export function ToolCallVisualization({
     tc => tc.result !== undefined && tc.result !== null
   ).length
 
+  // Single round with round content: show step-style layout
+  const round1Content = roundContents[1]
+  if (totalRounds <= 1) {
+    return (
+      <div className="my-3 rounded-xl border border-border/60 bg-muted/30 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border/40">
+          <Wrench className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">{t("toolCall.title")}</span>
+          <span className="text-xs text-muted-foreground">
+            {completedCount}/{toolCalls.length}
+          </span>
+          {completedCount === toolCalls.length && (
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 ml-auto" />
+          )}
+        </div>
+
+        {/* Step description - show what the AI was doing */}
+        {round1Content && (
+          <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border/20 flex items-center gap-2">
+            <span className="shrink-0">{isStreaming ? "⏳" : "✓"}</span>
+            <span className="line-clamp-2">{round1Content}</span>
+          </div>
+        )}
+
+        {/* Tool list */}
+        <div>
+          {toolCalls.map((tc, i) => (
+            <ToolCallItem
+              key={i}
+              toolCall={tc}
+              isExpanded={expandedItems.has(i)}
+              isStreaming={isStreaming}
+              onToggle={() => toggleItem(i)}
+              t={t}
+            />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // Multi-round: show grouped layout
   return (
     <div className="my-3 rounded-xl border border-border/60 bg-muted/30 overflow-hidden">
-      {/* Header */}
+      {/* Header with round count */}
       <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border/40">
         <Wrench className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium">{t("toolCall.title")}</span>
+        <span className="text-sm font-medium">{t("toolCall.multiRoundTitle")}</span>
         <span className="text-xs text-muted-foreground">
           {completedCount}/{toolCalls.length}
         </span>
+        <span className="text-xs text-muted-foreground">
+          {totalRounds} {t("toolCall.rounds")}
+        </span>
       </div>
 
-      {/* Tool list */}
+      {/* Round groups */}
       <div>
-        {toolCalls.map((tc, i) => (
-          <ToolCallItem
-            key={i}
-            toolCall={tc}
-            isExpanded={expandedItems.has(i)}
+        {Array.from(roundGroups.entries()).map(([round, calls]) => (
+          <RoundGroup
+            key={round}
+            round={round}
+            toolCalls={calls}
             isStreaming={isStreaming}
-            onToggle={() => toggleItem(i)}
+            roundContent={roundContents[round]}
             t={t}
           />
         ))}

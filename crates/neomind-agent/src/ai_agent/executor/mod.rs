@@ -179,6 +179,8 @@ pub struct AgentExecutorConfig {
     pub tool_registry: Option<Arc<crate::toolkit::ToolRegistry>>,
     /// Memory store for extracting learned patterns
     pub memory_store: Option<Arc<MarkdownMemoryStore>>,
+    /// Per-LLM-backend semaphores for concurrency limiting (shared with scheduler)
+    pub backend_semaphores: Option<crate::ai_agent::scheduler::BackendSemaphores>,
 }
 
 /// Context for agent execution.
@@ -239,6 +241,8 @@ pub struct AgentExecutor {
     tool_registry: Option<Arc<crate::toolkit::ToolRegistry>>,
     /// Memory store for extracting learned patterns
     memory_store: Option<Arc<MarkdownMemoryStore>>,
+    /// Per-LLM-backend semaphores for concurrency limiting (shared with scheduler)
+    backend_semaphores: Option<crate::ai_agent::scheduler::BackendSemaphores>,
 }
 
 /// Calculate relevance score for a conversation turn based on current context.
@@ -285,6 +289,7 @@ impl AgentExecutor {
             extension_registry,
             tool_registry: config.tool_registry.clone(),
             memory_store: config.memory_store.clone(),
+            backend_semaphores: config.backend_semaphores.clone(),
         })
     }
 
@@ -1309,8 +1314,31 @@ impl AgentExecutor {
                     let executor_llm = self.llm_runtime.clone();
                     let executor_llm_store = self.llm_backend_store.clone();
                     let agent_id_for_log = agent.id.clone();
+                    let backend_sems = self.backend_semaphores.clone();
+                    let backend_id = agent.llm_backend_id
+                        .clone()
+                        .unwrap_or_else(|| "default".to_string());
 
                     tokio::spawn(async move {
+                        // Acquire per-backend semaphore (WAIT, not fail)
+                        if let Some(ref sems) = backend_sems {
+                            let backend_sem = sems.get(&backend_id).await;
+                            let available = backend_sem.available_permits();
+                            if available == 0 {
+                                tracing::debug!(
+                                    agent_id = %agent_id_for_log,
+                                    backend_id = %backend_id,
+                                    "Event agent waiting for backend permit"
+                                );
+                            }
+                            let _backend_permit = backend_sem.acquire().await.unwrap();
+                            tracing::debug!(
+                                agent_id = %agent_id_for_log,
+                                backend_id = %backend_id,
+                                "Event agent acquired backend permit"
+                            );
+                        }
+
                         // Create event trigger data
                         let event_trigger_data = EventTriggerData {
                             device_id: device_id_for_task,
@@ -1331,6 +1359,7 @@ impl AgentExecutor {
                             extension_registry: None,
                             tool_registry: None,
                             memory_store: None,
+                            backend_semaphores: backend_sems,
                         };
 
                         match AgentExecutor::new(executor_config).await {

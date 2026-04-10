@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useParams } from "react-router-dom"
 import { useStore } from "@/store"
 import { createPortal } from "react-dom"
 import type { ChatSession } from "@/types"
@@ -62,10 +62,11 @@ export function SessionSidebar({
   const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { toast } = useToast()
+  const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>()
 
   const {
     sessions,
-    sessionId: currentSessionId,
+    sessionId: storeSessionId,
     createSession,
     switchSession,
     deleteSession,
@@ -74,6 +75,10 @@ export function SessionSidebar({
     sessionsHasMore,
     sessionsLoading,
   } = useStore()
+
+  // Use URL sessionId for active highlight, not store sessionId.
+  // This ensures no session is highlighted in welcome mode (/chat without sessionId).
+  const currentSessionId = urlSessionId || null
 
   const [searchQuery, setSearchQuery] = useState("")
   const [isCreating, setIsCreating] = useState(false)
@@ -307,7 +312,7 @@ export function SessionSidebar({
 
       {/* Collapsed mode - only show icons */}
       {collapsed ? (
-        <div className="flex flex-col items-center py-2 gap-1">
+        <div className="flex-1 min-h-0 flex flex-col items-center py-2 gap-1 overflow-hidden">
           <Button
             variant="ghost"
             size="icon"
@@ -536,7 +541,7 @@ export function SessionSidebar({
       <>
         <div
           className={cn(
-            "h-full bg-background/50 border-r border-border/50 flex flex-col transition-all duration-200",
+            "h-full bg-background/50 border-r border-border/50 flex flex-col transition-[width] duration-200",
             collapsed ? "w-12" : "w-64"
           )}
         >

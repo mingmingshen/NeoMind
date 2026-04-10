@@ -256,6 +256,29 @@ impl MetricValue {
             Self::Null => "null",
         }
     }
+
+    /// Convert to a plain `serde_json::Value` without enum type tags.
+    ///
+    /// This is the correct way to serialize `MetricValue` into JSON for
+    /// tool results and API responses. Using `serde_json::json!(value)`
+    /// on a `MetricValue` produces `{"Integer": 22}` instead of `22`,
+    /// which wastes tokens and confuses LLMs.
+    pub fn to_json_value(&self) -> serde_json::Value {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        match self {
+            Self::Integer(n) => serde_json::Value::Number(serde_json::Number::from(*n)),
+            Self::Float(f) => serde_json::Value::Number(
+                serde_json::Number::from_f64(*f).unwrap_or(serde_json::Number::from(0)),
+            ),
+            Self::String(s) => serde_json::Value::String(s.clone()),
+            Self::Boolean(b) => serde_json::Value::Bool(*b),
+            Self::Array(arr) => {
+                serde_json::Value::Array(arr.iter().map(|v| v.to_json_value()).collect())
+            }
+            Self::Binary(data) => serde_json::Value::String(STANDARD.encode(data)),
+            Self::Null => serde_json::Value::Null,
+        }
+    }
 }
 
 impl From<i64> for MetricValue {

@@ -71,16 +71,27 @@ impl Tool for DeviceTool {
         r#"Device management tool for querying and controlling IoT devices.
 
 Actions:
-- list: List all devices with type/status filtering. Use when user asks what devices exist or their status.
-- get: Get device details including capabilities, supported metrics and commands. Use when user asks about a specific device.
-- query: Query device time-series data and sensor readings. Defaults to last 1 hour. Use when user asks for current or historical readings.
-- control: Send control commands to devices (switch on/off, adjust parameters). WARNING: This changes real device state.
+- list: List all devices. Use response_format="detailed" to include type_templates
+  with available metrics/commands for each device type.
+- get: Get a specific device's details.
+- query: Query time-series metric data. Supports fuzzy metric name matching
+  (e.g., "battery" auto-resolves to "values.battery"). Defaults to last 1 hour.
+- control: Send control commands to devices. Requires confirm=true to execute.
+
+Efficient Usage Patterns:
+- To analyze all devices: call list(detailed) ONCE → use type_templates to find
+  metric names → call query per device with the correct metric.
+- NEVER call get for each device; list(detailed) already includes all info.
+- Multiple query calls can be made in parallel (same tool call batch).
+
+Examples:
+- "Query all device batteries": device(action="list", response_format="detailed")
+  → device(action="query", device_id="id1", metric="battery")
+  → device(action="query", device_id="id2", metric="battery")  [parallel]
 
 Important:
 - Always confirm user intent before using control action
-- If device_id is uncertain, call list first, then get/query
-- Supports fuzzy matching on device names (partial name works)
-- Use response_format="detailed" when you need IDs for follow-up chained calls"#
+- Supports fuzzy matching on device names (partial name works)"#
     }
 
     fn parameters(&self) -> Value {
@@ -125,7 +136,7 @@ Important:
                 },
                 "limit": {
                     "type": "number",
-                    "description": "Max number of results to return (default: 100 for query, unlimited for list)"
+                    "description": "Max number of results to return (default: 10 for query, unlimited for list)"
                 },
                 "response_format": {
                     "type": "string",
@@ -212,64 +223,82 @@ impl DeviceTool {
                 continue;
             }
 
-            // Detailed mode: full info with metrics and commands
-            let mut device_json = serde_json::json!({
+            // Detailed mode: device info only (metrics/commands shared via type_templates)
+            result.push(serde_json::json!({
                 "id": d.device_id,
                 "name": d.name,
                 "type": d.device_type,
                 "adapter_type": d.adapter_type
-            });
-
-            if let Some(template) = self.device_service.get_template(&d.device_type).await {
-                if !template.metrics.is_empty() {
-                    let metrics_info: Vec<Value> = template
-                        .metrics
-                        .iter()
-                        .map(|m| {
-                            serde_json::json!({
-                                "name": m.name,
-                                "display_name": m.display_name,
-                                "unit": m.unit,
-                                "data_type": format!("{:?}", m.data_type)
-                            })
-                        })
-                        .collect();
-                    device_json["metrics"] = serde_json::json!(metrics_info);
-                }
-
-                if !template.commands.is_empty() {
-                    let commands_info: Vec<Value> = template
-                        .commands
-                        .iter()
-                        .map(|c| {
-                            serde_json::json!({
-                                "name": c.name,
-                                "display_name": c.display_name,
-                                "parameters": c.parameters.iter().map(|p| {
-                                    serde_json::json!({
-                                        "name": p.name,
-                                        "display_name": p.display_name,
-                                        "data_type": format!("{:?}", p.data_type),
-                                        "required": p.required
-                                    })
-                                }).collect::<Vec<_>>()
-                            })
-                        })
-                        .collect();
-                    device_json["commands"] = serde_json::json!(commands_info);
-                }
-            }
-
-            result.push(device_json);
+            }));
         }
 
         let limit = args["limit"].as_u64().unwrap_or(result.len() as u64) as usize;
         let result: Vec<_> = result.into_iter().take(limit).collect();
 
-        Ok(ToolOutput::success(serde_json::json!({
+        // Build deduplicated type templates for detailed mode
+        let mut output = serde_json::json!({
             "count": result.len(),
             "devices": result
-        })))
+        });
+
+        if detailed {
+            // Collect unique device types from the filtered result
+            let seen_types: std::collections::BTreeSet<&str> = result
+                .iter()
+                .filter_map(|d| d["type"].as_str())
+                .collect();
+
+            let mut type_templates = serde_json::Map::new();
+            for dt in seen_types {
+                if let Some(template) = self.device_service.get_template(dt).await {
+                    let mut tpl_json = serde_json::Map::new();
+                    if !template.metrics.is_empty() {
+                        let metrics_info: Vec<Value> = template
+                            .metrics
+                            .iter()
+                            .map(|m| {
+                                serde_json::json!({
+                                    "name": m.name,
+                                    "display_name": m.display_name,
+                                    "unit": m.unit,
+                                    "data_type": format!("{:?}", m.data_type)
+                                })
+                            })
+                            .collect();
+                        tpl_json.insert("metrics".into(), serde_json::json!(metrics_info));
+                    }
+                    if !template.commands.is_empty() {
+                        let commands_info: Vec<Value> = template
+                            .commands
+                            .iter()
+                            .map(|c| {
+                                serde_json::json!({
+                                    "name": c.name,
+                                    "display_name": c.display_name,
+                                    "parameters": c.parameters.iter().map(|p| {
+                                        serde_json::json!({
+                                            "name": p.name,
+                                            "display_name": p.display_name,
+                                            "data_type": format!("{:?}", p.data_type),
+                                            "required": p.required
+                                        })
+                                    }).collect::<Vec<_>>()
+                                })
+                            })
+                            .collect();
+                        tpl_json.insert("commands".into(), serde_json::json!(commands_info));
+                    }
+                    if !tpl_json.is_empty() {
+                        type_templates.insert(dt.into(), serde_json::Value::Object(tpl_json));
+                    }
+                }
+            }
+            if !type_templates.is_empty() {
+                output["type_templates"] = serde_json::Value::Object(type_templates);
+            }
+        }
+
+        Ok(ToolOutput::success(output))
     }
 
     async fn execute_get(&self, args: &Value) -> Result<ToolOutput> {
@@ -364,7 +393,7 @@ impl DeviceTool {
             .as_i64()
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
         let start_time = args["start_time"].as_i64().unwrap_or(end_time - 3600);
-        let limit = args["limit"].as_u64().unwrap_or(100) as usize;
+        let limit = args["limit"].as_u64().unwrap_or(10) as usize;
 
         if let Some(m) = metric {
             let mut data = storage
@@ -398,14 +427,67 @@ impl DeviceTool {
                 }
             }
 
-            Ok(ToolOutput::success(serde_json::json!({
-                "device_id": device_id,
-                "metric": resolved_metric,
-                "points": data.iter().take(limit).map(|p| serde_json::json!({
-                    "timestamp": p.timestamp,
-                    "value": p.value
-                })).collect::<Vec<_>>()
-            })))
+            // Detect if this is an image metric and format accordingly.
+            // Image metrics contain data URI values like "data:image/jpeg;base64,...".
+            // For images, we return a structured format with separated base64 data and mime type,
+            // making it easy to pass to extension tools for analysis.
+            let is_image_metric = resolved_metric.contains("image")
+                || resolved_metric.contains("snapshot")
+                || resolved_metric.contains("picture")
+                || resolved_metric.contains("frame")
+                || data.iter().any(|p| {
+                    p.value.as_str().map_or(false, |s| s.starts_with("data:image/"))
+                });
+
+            if is_image_metric && !data.is_empty() {
+                // For image metrics, return structured data with base64 separated from the data URI prefix.
+                // This makes it easy for the LLM to pass the base64_data field directly to
+                // image analysis extensions, while also preserving the mime_type for content handling.
+                let points: Vec<Value> = data.iter().take(limit).map(|p| {
+                    if let Some(s) = p.value.as_str() {
+                        if s.starts_with("data:image/") {
+                            // Parse data URI: "data:image/jpeg;base64,<base64data>"
+                            let mime_type = if let Some(semi) = s.find(';') {
+                                s[..semi].trim_start_matches("data:").to_string()
+                            } else {
+                                "image/jpeg".to_string()
+                            };
+                            let base64_data = if let Some(comma) = s.find(";base64,") {
+                                s[comma + 8..].to_string()
+                            } else {
+                                s.to_string()
+                            };
+                            let size_kb = base64_data.len() as f64 / 1024.0;
+                            return serde_json::json!({
+                                "timestamp": p.timestamp,
+                                "mime_type": mime_type,
+                                "base64_data": base64_data,
+                                "size_kb": format!("{:.1}", size_kb),
+                            });
+                        }
+                    }
+                    serde_json::json!({
+                        "timestamp": p.timestamp,
+                        "value": p.value.to_json_value()
+                    })
+                }).collect();
+
+                Ok(ToolOutput::success(serde_json::json!({
+                    "device_id": device_id,
+                    "metric": resolved_metric,
+                    "data_type": "image",
+                    "points": points
+                })))
+            } else {
+                Ok(ToolOutput::success(serde_json::json!({
+                    "device_id": device_id,
+                    "metric": resolved_metric,
+                    "points": data.iter().take(limit).map(|p| serde_json::json!({
+                        "timestamp": p.timestamp,
+                        "value": p.value.to_json_value()
+                    })).collect::<Vec<_>>()
+                })))
+            }
         } else {
             Ok(ToolOutput::success(serde_json::json!({
                 "device_id": device_id,
@@ -1017,6 +1099,97 @@ impl AgentHistoryTool {
         })))
     }
 
+    /// Compact a JSON value by replacing large strings (images, base64) with size summaries.
+    fn compact_value(val: &serde_json::Value, max_str_len: usize) -> serde_json::Value {
+        match val {
+            serde_json::Value::String(s) => {
+                if s.len() > max_str_len {
+                    // Check if it looks like base64 image data
+                    let size_mb = s.len() as f64 / (1024.0 * 1024.0);
+                    if s.starts_with("data:image/") || s.starts_with("/9j/") || s.starts_with("iVBOR") {
+                        serde_json::json!(format!("[图像数据: {:.1}MB, 已省略]", size_mb))
+                    } else if size_mb > 0.1 {
+                        serde_json::json!(format!("[大数据: {:.1}MB, 已省略]", size_mb))
+                    } else {
+                        serde_json::json!(format!("[{}...已省略{}字符]", &s[..max_str_len.min(s.len())], s.len() - max_str_len.min(s.len())))
+                    }
+                } else {
+                    val.clone()
+                }
+            }
+            serde_json::Value::Object(map) => {
+                let compacted: serde_json::Map<String, serde_json::Value> = map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Self::compact_value(v, max_str_len)))
+                    .collect();
+                serde_json::Value::Object(compacted)
+            }
+            serde_json::Value::Array(arr) => {
+                serde_json::Value::Array(arr.iter().map(|v| Self::compact_value(v, max_str_len)).collect())
+            }
+            _ => val.clone(),
+        }
+    }
+
+    /// Build a compact summary of TurnInput, filtering out large binary/image data.
+    fn compact_input(input: &neomind_storage::TurnInput) -> serde_json::Value {
+        let data_summaries: Vec<serde_json::Value> = input
+            .data_collected
+            .iter()
+            .map(|dc| {
+                let compacted_values = Self::compact_value(&dc.values, 200);
+                serde_json::json!({
+                    "source": dc.source,
+                    "data_type": dc.data_type,
+                    "values": compacted_values,
+                })
+            })
+            .collect();
+
+        let mut result = serde_json::Map::new();
+        result.insert("data_collected".into(), serde_json::Value::Array(data_summaries));
+        if let Some(ref event) = input.event_data {
+            result.insert("event_data".into(), Self::compact_value(event, 200));
+        }
+        serde_json::Value::Object(result)
+    }
+
+    /// Build a focused output summary from TurnOutput for conversation history.
+    /// Prioritizes text insights (analysis, reasoning, decisions, conclusion).
+    fn compact_output(output: &neomind_storage::TurnOutput) -> serde_json::Value {
+        let decisions: Vec<serde_json::Value> = output
+            .decisions
+            .iter()
+            .map(|d| {
+                serde_json::json!({
+                    "type": d.decision_type,
+                    "description": d.description,
+                    "action": d.action,
+                })
+            })
+            .collect();
+
+        let reasoning: Vec<serde_json::Value> = output
+            .reasoning_steps
+            .iter()
+            .map(|rs| {
+                serde_json::json!({
+                    "step": rs.step_number,
+                    "type": rs.step_type,
+                    "description": rs.description,
+                    "output": rs.output,
+                })
+            })
+            .collect();
+
+        serde_json::json!({
+            "situation_analysis": output.situation_analysis,
+            "reasoning_steps": reasoning,
+            "decisions": decisions,
+            "conclusion": output.conclusion,
+        })
+    }
+
     async fn execute_conversation(&self, args: &Value) -> Result<ToolOutput> {
         let agent_id = args["agent_id"]
             .as_str()
@@ -1040,14 +1213,17 @@ impl AgentHistoryTool {
                     "execution_id": turn.execution_id,
                     "timestamp": turn.timestamp,
                     "trigger_type": turn.trigger_type,
-                    "input": turn.input,
-                    "output": turn.output
+                    "success": turn.success,
+                    "duration_ms": turn.duration_ms,
+                    "input": Self::compact_input(&turn.input),
+                    "output": Self::compact_output(&turn.output),
                 })
             })
             .collect();
 
         Ok(ToolOutput::success(serde_json::json!({
             "agent_id": agent_id,
+            "total_turns": agent.conversation_history.len(),
             "messages": conversation
         })))
     }
@@ -1087,9 +1263,39 @@ impl AgentHistoryTool {
                 "trigger_type": turn.trigger_type,
                 "success": turn.success,
                 "duration_ms": turn.duration_ms,
-                "input": turn.input,
-                "output": turn.output
+                "input": Self::compact_input(&turn.input),
+                "output": Self::compact_output(&turn.output),
             })
+        });
+
+        // Build memory summary for user insight
+        let recent_summaries: Vec<serde_json::Value> = agent.memory.short_term.summaries
+            .iter()
+            .take(3)
+            .map(|s| serde_json::json!({
+                "situation": s.situation,
+                "conclusion": s.conclusion,
+                "decisions": s.decisions,
+                "timestamp": s.timestamp,
+                "success": s.success,
+            }))
+            .collect();
+
+        let memory_summary = serde_json::json!({
+            "working_memory": {
+                "current_analysis": agent.memory.working.current_analysis,
+                "current_conclusion": agent.memory.working.current_conclusion,
+            },
+            "recent_summaries": recent_summaries,
+            "learned_patterns_count": agent.memory.learned_patterns.len(),
+            "baselines_count": agent.memory.baselines.len(),
+            "recent_patterns": agent.memory.learned_patterns.iter().take(5).map(|p| {
+                serde_json::json!({
+                    "pattern_type": p.pattern_type,
+                    "description": p.description,
+                    "confidence": p.confidence,
+                })
+            }).collect::<Vec<_>>(),
         });
 
         Ok(ToolOutput::success(serde_json::json!({
@@ -1097,6 +1303,7 @@ impl AgentHistoryTool {
             "agent_name": agent.name,
             "agent_status": format!("{:?}", agent.status).to_lowercase(),
             "last_execution": last_execution,
+            "memory": memory_summary,
             "pending_user_messages": agent.user_messages.len(),
             "stats_summary": stats_summary
         })))

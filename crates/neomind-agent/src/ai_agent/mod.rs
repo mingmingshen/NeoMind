@@ -22,7 +22,7 @@ use tokio::sync::RwLock;
 
 pub use executor::{AgentExecutionResult, AgentExecutor, AgentExecutorConfig, ExecutionContext};
 pub use intent_parser::IntentParser;
-pub use scheduler::{AgentScheduler, ScheduledTask, SchedulerConfig, SchedulerError};
+pub use scheduler::{AgentScheduler, BackendSemaphores, ScheduledTask, SchedulerConfig, SchedulerError};
 
 /// AI Agent manager - the main entry point for user-defined agents.
 ///
@@ -114,8 +114,15 @@ pub struct AgentExecutionSummary {
 impl AiAgentManager {
     /// Create a new AI Agent manager.
     pub async fn new(config: AgentExecutorConfig) -> Result<Arc<Self>, crate::error::NeoMindError> {
-        let executor = Arc::new(AgentExecutor::new(config.clone()).await?);
-        let scheduler = Arc::new(AgentScheduler::new(SchedulerConfig::default()).await?);
+        // Create scheduler first so we can share its backend semaphores with the executor
+        let scheduler_config = SchedulerConfig::default();
+        let scheduler = Arc::new(AgentScheduler::new(scheduler_config).await?);
+
+        // Share backend semaphores between scheduler and executor
+        let mut executor_config = config;
+        executor_config.backend_semaphores = Some(scheduler.backend_semaphores().clone());
+
+        let executor = Arc::new(AgentExecutor::new(executor_config).await?);
 
         Ok(Arc::new(Self {
             executor,

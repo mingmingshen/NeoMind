@@ -311,7 +311,7 @@ impl SessionManager {
         let session_messages: Vec<neomind_storage::SessionMessage> = messages
             .iter()
             .map(|msg| {
-                // Convert ToolCall to serde_json::Value, including result field
+                // Convert ToolCall to serde_json::Value, including result and round fields
                 let tool_calls = msg.tool_calls.as_ref().map(|calls| {
                     calls
                         .iter()
@@ -325,6 +325,12 @@ impl SessionManager {
                             if let Some(ref result) = call.result {
                                 if let Some(obj_map) = obj.as_object_mut() {
                                     obj_map.insert("result".to_string(), result.clone());
+                                }
+                            }
+                            // Add round field if present
+                            if let Some(ref round) = call.round {
+                                if let Some(obj_map) = obj.as_object_mut() {
+                                    obj_map.insert("round".to_string(), serde_json::json!(round));
                                 }
                             }
                             obj
@@ -350,6 +356,7 @@ impl SessionManager {
                     tool_call_name: msg.tool_call_name.clone(),
                     thinking: msg.thinking.clone(),
                     images,
+                    round_contents: msg.round_contents.clone(),
                     timestamp: msg.timestamp,
                 }
             })
@@ -390,7 +397,7 @@ impl SessionManager {
         let messages = session_messages
             .into_iter()
             .map(|sm| {
-                // Convert serde_json::Value to ToolCall, including result field
+                // Convert serde_json::Value to ToolCall, including result and round fields
                 let tool_calls = sm.tool_calls.map(|values| {
                     values
                         .into_iter()
@@ -402,11 +409,14 @@ impl SessionManager {
                             ) {
                                 // Extract result field if present
                                 let result = v.get("result").cloned();
+                                // Extract round field if present
+                                let round = v.get("round").and_then(|r| r.as_u64()).map(|r| r as usize);
                                 Some(super::agent::ToolCall {
                                     name: name.to_string(),
                                     id: id.to_string(),
                                     arguments: args.clone(),
                                     result,
+                                    round,
                                 })
                             } else {
                                 None
@@ -433,6 +443,7 @@ impl SessionManager {
                     tool_call_name: sm.tool_call_name,
                     thinking: sm.thinking,
                     images,
+                    round_contents: sm.round_contents,
                     timestamp: sm.timestamp,
                 }
             })
