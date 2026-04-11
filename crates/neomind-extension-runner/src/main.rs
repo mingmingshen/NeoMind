@@ -71,15 +71,19 @@ type ResponseSender = Sender<IpcResponse>;
 static PENDING_REQUESTS: std::sync::OnceLock<Mutex<HashMap<u64, ResponseSender>>> =
     std::sync::OnceLock::new();
 
-/// Event queue for main loop
-static EVENT_QUEUE: std::sync::OnceLock<Mutex<Vec<IpcMessage>>> = std::sync::OnceLock::new();
+/// Channel-based event queue for main loop (replaces polling)
+static EVENT_TX: std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<IpcMessage>> =
+    std::sync::OnceLock::new();
 
 fn get_pending_requests() -> &'static Mutex<HashMap<u64, ResponseSender>> {
     PENDING_REQUESTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn get_event_queue() -> &'static Mutex<Vec<IpcMessage>> {
-    EVENT_QUEUE.get_or_init(|| Mutex::new(Vec::new()))
+/// Create the event channel and return the receiver (call once at startup)
+fn create_event_channel() -> tokio::sync::mpsc::UnboundedReceiver<IpcMessage> {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    EVENT_TX.set(tx).expect("event channel already initialized");
+    rx
 }
 
 /// Register a pending request and return the response receiver
@@ -99,14 +103,11 @@ fn complete_pending_request(request_id: u64, response: IpcResponse) {
     }
 }
 
-/// Push an event to the queue for main loop processing
+/// Push an event to the channel for main loop processing
 fn push_event(message: IpcMessage) {
-    get_event_queue().lock().unwrap().push(message);
-}
-
-/// Pop an event from the queue
-fn pop_event() -> Option<IpcMessage> {
-    get_event_queue().lock().unwrap().pop()
+    if let Some(tx) = EVENT_TX.get() {
+        let _ = tx.send(message);
+    }
 }
 
 /// Start the stdin reader thread
@@ -2281,21 +2282,22 @@ impl Runner {
             None
         };
 
-        while self.running {
-            debug!("Waiting for IPC message...");
+        // Create event channel for efficient notification (replaces polling)
+        let mut event_rx = create_event_channel();
 
-            // Poll event queue with a small timeout
-            match pop_event() {
-                Some(message) => {
+        while self.running {
+            // Channel recv blocks efficiently - zero CPU when idle
+            tokio::select! {
+                Some(message) = event_rx.recv() => {
                     debug!(
-                        "Received IPC message from queue: {:?}",
+                        "Received IPC message from channel: {:?}",
                         std::mem::discriminant(&message)
                     );
                     self.handle_message(message).await;
                 }
-                None => {
-                    // No message, sleep asynchronously to avoid blocking thread
-                    tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+                _ = tokio::time::sleep(tokio::time::Duration::from_secs(30)) => {
+                    // Periodic keepalive check
+                    trace!("Extension runner keepalive");
                 }
             }
         }

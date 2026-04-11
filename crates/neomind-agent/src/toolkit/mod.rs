@@ -37,6 +37,7 @@ pub mod error;
 pub mod extension_tools;
 pub mod registry;
 pub mod resolver;
+pub mod session_search;
 pub mod simplified;
 pub mod system_tools;
 pub mod tool;
@@ -75,13 +76,15 @@ pub use extension_tools::{
     ExtensionFilter, ExtensionTool, ExtensionToolExecutor, ExtensionToolGenerator,
 };
 
+pub use session_search::SessionSearchTool;
+
 // ============================================================================
 // Aggregated Tools (Action-based design for token efficiency)
 // ============================================================================
 
 pub use aggregated::{
-    AgentHistoryTool, AgentTool, AggregatedAlertInfo, AggregatedAlertSeverity,
-    AggregatedToolsBuilder, AlertTool, DeviceTool, ExtensionAggregatedTool, RuleTool,
+    AgentHistoryTool, AgentTool, AggregatedMessageInfo, AggregatedMessageLevel,
+    AggregatedToolsBuilder, DeviceTool, ExtensionAggregatedTool, MessageTool, RuleTool,
 };
 
 /// Version information

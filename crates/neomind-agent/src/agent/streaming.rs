@@ -497,51 +497,77 @@ const NON_CACHEABLE_TOOLS: &[&str] = &[
     "delete_device",
 ];
 
-/// Simple query tools that can return results directly without LLM follow-up
-/// These tools return structured data that users want to see as-is
-/// Skipping LLM follow-up for these tools:
-/// 1. Reduces latency (no second LLM call)
-/// 2. Eliminates unnecessary thinking content
-/// 3. Provides exact data from tools without LLM reformatting
-///
-/// This follows the design pattern of mainstream agent frameworks:
-/// - AutoGen: `reflect_on_tool_use=False` returns tool results directly
-/// - LangChain: `return_direct=True` stops agent loop after tool execution
-const SIMPLE_QUERY_TOOLS: &[&str] = &[
-    "device",                // Aggregated device tool (list/query/get/control)
-    "device_discover",       // Device discovery - returns device list
-    "list_devices",          // List all devices
-    "list_rules",            // List automation rules
-    "list_agents",           // List AI agents
-    "list_scenarios",        // List scenarios
-    "list_workflows",        // List workflows
-    "query_rule_history",    // Query rule execution history
-    "query_workflow_status", // Get workflow status
-    "get_device_metrics",    // Get device metrics/data
-];
+/// Check if tool results should bypass LLM and return directly.
+/// Always returns false — all results go through LLM Phase 2.
+fn should_return_directly(_tool_results: &[(String, String)]) -> bool {
+    false
+}
 
 fn is_tool_cacheable(name: &str) -> bool {
     !NON_CACHEABLE_TOOLS.contains(&name)
 }
 
-/// Check if all tools in the result set are simple query tools
-/// that can return results directly without LLM follow-up.
-///
-/// This follows mainstream agent design:
-/// - AutoGen: `reflect_on_tool_use=False` by default
-/// - LangChain: Tools with `return_direct=True` stop the agent loop
-fn should_return_directly(tool_results: &[(String, String)]) -> bool {
-    if tool_results.is_empty() {
-        return false;
-    }
-    // All tools must be simple query tools
-    tool_results
-        .iter()
-        .all(|(name, _)| SIMPLE_QUERY_TOOLS.contains(&name.as_str()))
-}
-
 /// Max length of tool result text to inject into Phase 2 prompt (avoid context overflow).
 const PHASE2_TOOL_RESULT_MAX_LEN: usize = 8000;
+
+/// Deduplicate accumulated tool results across multiple rounds.
+///
+/// Keeps the **latest** result for each (tool_name, key_arguments) combination.
+/// When the same tool is called with the same arguments across rounds (LLM retrying),
+/// only the last successful result is kept. Different arguments produce separate entries.
+fn deduplicate_tool_results(results: &[(String, String)]) -> Vec<(String, String)> {
+    // Build a key from tool name + distinguishing arguments parsed from the result JSON
+    let mut seen: Vec<(String, String)> = Vec::new(); // (key, dedup_key)
+    let mut deduped: Vec<(String, String)> = Vec::new();
+
+    for (name, result) in results {
+        // Create a dedup key from name + result fingerprint
+        let dedup_key = make_result_dedup_key(name, result);
+
+        if let Some(pos) = seen.iter().position(|(k, dk)| k == name && dk == &dedup_key) {
+            // Replace with latest result
+            deduped[pos] = (name.clone(), result.clone());
+        } else {
+            seen.push((name.clone(), dedup_key));
+            deduped.push((name.clone(), result.clone()));
+        }
+    }
+
+    deduped
+}
+
+/// Create a dedup key for a tool result by extracting entity identifiers.
+fn make_result_dedup_key(name: &str, result: &str) -> String {
+    // Try to extract entity IDs from the result JSON
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(result) {
+        let mut key_parts = vec![name.to_string()];
+
+        // Extract common entity identifiers
+        for field in &["device_id", "metric", "agent_id", "rule_id", "id", "name"] {
+            if let Some(val) = json.get(*field).and_then(|v| v.as_str()) {
+                key_parts.push(val.to_string());
+            }
+        }
+
+        // For device query results, also check nested data
+        if let Some(data) = json.get("data") {
+            if let Some(obj) = data.as_object() {
+                for field in &["device_id", "device_name"] {
+                    if let Some(val) = obj.get(*field).and_then(|v| v.as_str()) {
+                        key_parts.push(val.to_string());
+                    }
+                }
+            }
+        }
+
+        return key_parts.join("|");
+    }
+
+    // Fallback: simple hash of the result content for dedup
+    let preview: String = result.chars().take(200).collect();
+    let hash = preview.chars().fold(0u64, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u64));
+    format!("{}|{:016x}", name, hash)
+}
 
 /// Build Phase 2 user prompt with tool results explicitly included so the second LLM always sees them.
 fn build_phase2_prompt_with_tool_results(
@@ -616,6 +642,54 @@ fn build_phase2_prompt_with_tool_results(
     question + &block
 }
 
+/// Build Phase 2 prompt with accumulated multi-round tool results.
+///
+/// This is used when the multi-round loop ends (iteration limit, consecutive
+/// duplicates, or non-complex intent) to generate a comprehensive summary
+/// covering ALL collected data, not just the last round.
+fn build_phase2_summary_prompt(
+    original_question: Option<String>,
+    all_results: &[(String, String)],
+    total_rounds: usize,
+    end_reason: &str,
+) -> String {
+    let question =
+        original_question.unwrap_or_else(|| "请总结以上工具执行结果，给出完整的回复。".to_string());
+
+    if all_results.is_empty() {
+        return question;
+    }
+
+    let mut block = format!(
+        "\n\n[Completed {} rounds of tool execution (ended: {}), {} tool results collected]\n",
+        total_rounds, end_reason, all_results.len()
+    );
+
+    block.push_str(&format!(
+        "IMPORTANT: You MUST provide a COMPLETE summary of ALL tool results below. \
+         Do NOT mention that tools were called or that execution ended - just present the data naturally.\n\n"
+    ));
+
+    for (name, result) in all_results {
+        let r = if result.len() > PHASE2_TOOL_RESULT_MAX_LEN {
+            format!(
+                "{}... (result truncated, total {} chars)",
+                &result[..PHASE2_TOOL_RESULT_MAX_LEN],
+                result.len()
+            )
+        } else {
+            result.clone()
+        };
+        block.push_str(&format!("[{}]\n{}\n\n", name, r));
+    }
+
+    block.push_str(&format!(
+        "\nPlease organize the above data to answer: {}", question
+    ));
+
+    question + &block
+}
+
 /// Detect if Phase 2 LLM response is hallucinated (doesn't match actual tool results)
 /// Returns true if hallucination is detected, indicating we should use fallback formatter
 fn detect_hallucination(phase2_response: &str, tool_results: &[(String, String)]) -> bool {
@@ -680,6 +754,350 @@ fn extract_array(json_value: &serde_json::Value, key: &str) -> Option<Vec<serde_
     }
 
     None
+}
+
+/// Format results from aggregated tools (device, agent, rule, alert, extension)
+/// by detecting the JSON structure. This handles both aggregated and legacy tool names.
+fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, response: &mut String) {
+    // Detect what kind of result this is based on JSON structure
+
+    // Agent list: has "agents" key with array or nested object
+    if json.get("agents").is_some() || json.get("count").is_some() && tool_name == "agent" {
+        format_agent_list(json, response);
+        return;
+    }
+
+    // Device list: has "devices" array
+    if let Some(devices) = extract_array(json, "devices") {
+        response.push_str(&format!("## Device List ({} total)\n\n", devices.len()));
+        for device in devices {
+            let name = device.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+            let id = device.get("id").and_then(|i| i.as_str()).unwrap_or("");
+            let device_type = device.get("type")
+                .or_else(|| device.get("device_type"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("unknown");
+            let status = device.get("status").and_then(|s| s.as_str()).unwrap_or("");
+
+            if status.is_empty() {
+                response.push_str(&format!("- **{}** ({}) - {}\n", name, id, device_type));
+            } else {
+                response.push_str(&format!("- **{}** ({}) - {} - {}\n", name, id, device_type, status));
+            }
+        }
+        return;
+    }
+
+    // Device query result: has "device_id" and "points"
+    if json.get("device_id").is_some() && json.get("points").is_some() {
+        let device_id = json.get("device_id").and_then(|d| d.as_str()).unwrap_or("unknown");
+        let metric = json.get("metric").and_then(|m| m.as_str()).unwrap_or("unknown");
+        let points = json.get("points").and_then(|p| p.as_array());
+
+        response.push_str(&format!("## {} - {}\n\n", device_id, metric));
+
+        if let Some(pts) = points {
+            if pts.is_empty() {
+                response.push_str("No data available.\n");
+            } else {
+                for point in pts.iter().take(10) {
+                    let ts = point.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
+                    let is_image = point.get("base64_data").is_some();
+                    let value = if is_image {
+                        "[image data]".to_string()
+                    } else {
+                        point.get("value")
+                            .map(|v| v.to_string().trim_matches('"').to_string())
+                            .unwrap_or_else(|| "N/A".to_string())
+                    };
+
+                    if ts > 0 {
+                        let time_str = chrono::DateTime::from_timestamp(ts, 0)
+                            .map(|dt| dt.format("%H:%M:%S").to_string())
+                            .unwrap_or_else(|| ts.to_string());
+                        response.push_str(&format!("- {}: {}\n", time_str, value));
+                    } else {
+                        response.push_str(&format!("- {}\n", value));
+                    }
+                }
+                if pts.len() > 10 {
+                    response.push_str(&format!("\n... ({} more data points)\n", pts.len() - 10));
+                }
+            }
+        }
+        return;
+    }
+
+    // Device get with metrics: has "id"/"name" + "type" + "metrics" array with values
+    if json.get("name").is_some() && json.get("type").is_some() {
+        if let Some(metrics) = json.get("metrics").and_then(|m| m.as_array()) {
+            let name = json.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+            let device_type = json.get("type").and_then(|t| t.as_str()).unwrap_or("unknown");
+            response.push_str(&format!("## {} ({})\n\n", name, device_type));
+
+            for metric in metrics {
+                let display_name = metric.get("display_name").and_then(|d| d.as_str())
+                    .or_else(|| metric.get("name").and_then(|n| n.as_str()))
+                    .unwrap_or("unknown");
+                let unit = metric.get("unit").and_then(|u| u.as_str()).unwrap_or("");
+
+                if let Some(value) = metric.get("value") {
+                    let value_str = value.to_string().trim_matches('"').to_string();
+                    if unit.is_empty() {
+                        response.push_str(&format!("- **{}**: {}\n", display_name, value_str));
+                    } else {
+                        response.push_str(&format!("- **{}**: {} {}\n", display_name, value_str, unit));
+                    }
+                } else {
+                    response.push_str(&format!("- **{}**: 无数据\n", display_name));
+                }
+            }
+            return;
+        }
+    }
+
+    // Metric not found with suggestions: has "error" + "available_metrics"
+    if json.get("error").is_some() && json.get("available_metrics").is_some() {
+        let error = json.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error");
+        response.push_str(&format!("**Error**: {}\n\n", error));
+
+        if let Some(available) = json.get("available_metrics").and_then(|a| a.as_array()) {
+            response.push_str("**Available metrics:**\n");
+            for metric in available {
+                let name = metric.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                let display_name = metric.get("display_name").and_then(|d| d.as_str()).unwrap_or("");
+                let unit = metric.get("unit").and_then(|u| u.as_str()).unwrap_or("");
+                if display_name.is_empty() {
+                    response.push_str(&format!("- `{}`\n", name));
+                } else if unit.is_empty() {
+                    response.push_str(&format!("- `{}` ({})\n", name, display_name));
+                } else {
+                    response.push_str(&format!("- `{}` ({}) - {}\n", name, display_name, unit));
+                }
+            }
+        }
+        return;
+    }
+
+    // Rule list: has "rules" array
+    if let Some(rules) = extract_array(json, "rules") {
+        response.push_str(&format!("## Automation Rules ({} total)\n\n", rules.len()));
+        for rule in rules {
+            let name = rule.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+            let enabled = rule.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false);
+            let status = if enabled { "✓ Enabled" } else { "✗ Disabled" };
+            response.push_str(&format!("- **{}** {}\n", name, status));
+        }
+        return;
+    }
+
+    // Alert list: has "alerts" array
+    if let Some(alerts) = extract_array(json, "alerts") {
+        response.push_str(&format!("## Alerts ({} total)\n\n", alerts.len()));
+        for alert in alerts.iter().take(10) {
+            let title = alert.get("title").or_else(|| alert.get("message"))
+                .and_then(|t| t.as_str()).unwrap_or("unknown");
+            let severity = alert.get("severity").and_then(|s| s.as_str()).unwrap_or("info");
+            let icon = match severity {
+                "critical" => "🔴",
+                "warning" => "🟡",
+                _ => "ℹ️",
+            };
+            response.push_str(&format!("- {} **{}** ({})\n", icon, title, severity));
+        }
+        if alerts.len() > 10 {
+            response.push_str(&format!("\n... ({} more alerts)\n", alerts.len() - 10));
+        }
+        return;
+    }
+
+    // Extension list: has "extensions" array
+    if let Some(extensions) = extract_array(json, "extensions") {
+        response.push_str(&format!("## Extensions ({} total)\n\n", extensions.len()));
+        for ext in extensions {
+            let name = ext.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+            let status = ext.get("status").and_then(|s| s.as_str()).unwrap_or("unknown");
+            let icon = if status == "running" { "🟢" } else { "⚪" };
+            response.push_str(&format!("- {} **{}** ({})\n", icon, name, status));
+        }
+        return;
+    }
+
+    // Agent details: has "name" and "type" at top level (single agent)
+    if json.get("name").is_some() && json.get("type").is_some() && tool_name == "agent" {
+        let name = json.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+        let status = json.get("status").and_then(|s| s.as_str()).unwrap_or("unknown");
+        response.push_str(&format!("## Agent: {}\n\n", name));
+        response.push_str(&format!("**Status**: {}\n", status));
+        if let Some(stats) = json.get("stats") {
+            if let Some(total) = stats.get("total_executions").and_then(|t| t.as_u64()) {
+                response.push_str(&format!("**Total Executions**: {}\n", total));
+            }
+        }
+        return;
+    }
+
+    // Agent execution history: has "agent_id" + "stats"
+    if json.get("agent_id").is_some() && json.get("stats").is_some() {
+        if let Some(stats) = json.get("stats") {
+            let total = stats.get("total_executions").and_then(|t| t.as_u64()).unwrap_or(0);
+            let success = stats.get("successful_executions").and_then(|s| s.as_u64()).unwrap_or(0);
+            let failed = stats.get("failed_executions").and_then(|f| f.as_u64()).unwrap_or(0);
+            let avg_ms = stats.get("avg_duration_ms").and_then(|d| d.as_u64()).unwrap_or(0);
+            response.push_str(&format!("## Execution Stats\n\n"));
+            response.push_str(&format!("- **Total**: {} times\n", total));
+            response.push_str(&format!("- **Success**: {} | **Failed**: {}\n", success, failed));
+            if avg_ms > 0 {
+                let avg_sec = avg_ms as f64 / 1000.0;
+                response.push_str(&format!("- **Avg Duration**: {:.1}s\n", avg_sec));
+            }
+            if let Some(last_ms) = stats.get("last_duration_ms").and_then(|d| d.as_u64()) {
+                if last_ms > 0 {
+                    response.push_str(&format!("- **Last Duration**: {:.1}s\n", last_ms as f64 / 1000.0));
+                }
+            }
+        }
+        return;
+    }
+
+    // Agent conversation history: has "messages" array
+    if let Some(messages) = extract_array(json, "messages") {
+        response.push_str(&format!("## Conversation Log ({} messages)\n\n", messages.len()));
+        for msg in messages.iter().take(10) {
+            let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("unknown");
+            let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
+            let preview: String = content.chars().take(100).collect();
+            response.push_str(&format!("- **{}**: {}\n", role, preview));
+        }
+        if messages.len() > 10 {
+            response.push_str(&format!("\n... ({} more messages)\n", messages.len() - 10));
+        }
+        return;
+    }
+
+    // Control/execution success — but check if there's meaningful data first
+    if json.get("success").is_some() || json.get("execution_id").is_some() || json.get("rule_id").is_some() {
+        // If there's a "data" object with useful fields, format those instead of generic message
+        if let Some(data) = json.get("data") {
+            format_json_data(data, response);
+            return;
+        }
+        if let Some(exec_id) = json.get("execution_id").and_then(|e| e.as_str()) {
+            response.push_str(&format!("✓ Executed successfully (ID: {})\n", exec_id));
+        } else if let Some(rule_id) = json.get("rule_id").and_then(|r| r.as_str()) {
+            response.push_str(&format!("✓ Created successfully (ID: {})\n", rule_id));
+        } else if let Some(agent_id) = json.get("agent_id").or_else(|| json.get("id")).and_then(|a| a.as_str()) {
+            response.push_str(&format!("✓ Created successfully (ID: {})\n", agent_id));
+        } else if json.get("success").and_then(|s| s.as_bool()).unwrap_or(false) {
+            response.push_str(&format!("✓ {} completed successfully.\n", tool_name));
+        } else {
+            // Has error
+            let error = json.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error");
+            response.push_str(&format!("✗ {} failed: {}\n", tool_name, error));
+        }
+        return;
+    }
+
+    // Fallback: format the JSON object with key-value pairs (handles extension tools, etc.)
+    if json.is_object() {
+        format_json_data(json, response);
+    } else if json.is_array() {
+        format_json_data(json, response);
+    } else {
+        response.push_str(&format!("✓ {} completed.\n", tool_name));
+    }
+}
+
+/// Format agent list from JSON result.
+fn format_agent_list(json: &serde_json::Value, response: &mut String) {
+    let agents_array = if let Some(agents_obj) = json.get("agents").and_then(|a| a.as_object()) {
+        agents_obj.get("items").and_then(|i| i.as_array())
+    } else {
+        json.get("agents").and_then(|a| a.as_array())
+    };
+
+    if let Some(agents) = agents_array {
+        if agents.is_empty() {
+            response.push_str("🤖 **AI Agent List**\n\n🔍 No AI Agents configured.");
+        } else {
+            response.push_str(&format!("🤖 **AI Agent List** ({} total)\n\n", agents.len()));
+            for agent in agents {
+                let name = agent.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+                let status = agent.get("status").and_then(|s| s.as_str()).unwrap_or("unknown");
+                let icon = match status {
+                    "active" | "Active" => "🟢",
+                    _ => "🔴",
+                };
+                response.push_str(&format!("- {} **{}** ({})\n", icon, name, status));
+
+                if let Some(desc) = agent.get("description").and_then(|d| d.as_str()) {
+                    if !desc.is_empty() && desc != "null" {
+                        response.push_str(&format!("  {}\n", desc));
+                    }
+                }
+            }
+        }
+    } else if let Some(count) = json.get("count").and_then(|c| c.as_u64()) {
+        response.push_str(&format!("🤖 **AI Agent List** ({} total)\n", count));
+    } else {
+        response.push_str("🤖 **AI Agent List**\n\n🔍 No AI Agents found.");
+    }
+}
+
+/// Format a generic JSON data object into readable key-value pairs.
+/// Used for extension tool results (weather, image analysis, etc.)
+fn format_json_data(data: &serde_json::Value, response: &mut String) {
+    if let Some(obj) = data.as_object() {
+        for (key, value) in obj {
+            // Skip nested objects and arrays in simple view
+            if value.is_object() || value.is_array() {
+                continue;
+            }
+
+            // Convert snake_case to Title Case
+            let display_name: String = key.chars().enumerate().flat_map(|(i, c)| {
+                if i == 0 {
+                    c.to_uppercase().collect::<Vec<char>>()
+                } else if c == '_' {
+                    vec![' ']
+                } else {
+                    vec![c]
+                }
+            }).collect();
+
+            let value_str = match value {
+                serde_json::Value::Bool(b) => if *b { "Yes".to_string() } else { "No".to_string() },
+                serde_json::Value::Number(n) => {
+                    if key.ends_with("_c") {
+                        format!("{}°C", n)
+                    } else if key.ends_with("_percent") {
+                        format!("{}%", n)
+                    } else if key.ends_with("_kmph") {
+                        format!("{} km/h", n)
+                    } else if key.ends_with("_hpa") {
+                        format!("{} hPa", n)
+                    } else if key.ends_with("_ms") || key.ends_with("_duration_ms") {
+                        format!("{:.1}s", n.as_f64().unwrap_or(0.0) / 1000.0)
+                    } else {
+                        n.to_string()
+                    }
+                }
+                serde_json::Value::String(s) => s.clone(),
+                _ => value.to_string(),
+            };
+
+            response.push_str(&format!("- **{}**: {}\n", display_name, value_str));
+        }
+    } else if let Some(arr) = data.as_array() {
+        for (i, item) in arr.iter().enumerate().take(10) {
+            response.push_str(&format!("{}. {}\n", i + 1, item));
+        }
+        if arr.len() > 10 {
+            response.push_str(&format!("\n... ({} more)\n", arr.len() - 10));
+        }
+    } else {
+        response.push_str(&format!("{}\n", data));
+    }
 }
 
 /// Format tool results into a user-friendly response
@@ -1223,8 +1641,10 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                     response.push_str("✓ Rule deleted.\n");
                 }
                 _ => {
-                    // Generic formatting for other tools
-                    response.push_str(&format!("✓ {} executed successfully.\n", tool_name));
+                    // Aggregated tools (device, agent, rule, alert, extension) share the
+                    // same JSON output format as the legacy tools. Detect the format by
+                    // inspecting the JSON structure instead of matching tool names.
+                    format_aggregated_tool_result(tool_name, &json_value, &mut response);
                 }
             }
         } else {
@@ -1850,12 +2270,15 @@ pub async fn process_stream_events_with_safeguards(
 
         // === SAFEGUARD: Track recently executed tools for multi-round context ===
         let mut recently_executed_tools: VecDeque<String> = VecDeque::new();
-        // Track (tool_name, arguments_hash) to detect duplicate calls across rounds
-        let mut executed_tool_signatures: Vec<(String, String)> = Vec::new();
+        // Track tool signatures to detect consecutive duplicate rounds
+        let mut prev_round_signatures: Vec<Vec<String>> = Vec::new();
+        let mut consecutive_duplicate_rounds: usize = 0;
 
         // === SAFEGUARD: Track multi-round tool calling iterations ===
         let mut tool_iteration_count = 0usize;
-        const MAX_TOOL_ITERATIONS: usize = 5;
+        const MAX_TOOL_ITERATIONS: usize = 10;
+        // Accumulate ALL tool results across rounds for final summary
+        let mut all_round_tool_results: Vec<(String, String)> = Vec::new();
 
         // === INTENT & PLAN VISUALIZATION ===
         // Send intent and plan events first to show user what's happening
@@ -1890,7 +2313,7 @@ pub async fn process_stream_events_with_safeguards(
 
                 let context_msg = if recently_executed.is_empty() {
                     format!(
-                        "Round {} of processing. Continue. Use tools if more information is needed, or give the final response.",
+                        "Round {} of processing. Call ALL needed tools in ONE batch using JSON array format. Give the final response if no more tools needed.",
                         tool_iteration_count + 1
                     )
                 } else {
@@ -1901,9 +2324,11 @@ pub async fn process_stream_events_with_safeguards(
                     format!(
                         "Round {} of processing.\n\n\
                         Previously executed tools:\n{}\n\n\
-                        IMPORTANT: Do NOT repeat tools that were already executed. If you already called a tool, use its results from context.\n\
-                        Only call NEW tools with DIFFERENT parameters if more data is needed.\n\
-                        If you have enough data to answer the user's question, give the final response now.",
+                        Rules:\n\
+                        1. Do NOT repeat tools that were already executed — use their results from context.\n\
+                        2. BATCH all new tool calls in ONE response using JSON array: [{{\"name\":\"tool\",\"arguments\":{{...}}}}, ...]\n\
+                        3. Example: querying battery for 3 devices → output 3 device(query) calls in ONE array, NOT one per round.\n\
+                        4. If you have enough data, give the final response now without calling any tools.",
                         tool_iteration_count + 1,
                         executed_summary
                     )
@@ -2245,15 +2670,27 @@ pub async fn process_stream_events_with_safeguards(
                 }
                 let tool_calls_to_execute = tool_calls.clone();
 
+                // Resolve cached data references in tool arguments
+                let large_cache = {
+                    let state = internal_state.read().await;
+                    state.large_data_cache.clone()
+                };
+
                 // Create cache for this batch of tool executions
                 let cache = Arc::new(RwLock::new(ToolResultCache::new(Duration::from_secs(300))));
 
-                // Execute all tool calls in parallel
-                let tool_futures: Vec<_> = tool_calls_to_execute.iter().map(|tool_call| {
+                // Execute tool calls with bounded concurrency (max 6 parallel)
+                const MAX_TOOL_CONCURRENCY: usize = 6;
+
+                // Collect into owned tuples to avoid lifetime issues with async_stream
+                let tool_inputs: Vec<(String, serde_json::Value)> = tool_calls_to_execute
+                    .iter()
+                    .map(|tc| (tc.name.clone(), resolve_cached_arguments(&tc.arguments, &large_cache)))
+                    .collect();
+
+                let tool_futures = futures::stream::iter(tool_inputs.into_iter().map(|(name, arguments)| {
                     let tools_clone = tools.clone();
                     let cache_clone = cache.clone();
-                    let name = tool_call.name.clone();
-                    let arguments = tool_call.arguments.clone();
 
                     async move {
                         (name.clone(), ToolExecutionResult {
@@ -2262,9 +2699,9 @@ pub async fn process_stream_events_with_safeguards(
                             result: execute_tool_with_retry(&tools_clone, &cache_clone, &name, arguments.clone()).await,
                         })
                     }
-                }).collect();
+                })).buffer_unordered(MAX_TOOL_CONCURRENCY);
 
-                let tool_results_executed = futures::future::join_all(tool_futures).await;
+                let tool_results_executed: Vec<_> = tool_futures.collect().await;
 
                 // Process results
                 let mut tool_calls_with_results: Vec<ToolCall> = Vec::new();
@@ -2319,6 +2756,7 @@ pub async fn process_stream_events_with_safeguards(
                 }
 
                 // Update recently executed tools list (for multi-round context)
+                all_round_tool_results.extend(tool_call_results.iter().cloned());
                 for (name, _result) in &tool_call_results {
                     if !recently_executed_tools.iter().any(|n| n == name) {
                         recently_executed_tools.push_back(name.clone());
@@ -2335,39 +2773,57 @@ pub async fn process_stream_events_with_safeguards(
                     tracing::info!("Complex intent: Checking if more tool calls needed (iteration {}/{})",
                         tool_iteration_count + 1, MAX_TOOL_ITERATIONS);
 
-                    // === DUPLICATE DETECTION: Check if all tools in this round are duplicates ===
-                    // Signature = (tool_name, action_or_empty) to distinguish
-                    // device(list) from device(query, device_id="x").
-                    let mut all_duplicates = true;
-                    let mut new_tool_signatures: Vec<(String, String)> = Vec::new();
-                    for tc in &tool_calls_to_execute {
-                        let action_key = tc.arguments.get("action")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        let sig = (tc.name.clone(), action_key);
-                        new_tool_signatures.push(sig);
-                    }
-                    // Check against previously executed signatures
-                    for sig in &new_tool_signatures {
-                        let is_dup = executed_tool_signatures.iter()
-                            .any(|prev| prev == sig);
-                        if !is_dup {
-                            all_duplicates = false;
+                    // === DUPLICATE DETECTION ===
+                    // Detect consecutive duplicate rounds (same tool calls repeated).
+                    // Allow 1 retry but stop after 2+ consecutive duplicates to prevent loops.
+                    // Different-entity calls (different device_id/metric) are never duplicates.
+                    {
+                        let mut new_tool_signatures: Vec<Vec<String>> = Vec::new();
+                        for tc in &tool_calls_to_execute {
+                            let action_key = tc.arguments.get("action")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let mut sig = vec![tc.name.clone(), action_key];
+                            for param in &["device_id", "metric", "agent_id", "rule_id", "alert_id"] {
+                                if let Some(val) = tc.arguments.get(*param).and_then(|v| v.as_str()) {
+                                    sig.push(val.to_string());
+                                }
+                            }
+                            new_tool_signatures.push(sig);
                         }
-                    }
 
-                    if all_duplicates && tool_iteration_count > 0 {
-                        tracing::warn!(
-                            "All tools in round {} are duplicates of previous rounds (tools: {:?}). Stopping multi-round loop.",
-                            tool_iteration_count + 1,
-                            tool_call_results.iter().map(|(n, _)| n).collect::<Vec<_>>()
-                        );
-                        // Fall through to final response instead of looping
-                    } else {
-                        // Track tool signatures for future duplicate detection
-                        executed_tool_signatures.extend(new_tool_signatures);
+                        // Check if this round is identical to the PREVIOUS round (consecutive duplicate)
+                        let is_consecutive_dup = !prev_round_signatures.is_empty()
+                            && new_tool_signatures.len() == prev_round_signatures.len()
+                            && new_tool_signatures.iter().all(|sig| {
+                                prev_round_signatures.iter().any(|prev| {
+                                    prev.len() == sig.len()
+                                        && prev.iter().zip(sig.iter()).all(|(a, b)| a == b)
+                                })
+                            });
 
+                        if is_consecutive_dup {
+                            consecutive_duplicate_rounds += 1;
+                            tracing::warn!(
+                                "Consecutive duplicate round detected (count={}/2). Tools: {:?}",
+                                consecutive_duplicate_rounds,
+                                tool_call_results.iter().map(|(n, _)| n).collect::<Vec<_>>()
+                            );
+                        } else {
+                            consecutive_duplicate_rounds = 0;
+                        }
+
+                        prev_round_signatures = new_tool_signatures;
+
+                        // Stop after 2 consecutive identical rounds — the LLM is stuck
+                        if consecutive_duplicate_rounds >= 2 {
+                            tracing::warn!(
+                                "LLM stuck in loop (2+ consecutive duplicate rounds). Stopping multi-round loop."
+                            );
+                            // Fall through to final response
+                        } else {
+                    // === Continue the loop (save state + loop back) ===
                         // === CRITICAL: Save assistant message with tool_calls BEFORE tool results ===
                         // Without this, tool_calls are lost when switching sessions because
                         // the assistant message is never persisted in the multi-round path.
@@ -2407,10 +2863,11 @@ pub async fn process_stream_events_with_safeguards(
 
                         // Continue the loop to make another LLM call with tools
                         continue 'multi_round_loop;
-                    }
-                }
+                        } // end else (not consecutive duplicate)
+                    } // end duplicate detection block
+                } // end if is_complex_intent
 
-                // === SIMPLE INTENT OR MAX ITERATIONS REACHED: Final response ===
+                // === MAX ITERATIONS REACHED, CONSECUTIVE DUPLICATES, or NON-COMPLEX INTENT: Final response ===
                 // Save the initial message with thinking and tool calls
                 let response_to_save = if content_before_tools.is_empty() {
                     // No content before tools - use empty string, don't show meaningless fallback
@@ -2518,12 +2975,39 @@ pub async fn process_stream_events_with_safeguards(
                 // For complex queries that need LLM analysis/summarization
                 tracing::info!("Phase 2: Generating follow-up response (complex query)");
 
-                // Build Phase 2 prompt with tool results explicitly included so the second LLM
-                // always receives them (history alone can be dropped or mishandled by backends).
-                let phase2_prompt = build_phase2_prompt_with_tool_results(
-                    original_user_question.clone(),
-                    &tool_call_results,
+                // Deduplicate accumulated tool results across all rounds.
+                // Keep the latest result for each (tool_name, key_params) combination.
+                let deduped_results = deduplicate_tool_results(&all_round_tool_results);
+                tracing::info!(
+                    "Phase 2: {} accumulated results → {} deduplicated",
+                    all_round_tool_results.len(),
+                    deduped_results.len()
                 );
+
+                // Build Phase 2 prompt with ALL accumulated tool results so the LLM
+                // can produce a comprehensive summary even after multiple rounds.
+                // Use the summary prompt builder for multi-round scenarios to ensure
+                // the LLM summarizes everything, not just the last round.
+                let phase2_prompt = if tool_iteration_count > 0 || all_round_tool_results.len() > tool_call_results.len() {
+                    let end_reason = if consecutive_duplicate_rounds >= 2 {
+                        "loop detected"
+                    } else if tool_iteration_count >= MAX_TOOL_ITERATIONS - 1 {
+                        "iteration limit reached"
+                    } else {
+                        "completed"
+                    };
+                    build_phase2_summary_prompt(
+                        original_user_question.clone(),
+                        &deduped_results,
+                        tool_iteration_count + 1,
+                        end_reason,
+                    )
+                } else {
+                    build_phase2_prompt_with_tool_results(
+                        original_user_question.clone(),
+                        &deduped_results,
+                    )
+                };
                 tracing::info!("Phase 2 prompt length: {} chars (with tool results)", phase2_prompt.len());
 
                 let followup_stream_result = llm_interface.chat_stream_no_tools_no_thinking_with_history(
@@ -2534,7 +3018,7 @@ pub async fn process_stream_events_with_safeguards(
                     Ok(stream) => stream,
                     Err(e) => {
                         tracing::error!("Phase 2 LLM call failed: {}", e);
-                        let fallback_text = format_tool_results(&tool_call_results);
+                        let fallback_text = format_tool_results(&deduped_results);
                         for chunk in fallback_text.chars().collect::<Vec<_>>().chunks(20) {
                             let chunk_str: String = chunk.iter().collect();
                             if !chunk_str.is_empty() {
@@ -2591,16 +3075,60 @@ pub async fn process_stream_events_with_safeguards(
                 tracing::info!("Phase 2 stream consumed: {} chunks, {} chars total", chunk_count, final_response_content.len());
 
                 // Check for empty response OR hallucination detection
-                let hallucination_detected = detect_hallucination(&final_response_content, &tool_call_results);
+                let hallucination_detected = detect_hallucination(&final_response_content, &deduped_results);
                 tracing::info!("Phase 2 fallback check: empty={}, hallucination={}, tools={}",
                     final_response_content.is_empty(), hallucination_detected, tool_call_results.len());
 
                 if final_response_content.is_empty() || hallucination_detected {
                     // Use rich formatter instead of simple fallback
-                    let fallback = format_tool_results(&tool_call_results);
+                    let fallback = format_tool_results(&deduped_results);
                     tracing::info!("Phase 2: Yielding fallback content: {} chars", fallback.len());
                     yield AgentEvent::content(fallback.clone());
                     final_response_content = fallback;
+                }
+
+                // === PHASE 2 TOOL CALL RECOVERY ===
+                // Phase 2 calls LLM without tools (no_tools), but the LLM may still
+                // output tool call JSON as text because the system prompt teaches this format.
+                // Detect and extract these embedded tool calls so they get executed
+                // instead of being shown as raw JSON to the user.
+                if let Ok((cleaned_text, embedded_tool_calls)) = parse_tool_calls(&final_response_content) {
+                    if !embedded_tool_calls.is_empty() && tool_iteration_count < MAX_TOOL_ITERATIONS - 1 {
+                        tracing::info!(
+                            "Phase 2: Recovered {} embedded tool calls from follow-up response, continuing execution",
+                            embedded_tool_calls.len()
+                        );
+
+                        // Replace final_response_content with cleaned text (JSON removed)
+                        final_response_content = cleaned_text;
+
+                        // IMPORTANT: Save the current state before continuing
+                        {
+                            let mut state = internal_state.write().await;
+                            state.register_response(&final_response_content);
+                            if let Some(last_msg) = state.memory.last_mut() {
+                                if last_msg.role == "assistant" && last_msg.tool_calls.is_some() {
+                                    last_msg.content = final_response_content.clone();
+                                } else {
+                                    let final_msg = AgentMessage::assistant(&final_response_content);
+                                    state.push_message(final_msg);
+                                }
+                            } else {
+                                let final_msg = AgentMessage::assistant(&final_response_content);
+                                state.push_message(final_msg);
+                            }
+                        }
+
+                        // Set up for next round with the recovered tool calls
+                        tool_calls = embedded_tool_calls;
+                        tool_calls_detected = true;
+                        tool_iteration_count += 1;
+                        content_before_tools.clear();
+                        thinking_content.clear();
+
+                        yield AgentEvent::IntermediateEnd;
+                        continue 'multi_round_loop;
+                    }
                 }
 
                 // IMPORTANT: Update the initial message with the follow-up content
@@ -2769,6 +3297,11 @@ pub async fn process_multimodal_stream_events_with_safeguards(
     // Check if images are present (before moving images)
     let has_images = !images.is_empty();
 
+    // Extract base64 data for caching before images are consumed
+    let image_base64_list: Vec<String> = images.iter()
+        .filter_map(|data_url| data_url.split(',').nth(1).map(|s| s.to_string()))
+        .collect();
+
     // Store user message in history with images
     // Convert the image strings to AgentMessageImage
     let user_images: Vec<AgentMessageImage> = images
@@ -2795,6 +3328,15 @@ pub async fn process_multimodal_stream_events_with_safeguards(
 
     let user_msg = AgentMessage::user_with_images(&user_message, user_images);
     internal_state.write().await.push_message(user_msg);
+
+    // Cache user-uploaded images so tools can reference them via $cached:user_image
+    if !image_base64_list.is_empty() {
+        let mut state = internal_state.write().await;
+        for (i, base64_data) in image_base64_list.iter().enumerate() {
+            let cache_key = if i == 0 { "user_image".to_string() } else { format!("user_image_{}", i) };
+            state.large_data_cache.store(&cache_key, base64_data);
+        }
+    }
 
     Ok(Box::pin(async_stream::stream! {
         let mut stream = stream;
@@ -2908,14 +3450,24 @@ pub async fn process_multimodal_stream_events_with_safeguards(
             tracing::info!("Tool calls detected in multimodal response, executing {} tools", tool_calls.len());
 
             let tool_calls_to_execute = tool_calls.clone();
+
+            // Resolve cached data references in tool arguments
+            let large_cache = {
+                let state = internal_state.read().await;
+                state.large_data_cache.clone()
+            };
+
             let cache = Arc::new(RwLock::new(ToolResultCache::new(Duration::from_secs(300))));
 
-            // Execute all tool calls in parallel
-            let tool_futures: Vec<_> = tool_calls_to_execute.iter().map(|tool_call| {
+            // Execute tool calls with bounded concurrency (max 6 parallel)
+            let tool_inputs: Vec<(String, serde_json::Value)> = tool_calls_to_execute
+                .iter()
+                .map(|tc| (tc.name.clone(), resolve_cached_arguments(&tc.arguments, &large_cache)))
+                .collect();
+
+            let tool_futures = futures::stream::iter(tool_inputs.into_iter().map(|(name, arguments)| {
                 let tools_clone = tools.clone();
                 let cache_clone = cache.clone();
-                let name = tool_call.name.clone();
-                let arguments = tool_call.arguments.clone();
 
                 async move {
                     (name.clone(), ToolExecutionResult {
@@ -2924,9 +3476,9 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                         result: execute_tool_with_retry(&tools_clone, &cache_clone, &name, arguments.clone()).await,
                     })
                 }
-            }).collect();
+            })).buffer_unordered(6);
 
-            let tool_results_executed = futures::future::join_all(tool_futures).await;
+            let tool_results_executed: Vec<_> = tool_futures.collect().await;
 
             // Process results
             let mut tool_calls_with_results: Vec<ToolCall> = Vec::new();
@@ -3265,6 +3817,71 @@ fn is_complex_multi_step_intent_fallback(message: &str) -> bool {
     }
 
     false
+}
+
+/// Argument names that typically hold image/base64 data.
+const IMAGE_ARG_NAMES: &[&str] = &["image", "image_base64", "base64_data", "image_data", "img"];
+
+/// Resolve `$cached:tool_name` references in tool arguments by replacing them
+/// with the full cached data. Also **auto-injects** cached image data for any
+/// image-related argument — the LLM cannot reliably pass binary image data, so
+/// whenever cached image data exists it takes precedence over the LLM's value.
+///
+/// Only HTTP(S) URLs are passed through (they may point to a real image resource).
+fn resolve_cached_arguments(arguments: &serde_json::Value, cache: &LargeDataCache) -> serde_json::Value {
+    match arguments {
+        // Explicit $cached: reference → resolve
+        serde_json::Value::String(s) if s.starts_with("$cached:") => {
+            if let Some(resolved) = cache.resolve_reference(s) {
+                tracing::info!(
+                    reference = %s,
+                    resolved_bytes = resolved.len(),
+                    "Resolved cached data reference in tool arguments"
+                );
+                serde_json::Value::String(resolved)
+            } else {
+                tracing::warn!(reference = %s, "Cached data reference not found, using as-is");
+                arguments.clone()
+            }
+        }
+        serde_json::Value::Object(map) => {
+            let resolved: serde_json::Map<String, serde_json::Value> = map
+                .iter()
+                .map(|(k, v)| {
+                    let resolved_val = resolve_cached_arguments(v, cache);
+                    // Auto-injection for image arguments:
+                    // The LLM cannot reliably pass binary image data — it will copy
+                    // truncated previews, output MIME types, or invent values.
+                    // If we have cached image data, always prefer it over the LLM's value.
+                    if IMAGE_ARG_NAMES.contains(&k.as_str()) {
+                        if let serde_json::Value::String(ref s) = resolved_val {
+                            // Pass through valid HTTP(S) URLs — those are legitimate references
+                            if !s.starts_with("http://") && !s.starts_with("https://") {
+                                if let Some((image_data, source)) = cache.get_latest_image() {
+                                    tracing::info!(
+                                        arg_name = %k,
+                                        original_preview = %&s[..s.len().min(80)],
+                                        source = %source,
+                                        injected_bytes = image_data.len(),
+                                        "Auto-injected cached image data (LLM cannot pass binary data)"
+                                    );
+                                    return (k.clone(), serde_json::Value::String(image_data));
+                                }
+                            }
+                        }
+                    }
+                    (k.clone(), resolved_val)
+                })
+                .collect();
+            serde_json::Value::Object(resolved)
+        }
+        serde_json::Value::Array(arr) => {
+            serde_json::Value::Array(
+                arr.iter().map(|v| resolve_cached_arguments(v, cache)).collect(),
+            )
+        }
+        other => other.clone(),
+    }
 }
 
 /// Execute a tool with retry logic for transient errors and caching.

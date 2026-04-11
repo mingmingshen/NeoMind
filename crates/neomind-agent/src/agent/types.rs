@@ -752,6 +752,13 @@ impl LargeDataCache {
                 "[Image data, {}. Use \"{}\" to reference this data in subsequent tool calls. Structure: {}]",
                 human_size, cached_ref, structure_preview
             )
+        } else if content_type == "application/json" {
+            // JSON data: show structure without leaking raw content
+            let structure_preview = Self::describe_structure(result);
+            format!(
+                "[Data: {}, {}. Use \"{}\" to reference. Structure: {}]",
+                content_type, human_size, cached_ref, structure_preview
+            )
         } else {
             let preview: String = result.chars().take(300).collect();
             format!("[Data: {}, {}. Use \"{}\" to reference. Preview: {}]", content_type, human_size, cached_ref, preview)
@@ -778,6 +785,32 @@ impl LargeDataCache {
         self.entries.iter()
     }
 
+    /// Get the most recently cached image-like data entry.
+    /// Used for auto-injection when the LLM fails to pass valid image arguments.
+    /// Returns the extracted image data (base64) and the cache key.
+    pub fn get_latest_image(&self) -> Option<(String, String)> {
+        // Priority 1: user-uploaded images
+        if let Some(user_img) = self.entries.get("user_image") {
+            return Some((Self::extract_image_data(&user_img.data), "user_image".to_string()));
+        }
+        // Priority 2: most recent image-type cached entry by timestamp
+        let mut best: Option<(&String, &CachedLargeResult)> = None;
+        for (key, entry) in &self.entries {
+            let is_image = entry.content_type.starts_with("image/")
+                || entry.content_type == "application/json+base64";
+            if is_image {
+                let is_better = match best {
+                    None => true,
+                    Some((_, prev)) => entry.cached_at > prev.cached_at,
+                };
+                if is_better {
+                    best = Some((key, entry));
+                }
+            }
+        }
+        best.map(|(key, entry)| (Self::extract_image_data(&entry.data), key.clone()))
+    }
+
     /// Detect content type from content heuristics.
     fn detect_content_type(content: &str) -> String {
         // Check for data URL images (data:image/png;base64,...)
@@ -792,7 +825,11 @@ impl LargeDataCache {
         }
         // Check for JSON with embedded base64 image
         if content.starts_with('{') || content.starts_with('[') {
-            if content.contains("base64,") || content.contains("\"data:image/") {
+            if content.contains("base64,")
+                || content.contains("\"data:image/")
+                || content.contains("\"base64_data\"")
+                || content.contains("\"data_type\":\"image\"")
+            {
                 return "application/json+base64".to_string();
             }
             return "application/json".to_string();
@@ -817,32 +854,64 @@ impl LargeDataCache {
     }
 
     /// Extract image/base64 data from a cached result string.
-    /// Tries common JSON patterns first, falls back to raw data.
+    /// Recursively walks the JSON tree to find base64_data regardless of nesting depth,
+    /// so it works for any tool response structure (device get, query, extensions, etc.).
     fn extract_image_data(data: &str) -> String {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-            // Pattern 1: {"points": [{"base64_data": "..."}]}
-            if let Some(points) = json.get("points").and_then(|p| p.as_array()) {
-                for point in points {
-                    if let Some(b64) = point.get("base64_data").and_then(|v| v.as_str()) {
-                        return b64.to_string();
-                    }
-                }
-            }
-            // Pattern 2: {"base64_data": "..."}
-            if let Some(b64) = json.get("base64_data").and_then(|v| v.as_str()) {
-                return b64.to_string();
-            }
-            // Pattern 3: {"data": "..."} or {"image": "..."} — large string fields
-            for key in &["data", "image", "content"] {
-                if let Some(val) = json.get(*key).and_then(|v| v.as_str()) {
-                    if val.len() > 500 {
-                        return val.to_string();
-                    }
-                }
+            if let Some(found) = Self::find_base64_in_value(&json) {
+                return found;
             }
         }
         // Fallback: return raw data (works for pure base64)
         data.to_string()
+    }
+
+    /// Recursively search a JSON value for base64 image data.
+    /// Priority: base64_data fields > data:image URLs > large string values.
+    fn find_base64_in_value(value: &serde_json::Value) -> Option<String> {
+        match value {
+            serde_json::Value::Object(map) => {
+                // Direct base64_data field (any depth)
+                if let Some(b64) = map.get("base64_data").and_then(|v| v.as_str()) {
+                    return Some(b64.to_string());
+                }
+                // data:image URL (extract base64 portion)
+                for key in &["data", "image", "content", "url"] {
+                    if let Some(s) = map.get(*key).and_then(|v| v.as_str()) {
+                        if let Some(b64) = s.strip_prefix("data:image/") {
+                            if let Some(after_comma) = b64.split(',').nth(1) {
+                                return Some(after_comma.to_string());
+                            }
+                        }
+                        // Large string likely to be raw base64 image.
+                        // Require substantial size (>10KB) and valid base64 alphabet to avoid
+                        // false positives on non-image base64 data (certificates, tokens, etc.).
+                        if s.len() > 10000
+                            && s.len() % 4 <= 1 // base64 length is always 4n, 4n+2, 4n+3
+                            && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+                        {
+                            return Some(s.to_string());
+                        }
+                    }
+                }
+                // Recurse into child values
+                for v in map.values() {
+                    if let Some(found) = Self::find_base64_in_value(v) {
+                        return Some(found);
+                    }
+                }
+                None
+            }
+            serde_json::Value::Array(arr) => {
+                for v in arr {
+                    if let Some(found) = Self::find_base64_in_value(v) {
+                        return Some(found);
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
     }
 
     /// Describe JSON structure without exposing raw base64 content.

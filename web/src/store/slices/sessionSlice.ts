@@ -8,164 +8,12 @@
 import type { StateCreator } from 'zustand'
 import type { Message } from '@/types'
 import { logError } from '@/lib/errors'
-
-/**
- * Merge fragmented assistant messages from backend.
- *
- * The backend may split assistant responses into multiple messages:
- * - First message: thinking + tool_calls (without content)
- * - Second message: content only
- * - Sometimes: multiple content chunks that should be combined
- *
- * This function merges them back into a single message for display.
- * Also filters out internal tool role messages.
- */
-function mergeAssistantMessages(messages: Message[]): Message[] {
-  const result: Message[] = []
-  let i = 0
-
-  while (i < messages.length) {
-    const msg = messages[i]
-
-    // Skip tool role messages (internal LLM context)
-    if (isToolMessage(msg)) {
-      i++
-      continue
-    }
-
-    // If not an assistant message, keep as-is
-    if (msg.role !== 'assistant') {
-      result.push(msg)
-      i++
-      continue
-    }
-
-    // Collect consecutive assistant messages that should be merged
-    // (skipping any tool messages in between)
-    const mergedAssistant: Message = {
-      ...msg,
-      content: msg.content || '',
-    }
-    const contentParts: string[] = []
-    if (msg.content) contentParts.push(msg.content)
-
-    let j = i + 1
-    while (j < messages.length) {
-      const nextMsg = messages[j]
-
-      // Skip tool messages between assistant messages
-      if (isToolMessage(nextMsg)) {
-        j++
-        continue
-      }
-
-      // Stop if not an assistant message
-      if (nextMsg.role !== 'assistant') break
-
-      // Only merge if the messages are related (one has tools/thinking)
-      if (!shouldMergeMessages(mergedAssistant, nextMsg) &&
-          !(nextMsg.tool_calls || nextMsg.thinking) &&
-          !(msg.tool_calls || msg.thinking)) {
-        break
-      }
-
-      // Merge content
-      if (nextMsg.content) contentParts.push(nextMsg.content)
-
-      // Merge thinking (keep first non-empty)
-      if (!mergedAssistant.thinking && nextMsg.thinking) {
-        mergedAssistant.thinking = nextMsg.thinking
-      }
-
-      // Merge tool_calls from all messages (multi-round tool calls)
-      if (nextMsg.tool_calls && nextMsg.tool_calls.length > 0) {
-        if (!mergedAssistant.tool_calls) {
-          mergedAssistant.tool_calls = [...nextMsg.tool_calls]
-        } else {
-          mergedAssistant.tool_calls = [...mergedAssistant.tool_calls, ...nextMsg.tool_calls]
-        }
-      }
-
-      // Merge round_contents
-      if (nextMsg.round_contents) {
-        if (!mergedAssistant.round_contents) {
-          mergedAssistant.round_contents = nextMsg.round_contents
-        } else {
-          mergedAssistant.round_contents = { ...mergedAssistant.round_contents, ...nextMsg.round_contents }
-        }
-      }
-
-      j++
-    }
-
-    // Set merged content, deduplicating
-    mergedAssistant.content = contentParts.reduce(
-      (acc, part) => dedupeContentConcat(acc, part),
-      ''
-    )
-
-    result.push(mergedAssistant)
-    i = j
-  }
-
-  return result
-}
-
-/**
- * Combine two content strings without duplicating when backend sent the same content twice
- * (e.g. thinking+tools+content in first message and content-only in second with same text).
- */
-function dedupeContentConcat(a: string, b: string): string {
-  const x = (a || '').trim()
-  const y = (b || '').trim()
-  if (!y) return a || ''
-  if (!x) return b || ''
-  if (x === y) return a
-  if (x.endsWith(y)) return a
-  if (y.startsWith(x)) return b
-  if (x.includes(y)) return a
-  return (a || '') + (b || '')
-}
-
-/**
- * Check if two assistant messages should be merged.
- *
- * They should be merged if:
- * - First has thinking OR tools
- * - Second has content OR first is missing content (split response)
- * - They are consecutive assistant messages
- *
- * Backend pattern: [thinking+tools] + [content] or [thinking] + [tools+content]
- */
-function shouldMergeMessages(first: Message, second: Message): boolean {
-  const firstHasThinking = !!first.thinking && first.thinking.length > 0
-  const firstHasTools = !!first.tool_calls && first.tool_calls.length > 0
-  const firstHasContent = !!first.content && first.content.length > 0
-
-  const secondHasThinking = !!second.thinking && second.thinking.length > 0
-  const secondHasTools = !!second.tool_calls && second.tool_calls.length > 0
-  const secondHasContent = !!second.content && second.content.length > 0
-
-  // Always merge consecutive assistant messages where first has thinking or tools
-  // This handles the backend pattern of splitting responses
-  if (firstHasThinking || firstHasTools) {
-    // Merge if second has content, OR if first is missing content (split response)
-    return !firstHasContent || secondHasContent
-  }
-
-  // Also merge if second has thinking or tools and first only has content
-  if ((secondHasThinking || secondHasTools) && firstHasContent) {
-    return true
-  }
-
-  return false
-}
+import { mergeMessagesForDisplay as mergeAssistantMessages } from '@/lib/messageUtils'
 
 import type { SessionState } from '../types'
 import type { ChatSession } from '@/types'
 import { api } from '@/lib/api'
 import { normalizeSessions, normalizeSessionsResponse } from '@/lib/api/transforms'
-import { isToolMessage } from '@/types'
 
 export interface SessionSlice extends SessionState {
   // Actions
@@ -177,6 +25,7 @@ export interface SessionSlice extends SessionState {
   deleteSession: (sessionId: string) => Promise<void>
   clearAllSessions: () => Promise<void>
   updateSessionTitle: (sessionId: string, title: string) => Promise<void>
+  toggleMemory: (sessionId: string, enabled: boolean) => Promise<void>
   loadSessions: () => Promise<void>
   loadMoreSessions: () => Promise<void>
   fetchSessionHistory: (sessionId: string) => Promise<void>
@@ -481,6 +330,19 @@ export const createSessionSlice: StateCreator<
     } catch (error) {
       logError(error, { operation: 'Update session title' })
       throw error
+    }
+  },
+
+  toggleMemory: async (sessionId: string, enabled: boolean) => {
+    try {
+      await api.toggleMemory(sessionId, enabled)
+      set((state) => ({
+        sessions: state.sessions.map(s =>
+          s.sessionId === sessionId ? { ...s, memoryEnabled: enabled } : s
+        ),
+      }))
+    } catch (error) {
+      logError(error, { operation: 'Toggle memory' })
     }
   },
 

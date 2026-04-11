@@ -202,6 +202,9 @@ pub struct SessionInfo {
     pub title: Option<String>,
     /// Preview of the first user message
     pub preview: Option<String>,
+    /// Whether memory injection is enabled
+    #[serde(rename = "memoryEnabled", default)]
+    pub memory_enabled: bool,
 }
 
 /// Session manager for managing multiple agent sessions with persistence.
@@ -793,9 +796,9 @@ impl SessionManager {
         }
 
         // Save the metadata
-        let metadata = neomind_storage::SessionMetadata {
-            title: title.filter(|t| !t.trim().is_empty()), // Filter out empty titles
-        };
+        let mut metadata = self.store.get_session_metadata(session_id)
+            .unwrap_or_default();
+        metadata.title = title.filter(|t| !t.trim().is_empty()); // Filter out empty titles
 
         self.store
             .save_session_metadata(session_id, &metadata)
@@ -804,6 +807,34 @@ impl SessionManager {
             })?;
 
         Ok(())
+    }
+
+    /// Toggle memory enabled state for a session.
+    pub async fn toggle_memory(&self, session_id: &str, enabled: bool) -> Result<bool> {
+        // Check if session exists
+        let in_memory = self.sessions.read().await.contains_key(session_id);
+        let in_db = self
+            .store
+            .session_exists(session_id)
+            .map_err(|e| NeoMindError::Storage(format!("Failed to check session: {}", e)))?;
+
+        if !in_memory && !in_db {
+            return Err(NeoMindError::NotFound(format!("Session: {}", session_id)));
+        }
+
+        self.store
+            .toggle_memory(session_id, enabled)
+            .map_err(|e| NeoMindError::Storage(format!("Failed to toggle memory: {}", e)))?;
+
+        Ok(enabled)
+    }
+
+    /// Get whether memory is enabled for a session.
+    pub async fn is_memory_enabled(&self, session_id: &str) -> bool {
+        self.store
+            .get_session_metadata(session_id)
+            .map(|m| m.memory_enabled)
+            .unwrap_or(false)
     }
 
     /// Get session title.
@@ -865,13 +896,12 @@ impl SessionManager {
                 })
             });
 
-            // Get title from metadata
-            let title = self
+            // Get title and memory_enabled from metadata
+            let metadata = self
                 .store
                 .get_session_metadata(&session_id)
-                .ok()
-                .and_then(|meta| meta.title)
-                .filter(|t| !t.is_empty());
+                .unwrap_or_default();
+            let title = metadata.title.filter(|t| !t.is_empty());
 
             infos.push(SessionInfo {
                 session_id: session_id.clone(),
@@ -879,6 +909,7 @@ impl SessionManager {
                 message_count,
                 title,
                 preview,
+                memory_enabled: metadata.memory_enabled,
             });
         }
 
@@ -917,13 +948,12 @@ impl SessionManager {
             let timestamp_ms =
                 timestamp_seconds.unwrap_or_else(|| chrono::Utc::now().timestamp()) * 1000;
 
-            // Get title from metadata
-            let title = self
+            // Get title and memory_enabled from metadata
+            let metadata = self
                 .store
                 .get_session_metadata(&session_id)
-                .ok()
-                .and_then(|meta| meta.title)
-                .filter(|t| !t.is_empty());
+                .unwrap_or_default();
+            let title = metadata.title.filter(|t| !t.is_empty());
 
             infos.push(SessionInfo {
                 session_id: session_id.clone(),
@@ -931,6 +961,7 @@ impl SessionManager {
                 message_count: 0, // Not loaded in light version
                 title,
                 preview: None, // Not loaded in light version
+                memory_enabled: metadata.memory_enabled,
             });
         }
 
@@ -1017,6 +1048,20 @@ impl SessionManager {
         message: &str,
     ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
         let agent = self.get_session(session_id).await?;
+
+        // Load memory snapshot if enabled and not yet loaded
+        if self.is_memory_enabled(session_id).await && !agent.has_memory_snapshot().await {
+            let memory_store = neomind_storage::MarkdownMemoryStore::new("data/memory");
+            let snapshot = crate::memory::MemorySnapshot::load(&memory_store);
+            if !snapshot.is_empty() {
+                tracing::info!(
+                    session_id = %session_id,
+                    "Loaded memory snapshot for session"
+                );
+                agent.set_memory_snapshot(snapshot).await;
+            }
+        }
+
         agent.process_stream_events(message).await
     }
 

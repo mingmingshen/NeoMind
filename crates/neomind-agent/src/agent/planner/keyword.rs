@@ -136,11 +136,11 @@ impl KeywordPlanner {
     fn plan_alert(&self) -> Option<ExecutionPlan> {
         let step = PlanStep {
             id: 0,
-            tool_name: "alert".to_string(),
+            tool_name: "message".to_string(),
             action: "list".to_string(),
             params: serde_json::json!({}),
             depends_on: vec![],
-            description: "列出告警信息".to_string(),
+            description: "列出消息通知".to_string(),
         };
 
         Some(ExecutionPlan {
@@ -280,7 +280,7 @@ mod tests {
         let plan = planner.plan_sync(&intent, "查看告警").unwrap();
         assert_eq!(plan.mode, PlanningMode::Keyword);
         assert_eq!(plan.steps.len(), 1);
-        assert_eq!(plan.steps[0].tool_name, "alert");
+        assert_eq!(plan.steps[0].tool_name, "message");
         assert_eq!(plan.steps[0].action, "list");
     }
 

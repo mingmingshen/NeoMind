@@ -19,6 +19,7 @@ import {
   Zap,
   Bell,
   ChevronUp,
+  Wrench,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
@@ -197,47 +198,62 @@ export function AgentExecutionTimeline({
                               </div>
                             ) : detail ? (
                               <>
-                                {/* Situation Analysis */}
-                                {detail.decision_process?.situation_analysis && (
-                                  <TimelineSection
-                                    icon={<Brain className="h-4 w-4 text-purple-500" />}
-                                    title={t('agents:memory.situationAnalysis')}
-                                  >
-                                    <p className="text-sm">{detail.decision_process.situation_analysis}</p>
-                                  </TimelineSection>
-                                  )}
+                                {/* ① Conclusion — merged situation_analysis + conclusion + confidence */}
+                                {(() => {
+                                  const dp = detail.decision_process
+                                  const hasAnalysis = !!dp?.situation_analysis
+                                  const hasConclusion = !!dp?.conclusion
+                                  const hasConfidence = dp?.confidence !== undefined
+                                  if (!hasAnalysis && !hasConclusion && !hasConfidence) return null
+                                  return (
+                                    <TimelineSection
+                                      icon={<Brain className="h-4 w-4 text-purple-500" />}
+                                      title={t('agents:memory.conclusion')}
+                                    >
+                                      <div className="space-y-2">
+                                        {hasAnalysis && (
+                                          <div>
+                                            <div className="text-xs text-muted-foreground font-medium mb-1">{t('agents:memory.situationAnalysis')}</div>
+                                            <p className="text-sm">{dp!.situation_analysis}</p>
+                                          </div>
+                                        )}
+                                        {hasConclusion && (
+                                          <div>
+                                            <div className="text-xs text-muted-foreground font-medium mb-1">{t('agents:memory.conclusion')}</div>
+                                            <p className="text-sm">{dp!.conclusion}</p>
+                                          </div>
+                                        )}
+                                        {hasConfidence && (
+                                          <div className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded-lg">
+                                            <span className="text-muted-foreground">{t('agents:memory.confidence')}</span>
+                                            <Badge variant={dp!.confidence! > 0.7 ? "default" : "secondary"}>
+                                              {(dp!.confidence! * 100).toFixed(0)}%
+                                            </Badge>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </TimelineSection>
+                                  )
+                                })()}
 
-                                {/* Data Collected */}
-                                {detail.decision_process?.data_collected && detail.decision_process.data_collected.length > 0 && (
-                                  <TimelineSection
-                                    icon={<Database className="h-4 w-4 text-blue-500" />}
-                                    title={t('agents:memory.dataCollected')}
-                                    subtitle={`${detail.decision_process.data_collected.filter(d => d.data_type !== 'device_info').length} ${t('agents:memory.sources')}`}
-                                  >
-                                    <div className="grid grid-cols-1 gap-2">
-                                      {detail.decision_process.data_collected
-                                        .filter(data => data.data_type !== 'device_info')
-                                        .map((data, idx) => (
-                                        <DataCollectedItem key={idx} data={data} />
-                                      ))}
-                                    </div>
-                                  </TimelineSection>
-                                )}
-
-                                {/* Reasoning Steps */}
+                                {/* ② Execution Process — reasoning_steps with tool_call cards */}
                                 {detail.decision_process?.reasoning_steps && detail.decision_process.reasoning_steps.length > 0 && (
                                   <TimelineSection
                                     icon={<ChevronRight className="h-4 w-4 text-orange-500" />}
-                                    title={t('agents:memory.reasoningSteps')}
+                                    title={t('agents:memory.executionProcess')}
                                   >
                                     <div className="space-y-2">
                                       {detail.decision_process.reasoning_steps.map((step, idx, steps) => {
-                                        // Detect round boundaries: a thought after a tool_call/error starts a new round
+                                        // Detect round boundaries
                                         const prevStep = idx > 0 ? steps[idx - 1] : null;
                                         const isNewRound = step.step_type === 'thought' &&
                                           (prevStep?.step_type === 'tool_call' || prevStep?.step_type === 'error' || idx === 0);
-                                        // Count round number by counting thoughts up to this point
                                         const roundNumber = steps.slice(0, idx + 1).filter(s => s.step_type === 'thought').length;
+
+                                        // Use ToolCallStep for non-thought types (tool_call, error, data_collection, etc.)
+                                        if (step.step_type !== 'thought') {
+                                          return <ToolCallStep key={idx} step={step} />;
+                                        }
                                         return (
                                           <ReasoningStepItem
                                             key={idx}
@@ -249,40 +265,6 @@ export function AgentExecutionTimeline({
                                       })}
                                     </div>
                                   </TimelineSection>
-                                )}
-
-                                {/* Decisions */}
-                                {detail.decision_process?.decisions && detail.decision_process.decisions.length > 0 && (
-                                  <TimelineSection
-                                    icon={<Play className="h-4 w-4 text-green-500" />}
-                                    title={t('agents:memory.decisions')}
-                                  >
-                                    <div className="grid grid-cols-1 gap-2">
-                                      {detail.decision_process.decisions.map((decision, idx) => (
-                                        <DecisionItem key={idx} decision={decision} />
-                                      ))}
-                                    </div>
-                                  </TimelineSection>
-                                )}
-
-                                {/* Confidence */}
-                                {detail.decision_process?.confidence !== undefined && (
-                                  <div className="flex items-center justify-between text-sm p-3 bg-muted/50 rounded-lg">
-                                    <span className="text-muted-foreground">{t('agents:memory.confidence')}</span>
-                                    <Badge variant={detail.decision_process.confidence > 0.7 ? "default" : "secondary"}>
-                                      {(detail.decision_process.confidence * 100).toFixed(0)}%
-                                    </Badge>
-                                  </div>
-                                )}
-
-                                {/* Conclusion */}
-                                {detail.decision_process?.conclusion && (
-                                  <Card className="p-3 bg-muted/50">
-                                    <div className="text-sm">
-                                      <span className="font-medium">{t('agents:memory.conclusion')}:</span>
-                                      <span className="ml-2">{detail.decision_process.conclusion}</span>
-                                    </div>
-                                  </Card>
                                 )}
 
                                 {/* Report */}
@@ -299,57 +281,61 @@ export function AgentExecutionTimeline({
                                   </TimelineSection>
                                 )}
 
-                                {/* Actions Executed */}
-                                {detail.result?.actions_executed && detail.result.actions_executed.length > 0 && (
-                                  <TimelineSection
-                                    icon={<Zap className="h-4 w-4 text-yellow-500" />}
-                                    title={t('agents:memory.actionsExecuted')}
-                                  >
-                                    <div className="space-y-2">
-                                      {detail.result.actions_executed.map((action, idx) => (
-                                        <Card key={idx} className="p-3 min-w-0">
-                                          <div className="flex items-start justify-between gap-3 mb-2">
-                                            <div className="text-sm flex-1 min-w-0">
-                                              <div className="font-medium truncate" title={action.description}>
-                                                {action.description}
+                                {/* ③ Execution Actions — filtered, only device/extension commands */}
+                                {(() => {
+                                  const realActions = detail.result?.actions_executed?.filter(
+                                    (a: { action_type: string }) => a.action_type !== 'tool_call'
+                                  ) ?? []
+                                  if (realActions.length === 0) return null
+                                  return (
+                                    <TimelineSection
+                                      icon={<Zap className="h-4 w-4 text-yellow-500" />}
+                                      title={t('agents:memory.actionsExecuted')}
+                                    >
+                                      <div className="space-y-2">
+                                        {realActions.map((action: any, idx: number) => (
+                                          <Card key={idx} className="p-3 min-w-0">
+                                            <div className="flex items-start justify-between gap-3 mb-2">
+                                              <div className="text-sm flex-1 min-w-0">
+                                                <div className="font-medium truncate" title={action.description}>
+                                                  {action.description}
+                                                </div>
+                                                <div className="text-xs text-muted-foreground truncate" title={action.target}>
+                                                  {action.target}
+                                                </div>
                                               </div>
-                                              <div className="text-xs text-muted-foreground truncate" title={action.target}>
-                                                {action.target}
-                                              </div>
+                                              <Badge variant={action.success ? "default" : "destructive"} className="shrink-0">
+                                                {action.success ? t('common:success') : t('common:failed')}
+                                              </Badge>
                                             </div>
-                                            <Badge variant={action.success ? "default" : "destructive"} className="shrink-0">
-                                              {action.success ? t('common:success') : t('common:failed')}
-                                            </Badge>
-                                          </div>
-                                          {/* Parameters */}
-                                          {action.parameters && Object.keys(action.parameters).length > 0 && (
-                                            <div className="mt-2 pt-2 border-t">
-                                              <div className="text-xs text-muted-foreground mb-1">
-                                                {t('agents:memory.parameters')}:
+                                            {action.parameters && Object.keys(action.parameters).length > 0 && (
+                                              <div className="mt-2 pt-2 border-t">
+                                                <div className="text-xs text-muted-foreground mb-1">
+                                                  {t('agents:memory.parameters')}:
+                                                </div>
+                                                <pre className="text-xs bg-muted p-2 rounded overflow-x-auto max-h-20 w-full break-all">
+                                                  {JSON.stringify(action.parameters, null, 2)}
+                                                </pre>
                                               </div>
-                                              <pre className="text-xs bg-muted p-2 rounded overflow-x-auto max-h-20 w-full break-all">
-                                                {JSON.stringify(action.parameters, null, 2)}
-                                              </pre>
-                                            </div>
-                                          )}
-                                          {/* Result */}
-                                          {action.result && (
-                                            <div className="mt-2 pt-2 border-t">
-                                              <div className="text-xs text-muted-foreground mb-1">
-                                                {t('agents:memory.result')}:
+                                            )}
+                                            {action.result && (
+                                              <div className="mt-2 pt-2 border-t">
+                                                <div className="text-xs text-muted-foreground mb-1">
+                                                  {t('agents:memory.result')}:
+                                                </div>
+                                                <div className="text-xs bg-muted p-2 rounded max-h-20 overflow-auto break-words">
+                                                  {action.result}
+                                                </div>
                                               </div>
-                                              <div className="text-xs bg-muted p-2 rounded max-h-20 overflow-auto break-words">
-                                                {action.result}
-                                              </div>
-                                            </div>
-                                          )}
-                                        </Card>
-                                      ))}
-                                    </div>
-                                  </TimelineSection>
-                                )}
+                                            )}
+                                          </Card>
+                                        ))}
+                                      </div>
+                                    </TimelineSection>
+                                  )
+                                })()}
 
-                                {/* Notifications Sent */}
+                                {/* ④ Notifications */}
                                 {detail.result?.notifications_sent && detail.result.notifications_sent.length > 0 && (
                                   <TimelineSection
                                     icon={<Bell className="h-4 w-4 text-blue-500" />}
@@ -621,5 +607,66 @@ function DecisionItem({ decision }: { decision: Decision }) {
         <Badge variant="secondary" className="h-5 truncate max-w-[150px]">{decision.action}</Badge>
       </div>
     </Card>
+  )
+}
+
+// --- ToolCallStep: collapsible card for tool_call / error reasoning steps ---
+
+function extractToolName(desc: string): string {
+  const match = desc.match(/tool ['"]([^'"]+)['"]/i)
+  return match ? match[1] : desc.slice(0, 60)
+}
+
+function formatJsonStr(str: string): string {
+  try { return JSON.stringify(JSON.parse(str), null, 2) } catch { return str }
+}
+
+function JsonBlock({ label, content }: { label: string; content: string }) {
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground font-medium mb-0.5">{label}</div>
+      <pre className="text-xs bg-muted p-2 rounded overflow-x-auto max-h-40 whitespace-pre-wrap break-all font-mono">
+        {content}
+      </pre>
+    </div>
+  )
+}
+
+function ToolCallStep({ step }: { step: ReasoningStep }) {
+  const { t } = useTranslation(['agents'])
+  const [expanded, setExpanded] = useState(false)
+  const isSuccess = step.step_type === 'tool_call'
+  const toolName = extractToolName(step.description)
+
+  return (
+    <div className="rounded-lg border bg-muted/20 overflow-hidden my-2">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/30"
+      >
+        {isSuccess ? (
+          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+        ) : (
+          <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+        )}
+        <Wrench className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className="font-mono text-sm truncate">{toolName}</span>
+        <span className={cn(
+          "text-[10px] px-1.5 py-0.5 rounded shrink-0",
+          isSuccess ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-red-500"
+        )}>
+          {isSuccess ? t('agents:memory.success') : t('agents:memory.failed')}
+        </span>
+        <div className="flex-1" />
+        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", expanded && "rotate-180")} />
+      </button>
+      {expanded && (
+        <div className="border-t px-3 py-2 space-y-2">
+          {step.input && <JsonBlock label={t('agents:memory.toolInput')} content={formatJsonStr(step.input)} />}
+          {step.output && <JsonBlock label={t('agents:memory.toolOutput')} content={step.output} />}
+        </div>
+      )}
+    </div>
   )
 }

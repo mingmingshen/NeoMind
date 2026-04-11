@@ -38,8 +38,8 @@ pub(crate) fn extract_semantic_patterns(
 
         // Default confidence: higher for alerts and commands
         let confidence = match decision.decision_type.as_str() {
-            "alert" | "command" => 0.8,
-            _ => 0.6,
+            "alert" | "command" => 0.9,
+            _ => 0.8,
         };
 
         // Optimize ID allocation with pre-allocated capacity
@@ -155,52 +155,67 @@ impl AgentExecutor {
 
         // === HIERARCHICAL MEMORY UPDATE ===
 
-        // 1. Update Working Memory with current analysis
+        // 1. Update Working Memory with current analysis (always, for current conversation)
         let cleaned_analysis = clean_and_truncate_text(situation_analysis, 500);
         let cleaned_conclusion = clean_and_truncate_text(conclusion, 200);
         memory.set_working_analysis(cleaned_analysis.clone(), cleaned_conclusion.clone());
 
-        // 2. Prepare decision summaries for Short-Term Memory
-        let decision_summaries: Vec<String> = decisions
+        // 2. Write gating: skip short-term/long-term for routine successful executions
+        let has_alert_or_command = decisions
             .iter()
-            .filter(|d| !d.description.is_empty())
-            .map(|d| clean_and_truncate_text(&d.description, 100))
-            .collect();
+            .any(|d| matches!(d.decision_type.as_str(), "alert" | "command"));
+        let has_anomaly = situation_analysis.to_lowercase().contains("异常")
+            || situation_analysis.to_lowercase().contains("abnormal")
+            || situation_analysis.to_lowercase().contains("anomaly");
+        let is_routine_success = !has_alert_or_command && decisions.is_empty() && success && !has_anomaly;
 
-        // Debug: log what we're about to save
-        tracing::info!(
-            agent_id = %agent.id,
-            execution_id = %execution_id,
-            analysis_len = cleaned_analysis.len(),
-            conclusion_len = cleaned_conclusion.len(),
-            decisions_count = decision_summaries.len(),
-            "About to add to short_term memory"
-        );
+        if !is_routine_success {
+            // Prepare decision summaries for Short-Term Memory
+            let decision_summaries: Vec<String> = decisions
+                .iter()
+                .filter(|d| !d.description.is_empty())
+                .map(|d| clean_and_truncate_text(&d.description, 100))
+                .collect();
 
-        memory.add_to_short_term(
-            execution_id.to_string(),
-            cleaned_analysis,
-            cleaned_conclusion,
-            decision_summaries,
-            success,
-        );
+            tracing::info!(
+                agent_id = %agent.id,
+                execution_id = %execution_id,
+                analysis_len = cleaned_analysis.len(),
+                conclusion_len = cleaned_conclusion.len(),
+                decisions_count = decision_summaries.len(),
+                "About to add to short_term memory"
+            );
 
-        // Debug: log what was added
-        tracing::info!(
-            agent_id = %agent.id,
-            execution_id = %execution_id,
-            short_term_count = memory.short_term.summaries.len(),
-            "Short-term memory updated"
-        );
+            memory.add_to_short_term(
+                execution_id.to_string(),
+                cleaned_analysis,
+                cleaned_conclusion,
+                decision_summaries,
+                success,
+            );
 
-        // 3. Add patterns to Long-Term Memory
-        if !decisions.is_empty() {
-            let semantic_patterns =
-                extract_semantic_patterns(decisions, situation_analysis, data, &memory.baselines);
+            tracing::info!(
+                agent_id = %agent.id,
+                execution_id = %execution_id,
+                short_term_count = memory.short_term.summaries.len(),
+                "Short-term memory updated"
+            );
 
-            for pattern in semantic_patterns {
-                memory.add_pattern(pattern);
+            // 3. Add patterns to Long-Term Memory (only for significant executions)
+            if !decisions.is_empty() {
+                let semantic_patterns =
+                    extract_semantic_patterns(decisions, situation_analysis, data, &memory.baselines);
+
+                for pattern in semantic_patterns {
+                    memory.add_pattern(pattern);
+                }
             }
+        } else {
+            tracing::debug!(
+                agent_id = %agent.id,
+                execution_id = %execution_id,
+                "Skipping short-term/long-term memory: routine success"
+            );
         }
 
         // === TREND AND BASELINE TRACKING ===
@@ -214,7 +229,7 @@ impl AgentExecutor {
 
             if let Some(value) = data_item.values.get("value") {
                 if let Some(num) = value.as_f64() {
-                    // Add to trend data (limit to 1000 points)
+                    // Add to trend data (limit to 200 points - enough for trends)
                     memory.trend_data.push(TrendPoint {
                         timestamp: data_item.timestamp,
                         metric: data_item.source.clone(),
@@ -222,9 +237,9 @@ impl AgentExecutor {
                         context: Some(serde_json::json!(data_item.data_type)),
                     });
 
-                    if memory.trend_data.len() > 1000 {
+                    if memory.trend_data.len() > 200 {
                         memory.trend_data =
-                            memory.trend_data.split_off(memory.trend_data.len() - 1000);
+                            memory.trend_data.split_off(memory.trend_data.len() - 200);
                     }
 
                     // Update baseline using exponential moving average

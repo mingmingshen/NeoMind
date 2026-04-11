@@ -157,26 +157,36 @@ impl AgentExtractor {
 
 ## Categories
 - user_profile: User preferences revealed during execution
-- domain_knowledge: Device states, environment facts discovered
+- domain_knowledge: Device info, protocols, environment facts from DATA (raw readings, static facts)
 - task_patterns: Successful/failed approaches, workflow patterns
-- system_evolution: Agent's own learnings, self-improvement insights
+- system_evolution: Discovered thresholds, behavioral baselines, optimization insights, learned patterns from EXECUTION EXPERIENCE
 
 ## Rules
 1. **ONE fact per entry**, max 120 characters. Never dump paragraphs.
 2. **Check existing** — if similar info exists, use merge:
    "action": {{"merge": {{"targets": ["<keyword from existing>"]}}}}
 3. **Append only truly new info**
-4. **system_evolution is ONLY for agent self-learning** (e.g. "Threshold 30°C works better than 25°C for this room")
+4. **system_evolution for learned insights**: Use when the agent discovered something through its own execution experience:
+   - Effective thresholds (e.g., "25°C threshold too low for false alerts; 28°C is better")
+   - Device behavioral baselines (e.g., "Sensor typically reads 2°C higher than actual")
+   - Optimized strategies (e.g., "Checking twice before alerting reduces false positives")
+   - Pattern observations (e.g., "Temperature always spikes at 14:00 in warehouse")
+   NOT for: raw data readings or static facts (those go to domain_knowledge)
 5. **Importance**: 80-100 = critical, 50-79 = useful, below 50 = minor
 6. **Language**: match the user's detected language
 
 ## Good Examples
 → {{"content":"Living room temp threshold 26°C triggers cooling","category":"task_patterns","importance":75,"action":"append"}}
 → {{"content":"Agent learned MQTT timeout should be 5s not 10s","category":"system_evolution","importance":85,"action":"append"}}
+→ {{"content":"25°C alert threshold causes too many false positives, 28°C is better","category":"system_evolution","importance":90,"action":"append"}}
+→ {{"content":"Warehouse temperature spikes daily at 14:00 due to sunlight","category":"system_evolution","importance":80,"action":"append"}}
+→ {{"content":"Sensor #3 consistently reads 2°C higher than calibrated baseline","category":"system_evolution","importance":75,"action":"append"}}
+→ {{"content":"Double-checking before alerting reduces false positives by 80%","category":"system_evolution","importance":85,"action":"append"}}
 → {{"content":"Living room sensor reads 25-26°C range","category":"domain_knowledge","importance":60,"action":{{"merge":{{"targets":["Living room sensor"]}}}}}}
 
 ## Bad Examples (DO NOT)
 - "The agent checked the temperature sensor, found it was 26°C, compared against threshold of 25°C, and decided to turn on the AC" (TOO LONG)
+- "Sensor reads 25°C" → this is raw data, use domain_knowledge not system_evolution
 "#,
             agent_name,
             user_prompt.unwrap_or("(none)"),

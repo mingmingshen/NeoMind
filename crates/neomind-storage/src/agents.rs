@@ -392,7 +392,7 @@ fn default_long_term_limit() -> usize {
 
 /// Default minimum importance score for long-term retention.
 fn default_min_importance() -> f32 {
-    0.3
+    0.5
 }
 
 /// Normalize agent memory limits for backward compatibility.
@@ -428,6 +428,15 @@ impl Default for AgentMemory {
 }
 
 // ========== Hierarchical Memory Methods ==========
+
+/// Truncate a string to a maximum character count, respecting Unicode.
+fn truncate_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let truncated: String = s.chars().take(max).collect();
+    format!("{}...", truncated)
+}
 
 impl AgentMemory {
     /// Add a memory summary to short-term memory.
@@ -485,7 +494,11 @@ impl AgentMemory {
                         "failed_execution"
                     }
                     .to_string(),
-                    content: format!("{} -> {}", summary.situation, summary.conclusion),
+                    content: format!(
+                        "{} -> {}",
+                        truncate_chars(&summary.situation, 100),
+                        truncate_chars(&summary.conclusion, 100)
+                    ),
                     importance,
                     created_at: summary.timestamp,
                     last_accessed_at: now,

@@ -365,6 +365,19 @@ impl MemoryExtractor {
         let store = self.store.read().await;
 
         for candidate in result.memories {
+            // Security scan - block prompt injection and data exfiltration
+            match crate::memory::MemorySecurityScanner::scan(&candidate.content) {
+                crate::memory::SecurityScanResult::Clean => {}
+                crate::memory::SecurityScanResult::Blocked { reason } => {
+                    tracing::warn!(
+                        content = %&candidate.content[..candidate.content.len().min(100)],
+                        reason = %reason,
+                        "Memory blocked by security scanner"
+                    );
+                    continue;
+                }
+            }
+
             // Filter by minimum importance
             if candidate.importance < self.config.min_importance {
                 tracing::debug!(

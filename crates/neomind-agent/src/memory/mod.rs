@@ -53,10 +53,13 @@ pub mod embeddings;
 pub mod error;
 pub mod extractor;
 pub mod long_term;
+pub mod lifecycle;
 pub mod manager;
 pub mod mid_term;
 pub mod scheduler;
 pub mod short_term;
+pub mod snapshot;
+pub mod security;
 pub mod tiered;
 
 // Re-export commonly used types
@@ -89,6 +92,15 @@ pub use extractor::{
 
 // Memory scheduler export
 pub use scheduler::MemoryScheduler;
+
+// Memory snapshot export
+pub use snapshot::MemorySnapshot;
+
+// Memory security export
+pub use security::{MemorySecurityScanner, SecurityScanResult};
+
+// Memory lifecycle export
+pub use lifecycle::{DefaultMemoryLifecycle, MemoryLifecycle};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

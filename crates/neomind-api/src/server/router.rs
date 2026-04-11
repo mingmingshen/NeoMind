@@ -276,6 +276,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         )
         .route("/api/sessions/:id", put(sessions::update_session_handler))
         .route(
+            "/api/sessions/:id/memory-toggle",
+            put(sessions::toggle_memory_handler),
+        )
+        .route(
             "/api/sessions/:id",
             delete(sessions::delete_session_handler),
         )

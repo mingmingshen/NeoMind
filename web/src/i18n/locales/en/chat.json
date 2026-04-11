@@ -162,6 +162,11 @@
     "llmError": "LLM Service Error",
     "dismiss": "Dismiss"
   },
+  "memory": {
+    "label": "Memory",
+    "enabled": "Memory on",
+    "disabled": "Memory off"
+  },
   "notConfigured": {
     "title": "LLM Not Configured",
     "description": "Please configure LLM backend to use chat feature",

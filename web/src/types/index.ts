@@ -517,6 +517,8 @@ export interface ChatSession {
   title?: string | null
   // Preview text from last message
   preview?: string
+  // Whether memory injection is enabled
+  memoryEnabled?: boolean
 }
 
 export interface SessionListResponse {

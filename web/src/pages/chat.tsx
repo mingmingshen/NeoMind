@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
+import { mergeMessagesForDisplay } from "@/lib/messageUtils"
 
 /** Image gallery component for user messages */
 function MessageImages({ images }: { images: ChatImage[] }) {
@@ -45,70 +46,6 @@ function MessageImages({ images }: { images: ChatImage[] }) {
       ))}
     </div>
   )
-}
-
-/**
- * Merge fragmented assistant messages for display.
- * Same logic as MergedMessageList component.
- */
-function mergeMessagesForDisplay(messages: Message[]): Message[] {
-  const result: Message[] = []
-
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i]
-
-    // Skip tool messages (internal use)
-    if ((msg as any).role === "tool") continue
-
-    // User messages and system messages are kept as-is
-    if (msg.role !== "assistant") {
-      result.push(msg)
-      continue
-    }
-
-    // Assistant messages - check if we should merge with following assistant messages
-    const mergedAssistant: Message = { ...msg }
-    const contentParts: string[] = []
-    if (msg.content) {
-      contentParts.push(msg.content)
-    }
-
-    // Look ahead for consecutive assistant messages to merge
-    let j = i + 1
-    while (j < messages.length && messages[j].role === "assistant") {
-      const nextMsg = messages[j]
-
-      // Collect content
-      if (nextMsg.content) {
-        contentParts.push(nextMsg.content)
-      }
-
-      // Use thinking from first message that has it
-      if (!mergedAssistant.thinking && nextMsg.thinking) {
-        mergedAssistant.thinking = nextMsg.thinking
-      }
-
-      // Use tool_calls from first message that has them
-      if (!mergedAssistant.tool_calls && nextMsg.tool_calls) {
-        mergedAssistant.tool_calls = nextMsg.tool_calls
-      }
-
-      j++
-    }
-
-    // Set merged content
-    mergedAssistant.content = contentParts.join("")
-
-    // Only add if there's something to show
-    if (mergedAssistant.content || mergedAssistant.thinking || mergedAssistant.tool_calls) {
-      result.push(mergedAssistant)
-    }
-
-    // Skip the merged messages
-    i = j - 1
-  }
-
-  return result
 }
 
 // Hook to detect desktop breakpoint (lg: 1024px)
@@ -235,6 +172,7 @@ export function ChatPage() {
     createSession,
     switchSession,
     loadSessions,
+    toggleMemory,
     user,
     isLoadingSession
   } = useStore()
@@ -1187,6 +1125,28 @@ export function ChatPage() {
                   ))}
                 </div>
               )}
+
+              {/* Memory toggle */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-7 px-1.5 sm:px-2 rounded-lg text-xs gap-1",
+                  sessions.find(s => s.sessionId === sessionId)?.memoryEnabled
+                    ? "text-amber-500 hover:text-amber-600"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => {
+                  const current = sessions.find(s => s.sessionId === sessionId)?.memoryEnabled ?? false
+                  if (sessionId) toggleMemory(sessionId, !current)
+                }}
+                title={sessions.find(s => s.sessionId === sessionId)?.memoryEnabled
+                  ? t('chat:memory.enabled', 'Memory on')
+                  : t('chat:memory.disabled', 'Memory off')}
+              >
+                <Brain className="h-3 w-3 shrink-0" />
+                <span className="hidden sm:inline">{t('chat:memory.label', 'Memory')}</span>
+              </Button>
 
               <div className="flex-1" />
             </div>

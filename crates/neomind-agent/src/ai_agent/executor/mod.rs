@@ -609,6 +609,20 @@ impl AgentExecutor {
                     MessageRole::User,
                     Content::text(&format!("Tool '{}' result:\n{}", result.name, result_text)),
                 ));
+
+                // Send thinking event for each tool result
+                let result_preview = match &result.result {
+                    Ok(output) => {
+                        let s = serde_json::to_string(&output.data).unwrap_or_default();
+                        if s.len() > 200 { format!("{}...", &s[..200]) } else { s }
+                    }
+                    Err(e) => format!("Error: {}", e),
+                };
+                self.send_thinking(
+                    &agent.id, execution_id, step_num,
+                    &format!("tool '{}' → {}", result.name, result_preview),
+                ).await;
+                step_num += 1;
             }
         }
 

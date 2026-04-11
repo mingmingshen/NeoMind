@@ -255,10 +255,10 @@ impl SystemHelpTool {
                     "actions": ["list", "get", "create", "update", "control", "memory"]
                 },
                 {
-                    "name": "告警系统",
-                    "description": "监控异常并及时告警",
-                    "tool": "alert",
-                    "actions": ["list", "create", "acknowledge", "data_push"]
+                    "name": "消息通知",
+                    "description": "查看和发送消息通知",
+                    "tool": "message",
+                    "actions": ["list", "send", "read"]
                 }
             ],
             "quick_start_questions": [
@@ -332,15 +332,14 @@ impl SystemHelpTool {
 
     fn get_alerts_help(&self, _detail: Option<&str>) -> Value {
         serde_json::json!({
-            "topic": "alerts",
-            "title": "告警系统功能",
-            "description": "使用 alert 工具管理告警和数据推送",
-            "tool": "alert",
+            "topic": "messages",
+            "title": "消息通知功能",
+            "description": "使用 message 工具管理消息通知",
+            "tool": "message",
             "actions": {
-                "list": "列出告警",
-                "create": "创建告警",
-                "acknowledge": "确认告警",
-                "data_push": "推送结构化数据"
+                "list": "列出消息",
+                "send": "发送消息",
+                "read": "标记已读"
             },
             "examples": [
                 {"query": "最近的告警", "tool_call": {"action": "list"}},

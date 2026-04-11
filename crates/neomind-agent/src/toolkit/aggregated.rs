@@ -16,7 +16,7 @@
 //! 3. `agent_history` - Execution history (executions, conversation)
 //! 4. `rule` - Rule management (list, get, delete, history)
 //! 5. `alert` - Alert management (list, create, acknowledge)
-//! 6. `extension` - Extension management (list, get, execute, status)
+//! 6. `extension` - Extension management (list, get, status)
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -71,25 +71,21 @@ impl Tool for DeviceTool {
         r#"Device management tool for querying and controlling IoT devices.
 
 Actions:
-- list: List all devices. Use response_format="detailed" to include type_templates
-  with available metrics/commands for each device type.
-- get: Get a specific device's details.
-- query: Query time-series metric data. Supports fuzzy metric name matching
-  (e.g., "battery" auto-resolves to "values.battery"). Defaults to last 1 hour.
+- list: List all devices with their available metrics and commands.
+- latest: Device overview with ALL current (latest) metric values (name, value, unit, timestamp).
+  Returns every metric's latest reading in one call. Use when user asks "latest data", "current status", "how is device now".
+- history: Historical time-series data for a specific metric over a time range.
+  Requires device_id and metric. Returns time-ordered data points. Defaults to last 24 hours.
+  Use when user asks about trends, changes over time, or past data with a time range.
 - control: Send control commands to devices. Requires confirm=true to execute.
 
-Efficient Usage Patterns:
-- To analyze all devices: call list(detailed) ONCE → use type_templates to find
-  metric names → call query per device with the correct metric.
-- NEVER call get for each device; list(detailed) already includes all info.
-- Multiple query calls can be made in parallel (same tool call batch).
-
-Examples:
-- "Query all device batteries": device(action="list", response_format="detailed")
-  → device(action="query", device_id="id1", metric="battery")
-  → device(action="query", device_id="id2", metric="battery")  [parallel]
+IMPORTANT - Batch Tool Calls:
+When querying history for MULTIPLE devices, you MUST output ALL history calls in ONE
+JSON array in a single response. Do NOT call one device at a time.
 
 Important:
+- latest = current snapshot (all metrics, latest values). Use for "how is device X?", "latest data", "current status" queries.
+- history = historical trend (one metric, time range). Use for "show battery trend", "temperature over time" queries.
 - Always confirm user intent before using control action
 - Supports fuzzy matching on device names (partial name works)"#
     }
@@ -99,16 +95,16 @@ Important:
             serde_json::json!({
                 "action": {
                     "type": "string",
-                    "enum": ["list", "get", "query", "control"],
-                    "description": "Operation type: 'list' (list all devices), 'get' (device details), 'query' (time-series data), 'control' (send command)"
+                    "enum": ["list", "latest", "history", "control"],
+                    "description": "Operation type: 'list' (list devices), 'latest' (all current metric values), 'history' (historical time-series for one metric), 'control' (send command)"
                 },
                 "device_id": {
                     "type": "string",
-                    "description": "Device ID or name. Required for get/query/control. Supports fuzzy matching (e.g., 'living' matches 'Living Room Light'). Examples: 'ne101', 'sensor_1', 'living_room_light'"
+                    "description": "Device ID or name. Required for get/history/control. Supports fuzzy matching. Use the ID returned by list action."
                 },
                 "metric": {
                     "type": "string",
-                    "description": "Metric name to query (query action). Format: 'field' or 'values.field'. Examples: 'values.battery', 'temperature', 'humidity'"
+                    "description": "Metric name (history action). Use the metric names from list action output. Supports fuzzy matching (e.g., 'battery' matches 'values.battery')."
                 },
                 "command": {
                     "type": "string",
@@ -128,15 +124,15 @@ Important:
                 },
                 "start_time": {
                     "type": "number",
-                    "description": "Start timestamp in seconds for time range query (query action, default: 1 hour ago). Example: 1712000000"
+                    "description": "Start timestamp in seconds for history time range (history action, default: 24 hours ago). Example: 1712000000"
                 },
                 "end_time": {
                     "type": "number",
-                    "description": "End timestamp in seconds for time range query (query action, default: now)"
+                    "description": "End timestamp in seconds for history time range (history action, default: now)"
                 },
                 "limit": {
                     "type": "number",
-                    "description": "Max number of results to return (default: 10 for query, unlimited for list)"
+                    "description": "Max number of data points to return (default: 10 for history, unlimited for list)"
                 },
                 "response_format": {
                     "type": "string",
@@ -163,11 +159,11 @@ Important:
 
         match action {
             "list" => self.execute_list(&args).await,
-            "get" => self.execute_get(&args).await,
-            "query" => self.execute_query(&args).await,
+            "latest" | "get" => self.execute_get(&args).await,
+            "history" | "query" => self.execute_query(&args).await,
             "control" => self.execute_control(&args).await,
             _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action: {}",
+                "Unknown action: '{}'. Valid actions: list, latest, history, control",
                 action
             ))),
         }
@@ -223,80 +219,56 @@ impl DeviceTool {
                 continue;
             }
 
-            // Detailed mode: device info only (metrics/commands shared via type_templates)
-            result.push(serde_json::json!({
+            // Detailed mode: device info with inline metric/command names
+            // so the LLM directly knows what it can query/control per device
+            let mut device_json = serde_json::json!({
                 "id": d.device_id,
                 "name": d.name,
                 "type": d.device_type,
-                "adapter_type": d.adapter_type
-            }));
+            });
+
+            if let Some(template) = self.device_service.get_template(&d.device_type).await {
+                if !template.metrics.is_empty() {
+                    let metric_names: Vec<&str> = template.metrics.iter().map(|m| m.name.as_str()).collect();
+                    device_json["metrics"] = serde_json::json!(metric_names);
+                }
+                if !template.commands.is_empty() {
+                    let commands_info: Vec<Value> = template
+                        .commands
+                        .iter()
+                        .map(|c| {
+                            if c.parameters.is_empty() {
+                                serde_json::json!({"name": c.name})
+                            } else {
+                                let params: Vec<Value> = c.parameters.iter().map(|p| {
+                                    let type_str = format!("{:?}", p.data_type).to_lowercase();
+                                    if p.required {
+                                        serde_json::json!(format!("{}:{} (required)", p.name, type_str))
+                                    } else {
+                                        serde_json::json!(format!("{}:{}", p.name, type_str))
+                                    }
+                                }).collect();
+                                serde_json::json!({
+                                    "name": c.name,
+                                    "params": params
+                                })
+                            }
+                        })
+                        .collect();
+                    device_json["commands"] = serde_json::json!(commands_info);
+                }
+            }
+
+            result.push(device_json);
         }
 
         let limit = args["limit"].as_u64().unwrap_or(result.len() as u64) as usize;
         let result: Vec<_> = result.into_iter().take(limit).collect();
 
-        // Build deduplicated type templates for detailed mode
-        let mut output = serde_json::json!({
+        let output = serde_json::json!({
             "count": result.len(),
             "devices": result
         });
-
-        if detailed {
-            // Collect unique device types from the filtered result
-            let seen_types: std::collections::BTreeSet<&str> = result
-                .iter()
-                .filter_map(|d| d["type"].as_str())
-                .collect();
-
-            let mut type_templates = serde_json::Map::new();
-            for dt in seen_types {
-                if let Some(template) = self.device_service.get_template(dt).await {
-                    let mut tpl_json = serde_json::Map::new();
-                    if !template.metrics.is_empty() {
-                        let metrics_info: Vec<Value> = template
-                            .metrics
-                            .iter()
-                            .map(|m| {
-                                serde_json::json!({
-                                    "name": m.name,
-                                    "display_name": m.display_name,
-                                    "unit": m.unit,
-                                    "data_type": format!("{:?}", m.data_type)
-                                })
-                            })
-                            .collect();
-                        tpl_json.insert("metrics".into(), serde_json::json!(metrics_info));
-                    }
-                    if !template.commands.is_empty() {
-                        let commands_info: Vec<Value> = template
-                            .commands
-                            .iter()
-                            .map(|c| {
-                                serde_json::json!({
-                                    "name": c.name,
-                                    "display_name": c.display_name,
-                                    "parameters": c.parameters.iter().map(|p| {
-                                        serde_json::json!({
-                                            "name": p.name,
-                                            "display_name": p.display_name,
-                                            "data_type": format!("{:?}", p.data_type),
-                                            "required": p.required
-                                        })
-                                    }).collect::<Vec<_>>()
-                                })
-                            })
-                            .collect();
-                        tpl_json.insert("commands".into(), serde_json::json!(commands_info));
-                    }
-                    if !tpl_json.is_empty() {
-                        type_templates.insert(dt.into(), serde_json::Value::Object(tpl_json));
-                    }
-                }
-            }
-            if !type_templates.is_empty() {
-                output["type_templates"] = serde_json::Value::Object(type_templates);
-            }
-        }
 
         Ok(ToolOutput::success(output))
     }
@@ -335,18 +307,24 @@ impl DeviceTool {
         // Enrich with metrics and commands from device type template
         if let Some(template) = self.device_service.get_template(&device.device_type).await {
             if !template.metrics.is_empty() {
-                let metrics_info: Vec<Value> = template
-                    .metrics
-                    .iter()
-                    .map(|m| {
-                        serde_json::json!({
-                            "name": m.name,
-                            "display_name": m.display_name,
-                            "unit": m.unit,
-                            "data_type": format!("{:?}", m.data_type)
-                        })
-                    })
-                    .collect();
+                let storage = self.storage.as_ref();
+                let mut metrics_info: Vec<Value> = Vec::new();
+                for m in &template.metrics {
+                    let mut metric_json = serde_json::json!({
+                        "name": m.name,
+                        "display_name": m.display_name,
+                        "unit": m.unit,
+                        "data_type": format!("{:?}", m.data_type)
+                    });
+                    // Fetch latest value for this metric
+                    if let Some(store) = storage {
+                        if let Ok(Some(latest)) = store.latest(&device_id, &m.name).await {
+                            metric_json["value"] = latest.value.to_json_value();
+                            metric_json["timestamp"] = serde_json::json!(latest.timestamp);
+                        }
+                    }
+                    metrics_info.push(metric_json);
+                }
                 device_json["metrics"] = serde_json::json!(metrics_info);
             }
 
@@ -392,7 +370,20 @@ impl DeviceTool {
         let end_time = args["end_time"]
             .as_i64()
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
-        let start_time = args["start_time"].as_i64().unwrap_or(end_time - 3600);
+        let metric_str = metric.unwrap_or("");
+        // Image/snapshot metrics use a wider default time window (48h) because devices
+        // may capture images infrequently. Regular metrics default to 24h to ensure
+        // we capture data even for infrequently reporting devices.
+        let default_window = if metric_str.contains("image")
+            || metric_str.contains("snapshot")
+            || metric_str.contains("picture")
+            || metric_str.contains("frame")
+        {
+            48 * 3600 // 48 hours
+        } else {
+            24 * 3600 // 24 hours (was 1h - too short for infrequent metrics like battery)
+        };
+        let start_time = args["start_time"].as_i64().unwrap_or(end_time - default_window);
         let limit = args["limit"].as_u64().unwrap_or(10) as usize;
 
         if let Some(m) = metric {
@@ -425,6 +416,54 @@ impl DeviceTool {
                         }
                     }
                 }
+            }
+
+            // If still no data, fall back to latest() which returns the most recent
+            // data point regardless of time range. This ensures we always return
+            // something useful even if the time range didn't capture any data.
+            if data.is_empty() {
+                if let Ok(Some(latest_point)) = storage.latest(&device_id, &resolved_metric).await {
+                    tracing::info!(
+                        "Time range query returned empty, using latest point (timestamp={})",
+                        latest_point.timestamp
+                    );
+                    data = vec![latest_point];
+                }
+            }
+
+            // If no data found after all attempts, the metric key is likely incorrect.
+            // Return available metrics from the device template so the LLM can retry.
+            if data.is_empty() {
+                if let Some(device) = self.device_service.get_device(&device_id).await {
+                    if let Some(template) = self.device_service.get_template(&device.device_type).await {
+                        let available: Vec<Value> = template.metrics.iter().map(|def| {
+                            serde_json::json!({
+                                "name": def.name,
+                                "display_name": def.display_name,
+                                "unit": def.unit,
+                            })
+                        }).collect();
+                        tracing::warn!(
+                            "Metric '{}' not found for device '{}'. Available: {:?}",
+                            m, device_id,
+                            available.iter().filter_map(|v| v.get("name").and_then(|n| n.as_str())).collect::<Vec<_>>()
+                        );
+                        return Ok(ToolOutput::success(serde_json::json!({
+                            "device_id": device_id,
+                            "metric": m,
+                            "error": format!("Metric '{}' not found for device '{}'. Use one of the available metrics below.", m, device_id),
+                            "available_metrics": available,
+                            "hint": "Use the 'name' field from available_metrics as the metric parameter."
+                        })));
+                    }
+                }
+                // No template found either — return a generic error
+                return Ok(ToolOutput::success(serde_json::json!({
+                    "device_id": device_id,
+                    "metric": m,
+                    "error": format!("Metric '{}' not found. Use device(action=\"list\", response_format=\"detailed\") to see available metrics. Use device(action=\"latest\") to get all current values.", m),
+                    "points": []
+                })));
             }
 
             // Detect if this is an image metric and format accordingly.
@@ -497,13 +536,55 @@ impl DeviceTool {
     }
 
     async fn execute_control(&self, args: &Value) -> Result<ToolOutput> {
-        let device_id = args["device_id"]
+        let device_id_input = args["device_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("device_id is required".into()))?;
+
+        let device_id = self.resolve_device_id(device_id_input).await?;
 
         let command = args["command"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("command is required".into()))?;
+
+        // Validate command against device type template
+        if let Some(device) = self.device_service.get_device(&device_id).await {
+            if let Some(template) = self.device_service.get_template(&device.device_type).await {
+                if let Some(cmd_def) = template.commands.iter().find(|c| c.name == command) {
+                    let params_obj = args.get("params").and_then(|p| p.as_object());
+                    let mut missing: Vec<String> = Vec::new();
+                    for p in &cmd_def.parameters {
+                        if p.required {
+                            let has_param = params_obj
+                                .map(|obj| obj.contains_key(&p.name))
+                                .unwrap_or(false);
+                            if !has_param {
+                                let type_str = format!("{:?}", p.data_type).to_lowercase();
+                                missing.push(format!("{} ({})", p.name, type_str));
+                            }
+                        }
+                    }
+                    if !missing.is_empty() {
+                        return Ok(ToolOutput::error(format!(
+                            "Missing required parameters for '{}': {}. Available params: {}",
+                            command,
+                            missing.join(", "),
+                            cmd_def.parameters.iter()
+                                .map(|p| format!("{}:{}{}", p.name, format!("{:?}", p.data_type).to_lowercase(), if p.required { " (required)" } else { "" }))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )));
+                    }
+                } else {
+                    let available: Vec<&str> = template.commands.iter().map(|c| c.name.as_str()).collect();
+                    return Ok(ToolOutput::error(format!(
+                        "Unknown command '{}' for device '{}'. Available commands: {}",
+                        command, device_id, available.join(", ")
+                    )));
+                }
+            }
+        } else {
+            return Ok(ToolOutput::error(format!("Device not found: {}", device_id)));
+        }
 
         // Confirmation check
         let confirm = args["confirm"].as_bool().unwrap_or(false);
@@ -524,7 +605,7 @@ impl DeviceTool {
             .unwrap_or_default();
 
         self.device_service
-            .send_command(device_id, command, params)
+            .send_command(&device_id, command, params)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
@@ -607,7 +688,7 @@ When creating agents:
                 },
                 "user_prompt": {
                     "type": "string",
-                    "description": "Natural language description of what the agent should do. Required for create, optional for update. Be specific: 'Check ne101 temperature every 5 minutes, alert if above 30C'"
+                    "description": "Natural language description of what the agent should do. Required for create, optional for update. Be specific with device names and thresholds."
                 },
                 "schedule_type": {
                     "type": "string",
@@ -1360,7 +1441,7 @@ Actions:
 
 Rule DSL format:
 RULE "rule_name" WHEN device_id.metric OPERATOR value DO ACTION END
-Example: RULE "Low Battery Alert" WHEN ne101.battery < 50 DO NOTIFY "Battery below 50%" END
+Example: RULE "Low Battery Alert" WHEN sensor_01.battery < 50 DO NOTIFY "Battery below 50%" END
 
 Operators: <, >, <=, >=, ==, !=
 Actions: NOTIFY (send alert), CONTROL (send device command)"#
@@ -1380,7 +1461,7 @@ Actions: NOTIFY (send alert), CONTROL (send device command)"#
                 },
                 "dsl": {
                     "type": "string",
-                    "description": "Rule DSL definition. Required for create/update. Format: RULE \"name\" WHEN device.metric OP value DO ACTION END. Example: RULE \"Low Battery\" WHEN ne101.battery < 50 DO NOTIFY \"Battery low\" END"
+                    "description": "Rule DSL definition. Required for create/update. Format: RULE \"name\" WHEN device_id.metric OP value DO ACTION END. Example: RULE \"Low Battery\" WHEN sensor_01.battery < 50 DO NOTIFY \"Battery low\" END"
                 },
                 "name_filter": {
                     "type": "string",
@@ -1655,42 +1736,42 @@ impl RuleTool {
 }
 
 // ============================================================================
-// Alert Tool - Aggregates: list_alerts, create_alert, acknowledge_alert
+// Message Tool - Aggregates: list_messages, send_message, read_message
 // ============================================================================
 
-/// Alert information.
+/// Message information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AggregatedAlertInfo {
+pub struct AggregatedMessageInfo {
     pub id: String,
     pub title: String,
     pub message: String,
-    pub severity: AggregatedAlertSeverity,
+    pub level: AggregatedMessageLevel,
     pub source: String,
-    pub acknowledged: bool,
+    pub read: bool,
     pub created_at: i64,
 }
 
-/// Alert severity levels.
+/// Message priority levels.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum AggregatedAlertSeverity {
+pub enum AggregatedMessageLevel {
     Info,
-    Warning,
-    Error,
-    Critical,
+    Notice,
+    Important,
+    Urgent,
 }
 
-/// Aggregated alert tool.
-pub struct AlertTool {
+/// Aggregated message tool.
+pub struct MessageTool {
     message_manager: Option<Arc<neomind_messages::MessageManager>>,
-    alerts: Arc<tokio::sync::RwLock<Vec<AggregatedAlertInfo>>>,
+    messages: Arc<tokio::sync::RwLock<Vec<AggregatedMessageInfo>>>,
 }
 
-impl AlertTool {
-    /// Create a new alert tool.
+impl MessageTool {
+    /// Create a new message tool.
     pub fn new() -> Self {
         Self {
             message_manager: None,
-            alerts: Arc::new(tokio::sync::RwLock::new(Vec::new())),
+            messages: Arc::new(tokio::sync::RwLock::new(Vec::new())),
         }
     }
 
@@ -1698,41 +1779,41 @@ impl AlertTool {
     pub fn with_message_manager(message_manager: Arc<neomind_messages::MessageManager>) -> Self {
         Self {
             message_manager: Some(message_manager),
-            alerts: Arc::new(tokio::sync::RwLock::new(Vec::new())),
+            messages: Arc::new(tokio::sync::RwLock::new(Vec::new())),
         }
     }
 }
 
-impl Default for AlertTool {
+impl Default for MessageTool {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait]
-impl Tool for AlertTool {
+impl Tool for MessageTool {
     fn name(&self) -> &str {
-        "alert"
+        "message"
     }
 
     fn description(&self) -> &str {
-        r#"Alert management tool for viewing and managing system alerts and notifications.
+        r#"Message tool for viewing and managing system messages and notifications.
 
 Actions:
-- list: List alerts with optional severity and acknowledgment filters. Use when user asks about current or recent alerts.
-- get: Get a single alert by ID. Use when you need full details of a specific alert.
-- create: Create a new alert manually. Use when user wants to flag something or when an agent needs to notify the user.
-- acknowledge: Mark an alert as acknowledged/resolved. Use when user confirms they've seen an alert.
+- list: List messages with optional level and read/unread filters. Use when user asks about messages or notifications.
+- get: Get a single message by ID. Use when you need full details of a specific message.
+- send: Send a new message/notification. Use when user wants to notify someone or when an agent needs to report something.
+- read: Mark a message as read. Use when user confirms they've seen a message.
 
-Severity levels:
-- info: Informational, no action needed (e.g., 'Device came online')
-- warning: Attention recommended (e.g., 'Battery below 30%')
-- error: Action needed (e.g., 'Device communication failed')
-- critical: Immediate action required (e.g., 'Temperature exceeds safety limit')
+Priority levels:
+- info: General information, no action needed (e.g., 'Device came online')
+- notice: Worth noting (e.g., 'Battery below 30%')
+- important: Needs attention (e.g., 'Device communication failed')
+- urgent: Immediate action required (e.g., 'Temperature exceeds safety limit')
 
 Tips:
-- Use unacknowledged_only=true to see only active alerts
-- Filter by severity to prioritize critical issues"#
+- Use unread_only=true to see only unread messages
+- Filter by level to prioritize urgent messages"#
     }
 
     fn parameters(&self) -> Value {
@@ -1740,45 +1821,45 @@ Tips:
             serde_json::json!({
                 "action": {
                     "type": "string",
-                    "enum": ["list", "get", "create", "acknowledge"],
-                    "description": "Operation type: 'list' (view alerts), 'get' (single alert by ID), 'create' (new alert), 'acknowledge' (mark as resolved)"
+                    "enum": ["list", "get", "send", "read"],
+                    "description": "Operation type: 'list' (view messages), 'get' (single message by ID), 'send' (new message), 'read' (mark as read)"
                 },
-                "alert_id": {
+                "message_id": {
                     "type": "string",
-                    "description": "Alert ID or title. Supports fuzzy matching on title (e.g., 'High Temperature' matches). Use list action to discover alerts"
+                    "description": "Message ID or title. Supports fuzzy matching on title. Use list action to discover messages"
                 },
                 "title": {
                     "type": "string",
-                    "description": "Alert title (create action). Short summary. Example: 'High Temperature Alert', 'Device Offline'"
+                    "description": "Message title (send action). Short summary. Example: 'Device Offline', 'Battery Low'"
                 },
                 "message": {
                     "type": "string",
-                    "description": "Alert message body (create action). Detailed description. Example: 'Living room sensor reports 35.2C, threshold is 30C'"
+                    "description": "Message body (send action). Detailed description. Example: 'Living room sensor reports 35.2C, threshold is 30C'"
                 },
-                "severity": {
+                "level": {
                     "type": "string",
-                    "description": "Alert severity level (create action): 'info', 'warning', 'error', 'critical'. Default: 'warning'"
+                    "description": "Priority level (send action): 'info', 'notice', 'important', 'urgent'. Default: 'notice'"
                 },
                 "source": {
                     "type": "string",
-                    "description": "Alert source identifier (create action). Default: 'system'. Example: 'temperature_monitor', 'security_agent'"
+                    "description": "Message source identifier (send action). Default: 'system'. Example: 'temperature_monitor', 'security_agent'"
                 },
-                "unacknowledged_only": {
+                "unread_only": {
                     "type": "boolean",
-                    "description": "Only return unacknowledged alerts (list action). Default: false"
+                    "description": "Only return unread messages (list action). Default: false"
                 },
-                "severity_filter": {
+                "level_filter": {
                     "type": "string",
-                    "description": "Filter by severity (list action): 'info', 'warning', 'error', 'critical'"
+                    "description": "Filter by priority level (list action): 'info', 'notice', 'important', 'urgent'"
                 },
                 "limit": {
                     "type": "number",
-                    "description": "Max alerts to return (list action). Default: 50"
+                    "description": "Max messages to return (list action). Default: 50"
                 },
                 "response_format": {
                     "type": "string",
                     "enum": ["concise", "detailed"],
-                    "description": "Output format. 'concise': title/severity/status only (default). 'detailed': full alert info with timestamps"
+                    "description": "Output format. 'concise': title/level/status only (default). 'detailed': full message info with timestamps"
                 }
             }),
             vec!["action".to_string()],
@@ -1797,100 +1878,146 @@ Tips:
         match action {
             "list" => self.execute_list(&args).await,
             "get" => self.execute_get(&args).await,
-            "create" => self.execute_create(&args).await,
-            "acknowledge" => self.execute_acknowledge(&args).await,
+            "send" | "create" => self.execute_send(&args).await,
+            "read" | "acknowledge" => self.execute_read(&args).await,
             _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action: {}",
+                "Unknown action: '{}'. Valid actions: list, get, send, read",
                 action
             ))),
         }
     }
 }
 
-impl AlertTool {
+impl MessageTool {
     fn is_detailed(args: &Value) -> bool {
         args["response_format"].as_str() == Some("detailed")
     }
 
-    /// Resolve alert_id with fuzzy matching using EntityResolver.
-    async fn resolve_alert_id(&self, input: &str) -> Result<String> {
-        let alerts = self.alerts.read().await;
+    /// Map user-facing level string to internal MessageSeverity.
+    fn level_to_severity(level: &str) -> neomind_messages::MessageSeverity {
+        use neomind_messages::MessageSeverity;
+        match level {
+            "info" => MessageSeverity::Info,
+            "notice" | "warning" => MessageSeverity::Warning,
+            "important" | "error" => MessageSeverity::Critical,
+            "urgent" | "critical" | "emergency" => MessageSeverity::Emergency,
+            _ => MessageSeverity::Warning,
+        }
+    }
+
+    /// Map internal MessageSeverity to user-facing level string.
+    fn severity_to_level(severity: neomind_messages::MessageSeverity) -> &'static str {
+        use neomind_messages::MessageSeverity;
+        match severity {
+            MessageSeverity::Info => "info",
+            MessageSeverity::Warning => "notice",
+            MessageSeverity::Critical => "important",
+            MessageSeverity::Emergency => "urgent",
+        }
+    }
+
+    /// Map user-facing level string to AggregatedMessageLevel (in-memory path).
+    fn level_to_enum(level: &str) -> AggregatedMessageLevel {
+        match level {
+            "info" => AggregatedMessageLevel::Info,
+            "notice" | "warning" => AggregatedMessageLevel::Notice,
+            "important" | "error" => AggregatedMessageLevel::Important,
+            "urgent" | "critical" => AggregatedMessageLevel::Urgent,
+            _ => AggregatedMessageLevel::Notice,
+        }
+    }
+
+    /// Map AggregatedMessageLevel to display string.
+    fn enum_to_level(level: &AggregatedMessageLevel) -> &'static str {
+        match level {
+            AggregatedMessageLevel::Info => "info",
+            AggregatedMessageLevel::Notice => "notice",
+            AggregatedMessageLevel::Important => "important",
+            AggregatedMessageLevel::Urgent => "urgent",
+        }
+    }
+
+    /// Check if a user-facing level matches an internal MessageSeverity.
+    fn level_matches(level: &str, severity: &neomind_messages::MessageSeverity) -> bool {
+        Self::severity_to_level(*severity) == level
+    }
+
+    /// Check if a user-facing level matches an AggregatedMessageLevel.
+    fn level_matches_enum(level: &str, msg_level: &AggregatedMessageLevel) -> bool {
+        Self::enum_to_level(msg_level) == level
+    }
+
+    /// Resolve message_id with fuzzy matching using EntityResolver.
+    async fn resolve_message_id(&self, input: &str) -> Result<String> {
+        let messages = self.messages.read().await;
 
         // Fast path: exact ID match
-        let exact_match = alerts.iter().find(|a| a.id == input);
-        if let Some(alert) = exact_match {
-            return Ok(alert.id.clone());
+        let exact_match = messages.iter().find(|m| m.id == input);
+        if let Some(msg) = exact_match {
+            return Ok(msg.id.clone());
         }
 
         // Fuzzy match by title
-        let candidates: Vec<(String, String)> = alerts
+        let candidates: Vec<(String, String)> = messages
             .iter()
-            .map(|a| (a.id.clone(), a.title.clone()))
+            .map(|m| (m.id.clone(), m.title.clone()))
             .collect();
 
-        super::resolver::EntityResolver::resolve(input, &candidates, "告警")
+        super::resolver::EntityResolver::resolve(input, &candidates, "消息")
             .map_err(ToolError::Execution)
     }
 
     async fn execute_list(&self, args: &Value) -> Result<ToolOutput> {
-        let unacknowledged_only = args["unacknowledged_only"].as_bool().unwrap_or(false);
-        let severity_filter = args["severity_filter"].as_str();
+        let unread_only = args["unread_only"].as_bool()
+            .or_else(|| args["unacknowledged_only"].as_bool())
+            .unwrap_or(false);
+        let level_filter = args["level_filter"].as_str()
+            .or_else(|| args["severity_filter"].as_str());
         let limit = args["limit"].as_u64().unwrap_or(50) as usize;
         let detailed = Self::is_detailed(args);
 
         // Use message_manager if available, otherwise use in-memory storage
         if let Some(manager) = &self.message_manager {
-            use neomind_messages::{MessageSeverity, MessageType};
+            use neomind_messages::MessageType;
 
-            let messages = manager.list_active_messages().await;
+            let msgs = manager.list_active_messages().await;
 
-            let filtered: Vec<Value> = messages
+            let filtered: Vec<Value> = msgs
                 .into_iter()
                 .filter(|m| m.message_type == MessageType::Notification)
                 .filter(|m| {
-                    if unacknowledged_only {
+                    if unread_only {
                         m.is_active()
                     } else {
                         true
                     }
                 })
                 .filter(|m| {
-                    if let Some(sev) = severity_filter {
-                        let m_sev = match m.severity {
-                            MessageSeverity::Info => "info",
-                            MessageSeverity::Warning => "warning",
-                            MessageSeverity::Critical => "critical",
-                            MessageSeverity::Emergency => "emergency",
-                        };
-                        m_sev == sev
+                    if let Some(lvl) = level_filter {
+                        Self::level_matches(lvl, &m.severity)
                     } else {
                         true
                     }
                 })
                 .take(limit)
                 .map(|m| {
-                    let severity_str = match m.severity {
-                        MessageSeverity::Info => "info",
-                        MessageSeverity::Warning => "warning",
-                        MessageSeverity::Critical => "critical",
-                        MessageSeverity::Emergency => "emergency",
-                    };
+                    let level_str = Self::severity_to_level(m.severity);
                     if detailed {
                         serde_json::json!({
                             "id": m.id.to_string(),
                             "title": m.title,
                             "message": m.message,
-                            "severity": severity_str,
+                            "level": level_str,
                             "source": m.source_type,
-                            "acknowledged": !m.is_active(),
+                            "read": !m.is_active(),
                             "created_at": m.timestamp.timestamp()
                         })
                     } else {
                         serde_json::json!({
                             "id": m.id.to_string(),
                             "title": m.title,
-                            "severity": severity_str,
-                            "acknowledged": !m.is_active()
+                            "level": level_str,
+                            "read": !m.is_active()
                         })
                     }
                 })
@@ -1898,37 +2025,37 @@ impl AlertTool {
 
             Ok(ToolOutput::success(serde_json::json!({
                 "count": filtered.len(),
-                "alerts": filtered
+                "messages": filtered
             })))
         } else {
-            let alerts = self.alerts.read().await;
+            let msgs = self.messages.read().await;
 
-            let filtered: Vec<Value> = alerts
+            let filtered: Vec<Value> = msgs
                 .iter()
-                .filter(|a| {
-                    if unacknowledged_only {
-                        !a.acknowledged
+                .filter(|m| {
+                    if unread_only {
+                        !m.read
                     } else {
                         true
                     }
                 })
-                .filter(|a| {
-                    if let Some(sev) = severity_filter {
-                        format!("{:?}", a.severity).to_lowercase() == sev.to_lowercase()
+                .filter(|m| {
+                    if let Some(lvl) = level_filter {
+                        Self::level_matches_enum(lvl, &m.level)
                     } else {
                         true
                     }
                 })
                 .take(limit)
-                .map(|a| {
+                .map(|m| {
                     if detailed {
-                        serde_json::to_value(a).unwrap()
+                        serde_json::to_value(m).unwrap()
                     } else {
                         serde_json::json!({
-                            "id": a.id,
-                            "title": a.title,
-                            "severity": format!("{:?}", a.severity).to_lowercase(),
-                            "acknowledged": a.acknowledged
+                            "id": m.id,
+                            "title": m.title,
+                            "level": Self::enum_to_level(&m.level),
+                            "read": m.read
                         })
                     }
                 })
@@ -1936,67 +2063,62 @@ impl AlertTool {
 
             Ok(ToolOutput::success(serde_json::json!({
                 "count": filtered.len(),
-                "alerts": filtered
+                "messages": filtered
             })))
         }
     }
 
     async fn execute_get(&self, args: &Value) -> Result<ToolOutput> {
-        let alert_id_str = args["alert_id"]
+        let id_str = args["message_id"]
             .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("alert_id is required".into()))?;
+            .or_else(|| args["alert_id"].as_str())
+            .ok_or_else(|| ToolError::InvalidArguments("message_id is required".into()))?;
 
-        // Resolve alert_id (supports fuzzy matching by title)
-        let resolved_id = self.resolve_alert_id(alert_id_str).await?;
+        let resolved_id = self.resolve_message_id(id_str).await?;
 
         // Use message_manager if available
         if let Some(manager) = &self.message_manager {
             use neomind_messages::MessageId;
 
-            let alert_id = MessageId::from_string(&resolved_id)
-                .map_err(|e| ToolError::InvalidArguments(format!("Invalid alert_id: {}", e)))?;
+            let msg_id = MessageId::from_string(&resolved_id)
+                .map_err(|e| ToolError::InvalidArguments(format!("Invalid message_id: {}", e)))?;
 
-            let message = manager
-                .get_message(&alert_id)
+            let msg = manager
+                .get_message(&msg_id)
                 .await
-                .ok_or_else(|| ToolError::Execution("Alert not found".into()))?;
+                .ok_or_else(|| ToolError::Execution("Message not found".into()))?;
 
-            let severity_str = match message.severity {
-                neomind_messages::MessageSeverity::Info => "info",
-                neomind_messages::MessageSeverity::Warning => "warning",
-                neomind_messages::MessageSeverity::Critical => "critical",
-                neomind_messages::MessageSeverity::Emergency => "emergency",
-            };
+            let level_str = Self::severity_to_level(msg.severity);
 
             Ok(ToolOutput::success(serde_json::json!({
-                "id": message.id.to_string(),
-                "title": message.title,
-                "message": message.message,
-                "severity": severity_str,
-                "source": message.source_type,
-                "acknowledged": !message.is_active(),
-                "created_at": message.timestamp.timestamp()
+                "id": msg.id.to_string(),
+                "title": msg.title,
+                "message": msg.message,
+                "level": level_str,
+                "source": msg.source_type,
+                "read": !msg.is_active(),
+                "created_at": msg.timestamp.timestamp()
             })))
         } else {
-            let alerts = self.alerts.read().await;
-            let alert = alerts
+            let msgs = self.messages.read().await;
+            let msg = msgs
                 .iter()
-                .find(|a| a.id == resolved_id)
-                .ok_or_else(|| ToolError::Execution("Alert not found".into()))?;
+                .find(|m| m.id == resolved_id)
+                .ok_or_else(|| ToolError::Execution("Message not found".into()))?;
 
             Ok(ToolOutput::success(serde_json::json!({
-                "id": alert.id,
-                "title": alert.title,
-                "message": alert.message,
-                "severity": format!("{:?}", alert.severity).to_lowercase(),
-                "source": alert.source,
-                "acknowledged": alert.acknowledged,
-                "created_at": alert.created_at
+                "id": msg.id,
+                "title": msg.title,
+                "message": msg.message,
+                "level": Self::enum_to_level(&msg.level),
+                "source": msg.source,
+                "read": msg.read,
+                "created_at": msg.created_at
             })))
         }
     }
 
-    async fn execute_create(&self, args: &Value) -> Result<ToolOutput> {
+    async fn execute_send(&self, args: &Value) -> Result<ToolOutput> {
         let title = args["title"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("title is required".into()))?;
@@ -2005,23 +2127,19 @@ impl AlertTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("message is required".into()))?;
 
-        let severity_str = args["severity"].as_str().unwrap_or("warning");
+        let level_str = args["level"].as_str()
+            .or_else(|| args["severity"].as_str())
+            .unwrap_or("notice");
         let source = args["source"].as_str().unwrap_or("system");
 
         // Use message_manager if available
         if let Some(manager) = &self.message_manager {
-            use neomind_messages::{Message, MessageSeverity};
+            use neomind_messages::Message;
 
-            let severity = match severity_str {
-                "info" => MessageSeverity::Info,
-                "warning" => MessageSeverity::Warning,
-                "critical" => MessageSeverity::Critical,
-                "emergency" => MessageSeverity::Emergency,
-                _ => MessageSeverity::Warning,
-            };
+            let severity = Self::level_to_severity(level_str);
 
             let msg = Message::new(
-                "alert",
+                "message",
                 severity,
                 title.to_string(),
                 message.to_string(),
@@ -2035,73 +2153,67 @@ impl AlertTool {
 
             Ok(ToolOutput::success(serde_json::json!({
                 "id": msg.id.to_string(),
-                "status": "created"
+                "status": "sent"
             })))
         } else {
-            let severity = match severity_str {
-                "info" => AggregatedAlertSeverity::Info,
-                "warning" => AggregatedAlertSeverity::Warning,
-                "error" => AggregatedAlertSeverity::Error,
-                "critical" => AggregatedAlertSeverity::Critical,
-                _ => AggregatedAlertSeverity::Warning,
-            };
+            let level = Self::level_to_enum(level_str);
 
-            let alert = AggregatedAlertInfo {
+            let msg = AggregatedMessageInfo {
                 id: uuid::Uuid::new_v4().to_string(),
                 title: title.to_string(),
                 message: message.to_string(),
-                severity,
+                level,
                 source: source.to_string(),
-                acknowledged: false,
+                read: false,
                 created_at: chrono::Utc::now().timestamp(),
             };
 
-            let id = alert.id.clone();
-            self.alerts.write().await.push(alert);
+            let id = msg.id.clone();
+            self.messages.write().await.push(msg);
 
             Ok(ToolOutput::success(serde_json::json!({
                 "id": id,
-                "status": "created"
+                "status": "sent"
             })))
         }
     }
 
-    async fn execute_acknowledge(&self, args: &Value) -> Result<ToolOutput> {
-        let alert_id_str = args["alert_id"]
+    async fn execute_read(&self, args: &Value) -> Result<ToolOutput> {
+        let id_str = args["message_id"]
             .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("alert_id is required".into()))?;
+            .or_else(|| args["alert_id"].as_str())
+            .ok_or_else(|| ToolError::InvalidArguments("message_id is required".into()))?;
 
-        // Resolve alert_id (supports fuzzy matching by title)
-        let resolved_id = self.resolve_alert_id(alert_id_str).await?;
+        let resolved_id = self.resolve_message_id(id_str).await?;
 
         // Use message_manager if available
         if let Some(manager) = &self.message_manager {
             use neomind_messages::MessageId;
 
-            let alert_id = MessageId::from_string(&resolved_id)
-                .map_err(|e| ToolError::InvalidArguments(format!("Invalid alert_id: {}", e)))?;
+            let msg_id = MessageId::from_string(&resolved_id)
+                .map_err(|e| ToolError::InvalidArguments(format!("Invalid message_id: {}", e)))?;
 
             manager
-                .acknowledge(&alert_id)
+                .acknowledge(&msg_id)
                 .await
                 .map_err(|e| ToolError::Execution(e.to_string()))?;
 
             Ok(ToolOutput::success(serde_json::json!({
                 "id": resolved_id,
-                "status": "acknowledged"
+                "status": "read"
             })))
         } else {
-            let mut alerts = self.alerts.write().await;
-            let alert = alerts
+            let mut msgs = self.messages.write().await;
+            let msg = msgs
                 .iter_mut()
-                .find(|a| a.id == resolved_id)
-                .ok_or_else(|| ToolError::Execution("Alert not found".into()))?;
+                .find(|m| m.id == resolved_id)
+                .ok_or_else(|| ToolError::Execution("Message not found".into()))?;
 
-            alert.acknowledged = true;
+            msg.read = true;
 
             Ok(ToolOutput::success(serde_json::json!({
                 "id": resolved_id,
-                "status": "acknowledged"
+                "status": "read"
             })))
         }
     }
@@ -2138,13 +2250,13 @@ impl Tool for ExtensionAggregatedTool {
 Actions:
 - list: List all installed extensions with their status and command count. Use when user asks what extensions or plugins are available.
 - get: Get detailed info about a specific extension, including its commands and metrics. Use before executing a command.
-- execute: Execute a command on an extension. Requires extension_id, command name, and optional params.
 - status: Check the health and runtime status of an extension.
+
+To execute extension commands, call them directly using the format: extension-id:command (e.g., weather-forecast-v2:get_weather)
 
 Tips:
 - Always call list first if you're unsure which extensions are available
-- Use get to discover available commands before calling execute
-- The params field should be a JSON object matching the command's expected parameters"#
+- Use get to discover available commands, then call them directly with extension-id:command format"#
     }
 
     fn parameters(&self) -> Value {
@@ -2152,20 +2264,12 @@ Tips:
             serde_json::json!({
                 "action": {
                     "type": "string",
-                    "enum": ["list", "get", "execute", "status"],
-                    "description": "Operation type: 'list' (list extensions), 'get' (extension details), 'execute' (run command), 'status' (health check)"
+                    "enum": ["list", "get", "status"],
+                    "description": "Operation type: 'list' (list extensions), 'get' (extension details), 'status' (health check)"
                 },
                 "extension_id": {
                     "type": "string",
                     "description": "Extension ID or name. Supports fuzzy matching (e.g., 'weather' matches 'Weather Forecast'). Use list action to discover available extensions"
-                },
-                "command": {
-                    "type": "string",
-                    "description": "Command name to execute (execute action). Use get action to discover available commands. Example: 'get_weather'"
-                },
-                "params": {
-                    "type": "object",
-                    "description": "Command parameters as JSON object (execute action). Example: {\"city\": \"Beijing\"}"
                 },
                 "response_format": {
                     "type": "string",
@@ -2189,10 +2293,11 @@ Tips:
         match action {
             "list" => self.execute_list(&args).await,
             "get" => self.execute_get(&args).await,
-            "execute" => self.execute_command(&args).await,
             "status" => self.execute_status(&args).await,
+            // Backward compat: execute still works but delegates to direct command execution
+            "execute" => self.execute_command_compat(&args).await,
             _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action: {}",
+                "Unknown action: '{}'. Valid actions: list, get, status. To execute extension commands, call them directly: extension-id:command",
                 action
             ))),
         }
@@ -2304,29 +2409,6 @@ impl ExtensionAggregatedTool {
         })))
     }
 
-    async fn execute_command(&self, args: &Value) -> Result<ToolOutput> {
-        let raw_id = args["extension_id"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("extension_id is required".into()))?;
-        let extension_id = self.resolve_extension_id(raw_id).await?;
-        let command = args["command"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("command is required".into()))?;
-        let params = args.get("params").cloned().unwrap_or(serde_json::json!({}));
-
-        let result = self
-            .registry
-            .execute_command(&extension_id, command, &params)
-            .await
-            .map_err(|e| ToolError::Execution(format!("Extension command failed: {}", e)))?;
-
-        Ok(ToolOutput::success(serde_json::json!({
-            "extension_id": extension_id,
-            "command": command,
-            "result": result
-        })))
-    }
-
     async fn execute_status(&self, args: &Value) -> Result<ToolOutput> {
         let raw_id = args["extension_id"]
             .as_str()
@@ -2354,6 +2436,31 @@ impl ExtensionAggregatedTool {
             "error_count": info.stats.error_count
         })))
     }
+
+    /// Backward-compatible execute action for legacy callers.
+    /// Delegates to the registry's execute_command directly.
+    async fn execute_command_compat(&self, args: &Value) -> Result<ToolOutput> {
+        let raw_id = args["extension_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("extension_id is required".into()))?;
+        let extension_id = self.resolve_extension_id(raw_id).await?;
+        let command = args["command"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("command is required".into()))?;
+        let params = args.get("params").cloned().unwrap_or(serde_json::json!({}));
+
+        let result = self
+            .registry
+            .execute_command(&extension_id, command, &params)
+            .await
+            .map_err(|e| ToolError::Execution(format!("Extension command failed: {}", e)))?;
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "extension_id": extension_id,
+            "command": command,
+            "result": result
+        })))
+    }
 }
 
 // ============================================================================
@@ -2369,6 +2476,7 @@ pub struct AggregatedToolsBuilder {
     rule_history: Option<Arc<neomind_rules::RuleHistoryStorage>>,
     message_manager: Option<Arc<neomind_messages::MessageManager>>,
     extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
+    session_store: Option<Arc<neomind_storage::SessionStore>>,
 }
 
 impl AggregatedToolsBuilder {
@@ -2382,6 +2490,7 @@ impl AggregatedToolsBuilder {
             rule_history: None,
             message_manager: None,
             extension_registry: None,
+            session_store: None,
         }
     }
 
@@ -2433,6 +2542,12 @@ impl AggregatedToolsBuilder {
         self
     }
 
+    /// Set session store for the session search tool.
+    pub fn with_session_store(mut self, store: Arc<neomind_storage::SessionStore>) -> Self {
+        self.session_store = Some(store);
+        self
+    }
+
     /// Build all aggregated tools as a vector of DynTool.
     pub fn build(self) -> Vec<Arc<dyn Tool>> {
         let mut tools: Vec<Arc<dyn Tool>> = Vec::new();
@@ -2463,17 +2578,22 @@ impl AggregatedToolsBuilder {
             tools.push(Arc::new(rule_tool));
         }
 
-        // Alert tool (always available)
-        let alert_tool = if let Some(manager) = self.message_manager {
-            AlertTool::with_message_manager(manager)
+        // Message tool (always available)
+        let message_tool = if let Some(manager) = self.message_manager {
+            MessageTool::with_message_manager(manager)
         } else {
-            AlertTool::new()
+            MessageTool::new()
         };
-        tools.push(Arc::new(alert_tool));
+        tools.push(Arc::new(message_tool));
 
         // Extension tool
         if let Some(ext_reg) = self.extension_registry {
             tools.push(Arc::new(ExtensionAggregatedTool::new(ext_reg)));
+        }
+
+        // Session search tool
+        if let Some(session_store) = self.session_store {
+            tools.push(Arc::new(super::SessionSearchTool::new(session_store)));
         }
 
         tools
@@ -2494,21 +2614,21 @@ mod tests {
     fn test_aggregated_tools_builder_creates_tools() {
         // Test that builder creates tools even without dependencies
         let tools = AggregatedToolsBuilder::new().build();
-        // Without dependencies, only AlertTool is created
+        // Without dependencies, only MessageTool is created
         assert_eq!(tools.len(), 1);
     }
 
     #[test]
-    fn test_alert_tool_name() {
-        // Test AlertTool metadata
-        let tool = AlertTool::new();
-        assert_eq!(tool.name(), "alert");
+    fn test_message_tool_name() {
+        // Test MessageTool metadata
+        let tool = MessageTool::new();
+        assert_eq!(tool.name(), "message");
     }
 
     #[tokio::test]
-    async fn test_alert_tool_list_empty() {
-        // Test listing alerts when none exist
-        let tool = AlertTool::new();
+    async fn test_message_tool_list_empty() {
+        // Test listing messages when none exist
+        let tool = MessageTool::new();
         let result = tool
             .execute(serde_json::json!({"action": "list"}))
             .await
@@ -2519,25 +2639,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_alert_tool_create_and_list() {
-        // Test creating and listing alerts
-        let tool = AlertTool::new();
+    async fn test_message_tool_send_and_list() {
+        // Test sending and listing messages
+        let tool = MessageTool::new();
 
-        // Create an alert
-        let create_result = tool
+        // Send a message
+        let send_result = tool
             .execute(serde_json::json!({
-                "action": "create",
-                "title": "Test Alert",
+                "action": "send",
+                "title": "Test Message",
                 "message": "This is a test",
-                "severity": "warning"
+                "level": "notice"
             }))
             .await
             .unwrap();
 
-        assert!(create_result.success);
-        let alert_id = create_result.data["id"].as_str().unwrap().to_string();
+        assert!(send_result.success);
+        let msg_id = send_result.data["id"].as_str().unwrap().to_string();
 
-        // List alerts
+        // List messages
         let list_result = tool
             .execute(serde_json::json!({"action": "list"}))
             .await
@@ -2546,21 +2666,21 @@ mod tests {
         assert!(list_result.success);
         assert_eq!(list_result.data["count"].as_u64().unwrap(), 1);
 
-        // Acknowledge the alert
-        let ack_result = tool
+        // Read the message
+        let read_result = tool
             .execute(serde_json::json!({
-                "action": "acknowledge",
-                "alert_id": alert_id
+                "action": "read",
+                "message_id": msg_id
             }))
             .await
             .unwrap();
 
-        assert!(ack_result.success);
+        assert!(read_result.success);
     }
 
     #[tokio::test]
-    async fn test_alert_tool_unknown_action() {
-        let tool = AlertTool::new();
+    async fn test_message_tool_unknown_action() {
+        let tool = MessageTool::new();
 
         let result = tool
             .execute(serde_json::json!({"action": "unknown_action"}))
@@ -2570,35 +2690,35 @@ mod tests {
     }
 
     #[test]
-    fn test_aggregated_alert_severity_variants() {
-        // Test that AggregatedAlertSeverity has all expected variants
-        let info = AggregatedAlertSeverity::Info;
-        let warning = AggregatedAlertSeverity::Warning;
-        let error = AggregatedAlertSeverity::Error;
-        let critical = AggregatedAlertSeverity::Critical;
+    fn test_aggregated_message_level_variants() {
+        // Test that AggregatedMessageLevel has all expected variants
+        let info = AggregatedMessageLevel::Info;
+        let notice = AggregatedMessageLevel::Notice;
+        let important = AggregatedMessageLevel::Important;
+        let urgent = AggregatedMessageLevel::Urgent;
 
         // Verify Debug trait is implemented
         assert!(format!("{:?}", info).contains("Info"));
-        assert!(format!("{:?}", warning).contains("Warning"));
-        assert!(format!("{:?}", error).contains("Error"));
-        assert!(format!("{:?}", critical).contains("Critical"));
+        assert!(format!("{:?}", notice).contains("Notice"));
+        assert!(format!("{:?}", important).contains("Important"));
+        assert!(format!("{:?}", urgent).contains("Urgent"));
     }
 
     #[test]
-    fn test_aggregated_alert_info_serialization() {
-        // Test that AggregatedAlertInfo can be serialized
-        let alert = AggregatedAlertInfo {
+    fn test_aggregated_message_info_serialization() {
+        // Test that AggregatedMessageInfo can be serialized
+        let msg = AggregatedMessageInfo {
             id: "test-id".to_string(),
-            title: "Test Alert".to_string(),
-            message: "Test message".to_string(),
-            severity: AggregatedAlertSeverity::Warning,
+            title: "Test Message".to_string(),
+            message: "Test body".to_string(),
+            level: AggregatedMessageLevel::Notice,
             source: "test".to_string(),
-            acknowledged: false,
+            read: false,
             created_at: 1234567890,
         };
 
-        let json = serde_json::to_string(&alert).unwrap();
+        let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("test-id"));
-        assert!(json.contains("Test Alert"));
+        assert!(json.contains("Test Message"));
     }
 }

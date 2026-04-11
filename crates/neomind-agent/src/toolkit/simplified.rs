@@ -261,17 +261,17 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
         // === Device Tool (aggregates 4 device operations) ===
         LlmToolDefinition {
             name: "device".to_string(),
-            description: "Device management tool for querying and controlling IoT devices. Actions: list (list devices), get (device details), query (time-series data), control (send commands). Supports fuzzy device name matching.".to_string(),
+            description: "Device management tool. Actions: list (list devices), get (all current metric values), history (historical time-series data for one metric), control (send commands). Supports fuzzy device name matching.".to_string(),
             aliases: vec!["device".to_string(), "devices".to_string(), "sensor".to_string(), "iot".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
                 ("device_id".to_string(), ParameterInfo {
                     description: "Device ID or partial name (get/query/control). Fuzzy matching supported, e.g., 'living' matches 'Living Room Light'".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["ne101".to_string(), "sensor_1".to_string(), "living_room_light".to_string()],
+                    examples: vec!["sensor_01".to_string(), "living_room_light".to_string(), "thermostat_02".to_string()],
                 }),
                 ("metric".to_string(), ParameterInfo {
-                    description: "Metric name to query (query action). Format: 'field' or 'values.field'. Examples: 'values.battery', 'temperature'".to_string(),
+                    description: "Metric name (history action). Format: 'field' or 'values.field'. Examples: 'values.battery', 'temperature'".to_string(),
                     default: serde_json::json!(null),
                     examples: vec!["values.battery".to_string(), "temperature".to_string(), "humidity".to_string()],
                 }),
@@ -286,12 +286,12 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     examples: vec![r#"{"value": 26}"#.to_string(), r#"{"brightness": 80}"#.to_string()],
                 }),
                 ("start_time".to_string(), ParameterInfo {
-                    description: "Start timestamp for time range query (query action). Unix timestamp in seconds. Default: 1 hour ago".to_string(),
+                    description: "Start timestamp for history time range (history action). Unix timestamp in seconds. Default: 1 hour ago".to_string(),
                     default: serde_json::json!(null),
                     examples: vec!["1712000000".to_string()],
                 }),
                 ("end_time".to_string(), ParameterInfo {
-                    description: "End timestamp for time range query (query action). Default: now".to_string(),
+                    description: "End timestamp for history time range (history action). Default: now".to_string(),
                     default: serde_json::json!(null),
                     examples: vec!["1712100000".to_string()],
                 }),
@@ -308,18 +308,23 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             ]),
             examples: vec![
                 Example {
+                    user_query: "How is the office temperature sensor doing?".to_string(),
+                    tool_call: r#"device(action="latest", device_id="office_temp_sensor")"#.to_string(),
+                    explanation: "Get device's latest data with all current metric values".to_string(),
+                },
+                Example {
                     user_query: "What devices do I have?".to_string(),
                     tool_call: r#"device(action="list")"#.to_string(),
                     explanation: "List all devices".to_string(),
                 },
                 Example {
-                    user_query: "What's the battery level of ne101?".to_string(),
-                    tool_call: r#"device(action="get", device_id="ne101")"#.to_string(),
-                    explanation: "Get device details and current metrics".to_string(),
+                    user_query: "What's the battery level of sensor_01?".to_string(),
+                    tool_call: r#"device(action="latest", device_id="sensor_01")"#.to_string(),
+                    explanation: "Get device's latest data and current metrics".to_string(),
                 },
                 Example {
                     user_query: "Show battery trend for today".to_string(),
-                    tool_call: r#"device(action="query", device_id="ne101", metric="values.battery")"#.to_string(),
+                    tool_call: r#"device(action="history", device_id="sensor_01", metric="values.battery")"#.to_string(),
                     explanation: "Query historical time-series data".to_string(),
                 },
                 Example {
@@ -331,6 +336,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             use_when: vec![
                 "User asks about devices, sensors, or IoT hardware".to_string(),
                 "User wants to check device status or readings".to_string(),
+                "User asks about a device's overall status or data summary".to_string(),
                 "User wants to control a device (turn on/off, adjust)".to_string(),
                 "User asks for historical sensor data or trends".to_string(),
             ],
@@ -361,7 +367,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 ("user_prompt".to_string(), ParameterInfo {
                     description: "Natural language description of what the agent should do (create action). Be specific with device names and thresholds".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["Check ne101 temperature every 5 minutes, alert if above 30C".to_string()],
+                    examples: vec!["Check temperature sensor every 5 minutes, alert if above 30C".to_string()],
                 }),
                 ("schedule_type".to_string(), ParameterInfo {
                     description: "How agent is triggered (create): 'event' (device events), 'cron' (cron schedule), 'interval' (periodic)".to_string(),
@@ -407,7 +413,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 },
                 Example {
                     user_query: "Create a temperature monitoring agent".to_string(),
-                    tool_call: r#"agent(action="create", name="Temperature Monitor", user_prompt="Check ne101 temperature every 5 minutes, alert if above 30C", schedule_type="interval", schedule_config="300")"#.to_string(),
+                    tool_call: r#"agent(action="create", name="Temperature Monitor", user_prompt="Check temperature sensor every 5 minutes, alert if above 30C", schedule_type="interval", schedule_config="300")"#.to_string(),
                     explanation: "Create an interval-based monitoring agent".to_string(),
                 },
                 Example {
@@ -481,9 +487,9 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     examples: vec!["rule_1".to_string()],
                 }),
                 ("dsl".to_string(), ParameterInfo {
-                    description: "Rule DSL definition (create/update). Example: RULE \"Low Battery\" WHEN ne101.battery < 50 DO NOTIFY \"Battery low\" END".to_string(),
+                    description: "Rule DSL definition (create/update). Example: RULE \"Low Battery\" WHEN sensor_01.battery < 50 DO NOTIFY \"Battery low\" END".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec![r#"RULE "Low Battery" WHEN ne101.battery < 50 DO NOTIFY "Battery low" END"#.to_string()],
+                    examples: vec![r#"RULE "Low Battery" WHEN sensor_01.battery < 50 DO NOTIFY "Battery low" END"#.to_string()],
                 }),
                 ("name_filter".to_string(), ParameterInfo {
                     description: "Filter rules by name substring (list action)".to_string(),
@@ -514,7 +520,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 },
                 Example {
                     user_query: "Alert me when battery drops below 50%".to_string(),
-                    tool_call: r#"rule(action="create", dsl="RULE \"Low Battery\" WHEN ne101.battery < 50 DO NOTIFY \"Battery below 50%\" END")"#.to_string(),
+                    tool_call: r#"rule(action="create", dsl="RULE \"Low Battery\" WHEN sensor_01.battery < 50 DO NOTIFY \"Battery below 50%\" END")"#.to_string(),
                     explanation: "Create an automation rule".to_string(),
                 },
                 Example {
@@ -530,32 +536,32 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             ],
         },
 
-        // === Alert Tool ===
+        // === Message Tool ===
         LlmToolDefinition {
-            name: "alert".to_string(),
-            description: "Alert management tool. Actions: list (view alerts with filters), create (new alert), acknowledge (mark resolved). Severity levels: info, warning, error, critical.".to_string(),
-            aliases: vec!["alert".to_string(), "notification".to_string(), "warning".to_string()],
+            name: "message".to_string(),
+            description: "Message and notification tool. Actions: list (view messages with filters), send (new message), read (mark as read). Priority levels: info, notice, important, urgent.".to_string(),
+            aliases: vec!["message".to_string(), "alert".to_string(), "notification".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
-                ("alert_id".to_string(), ParameterInfo {
-                    description: "Alert ID to acknowledge (acknowledge action)".to_string(),
+                ("message_id".to_string(), ParameterInfo {
+                    description: "Message ID to read (read action)".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["alert_1".to_string()],
+                    examples: vec!["msg_1".to_string()],
                 }),
                 ("title".to_string(), ParameterInfo {
-                    description: "Alert title (create action). Short summary".to_string(),
+                    description: "Message title (send action). Short summary".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["High Temperature Alert".to_string(), "Device Offline".to_string()],
+                    examples: vec!["Device Offline".to_string(), "Battery Low".to_string()],
                 }),
                 ("message".to_string(), ParameterInfo {
-                    description: "Alert message body (create action). Detailed description".to_string(),
+                    description: "Message body (send action). Detailed description".to_string(),
                     default: serde_json::json!(null),
                     examples: vec!["Sensor reports 35.2C, threshold is 30C".to_string()],
                 }),
-                ("severity".to_string(), ParameterInfo {
-                    description: "Alert severity (create action): info/warning/error/critical. Default: warning".to_string(),
-                    default: serde_json::json!("warning"),
-                    examples: vec!["info".to_string(), "warning".to_string(), "critical".to_string()],
+                ("level".to_string(), ParameterInfo {
+                    description: "Priority level (send action): info/notice/important/urgent. Default: notice".to_string(),
+                    default: serde_json::json!("notice"),
+                    examples: vec!["info".to_string(), "notice".to_string(), "urgent".to_string()],
                 }),
                 ("unacknowledged_only".to_string(), ParameterInfo {
                     description: "Only return unacknowledged alerts (list action). Default: false".to_string(),
@@ -587,27 +593,17 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             ],
         },
 
-        // === Extension Tool (aggregates all extension commands) ===
+        // === Extension Tool (management only - execute via direct extension-id:command format) ===
         LlmToolDefinition {
             name: "extension".to_string(),
-            description: "Extension (plugin) management tool for interacting with installed extensions. Actions: list (show extensions), get (extension details and commands), execute (run extension command), status (health check).".to_string(),
-            aliases: vec!["extension".to_string(), "plugin".to_string(), "weather".to_string()],
+            description: "Extension (plugin) management tool. Actions: list (show extensions), get (extension details and commands), status (health check). To execute extension commands, use the direct format: extension-id:command (e.g., weather-forecast-v2:get_weather(city=\"Beijing\"))".to_string(),
+            aliases: vec!["extension".to_string(), "plugin".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
                 ("extension_id".to_string(), ParameterInfo {
-                    description: "Extension ID (get/execute/status actions). Use list first to discover available extensions".to_string(),
+                    description: "Extension ID (get/status actions). Use list first to discover available extensions".to_string(),
                     default: serde_json::json!(null),
                     examples: vec!["weather-forecast-v2".to_string(), "image-analyzer-v2".to_string()],
-                }),
-                ("command".to_string(), ParameterInfo {
-                    description: "Command name to execute (execute action). Use get action to discover available commands".to_string(),
-                    default: serde_json::json!(null),
-                    examples: vec!["get_weather".to_string(), "analyze_image".to_string()],
-                }),
-                ("params".to_string(), ParameterInfo {
-                    description: "Command parameters as JSON object (execute action). Example: {\"city\": \"Beijing\"}".to_string(),
-                    default: serde_json::json!({}),
-                    examples: vec![r#"{"city": "Beijing"}"#.to_string(), r#"{"url": "https://example.com/img.jpg"}"#.to_string()],
                 }),
                 ("response_format".to_string(), ParameterInfo {
                     description: "Output verbosity: 'concise' (summary only) or 'detailed' (full info)".to_string(),
@@ -627,11 +623,6 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     explanation: "Get extension details including available commands".to_string(),
                 },
                 Example {
-                    user_query: "Check weather in Beijing".to_string(),
-                    tool_call: r#"extension(action="execute", extension_id="weather-forecast-v2", command="get_weather", params={"city":"北京"})"#.to_string(),
-                    explanation: "Execute an extension command with parameters".to_string(),
-                },
-                Example {
                     user_query: "Is the weather extension healthy?".to_string(),
                     tool_call: r#"extension(action="status", extension_id="weather-forecast-v2")"#.to_string(),
                     explanation: "Check extension health and status".to_string(),
@@ -639,7 +630,6 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             ],
             use_when: vec![
                 "User asks about installed extensions, plugins, or add-ons".to_string(),
-                "User wants to use extension functionality (weather, image analysis, etc.)".to_string(),
                 "User wants to check if an extension is working properly".to_string(),
             ],
         },
@@ -654,12 +644,12 @@ pub fn format_tools_for_llm() -> String {
     // Concise guide
     prompt.push_str("### Usage\n\n");
     prompt.push_str("All tools use an `action` parameter to differentiate operations:\n");
-    prompt.push_str("- device(action=\"list|get|query|control\", ...)\n");
+    prompt.push_str("- device(action=\"list|get|history|control\", ...)\n");
     prompt.push_str("- agent(action=\"list|get|create|update|control|memory|send_message\", ...)\n");
     prompt.push_str("- agent_history(action=\"executions|conversation|latest_execution\", agent_id=\"...\")\n");
     prompt.push_str("- rule(action=\"list|get|create|delete|history\", ...)\n");
     prompt.push_str("- alert(action=\"list|create|acknowledge\", ...)\n");
-    prompt.push_str("- extension(action=\"list|get|execute|status\", ...)\n\n");
+    prompt.push_str("- extension(action=\"list|get|status\", ...)\n\n");
     prompt.push_str(
         "Format: [{\"name\":\"tool_name\",\"arguments\":{\"action\":\"operation\",\"param\":\"value\"}}]\n\n",
     );
@@ -753,7 +743,7 @@ mod tests {
         assert!(prompt.contains("device"));
         assert!(prompt.contains("agent"));
         assert!(prompt.contains("rule"));
-        assert!(prompt.contains("alert"));
+        assert!(prompt.contains("message"));
     }
 
     #[test]
@@ -771,7 +761,7 @@ mod tests {
         assert!(names.contains(&"agent"));
         assert!(names.contains(&"agent_history"));
         assert!(names.contains(&"rule"));
-        assert!(names.contains(&"alert"));
+        assert!(names.contains(&"message"));
         assert!(names.contains(&"extension"));
     }
 

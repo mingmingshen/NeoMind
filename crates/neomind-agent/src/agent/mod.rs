@@ -707,6 +707,8 @@ pub struct Agent {
     last_injected_context_hash: Arc<tokio::sync::RwLock<u64>>,
     /// Tool result cache - caches recent tool executions to avoid redundant calls
     tool_result_cache: Arc<tokio::sync::RwLock<ToolResultCache>>,
+    /// Frozen memory snapshot for this session (loaded once when memory is enabled)
+    memory_snapshot: Arc<tokio::sync::RwLock<Option<crate::memory::MemorySnapshot>>>,
 }
 
 impl Agent {
@@ -763,6 +765,7 @@ impl Agent {
             )),
             last_injected_context_hash: Arc::new(tokio::sync::RwLock::new(0)),
             tool_result_cache: Arc::new(tokio::sync::RwLock::new(ToolResultCache::new())),
+            memory_snapshot: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 
@@ -1239,6 +1242,14 @@ impl Agent {
             prompt.push_str(&resource_context);
         }
 
+        // === Memory snapshot injection (frozen, loaded once per session) ===
+        if let Some(snapshot) = self.memory_snapshot.read().await.as_ref() {
+            let section = snapshot.to_prompt_section();
+            if !section.is_empty() {
+                prompt.push_str(&section);
+            }
+        }
+
         prompt
     }
 
@@ -1250,192 +1261,16 @@ impl Agent {
     ) -> String {
         let mut prompt = String::from(self.config.system_prompt.trim());
 
-        prompt.push_str("\n\n## Available Tools\n\n");
+        prompt.push_str("\n\n## Available Tools (Quick Reference)\n\n");
 
-        // Group tools by category for better organization
-        let mut device_tools = Vec::new();
-        let mut data_tools = Vec::new();
-        let mut rule_tools = Vec::new();
-        let mut agent_tools = Vec::new();
-        let mut ext_aggregated_tools = Vec::new();
-        let mut system_tools = Vec::new();
-
+        // Concise tool reference table — detailed usage is in TOOL_STRATEGY
         for tool in simplified_tools {
-            if tool.name.contains("device_discover")
-                || tool.name.contains("device_control")
-                || tool.name.contains("device")
-                || tool.name.contains("control")
-            {
-                device_tools.push(tool);
-            } else if tool.name.contains("data")
-                || tool.name.contains("query")
-                || tool.name.contains("metrics")
-            {
-                data_tools.push(tool);
-            } else if tool.name.contains("rule") {
-                rule_tools.push(tool);
-            } else if tool.name.contains("agent") {
-                agent_tools.push(tool);
-            } else if tool.name.contains("extension") || tool.name.contains("alert") {
-                ext_aggregated_tools.push(tool);
-            } else {
-                system_tools.push(tool);
-            }
-        }
-
-        // Add tool sections with examples
-        if !device_tools.is_empty() {
-            prompt.push_str("### Device Management\n");
-            for tool in device_tools {
-                prompt.push_str(&format!(
-                    "**{}**: {} (aliases: {})\n",
-                    tool.name,
-                    tool.description,
-                    tool.aliases.join(", ")
-                ));
-
-                // Add use_when conditions
-                if !tool.use_when.is_empty() {
-                    prompt.push_str("  *When to use*: ");
-                    for (i, condition) in tool.use_when.iter().enumerate() {
-                        if i > 0 {
-                            prompt.push_str(" OR ");
-                        }
-                        prompt.push_str(condition);
-                    }
-                    prompt.push('\n');
-                }
-
-                // Add examples (especially important for chains)
-                if !tool.examples.is_empty() {
-                    prompt.push_str("  *Examples*:\n");
-                    for example in &tool.examples {
-                        prompt.push_str(&format!("    - User: \"{}\"\n", example.user_query));
-                        prompt.push_str(&format!("      Call: {}\n", example.tool_call));
-                        if !example.explanation.is_empty() {
-                            prompt.push_str(&format!("      Note: {}\n", example.explanation));
-                        }
-                    }
-                }
-                prompt.push('\n');
-            }
-        }
-
-        if !data_tools.is_empty() {
-            prompt.push_str("### Data Query\n");
-            for tool in data_tools {
-                prompt.push_str(&format!(
-                    "**{}**: {} (aliases: {})\n",
-                    tool.name,
-                    tool.description,
-                    tool.aliases.join(", ")
-                ));
-
-                if !tool.use_when.is_empty() {
-                    prompt.push_str("  *When to use*: ");
-                    for (i, condition) in tool.use_when.iter().enumerate() {
-                        if i > 0 {
-                            prompt.push_str(" OR ");
-                        }
-                        prompt.push_str(condition);
-                    }
-                    prompt.push('\n');
-                }
-
-                if !tool.examples.is_empty() {
-                    prompt.push_str("  *Examples*:\n");
-                    for example in &tool.examples {
-                        prompt.push_str(&format!("    - User: \"{}\"\n", example.user_query));
-                        prompt.push_str(&format!("      Call: {}\n", example.tool_call));
-                        if !example.explanation.is_empty() {
-                            prompt.push_str(&format!("      Note: {}\n", example.explanation));
-                        }
-                    }
-                }
-                prompt.push('\n');
-            }
-        }
-
-        if !rule_tools.is_empty() {
-            prompt.push_str("### Rule Management\n");
-            for tool in rule_tools {
-                prompt.push_str(&format!(
-                    "**{}**: {} (aliases: {})\n",
-                    tool.name,
-                    tool.description,
-                    tool.aliases.join(", ")
-                ));
-
-                if !tool.examples.is_empty() {
-                    prompt.push_str("  *Examples*:\n");
-                    for example in &tool.examples {
-                        prompt.push_str(&format!(
-                            "    - User: \"{}\" -> {}\n",
-                            example.user_query, example.tool_call
-                        ));
-                    }
-                }
-                prompt.push('\n');
-            }
-        }
-
-        if !agent_tools.is_empty() {
-            prompt.push_str("### AI Agent\n");
-            for tool in agent_tools {
-                prompt.push_str(&format!(
-                    "**{}**: {} (aliases: {})\n",
-                    tool.name,
-                    tool.description,
-                    tool.aliases.join(", ")
-                ));
-
-                if !tool.examples.is_empty() {
-                    prompt.push_str("  *Examples*:\n");
-                    for example in &tool.examples {
-                        prompt.push_str(&format!(
-                            "    - User: \"{}\" -> {}\n",
-                            example.user_query, example.tool_call
-                        ));
-                    }
-                }
-                prompt.push('\n');
-            }
-        }
-
-        if !ext_aggregated_tools.is_empty() {
-            prompt.push_str("### Extension & Alert Tools\n");
-            for tool in &ext_aggregated_tools {
-                prompt.push_str(&format!(
-                    "**{}**: {} (aliases: {})\n",
-                    tool.name,
-                    tool.description,
-                    tool.aliases.join(", ")
-                ));
-
-                if !tool.examples.is_empty() {
-                    prompt.push_str("  *Examples*:\n");
-                    for example in &tool.examples {
-                        prompt.push_str(&format!(
-                            "    - User: \"{}\" -> {}\n",
-                            example.user_query, example.tool_call
-                        ));
-                    }
-                }
-                prompt.push('\n');
-            }
-        }
-
-        if !system_tools.is_empty() {
-            prompt.push_str("### System Tools\n");
-            for tool in system_tools {
-                prompt.push_str(&format!(
-                    "**{}**: {} (aliases: {})\n",
-                    tool.name,
-                    tool.description,
-                    tool.aliases.join(", ")
-                ));
-            }
-            prompt.push('\n');
+            prompt.push_str(&format!(
+                "**{}**: {} [aliases: {}]\n",
+                tool.name,
+                tool.description,
+                tool.aliases.join(", ")
+            ));
         }
 
         // Add extension tools from the tool registry
@@ -1509,6 +1344,17 @@ impl Agent {
     /// Get the session ID.
     pub fn session_id(&self) -> &str {
         &self.session_id
+    }
+
+    /// Set the frozen memory snapshot for this session.
+    /// Called once when memory is enabled for the session.
+    pub async fn set_memory_snapshot(&self, snapshot: crate::memory::MemorySnapshot) {
+        *self.memory_snapshot.write().await = Some(snapshot);
+    }
+
+    /// Check if a memory snapshot has been loaded.
+    pub async fn has_memory_snapshot(&self) -> bool {
+        self.memory_snapshot.read().await.is_some()
     }
 
     /// Get the session state.
@@ -2347,36 +2193,6 @@ impl Agent {
                 tracing::debug!("Skipping context injection - unchanged from previous");
             }
         }
-
-        // === P4.2: INTELLIGENT MEMORY INJECTION (TEMPORARILY DISABLED FOR DEBUGGING) ===
-        // Detect stale context and inject relevant long-term memory summaries
-        // This improves context continuity in long conversations
-        /*
-        use crate::context::{calculate_health, ContextHealth};
-        let health = calculate_health(&history_without_last);
-
-        // Inject memory if context is degraded
-        if health.needs_refresh() {
-            tracing::debug!(
-                "Context health degraded (score: {:.2}), injecting memory hints",
-                health.overall_score
-            );
-
-            // Extract entities and topics from recent conversation
-            let (entities, topics) = self.extract_conversation_entities_topics(&history_without_last);
-
-            if !entities.is_empty() || !topics.is_empty() {
-                // Build memory hint prompt
-                let memory_hint = self.build_memory_injection_hint(&entities, &topics, &health);
-
-                if !memory_hint.is_empty() {
-                    use neomind_core::message::{Content, MessageRole};
-                    core_history.push(Message::new(MessageRole::System, Content::text(&memory_hint)));
-                    tracing::debug!("Injected memory hint into context");
-                }
-            }
-        }
-        */
 
         // Call LLM with conversation history (user message will be added by LLM interface)
         let chat_response = self

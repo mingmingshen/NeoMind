@@ -162,6 +162,11 @@
     "llmError": "LLM 服务错误",
     "dismiss": "关闭"
   },
+  "memory": {
+    "label": "记忆",
+    "enabled": "记忆已开启",
+    "disabled": "记忆已关闭"
+  },
   "notConfigured": {
     "title": "LLM 未配置",
     "description": "请先配置 LLM 后端以使用聊天功能",

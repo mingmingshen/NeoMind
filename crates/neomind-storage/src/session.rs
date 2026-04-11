@@ -34,6 +34,9 @@ const PENDING_STREAM_TABLE: TableDefinition<&str, Vec<u8>> =
 pub struct SessionMetadata {
     /// User-defined title for the session
     pub title: Option<String>,
+    /// Whether memory injection is enabled for this session
+    #[serde(default)]
+    pub memory_enabled: bool,
 }
 
 /// A message in a session.
@@ -709,6 +712,13 @@ impl SessionStore {
         }
     }
 
+    /// Toggle memory enabled state for a session.
+    pub fn toggle_memory(&self, session_id: &str, enabled: bool) -> Result<(), Error> {
+        let mut metadata = self.get_session_metadata(session_id)?;
+        metadata.memory_enabled = enabled;
+        self.save_session_metadata(session_id, &metadata)
+    }
+
     /// Delete session metadata.
     pub fn delete_session_metadata(&self, session_id: &str) -> Result<(), Error> {
         let write_txn = self.db.begin_write()?;
@@ -984,6 +994,7 @@ mod tests {
                 "test-session",
                 &SessionMetadata {
                     title: Some("My Chat Session".to_string()),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -998,6 +1009,7 @@ mod tests {
                 "test-session",
                 &SessionMetadata {
                     title: Some("New Title".to_string()),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -1006,7 +1018,7 @@ mod tests {
 
         // Clear title
         store
-            .save_session_metadata("test-session", &SessionMetadata { title: None })
+            .save_session_metadata("test-session", &SessionMetadata { title: None, ..Default::default() })
             .unwrap();
         let meta = store.get_session_metadata("test-session").unwrap();
         assert!(meta.title.is_none());

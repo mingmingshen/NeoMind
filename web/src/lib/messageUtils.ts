@@ -23,50 +23,11 @@ export function dedupeContentConcat(a: string, b: string): string {
 }
 
 /**
- * Check if two assistant messages should be merged.
- *
- * They should be merged if:
- * - First has thinking OR tools
- * - Second has content OR first is missing content (split response)
- * - They are consecutive assistant messages
- *
- * Backend pattern: [thinking+tools] + [content] or [thinking] + [tools+content]
- */
-export function shouldMergeMessages(first: Message, second: Message): boolean {
-  const firstHasThinking = !!first.thinking && first.thinking.length > 0
-  const firstHasTools = !!first.tool_calls && first.tool_calls.length > 0
-  const firstHasContent = !!first.content && first.content.length > 0
-
-  const secondHasThinking = !!second.thinking && second.thinking.length > 0
-  const secondHasTools = !!second.tool_calls && second.tool_calls.length > 0
-  const secondHasContent = !!second.content && second.content.length > 0
-
-  // Always merge consecutive assistant messages where first has thinking or tools
-  // This handles the backend pattern of splitting responses
-  if (firstHasThinking || firstHasTools) {
-    // Merge if second has content, OR if first is missing content (split response)
-    return !firstHasContent || secondHasContent
-  }
-
-  // Also merge if second has thinking or tools and first only has content
-  if ((secondHasThinking || secondHasTools) && firstHasContent) {
-    return true
-  }
-
-  return false
-}
-
-/**
  * Merge fragmented assistant messages for display.
  *
- * Rules:
- * 1. User messages are kept as-is
- * 2. Consecutive assistant messages are merged if they should be:
- *    - Take thinking from the first one
- *    - Take tool_calls from the first one (or any that has them)
- *    - Concatenate all content
- *    - Use the earliest timestamp
- * 3. Other roles (system, tool) are filtered out
+ * Same logic as sessionSlice.mergeAssistantMessages:
+ * Reconstruct ONE message per user turn, combining all tool calls across rounds,
+ * building round_contents, and using the final content as message content.
  */
 export function mergeMessagesForDisplay(messages: Message[]): Message[] {
   const result: Message[] = []
@@ -83,57 +44,75 @@ export function mergeMessagesForDisplay(messages: Message[]): Message[] {
       continue
     }
 
-    // Assistant messages - check if we should merge with following assistant messages
-    const mergedAssistant: Message = { ...msg }
-    const contentParts: string[] = []
-    if (msg.content) {
-      contentParts.push(msg.content)
-    }
-
-    // Look ahead for consecutive assistant messages to merge
+    // Collect all assistant messages in this turn
+    const turnMessages: Message[] = [msg]
     let j = i + 1
-    while (j < messages.length && messages[j].role === "assistant") {
+    while (j < messages.length) {
       const nextMsg = messages[j]
-
-      // Only merge if they should be merged
-      if (!shouldMergeMessages(mergedAssistant, nextMsg)) {
-        break
-      }
-
-      // Collect content (will dedupe when joining)
-      if (nextMsg.content) {
-        contentParts.push(nextMsg.content)
-      }
-
-      // Use thinking from first message that has it
-      if (!mergedAssistant.thinking && nextMsg.thinking) {
-        mergedAssistant.thinking = nextMsg.thinking
-      }
-
-      // Merge tool_calls from all messages (multi-round tool calls may span multiple messages)
-      if (nextMsg.tool_calls && nextMsg.tool_calls.length > 0) {
-        if (!mergedAssistant.tool_calls) {
-          mergedAssistant.tool_calls = [...nextMsg.tool_calls]
-        } else {
-          mergedAssistant.tool_calls = [...mergedAssistant.tool_calls, ...nextMsg.tool_calls]
-        }
-      }
-
+      if ((nextMsg as any).role === "tool") { j++; continue }
+      if (nextMsg.role !== "assistant") break
+      turnMessages.push(nextMsg)
       j++
     }
 
-    // Set merged content, deduplicating so the same text is not shown twice
-    mergedAssistant.content = contentParts.reduce(
-      (acc, part) => dedupeContentConcat(acc, part),
-      ""
+    const merged: Message = { ...msg, content: '' }
+    let allToolCalls: any[] = []
+    let roundContents: Record<number, string> = {}
+    let roundCounter = 1
+    let finalContent = ''
+    let thinking: string | undefined
+
+    // Detect backend storage pattern
+    const hasTrailingContentMsg = turnMessages.some(m =>
+      !(m.tool_calls && m.tool_calls.length > 0) && !!(m.content && m.content.trim())
     )
 
-    // Only add if there's something to show
-    if (mergedAssistant.content || mergedAssistant.thinking || mergedAssistant.tool_calls) {
-      result.push(mergedAssistant)
+    let lastToolCallMsgIndex = -1
+    for (let k = turnMessages.length - 1; k >= 0; k--) {
+      if (turnMessages[k].tool_calls && turnMessages[k].tool_calls!.length > 0) {
+        lastToolCallMsgIndex = k
+        break
+      }
     }
 
-    // Skip the merged messages
+    for (let k = 0; k < turnMessages.length; k++) {
+      const cur = turnMessages[k]
+      const hasTools = !!(cur.tool_calls && cur.tool_calls.length > 0)
+      const hasContent = !!(cur.content && cur.content.trim())
+
+      if (!thinking && cur.thinking) thinking = cur.thinking
+      if (cur.round_contents) {
+        roundContents = { ...roundContents, ...cur.round_contents }
+      }
+
+      if (hasTools) {
+        const roundNum = cur.tool_calls![0]?.round ?? roundCounter
+        allToolCalls = [...allToolCalls, ...cur.tool_calls!.map(tc => ({ ...tc, round: tc.round ?? roundNum }))]
+        roundCounter = roundNum + 1
+
+        if (hasContent) {
+          if (hasTrailingContentMsg) {
+            roundContents[roundNum] = cur.content!
+          } else if (k === lastToolCallMsgIndex) {
+            finalContent = cur.content!
+          } else {
+            roundContents[roundNum] = cur.content!
+          }
+        }
+      } else if (hasContent) {
+        finalContent = dedupeContentConcat(finalContent, cur.content!)
+      }
+    }
+
+    merged.content = finalContent
+    merged.thinking = thinking || undefined
+    merged.tool_calls = allToolCalls.length > 0 ? allToolCalls : undefined
+    merged.round_contents = Object.keys(roundContents).length > 0 ? roundContents : undefined
+
+    if (merged.content || merged.thinking || merged.tool_calls) {
+      result.push(merged)
+    }
+
     i = j - 1
   }
 

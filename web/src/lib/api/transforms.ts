@@ -21,6 +21,8 @@ interface RawSession {
   messageCount?: number
   message_count?: number
   title?: string | null
+  memoryEnabled?: boolean
+  memory_enabled?: boolean
   preview?: string | null
   [key: string]: unknown
 }
@@ -57,6 +59,7 @@ export function normalizeSession(raw: unknown): ChatSession | null {
     messageCount: s.messageCount || s.message_count || 0,
     title: s.title ?? undefined,
     preview: s.preview ?? undefined,
+    memoryEnabled: s.memoryEnabled ?? s.memory_enabled ?? false,
   }
 }
 

@@ -652,6 +652,32 @@ pub async fn update_session_handler(
     }))))
 }
 
+/// Request body for toggling memory.
+#[derive(Debug, Deserialize)]
+pub struct ToggleMemoryRequest {
+    /// Whether memory should be enabled
+    pub enabled: bool,
+}
+
+/// Toggle memory enabled state for a session.
+pub async fn toggle_memory_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+    Json(req): Json<ToggleMemoryRequest>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
+    state
+        .agents
+        .session_manager
+        .toggle_memory(&id, req.enabled)
+        .await
+        .map_err(|e| ErrorResponse::with_message(e.to_string()))?;
+
+    Ok(Json(ApiResponse::success(json!({
+        "sessionId": id,
+        "memoryEnabled": req.enabled,
+    }))))
+}
+
 /// Clean up invalid sessions (dirty data).
 /// Removes sessions that appear in the list but don't have valid data.
 pub async fn cleanup_sessions_handler(

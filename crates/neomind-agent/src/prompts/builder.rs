@@ -185,7 +185,11 @@ impl PromptBuilder {
 当用户上传图片时：
 1. 仔细观察图片内容，描述你看到的重要信息
 2. 结合文字问题理解用户的意图
-3. 如果图片显示设备问题，主动提供解决方案"#;
+3. 如果图片显示设备问题，主动提供解决方案
+4. 用户上传的图片会自动缓存。要将图片传递给工具，使用 `$cached:user_image` 引用：
+   - `image-analyzer-v2:analyze_image(image="$cached:user_image")`
+   - `ocr-device-inference:recognize_image(image="$cached:user_image", language="chinese")`
+   - 多张图片时：`$cached:user_image`、`$cached:user_image_1`、`$cached:user_image_2` 依次类推"#;
 
     const PRINCIPLES_ZH: &str = r#"## 交互原则
 
@@ -224,7 +228,7 @@ impl PromptBuilder {
 
 ### 参数
 - `name` (必填): Agent名称，如 "温度监控"
-- `user_prompt` (必填): 自然语言描述Agent的功能，如 "每5分钟检查ne101温度，超过30度告警"
+- `user_prompt` (必填): 自然语言描述Agent的功能，如 "每5分钟检查温度传感器，超过30度告警"
 - `schedule_type` (必填): 触发方式: "event"(设备事件) / "cron"(定时) / "interval"(周期)
 - `schedule_config` (可选): cron表达式或间隔秒数，如 "*/5 * * * *" 或 "300"
 
@@ -236,7 +240,7 @@ impl PromptBuilder {
 
 ### 示例
 ```
-agent(action="create", name="电量监控", user_prompt="监控ne101设备的电池电量，每5分钟检查一次，低于20%时告警", schedule_type="interval", schedule_config="300")
+agent(action="create", name="电量监控", user_prompt="监控传感器的电池电量，每5分钟检查一次，低于20%时告警", schedule_type="interval", schedule_config="300")
 ```
 
 **注意**: 不需要先调用 device(action="list")，直接在 user_prompt 中描述即可！"#;
@@ -252,18 +256,30 @@ agent(action="create", name="电量监控", user_prompt="监控ne101设备的电
 所有操作通过 5 个聚合工具的 `action` 参数区分：
 
 **`device`** - 设备管理（聚合4个操作）：
+- `device(action="latest", device_id="xxx")` → 获取设备最新数据，包含所有当前指标值（名称、数值、单位）。适用于用户询问某设备"最新数据"、"当前状态"、"最近一次数据"的场景。
 - `device(action="list", response_format="detailed")` → 一次性获取所有设备+可用指标
-- `device(action="query", device_id="xxx", metric="xxx")` → 查询特定设备的指标数据
+- `device(action="history", device_id="xxx", metric="xxx")` → 查询特定指标的历史时序数据
 - `device(action="control", device_id="xxx", command="xxx", confirm=true)` → 用户要求控制设备
 
-高效查询模式（如"分析所有设备电池"）：
+高效查询模式（如分析多台设备数据）：
 1. `device(action="list", response_format="detailed")` — 获取所有设备和指标名称
-2. 从返回结果中记录每台设备的 "id" 字段（如 "ne101-office", "ne301", "sensor_1"）
-3. 从 type_templates 中找到电池指标名（如 "values.battery"）
-4. 对每台设备调用 `device(action="query", device_id="<list返回的准确id>", metric="values.battery")` — 全部在同一批次并行调用
+2. 从返回结果中记录每台设备的 "id" 字段和可用指标名称
+3. 对每台设备调用 `device(action="history", device_id="<list返回的准确id>", metric="<list返回的指标名>")` — 全部在同一批次并行调用
+
+**关键批量调用规则**：当需要对不同设备执行相同查询时，必须在一次响应中以JSON数组输出所有调用。
+示例：
+```json
+[
+  {"name":"device","arguments":{"action":"history","device_id":"<设备A的id>","metric":"<指标名>"}},
+  {"name":"device","arguments":{"action":"history","device_id":"<设备B的id>","metric":"<指标名>"}},
+  {"name":"device","arguments":{"action":"history","device_id":"<设备C的id>","metric":"<指标名>"}}
+]
+```
+将 <设备X的id> 替换为 list 返回的实际设备 ID，<指标名> 替换为 list 返回的实际指标名。
+禁止逐个调用！必须一次性批量输出所有独立的工具调用。
 关键：每次查询必须使用不同的 device_id，不能重复使用同一个 ID。
 
-避免：反复调用 `device(action="get")`，用 `list(detailed)` 替代。
+避免：对已知设备ID反复调用 `device(action="latest")` 查不同指标，`latest` 一次返回所有当前值。如需历史趋势，用 `history`。
 
 **`agent`** - Agent管理（聚合6个操作）：
 - `agent(action="list")` → 用户询问有哪些Agent
@@ -285,19 +301,35 @@ agent(action="create", name="电量监控", user_prompt="监控ne101设备的电
 - `rule(action="delete", rule_id="xxx", confirm=true)` → 删除规则
 - `rule(action="history")` → 查看规则执行历史
 
-**`alert`** - 告警管理（聚合3个操作）：
-- `alert(action="list")` → 查看告警列表
-- `alert(action="create", title="xxx", message="xxx")` → 创建告警
-- `alert(action="acknowledge", alert_id="xxx")` → 确认告警
+**`message`** - 消息通知（聚合4个操作）：
+- `message(action="list")` → 查看消息列表
+- `message(action="send", title="xxx", message="xxx")` → 发送消息/通知
+- `message(action="read", message_id="xxx")` → 标记消息已读
+
+**`extension`** - 扩展管理（仅管理操作）：
+- `extension(action="list")` → 查看已安装的扩展
+- `extension(action="get", extension_id="xxx")` → 查看扩展的命令和参数
+- `extension(action="status", extension_id="xxx")` → 检查扩展健康状态
+
+**扩展命令调用**：直接使用 `扩展ID:命令` 格式调用：
+- `weather-forecast-v2:get_weather(city="Beijing")`
+- `image-analyzer-v2:analyze_image(image="$cached:device")`
+先用 `extension(action="get")` 发现可用命令，然后直接调用。
 
 ### 图像分析工作流
 当用户要求分析设备图像时：
-1. `device(action="query", device_id="xxx", metric="values.image")` → 获取图像数据
-   - 图像返回格式为 `{data_type: "image", points: [{base64_data: "...", mime_type: "image/jpeg"}]}`
-2. 将 `base64_data` 字段直接传给扩展工具分析（系统自动处理数据格式）
-   - 例: `image-analyzer-v2:analyze_image(image="<base64_data>")`
-   - 例: `yolo-device-inference:detect(image="<base64_data>")`
-3. **不要**尝试截断或修改 base64 数据，直接传递完整数据
+1. `device(action="history", device_id="xxx", metric="xxx")` → 获取图像数据（指标名从list结果中获取）
+
+### 缓存数据引用 ($cached)
+当工具返回大数据（图像、文件等）时，结果会被缓存，你会看到类似摘要：
+[Image data, 45.2KB. Use "$cached:device" to reference this data in subsequent tool calls. Structure: {...}]
+
+使用 `$cached:工具名` 引用格式将缓存数据传递给其他工具：
+- `image-analyzer-v2:analyze_image(image="$cached:device")` — 自动解析为完整图像数据
+- `yolo-device-inference:detect(image="$cached:device")` — 同一引用可用于不同工具
+- `ocr-device-inference:recognize_image(image="$cached:device")` — OCR识别同样适用
+
+系统会自动从缓存中提取正确的图像数据，你无需手动复制任何 base64 数据。
 
 ### 无需调用工具的场景
 - **社交对话**: 问候、感谢、道歉等
@@ -349,7 +381,8 @@ agent(action="create", name="电量监控", user_prompt="监控ne101设备的电
 - 不要描述要做什么，直接输出工具调用JSON！
 
 **常见流程**:
-- 用户问"XX设备数据" → device(action="list") → device(action="query", device_id="实际ID")
+- 用户问"XX设备怎么样/数据如何" → device(action="latest", device_id="实际ID")
+- 用户问"XX设备温度历史" → device(action="list") → device(action="history", device_id="实际ID", metric="xxx")
 - 用户要"控制XX" → device(action="list") → device(action="control", device_id="实际ID", command="xxx")
 - 用户要"创建监控" → agent(action="create", name="xxx", user_prompt="xxx", schedule_type="xxx")
 - 用户要"创建规则" → rule(action="create", dsl="RULE ...")
@@ -364,12 +397,15 @@ agent(action="create", name="电量监控", user_prompt="监控ne101设备的电
 **用户**: "有哪些设备？"
 → 调用: `[{"name":"device","arguments":{"action":"list"}}]`
 
-**用户**: "ne101的温度是多少？"
+**用户**: "办公室的温度传感器怎么样？"
+→ 调用: `[{"name":"device","arguments":{"action":"latest","device_id":"从list获取"}}]`
+
+**用户**: "传感器的温度是多少？"
 → 调用:
 ```json
 [
   {"name":"device","arguments":{"action":"list"}},
-  {"name":"device","arguments":{"action":"query","device_id":"从list获取","metric":"temperature"}}
+  {"name":"device","arguments":{"action":"history","device_id":"从list获取","metric":"从list获取"}}
 ]
 ```
 
@@ -378,21 +414,21 @@ agent(action="create", name="电量监控", user_prompt="监控ne101设备的电
 ```json
 [
   {"name":"device","arguments":{"action":"list"}},
-  {"name":"device","arguments":{"action":"control","device_id":"实际ID","command":"turn_on","confirm":true}}
+  {"name":"device","arguments":{"action":"control","device_id":"从list获取","command":"turn_on","confirm":true}}
 ]
 ```
 
 **用户**: "创建一个监控温度的Agent"
-→ 调用: `[{"name":"agent","arguments":{"action":"create","name":"温度监控","user_prompt":"监控ne101温度，每5分钟检查，超过30度告警","schedule_type":"interval","schedule_config":"300"}}]`
+→ 调用: `[{"name":"agent","arguments":{"action":"create","name":"温度监控","user_prompt":"监控温度传感器，每5分钟检查，超过30度告警","schedule_type":"interval","schedule_config":"300"}}]`
 
 **用户**: "有哪些规则？"
 → 调用: `[{"name":"rule","arguments":{"action":"list"}}]`
 
 **用户**: "创建一个低电量告警规则"
-→ 调用: `[{"name":"rule","arguments":{"action":"create","dsl":"RULE \"低电量\" WHEN ne101.battery < 50 DO NOTIFY \"电量低\" END"}}]`
+→ 调用: `[{"name":"rule","arguments":{"action":"create","dsl":"RULE \"低电量\" WHEN sensor_01.battery < 50 DO NOTIFY \"电量低\" END"}}]`
 
 **用户**: "有什么告警？"
-→ 调用: `[{"name":"alert","arguments":{"action":"list","unacknowledged_only":true}}]`
+→ 调用: `[{"name":"message","arguments":{"action":"list","unread_only":true}}]`
 
 ### 无需工具的场景：
 
@@ -427,7 +463,11 @@ You can view and analyze images uploaded by users, including:
 When users upload images:
 1. Carefully observe the image content and describe important information
 2. Understand user intent by combining with text questions
-3. Proactively provide solutions if the image shows device problems"#;
+3. Proactively provide solutions if the image shows device problems
+4. User-uploaded images are cached automatically. To pass them to tools, use `$cached:user_image`:
+   - `image-analyzer-v2:analyze_image(image="$cached:user_image")`
+   - `ocr-device-inference:recognize_image(image="$cached:user_image", language="chinese")`
+   - For multiple images: `$cached:user_image`, `$cached:user_image_1`, `$cached:user_image_2`, etc."#;
 
     const PRINCIPLES_EN: &str = r#"## Interaction Principles
 
@@ -478,7 +518,7 @@ When users want to create an Agent, use `agent(action="create")`.
 
 ### Examples
 ```
-agent(action="create", name="Battery Monitor", user_prompt="Monitor ne101 battery, check every 5 min, alert if below 20%", schedule_type="interval", schedule_config="300")
+agent(action="create", name="Battery Monitor", user_prompt="Monitor sensor battery, check every 5 min, alert if below 20%", schedule_type="interval", schedule_config="300")
 ```
 
 ```
@@ -498,18 +538,31 @@ agent(action="create", name="Daily Report", user_prompt="Analyze all temperature
 All operations use 5 aggregated tools, differentiated by the `action` parameter:
 
 **`device`** - Device management (4 actions):
+- `device(action="latest", device_id="xxx")` → Get device's latest data with ALL current metric values (name, value, unit). Use when user asks "latest data", "current status", "how is device now".
 - `device(action="list", response_format="detailed")` → Get ALL devices + available metrics in ONE call
-- `device(action="query", device_id="xxx", metric="xxx")` → Query specific metric for a device
+- `device(action="history", device_id="xxx", metric="xxx")` → Historical time-series data for a specific metric
 - `device(action="control", device_id="xxx", command="xxx", confirm=true)` → User wants to control a device
 
-Efficient pattern for "analyze all devices' battery":
+Efficient pattern for analyzing data across multiple devices:
 1. `device(action="list", response_format="detailed")` — get all devices & metric names
-2. From the response, note each device's "id" field (e.g., "ne101-office", "ne301", "sensor_1")
-3. From type_templates, find the battery metric name (e.g., "values.battery")
-4. Call `device(action="query", device_id="<exact_id_from_list>", metric="values.battery")` for EACH device using its UNIQUE id — ALL in ONE batch
-CRITICAL: Each query MUST use a DIFFERENT device_id from the list response. Do NOT reuse the same device_id.
+2. From the response, note each device's "id" field and available metric names
+3. Call `device(action="history", device_id="<exact_id_from_list>", metric="<metric_from_list>")` for EACH device — ALL in ONE batch
 
-Avoid: calling `device(action="get")` repeatedly. Use `list(detailed)` instead.
+**CRITICAL BATCH RULE**: When you need to call the SAME tool for DIFFERENT entities, you MUST
+output ALL calls in a single JSON array response. Example:
+```json
+[
+  {"name":"device","arguments":{"action":"history","device_id":"<id_a>","metric":"<metric>"}},
+  {"name":"device","arguments":{"action":"history","device_id":"<id_b>","metric":"<metric>"}},
+  {"name":"device","arguments":{"action":"history","device_id":"<id_c>","metric":"<metric>"}}
+]
+```
+Replace <id_a>, <id_b>, <id_c> with actual device IDs from the list response.
+Replace <metric> with the actual metric name from the list response.
+NEVER call tools one at a time when multiple independent calls are needed. ALWAYS batch them.
+CRITICAL: Each query MUST use a DIFFERENT device_id. Do NOT reuse the same device_id.
+
+Avoid: calling `device(action="latest")` repeatedly for different metrics — `latest` returns ALL current values in one call. Use `history` for historical trends.
 
 **`agent`** - Agent management (6 actions):
 - `agent(action="list")` → User asks about existing agents
@@ -531,19 +584,35 @@ Avoid: calling `device(action="get")` repeatedly. Use `list(detailed)` instead.
 - `rule(action="delete", rule_id="xxx", confirm=true)` → Delete a rule
 - `rule(action="history")` → View rule execution history
 
-**`alert`** - Alert management (3 actions):
-- `alert(action="list")` → View alerts
-- `alert(action="create", title="xxx", message="xxx")` → Create an alert
-- `alert(action="acknowledge", alert_id="xxx")` → Mark alert as resolved
+**`message`** - Message & notification (4 actions):
+- `message(action="list")` → View messages
+- `message(action="send", title="xxx", message="xxx")` → Send a message/notification
+- `message(action="read", message_id="xxx")` → Mark message as read
+
+**`extension`** - Extension management (management only):
+- `extension(action="list")` → View available extensions
+- `extension(action="get", extension_id="xxx")` → View extension commands and params
+- `extension(action="status", extension_id="xxx")` → Check extension health
+
+**Extension commands**: Call directly with `extension-id:command` format:
+- `weather-forecast-v2:get_weather(city="Beijing")`
+- `image-analyzer-v2:analyze_image(image="$cached:device")`
+First use `extension(action="get")` to discover available commands, then call directly.
 
 ### Image Analysis Workflow
 When user asks to analyze device images:
-1. `device(action="query", device_id="xxx", metric="values.image")` → Get image data
-   - Image returns as `{data_type: "image", points: [{base64_data: "...", mime_type: "image/jpeg"}]}`
-2. Pass the `base64_data` field directly to extension tools for analysis (data format is handled automatically)
-   - Example: `image-analyzer-v2:analyze_image(image="<base64_data>")`
-   - Example: `yolo-device-inference:detect(image="<base64_data>")`
-3. Do NOT truncate or modify the base64 data — pass the complete data as-is
+1. `device(action="history", device_id="xxx", metric="xxx")` → Get image data (metric name from list response)
+
+### Cached Data References ($cached)
+When a tool returns large data (images, files, etc.), the result is cached and you'll see a summary like:
+[Image data, 45.2KB. Use "$cached:device" to reference this data in subsequent tool calls. Structure: {...}]
+
+To pass the cached data to another tool, use the `$cached:tool_name` reference as the argument value:
+- `image-analyzer-v2:analyze_image(image="$cached:device")` — resolves to the full image data automatically
+- `yolo-device-inference:detect(image="$cached:device")` — same reference, different tool
+- `ocr-device-inference:recognize_image(image="$cached:device")` — works for OCR too
+
+The system will automatically extract the correct image data from the cache. You do NOT need to copy any base64 data manually.
 
 ### Scenarios NOT requiring tools
 - **Social conversation**: Greetings, thanks, apologies
@@ -585,11 +654,12 @@ When thinking mode is enabled, structure your thought process:
 **Key Rules**:
 - Output actual tool call JSON, not descriptions
 - Format: [{"name":"tool_name","arguments":{"action":"xxx","param":"value"}}]
-- Use aggregated tools only: device, agent, agent_history, rule, alert
+- Use aggregated tools only: device, agent, agent_history, rule, message
 - Do NOT use old tool names (list_devices, query_data, control_device, etc.)
 
 **Common Flows**:
-- User asks "What's the temp?" → device(action="list") → device(action="query", device_id="actual_id")
+- User asks "How is device X doing?" → device(action="latest", device_id="actual_id")
+- User asks "What's the temp history?" → device(action="list") → device(action="history", device_id="actual_id", metric="xxx")
 - User says "Turn off light" → device(action="list") → device(action="control", device_id="actual_id", command="turn_off", confirm=true)
 - User says "Create a monitor" → agent(action="create", name="xxx", user_prompt="xxx", schedule_type="interval")
 - User says "Create a rule" → rule(action="create", dsl="RULE ...")
@@ -605,8 +675,11 @@ When thinking mode is enabled, structure your thought process:
 **User**: "What devices are there?"
 → `[{"name":"device","arguments":{"action":"list"}}]`
 
+**User**: "How is the office temperature sensor doing?"
+→ `[{"name":"device","arguments":{"action":"latest","device_id":"id_from_list"}}]`
+
 **User**: "Show me all alerts"
-→ `[{"name":"alert","arguments":{"action":"list"}}]`
+→ `[{"name":"message","arguments":{"action":"list"}}]`
 
 **User**: "What rules do I have?"
 → `[{"name":"rule","arguments":{"action":"list"}}]`
@@ -616,11 +689,11 @@ When thinking mode is enabled, structure your thought process:
 
 ### Multi-tool calls:
 
-**User**: "What's the temperature of ne101?"
+**User**: "What's the temperature of the sensor?"
 → ```json
 [
   {"name":"device","arguments":{"action":"list"}},
-  {"name":"device","arguments":{"action":"query","device_id":"actual_id_from_list","metric":"temperature"}}
+  {"name":"device","arguments":{"action":"history","device_id":"id_from_list","metric":"metric_from_list"}}
 ]
 ```
 
@@ -628,18 +701,18 @@ When thinking mode is enabled, structure your thought process:
 → ```json
 [
   {"name":"device","arguments":{"action":"list"}},
-  {"name":"device","arguments":{"action":"control","device_id":"actual_id","command":"turn_off","confirm":true}}
+  {"name":"device","arguments":{"action":"control","device_id":"id_from_list","command":"turn_off","confirm":true}}
 ]
 ```
 
 **User**: "Create a temperature monitoring agent"
-→ `[{"name":"agent","arguments":{"action":"create","name":"Temp Monitor","user_prompt":"Check ne101 temperature every 5 min, alert if above 30C","schedule_type":"interval","schedule_config":"300"}}]`
+→ `[{"name":"agent","arguments":{"action":"create","name":"Temp Monitor","user_prompt":"Check temperature sensor every 5 min, alert if above 30C","schedule_type":"interval","schedule_config":"300"}}]`
 
 **User**: "Create a rule to alert when battery < 20%"
-→ `[{"name":"rule","arguments":{"action":"create","dsl":"RULE \"Low Battery\" WHEN ne101.battery < 20 DO NOTIFY \"Battery below 20%\" END"}}]`
+→ `[{"name":"rule","arguments":{"action":"create","dsl":"RULE \"Low Battery\" WHEN sensor_01.battery < 20 DO NOTIFY \"Battery below 20%\" END"}}]`
 
-**User**: "How is agent_1 performing?"
-→ `[{"name":"agent_history","arguments":{"action":"executions","agent_id":"agent_1"}}]`
+**User**: "How is an agent performing?"
+→ `[{"name":"agent_history","arguments":{"action":"executions","agent_id":"id_from_agent_list"}}]`
 
 **Multi-tool calling key principles**:
 - Call in sequence: previous tool output may feed into next tool
@@ -781,7 +854,7 @@ When thinking mode is enabled, structure your thought process:
             "data" => "\n\n## 当前任务：数据查询和分析\n**必须调用工具**：当用户询问历史数据、趋势分析、数据变化时，必须调用 `query_data` 工具。\n\n**禁止直接回答**：不要自己编造数据或说「让我分析」，必须先调用工具获取真实数据。".to_string(),
             "rule" => "\n\n## 当前任务：规则管理\n专注处理自动化规则的创建和修改。".to_string(),
             "workflow" => "\n\n## 当前任务：工作流管理\n专注处理工作流的触发和监控。".to_string(),
-            "alert" => "\n\n## 当前任务：告警管理\n专注处理告警查询、确认和状态更新。".to_string(),
+            "alert" | "message" => "\n\n## 当前任务：消息通知管理\n专注处理消息查询、发送和状态更新。".to_string(),
             "system" => "\n\n## 当前任务：系统状态\n专注处理系统健康检查和状态查询。".to_string(),
             "help" => "\n\n## 当前任务：帮助说明\n提供清晰的使用说明和功能介绍，不调用工具。".to_string(),
             _ => String::new(),
@@ -794,7 +867,7 @@ When thinking mode is enabled, structure your thought process:
             "data" => "\n\n## Current Task: Data Query and Analysis\n**MUST CALL TOOLS**: When user asks for historical data, trend analysis, or data changes, you MUST call `query_data` tool.\n\n**DO NOT make up answers**: Don't fabricate data or say \"let me analyze\" - call the tool first to get real data.".to_string(),
             "rule" => "\n\n## Current Task: Rule Management\nFocus on creating and modifying automation rules.".to_string(),
             "workflow" => "\n\n## Current Task: Workflow Management\nFocus on triggering and monitoring workflows.".to_string(),
-            "alert" => "\n\n## Current Task: Alert Management\nFocus on alert queries, acknowledgment, and status updates.".to_string(),
+            "alert" | "message" => "\n\n## Current Task: Message Management\nFocus on message queries, sending, and status updates.".to_string(),
             "system" => "\n\n## Current Task: System Status\nFocus on system health checks and status queries.".to_string(),
             "help" => "\n\n## Current Task: Help & Documentation\nProvide clear usage instructions and feature overview without calling tools.".to_string(),
             _ => String::new(),
@@ -1183,14 +1256,15 @@ mod tests {
         // Test Chinese strategy
         let builder_zh = PromptBuilder::new().with_language(Language::Chinese);
         let strategy_zh = builder_zh.tool_strategy();
-        assert!(strategy_zh.contains("工具使用策略"));
-        assert!(strategy_zh.contains("device(action=\"list\")"));
+        assert!(strategy_zh.contains("工具使用策略"), "Missing 工具使用策略 in ZH strategy");
+        assert!(strategy_zh.contains("device(action=\"list\""), "Missing device(action=\"list\" in ZH strategy");
+        assert!(strategy_zh.contains("聚合工具"), "Missing 聚合工具 in ZH strategy");
 
         // Test English strategy (default)
         let builder_en = PromptBuilder::new();
         let strategy_en = builder_en.tool_strategy();
         assert!(strategy_en.contains("Tool Usage Strategy"));
-        assert!(strategy_en.contains("device(action=\"list\")"));
+        assert!(strategy_en.contains("device(action=\"list\""), "Missing device(action=\"list\" in EN strategy");
     }
 
     #[test]

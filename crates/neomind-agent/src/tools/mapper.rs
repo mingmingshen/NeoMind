@@ -40,7 +40,8 @@ impl ToolNameMapper {
         self.register_simplified("agent", "agent");
         self.register_simplified("agent_history", "agent_history");
         self.register_simplified("rule", "rule");
-        self.register_simplified("alert", "alert");
+        self.register_simplified("alert", "message");
+        self.register_simplified("message", "message");
 
         // ===== 设备工具别名 =====
         // 设备工具别名 - 指向聚合工具
@@ -66,11 +67,16 @@ impl ToolNameMapper {
         self.register_alias("创建智能体", "agent");
         self.register_alias("新建智能体", "agent");
 
-        // ===== 告警工具别名 =====
-        self.register_alias("告警列表", "alert");
-        self.register_alias("列出告警", "alert");
-        self.register_alias("查看告警", "alert");
-        self.register_alias("创建告警", "alert");
+        // ===== 消息工具别名 =====
+        self.register_alias("消息列表", "message");
+        self.register_alias("列出消息", "message");
+        self.register_alias("查看消息", "message");
+        self.register_alias("发送消息", "message");
+        self.register_alias("通知列表", "message");
+        self.register_alias("告警列表", "message");
+        self.register_alias("列出告警", "message");
+        self.register_alias("查看告警", "message");
+        self.register_alias("创建告警", "message");
 
         // ===== 旧工具名称兼容映射 =====
         // 将旧工具名称映射到新的聚合工具
@@ -94,9 +100,9 @@ impl ToolNameMapper {
         self.register_alias("execute_agent", "agent");
         self.register_alias("control_agent", "agent");
 
-        self.register_alias("list_alerts", "alert");
-        self.register_alias("create_alert", "alert");
-        self.register_alias("acknowledge_alert", "alert");
+        self.register_alias("list_alerts", "message");
+        self.register_alias("create_alert", "message");
+        self.register_alias("acknowledge_alert", "message");
 
         // ===== 旧工具名称兼容映射 =====
         // 将旧工具名称映射到新的聚合工具
@@ -298,9 +304,10 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                 ("agent", "agent") => "agent_id",
                 ("agent", other) => other,
 
-                // ===== alert tool (aggregated) =====
-                ("alert", "alert") => "alert_id",
-                ("alert", other) => other,
+                // ===== message tool (aggregated) =====
+                ("message", "message_id") => "message_id",
+                ("message", "alert_id") => "message_id",  // backward compat
+                ("message", other) => other,
 
                 // ===== Legacy tool names (now map to aggregated) =====
                 // These are kept for backward compatibility if old names are used directly
@@ -371,7 +378,8 @@ mod tests {
         assert_eq!(mapper.resolve("agent"), "agent");
         assert_eq!(mapper.resolve("agent_history"), "agent_history");
         assert_eq!(mapper.resolve("rule"), "rule");
-        assert_eq!(mapper.resolve("alert"), "alert");
+        assert_eq!(mapper.resolve("alert"), "message");
+        assert_eq!(mapper.resolve("message"), "message");
     }
 
     #[test]
@@ -393,8 +401,8 @@ mod tests {
         assert_eq!(mapper.resolve("get_agent"), "agent");
         assert_eq!(mapper.resolve("create_agent"), "agent");
 
-        assert_eq!(mapper.resolve("list_alerts"), "alert");
-        assert_eq!(mapper.resolve("create_alert"), "alert");
+        assert_eq!(mapper.resolve("list_alerts"), "message");
+        assert_eq!(mapper.resolve("create_alert"), "message");
     }
 
     #[test]
@@ -412,7 +420,8 @@ mod tests {
         assert_eq!(mapper.resolve("智能体列表"), "agent");
         assert_eq!(mapper.resolve("列出智能体"), "agent");
 
-        assert_eq!(mapper.resolve("告警列表"), "alert");
+        assert_eq!(mapper.resolve("告警列表"), "message");
+        assert_eq!(mapper.resolve("通知列表"), "message");
     }
 
     #[test]

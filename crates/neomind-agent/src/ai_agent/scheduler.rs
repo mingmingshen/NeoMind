@@ -381,7 +381,14 @@ impl AgentScheduler {
                                         "Waiting for backend permit"
                                     );
                                 }
-                                let _backend_permit = backend_sem.acquire().await.unwrap();
+                                let _backend_permit = match backend_sem.acquire().await {
+                                    Ok(p) => p,
+                                    Err(_) => {
+                                        tracing::warn!(agent_id = %agent_id, "Backend semaphore closed");
+                                        running_executions_clone.write().await.remove(&agent_id);
+                                        return;
+                                    }
+                                };
                                 tracing::debug!(
                                     agent_id = %agent_id,
                                     backend_id = %backend_id,
