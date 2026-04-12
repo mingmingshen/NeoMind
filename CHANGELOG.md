@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Memory System Improvements** — Expanded `system_evolution` category definition with concrete guidance (thresholds, baselines, strategies, behavioral patterns) and 4 new prompt examples. 30-round integration test confirms 79% of agent memories now correctly categorized as `system_evolution`.
+- **Memory Integration Tests** — New test suite with real LLM (`qwen3.5:4b`): agent extraction across all 4 categories, chat extraction skipping `system_evolution`, full extract→snapshot pipeline, and 30-round simulation (43 memories extracted).
+- **Agent Execution Timeline** — Refactored timeline component with improved event rendering and tool thinking event support.
+- **Agent Thinking Panel** — Enhanced thinking display with streaming tool call visualization.
+
+### Changed
+
+- **Thinking Model Compatibility** — Memory extraction and compression LLM calls now explicitly disable thinking (`thinking_enabled: Some(false)`), preventing token waste on reasoning models (qwen3.x, deepseek-r1, etc.) that would otherwise exhaust the response budget without producing parseable JSON.
+- **Memory Config Alignment** — Backend `ExtractionConfig` now includes `min_messages`, `max_messages`, `min_importance`, and `dedup_enabled` fields matching the frontend Config UI. `trigger_extract` uses saved configuration instead of hardcoded defaults.
+- **Chat Tool Calling** — Prompt updated to avoid redundant `device(action="latest")` calls within the same conversation round, reducing unnecessary tool invocations.
+
+### Fixed
+
+- **Memory Extraction Returns Zero** — Fixed memory extraction always returning 0 entries when using thinking-capable models. Root cause: models put responses in the `thinking` field instead of `content`, exhausting `max_tokens` budget. Fix: `thinking_enabled: Some(false)`.
+- **Memory Config Not Persisted** — Frontend Config UI settings for extraction (min messages, min importance, dedup) were silently discarded on save. Backend now accepts and persists all fields.
+- **Streaming Tool Calls** — Fixed tool call streaming event handling in chat interface.
+- **Sidebar Scroll** — Fixed sidebar scroll behavior and chat layout issues.
+- **Scheduler Panic** — Fixed agent scheduler panic on concurrent access.
+
+---
+
 ## [v0.6.5] - 2025-04-09
 
 ### Changed

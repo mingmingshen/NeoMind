@@ -53,7 +53,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 - **Interactive Chat**: Natural language interface for querying and controlling devices
 - **AI Agents**: Autonomous agents with tool calling capabilities for automation
 - **Aggregated Tools**: Token-efficient tool definitions that reduce context usage by 60%+
-- **Multi-Backend Support**: Ollama, OpenAI, Anthropic, Google, xAI, Qwen, DeepSeek, GLM, MiniMax
+- **Multi-Backend Support**: Ollama, OpenAI, Anthropic, Google, xAI, Qwen, DeepSeek, GLM, MiniMax (including thinking model compatibility)
 
 ### 🔌 Modular Device Integration
 - **MQTT Protocol**: Primary device integration with embedded broker, mTLS and CA certificate support
@@ -69,7 +69,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 ### 📦 Complete Storage System
 - **Time-Series**: Device metrics history and queries (redb)
 - **State Storage**: Device states, automation execution records
-- **LLM Memory**: Category-based memory system (Profile, Knowledge, Tasks, Evolution) with LLM-powered extraction and compression
+- **LLM Memory**: Category-based memory system (Profile, Knowledge, Tasks, Evolution) with LLM-powered extraction and compression. Agent execution automatically discovers thresholds, baselines, and optimization insights as `system_evolution` memories.
 - **Vector Search**: Semantic search across devices and rules
 - **Data Explorer**: Unified interface for browsing and exploring time-series data
 
