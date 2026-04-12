@@ -156,8 +156,8 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
                     {t('agents:thinking.reasoningSteps')}
                   </h4>
                   <div className="space-y-2">
-                    {thinkingSteps.map((step) => (
-                      <ThinkingStep key={step.step_number} step={step} />
+                    {thinkingSteps.map((step, idx) => (
+                      <ThinkingStep key={`${step.step_number}-${idx}`} step={step} />
                     ))}
                   </div>
                 </div>

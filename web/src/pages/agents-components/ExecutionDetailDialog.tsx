@@ -450,6 +450,26 @@ export function ExecutionDetailDialog({
               </div>
             </Card>
 
+            {/* LLM Final Response */}
+            {execution.result?.summary && (() => {
+              const summary = execution.result.summary.trim()
+              const conclusion = execution.decision_process?.conclusion?.trim() ?? ''
+              const isGeneric = summary === 'Completed tool execution rounds.'
+                || summary === 'LLM generation failed during tool execution.'
+              const isDuplicate = summary === conclusion && conclusion.length < 100
+              if (!summary || isGeneric || isDuplicate) return null
+              return (
+                <FormSection
+                  title={t('agents:memory.llmResponse', 'LLM Response')}
+                  collapsible
+                >
+                  <pre className="text-xs whitespace-pre-wrap font-mono bg-muted/50 p-3 rounded-lg border max-h-60 overflow-auto break-words leading-relaxed">
+                    {summary}
+                  </pre>
+                </FormSection>
+              )
+            })()}
+
             {/* Actions Executed */}
             {execution.result?.actions_executed && execution.result.actions_executed.length > 0 && (
               <FormSection

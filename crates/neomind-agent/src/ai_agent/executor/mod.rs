@@ -72,12 +72,13 @@ struct RoundData {
 
 struct ToolLoopOutput {
     final_text: String,
+    /// Whether final_text is a generic fallback (no LLM response) vs real output
     is_generic_fallback: bool,
     all_tool_results: Vec<crate::toolkit::ToolResult>,
+    /// Text the LLM produced between tool calls (thinking/reasoning)
     all_reasoning_texts: Vec<String>,
     /// (thought, tool_calls) per round
     round_data_list_raw: Vec<(Option<String>, Vec<ToolCallRecord>)>,
-    max_rounds: usize,
 }
 
 
@@ -92,6 +93,7 @@ mod intent;
 
 // Re-export public types
 pub use context::{EventTriggerData, ChainState, ChainResult};
+pub(crate) use analyzer::AnalysisResult;
 
 // Re-export functions needed by sibling modules (via use super::*)
 pub(crate) use response_parser::{
@@ -372,17 +374,26 @@ impl AgentExecutor {
         }
     }
 
-    /// Build the system prompt for tool-calling mode.
+    /// Build the system prompt for tool-calling (React) mode.
+    ///
+    /// Unlike the Chat analysis path which filters out memory data for small
+    /// models, the React prompt intentionally **includes** historical context
+    /// (learned patterns, baselines, recent conclusions, user messages) so the
+    /// agent can leverage accumulated experience and make progressively better
+    /// decisions.
     fn build_tool_system_prompt(agent: &AiAgent, data_collected: &[DataCollected]) -> String {
         let time_ctx = get_time_context();
 
-        // Collect non-image, non-placeholder, non-memory data
+        // Collect non-image, non-placeholder data.
+        // Keep memory / baselines / patterns data — they are valuable for React mode.
         let data_text: Vec<String> = data_collected
             .iter()
             .filter(|d| {
+                // Exclude images
                 if d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false) {
                     return false;
                 }
+                // Exclude placeholder data from collect_data
                 if d.source == "system"
                     && d.values.get("message").and_then(|v| v.as_str())
                         .map(|s| s.contains("No pre-collected data"))
@@ -390,16 +401,11 @@ impl AgentExecutor {
                 {
                     return false;
                 }
-                let dtype = d.data_type.to_lowercase();
-                !matches!(dtype.as_str(), "summary" | "memory" | "state_variables" | "baselines" | "patterns")
+                true
             })
             .map(|d| {
                 let json_str = serde_json::to_string_pretty(&d.values).unwrap_or_default();
-                if json_str.len() > 2000 {
-                    format!("**Source: {}**\n{}...", d.source, &json_str[..2000])
-                } else {
-                    format!("**Source: {}**\n{}", d.source, json_str)
-                }
+                format!("**Source: {}**\n{}", d.source, json_str)
             })
             .collect();
 
@@ -422,22 +428,88 @@ impl AgentExecutor {
             &format!("\n## Current Data\n{}\n", data_text.join("\n\n"))
         };
 
+        // ── Historical Context (React mode exclusive) ──
+        // Build a rich context from agent memory so the LLM can learn from
+        // past executions and user feedback.
+        let mut history_parts: Vec<String> = Vec::new();
+
+        // 1. Recent conclusions from short-term memory
+        if !agent.memory.short_term.summaries.is_empty() {
+            let recent: Vec<String> = agent.memory.short_term.summaries
+                .iter()
+                .rev()
+                .take(3)
+                .map(|s| {
+                    let status = if s.success { "OK" } else { "FAIL" };
+                    format!("- [{}] {}", status, truncate_to(&s.conclusion, 80))
+                })
+                .collect();
+            history_parts.push(format!("### Recent Executions\n{}", recent.join("\n")));
+        }
+
+        // 2. Learned patterns (high confidence only)
+        if !agent.memory.learned_patterns.is_empty() {
+            let patterns: Vec<String> = agent.memory.learned_patterns
+                .iter()
+                .filter(|p| p.confidence >= 0.6)
+                .take(5)
+                .map(|p| format!("- [{}] {} ({:.0}%)", p.pattern_type, p.description, p.confidence * 100.0))
+                .collect();
+            if !patterns.is_empty() {
+                history_parts.push(format!("### Learned Patterns\n{}", patterns.join("\n")));
+            }
+        }
+
+        // 3. Baseline values
+        if !agent.memory.baselines.is_empty() {
+            let bl: Vec<String> = agent.memory.baselines
+                .iter()
+                .take(5)
+                .map(|(k, v)| format!("- {}: {:.2}", k, v))
+                .collect();
+            history_parts.push(format!("### Known Baselines\n{}", bl.join("\n")));
+        }
+
+        // 4. User messages (highest priority instructions)
+        if !agent.user_messages.is_empty() {
+            let msgs: Vec<String> = agent.user_messages
+                .iter()
+                .rev()
+                .take(5)
+                .map(|m| {
+                    let ts = chrono::DateTime::from_timestamp(m.timestamp, 0)
+                        .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                        .unwrap_or_else(|| "??".to_string());
+                    format!("- [{}] {}", ts, m.content)
+                })
+                .collect();
+            history_parts.push(format!(
+                "### User Instructions (HIGHEST PRIORITY)\n\
+                 These override any conflicting rules from initial config:\n{}",
+                msgs.join("\n")
+            ));
+        }
+
+        let history_section = if history_parts.is_empty() {
+            String::new()
+        } else {
+            format!("\n## Historical Context (learn from past experience)\n{}\n", history_parts.join("\n\n"))
+        };
+
         format!(
             "You are an intelligent IoT agent named '{}' monitoring edge devices.\n\
              Current time: {}\n\
-             Your task: {}\n{}{}\
-             \nYou have access to tools for querying metrics, executing commands, and sending notifications. \
-             **Always use tools to fetch the latest data before making conclusions.**\n\n\
-             **IMPORTANT - Avoid redundant tool calls:**\n\
-             - Do NOT call the same tool with the same parameters if it already returned results (even empty).\n\
-             - If a metric query returns empty data, try a different metric name or move on — do not retry the same query.\n\
+             Your task: {}\n{}{}{}\
+             You have access to tools for querying metrics, executing commands, and sending notifications.\n\
+             Always use tools to fetch the latest data before making conclusions.\n\n\
+             Guidelines:\n\
+             - Do NOT call the same tool with the same parameters if it already returned results.\n\
+             - If a metric query returns empty data, try a different metric or move on.\n\
              - Max 3 rounds of tool calls. Be efficient.\n\n\
-             When done, provide your analysis and conclusion as plain text WITHOUT tool calls.\n\n\
-             Output format for your final response (after tool calls, if any):\n\
-             ```json\n\
-             {{\n  \"situation_analysis\": \"...\",\n  \"conclusion\": \"...\",\n  \"confidence\": 0.8\n}}\n\
-             ```",
-            agent.name, time_ctx, agent.user_prompt, resource_info, current_data_section,
+             When you have enough information, respond with your complete analysis in natural language. \
+             Do NOT wrap your response in JSON or code blocks — just write your analysis directly.\n\
+             Reply in the SAME language as the task description.",
+            agent.name, time_ctx, agent.user_prompt, resource_info, current_data_section, history_section,
         )
     }
 
@@ -549,6 +621,11 @@ impl AgentExecutor {
                 break;
             }
 
+            // Collect LLM's reasoning text (what it said before/during tool calls)
+            if !remaining_text.is_empty() {
+                all_reasoning_texts.push(remaining_text.clone());
+            }
+
             tracing::info!(
                 agent_id = %agent.id, round = round + 1, tool_count = tool_calls.len(),
                 "Tool calls received"
@@ -576,10 +653,6 @@ impl AgentExecutor {
                 .collect();
             let results = registry.execute_parallel(registry_calls).await;
 
-            if !remaining_text.is_empty() {
-                all_reasoning_texts.push(remaining_text.clone());
-            }
-
             let mut round_tool_calls: Vec<ToolCallRecord> = Vec::new();
             for (i, tc) in tool_calls.iter().enumerate() {
                 let result = results.get(i).cloned().unwrap_or_else(|| crate::toolkit::ToolResult {
@@ -601,8 +674,17 @@ impl AgentExecutor {
             for result in &results {
                 all_tool_results.push(result.clone());
                 let result_text = match &result.result {
-                    Ok(output) => serde_json::to_string_pretty(&output.data)
-                        .unwrap_or_else(|_| "Success".to_string()),
+                    Ok(output) => {
+                        let raw = serde_json::to_string_pretty(&output.data)
+                            .unwrap_or_else(|_| "Success".to_string());
+                        // Truncate large results to avoid context overflow
+                        const MAX_TOOL_RESULT_IN_MSG: usize = 4000;
+                        if raw.len() > MAX_TOOL_RESULT_IN_MSG {
+                            format!("{}... (truncated, total {} chars)", &raw[..MAX_TOOL_RESULT_IN_MSG], raw.len())
+                        } else {
+                            raw
+                        }
+                    }
                     Err(e) => format!("Error: {}", e),
                 };
                 messages.push(Message::new(
@@ -613,8 +695,8 @@ impl AgentExecutor {
                 // Send thinking event for each tool result
                 let result_preview = match &result.result {
                     Ok(output) => {
-                        let s = serde_json::to_string(&output.data).unwrap_or_default();
-                        if s.len() > 200 { format!("{}...", &s[..200]) } else { s }
+                        let brief = summarize_tool_output(&output.data, &result.name);
+                        truncate_to(&brief, 200).to_string()
                     }
                     Err(e) => format!("Error: {}", e),
                 };
@@ -626,42 +708,106 @@ impl AgentExecutor {
             }
         }
 
-        // If exhausted all rounds, request a summary
-        let is_generic_fallback = final_text.is_empty();
-        if is_generic_fallback && !messages.is_empty() {
-            messages.push(Message::new(
-                MessageRole::User,
-                Content::text(
-                    "Based on all the tool results above, please provide a JSON summary in this exact format:\n\
-                     ```json\n\
-                     {\"situation_analysis\": \"brief analysis of what was found\", \"conclusion\": \"summary of findings and any actions taken\", \"confidence\": 0.85}\n\
-                     ```\n\
-                     Respond ONLY with the JSON block, no other text."
-                ),
+        // If all rounds exhausted without LLM producing final text, OR if LLM failed
+        // mid-loop (error message in final_text), use Chat's Phase 2 pattern to
+        // generate a natural language conclusion.
+        //
+        // Unlike the old JSON-template approach, this sends full tool results (truncated
+        // to 8KB each) in [tool_name]\nresult\n\n format — same as Chat Phase 2 — so
+        // the LLM has enough data to produce a real analysis.
+        let needs_summary = final_text.is_empty()
+            || final_text == "LLM generation failed during tool execution."
+            || final_text == "Completed tool execution rounds.";
+        if needs_summary && !all_tool_results.is_empty() {
+            // Clear error text so summary response replaces it
+            final_text.clear();
+
+            // Build Phase 2 prompt — natural language, NOT JSON template.
+            // Pattern mirrors Chat's build_phase2_prompt_with_tool_results.
+            let task = &agent.user_prompt;
+            let mut phase2_user = format!(
+                "{}\n\n[Completed {} rounds of tool execution, {} tool results collected]\n\
+                 IMPORTANT: You MUST analyze ALL tool results below and provide a COMPLETE response. \
+                 Do NOT just say \"execution completed\" — present the data naturally.\n\n",
+                task,
+                round_data_list.len().max(1),
+                all_tool_results.len(),
+            );
+
+            const TOOL_RESULT_MAX_LEN: usize = 8000;
+            for r in &all_tool_results {
+                let result_text = match &r.result {
+                    Ok(output) => {
+                        let raw = serde_json::to_string_pretty(&output.data)
+                            .unwrap_or_else(|_| "Success".to_string());
+                        if raw.len() > TOOL_RESULT_MAX_LEN {
+                            format!("{}... (truncated, total {} chars)", &raw[..TOOL_RESULT_MAX_LEN], raw.len())
+                        } else {
+                            raw
+                        }
+                    }
+                    Err(e) => format!("Error: {}", e),
+                };
+                phase2_user.push_str(&format!("[{}]\n{}\n\n", r.name, result_text));
+            }
+            phase2_user.push_str(&format!(
+                "\nPlease organize the above data to answer: {}",
+                task
             ));
 
+            let summary_messages = vec![
+                Message::new(
+                    MessageRole::System,
+                    Content::text(
+                        "You are an intelligent IoT assistant. Analyze the tool execution results \
+                         and provide a comprehensive, user-friendly response in the SAME language \
+                         as the task. Focus on the actual data and insights, not on mentioning that \
+                         tools were called."
+                    ),
+                ),
+                Message::new(MessageRole::User, Content::text(&phase2_user)),
+            ];
+
             let summary_input = LlmInput {
-                messages: messages.clone(),
+                messages: summary_messages,
                 params: GenerationParams {
-                    temperature: Some(0.3),
-                    max_tokens: Some(1000),
+                    temperature: Some(0.7),
+                    max_tokens: Some(2000),
                     ..Default::default()
                 },
                 model: None,
                 stream: false,
-                tools: Some(filtered_tools.to_vec()),
+                tools: None, // No tools — force LLM to answer, not call more tools
             };
 
             match llm_runtime.generate(summary_input).await {
                 Ok(output) => {
-                    final_text = output.text.trim().to_string();
+                    let text = output.text.trim().to_string();
+                    let response_len = text.len();
+                    if !text.is_empty() {
+                        final_text = text;
+                    }
+                    tracing::info!(
+                        agent_id = %agent.id,
+                        response_len,
+                        "Phase 2 analysis generated successfully"
+                    );
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to generate final summary: {}", e);
-                    final_text = "Completed tool execution rounds.".to_string();
+                    tracing::warn!(
+                        agent_id = %agent.id,
+                        error = %e,
+                        "Failed to generate Phase 2 analysis"
+                    );
+                    // Leave final_text empty — build_tool_result will generate fallback
                 }
             }
         }
+
+        // is_generic_fallback: true when the post-loop summary was needed (and may or
+        // may not have succeeded). This tells build_tool_result to prefer tool-derived
+        // fallbacks over the raw final_text when the latter is unhelpful.
+        let is_generic_fallback = needs_summary;
 
         if final_text.is_empty() {
             final_text = "Completed tool execution rounds.".to_string();
@@ -676,7 +822,6 @@ impl AgentExecutor {
                 .into_iter()
                 .map(|rd| (rd.thought, rd.tool_calls))
                 .collect(),
-            max_rounds,
         }
     }
 
@@ -692,53 +837,76 @@ impl AgentExecutor {
             all_tool_results,
             all_reasoning_texts,
             round_data_list_raw,
-            max_rounds,
         } = loop_output;
 
         let (mut situation_analysis, mut conclusion, confidence) =
             parse_final_tool_response(&final_text);
 
-        // Override situation_analysis only when it's empty or generic
+        // --- situation_analysis ---
+        // When the LLM didn't produce structured JSON:
+        // - If Phase 2 generated natural language, use it as situation_analysis
+        // - Otherwise fall back to reasoning texts or generic summary
         if is_generic_fallback || situation_analysis.is_empty() || situation_analysis == "Completed tool execution rounds." {
-            situation_analysis = if !all_reasoning_texts.is_empty() {
+            // Phase 2 natural language response — use as situation_analysis
+            if is_generic_fallback && !final_text.is_empty()
+                && final_text != "Completed tool execution rounds."
+                && final_text != "LLM generation failed during tool execution."
+            {
+                situation_analysis = if final_text.len() > 500 {
+                    let end = final_text[..500]
+                        .rfind(|c: char| c == '.' || c == '!' || c == '?' || c == '。')
+                        .map(|i| i + 1)
+                        .unwrap_or(500);
+                    format!("{}...", &final_text[..end])
+                } else {
+                    final_text.clone()
+                };
+            } else if !all_reasoning_texts.is_empty() {
                 let combined = all_reasoning_texts.join(" ");
-                if combined.len() > 500 {
+                situation_analysis = if combined.len() > 500 {
                     let end = combined[..500]
-                        .rfind(|c: char| c == '.' || c == '!' || c == '?')
+                        .rfind(|c: char| c == '.' || c == '!' || c == '?' || c == '。')
                         .map(|i| i + 1)
                         .unwrap_or(500);
                     format!("{}...", &combined[..end])
                 } else {
                     combined
-                }
+                };
             } else {
-                format!(
-                    "Agent executed {} tool operations across {} rounds.",
-                    all_tool_results.len(), max_rounds
-                )
-            };
+                situation_analysis = format!(
+                    "Agent executed {} tool operations across completed rounds.",
+                    all_tool_results.len()
+                );
+            }
         }
 
-        // Override conclusion only when the model didn't provide one
-        if conclusion.is_empty() {
-            conclusion = if let Some(last_thought) = all_reasoning_texts.last() {
-                last_thought.trim().to_string()
+        // --- conclusion ---
+        // Priority: JSON-parsed > Phase 2 natural language > tool summary
+        // Treat generic/error strings as empty so they get replaced.
+        let is_generic_conclusion = conclusion == "Completed tool execution rounds."
+            || conclusion == "LLM generation failed during tool execution.";
+        if conclusion.is_empty() || is_generic_conclusion {
+            if !final_text.is_empty()
+                && final_text != "Completed tool execution rounds."
+                && final_text != "LLM generation failed during tool execution."
+            {
+                // Use the LLM's Phase 2 natural language response
+                conclusion = final_text.clone();
             } else if !all_tool_results.is_empty() {
                 let tool_summary: Vec<String> = all_tool_results
                     .iter()
-                    .take(3)
                     .filter_map(|r| match &r.result {
                         Ok(output) => Some(summarize_tool_output(&output.data, &r.name)),
                         Err(e) => Some(format!("{} failed: {}", r.name, e)),
                     })
                     .collect();
-                tool_summary.join("; ") + "."
+                conclusion = tool_summary.join("; ") + ".";
             } else {
-                "No tools were executed during this agent run.".to_string()
-            };
+                conclusion = "No tools were executed during this agent run.".to_string();
+            }
         }
 
-        // Build reasoning steps interleaved by round
+        // --- reasoning steps ---
         let mut reasoning_steps: Vec<ReasoningStep> = Vec::new();
         let mut step_counter = 0u32;
 
@@ -768,14 +936,7 @@ impl AgentExecutor {
 
                 let input_str = serde_json::to_string(&tc.input).ok();
                 let output_str = match &tc.result.result {
-                    Ok(output) => {
-                        let data_str = serde_json::to_string(&output.data).unwrap_or_default();
-                        if data_str.len() > 2000 {
-                            format!("{}...", &data_str[..2000])
-                        } else {
-                            data_str
-                        }
-                    }
+                    Ok(output) => serde_json::to_string(&output.data).unwrap_or_default(),
                     Err(e) => format!("Error: {}", e),
                 };
 
@@ -810,13 +971,31 @@ impl AgentExecutor {
             })
             .collect();
 
+        // Derive confidence: LLM may provide it via JSON (explicit), natural language (0.7),
+        // or not at all (0.5). Use tool success rate as a floor.
+        let tool_success_rate = if all_tool_results.is_empty() {
+            None
+        } else {
+            let ok = all_tool_results.iter().filter(|r| r.result.is_ok()).count() as f32;
+            Some((ok / all_tool_results.len() as f32).max(0.5))
+        };
+        let final_confidence = if confidence > 0.7 {
+            // LLM provided explicit confidence via JSON
+            confidence
+        } else if let Some(rate) = tool_success_rate {
+            // Fall back to tool success rate when confidence is default or steps empty
+            rate
+        } else {
+            0.5
+        };
+
         let decision_process = DecisionProcess {
             situation_analysis,
             data_collected: data_collected.to_vec(),
             reasoning_steps,
             decisions,
             conclusion,
-            confidence,
+            confidence: final_confidence,
         };
 
         let actions_executed: Vec<neomind_storage::ActionExecuted> = all_tool_results
@@ -845,11 +1024,18 @@ impl AgentExecutor {
                 / actions_executed.len() as f32
         };
 
+        // summary: the actual LLM response text (Phase 2 or natural).
+        // Skip generic/error strings — the frontend already shows conclusion separately.
+        let summary_text = if is_generic_fallback || final_text == "LLM generation failed during tool execution." {
+            String::new()
+        } else {
+            final_text.clone()
+        };
         let execution_result = neomind_storage::ExecutionResult {
             actions_executed,
             report: None,
             notifications_sent: vec![],
-            summary: final_text.clone(),
+            summary: summary_text,
             success_rate,
         };
 
@@ -1563,6 +1749,43 @@ impl AgentExecutor {
             .await
             .map_err(|e| NeoMindError::Storage(format!("Failed to update status: {}", e)))?;
 
+        // RAII guard: if execute_agent is cancelled/panics before reaching the
+        // normal status-reset at the end, this guard will reset the status on drop.
+        // Without this, an agent can be permanently stuck in Executing state.
+        struct StatusGuard {
+            store: Arc<AgentStore>,
+            agent_id: String,
+            armed: std::cell::Cell<bool>,
+        }
+
+        impl Drop for StatusGuard {
+            fn drop(&mut self) {
+                if self.armed.get() {
+                    let store = self.store.clone();
+                    let aid = self.agent_id.clone();
+                    tokio::spawn(async move {
+                        tracing::warn!(
+                            agent_id = %aid,
+                            "execute_agent dropped before status reset — force-resetting to Active"
+                        );
+                        let _ = store
+                            .update_agent_status(
+                                &aid,
+                                neomind_storage::AgentStatus::Active,
+                                Some("Execution interrupted - force reset".to_string()),
+                            )
+                            .await;
+                    });
+                }
+            }
+        }
+
+        let status_guard = StatusGuard {
+            store: self.store.clone(),
+            agent_id: agent_id.clone(),
+            armed: std::cell::Cell::new(true),
+        };
+
         // Determine trigger type and context event_data based on whether we have event trigger
         let trigger_type = match &event_data {
             Some(ed) => format!("event:{}", ed.metric),
@@ -1747,6 +1970,9 @@ impl AgentExecutor {
         }
 
         // Reset agent status based on result
+        // Disarm the RAII guard — normal completion handles status reset
+        status_guard.armed.set(false);
+
         let new_status = if record.status == ExecutionStatus::Completed {
             neomind_storage::AgentStatus::Active
         } else {
@@ -2324,8 +2550,9 @@ impl AgentExecutor {
             agent.parsed_intent = Some(intent.clone());
         }
 
-        // Step 2: Analyze situation with LLM
-        let (situation_analysis, reasoning_steps, decisions, conclusion) = self
+        // Step 2: Analyze situation — returns AnalysisResult which branches
+        // React vs Chat.
+        let analysis = self
             .analyze_situation_with_intent(
                 &agent,
                 &data_collected,
@@ -2334,178 +2561,228 @@ impl AgentExecutor {
             )
             .await?;
 
-        // Send thinking event for analysis completion
-        self.send_thinking(
-            &agent_id,
-            &execution_id,
-            step_num,
-            &format!(
-                "Analysis completed: Generated {} decision(s)",
-                decisions.len()
-            ),
-        )
-        .await;
-        step_num += 1;
+        match analysis {
+            // ── React path ──────────────────────────────────────────────
+            // Tool-calling mode already produced a full DecisionProcess and
+            // ExecutionResult.  We only need to update memory and return.
+            AnalysisResult::React {
+                decision_process,
+                execution_result,
+            } => {
+                self.send_thinking(
+                    &agent_id,
+                    &execution_id,
+                    step_num,
+                    &format!(
+                        "React analysis completed: {} tool call(s), confidence {:.0}%",
+                        decision_process.decisions.len(),
+                        decision_process.confidence * 100.0
+                    ),
+                )
+                .await;
 
-        // Progress: Executing decisions
-        self.send_progress(
-            &agent_id,
-            &execution_id,
-            "executing",
-            "Executing decisions",
-            Some(&format!("Executing {} decision(s)...", decisions.len())),
-        )
-        .await;
+                // Update memory with React results
+                let updated_memory = self
+                    .update_memory(
+                        &agent,
+                        &decision_process.data_collected,
+                        &decision_process.decisions,
+                        &decision_process.situation_analysis,
+                        &decision_process.conclusion,
+                        &execution_id,
+                        true,
+                    )
+                    .await?;
 
-        // Send initial executing status
-        self.send_thinking(
-            &agent_id,
-            &execution_id,
-            step_num,
-            &format!("Starting execution of {} decision(s)", decisions.len()),
-        )
-        .await;
-        step_num += 1;
+                self.store
+                    .update_agent_memory(&agent.id, updated_memory.clone())
+                    .await
+                    .map_err(|e| NeoMindError::Storage(format!("Failed to update memory: {}", e)))?;
 
-        // Step 3: Execute decisions
-        let (actions_executed, notifications_sent) =
-            self.execute_decisions(&agent, &decisions).await?;
+                // Extract learned patterns into system memory
+                if !decision_process.decisions.is_empty()
+                    || !decision_process.situation_analysis.is_empty()
+                {
+                    self.extract_to_system_memory(
+                        &agent,
+                        &decision_process.situation_analysis,
+                        &decision_process.conclusion,
+                        &decision_process.decisions,
+                    )
+                    .await;
+                }
 
-        // Send thinking events for each action executed
-        for action in &actions_executed {
-            self.send_thinking(
-                &agent_id,
-                &execution_id,
-                step_num,
-                &format!("Executing: {} -> {}", action.action_type, action.target),
-            )
-            .await;
-            step_num += 1;
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                tracing::info!(
+                    agent_id = %agent_id,
+                    "[REACT] Returning direct results — skipped Chat post-processing"
+                );
+
+                Ok((decision_process, execution_result))
+            }
+
+            // ── Chat path ───────────────────────────────────────────────
+            // Standard single-pass LLM or rule-based analysis.  Follow the
+            // original pipeline: execute_decisions → report → memory → store.
+            AnalysisResult::Chat {
+                situation_analysis,
+                reasoning_steps,
+                decisions,
+                conclusion,
+            } => {
+                // Send thinking event for analysis completion
+                self.send_thinking(
+                    &agent_id,
+                    &execution_id,
+                    step_num,
+                    &format!(
+                        "Analysis completed: Generated {} decision(s)",
+                        decisions.len()
+                    ),
+                )
+                .await;
+                step_num += 1;
+
+                // Progress: Executing decisions
+                self.send_progress(
+                    &agent_id,
+                    &execution_id,
+                    "executing",
+                    "Executing decisions",
+                    Some(&format!("Executing {} decision(s)...", decisions.len())),
+                )
+                .await;
+
+                // Send initial executing status
+                self.send_thinking(
+                    &agent_id,
+                    &execution_id,
+                    step_num,
+                    &format!("Starting execution of {} decision(s)", decisions.len()),
+                )
+                .await;
+                step_num += 1;
+
+                // Step 3: Execute decisions
+                let (actions_executed, notifications_sent) =
+                    self.execute_decisions(&agent, &decisions).await?;
+
+                // Send thinking events for each action executed
+                for action in &actions_executed {
+                    self.send_thinking(
+                        &agent_id,
+                        &execution_id,
+                        step_num,
+                        &format!("Executing: {} -> {}", action.action_type, action.target),
+                    )
+                    .await;
+                    step_num += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+
+                // Send thinking events for notifications
+                for notification in &notifications_sent {
+                    self.send_thinking(
+                        &agent_id,
+                        &execution_id,
+                        step_num,
+                        &format!("Sending notification: {}", notification.message),
+                    )
+                    .await;
+                    step_num += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+
+                // Send completion event for executing stage
+                if actions_executed.is_empty() && notifications_sent.is_empty() {
+                    self.send_thinking(
+                        &agent_id,
+                        &execution_id,
+                        step_num,
+                        "Execution completed: No additional actions required",
+                    )
+                    .await;
+                } else {
+                    self.send_thinking(
+                        &agent_id,
+                        &execution_id,
+                        step_num,
+                        &format!(
+                            "Execution completed: {} action(s), {} notification(s)",
+                            actions_executed.len(),
+                            notifications_sent.len()
+                        ),
+                    )
+                    .await;
+                }
+
+                // Step 4: Generate report if needed
+                let report = self.maybe_generate_report(&agent, &data_collected).await?;
+
+                // Step 5: Update memory with learnings
+                let updated_memory = self
+                    .update_memory(
+                        &agent,
+                        &data_collected,
+                        &decisions,
+                        &situation_analysis,
+                        &conclusion,
+                        &execution_id,
+                        true,
+                    )
+                    .await?;
+
+                // Save updated memory
+                self.store
+                    .update_agent_memory(&agent.id, updated_memory.clone())
+                    .await
+                    .map_err(|e| NeoMindError::Storage(format!("Failed to update memory: {}", e)))?;
+
+                // Bridge: extract learned patterns into system memory
+                if !decisions.is_empty() || !situation_analysis.is_empty() {
+                    self.extract_to_system_memory(
+                        &agent,
+                        &situation_analysis,
+                        &conclusion,
+                        &decisions,
+                    ).await;
+                }
+
+                // Calculate confidence from reasoning
+                let confidence = if reasoning_steps.is_empty() {
+                    0.5
+                } else {
+                    reasoning_steps.iter().map(|s| s.confidence).sum::<f32>() / reasoning_steps.len() as f32
+                };
+
+                // No truncation — preserve full LLM output for quality
+                let summary_for_result = conclusion.clone();
+
+                let decision_process = DecisionProcess {
+                    situation_analysis,
+                    data_collected,
+                    reasoning_steps,
+                    decisions,
+                    conclusion,
+                    confidence,
+                };
+
+                let success_rate = if actions_executed.is_empty() {
+                    1.0
+                } else {
+                    let success_count = actions_executed.iter().filter(|a| a.success).count() as f32;
+                    success_count / actions_executed.len() as f32
+                };
+
+                let execution_result = StorageExecutionResult {
+                    actions_executed,
+                    report,
+                    notifications_sent,
+                    summary: summary_for_result,
+                    success_rate,
+                };
+
+                Ok((decision_process, execution_result))
+            }
         }
-
-        // Send thinking events for notifications
-        for notification in &notifications_sent {
-            self.send_thinking(
-                &agent_id,
-                &execution_id,
-                step_num,
-                &format!("Sending notification: {}", notification.message),
-            )
-            .await;
-            step_num += 1;
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-
-        // Send completion event for executing stage
-        if actions_executed.is_empty() && notifications_sent.is_empty() {
-            self.send_thinking(
-                &agent_id,
-                &execution_id,
-                step_num,
-                "Execution completed: No additional actions required",
-            )
-            .await;
-        } else {
-            self.send_thinking(
-                &agent_id,
-                &execution_id,
-                step_num,
-                &format!(
-                    "Execution completed: {} action(s), {} notification(s)",
-                    actions_executed.len(),
-                    notifications_sent.len()
-                ),
-            )
-            .await;
-        }
-
-        // Step 4: Generate report if needed
-        let report = self.maybe_generate_report(&agent, &data_collected).await?;
-
-        // Step 5: Update memory with learnings
-        let memory_success = true;
-        let updated_memory = self
-            .update_memory(
-                &agent,
-                &data_collected,
-                &decisions,
-                &situation_analysis,
-                &conclusion,
-                &execution_id,
-                memory_success,
-            )
-            .await?;
-
-        // Save updated memory
-        self.store
-            .update_agent_memory(&agent.id, updated_memory.clone())
-            .await
-            .map_err(|e| NeoMindError::Storage(format!("Failed to update memory: {}", e)))?;
-
-        // Bridge: extract learned patterns into system memory
-        if !decisions.is_empty() || !situation_analysis.is_empty() {
-            self.extract_to_system_memory(
-                &agent,
-                &situation_analysis,
-                &conclusion,
-                &decisions,
-            ).await;
-        }
-
-        // Calculate confidence from reasoning
-        let confidence = if reasoning_steps.is_empty() {
-            0.5
-        } else {
-            reasoning_steps.iter().map(|s| s.confidence).sum::<f32>() / reasoning_steps.len() as f32
-        };
-
-        // Truncate text fields before storing in DecisionProcess
-        let cleaned_situation = clean_and_truncate_text(&situation_analysis, 500);
-        let cleaned_conclusion = clean_and_truncate_text(&conclusion, 200);
-
-        let cleaned_steps: Vec<neomind_storage::ReasoningStep> = reasoning_steps
-            .into_iter()
-            .map(|mut step| {
-                step.description = clean_and_truncate_text(&step.description, 150);
-                step
-            })
-            .collect();
-
-        let cleaned_decisions: Vec<neomind_storage::Decision> = decisions
-            .into_iter()
-            .map(|mut dec| {
-                dec.description = clean_and_truncate_text(&dec.description, 150);
-                dec.rationale = clean_and_truncate_text(&dec.rationale, 150);
-                dec.expected_outcome = clean_and_truncate_text(&dec.expected_outcome, 150);
-                dec
-            })
-            .collect();
-
-        let decision_process = DecisionProcess {
-            situation_analysis: cleaned_situation,
-            data_collected,
-            reasoning_steps: cleaned_steps,
-            decisions: cleaned_decisions,
-            conclusion: cleaned_conclusion,
-            confidence,
-        };
-
-        let success_rate = if actions_executed.is_empty() {
-            1.0
-        } else {
-            let success_count = actions_executed.iter().filter(|a| a.success).count() as f32;
-            success_count / actions_executed.len() as f32
-        };
-
-        let execution_result = StorageExecutionResult {
-            actions_executed,
-            report,
-            notifications_sent,
-            summary: conclusion,
-            success_rate,
-        };
-
-        Ok((decision_process, execution_result))
     }
 }

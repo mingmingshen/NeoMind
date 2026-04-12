@@ -1,5 +1,26 @@
 use super::*;
 
+/// Result of situation analysis, branching by execution path.
+///
+/// - `React`: Tool-calling (ReAct) mode — the LLM autonomously called tools and
+///   produced a full `DecisionProcess` + `ExecutionResult`.  The caller should
+///   return these directly, skipping Chat post-processing (execute_decisions,
+///   report generation, truncation).
+/// - `Chat`: Standard single-pass LLM or rule-based analysis — returns the four
+///   classical fields that `execute_internal` assembles into `DecisionProcess`.
+pub(crate) enum AnalysisResult {
+    Chat {
+        situation_analysis: String,
+        reasoning_steps: Vec<ReasoningStep>,
+        decisions: Vec<Decision>,
+        conclusion: String,
+    },
+    React {
+        decision_process: DecisionProcess,
+        execution_result: neomind_storage::ExecutionResult,
+    },
+}
+
 impl AgentExecutor {
     pub(crate) fn build_available_commands_description(agent: &AiAgent) -> String {
         let mut device_commands: std::collections::HashMap<String, Vec<&AgentResource>> =
@@ -328,7 +349,7 @@ impl AgentExecutor {
         data: &[DataCollected],
         parsed_intent: Option<&neomind_storage::ParsedIntent>,
         execution_id: &str,
-    ) -> AgentResult<(String, Vec<ReasoningStep>, Vec<Decision>, String)> {
+    ) -> AgentResult<AnalysisResult> {
         tracing::info!(
             agent_id = %agent.id,
             agent_name = %agent.name,
@@ -354,17 +375,16 @@ impl AgentExecutor {
                         .execute_with_tools(agent, data, llm.clone(), execution_id)
                         .await
                     {
-                        Ok((dp, _exec_result)) => {
+                        Ok((dp, exec_result)) => {
                             tracing::info!(
                                 agent_id = %agent.id,
                                 "Tool-based analysis completed successfully"
                             );
-                            return Ok((
-                                dp.situation_analysis,
-                                dp.reasoning_steps,
-                                dp.decisions,
-                                dp.conclusion,
-                            ));
+                            // React path: return full (DP, ER) — caller uses them directly
+                            return Ok(AnalysisResult::React {
+                                decision_process: dp,
+                                execution_result: exec_result,
+                            });
                         }
                         Err(e) => {
                             tracing::warn!(
@@ -376,17 +396,22 @@ impl AgentExecutor {
                     }
                 }
 
-                // Standard LLM-based analysis
+                // Standard LLM-based analysis (Chat path)
                 match self
                     .analyze_with_llm(llm, agent, data, parsed_intent, execution_id)
                     .await
                 {
-                    Ok(result) => {
+                    Ok((situation_analysis, reasoning_steps, decisions, conclusion)) => {
                         tracing::info!(
                             agent_id = %agent.id,
                             "LLM-based analysis completed successfully"
                         );
-                        return Ok(result);
+                        return Ok(AnalysisResult::Chat {
+                            situation_analysis,
+                            reasoning_steps,
+                            decisions,
+                            conclusion,
+                        });
                     }
                     Err(e) => {
                         tracing::warn!(
@@ -412,8 +437,15 @@ impl AgentExecutor {
             }
         }
 
-        // Fall back to rule-based logic
-        self.analyze_rule_based(agent, data, parsed_intent).await
+        // Fall back to rule-based logic (Chat path)
+        let (situation_analysis, reasoning_steps, decisions, conclusion) =
+            self.analyze_rule_based(agent, data, parsed_intent).await?;
+        Ok(AnalysisResult::Chat {
+            situation_analysis,
+            reasoning_steps,
+            decisions,
+            conclusion,
+        })
     }
 
 

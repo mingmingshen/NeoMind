@@ -343,18 +343,29 @@ export function AgentsPage() {
   }
 
   const handleExecute = async (agent: AiAgent) => {
+    // Immediately mark as executing for responsive UI
+    setAgents(prev => prev.map(a =>
+      a.id === agent.id ? { ...a, status: 'Executing' } : a
+    ))
+    setExecutingAgents(prev => new Map(prev).set(agent.id, Date.now()))
+
     try {
-      const result = await api.executeAgent(agent.id)
+      // API returns immediately — execution runs in background
+      await api.executeAgent(agent.id)
       toast({
         title: tCommon('success'),
-        description: tAgent('executionStarted', { id: result.execution_id }),
+        description: tAgent('executionStarted', { id: agent.name }),
       })
-      // Immediately mark as executing (WebSocket will also update this)
-      setAgents(prev => prev.map(a =>
-        a.id === agent.id ? { ...a, status: 'Executing' } : a
-      ))
-      setExecutingAgents(prev => new Map(prev).set(agent.id, Date.now()))
     } catch (error) {
+      // Revert status on error
+      setAgents(prev => prev.map(a =>
+        a.id === agent.id ? { ...a, status: 'Active' } : a
+      ))
+      setExecutingAgents(prev => {
+        const next = new Map(prev)
+        next.delete(agent.id)
+        return next
+      })
       handleError(error, { operation: 'Execute agent', showToast: true })
       toast({
         title: tCommon('failed'),

@@ -241,9 +241,24 @@ pub(crate) fn parse_final_tool_response(text: &str) -> (String, String, f32) {
         return extract_analysis_fields(&parsed, text);
     }
 
-    // Fallback: return empty analysis (caller will construct from reasoning history),
-    // use the text as conclusion
-    (String::new(), text.to_string(), 0.5)
+    // Natural language response — the entire text is the conclusion.
+    // Try to split into situation_analysis (first paragraph) and conclusion (rest).
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return (String::new(), String::new(), 0.5);
+    }
+
+    // Split on double-newline to separate analysis from conclusion
+    if let Some(pos) = trimmed.find("\n\n") {
+        let analysis = trimmed[..pos].trim().to_string();
+        let conclusion = trimmed[pos + 2..].trim().to_string();
+        if !conclusion.is_empty() {
+            return (analysis, conclusion, 0.7);
+        }
+    }
+
+    // Single paragraph — use as both analysis and conclusion
+    (String::new(), trimmed.to_string(), 0.7)
 }
 
 /// Extract JSON string from text that may be wrapped in markdown code blocks.

@@ -1036,7 +1036,29 @@ export function ChatPage() {
                 />
               </div>
             )}
-            {/* Input toolbar with model selector and image preview */}
+            {/* Image previews */}
+            {attachedImages.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-1">
+                {attachedImages.map((image, index) => (
+                  <div key={index} className="relative group">
+                    <img
+                      src={image.data}
+                      alt={`Attached ${index + 1}`}
+                      className="h-8 w-8 sm:h-9 sm:w-9 object-cover rounded-md border border-border"
+                    />
+                    <button
+                      type="button"
+                      className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => removeAttachedImage(index)}
+                    >
+                      <X className="h-2 w-2" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Input toolbar with model selector */}
             <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-2">
               {/* Model selector */}
               {llmBackends.length > 0 && (
@@ -1101,29 +1123,6 @@ export function ChatPage() {
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
-              )}
-
-              {/* Image preview - shown next to model selector */}
-              {attachedImages.length > 0 && (
-                <div className="flex items-center gap-1 sm:gap-1.5">
-                  {attachedImages.map((image, index) => (
-                    <div key={index} className="relative group">
-                      <img
-                        src={image.data}
-                        alt={`Attached ${index + 1}`}
-                        className="h-6 w-6 sm:h-7 sm:w-7 object-cover rounded-md border border-border"
-                      />
-                      <Button
-                        variant="destructive"
-                        size="icon"
-                        className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => removeAttachedImage(index)}
-                      >
-                        <X className="h-2.5 w-2.5" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
               )}
 
               {/* Memory toggle */}

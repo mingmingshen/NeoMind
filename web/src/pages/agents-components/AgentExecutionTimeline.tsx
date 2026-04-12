@@ -20,6 +20,7 @@ import {
   Bell,
   ChevronUp,
   Wrench,
+  Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
@@ -284,7 +285,26 @@ export function AgentExecutionTimeline({
                                   )
                                 })()}
 
-                                {/* ③ Execution Actions — filtered, only device/extension commands */}
+                                {/* ④ LLM Final Response */}
+                                {detail.result?.summary && (() => {
+                                  const summary = detail.result.summary.trim()
+                                  const conclusion = detail.decision_process?.conclusion?.trim() ?? ''
+                                  const isGeneric = summary === 'Completed tool execution rounds.'
+                                    || summary === 'LLM generation failed during tool execution.'
+                                  // Skip if generic or if conclusion already shows the same content
+                                  const isDuplicate = summary === conclusion && conclusion.length < 100
+                                  if (!summary || isGeneric || isDuplicate) return null
+                                  return (
+                                    <TimelineSection
+                                      icon={<Sparkles className="h-4 w-4 text-violet-500" />}
+                                      title={t('agents:memory.llmResponse', 'LLM Response')}
+                                    >
+                                      <CollapsibleText content={summary} maxLines={6} />
+                                    </TimelineSection>
+                                  )
+                                })()}
+
+                                {/* ⑤ Execution Actions — filtered, only device/extension commands */}
                                 {(() => {
                                   const realActions = detail.result?.actions_executed?.filter(
                                     (a: { action_type: string }) => a.action_type !== 'tool_call'
@@ -477,6 +497,43 @@ function DataCollectedItem({ data }: { data: DataCollected }) {
   )
 }
 
+/// Collapsible text block for LLM responses and long content
+function CollapsibleText({ content, maxLines = 6 }: { content: string; maxLines?: number }) {
+  const { t } = useTranslation(['agents'])
+  const [expanded, setExpanded] = useState(false)
+  const lineCount = content.split('\n').length
+  const isLong = lineCount > maxLines || content.length > 500
+
+  return (
+    <div>
+      <div
+        className={cn(
+          "text-sm bg-muted/50 p-3 rounded-lg border whitespace-pre-wrap break-words leading-relaxed",
+          !expanded && isLong && "max-h-40 overflow-hidden relative",
+        )}
+      >
+        {expanded || !isLong ? content : content.split('\n').slice(0, maxLines).join('\n')}
+        {!expanded && isLong && (
+          <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-muted/50 to-transparent" />
+        )}
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="text-xs text-primary hover:underline mt-1 flex items-center gap-0.5"
+        >
+          {expanded ? (
+            <>{t('agents:memory.showLess', 'Show less')} <ChevronUp className="h-3 w-3" /></>
+          ) : (
+            <>{t('agents:memory.showMore', 'Show more')} <ChevronDown className="h-3 w-3" /></>
+          )}
+        </button>
+      )}
+    </div>
+  )
+}
+
 /// Collapsible output display for long tool results
 function CollapsibleOutput({ label, content }: { label: string; content: string }) {
   const { t } = useTranslation(['agents'])
@@ -624,6 +681,52 @@ function formatJsonStr(str: string): string {
   try { return JSON.stringify(JSON.parse(str), null, 2) } catch { return str }
 }
 
+/** Extract a short summary from tool output JSON/string */
+function summarizeOutput(output: string, maxLen = 120): string | null {
+  if (!output || output === 'null' || output === '""') return null
+  try {
+    const parsed = JSON.parse(output)
+    if (typeof parsed === 'string') return parsed.length > maxLen ? parsed.slice(0, maxLen) + '...' : parsed
+    if (typeof parsed === 'object' && parsed !== null) {
+      // Try common summary fields
+      for (const key of ['message', 'summary', 'description', 'status', 'result', 'error']) {
+        const val = (parsed as Record<string, unknown>)[key]
+        if (typeof val === 'string' && val) return val.length > maxLen ? val.slice(0, maxLen) + '...' : val
+      }
+      // Fallback: show first key-value pairs
+      const entries = Object.entries(parsed as Record<string, unknown>).slice(0, 3)
+      const summary = entries.map(([k, v]) => {
+        const vs = typeof v === 'string' ? v : JSON.stringify(v)
+        return `${k}: ${vs.length > 30 ? vs.slice(0, 30) + '...' : vs}`
+      }).join(', ')
+      return summary.length > maxLen ? summary.slice(0, maxLen) + '...' : summary
+    }
+    return null
+  } catch {
+    return output.length > maxLen ? output.slice(0, maxLen) + '...' : output
+  }
+}
+
+/** Extract a short input preview (e.g. the command or key params) */
+function summarizeInput(input: string, maxLen = 80): string | null {
+  if (!input) return null
+  try {
+    const parsed = JSON.parse(input)
+    if (typeof parsed === 'string') return parsed.length > maxLen ? parsed.slice(0, maxLen) + '...' : parsed
+    if (typeof parsed === 'object' && parsed !== null) {
+      const entries = Object.entries(parsed as Record<string, unknown>).slice(0, 2)
+      const preview = entries.map(([k, v]) => {
+        const vs = typeof v === 'string' ? v : JSON.stringify(v)
+        return `${k}=${vs.length > 20 ? vs.slice(0, 20) + '...' : vs}`
+      }).join(', ')
+      return preview.length > maxLen ? preview.slice(0, maxLen) + '...' : preview
+    }
+    return null
+  } catch {
+    return input.length > maxLen ? input.slice(0, maxLen) + '...' : input
+  }
+}
+
 function JsonBlock({ label, content }: { label: string; content: string }) {
   return (
     <div>
@@ -640,29 +743,40 @@ function ToolCallStep({ step }: { step: ReasoningStep }) {
   const [expanded, setExpanded] = useState(false)
   const isSuccess = step.step_type === 'tool_call'
   const toolName = extractToolName(step.description)
+  const outputSummary = summarizeOutput(step.output)
+  const inputPreview = summarizeInput(step.input || '')
 
   return (
     <div className="rounded-lg border bg-muted/20 overflow-hidden my-2">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/30"
+        className="w-full flex items-start gap-2 px-3 py-2 hover:bg-muted/30 text-left"
       >
         {isSuccess ? (
-          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
         ) : (
-          <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+          <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
         )}
-        <Wrench className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        <span className="font-mono text-sm truncate">{toolName}</span>
-        <span className={cn(
-          "text-[10px] px-1.5 py-0.5 rounded shrink-0",
-          isSuccess ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-red-500"
-        )}>
-          {isSuccess ? t('agents:memory.success') : t('agents:memory.failed')}
-        </span>
-        <div className="flex-1" />
-        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", expanded && "rotate-180")} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <Wrench className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="font-mono text-sm truncate">{toolName}</span>
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.5 rounded shrink-0",
+              isSuccess ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-red-500"
+            )}>
+              {isSuccess ? t('agents:memory.success') : t('agents:memory.failed')}
+            </span>
+          </div>
+          {inputPreview && !expanded && (
+            <div className="text-[11px] text-muted-foreground mt-0.5 truncate font-mono">{inputPreview}</div>
+          )}
+          {outputSummary && !expanded && (
+            <div className="text-[11px] mt-0.5 truncate">{outputSummary}</div>
+          )}
+        </div>
+        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform shrink-0 mt-0.5", expanded && "rotate-180")} />
       </button>
       {expanded && (
         <div className="border-t px-3 py-2 space-y-2">

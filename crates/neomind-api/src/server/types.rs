@@ -1874,7 +1874,9 @@ impl ServerState {
         let executor = manager.executor().clone();
         let store = executor.store().clone();
 
-        // Cleanup agents stuck in Executing status on startup
+        // Cleanup agents stuck in Executing status on startup.
+        // On a fresh startup, NO agent can be executing — so unconditionally
+        // reset all Executing agents to Active to prevent permanent stuck states.
         tokio::spawn(async move {
             if let Ok(agents) = store
                 .query_agents(neomind_storage::AgentFilter {
@@ -1883,42 +1885,19 @@ impl ServerState {
                 })
                 .await
             {
-                let now = chrono::Utc::now().timestamp();
                 for agent in agents {
-                    // Check if agent has been executing for more than 10 minutes
-                    if let Some(last_exec) = agent.last_execution_at {
-                        let exec_duration_secs = now - last_exec;
-                        if exec_duration_secs > 600 {
-                            // 10 minutes
-                            tracing::warn!(
-                                agent_id = %agent.id,
-                                agent_name = %agent.name,
-                                exec_duration_secs = exec_duration_secs,
-                                "Agent stuck in Executing status, resetting to Active"
-                            );
-                            let _ = store
-                                .update_agent_status(
-                                    &agent.id,
-                                    neomind_storage::AgentStatus::Active,
-                                    Some("Execution timeout - status reset".to_string()),
-                                )
-                                .await;
-                        }
-                    } else {
-                        // No last execution time but status is Executing - reset it
-                        tracing::warn!(
-                            agent_id = %agent.id,
-                            agent_name = %agent.name,
-                            "Agent in Executing status with no execution time, resetting to Active"
-                        );
-                        let _ = store
-                            .update_agent_status(
-                                &agent.id,
-                                neomind_storage::AgentStatus::Active,
-                                Some("Invalid executing state - status reset".to_string()),
-                            )
-                            .await;
-                    }
+                    tracing::warn!(
+                        agent_id = %agent.id,
+                        agent_name = %agent.name,
+                        "Agent stuck in Executing status on startup, resetting to Active"
+                    );
+                    let _ = store
+                        .update_agent_status(
+                            &agent.id,
+                            neomind_storage::AgentStatus::Active,
+                            Some("Server restarted - status reset".to_string()),
+                        )
+                        .await;
                 }
             }
         });

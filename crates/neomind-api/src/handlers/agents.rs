@@ -1308,28 +1308,53 @@ pub async fn execute_agent(
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get agent manager: {}", e)))?;
 
-    // Execute the agent using the manager (this does full execution with data collection, analysis, and actions)
-    let summary = agent_manager
-        .execute_agent_now(&id)
+    // Verify the agent exists before spawning background execution
+    let agent = agent_manager
+        .executor()
+        .store()
+        .get_agent(&id)
         .await
-        .map_err(|e| ErrorResponse::internal(format!("Failed to execute agent: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
-    tracing::info!(
-        execution_id = %summary.execution_id,
-        agent_id = %id,
-        status = ?summary.status,
-        duration_ms = summary.duration_ms,
-        "Executed AI Agent"
-    );
+    let execution_id = uuid::Uuid::new_v4().to_string();
+    let agent_name = agent.name.clone();
+    let eid_clone = execution_id.clone();
+    let aid_clone = id.clone();
+
+    // Spawn execution in background — API returns immediately
+    tokio::spawn(async move {
+        tracing::info!(
+            execution_id = %eid_clone,
+            agent_id = %aid_clone,
+            "Background agent execution started"
+        );
+        match agent_manager.execute_agent_now(&aid_clone).await {
+            Ok(summary) => {
+                tracing::info!(
+                    execution_id = %summary.execution_id,
+                    agent_id = %aid_clone,
+                    status = ?summary.status,
+                    duration_ms = summary.duration_ms,
+                    "Background agent execution completed"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    execution_id = %eid_clone,
+                    agent_id = %aid_clone,
+                    error = %e,
+                    "Background agent execution failed"
+                );
+            }
+        }
+    });
 
     ok(json!({
-        "execution_id": summary.execution_id,
+        "execution_id": execution_id,
         "agent_id": id,
-        "agent_name": summary.agent_name,
-        "status": format!("{:?}", summary.status),
-        "duration_ms": summary.duration_ms,
-        "summary": summary.summary,
-        "has_error": summary.has_error,
+        "agent_name": agent_name,
+        "status": "Executing",
     }))
 }
 
