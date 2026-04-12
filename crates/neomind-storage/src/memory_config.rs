@@ -52,18 +52,43 @@ fn default_storage_path() -> String {
 pub struct ExtractionConfig {
     #[serde(default = "default_similarity_threshold")]
     pub similarity_threshold: f32,
+
+    #[serde(default = "default_min_messages")]
+    pub min_messages: usize,
+
+    #[serde(default = "default_max_messages")]
+    pub max_messages: usize,
+
+    #[serde(default = "default_min_importance")]
+    pub min_importance: u8,
+
+    #[serde(default = "default_true")]
+    pub dedup_enabled: bool,
 }
 
 impl Default for ExtractionConfig {
     fn default() -> Self {
         Self {
             similarity_threshold: 0.85,
+            min_messages: 3,
+            max_messages: 50,
+            min_importance: 30,
+            dedup_enabled: true,
         }
     }
 }
 
 fn default_similarity_threshold() -> f32 {
     0.85
+}
+fn default_min_messages() -> usize {
+    3
+}
+fn default_max_messages() -> usize {
+    50
+}
+fn default_min_importance() -> u8 {
+    30
 }
 
 /// Compression configuration
@@ -72,7 +97,7 @@ pub struct CompressionConfig {
     #[serde(default = "default_decay_days")]
     pub decay_period_days: u8,
 
-    #[serde(default = "default_min_importance")]
+    #[serde(default = "default_compression_min_importance")]
     pub min_importance: u8,
 
     #[serde(default = "default_max_entries")]
@@ -98,7 +123,7 @@ impl Default for CompressionConfig {
 fn default_decay_days() -> u8 {
     30
 }
-fn default_min_importance() -> u8 {
+fn default_compression_min_importance() -> u8 {
     20
 }
 fn default_max_entries() -> HashMap<String, usize> {

@@ -327,6 +327,7 @@ impl MemoryExtractor {
         let input = LlmInput::new(prompt).with_params(GenerationParams {
             temperature: Some(0.3), // Lower temperature for more consistent extraction
             max_tokens: Some(1024), // Limit response size
+            thinking_enabled: Some(false), // Disable thinking to avoid wasting tokens on reasoning
             ..Default::default()
         });
 

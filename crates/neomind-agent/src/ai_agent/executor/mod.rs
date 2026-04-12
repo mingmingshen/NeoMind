@@ -698,6 +698,7 @@ impl AgentExecutor {
         let (mut situation_analysis, mut conclusion, confidence) =
             parse_final_tool_response(&final_text);
 
+        // Override situation_analysis only when it's empty or generic
         if is_generic_fallback || situation_analysis.is_empty() || situation_analysis == "Completed tool execution rounds." {
             situation_analysis = if !all_reasoning_texts.is_empty() {
                 let combined = all_reasoning_texts.join(" ");
@@ -716,10 +717,16 @@ impl AgentExecutor {
                     all_tool_results.len(), max_rounds
                 )
             };
+        }
 
-            conclusion = if !all_tool_results.is_empty() {
+        // Override conclusion only when the model didn't provide one
+        if conclusion.is_empty() {
+            conclusion = if let Some(last_thought) = all_reasoning_texts.last() {
+                last_thought.trim().to_string()
+            } else if !all_tool_results.is_empty() {
                 let tool_summary: Vec<String> = all_tool_results
                     .iter()
+                    .take(3)
                     .filter_map(|r| match &r.result {
                         Ok(output) => Some(summarize_tool_output(&output.data, &r.name)),
                         Err(e) => Some(format!("{} failed: {}", r.name, e)),
@@ -2115,19 +2122,24 @@ impl AgentExecutor {
             }
 
             // If conclusion is empty or meaningless, generate via LLM
+            // Only do this for multi-round chaining where we have accumulated actions to summarize
             if final_dp.conclusion.is_empty()
                 || final_dp.conclusion == "No conclusion"
                 || final_dp.conclusion == "Completed tool execution rounds."
-                || final_dp.conclusion.len() < 10
             {
-                final_dp.conclusion = self
-                    .generate_conclusion_summary(
-                        &agent,
-                        &all_actions_executed,
-                        chain_state.depth,
-                        &agent.user_prompt,
-                    )
-                    .await?;
+                if !all_actions_executed.is_empty() {
+                    final_dp.conclusion = self
+                        .generate_conclusion_summary(
+                            &agent,
+                            &all_actions_executed,
+                            chain_state.depth,
+                            &agent.user_prompt,
+                        )
+                        .await?;
+                } else if final_dp.conclusion.is_empty() || final_dp.conclusion == "No conclusion" {
+                    // No actions and no conclusion — keep reasoning text as fallback
+                    final_dp.conclusion = "No additional actions required.".to_string();
+                }
             }
 
             final_dp

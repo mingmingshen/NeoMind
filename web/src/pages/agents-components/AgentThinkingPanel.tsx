@@ -4,7 +4,7 @@
  * Shows thinking steps and decisions as they happen during execution.
  */
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
@@ -17,10 +17,14 @@ import {
   Zap,
   CheckCircle2,
   Clock,
+  FileText,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAgentEvents, type AgentThinkingStep } from "@/hooks/useAgentEvents"
 import { formatTimestamp } from "@/lib/utils/format"
+import { api } from "@/lib/api"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
+import type { AgentExecutionDetail } from "@/types"
 
 interface AgentThinkingPanelProps {
   agentId: string
@@ -29,6 +33,7 @@ interface AgentThinkingPanelProps {
 
 export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelProps) {
   const { t } = useTranslation(['common', 'agents'])
+  const { handleError } = useErrorHandler()
   const { currentExecution, thinkingSteps, decisions } = useAgentEvents(agentId, {
     enabled: true,
     eventTypes: ['AgentExecutionStarted', 'AgentThinking', 'AgentDecision', 'AgentExecutionCompleted'],
@@ -40,6 +45,28 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
   const [showPanel, setShowPanel] = useState(false)
   const [dismissed, setDismissed] = useState(false)
 
+  // Fetch execution detail on completion to show conclusion
+  const [executionDetail, setExecutionDetail] = useState<AgentExecutionDetail | null>(null)
+  const fetchedExecutionId = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (
+      currentExecution?.status === 'completed' &&
+      currentExecution.id &&
+      fetchedExecutionId.current !== currentExecution.id
+    ) {
+      fetchedExecutionId.current = currentExecution.id
+      api.getExecution(agentId, currentExecution.id)
+        .then(setExecutionDetail)
+        .catch((err) => handleError(err, { operation: 'Load execution detail', showToast: false }))
+    }
+    // Reset when new execution starts
+    if (currentExecution?.status === 'running') {
+      setExecutionDetail(null)
+      fetchedExecutionId.current = null
+    }
+  }, [currentExecution?.status, currentExecution?.id, agentId, handleError])
+
   useEffect(() => {
     if (isExecuting && currentExecution && !dismissed) {
       setShowPanel(true)
@@ -48,7 +75,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
     if (!isExecuting && currentExecution?.completed_at) {
       const timer = setTimeout(() => {
         setShowPanel(false)
-      }, 5000)
+      }, 15000)
       return () => clearTimeout(timer)
     }
   }, [isExecuting, currentExecution, dismissed])
@@ -150,6 +177,37 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
                   </div>
                 </div>
               )}
+
+              {/* Conclusion (fetched after execution completes) */}
+              {executionDetail && (() => {
+                const dp = executionDetail.decision_process
+                const conclusion = dp?.conclusion
+                const confidence = dp?.confidence
+                if (!conclusion && confidence === undefined) return null
+                return (
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-green-500" />
+                      {t('agents:memory.conclusion')}
+                    </h4>
+                    <div className="space-y-2">
+                      {conclusion && (
+                        <Card className="p-2.5 bg-muted/50">
+                          <p className="text-sm">{conclusion}</p>
+                        </Card>
+                      )}
+                      {confidence !== undefined && (
+                        <div className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded-lg">
+                          <span className="text-xs text-muted-foreground">{t('agents:memory.confidence')}</span>
+                          <Badge variant={confidence > 0.7 ? "default" : "secondary"} className="h-5">
+                            {(confidence * 100).toFixed(0)}%
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
             </>
           )}
         </div>

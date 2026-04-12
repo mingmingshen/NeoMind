@@ -195,6 +195,7 @@ impl MemoryCompressor {
         let input = LlmInput::new(prompt).with_params(GenerationParams {
             temperature: Some(0.3),
             max_tokens: Some(1024),
+            thinking_enabled: Some(false), // Disable thinking to avoid wasting tokens on reasoning
             ..Default::default()
         });
 

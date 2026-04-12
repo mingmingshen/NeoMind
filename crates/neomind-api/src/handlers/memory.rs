@@ -359,15 +359,25 @@ pub async fn trigger_extract(
         Arc::new(RwLock::new(store))
     };
 
-    // Create extractor with custom config if force is set
+    // Create extractor using saved config
+    let saved_config = neomind_storage::MemoryConfig::load();
     let config = if req.force {
         tracing::debug!("Using force extraction config (min_messages=1)");
         ExtractionConfig {
             min_messages: 1,
-            ..Default::default()
+            max_messages: saved_config.extraction.max_messages,
+            min_importance: saved_config.extraction.min_importance,
+            dedup_enabled: saved_config.extraction.dedup_enabled,
+            similarity_threshold: saved_config.extraction.similarity_threshold,
         }
     } else {
-        ExtractionConfig::default()
+        ExtractionConfig {
+            min_messages: saved_config.extraction.min_messages,
+            max_messages: saved_config.extraction.max_messages,
+            min_importance: saved_config.extraction.min_importance,
+            dedup_enabled: saved_config.extraction.dedup_enabled,
+            similarity_threshold: saved_config.extraction.similarity_threshold,
+        }
     };
 
     let extractor = MemoryExtractor::with_config(memory_store, llm_runtime, config);

@@ -198,43 +198,15 @@ export function AgentExecutionTimeline({
                               </div>
                             ) : detail ? (
                               <>
-                                {/* ① Conclusion — merged situation_analysis + conclusion + confidence */}
-                                {(() => {
-                                  const dp = detail.decision_process
-                                  const hasAnalysis = !!dp?.situation_analysis
-                                  const hasConclusion = !!dp?.conclusion
-                                  const hasConfidence = dp?.confidence !== undefined
-                                  if (!hasAnalysis && !hasConclusion && !hasConfidence) return null
-                                  return (
-                                    <TimelineSection
-                                      icon={<Brain className="h-4 w-4 text-purple-500" />}
-                                      title={t('agents:memory.conclusion')}
-                                    >
-                                      <div className="space-y-2">
-                                        {hasAnalysis && (
-                                          <div>
-                                            <div className="text-xs text-muted-foreground font-medium mb-1">{t('agents:memory.situationAnalysis')}</div>
-                                            <p className="text-sm">{dp!.situation_analysis}</p>
-                                          </div>
-                                        )}
-                                        {hasConclusion && (
-                                          <div>
-                                            <div className="text-xs text-muted-foreground font-medium mb-1">{t('agents:memory.conclusion')}</div>
-                                            <p className="text-sm">{dp!.conclusion}</p>
-                                          </div>
-                                        )}
-                                        {hasConfidence && (
-                                          <div className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded-lg">
-                                            <span className="text-muted-foreground">{t('agents:memory.confidence')}</span>
-                                            <Badge variant={dp!.confidence! > 0.7 ? "default" : "secondary"}>
-                                              {(dp!.confidence! * 100).toFixed(0)}%
-                                            </Badge>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </TimelineSection>
-                                  )
-                                })()}
+                                {/* ① Situation Analysis */}
+                                {detail.decision_process?.situation_analysis && (
+                                  <TimelineSection
+                                    icon={<Brain className="h-4 w-4 text-purple-500" />}
+                                    title={t('agents:memory.situationAnalysis')}
+                                  >
+                                    <p className="text-sm">{detail.decision_process.situation_analysis}</p>
+                                  </TimelineSection>
+                                )}
 
                                 {/* ② Execution Process — reasoning_steps with tool_call cards */}
                                 {detail.decision_process?.reasoning_steps && detail.decision_process.reasoning_steps.length > 0 && (
@@ -268,6 +240,7 @@ export function AgentExecutionTimeline({
                                 )}
 
                                 {/* Report */}
+                                {/* Report */}
                                 {detail.result?.report && (
                                   <TimelineSection
                                     icon={<FileText className="h-4 w-4 text-gray-500" />}
@@ -280,6 +253,36 @@ export function AgentExecutionTimeline({
                                     </Card>
                                   </TimelineSection>
                                 )}
+
+                                {/* ③ Conclusion + Confidence */}
+                                {(() => {
+                                  const dp = detail.decision_process
+                                  const hasConclusion = !!dp?.conclusion
+                                  const hasConfidence = dp?.confidence !== undefined
+                                  if (!hasConclusion && !hasConfidence) return null
+                                  return (
+                                    <TimelineSection
+                                      icon={<CheckCircle2 className="h-4 w-4 text-green-500" />}
+                                      title={t('agents:memory.conclusion')}
+                                    >
+                                      <div className="space-y-2">
+                                        {hasConclusion && (
+                                          <Card className="p-3 bg-muted/50">
+                                            <p className="text-sm">{dp!.conclusion}</p>
+                                          </Card>
+                                        )}
+                                        {hasConfidence && (
+                                          <div className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded-lg">
+                                            <span className="text-muted-foreground">{t('agents:memory.confidence')}</span>
+                                            <Badge variant={dp!.confidence! > 0.7 ? "default" : "secondary"}>
+                                              {(dp!.confidence! * 100).toFixed(0)}%
+                                            </Badge>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </TimelineSection>
+                                  )
+                                })()}
 
                                 {/* ③ Execution Actions — filtered, only device/extension commands */}
                                 {(() => {
