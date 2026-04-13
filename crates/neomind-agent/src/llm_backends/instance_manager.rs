@@ -15,7 +15,7 @@ use neomind_storage::{
 };
 
 use super::backends::create_backend;
-use super::backends::ollama::{OllamaConfig, OllamaRuntime};
+use super::backends::ollama::{OllamaConfig, OllamaRuntime, detect_model_context};
 #[cfg(feature = "llamacpp")]
 use super::backends::llamacpp::{LlamaCppConfig, LlamaCppRuntime};
 
@@ -275,11 +275,24 @@ impl LlmBackendInstanceManager {
                             "Could not detect Ollama capabilities from /api/show, using stored values"
                         );
                         let caps = &instance.capabilities;
+                        // Fallback to name-based context detection if stored value is 0
+                        let max_ctx = if caps.max_context > 0 {
+                            caps.max_context
+                        } else {
+                            let detected = detect_model_context(&instance.model);
+                            tracing::info!(
+                                backend_id = %instance.id,
+                                model = %instance.model,
+                                detected_context = detected,
+                                "Using name-based context detection as fallback"
+                            );
+                            detected
+                        };
                         (
                             caps.supports_multimodal,
                             caps.supports_thinking,
                             caps.supports_tools,
-                            caps.max_context,
+                            max_ctx,
                         )
                     }
                 };

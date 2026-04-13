@@ -1690,7 +1690,7 @@ fn detect_model_capabilities(model_name: &str) -> ModelCapability {
 ///
 /// Returns the maximum context window in tokens.
 /// Falls back to 4096 for unknown models (safe default).
-fn detect_model_context(model_name: &str) -> usize {
+pub fn detect_model_context(model_name: &str) -> usize {
     let name_lower = model_name.to_lowercase();
 
     // Qwen family (qwen, qwen2, qwen2.5, qwen3, qwen3-vl)
@@ -1755,13 +1755,21 @@ fn detect_model_context(model_name: &str) -> usize {
         return 64_000;
     }
 
-    // Mistral family
-    if name_lower.starts_with("mistral") || name_lower.contains("mixtral") {
+    // Mistral family (including ministral/Mistral Small)
+    if name_lower.starts_with("mistral") || name_lower.starts_with("ministral") || name_lower.contains("mixtral") {
+        // Ministral (Mistral Small) supports 128k context
+        if name_lower.starts_with("ministral") {
+            return 128_000;
+        }
         // Mixtral models typically support 32k
         if name_lower.contains("mixtral") {
             return 32_768;
         }
-        // Mistral 7B supports 32k
+        // Mistral Large supports 128k
+        if name_lower.contains("large") {
+            return 128_000;
+        }
+        // Mistral 7B / Nemo supports 32k
         return 32_768;
     }
 
@@ -1867,9 +1875,10 @@ struct OllamaToolFunction {
 /// Response from Ollama /api/show endpoint
 #[derive(Debug, Clone, Deserialize)]
 struct OllamaShowResponse {
-    /// Model name
+    /// Model name (not always present in /api/show response)
+    #[serde(default)]
     #[allow(dead_code)]
-    name: String,
+    name: Option<String>,
     /// Model details - Ollama returns flat key-value pairs like "llama.context_length": 8192
     #[serde(default)]
     model_info: std::collections::HashMap<String, serde_json::Value>,
