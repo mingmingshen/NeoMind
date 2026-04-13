@@ -81,7 +81,14 @@ impl ChainState {
             if let Some(ref result_str) = result.result {
                 // Only include non-trivial results
                 if !result_str.is_empty() && result_str != "Command sent successfully" {
-                    context.push_str(&format!("- **Result**: {}\n", result_str));
+                    // Sanitize base64/image data to prevent context bloat
+                    let sanitized = crate::agent::streaming::sanitize_tool_result_for_prompt(result_str);
+                    let display = if sanitized.chars().count() > 2000 {
+                        crate::agent::streaming::truncate_result_utf8(&sanitized, 2000)
+                    } else {
+                        sanitized
+                    };
+                    context.push_str(&format!("- **Result**: {}\n", display));
                 }
             }
             context.push('\n');

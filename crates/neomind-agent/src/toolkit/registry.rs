@@ -228,25 +228,11 @@ pub struct ToolResult {
 ///
 /// # Example
 ///
-/// ```rust,no_run
-/// use crate::toolkit::ToolRegistryBuilder;
-/// use neomind_devices::{DeviceService, TimeSeriesStorage};
-/// use neomind_rules::RuleEngine;
-/// use std::sync::Arc;
+/// ```
+/// use neomind_agent::toolkit::ToolRegistryBuilder;
 ///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let device_service = Arc::new(DeviceService::new());
-/// let storage = Arc::new(TimeSeriesStorage::memory()?);
-/// let rule_engine = Arc::new(RuleEngine::new());
-///
-/// let registry = ToolRegistryBuilder::new()
-///     .with_query_data_tool(storage)
-///     .with_control_device_tool(device_service.clone())
-///     .with_list_devices_tool(device_service)
-///     .with_create_rule_tool(rule_engine)
-///     .build();
-/// # Ok(())
-/// # }
+/// let registry = ToolRegistryBuilder::new().build();
+/// assert_eq!(registry.len(), 0);
 ///```
 pub struct ToolRegistryBuilder {
     registry: ToolRegistry,
@@ -293,22 +279,6 @@ impl ToolRegistryBuilder {
             }
         }
         self
-    }
-
-    // ============================================================================
-    // System Tools
-    // ============================================================================
-
-    /// Add the system help tool for onboarding and feature information.
-    pub fn with_system_help_tool(self) -> Self {
-        self.with_tool(Arc::new(super::system_tools::SystemHelpTool::new()))
-    }
-
-    /// Add the system help tool with a custom system name.
-    pub fn with_system_help_tool_named(self, name: impl Into<String>) -> Self {
-        self.with_tool(Arc::new(super::system_tools::SystemHelpTool::with_name(
-            name,
-        )))
     }
 
     // ============================================================================
@@ -630,14 +600,6 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert!(results[0].result.as_ref().unwrap().success);
         assert!(results[1].result.as_ref().unwrap().success);
-    }
-
-    #[tokio::test]
-    async fn test_builder_with_system_help() {
-        let registry = ToolRegistryBuilder::new().with_system_help_tool().build();
-
-        assert!(!registry.is_empty());
-        assert!(registry.has("system_help"));
     }
 
     #[test]

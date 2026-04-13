@@ -10,7 +10,7 @@
 //!   cargo test -p neomind-agent --test tool_calling_evaluation -- --ignored --nocapture
 //!
 //! Environment variables:
-//!   MODEL - Model name (default: qwen2.5:3b)
+//!   MODEL - Model name (default: qwen3.5:2b)
 //!   OLLAMA_ENDPOINT - Ollama endpoint (default: http://localhost:11434)
 
 #![allow(dead_code)]
@@ -336,7 +336,7 @@ struct TestRunner {
 
 impl TestRunner {
     async fn new() -> anyhow::Result<Self> {
-        let model_name = std::env::var("MODEL").unwrap_or_else(|_| "qwen2.5:3b".to_string());
+        let model_name = std::env::var("MODEL").unwrap_or_else(|_| "qwen3.5:2b".to_string());
 
         let ollama_endpoint = std::env::var("OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:11434".to_string());

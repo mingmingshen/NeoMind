@@ -42,9 +42,6 @@ use neomind_agent::{OllamaConfig, OllamaRuntime};
 ///   - get_agent_executions - 获取Agent执行历史
 ///   - get_agent_execution_detail - 获取单次执行详情
 ///   - get_agent_conversation - 获取Agent对话历史
-///
-/// **System Tools:**
-///   - system_help - 获取系统帮助
 
 #[derive(Debug, Clone)]
 struct TestCase {
@@ -148,14 +145,6 @@ fn get_test_cases() -> Vec<TestCase> {
             ],
             min_tools: 2,
             description: "应该调用多个工具".to_string(),
-        },
-        // === Context/Reference Tests ===
-        TestCase {
-            name: "系统帮助".to_string(),
-            query: "这个系统能做什么？".to_string(),
-            expected_tools: vec!["system_help".to_string()],
-            min_tools: 1,
-            description: "应该调用系统帮助工具".to_string(),
         },
         // === Control Tests ===
         TestCase {
@@ -461,7 +450,7 @@ async fn test_real_tool_calling_evaluation() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let model_name = std::env::var("MODEL").unwrap_or_else(|_| "qwen2.5:3b".to_string());
+    let model_name = std::env::var("MODEL").unwrap_or_else(|_| "qwen3.5:2b".to_string());
 
     let ollama_endpoint =
         std::env::var("OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://localhost:11434".to_string());
@@ -494,7 +483,7 @@ async fn test_real_tool_calling_evaluation() -> anyhow::Result<()> {
     );
     println!("  Rule:   list_rules, create_rule, delete_rule");
     println!("  Agent:  list_agents, get_agent, execute_agent, control_agent, create_agent, etc.");
-    println!("  System: system_help");
+
 
     let test_cases = get_test_cases();
     println!("\n📋 Test cases: {}", test_cases.len());

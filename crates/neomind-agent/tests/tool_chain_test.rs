@@ -22,7 +22,7 @@ async fn test_tool_calling_chain() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let model = std::env::var("MODEL").unwrap_or("qwen2.5:3b".to_string());
+    let model = std::env::var("MODEL").unwrap_or("qwen3.5:2b".to_string());
     let endpoint = std::env::var("OLLAMA_ENDPOINT").unwrap_or("http://localhost:11434".to_string());
 
     println!("\n🔗 Tool Calling Chain Test");

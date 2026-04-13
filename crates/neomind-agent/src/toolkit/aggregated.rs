@@ -1,6 +1,6 @@
 //! Aggregated tools using action-based design pattern.
 //!
-//! This module consolidates 34+ individual tools into 6 aggregated tools,
+//! This module consolidates 34+ individual tools into 5 aggregated tools,
 //! reducing token usage in tool definitions by ~60%.
 //!
 //! ## Design Principles
@@ -12,11 +12,10 @@
 //! ## Tools
 //!
 //! 1. `device` - Device operations (list, get, query, control)
-//! 2. `agent` - Agent management (list, get, create, update, control, memory)
-//! 3. `agent_history` - Execution history (executions, conversation)
-//! 4. `rule` - Rule management (list, get, delete, history)
-//! 5. `alert` - Alert management (list, create, acknowledge)
-//! 6. `extension` - Extension management (list, get, status)
+//! 2. `agent` - Agent management (list, get, create, update, control, memory, executions, conversation, latest_execution)
+//! 3. `rule` - Rule management (list, get, delete, history)
+//! 4. `alert` - Alert management (list, create, acknowledge)
+//! 5. `extension` - Extension management (list, get, status)
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -310,17 +309,51 @@ impl DeviceTool {
                 let storage = self.storage.as_ref();
                 let mut metrics_info: Vec<Value> = Vec::new();
                 for m in &template.metrics {
+                    // Concise mode: skip infrastructure/noise metrics (metadata.*, ai_result.*, encoding)
+                    // These are available via device(action="query", metric=<name>) when needed.
+                    if !detailed {
+                        let name = m.name.as_str();
+                        if name.starts_with("metadata.")
+                            || name.starts_with("ai_result.")
+                            || name == "encoding"
+                            || name == "image_data"
+                        {
+                            continue;
+                        }
+                    }
+
                     let mut metric_json = serde_json::json!({
                         "name": m.name,
                         "display_name": m.display_name,
-                        "unit": m.unit,
-                        "data_type": format!("{:?}", m.data_type)
                     });
+                    if detailed {
+                        metric_json["unit"] = serde_json::json!(m.unit);
+                        metric_json["data_type"] = serde_json::json!(format!("{:?}", m.data_type));
+                    }
                     // Fetch latest value for this metric
                     if let Some(store) = storage {
                         if let Ok(Some(latest)) = store.latest(&device_id, &m.name).await {
-                            metric_json["value"] = latest.value.to_json_value();
-                            metric_json["timestamp"] = serde_json::json!(latest.timestamp);
+                            // Binary metrics (images) are too large to include inline.
+                            // Return metadata only; use device(action="query", metric=<name>)
+                            // to fetch the actual binary data when needed.
+                            if m.data_type == neomind_devices::mdl::MetricDataType::Binary {
+                                if let Some(s) = latest.value.as_str() {
+                                    let size_bytes = s.len();
+                                    metric_json["value"] = serde_json::json!(format!(
+                                        "[binary data, {}]",
+                                        if size_bytes > 1024 * 1024 {
+                                            format!("{:.1}MB", size_bytes as f64 / (1024.0 * 1024.0))
+                                        } else {
+                                            format!("{:.1}KB", size_bytes as f64 / 1024.0)
+                                        }
+                                    ));
+                                }
+                            } else {
+                                metric_json["value"] = latest.value.to_json_value();
+                            }
+                            if detailed {
+                                metric_json["timestamp"] = serde_json::json!(latest.timestamp);
+                            }
                         }
                     }
                     metrics_info.push(metric_json);
@@ -328,7 +361,8 @@ impl DeviceTool {
                 device_json["metrics"] = serde_json::json!(metrics_info);
             }
 
-            if !template.commands.is_empty() {
+            // Commands: only include in detailed mode
+            if detailed && !template.commands.is_empty() {
                 let commands_info: Vec<Value> = template
                     .commands
                     .iter()
@@ -651,6 +685,9 @@ Actions:
 - control: Pause or resume agent execution (control_action: pause/resume). WARNING: This affects running agents.
 - memory: View agent's learned patterns and intent understanding. Use when debugging agent behavior.
 - send_message: Send a message or instruction to the agent. The agent will see it in its next execution. Use when user wants to guide, correct, or update an agent's behavior through natural language.
+- executions: View agent execution statistics (total runs, success rate, last execution time). Use when user asks about agent performance or reliability.
+- conversation: View agent's conversation history (inputs and outputs from past runs). Use when debugging agent behavior or reviewing what an agent did.
+- latest_execution: View the most recent execution with full details (analysis, reasoning, decisions, conclusion). Use when user asks about execution results or completion status.
 
 When creating agents:
 - schedule_type: 'event' (triggered by device events), 'cron' (cron schedule), 'interval' (periodic, e.g., every 5 minutes)
@@ -663,8 +700,8 @@ When creating agents:
             serde_json::json!({
                 "action": {
                     "type": "string",
-                    "enum": ["list", "get", "create", "update", "control", "memory", "send_message"],
-                    "description": "Operation type: 'list' (all agents), 'get' (agent details), 'create' (new agent), 'update' (modify agent), 'control' (pause/resume), 'memory' (view learned patterns), 'send_message' (send message to agent)"
+                    "enum": ["list", "get", "create", "update", "control", "memory", "send_message", "executions", "conversation", "latest_execution"],
+                    "description": "Operation type: 'list' (all agents), 'get' (agent details), 'create' (new agent), 'update' (modify agent), 'control' (pause/resume), 'memory' (view learned patterns), 'send_message' (send message to agent), 'executions' (execution stats), 'conversation' (conversation log), 'latest_execution' (most recent execution details)"
                 },
                 "agent_id": {
                     "type": "string",
@@ -745,6 +782,9 @@ When creating agents:
             "control" => self.execute_control(&args).await,
             "memory" => self.execute_memory(&args).await,
             "send_message" => self.execute_send_message(&args).await,
+            "executions" => self.execute_executions(&args).await,
+            "conversation" => self.execute_conversation(&args).await,
+            "latest_execution" => self.execute_latest_execution(&args).await,
             _ => Err(ToolError::InvalidArguments(format!(
                 "Unknown action: {}",
                 action
@@ -1075,93 +1115,7 @@ impl AgentTool {
             "note": "Message will be included in the agent's next execution context"
         })))
     }
-}
 
-// ============================================================================
-// Agent History Tool - Aggregates: executions, conversation
-// ============================================================================
-
-/// Aggregated agent history tool.
-pub struct AgentHistoryTool {
-    agent_store: Arc<neomind_storage::AgentStore>,
-}
-
-impl AgentHistoryTool {
-    /// Create a new agent history tool.
-    pub fn new(agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        Self { agent_store }
-    }
-}
-
-#[async_trait]
-impl Tool for AgentHistoryTool {
-    fn name(&self) -> &str {
-        "agent_history"
-    }
-
-    fn description(&self) -> &str {
-        r#"Agent execution history tool for reviewing agent performance and conversation logs.
-
-Actions:
-- executions: View agent execution statistics (total runs, success rate, last execution time). Use when user asks about agent performance or reliability.
-- conversation: View agent's conversation history (inputs and outputs from past runs). Use when debugging agent behavior or reviewing what an agent did.
-- latest_execution: View the most recent execution with full details (analysis, reasoning, decisions, conclusion). Use when user asks about execution results or completion status.
-
-Use cases:
-- Check if an agent is running correctly: executions action
-- Debug why an agent made a decision: conversation action
-- Review recent agent activity: conversation with limit
-- Check last execution result or success/failure: latest_execution action"#
-    }
-
-    fn parameters(&self) -> Value {
-        object_schema(
-            serde_json::json!({
-                "action": {
-                    "type": "string",
-                    "enum": ["executions", "conversation", "latest_execution"],
-                    "description": "Operation type: 'executions' (execution statistics), 'conversation' (conversation log), 'latest_execution' (most recent execution with full details)"
-                },
-                "agent_id": {
-                    "type": "string",
-                    "description": "Agent ID to query. Required. Use agent(action='list') to find available agent IDs"
-                },
-                "limit": {
-                    "type": "number",
-                    "description": "Max number of conversation entries to return (conversation action). Default: 50"
-                },
-                "response_format": {
-                    "type": "string",
-                    "enum": ["concise", "detailed"],
-                    "description": "Output format. 'concise': summary stats only (default). 'detailed': full execution details with timestamps"
-                }
-            }),
-            vec!["action".to_string(), "agent_id".to_string()],
-        )
-    }
-
-    fn category(&self) -> ToolCategory {
-        ToolCategory::Agent
-    }
-
-    async fn execute(&self, args: Value) -> Result<ToolOutput> {
-        let action = args["action"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("action is required".into()))?;
-
-        match action {
-            "executions" => self.execute_executions(&args).await,
-            "conversation" => self.execute_conversation(&args).await,
-            "latest_execution" => self.execute_latest_execution(&args).await,
-            _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action: {}",
-                action
-            ))),
-        }
-    }
-}
-
-impl AgentHistoryTool {
     async fn execute_executions(&self, args: &Value) -> Result<ToolOutput> {
         let agent_id = args["agent_id"]
             .as_str()
@@ -1185,7 +1139,6 @@ impl AgentHistoryTool {
         match val {
             serde_json::Value::String(s) => {
                 if s.len() > max_str_len {
-                    // Check if it looks like base64 image data
                     let size_mb = s.len() as f64 / (1024.0 * 1024.0);
                     if s.starts_with("data:image/") || s.starts_with("/9j/") || s.starts_with("iVBOR") {
                         serde_json::json!(format!("[图像数据: {:.1}MB, 已省略]", size_mb))
@@ -1236,7 +1189,6 @@ impl AgentHistoryTool {
     }
 
     /// Build a focused output summary from TurnOutput for conversation history.
-    /// Prioritizes text insights (analysis, reasoning, decisions, conclusion).
     fn compact_output(output: &neomind_storage::TurnOutput) -> serde_json::Value {
         let decisions: Vec<serde_json::Value> = output
             .decisions
@@ -2562,10 +2514,9 @@ impl AggregatedToolsBuilder {
             tools.push(Arc::new(device_tool));
         }
 
-        // Agent tools
+        // Agent tool (includes history actions: executions, conversation, latest_execution)
         if let Some(store) = self.agent_store.clone() {
-            tools.push(Arc::new(AgentTool::new(store.clone())));
-            tools.push(Arc::new(AgentHistoryTool::new(store)));
+            tools.push(Arc::new(AgentTool::new(store)));
         }
 
         // Rule tool

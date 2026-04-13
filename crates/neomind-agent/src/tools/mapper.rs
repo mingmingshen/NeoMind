@@ -38,7 +38,7 @@ impl ToolNameMapper {
         // 这些工具名称直接映射到自身，避免被模糊匹配到旧工具
         self.register_simplified("device", "device");
         self.register_simplified("agent", "agent");
-        self.register_simplified("agent_history", "agent_history");
+        self.register_alias("agent_history", "agent");
         self.register_simplified("rule", "rule");
         self.register_simplified("alert", "message");
         self.register_simplified("message", "message");
@@ -376,7 +376,7 @@ mod tests {
         // Aggregated tool names map to themselves
         assert_eq!(mapper.resolve("device"), "device");
         assert_eq!(mapper.resolve("agent"), "agent");
-        assert_eq!(mapper.resolve("agent_history"), "agent_history");
+        assert_eq!(mapper.resolve("agent_history"), "agent");
         assert_eq!(mapper.resolve("rule"), "rule");
         assert_eq!(mapper.resolve("alert"), "message");
         assert_eq!(mapper.resolve("message"), "message");

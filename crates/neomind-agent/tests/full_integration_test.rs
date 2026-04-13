@@ -45,7 +45,7 @@ impl FullTestContext {
         // Create LLM runtime
         let ollama_config = OllamaConfig {
             endpoint: "http://localhost:11434".to_string(),
-            model: "qwen2.5:3b".to_string(),
+            model: "qwen3.5:2b".to_string(),
             timeout_secs: 120,
         };
         let llm_runtime = Arc::new(OllamaRuntime::new(ollama_config)?);
@@ -334,7 +334,7 @@ impl FullTestContext {
                 max_tokens: Some(500),
                 ..Default::default()
             },
-            model: Some("qwen2.5:3b".to_string()),
+            model: Some("qwen3.5:2b".to_string()),
             stream: false,
             tools: None,
         };

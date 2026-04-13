@@ -1,7 +1,7 @@
 //! AI Agent with Real LLM Backend Integration Test
 //!
 //! This test requires Ollama to be running on localhost:11434
-//! with at least one model available (e.g., qwen2.5:3b)
+//! with at least one model available (e.g., qwen3.5:2b)
 
 #![allow(dead_code)]
 
@@ -32,7 +32,7 @@ impl LlmTestContext {
         // Create real LLM backend
         let ollama_config = OllamaConfig {
             endpoint: "http://localhost:11434".to_string(),
-            model: "qwen2.5:3b".to_string(),
+            model: "qwen3.5:2b".to_string(),
             timeout_secs: 120,
         };
 
@@ -357,7 +357,7 @@ async fn test_llm_direct_api() -> anyhow::Result<()> {
 
     let ollama_config = OllamaConfig {
         endpoint: "http://localhost:11434".to_string(),
-        model: "qwen2.5:3b".to_string(),
+        model: "qwen3.5:2b".to_string(),
         timeout_secs: 60,
     };
 
@@ -378,7 +378,7 @@ async fn test_llm_direct_api() -> anyhow::Result<()> {
             max_tokens: Some(200),
             ..Default::default()
         },
-        model: Some("qwen2.5:3b".to_string()),
+        model: Some("qwen3.5:2b".to_string()),
         stream: false,
         tools: None,
     };

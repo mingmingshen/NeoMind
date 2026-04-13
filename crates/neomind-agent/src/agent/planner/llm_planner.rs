@@ -50,8 +50,7 @@ impl LLMPlanner {
 
 Available tools:
 - device: actions=list, get, query, control
-- agent: actions=list, get, create, update, control, memory
-- agent_history: actions=executions, conversation
+- agent: actions=list, get, create, update, control, memory, send_message, executions, conversation, latest_execution
 - rule: actions=list, get, delete, history
 - alert: actions=list, create, acknowledge
 - extension: actions=list, get, execute, status

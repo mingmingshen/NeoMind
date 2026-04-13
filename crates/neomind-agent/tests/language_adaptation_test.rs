@@ -7,7 +7,7 @@
 //!
 //! Run with: cargo test --test language_adaptation_test -- --ignored --nocapture
 //!
-//! Requires: Ollama running on localhost:11434 with a model (e.g., qwen2.5:3b)
+//! Requires: Ollama running on localhost:11434 with a model (e.g., qwen3.5:2b)
 
 use anyhow::Result;
 use neomind_agent::session::SessionManager;
@@ -33,7 +33,7 @@ struct TestContext {
 
 impl TestContext {
     async fn new() -> Result<Self> {
-        let model = std::env::var("MODEL").unwrap_or_else(|_| "qwen2.5:3b".to_string());
+        let model = std::env::var("MODEL").unwrap_or_else(|_| "qwen3.5:2b".to_string());
 
         let endpoint = std::env::var("OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:11434".to_string());

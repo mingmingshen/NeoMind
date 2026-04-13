@@ -8,7 +8,7 @@
 //!
 //! Requires Ollama to be running on localhost:11434
 //! Recommended models (small/fast):
-//! - qwen2.5:3b (tested)
+//! - qwen3.5:2b (tested)
 //! - qwen3-vl:2b (fast, supports thinking)
 //! - phi3:3.8b (good reasoning)
 //!
@@ -39,7 +39,7 @@ struct ToolCallingTestContext {
 impl ToolCallingTestContext {
     async fn new() -> anyhow::Result<Self> {
         // Get model from environment or use default
-        let model_name = std::env::var("MODEL").unwrap_or_else(|_| "qwen2.5:3b".to_string());
+        let model_name = std::env::var("MODEL").unwrap_or_else(|_| "qwen3.5:2b".to_string());
 
         println!("📦 Using model: {}", model_name);
 
@@ -325,7 +325,7 @@ async fn test_direct_llm_tool_calling() -> anyhow::Result<()> {
 
     println!("\n=== Test: Direct LLM Tool Calling ===\n");
 
-    let model_name = std::env::var("MODEL").unwrap_or_else(|_| "qwen2.5:3b".to_string());
+    let model_name = std::env::var("MODEL").unwrap_or_else(|_| "qwen3.5:2b".to_string());
 
     let ollama_endpoint =
         std::env::var("OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://localhost:11434".to_string());

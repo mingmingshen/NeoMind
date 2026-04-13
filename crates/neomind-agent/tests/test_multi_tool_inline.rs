@@ -8,7 +8,7 @@ use std::sync::Arc;
 #[tokio::test]
 #[ignore]
 async fn test_multi_tools_single_request() -> anyhow::Result<()> {
-    let model = std::env::var("MODEL").unwrap_or("qwen2.5:3b".to_string());
+    let model = std::env::var("MODEL").unwrap_or("qwen3.5:2b".to_string());
     let endpoint = std::env::var("OLLAMA_ENDPOINT").unwrap_or("http://localhost:11434".to_string());
 
     let config = OllamaConfig {

@@ -79,7 +79,7 @@ impl RealPerfTestContext {
                 max_tokens: Some(500),
                 ..Default::default()
             },
-            model: Some("qwen2.5:3b".to_string()),
+            model: Some("qwen3.5:2b".to_string()),
             stream: false,
             tools: None,
         };

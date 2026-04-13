@@ -6,7 +6,7 @@
 //!
 //! The toolkit uses an **action-based aggregated design** for token efficiency:
 //!
-//! - **6 Aggregated Tools**: device, agent, agent_history, rule, alert, extension
+//! - **5 Aggregated Tools**: device, agent, rule, message, extension
 //! - Each tool supports multiple actions (list, get, create, control, etc.)
 //! - Reduces tool definition token usage by ~60% vs individual tools
 //!
@@ -20,7 +20,6 @@
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Create a registry with aggregated tools
 //!     let registry = ToolRegistryBuilder::new()
-//!         .with_system_help_tool_named("NeoMind")
 //!         .build();
 //!
 //!     // List available tools
@@ -39,7 +38,6 @@ pub mod registry;
 pub mod resolver;
 pub mod session_search;
 pub mod simplified;
-pub mod system_tools;
 pub mod tool;
 
 // Re-exports commonly used types
@@ -63,12 +61,6 @@ pub use neomind_core::tools::{
 };
 
 // ============================================================================
-// System Tools (Help/Onboarding)
-// ============================================================================
-
-pub use system_tools::{SystemHelpTool, SystemInfoTool};
-
-// ============================================================================
 // Extension Tools
 // ============================================================================
 
@@ -83,7 +75,7 @@ pub use session_search::SessionSearchTool;
 // ============================================================================
 
 pub use aggregated::{
-    AgentHistoryTool, AgentTool, AggregatedMessageInfo, AggregatedMessageLevel,
+    AgentTool, AggregatedMessageInfo, AggregatedMessageLevel,
     AggregatedToolsBuilder, DeviceTool, ExtensionAggregatedTool, MessageTool, RuleTool,
 };
 
@@ -103,13 +95,5 @@ mod tests {
     async fn test_registry_empty() {
         let registry = ToolRegistryBuilder::new().build();
         assert_eq!(registry.len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_registry_with_system_help() {
-        let registry = ToolRegistryBuilder::new().with_system_help_tool().build();
-
-        assert!(!registry.is_empty());
-        assert!(registry.has("system_help"));
     }
 }

@@ -679,12 +679,14 @@ impl AgentExecutor {
                     Ok(output) => {
                         let raw = serde_json::to_string_pretty(&output.data)
                             .unwrap_or_else(|_| "Success".to_string());
-                        // Truncate large results to avoid context overflow
+                        // Sanitize base64/image data to prevent context bloat
+                        let sanitized = crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
+                        // UTF-8 safe truncation
                         const MAX_TOOL_RESULT_IN_MSG: usize = 4000;
-                        if raw.len() > MAX_TOOL_RESULT_IN_MSG {
-                            format!("{}... (truncated, total {} chars)", &raw[..MAX_TOOL_RESULT_IN_MSG], raw.len())
+                        if sanitized.chars().count() > MAX_TOOL_RESULT_IN_MSG {
+                            crate::agent::streaming::truncate_result_utf8(&sanitized, MAX_TOOL_RESULT_IN_MSG)
                         } else {
-                            raw
+                            sanitized
                         }
                     }
                     Err(e) => format!("Error: {}", e),
@@ -742,10 +744,12 @@ impl AgentExecutor {
                     Ok(output) => {
                         let raw = serde_json::to_string_pretty(&output.data)
                             .unwrap_or_else(|_| "Success".to_string());
-                        if raw.len() > TOOL_RESULT_MAX_LEN {
-                            format!("{}... (truncated, total {} chars)", &raw[..TOOL_RESULT_MAX_LEN], raw.len())
+                        // Sanitize base64/image data to prevent context bloat
+                        let sanitized = crate::agent::streaming::sanitize_tool_result_for_prompt(&raw);
+                        if sanitized.chars().count() > TOOL_RESULT_MAX_LEN {
+                            crate::agent::streaming::truncate_result_utf8(&sanitized, TOOL_RESULT_MAX_LEN)
                         } else {
-                            raw
+                            sanitized
                         }
                     }
                     Err(e) => format!("Error: {}", e),

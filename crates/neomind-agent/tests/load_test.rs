@@ -154,7 +154,7 @@ impl LoadTestContext {
         let llm_runtime = if use_llm {
             let ollama_config = OllamaConfig {
                 endpoint: "http://localhost:11434".to_string(),
-                model: "qwen2.5:3b".to_string(),
+                model: "qwen3.5:2b".to_string(),
                 timeout_secs: 120,
             };
             Some(Arc::new(OllamaRuntime::new(ollama_config)?)

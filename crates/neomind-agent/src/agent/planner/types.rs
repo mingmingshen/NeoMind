@@ -21,7 +21,7 @@ pub enum PlanningMode {
 pub struct PlanStep {
     /// Unique step identifier (index in the plan).
     pub id: StepId,
-    /// Tool name: "device", "agent", "agent_history", "rule", "message", "extension"
+    /// Tool name: "device", "agent", "rule", "message", "extension"
     pub tool_name: String,
     /// Action within the tool: "list", "get", "query", "control", etc.
     pub action: String,
@@ -42,8 +42,7 @@ impl PlanStep {
             (self.tool_name.as_str(), self.action.as_str()),
             ("device", "list" | "get" | "query")
                 | ("rule", "list" | "get")
-                | ("agent", "list" | "get")
-                | ("agent_history", "executions" | "conversation")
+                | ("agent", "list" | "get" | "memory" | "executions" | "conversation")
                 | ("message", "list")
                 | ("extension", "list" | "get" | "status")
         )

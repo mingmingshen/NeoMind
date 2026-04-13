@@ -120,7 +120,7 @@ fn test_keyword_planner_alert_intent() {
     let plan = plan.unwrap();
     assert_eq!(plan.mode, PlanningMode::Keyword);
     assert_eq!(plan.steps.len(), 1);
-    assert_eq!(plan.steps[0].tool_name, "alert");
+    assert_eq!(plan.steps[0].tool_name, "message");
     assert_eq!(plan.steps[0].action, "list");
 }
 
@@ -204,7 +204,7 @@ fn test_execution_plan_parallel_batches_all_safe_parallel() {
             },
             PlanStep {
                 id: 2,
-                tool_name: "alert".to_string(),
+                tool_name: "message".to_string(),
                 action: "list".to_string(),
                 params: serde_json::json!({}),
                 depends_on: vec![],

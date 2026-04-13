@@ -1075,8 +1075,6 @@ impl ServerState {
                 None,                                    // rule_history
                 Some(self.core.message_manager.clone()), // message_manager for alert tool
             )
-            // System help tool for onboarding (kept separate for discoverability)
-            .with_system_help_tool_named("NeoMind")
             // Scan extensions and register their tools
             .with_extensions_scanned()
             .await
@@ -1122,7 +1120,6 @@ impl ServerState {
                 None,
                 Some(self.core.message_manager.clone()),
             )
-            .with_system_help_tool_named("NeoMind")
             .with_extensions_scanned()
             .await
             .build();

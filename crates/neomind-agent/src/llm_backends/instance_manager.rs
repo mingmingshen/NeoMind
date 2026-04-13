@@ -19,8 +19,10 @@ use super::backends::ollama::{OllamaConfig, OllamaRuntime};
 #[cfg(feature = "llamacpp")]
 use super::backends::llamacpp::{LlamaCppConfig, LlamaCppRuntime};
 
-/// Detect model capabilities from model name (for Ollama instances)
-fn detect_ollama_capabilities(model_name: &str) -> BackendCapabilities {
+/// Detect model capabilities from model name (for Ollama instances).
+/// This is a lightweight fallback when the Ollama API is unreachable.
+/// NOTE: max_context is always 0 here — the real value must come from /api/show.
+fn detect_ollama_capabilities_from_name(model_name: &str) -> BackendCapabilities {
     let name_lower = model_name.to_lowercase();
 
     // Thinking support: deepseek-r1, qwen3 variants
@@ -45,21 +47,30 @@ fn detect_ollama_capabilities(model_name: &str) -> BackendCapabilities {
         supports_multimodal,
         supports_thinking,
         supports_tools,
-        max_context: 8192,
+        max_context: 0, // Must come from /api/show — filled in create_runtime()
     }
 }
 
-/// Ensure an instance has correct capabilities
-/// This function corrects potentially outdated capabilities stored in the database
+/// Ensure an instance has correct capabilities (sync, name-based fallback only).
+/// This function corrects capabilities that can be detected from the model name.
+/// For accurate context length detection, use `create_runtime()` which calls /api/show.
 fn ensure_instance_capabilities(mut instance: LlmBackendInstance) -> LlmBackendInstance {
-    // For Ollama backends, update capabilities based on model name
     if matches!(instance.backend_type, LlmBackendType::Ollama) {
-        // Only update if the capabilities seem outdated (no supports_tools field set properly)
-        // or if tools support is false but model name suggests it should support tools
-        let detected = detect_ollama_capabilities(&instance.model);
+        let detected = detect_ollama_capabilities_from_name(&instance.model);
+        // Fix tools support if name-based detection disagrees
         if !instance.capabilities.supports_tools && detected.supports_tools {
-            instance.capabilities = detected;
+            instance.capabilities.supports_tools = true;
         }
+        // Fix thinking support
+        if instance.capabilities.supports_thinking != detected.supports_thinking {
+            instance.capabilities.supports_thinking = detected.supports_thinking;
+        }
+        // Fix multimodal support
+        if instance.capabilities.supports_multimodal != detected.supports_multimodal {
+            instance.capabilities.supports_multimodal = detected.supports_multimodal;
+        }
+        // NOTE: max_context is NOT updated here — it must come from /api/show
+        // which happens in create_runtime() to get the real value from Ollama.
     } else if matches!(instance.backend_type, LlmBackendType::LlamaCpp) {
         // For llama.cpp backends, detect multimodal from model name as fallback.
         // The primary detection happens at startup via /props endpoint.
@@ -210,26 +221,71 @@ impl LlmBackendInstanceManager {
         // Build config based on backend type
         let runtime: Arc<dyn LlmRuntime> =
             if matches!(instance.backend_type, LlmBackendType::Ollama) {
-                // For Ollama, create runtime with capabilities override
+                // For Ollama, create runtime and detect capabilities from /api/show
+                let endpoint = instance
+                    .endpoint
+                    .as_deref()
+                    .unwrap_or("http://localhost:11434");
+
                 let config = OllamaConfig::new(&instance.model)
-                    .with_endpoint(
-                        instance
-                            .endpoint
-                            .as_deref()
-                            .unwrap_or("http://localhost:11434"),
-                    )
+                    .with_endpoint(endpoint)
                     .with_timeout_secs(180);
 
                 let ollama_runtime = OllamaRuntime::new(config)
                     .map_err(|e| LlmError::BackendUnavailable(e.to_string()))?;
 
-                // Apply capabilities override from storage (detected via /api/show)
-                let caps = &instance.capabilities;
+                // Try to detect capabilities from /api/show endpoint first,
+                // fall back to stored capabilities
+                let detected = ollama_runtime.fetch_capabilities_from_api().await;
+
+                let (multimodal, thinking, tools, max_ctx) = match &detected {
+                    Some(caps) => {
+                        // Update stored capabilities if detection succeeded and values differ
+                        let changed = instance.capabilities.supports_multimodal != caps.supports_multimodal
+                            || instance.capabilities.supports_thinking != caps.supports_thinking
+                            || instance.capabilities.supports_tools != caps.supports_tools
+                            || instance.capabilities.max_context != caps.max_context;
+                        if changed {
+                            tracing::info!(
+                                backend_id = %instance.id,
+                                model = %instance.model,
+                                old_ctx = instance.capabilities.max_context,
+                                new_ctx = caps.max_context,
+                                "Updated Ollama capabilities from /api/show"
+                            );
+                            // Write back to storage and in-memory cache
+                            let mut updated = instance.clone();
+                            updated.capabilities.supports_multimodal = caps.supports_multimodal;
+                            updated.capabilities.supports_thinking = caps.supports_thinking;
+                            updated.capabilities.supports_tools = caps.supports_tools;
+                            updated.capabilities.max_context = caps.max_context;
+                            let _ = self.storage.save_instance(&updated);
+                            self.instances.insert(instance.id.clone(), updated);
+                        }
+                        (
+                            caps.supports_multimodal,
+                            caps.supports_thinking,
+                            caps.supports_tools,
+                            caps.max_context,
+                        )
+                    }
+                    None => {
+                        tracing::debug!(
+                            backend_id = %instance.id,
+                            "Could not detect Ollama capabilities from /api/show, using stored values"
+                        );
+                        let caps = &instance.capabilities;
+                        (
+                            caps.supports_multimodal,
+                            caps.supports_thinking,
+                            caps.supports_tools,
+                            caps.max_context,
+                        )
+                    }
+                };
+
                 let ollama_runtime = ollama_runtime.with_capabilities_override(
-                    caps.supports_multimodal,
-                    caps.supports_thinking,
-                    caps.supports_tools,
-                    caps.max_context,
+                    multimodal, thinking, tools, max_ctx,
                 );
 
                 Arc::new(ollama_runtime) as Arc<dyn LlmRuntime>

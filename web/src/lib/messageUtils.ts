@@ -80,7 +80,10 @@ export function mergeMessagesForDisplay(messages: Message[]): Message[] {
       const hasTools = !!(cur.tool_calls && cur.tool_calls.length > 0)
       const hasContent = !!(cur.content && cur.content.trim())
 
-      if (!thinking && cur.thinking) thinking = cur.thinking
+      if (cur.thinking) {
+        // Accumulate thinking across all messages in this turn (interleaved thinking pattern)
+        thinking = thinking ? thinking + '\n' + cur.thinking : cur.thinking
+      }
       if (cur.round_contents) {
         roundContents = { ...roundContents, ...cur.round_contents }
       }
