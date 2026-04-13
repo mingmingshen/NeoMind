@@ -183,6 +183,7 @@ export function ChatPage() {
   const [streamingContent, setStreamingContent] = useState("")
   const [streamingThinking, setStreamingThinking] = useState("")
   const [streamingToolCalls, setStreamingToolCalls] = useState<any[]>([])
+  const [lastTokenUsage, setLastTokenUsage] = useState<{ promptTokens: number } | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   // Track the ID of the last assistant message for tool call result updates
@@ -217,6 +218,8 @@ export function ChatPage() {
   const [roundContents, setRoundContents] = useState<Record<number, string>>({})
   const currentRoundRef = useRef(1)
   const roundContentsAccumulatorRef = useRef<Record<number, string>>({})
+  // Accumulate thinking across all rounds (interleaved thinking pattern)
+  const thinkingAccumulatorRef = useRef("")
 
   // Load LLM backends and sessions on mount
   useEffect(() => {
@@ -383,7 +386,16 @@ export function ChatPage() {
         }
 
         case "end": {
-          const { thinking, toolCalls } = capturedStreamingRef.current
+          // Capture token usage from backend
+          if (data.tokenUsage?.promptTokens) {
+            setLastTokenUsage({ promptTokens: data.tokenUsage.promptTokens })
+          }
+          const toolCalls = capturedStreamingRef.current.toolCalls
+          // Accumulate thinking from current round into total
+          if (capturedStreamingRef.current.thinking) {
+            thinkingAccumulatorRef.current += capturedStreamingRef.current.thinking
+          }
+          const thinking = thinkingAccumulatorRef.current
           // Last round's content is the current captured content
           const lastRoundContent = capturedStreamingRef.current.content
           // Save last round's content to round contents
@@ -418,6 +430,7 @@ export function ChatPage() {
           streamingMessageIdRef.current = null
           currentRoundRef.current = 1
           roundContentsAccumulatorRef.current = {}
+          thinkingAccumulatorRef.current = ""
           break
         }
 
@@ -427,7 +440,11 @@ export function ChatPage() {
           if (capturedStreamingRef.current.content) {
             roundContentsAccumulatorRef.current[currentRoundRef.current] = capturedStreamingRef.current.content
           }
-          // Reset captured content for next round - only keep toolCalls across rounds
+          // Accumulate thinking across rounds (interleaved thinking pattern)
+          if (capturedStreamingRef.current.thinking) {
+            thinkingAccumulatorRef.current += capturedStreamingRef.current.thinking
+          }
+          // Reset captured content for next round - keep toolCalls and clear thinking for next round's accumulation
           capturedStreamingRef.current.content = ""
           capturedStreamingRef.current.thinking = ""
           currentRoundRef.current += 1
@@ -568,6 +585,7 @@ export function ChatPage() {
     // Reset round tracking
     currentRoundRef.current = 1
     roundContentsAccumulatorRef.current = {}
+    thinkingAccumulatorRef.current = ""
     setRoundContents({})
 
     ws.sendMessage(trimmedInput, attachedImages.length > 0 ? attachedImages : undefined)
@@ -1148,6 +1166,34 @@ export function ChatPage() {
               </Button>
 
               <div className="flex-1" />
+              {/* Context usage indicator */}
+              {(() => {
+                const activeBackend = llmBackends.find(b => b.id === activeBackendId)
+                const maxContext = activeBackend?.capabilities?.max_context ?? 8192
+                // Prefer actual token count from LLM backend, fall back to estimation
+                const promptTokens = lastTokenUsage?.promptTokens
+                let displayTokens: number
+                let ratio: number
+                if (promptTokens != null && !isStreaming) {
+                  displayTokens = promptTokens
+                  ratio = promptTokens / maxContext
+                } else {
+                  const msgChars = messages.reduce((sum, m) => sum + (m.content?.length ?? 0), 0)
+                  const streamChars = (streamingContent?.length ?? 0) + (streamingThinking?.length ?? 0)
+                    + streamingToolCalls.reduce((s, tc) => s + (tc.arguments?.length ?? 0) + (tc.result?.length ?? 0), 0)
+                  displayTokens = Math.ceil((msgChars + streamChars) / 3)
+                  ratio = displayTokens / maxContext
+                }
+                if (messages.length === 0) return null
+                return (
+                  <span className={cn(
+                    "text-[11px] shrink-0 transition-colors",
+                    ratio > 0.9 ? "text-red-500" : ratio > 0.7 ? "text-yellow-500" : "text-muted-foreground/60"
+                  )}>
+                    Context {(displayTokens / 1000).toFixed(1)}K / {(maxContext / 1000).toFixed(0)}K
+                  </span>
+                )
+              })()}
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2">

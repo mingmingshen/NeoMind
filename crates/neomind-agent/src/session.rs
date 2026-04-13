@@ -9,6 +9,8 @@ use futures::Stream;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use crate::llm::LlmInterface;
+
 use neomind_storage::SessionStore;
 
 use super::agent::{Agent, AgentConfig, AgentEvent, AgentMessage, LlmBackend};
@@ -571,6 +573,12 @@ impl SessionManager {
         self.store.clone()
     }
 
+    /// Get the LLM interface for a session's agent (for background tasks like summarization).
+    pub async fn get_agent_llm(&self, session_id: &str) -> Option<Arc<LlmInterface>> {
+        let sessions = self.sessions.read().await;
+        sessions.get(session_id).map(|agent| agent.llm_interface())
+    }
+
     /// Create a new session.
     pub async fn create_session(&self) -> Result<String> {
         let session_id = Uuid::new_v4().to_string();
@@ -1062,7 +1070,13 @@ impl SessionManager {
             }
         }
 
-        agent.process_stream_events(message).await
+        // Read conversation summary from session metadata for context compression
+        let (conversation_summary, summary_up_to_index) = self.store
+            .get_session_metadata(session_id)
+            .map(|m| (m.conversation_summary, m.summary_up_to_index))
+            .unwrap_or((None, None));
+
+        agent.process_stream_events(message, conversation_summary, summary_up_to_index).await
     }
 
     /// Process a message in a session with event streaming and optional LLM backend override.

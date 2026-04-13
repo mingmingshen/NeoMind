@@ -24,6 +24,7 @@ pub mod sessions;
 pub mod settings;
 pub mod setup;
 pub mod stats;
+pub mod summarization;
 pub mod suggestions;
 pub mod tools;
 pub mod ws;

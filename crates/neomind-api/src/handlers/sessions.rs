@@ -190,7 +190,7 @@ async fn process_stream_to_channel(
                             "sessionId": session_id,
                         })
                     }
-                    AgentEvent::End => {
+                    AgentEvent::End { prompt_tokens } => {
                         // P0.3: Delete pending state on successful completion
                         let _ = session_store.delete_pending_stream(&session_id);
 
@@ -289,12 +289,35 @@ async fn process_stream_to_channel(
                             }
                         });
 
+                        // === Context Summarization ===
+                        // If context usage exceeds 60%, trigger background summarization
+                        if let Some(pt) = prompt_tokens {
+                            let pt_val = *pt; // Copy to owned value for 'static spawn
+                            let sum_session_id = session_id.clone();
+                            let sum_state = state.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = crate::handlers::summarization::trigger_summarization(
+                                    &sum_session_id,
+                                    &sum_state,
+                                    pt_val,
+                                ).await {
+                                    tracing::warn!("Background summarization failed: {}", e);
+                                }
+                            });
+                        }
+
                         tracing::info!("*** Sending End event (total events: {}) ***", event_count);
                         end_event_sent = true;
-                        json!({
+                        let mut end_json = json!({
                             "type": "end",
                             "sessionId": session_id,
-                        })
+                        });
+                        if let Some(pt) = prompt_tokens {
+                            end_json["tokenUsage"] = json!({
+                                "promptTokens": pt
+                            });
+                        }
+                        end_json
                     }
                     AgentEvent::Progress {
                         message,
@@ -354,7 +377,7 @@ async fn process_stream_to_channel(
 
                 // If this was the End event, exit the loop
                 // (IntermediateEnd does NOT exit the loop - more events are coming)
-                if matches!(event, AgentEvent::End) {
+                if matches!(event, AgentEvent::End { .. }) {
                     break;
                 }
             }

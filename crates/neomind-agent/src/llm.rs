@@ -254,6 +254,9 @@ pub struct LlmInterface {
     /// Whether thinking mode is enabled (for direct mode when not using instance manager).
     /// Defaults to false for faster responses.
     thinking_enabled: Arc<RwLock<Option<bool>>>,
+    /// Last prompt token count from the most recent stream response.
+    /// Updated in-band when the stream completes.
+    last_prompt_tokens: Arc<tokio::sync::Mutex<Option<u32>>>,
     /// Intent classifier for staged processing.
     intent_classifier: IntentClassifier,
     /// Tool filter for reducing tools sent to LLM.
@@ -284,6 +287,7 @@ impl LlmInterface {
             limiter: ConcurrencyLimiter::new(concurrent_limit),
             use_instance_manager: Arc::new(AtomicUsize::new(0)),
             thinking_enabled: Arc::new(RwLock::new(None)), // Use backend default (from storage)
+            last_prompt_tokens: Arc::new(tokio::sync::Mutex::new(None)),
             intent_classifier: IntentClassifier::default(),
             tool_filter: ToolFilter::default(),
             context_manager: None,
@@ -312,6 +316,7 @@ impl LlmInterface {
             limiter: ConcurrencyLimiter::new(concurrent_limit),
             use_instance_manager: Arc::new(AtomicUsize::new(1)),
             thinking_enabled: Arc::new(RwLock::new(None)), // Will use instance manager setting
+            last_prompt_tokens: Arc::new(tokio::sync::Mutex::new(None)),
             intent_classifier: IntentClassifier::default(),
             tool_filter: ToolFilter::default(),
             context_manager: None,
@@ -327,6 +332,12 @@ impl LlmInterface {
     /// Get the thinking mode setting.
     pub async fn get_thinking_enabled(&self) -> Option<bool> {
         *self.thinking_enabled.read().await
+    }
+
+    /// Take the last prompt token count from the most recent stream response.
+    /// Returns the value and resets it to None.
+    pub async fn take_last_prompt_tokens(&self) -> Option<u32> {
+        self.last_prompt_tokens.lock().await.take()
     }
 
     /// Set the global timezone for time-aware prompts.
@@ -1862,13 +1873,22 @@ impl LlmInterface {
         // Acquire permit for concurrency limiting and wrap stream
         let permit = self.limiter.acquire().await;
         let wrapped_stream = PermitStream::new(stream, permit);
+        let token_tracker = self.last_prompt_tokens.clone();
 
         // Convert stream
         Ok(Box::pin(async_stream::stream! {
             let mut stream = wrapped_stream;
             while let Some(result) = futures::StreamExt::next(&mut stream).await {
                 match result {
-                    Ok(chunk) => yield Ok(chunk),
+                    Ok((content, is_thinking)) => {
+                        let (clean, is_thinking, tokens) = extract_token_marker(&content, is_thinking);
+                        if let Some(t) = tokens {
+                            *token_tracker.lock().await = Some(t);
+                        }
+                        if !clean.is_empty() {
+                            yield Ok((clean, is_thinking));
+                        }
+                    }
                     Err(e) => yield Err(NeoMindError::Llm(e.to_string())),
                 }
             }
@@ -2172,6 +2192,7 @@ impl LlmInterface {
         // Prepare retry data for tiered context overflow retry
         let llm_retry = llm.clone();
         let limiter_retry = self.limiter.clone();
+        let token_tracker = self.last_prompt_tokens.clone();
 
         // Convert stream with tiered context overflow retry
         Ok(Box::pin(async_stream::stream! {
@@ -2179,7 +2200,15 @@ impl LlmInterface {
             let mut retry_stage: u8 = 0; // 0=initial, 1=compact retry, 2=minimal retry
             while let Some(result) = futures::StreamExt::next(&mut stream).await {
                 match result {
-                    Ok(chunk) => yield Ok(chunk),
+                    Ok((content, is_thinking)) => {
+                        let (clean, is_thinking, tokens) = extract_token_marker(&content, is_thinking);
+                        if let Some(t) = tokens {
+                            *token_tracker.lock().await = Some(t);
+                        }
+                        if !clean.is_empty() {
+                            yield Ok((clean, is_thinking));
+                        }
+                    }
                     Err(LlmError::ContextOverflow { prompt_tokens, max_context }) => {
                         retry_stage += 1;
                         if retry_stage <= 2 {
@@ -2241,6 +2270,25 @@ impl LlmInterface {
             }
         }))
     }
+}
+
+/// Extract in-band token usage marker from a stream chunk.
+/// Returns (clean_content, is_thinking, extracted_prompt_tokens).
+/// The marker format is `\n__NEOMIND_TOKEN_PROMPT:NN__`.
+fn extract_token_marker(content: &str, is_thinking: bool) -> (String, bool, Option<u32>) {
+    if is_thinking {
+        return (content.to_string(), is_thinking, None);
+    }
+    if let Some(start) = content.find("__NEOMIND_TOKEN_PROMPT:") {
+        let after = &content[start + "__NEOMIND_TOKEN_PROMPT:".len()..];
+        if let Some(end) = after.find("__") {
+            if let Ok(tokens) = after[..end].parse::<u32>() {
+                let clean = format!("{}{}", &content[..start], &content[start + "__NEOMIND_TOKEN_PROMPT:".len() + end + 2..]);
+                return (clean.trim().to_string(), is_thinking, Some(tokens));
+            }
+        }
+    }
+    (content.to_string(), is_thinking, None)
 }
 
 impl Default for LlmInterface {

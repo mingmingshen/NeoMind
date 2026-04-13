@@ -52,7 +52,11 @@ pub enum AgentEvent {
         message: String,
     },
     /// Stream ended
-    End,
+    End {
+        /// Prompt tokens used in this request (from LLM backend)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        prompt_tokens: Option<u32>,
+    },
     /// Intermediate end (for multi-round tool calling)
     /// Indicates the current round is complete but more processing is coming
     IntermediateEnd,
@@ -196,7 +200,12 @@ impl AgentEvent {
 
     /// Create an end event.
     pub fn end() -> Self {
-        Self::End
+        Self::End { prompt_tokens: None }
+    }
+
+    /// Create an end event with token usage data.
+    pub fn end_with_tokens(prompt_tokens: u32) -> Self {
+        Self::End { prompt_tokens: Some(prompt_tokens) }
     }
 
     /// Create an intermediate end event (for multi-round processing).
@@ -270,12 +279,12 @@ impl AgentEvent {
 
     /// Check if this event ends the stream.
     pub fn is_end(&self) -> bool {
-        matches!(self, Self::End)
+        matches!(self, Self::End { .. })
     }
 
     /// Check if this event is any kind of end (End or IntermediateEnd).
     pub fn is_any_end(&self) -> bool {
-        matches!(self, Self::End | Self::IntermediateEnd)
+        matches!(self, Self::End { .. } | Self::IntermediateEnd)
     }
 
     /// Convert to JSON for WebSocket transmission.

@@ -598,6 +598,7 @@ impl CloudRuntime {
             tools: input
                 .tools
                 .map(|tools| tools.into_iter().map(OpenAiTool::from).collect()),
+            stream_options: None,
         };
 
         // Create rate limit key based on provider and API key hash
@@ -875,6 +876,7 @@ impl CloudRuntime {
             tools: input
                 .tools
                 .map(|tools| tools.into_iter().map(OpenAiTool::from).collect()),
+            stream_options: Some(StreamOptions { include_usage: true }),
         };
 
         tokio::spawn(async move {
@@ -978,6 +980,16 @@ impl CloudRuntime {
                                             if let Ok(evt) =
                                                 serde_json::from_str::<StreamChunkEvent>(json)
                                             {
+                                                // Check for usage data in final chunk (stream_options.include_usage=true)
+                                                if let Some(ref usage) = evt.usage {
+                                                    if usage.prompt_tokens > 0 {
+                                                        let _ = tx.send(Ok((
+                                                            format!("\n__NEOMIND_TOKEN_PROMPT:{}__", usage.prompt_tokens),
+                                                            false,
+                                                        ))).await;
+                                                    }
+                                                }
+
                                                 if let Some(choice) = evt.choices.first() {
                                                     // Handle content
                                                     if let Some(ref content) = choice.delta.content
@@ -1487,6 +1499,15 @@ struct ChatCompletionRequest {
     /// Tools for function calling (OpenAI-compatible format)
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<OpenAiTool>>,
+    /// Request usage data in streaming response (OpenAI stream_options)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_options: Option<StreamOptions>,
+}
+
+/// Stream options to request usage data in final chunk
+#[derive(Debug, Serialize)]
+struct StreamOptions {
+    include_usage: bool,
 }
 
 /// Tool definition in OpenAI format
@@ -1629,7 +1650,11 @@ struct AccumulatedToolCall {
 
 #[derive(Debug, Deserialize)]
 struct StreamChunkEvent {
+    #[serde(default)]
     choices: Vec<StreamChoice>,
+    /// Usage data - only present in the final chunk when stream_options.include_usage=true
+    #[serde(default)]
+    usage: Option<Usage>,
 }
 
 #[derive(Debug, Deserialize)]

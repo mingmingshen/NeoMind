@@ -427,7 +427,7 @@ async fn run_chat(session_id: Option<String>) -> Result<()> {
                             // Intermediate end - more content coming, don't break
                             println!("[Continuing...]");
                         }
-                        neomind_agent::AgentEvent::End => {
+                        neomind_agent::AgentEvent::End { .. } => {
                             break;
                         }
                     }

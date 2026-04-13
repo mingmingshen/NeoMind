@@ -3090,6 +3090,8 @@ END"#
     pub async fn process_stream_events(
         &self,
         user_message: &str,
+        conversation_summary: Option<String>,
+        summary_up_to_index: Option<u64>,
     ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
         // Add user message to history
         let user_msg = AgentMessage::user(user_message);
@@ -3118,6 +3120,8 @@ END"#
             self.internal_state.clone(),
             self.tools.clone(),
             user_message,
+            conversation_summary,
+            summary_up_to_index,
         )
         .await
         {
@@ -3145,7 +3149,7 @@ END"#
         &self,
         user_message: &str,
     ) -> Result<Pin<Box<dyn Stream<Item = String> + Send>>> {
-        let event_stream = self.process_stream_events(user_message).await?;
+        let event_stream = self.process_stream_events(user_message, None, None).await?;
         Ok(events_to_string_stream(event_stream))
     }
 }

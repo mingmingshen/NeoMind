@@ -37,6 +37,12 @@ pub struct SessionMetadata {
     /// Whether memory injection is enabled for this session
     #[serde(default)]
     pub memory_enabled: bool,
+    /// Conversation summary for context compression (injected when context exceeds threshold)
+    #[serde(default)]
+    pub conversation_summary: Option<String>,
+    /// Index of the last message that has been summarized (messages up to this index can be removed)
+    #[serde(default)]
+    pub summary_up_to_index: Option<u64>,
 }
 
 /// A message in a session.

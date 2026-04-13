@@ -552,13 +552,10 @@ impl LlmRuntime for OllamaRuntime {
             None
         };
 
-        // Determine context size: use max_context from params, or compute from model capabilities
-        // CRITICAL: Qwen3 requires >= 16k context to avoid infinite repetition loops
-        let num_ctx = input.params.max_context.or({
-            // Use a safe default of 16k for models that support it
-            if caps.max_context >= 16384 {
-                Some(16384)
-            } else if caps.max_context >= 8192 {
+        // Determine context size: use max_context from params, or the model's real context length
+        // from /api/show. Never hardcode — the API returns the accurate value (e.g., 131072 for qwen3.5).
+        let num_ctx = input.params.max_context.or_else(|| {
+            if caps.max_context > 0 {
                 Some(caps.max_context)
             } else {
                 None // Let Ollama use its default
@@ -832,13 +829,10 @@ impl LlmRuntime for OllamaRuntime {
             None
         };
 
-        // Determine context size: use max_context from params, or compute from model capabilities
-        // CRITICAL: Qwen3 requires >= 16k context to avoid infinite repetition loops
-        let num_ctx = input.params.max_context.or({
-            // Use a safe default of 16k for models that support it
-            if caps.max_context >= 16384 {
-                Some(16384)
-            } else if caps.max_context >= 8192 {
+        // Determine context size: use max_context from params, or the model's real context length
+        // from /api/show. Never hardcode — the API returns the accurate value (e.g., 131072 for qwen3.5).
+        let num_ctx = input.params.max_context.or_else(|| {
+            if caps.max_context > 0 {
                 Some(caps.max_context)
             } else {
                 None // Let Ollama use its default
@@ -1411,11 +1405,21 @@ impl LlmRuntime for OllamaRuntime {
                                                     total_chars.saturating_sub(thinking_chars);
 
                                                 tracing::info!(
-                                                    "✅ LLM stream complete: thinking={} chars, content={} chars, total_chunks={}",
+                                                    "✅ LLM stream complete: thinking={} chars, content={} chars, total_chunks={}, prompt_eval={:?}, eval={:?}",
                                                     thinking_chars,
                                                     actual_content_len,
-                                                    total_bytes / 300 // Rough chunk count estimate
+                                                    total_bytes / 300, // Rough chunk count estimate
+                                                    ollama_chunk.prompt_eval_count,
+                                                    ollama_chunk.eval_count
                                                 );
+
+                                                // Send token usage as in-band marker before closing
+                                                if let Some(prompt_tokens) = ollama_chunk.prompt_eval_count {
+                                                    let _ = tx.send(Ok((
+                                                        format!("\n__NEOMIND_TOKEN_PROMPT:{}__", prompt_tokens),
+                                                        false,
+                                                    ))).await;
+                                                }
 
                                                 // Warn if no content was generated (possible token budget issue)
                                                 if actual_content_len == 0 && tool_calls_sent {
@@ -1468,8 +1472,11 @@ impl LlmRuntime for OllamaRuntime {
     }
 
     fn max_context_length(&self) -> usize {
-        // Detect the actual context window for the current model
-        detect_model_capabilities(&self.model).max_context
+        // Prefer capabilities_override (from /api/show), fall back to name-based detection
+        self.capabilities_override
+            .as_ref()
+            .map(|c| c.max_context)
+            .unwrap_or_else(|| detect_model_capabilities(&self.model).max_context)
     }
 
     fn supports_multimodal(&self) -> bool {
@@ -1594,11 +1601,11 @@ struct OllamaOptions {
 /// Model capability information
 #[derive(Debug, Clone)]
 pub struct ModelCapability {
-    supports_tools: bool,
-    supports_thinking: bool,
-    supports_multimodal: bool,
+    pub supports_tools: bool,
+    pub supports_thinking: bool,
+    pub supports_multimodal: bool,
     /// Maximum context window in tokens
-    max_context: usize,
+    pub max_context: usize,
 }
 
 /// Detect model capabilities from model name
@@ -1975,6 +1982,12 @@ struct OllamaStreamResponse {
     done: bool,
     #[serde(default)]
     message: OllamaResponseMessage,
+    /// Prompt tokens evaluated (available in final chunk when done=true)
+    #[serde(default)]
+    prompt_eval_count: Option<usize>,
+    /// Completion tokens generated (available in final chunk when done=true)
+    #[serde(default)]
+    eval_count: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, Default)]

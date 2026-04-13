@@ -327,86 +327,7 @@ fn detect_json_tool_calls(buffer: &str) -> Option<(usize, String, String)> {
     Some((start, json_str, remaining))
 }
 
-/// Detect if content is repetitive (indicating a loop)
-fn detect_repetition(recent_chunks: &[String], new_chunk: &str, threshold: usize) -> bool {
-    // === SINGLE-CHUNK REPETITION DETECTION ===
-    // Check for repetitive words/phrases within a single chunk first
-    // This catches cases where the model returns one large chunk with repetitive thinking
-    let repetitive_phrases = [
-        ("可能", 10), // "maybe" - shouldn't appear >10 times
-        ("或者", 8),  // "or"
-        ("也许", 8),  // "perhaps"
-        ("temperature", 8),
-        ("温度", 10),
-        ("sensor", 8),
-        ("传感器", 8),
-        ("可能", 10), // "possible" (Chinese)
-    ];
 
-    for (phrase, limit) in repetitive_phrases {
-        let count = new_chunk.matches(phrase).count();
-        if count > limit {
-            tracing::warn!(
-                "Single-chunk repetition detected: '{}' appears {} times (limit: {})",
-                phrase,
-                count,
-                limit
-            );
-            return true;
-        }
-    }
-
-    // === MULTI-CHUNK REPETITION DETECTION ===
-    // Check if chunks are similar to each other
-    if recent_chunks.len() < threshold || new_chunk.len() < 10 {
-        return false;
-    }
-
-    // Check if the last N chunks are very similar
-    let recent = &recent_chunks[recent_chunks.len().saturating_sub(threshold)..];
-    let similar_count = recent
-        .iter()
-        .filter(|chunk| {
-            // Check similarity: at least 80% character overlap
-            let overlap = chunk
-                .chars()
-                .zip(new_chunk.chars())
-                .filter(|(a, b)| a == b)
-                .count();
-            let max_len = chunk.len().max(new_chunk.len());
-            max_len > 0 && overlap * 100 / max_len >= 80
-        })
-        .count();
-
-    if similar_count >= threshold - 1 {
-        return true;
-    }
-
-    // === COMBINED PHRASE-LEVEL REPETITION DETECTION ===
-    // Check for repetitive words/phrases across all chunks
-    let combined: String = recent_chunks
-        .iter()
-        .map(|s| s.as_str())
-        .chain(std::iter::once(new_chunk))
-        .collect::<Vec<&str>>()
-        .join("");
-
-    for (phrase, limit) in repetitive_phrases {
-        let count = combined.matches(phrase).count();
-        if count > limit * 2 {
-            // Higher limit for combined text
-            tracing::warn!(
-                "Combined repetition detected: '{}' appears {} times (limit: {})",
-                phrase,
-                count,
-                limit * 2
-            );
-            return true;
-        }
-    }
-
-    false
-}
 
 /// Simple in-memory cache for tool results with TTL and size limit
 struct ToolResultCache {
@@ -509,6 +430,158 @@ fn is_tool_cacheable(name: &str) -> bool {
 
 /// Max length of tool result text to inject into Phase 2 prompt (avoid context overflow).
 const PHASE2_TOOL_RESULT_MAX_LEN: usize = 8000;
+
+/// Minimum size (bytes) for a result to be considered large enough to strip base64 from.
+const BASE64_STRIP_THRESHOLD: usize = 4096;
+
+// ---------------------------------------------------------------------------
+// Base64 / image stripping for Phase 2 prompts
+// ---------------------------------------------------------------------------
+
+/// Strip base64/image data from a tool result for safe inclusion in Phase 2 LLM prompts.
+///
+/// Base64 image data wastes LLM context tokens and causes the model to reproduce
+/// raw data in its response. This function:
+/// - For JSON results: walks the tree and replaces base64/image strings with `[image data, {size}]`
+/// - For text with `data:image/...` URLs: replaces URLs with size markers
+/// - Preserves all non-binary data (numbers, text, metadata)
+pub(crate) fn sanitize_tool_result_for_prompt(result: &str) -> String {
+    // Fast path: small results without base64 indicators pass through
+    if result.len() < BASE64_STRIP_THRESHOLD
+        && !result.contains("base64")
+        && !result.contains("data:image/")
+    {
+        return result.to_string();
+    }
+
+    // Try JSON path: parse, strip, re-serialize
+    if result.starts_with('{') || result.starts_with('[') {
+        if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(result) {
+            if strip_base64_from_json_value(&mut value) {
+                if let Ok(stripped) = serde_json::to_string(&value) {
+                    return stripped;
+                }
+            }
+        }
+        // JSON parse succeeded but no base64 found, or serialization failed — fall through
+    }
+
+    // Text containing data:image URLs
+    if result.contains("data:image/") {
+        return replace_data_image_urls(result);
+    }
+
+    result.to_string()
+}
+
+/// Recursively strip base64/image data from a JSON value tree.
+/// Returns `true` if any value was modified.
+fn strip_base64_from_json_value(value: &mut serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut modified = false;
+
+            // Collect keys whose values are base64/image data
+            let replacements: Vec<(String, serde_json::Value)> = map
+                .iter()
+                .filter_map(|(k, v)| {
+                    let s = v.as_str()?;
+                    if s.starts_with("data:image/") {
+                        return Some((
+                            k.clone(),
+                            serde_json::json!(format!("[image data, {}]", humanize_bytes(s.len()))),
+                        ));
+                    }
+                    if is_large_base64_string(s) {
+                        return Some((
+                            k.clone(),
+                            serde_json::json!(format!(
+                                "[base64 data, {}]",
+                                humanize_bytes(s.len())
+                            )),
+                        ));
+                    }
+                    None
+                })
+                .collect();
+
+            for (key, replacement) in replacements {
+                map.insert(key, replacement);
+                modified = true;
+            }
+
+            // Recurse into child values
+            for v in map.values_mut() {
+                if strip_base64_from_json_value(v) {
+                    modified = true;
+                }
+            }
+            modified
+        }
+        serde_json::Value::Array(arr) => {
+            let mut modified = false;
+            for v in arr.iter_mut() {
+                if strip_base64_from_json_value(v) {
+                    modified = true;
+                }
+            }
+            modified
+        }
+        _ => false,
+    }
+}
+
+/// Check if a string looks like large base64 data (>10KB, valid base64 alphabet).
+fn is_large_base64_string(s: &str) -> bool {
+    if s.len() <= 10_000 {
+        return false;
+    }
+    // Sample first 200 chars to check base64 alphabet
+    let sample_end = s.len().min(200);
+    let sample = &s[..sample_end];
+    sample
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+}
+
+/// Replace `data:image/...;base64,...` URLs in a text with size markers.
+fn replace_data_image_urls(text: &str) -> String {
+    let mut result = text.to_string();
+    while let Some(start) = result.find("data:image/") {
+        // Find end of the URL (whitespace, quote, or end of string)
+        let end = result[start..]
+            .find(|c: char| c.is_whitespace() || c == '"' || c == '\'')
+            .map(|i| start + i)
+            .unwrap_or(result.len());
+        let data_len = end - start;
+        let replacement = format!("[image data, {}]", humanize_bytes(data_len));
+        result.replace_range(start..end, &replacement);
+    }
+    result
+}
+
+/// Format byte count as human-readable string (e.g., "2.3MB", "512B").
+fn humanize_bytes(bytes: usize) -> String {
+    const KB: usize = 1024;
+    const MB: usize = 1024 * KB;
+    if bytes >= MB {
+        format!("{:.1}MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1}KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{}B", bytes)
+    }
+}
+
+/// UTF-8 safe truncation for tool result text.
+/// Returns the truncated string with an ellipsis suffix if truncated.
+pub(crate) fn truncate_result_utf8(result: &str, max_chars: usize) -> String {
+    if result.chars().count() <= max_chars {
+        return result.to_string();
+    }
+    let truncated: String = result.chars().take(max_chars).collect();
+    format!("{}... (truncated, total {} chars)", truncated, result.chars().count())
+}
 
 /// Deduplicate accumulated tool results across multiple rounds.
 ///
@@ -621,14 +694,12 @@ fn build_phase2_prompt_with_tool_results(
     }
 
     for (name, result) in tool_call_results {
-        let r = if result.len() > PHASE2_TOOL_RESULT_MAX_LEN {
-            format!(
-                "{}... (result truncated, total {} chars)",
-                &result[..PHASE2_TOOL_RESULT_MAX_LEN],
-                result.len()
-            )
+        // Sanitize base64/image data before including in LLM prompt
+        let sanitized = sanitize_tool_result_for_prompt(result);
+        let r = if sanitized.len() > PHASE2_TOOL_RESULT_MAX_LEN {
+            truncate_result_utf8(&sanitized, PHASE2_TOOL_RESULT_MAX_LEN)
         } else {
-            result.clone()
+            sanitized
         };
         block.push_str(&format!("[{}]\n{}\n\n", name, r));
     }
@@ -671,14 +742,12 @@ fn build_phase2_summary_prompt(
     ));
 
     for (name, result) in all_results {
-        let r = if result.len() > PHASE2_TOOL_RESULT_MAX_LEN {
-            format!(
-                "{}... (result truncated, total {} chars)",
-                &result[..PHASE2_TOOL_RESULT_MAX_LEN],
-                result.len()
-            )
+        // Sanitize base64/image data before including in LLM prompt
+        let sanitized = sanitize_tool_result_for_prompt(result);
+        let r = if sanitized.len() > PHASE2_TOOL_RESULT_MAX_LEN {
+            truncate_result_utf8(&sanitized, PHASE2_TOOL_RESULT_MAX_LEN)
         } else {
-            result.clone()
+            sanitized
         };
         block.push_str(&format!("[{}]\n{}\n\n", name, r));
     }
@@ -1763,8 +1832,49 @@ fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
 /// 4. Always keep recent messages for context continuity
 ///
 /// The `max_tokens` parameter allows dynamic context sizing based on the model's actual capacity.
-fn build_context_window(messages: &[AgentMessage], max_tokens: usize) -> Vec<AgentMessage> {
-    build_context_window_with_config(messages, max_tokens, &CompactionConfig::default())
+fn build_context_window(
+    messages: &[AgentMessage],
+    max_tokens: usize,
+) -> Vec<AgentMessage> {
+    build_context_window_with_summary(messages, max_tokens, None, None)
+}
+
+/// Build context window with optional conversation summary injection.
+///
+/// When a summary is provided, messages up to `summary_up_to_index` are removed
+/// and a system message with the summary is prepended to the context.
+fn build_context_window_with_summary(
+    messages: &[AgentMessage],
+    max_tokens: usize,
+    summary: Option<&str>,
+    summary_up_to_index: Option<u64>,
+) -> Vec<AgentMessage> {
+    let config = CompactionConfig::default();
+
+    // Filter out summarized messages if summary exists
+    let filtered: Vec<AgentMessage> = if let (Some(_summary), Some(up_to)) = (summary, summary_up_to_index) {
+        messages.iter().enumerate()
+            .filter(|(i, _)| (*i as u64) > up_to)
+            .map(|(_, msg)| msg.clone())
+            .collect()
+    } else {
+        messages.to_vec()
+    };
+
+    // Build context window from filtered messages
+    let mut result = build_context_window_with_config(&filtered, max_tokens, &config);
+
+    // Inject summary as a system message at the beginning (after any existing system messages)
+    if let Some(summary_text) = summary {
+        if !summary_text.is_empty() {
+            let summary_msg = AgentMessage::system(format!("[之前对话的摘要]\n{}", summary_text));
+            // Find insertion point: after system messages, before other messages
+            let insert_pos = result.iter().take_while(|m| m.role == "system").count();
+            result.insert(insert_pos, summary_msg);
+        }
+    }
+
+    result
 }
 
 /// Build context window with custom compaction configuration.
@@ -1958,6 +2068,8 @@ pub async fn process_stream_events(
     internal_state: Arc<tokio::sync::RwLock<AgentInternalState>>,
     tools: Arc<crate::toolkit::ToolRegistry>,
     user_message: &str,
+    conversation_summary: Option<String>,
+    summary_up_to_index: Option<u64>,
 ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
     process_stream_events_with_safeguards(
         llm_interface,
@@ -1965,6 +2077,8 @@ pub async fn process_stream_events(
         tools,
         user_message,
         StreamSafeguards::default(),
+        conversation_summary,
+        summary_up_to_index,
     )
     .await
 }
@@ -1975,6 +2089,8 @@ pub async fn process_stream_events_with_safeguards(
     tools: Arc<crate::toolkit::ToolRegistry>,
     user_message: &str,
     safeguards: StreamSafeguards,
+    conversation_summary: Option<String>,
+    summary_up_to_index: Option<u64>,
 ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
     let user_message = user_message.to_string();
 
@@ -2122,7 +2238,7 @@ pub async fn process_stream_events_with_safeguards(
     );
 
     let history_for_llm: Vec<neomind_core::Message> =
-        build_context_window(&history_messages, effective_max)
+        build_context_window_with_summary(&history_messages, effective_max, conversation_summary.as_deref(), summary_up_to_index)
             .iter()
             .map(|msg| msg.to_core())
             .collect::<Vec<_>>();
@@ -2443,16 +2559,9 @@ pub async fn process_stream_events_with_safeguards(
                             recent_chunks.remove(0);
                         }
 
-                        if detect_repetition(&recent_chunks, &text, safeguards.max_repetition_count) {
-                            if tool_calls_detected {
-                                // Tool calls already detected - don't abort, let them execute
-                                tracing::warn!("Repetition detected but tool calls pending, proceeding to execution");
-                                break;
-                            }
-                            tracing::warn!("Repetition detected, stopping stream");
-                            yield AgentEvent::error("Repetitive content detected, completing processing...".to_string());
-                            break;
-                        }
+                        // NOTE: Per-chunk repetition detection removed — it caused false positives
+                        // when the LLM legitimately discusses multiple devices/sensors and words
+                        // like "温度", "传感器" appear many times in a normal analysis report.
 
                         if is_thinking {
                             // Track thinking start time
@@ -2726,6 +2835,9 @@ pub async fn process_stream_events_with_safeguards(
                                 output.error.clone().unwrap_or_else(|| "Error".to_string())
                             };
 
+                            // Sanitize base64/image data before sending to frontend or LLM
+                            let display_str = sanitize_tool_result_for_prompt(&result_str);
+
                             tool_calls_with_results.push(ToolCall {
                                 name: name.clone(),
                                 id: String::new(),
@@ -2734,8 +2846,8 @@ pub async fn process_stream_events_with_safeguards(
                                 round: Some(tool_iteration_count + 1),
                             });
 
-                            yield AgentEvent::tool_call_end_round(&name, &result_str, output.success, tool_iteration_count + 1);
-                            tool_call_results.push((name.clone(), result_str));
+                            yield AgentEvent::tool_call_end_round(&name, &display_str, output.success, tool_iteration_count + 1);
+                            tool_call_results.push((name.clone(), display_str));
                         }
                         Err(e) => {
                             let error_msg = format!("Tool execution failed: {}", e);
@@ -2967,7 +3079,11 @@ pub async fn process_stream_events_with_safeguards(
                     internal_state.write().await.push_message(response_msg);
                     internal_state.write().await.register_response(&formatted_response);
 
-                    yield AgentEvent::end();
+                    let pt = llm_interface.take_last_prompt_tokens().await;
+                    match pt {
+                        Some(t) => yield AgentEvent::end_with_tokens(t),
+                        None => yield AgentEvent::end(),
+                    }
                     return;
                 }
 
@@ -3025,7 +3141,11 @@ pub async fn process_stream_events_with_safeguards(
                                 yield AgentEvent::content(chunk_str);
                             }
                         }
-                        yield AgentEvent::end();
+                        let pt = llm_interface.take_last_prompt_tokens().await;
+                        match pt {
+                            Some(t) => yield AgentEvent::end_with_tokens(t),
+                            None => yield AgentEvent::end(),
+                        }
                         return;
                     }
                 };
@@ -3190,7 +3310,12 @@ pub async fn process_stream_events_with_safeguards(
             break 'multi_round_loop;
         }
 
-        yield AgentEvent::end();
+        // Read token usage from LLM interface (captured from Ollama backend stream)
+        let prompt_tokens = llm_interface.take_last_prompt_tokens().await;
+        match prompt_tokens {
+            Some(pt) => yield AgentEvent::end_with_tokens(pt),
+            None => yield AgentEvent::end(),
+        }
     }))
 }
 
@@ -3212,6 +3337,8 @@ pub async fn process_multimodal_stream_events(
         user_message,
         images,
         StreamSafeguards::default(),
+        None,
+        None,
     )
     .await
 }
@@ -3224,6 +3351,8 @@ pub async fn process_multimodal_stream_events_with_safeguards(
     user_message: &str,
     images: Vec<String>,
     safeguards: StreamSafeguards,
+    conversation_summary: Option<String>,
+    summary_up_to_index: Option<u64>,
 ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
     use neomind_core::ContentPart;
 
@@ -3270,7 +3399,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
     };
 
     let history_for_llm: Vec<neomind_core::Message> =
-        build_context_window(&history_messages, effective_max)
+        build_context_window_with_summary(&history_messages, effective_max, conversation_summary.as_deref(), summary_up_to_index)
             .iter()
             .map(|msg| msg.to_core())
             .collect::<Vec<_>>();
@@ -3503,6 +3632,9 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                             output.error.clone().unwrap_or_else(|| "Error".to_string())
                         };
 
+                        // Sanitize base64/image data before sending to frontend or LLM
+                        let display_str = sanitize_tool_result_for_prompt(&result_str);
+
                         tool_calls_with_results.push(ToolCall {
                             name: name.clone(),
                             id: String::new(),
@@ -3511,8 +3643,8 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                             round: Some(1),
                         });
 
-                        yield AgentEvent::tool_call_end(&name, &result_str, output.success);
-                        tool_call_results.push((name.clone(), result_str));
+                        yield AgentEvent::tool_call_end(&name, &display_str, output.success);
+                        tool_call_results.push((name.clone(), display_str));
                     }
                     Err(e) => {
                         let error_msg = format!("Tool execution failed: {}", e);
@@ -3595,7 +3727,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                 tracing::info!("Trimming history from {} to {} messages", history_messages.len(), keep_count);
             }
 
-            // Phase 2: Generate follow-up response (no tools, no thinking)
+            // Phase 2: Generate follow-up response (no tools, with thinking)
             tracing::info!("Phase 2: Generating follow-up response (multimodal)");
 
             // Build Phase 2 prompt with tool results explicitly included so the second LLM
@@ -3621,7 +3753,11 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                             yield AgentEvent::content(chunk_str);
                         }
                     }
-                    yield AgentEvent::end();
+                    let pt = llm_interface.take_last_prompt_tokens().await;
+                    match pt {
+                        Some(t) => yield AgentEvent::end_with_tokens(t),
+                        None => yield AgentEvent::end(),
+                    }
                     return;
                 }
             };
@@ -3707,7 +3843,11 @@ pub async fn process_multimodal_stream_events_with_safeguards(
             }
         }
 
-        yield AgentEvent::end();
+        let pt = llm_interface.take_last_prompt_tokens().await;
+        match pt {
+            Some(t) => yield AgentEvent::end_with_tokens(t),
+            None => yield AgentEvent::end(),
+        }
     }))
 }
 
@@ -3996,7 +4136,7 @@ pub fn events_to_string_stream(
                 AgentEvent::Error { message } => {
                     yield format!("[Error: {}]", message);
                 }
-                AgentEvent::End => break,
+                AgentEvent::End { .. } => break,
                 _ => {
                     // Ignore other events for backward compatibility
                 }
@@ -4386,5 +4526,125 @@ mod tests {
         println!(" 11. Cache key generation");
         println!(" 12. Malformed tool call detection");
         println!("\n=== Test Suite Complete ===\n");
+    }
+
+    // -----------------------------------------------------------------------
+    // Base64 stripping tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_sanitize_small_result_passes_through() {
+        let result = r#"{"device_name":"test","battery":"100%"}"#;
+        assert_eq!(sanitize_tool_result_for_prompt(result), result);
+    }
+
+    #[test]
+    fn test_sanitize_json_with_data_image_url() {
+        let result = serde_json::json!({
+            "device_name": "NE101",
+            "battery": "100%",
+            "image_data": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ"
+        }).to_string();
+
+        let sanitized = sanitize_tool_result_for_prompt(&result);
+        assert!(!sanitized.contains("base64"), "Should strip base64 data URL");
+        assert!(!sanitized.contains("/9j/4AAQ"), "Should strip image content");
+        assert!(sanitized.contains("image data"), "Should have image data placeholder");
+        assert!(sanitized.contains("device_name"), "Should preserve non-image fields");
+        assert!(sanitized.contains("NE101"), "Should preserve device name");
+        assert!(sanitized.contains("100%"), "Should preserve battery info");
+    }
+
+    #[test]
+    fn test_sanitize_json_with_large_base64_string() {
+        // Create a JSON with a large base64 string (>10KB)
+        let fake_base64: String = "ABCDEFGHijklmnop+/=".repeat(600); // ~13KB
+        let result = serde_json::json!({
+            "device_name": "Camera",
+            "firmware": "v1.7",
+            "base64_data": fake_base64
+        }).to_string();
+
+        let sanitized = sanitize_tool_result_for_prompt(&result);
+        assert!(!sanitized.contains("ABCDEFGH"), "Should strip large base64");
+        assert!(sanitized.contains("base64 data"), "Should have base64 placeholder");
+        assert!(sanitized.contains("Camera"), "Should preserve device name");
+        assert!(sanitized.contains("v1.7"), "Should preserve firmware");
+    }
+
+    #[test]
+    fn test_sanitize_nested_json_with_base64() {
+        let result = serde_json::json!({
+            "device": {
+                "name": "NE101",
+                "info": {
+                    "battery": "85%",
+                    "image": "data:image/png;base64,iVBORw0KGgo="
+                }
+            }
+        }).to_string();
+
+        let sanitized = sanitize_tool_result_for_prompt(&result);
+        assert!(sanitized.contains("NE101"), "Should preserve nested text");
+        assert!(sanitized.contains("85%"), "Should preserve battery");
+        assert!(!sanitized.contains("iVBOR"), "Should strip nested base64");
+        assert!(sanitized.contains("image data"), "Should have placeholder");
+    }
+
+    #[test]
+    fn test_sanitize_text_with_data_image_url() {
+        let text = "Device: Camera\nBattery: 100%\nImage: data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==\nStatus: OK";
+
+        let sanitized = sanitize_tool_result_for_prompt(text);
+        assert!(!sanitized.contains("/9j/"), "Should strip image data");
+        assert!(sanitized.contains("Camera"), "Should preserve text");
+        assert!(sanitized.contains("100%"), "Should preserve battery");
+        assert!(sanitized.contains("Status: OK"), "Should preserve other text");
+    }
+
+    #[test]
+    fn test_sanitize_no_base64_large_result_passes_through() {
+        // Large result without base64 should be preserved
+        let large_data: String = "x".repeat(5000);
+        let result = format!(r#"{{"data": "{}"}}"#, large_data);
+
+        let sanitized = sanitize_tool_result_for_prompt(&result);
+        assert_eq!(sanitized, result, "Should pass through non-base64 data");
+    }
+
+    #[test]
+    fn test_truncate_utf8_safe() {
+        // Chinese text truncation
+        let text = "你好世界这是一段中文测试文本用于验证UTF8安全截断功能";
+        let truncated = truncate_result_utf8(text, 5);
+        assert!(truncated.starts_with("你好世界这"));
+        assert!(truncated.contains("truncated"));
+
+        // Text shorter than max
+        let short = "hello";
+        assert_eq!(truncate_result_utf8(short, 100), short);
+    }
+
+    #[test]
+    fn test_humanize_bytes() {
+        assert_eq!(humanize_bytes(500), "500B");
+        assert_eq!(humanize_bytes(1024), "1.0KB");
+        assert_eq!(humanize_bytes(1536), "1.5KB");
+        assert_eq!(humanize_bytes(1048576), "1.0MB");
+        assert_eq!(humanize_bytes(2621440), "2.5MB");
+    }
+
+    #[test]
+    fn test_is_large_base64_string() {
+        // Too small
+        assert!(!is_large_base64_string("abc123"));
+
+        // Large valid base64
+        let large_b64: String = "ABCDEFGHijklmnop+/=".repeat(600);
+        assert!(is_large_base64_string(&large_b64));
+
+        // Large but not base64 (contains invalid chars)
+        let not_b64 = "hello world! ".repeat(1000);
+        assert!(!is_large_base64_string(&not_b64));
     }
 }
