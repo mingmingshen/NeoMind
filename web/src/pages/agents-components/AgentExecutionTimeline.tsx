@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
 import { api } from "@/lib/api"
+import { MarkdownMessage } from "@/components/chat/MarkdownMessage"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import type { AgentExecution, AgentExecutionDetail, DataCollected, ReasoningStep, Decision } from "@/types"
 
@@ -205,7 +206,7 @@ export function AgentExecutionTimeline({
                                     icon={<Brain className="h-4 w-4 text-purple-500" />}
                                     title={t('agents:memory.situationAnalysis')}
                                   >
-                                    <p className="text-sm">{detail.decision_process.situation_analysis}</p>
+                                    <CollapsibleText content={detail.decision_process.situation_analysis} maxLines={3} />
                                   </TimelineSection>
                                 )}
 
@@ -223,8 +224,10 @@ export function AgentExecutionTimeline({
                                           (prevStep?.step_type === 'tool_call' || prevStep?.step_type === 'error' || idx === 0);
                                         const roundNumber = steps.slice(0, idx + 1).filter(s => s.step_type === 'thought').length;
 
-                                        // Use ToolCallStep for non-thought types (tool_call, error, data_collection, etc.)
-                                        if (step.step_type !== 'thought') {
+                                        // Use ToolCallStep for tool-related types only
+                                        // llm_analysis, data_collection, condition_eval etc. use ReasoningStepItem
+                                        const isToolStep = step.step_type === 'tool_call' || step.step_type === 'error';
+                                        if (isToolStep) {
                                           return <ToolCallStep key={idx} step={step} />;
                                         }
                                         return (
@@ -268,8 +271,8 @@ export function AgentExecutionTimeline({
                                     >
                                       <div className="space-y-2">
                                         {hasConclusion && (
-                                          <Card className="p-3 bg-muted/50">
-                                            <p className="text-sm">{dp!.conclusion}</p>
+                                          <Card className="p-4 bg-primary/5 border-primary/20 shadow-sm">
+                                            <MarkdownMessage content={dp!.conclusion} />
                                           </Card>
                                         )}
                                         {hasConfidence && (
@@ -291,8 +294,11 @@ export function AgentExecutionTimeline({
                                   const conclusion = detail.decision_process?.conclusion?.trim() ?? ''
                                   const isGeneric = summary === 'Completed tool execution rounds.'
                                     || summary === 'LLM generation failed during tool execution.'
-                                  // Skip if generic or if conclusion already shows the same content
-                                  const isDuplicate = summary === conclusion && conclusion.length < 100
+                                  // Skip if conclusion already contains the same content
+                                  const normalize = (s: string) => s.replace(/\s+/g, ' ').trim()
+                                  const isDuplicate = normalize(summary) === normalize(conclusion)
+                                    || (conclusion.length > 100 && normalize(summary).includes(normalize(conclusion).slice(0, 200)))
+                                    || (summary.length > 100 && normalize(conclusion).includes(normalize(summary).slice(0, 200)))
                                   if (!summary || isGeneric || isDuplicate) return null
                                   return (
                                     <TimelineSection

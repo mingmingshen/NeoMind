@@ -216,6 +216,7 @@
     "automation": "Automation",
     "agents": "AI Agents",
     "alerts": "Alerts",
+    "data": "Data Explorer",
     "decisions": "Decisions",
     "messages": "Messages",
     "extensions": "Extensions",

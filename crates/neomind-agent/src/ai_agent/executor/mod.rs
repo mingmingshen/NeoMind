@@ -506,8 +506,10 @@ impl AgentExecutor {
              - Do NOT call the same tool with the same parameters if it already returned results.\n\
              - If a metric query returns empty data, try a different metric or move on.\n\
              - Max 3 rounds of tool calls. Be efficient.\n\n\
-             When you have enough information, respond with your complete analysis in natural language. \
+             When you have enough information, respond with your analysis in natural language. \
              Do NOT wrap your response in JSON or code blocks — just write your analysis directly.\n\
+             Keep your conclusion concise and structured (2-5 sentences). \
+             State key findings first, then anomalies or recommendations. Avoid filler words.\n\
              Reply in the SAME language as the task description.",
             agent.name, time_ctx, agent.user_prompt, resource_info, current_data_section, history_section,
         )
@@ -853,10 +855,11 @@ impl AgentExecutor {
                 && final_text != "LLM generation failed during tool execution."
             {
                 situation_analysis = if final_text.len() > 500 {
-                    let end = final_text[..500]
+                    let cut = final_text.floor_char_boundary(500);
+                    let end = final_text[..cut]
                         .rfind(|c: char| c == '.' || c == '!' || c == '?' || c == '。')
                         .map(|i| i + 1)
-                        .unwrap_or(500);
+                        .unwrap_or(cut);
                     format!("{}...", &final_text[..end])
                 } else {
                     final_text.clone()
@@ -864,10 +867,11 @@ impl AgentExecutor {
             } else if !all_reasoning_texts.is_empty() {
                 let combined = all_reasoning_texts.join(" ");
                 situation_analysis = if combined.len() > 500 {
-                    let end = combined[..500]
+                    let cut = combined.floor_char_boundary(500);
+                    let end = combined[..cut]
                         .rfind(|c: char| c == '.' || c == '!' || c == '?' || c == '。')
                         .map(|i| i + 1)
-                        .unwrap_or(500);
+                        .unwrap_or(cut);
                     format!("{}...", &combined[..end])
                 } else {
                     combined

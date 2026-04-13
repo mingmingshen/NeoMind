@@ -23,6 +23,7 @@ import {
 import { api } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { formatTimestamp } from "@/lib/utils/format"
+import { MarkdownMessage } from "@/components/chat/MarkdownMessage"
 import type { AgentExecutionDetail, DataCollected } from "@/types"
 import { useIsMobile, useSafeAreaInsets } from "@/hooks/useMobile"
 import { useMobileBodyScrollLock } from "@/hooks/useBodyScrollLock"
@@ -315,7 +316,6 @@ export function ExecutionDetailDialog({
               title={t('agents:execution.analysis', { defaultValue: 'Situation Analysis' })}
               
               collapsible
-              defaultExpanded
             >
               <p className="text-xs leading-relaxed">{execution.decision_process.situation_analysis}</p>
             </FormSection>
@@ -443,11 +443,9 @@ export function ExecutionDetailDialog({
             )}
 
             {/* Conclusion */}
-            <Card className="p-2 bg-primary/5 border-primary/20">
-              <div className="text-xs">
-                <span className="font-semibold text-primary">{t('agents:execution.conclusionLabel', { defaultValue: 'Conclusion' })}:</span>
-                <span className="ml-1">{execution.decision_process.conclusion}</span>
-              </div>
+            <Card className="p-3 bg-primary/5 border-primary/20">
+              <div className="text-xs font-semibold text-primary mb-2">{t('agents:execution.conclusionLabel', { defaultValue: 'Conclusion' })}</div>
+              <MarkdownMessage content={execution.decision_process.conclusion} />
             </Card>
 
             {/* LLM Final Response */}
@@ -456,7 +454,10 @@ export function ExecutionDetailDialog({
               const conclusion = execution.decision_process?.conclusion?.trim() ?? ''
               const isGeneric = summary === 'Completed tool execution rounds.'
                 || summary === 'LLM generation failed during tool execution.'
-              const isDuplicate = summary === conclusion && conclusion.length < 100
+              const normalize = (s: string) => s.replace(/\s+/g, ' ').trim()
+              const isDuplicate = normalize(summary) === normalize(conclusion)
+                || (conclusion.length > 100 && normalize(summary).includes(normalize(conclusion).slice(0, 200)))
+                || (summary.length > 100 && normalize(conclusion).includes(normalize(summary).slice(0, 200)))
               if (!summary || isGeneric || isDuplicate) return null
               return (
                 <FormSection
