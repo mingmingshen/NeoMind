@@ -251,6 +251,27 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
+      - name: Collect updater artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          mkdir -p updater-out
+          BUNDLE_DIR="web/src-tauri/target/${{ matrix.target }}/release/bundle"
+
+          # Tauri v2 puts updater artifacts in platform-specific dirs, NOT bundle/updater/
+          # macOS: bundle/macos/NeoMind.app.tar.gz + .sig
+          # Windows: bundle/nsis/*.exe.sig
+          # Linux: bundle/appimage/*.AppImage.sig
+
+          # Collect all .sig files
+          find "$BUNDLE_DIR" -name "*.sig" -exec cp {} updater-out/ \; 2>/dev/null || true
+
+          # macOS: collect .app.tar.gz (the updater bundle)
+          find "$BUNDLE_DIR" -name "*.app.tar.gz" ! -name "*.sig" -exec cp {} updater-out/ \; 2>/dev/null || true
+
+          echo "✅ Collected updater artifacts:"
+          ls -la updater-out/ 2>/dev/null || echo "  (none found)"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -262,8 +283,6 @@ jobs:
             web/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
             web/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
             web/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
-            web/src-tauri/target/${{ matrix.target }}/release/bundle/updater/*.tar.gz
-            web/src-tauri/target/${{ matrix.target }}/release/bundle/updater/*.sig
           retention-days: 30
           if-no-files-found: warn
 
@@ -272,9 +291,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: neomind-updater-${{ matrix.platform }}
-          path: |
-            web/src-tauri/target/${{ matrix.target }}/release/bundle/updater/*.tar.gz
-            web/src-tauri/target/${{ matrix.target }}/release/bundle/updater/*.sig
+          path: updater-out/*
           retention-days: 90
           if-no-files-found: ignore
 
@@ -411,6 +428,87 @@ jobs:
       - name: Display structure of downloaded files
         run: ls -R artifacts
 
+      - name: Generate latest-update.json
+        id: update_manifest
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          TAG="${GITHUB_REF_NAME}"
+          BASE_URL="https://github.com/camthink-ai/NeoMind/releases/download/${TAG}"
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          echo "📦 Generating update manifest for version ${VERSION}"
+
+          # Platform mappings: artifact dir -> (platform_key, sig_pattern, url_file_pattern)
+          # For each platform, we need to find the .sig and the corresponding release asset URL
+
+          PLATFORMS_JSON=""
+          FOUND=0
+
+          add_platform() {
+            local platform_key="$1"
+            local sig_file="$2"
+            local url_file="$3"
+
+            if [ ! -f "$sig_file" ] || [ ! -f "$url_file" ]; then
+              echo "⚠️ Missing artifacts for $platform_key"
+              return
+            fi
+
+            local signature=$(cat "$sig_file" | tr -d '\n\r')
+            local url_name=$(basename "$url_file")
+            local url="${BASE_URL}/${url_name}"
+
+            if [ "$FOUND" -gt 0 ]; then
+              PLATFORMS_JSON+=","
+            fi
+
+            PLATFORMS_JSON+=$'\n'"    \"${platform_key}\": {\"signature\": \"${signature}\", \"url\": \"${url}\"}"
+            FOUND=$((FOUND + 1))
+            echo "✅ $platform_key -> $url_name"
+          }
+
+          # macOS aarch64: sig is .app.tar.gz.sig, URL file is .app.tar.gz
+          add_platform "darwin-aarch64" \
+            "$(find artifacts/neomind-updater-macos-aarch64 -name "*.app.tar.gz.sig" 2>/dev/null | head -1)" \
+            "$(find artifacts/neomind-updater-macos-aarch64 -name "*.app.tar.gz" ! -name "*.sig" 2>/dev/null | head -1)"
+
+          # Windows x86_64: sig is nsis *.exe.sig, URL file is the nsis .exe from desktop artifacts
+          add_platform "windows-x86_64" \
+            "$(find artifacts/neomind-updater-windows-x86_64 -name "*x64-setup.exe.sig" 2>/dev/null | head -1)" \
+            "$(find artifacts/neomind-desktop-windows-x86_64 -name "*x64-setup.exe" 2>/dev/null | head -1)"
+
+          # Linux x86_64: sig is AppImage.sig, URL file is the AppImage from desktop artifacts
+          add_platform "linux-x86_64" \
+            "$(find artifacts/neomind-updater-linux-x86_64 -name "*.AppImage.sig" 2>/dev/null | head -1)" \
+            "$(find artifacts/neomind-desktop-linux-x86_64 -name "*amd64.AppImage" 2>/dev/null | head -1)"
+
+          # Linux aarch64: sig is AppImage.sig, URL file is the AppImage from desktop artifacts
+          add_platform "linux-aarch64" \
+            "$(find artifacts/neomind-updater-linux-aarch64 -name "*.AppImage.sig" 2>/dev/null | head -1)" \
+            "$(find artifacts/neomind-desktop-linux-aarch64 -name "*aarch64.AppImage" 2>/dev/null | head -1)"
+
+          if [ "$FOUND" -eq 0 ]; then
+            echo "⚠️ No updater artifacts found - skipping latest-update.json"
+            echo "has_manifest=false" >> $GITHUB_OUTPUT
+          else
+            cat > latest-update.json << EOFJ
+          {
+            "version": "${VERSION}",
+            "notes": "NeoMind ${VERSION}",
+            "pub_date": "${PUB_DATE}",
+            "platforms": {${PLATFORMS_JSON}
+            }
+          }
+          EOFJ
+
+            # Validate and pretty-print with jq
+            jq '.' latest-update.json > latest-update-tmp.json && mv latest-update-tmp.json latest-update.json
+
+            echo "✅ Generated latest-update.json with ${FOUND} platforms:"
+            cat latest-update.json
+            echo "has_manifest=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Prepare release notes
         id: notes
         run: |
@@ -479,13 +577,14 @@ jobs:
         with:
           body_path: release_notes.md
           files: |
+            latest-update.json
             artifacts/**/*.dmg
             artifacts/**/*.msi
             artifacts/**/*.exe
             artifacts/**/*.AppImage
             artifacts/**/*.deb
-            artifacts/**/updater/*.tar.gz
-            artifacts/**/updater/*.sig
+            artifacts/neomind-updater-**/*.tar.gz
+            artifacts/neomind-updater-**/*.app.tar.gz
             artifacts/neomind-server-linux-amd64/**/*.tar.gz
             artifacts/neomind-server-linux-arm64/**/*.tar.gz
             artifacts/neomind-server-darwin-arm64/**/*.tar.gz
