@@ -16,6 +16,7 @@ import type {
 } from '@/types'
 import { api } from '@/lib/api'
 import { logError } from '@/lib/errors'
+import { BatchUpdater } from '@/lib/throttle'
 
 export interface DeviceSlice extends DeviceState, TelemetryState {
   // Actions
@@ -51,6 +52,31 @@ export interface DeviceSlice extends DeviceState, TelemetryState {
   // Update device metric from real-time events
   updateDeviceMetric: (deviceId: string, property: string, value: unknown) => void
 }
+
+// Module-level helper for setting nested properties immutably
+const setNestedProperty = (obj: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> => {
+  const parts = path.split('.')
+
+  // Create a completely new object tree with new references at every level
+  let result = { ...obj }
+  let current = result
+
+  for (let i = 0; i < parts.length - 1; i++) {
+    const part = parts[i]
+    // Get the nested object (or create new one)
+    const nestedObj = typeof current[part] === 'object' && current[part] !== null
+      ? { ...(current[part] as Record<string, unknown>) }  // Create new reference
+      : {}
+    current[part] = nestedObj
+    current = nestedObj
+  }
+
+  current[parts[parts.length - 1]] = value
+  return result
+}
+
+// Module-level batch updater for device metric updates
+let metricBatchUpdater: BatchUpdater<{ deviceId: string; property: string; value: unknown }> | null = null
 
 export const createDeviceSlice: StateCreator<
   DeviceSlice,
@@ -416,75 +442,48 @@ export const createDeviceSlice: StateCreator<
   // Update device metric from real-time events
   // Supports nested property paths like "values.battery" or "temperature"
   // If device doesn't exist in store, silently skip (will be added by fetchDevices)
+  // Batches multiple metric updates within a single RAF tick for performance
   updateDeviceMetric: (deviceId: string, property: string, value: unknown) => {
-    // Helper function to set nested property with proper immutable updates
-    // This creates new object references at every level of nesting to ensure React detects changes
-    const setNestedProperty = (obj: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> => {
-      const parts = path.split('.')
-
-      // Create a completely new object tree with new references at every level
-      let result = { ...obj }
-      let current = result
-
-      for (let i = 0; i < parts.length - 1; i++) {
-        const part = parts[i]
-        // Get the nested object (or create new one)
-        const nestedObj = typeof current[part] === 'object' && current[part] !== null
-          ? { ...current[part] as Record<string, unknown> }  // Create new reference
-          : {}
-        current[part] = nestedObj
-        current = nestedObj
-      }
-
-      current[parts[parts.length - 1]] = value
-      return result
-    }
-
-    // Single atomic update for both devices array and selectedDevice
-    set((state) => {
-      // Check if device exists
-      const existingDevice = state.devices.find((d) => d.id === deviceId || d.device_id === deviceId)
-
-      // If device doesn't exist, skip update (don't create placeholder)
-      // This prevents accumulating invalid devices in the store
-      if (!existingDevice) {
-        return state
-      }
-
-      // Update existing device in devices array
-      const updatedDevices = state.devices.map((device) => {
-        if (device.id === deviceId || device.device_id === deviceId) {
-          const currentValues = device.current_values || {}
-          const updatedValues = setNestedProperty({ ...currentValues }, property, value)
-
-          return {
-            ...device,
-            current_values: updatedValues,
-            last_seen: new Date().toISOString(),
-            status: 'online',  // Update status to online when receiving metrics
-            online: true,
+    if (!metricBatchUpdater) {
+      metricBatchUpdater = new BatchUpdater((updates) => {
+        set((state: any) => {
+          // Group updates by device
+          const deviceUpdates = new Map<string, Map<string, unknown>>()
+          for (const [, update] of updates) {
+            if (!deviceUpdates.has(update.deviceId)) {
+              deviceUpdates.set(update.deviceId, new Map())
+            }
+            deviceUpdates.get(update.deviceId)!.set(update.property, update.value)
           }
-        }
-        return device
+
+          // Single pass over devices array
+          const updatedDevices = state.devices.map((device: any) => {
+            const devUpdates = deviceUpdates.get(device.id || device.device_id)
+            if (!devUpdates) return device
+
+            let currentValues = { ...(device.current_values || {}) }
+            for (const [prop, val] of devUpdates) {
+              currentValues = setNestedProperty(currentValues, prop, val)
+            }
+            return { ...device, current_values: currentValues, last_seen: new Date().toISOString(), status: 'online', online: true }
+          })
+
+          // Update selectedDevice if affected
+          let updatedSelectedDevice = state.selectedDevice
+          const selKey = state.selectedDevice?.id || state.selectedDevice?.device_id
+          const selUpdates = selKey ? deviceUpdates.get(selKey) : undefined
+          if (selUpdates && state.selectedDevice) {
+            let cv = { ...(state.selectedDevice.current_values || {}) }
+            for (const [prop, val] of selUpdates) {
+              cv = setNestedProperty(cv, prop, val)
+            }
+            updatedSelectedDevice = { ...state.selectedDevice, current_values: cv, last_seen: new Date().toISOString() }
+          }
+
+          return { devices: updatedDevices, selectedDevice: updatedSelectedDevice }
+        })
       })
-
-      // Also update selectedDevice if it matches
-      let updatedSelectedDevice = state.selectedDevice
-      if (state.selectedDevice?.id === deviceId || state.selectedDevice?.device_id === deviceId) {
-        const currentValues = state.selectedDevice.current_values || {}
-        const updatedValues = setNestedProperty({ ...currentValues }, property, value)
-
-        updatedSelectedDevice = {
-          ...state.selectedDevice,
-          current_values: updatedValues,
-          last_seen: new Date().toISOString(),
-        }
-      }
-
-      return {
-        devices: updatedDevices,
-        selectedDevice: updatedSelectedDevice,
-      }
-    })
+    }
+    metricBatchUpdater.push(`${deviceId}:${property}`, { deviceId, property, value })
   },
 })
