@@ -64,17 +64,15 @@ export function SessionSidebar({
   const { toast } = useToast()
   const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>()
 
-  const {
-    sessions,
-    sessionId: storeSessionId,
-    createSession,
-    switchSession,
-    deleteSession,
-    updateSessionTitle,
-    loadMoreSessions,
-    sessionsHasMore,
-    sessionsLoading,
-  } = useStore()
+  const sessions = useStore((s) => s.sessions)
+  const storeSessionId = useStore((s) => s.sessionId)
+  const sessionsHasMore = useStore((s) => s.sessionsHasMore)
+  const sessionsLoading = useStore((s) => s.sessionsLoading)
+  const createSession = useStore((s) => s.createSession)
+  const switchSession = useStore((s) => s.switchSession)
+  const deleteSession = useStore((s) => s.deleteSession)
+  const updateSessionTitle = useStore((s) => s.updateSessionTitle)
+  const loadMoreSessions = useStore((s) => s.loadMoreSessions)
 
   // Use URL sessionId for active highlight, not store sessionId.
   // This ensures no session is highlighted in welcome mode (/chat without sessionId).

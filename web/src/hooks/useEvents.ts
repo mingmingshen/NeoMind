@@ -206,9 +206,11 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
             return
           }
           setEvents(prev => {
-            const newEvents = [...prev, event]
-            // Keep only the most recent events
-            return newEvents.slice(-maxEvents)
+            if (prev.length >= maxEvents) {
+              // Drop oldest, add newest - avoids copying entire array twice
+              return [...prev.slice(1), event]
+            }
+            return [...prev, event]
           })
           onEventRef.current?.(event)
         }
