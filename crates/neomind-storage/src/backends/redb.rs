@@ -74,23 +74,14 @@ impl RedbBackendConfig {
     }
 }
 
-/// Increment the last byte of a string to create an exclusive upper bound for range scans.
-/// For "abc" returns "abd", for "ab\xff" carries over to "ac".
-/// If all bytes are 0xFF, appends "\x00".
+/// Create an exclusive upper bound string for range scans.
+/// Appends '\u{10FFFF}' (highest valid Unicode codepoint) which sorts after
+/// any valid string with the given prefix. This avoids byte-level manipulation
+/// that could break UTF-8 validity for multi-byte characters.
 fn increment_prefix(s: &str) -> String {
-    let mut bytes = s.bytes().collect::<Vec<u8>>();
-    // Find the rightmost byte that can be incremented (< 0xFF)
-    for i in (0..bytes.len()).rev() {
-        if bytes[i] < 0xFF {
-            bytes[i] += 1;
-            // Truncate everything after the incremented byte
-            bytes.truncate(i + 1);
-            return String::from_utf8(bytes).expect("increment preserves UTF-8 validity");
-        }
-    }
-    // All bytes are 0xFF, append a byte to go beyond
-    let mut result = s.to_string();
-    result.push('\0');
+    let mut result = String::with_capacity(s.len() + 4);
+    result.push_str(s);
+    result.push('\u{10FFFF}');
     result
 }
 

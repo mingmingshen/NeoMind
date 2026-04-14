@@ -167,7 +167,10 @@ pub async fn get_device_telemetry_handler(
                 async move {
                     let _permit = match semaphore.acquire().await {
                         Ok(p) => p,
-                        Err(_) => return (metric_name, json!([]), 0),
+                        Err(e) => {
+                            tracing::warn!("telemetry semaphore acquire failed for {}: {}", metric_name, e);
+                            return (metric_name, json!([]), 0);
+                        }
                     };
                     let points = match telemetry
                         .aggregate(&device_id, &metric_name, start, end)
@@ -210,7 +213,10 @@ pub async fn get_device_telemetry_handler(
                 async move {
                     let _permit = match semaphore.acquire().await {
                         Ok(p) => p,
-                        Err(_) => return (metric_name, json!([]), 0),
+                        Err(e) => {
+                            tracing::warn!("telemetry semaphore acquire failed for {}: {}", metric_name, e);
+                            return (metric_name, json!([]), 0);
+                        }
                     };
                     let (points, total) = match device_service
                         .query_telemetry(&device_id, &metric_name, Some(start), Some(end))
