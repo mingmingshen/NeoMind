@@ -870,15 +870,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
     // Combine all routes - extension_upload_routes has its own larger limit
     let router = router.merge(limited_routes).merge(extension_upload_routes);
 
-    // Static file routes - serve embedded frontend assets
-    let static_routes = Router::new()
-        .route("/assets/*path", get(assets::serve_asset))
-        .route("/*path", get(assets::serve_asset))
-        .route("/", get(assets::serve_index));
+    // Static file routes
+    let router = assets::configure_static_file_serving(router);
 
     router
-        // Merge static routes before fallback
-        .merge(static_routes)
         // Apply middleware layers (compression, CORS) but NOT body limit - that's applied per-router
         .layer(tower_http::compression::CompressionLayer::new())
         // CORS layer

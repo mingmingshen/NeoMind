@@ -151,18 +151,20 @@ On first launch, a setup wizard will guide you through:
 
 ### 🖥️ Server Binary Deployment
 
-> **Frontend-Backend Separation**: The server provides the API. The Web UI is deployed separately via nginx (auto-configured by the install script).
+> **All-in-One**: The server serves both API and Web UI. No nginx required.
 
 **What's included:**
-- **neomind** - API server binary (~50 MB)
+- **neomind** - API server binary with built-in static file serving (~50 MB)
 - **neomind-extension-runner** - Extension process for sandboxed extensions (~8 MB)
-- **neomind-web-{version}.tar.gz** - Frontend static files (served by nginx)
+- **neomind-web-{version}.tar.gz** - Frontend static files
 
 **One-line installation (Linux & macOS):**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | sh
 ```
+
+After installation, access `http://your-server:9375` in your browser.
 
 **Install specific version:**
 
@@ -178,6 +180,9 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 
 # Skip service installation
 curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | NO_SERVICE=true sh
+
+# Use nginx for frontend-backend separation (port 80)
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | USE_NGINX=true sh
 ```
 
 **Supported platforms:**
@@ -186,10 +191,10 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 
 **What the script does:**
 1. Detects your OS and architecture automatically
-2. Downloads the correct binary with embedded Web UI
+2. Downloads the server binary and frontend static files
 3. Installs to `/usr/local/bin` (or custom directory)
 4. Creates systemd service (Linux) or launchd service (macOS)
-5. Starts the service automatically
+5. Starts the service — access Web UI at `http://your-server:9375`
 
 **Manual installation:**
 
@@ -305,8 +310,8 @@ The installer will be in `web/src-tauri/target/release/bundle/`
 | Method | Use Case | Platforms |
 |--------|----------|-----------|
 | **Desktop App** | End-user desktop application (all-in-one) | macOS, Windows, Linux |
-| **Server Binary** | Server/headless deployment (nginx + API server) | Linux (amd64/arm64), macOS (ARM) |
-| **One-line Install** | Quick server setup with nginx auto-config | `curl -fsSL ... \| sh` |
+| **Server Binary** | Server/headless deployment (all-in-one, no nginx needed) | Linux (amd64/arm64), macOS |
+| **One-line Install** | Quick server setup — Web UI served by the server itself | `curl -fsSL ... \| sh` |
 
 ---
 

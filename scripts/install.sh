@@ -8,7 +8,7 @@
 #   DATA_DIR       - Data directory (default: /var/lib/neomind)
 #   WEB_DIR        - Frontend static files directory (default: /var/www/neomind)
 #   NO_SERVICE     - Skip service installation (default: false)
-#   NO_NGINX       - Skip nginx configuration (default: false)
+#   USE_NGINX      - Configure nginx reverse proxy (default: false)
 #   PORT           - Backend API port (default: 9375)
 
 set -eu
@@ -28,7 +28,7 @@ INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 DATA_DIR="${DATA_DIR:-/var/lib/neomind}"
 WEB_DIR="${WEB_DIR:-/var/www/neomind}"
 NO_SERVICE="${NO_SERVICE:-false}"
-NO_NGINX="${NO_NGINX:-false}"
+USE_NGINX="${USE_NGINX:-false}"
 PORT="${PORT:-9375}"
 
 status() { echo "${BLUE}[INFO]${NC} $*"; }
@@ -175,13 +175,14 @@ TimeoutStopSec=30
 Environment=RUST_LOG=info
 Environment=NEOMIND_DATA_DIR=${DATA_DIR}
 Environment=NEOMIND_BIND_ADDR=0.0.0.0:${PORT}
+Environment=NEOMIND_WEB_DIR=${WEB_DIR}
 
 # Security hardening
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=${DATA_DIR}
+ReadWritePaths=${DATA_DIR} ${WEB_DIR}
 
 [Install]
 WantedBy=multi-user.target
@@ -191,8 +192,8 @@ EOF
         success "Systemd service installed"
     fi
 
-    # Configure nginx
-    if [ "$NO_NGINX" != "true" ]; then
+    # Configure nginx (optional, for frontend-backend separation)
+    if [ "$USE_NGINX" = "true" ]; then
         if available nginx; then
             status "Configuring nginx..."
             $SUDO tee /etc/nginx/sites-available/neomind >/dev/null <<'EOF'
@@ -281,30 +282,34 @@ EOF
             fi
         else
             warning "nginx not found. Skipping nginx configuration."
-            warning "Install nginx and configure it manually, or use NO_NGINX=true."
+            warning "The server will serve frontend directly on port ${PORT}."
         fi
     fi
 
     # Configure firewall
     status "Configuring firewall..."
     if available ufw; then
-        # Allow nginx (port 80)
-        if ! $SUDO ufw status 2>/dev/null | grep -q "^80/tcp"; then
-            $SUDO ufw allow 80/tcp >/dev/null 2>&1 || true
+        # Allow nginx (port 80) when using nginx
+        if [ "$USE_NGINX" = "true" ]; then
+            if ! $SUDO ufw status 2>/dev/null | grep -q "^80/tcp"; then
+                $SUDO ufw allow 80/tcp >/dev/null 2>&1 || true
+            fi
         fi
-        # Allow API port for direct access
+        # Always allow API port
         if ! $SUDO ufw status 2>/dev/null | grep -q "^${PORT}/tcp"; then
             $SUDO ufw allow ${PORT}/tcp >/dev/null 2>&1 || true
         fi
-        success "Firewall rules added (ufw: 80, ${PORT})"
+        success "Firewall rules added (ufw: ${PORT})"
     elif available firewall-cmd; then
-        $SUDO firewall-cmd --permanent --add-service=http >/dev/null 2>&1 || true
+        if [ "$USE_NGINX" = "true" ]; then
+            $SUDO firewall-cmd --permanent --add-service=http >/dev/null 2>&1 || true
+        fi
         $SUDO firewall-cmd --permanent --add-port=${PORT}/tcp >/dev/null 2>&1 || true
         $SUDO firewall-cmd --reload >/dev/null 2>&1 || true
-        success "Firewall rules added (firewalld: 80, ${PORT})"
+        success "Firewall rules added (firewalld: ${PORT})"
     else
         warning "No firewall tool found (ufw/firewalld)."
-        warning "Make sure ports 80 and ${PORT} are open for LAN access."
+        warning "Make sure port ${PORT} is open for LAN access."
     fi
 
     success "Installation complete!"
@@ -384,6 +389,8 @@ install_darwin() {
         <string>${DATA_DIR}</string>
         <key>NEOMIND_BIND_ADDR</key>
         <string>0.0.0.0:${PORT}</string>
+        <key>NEOMIND_WEB_DIR</key>
+        <string>${WEB_DIR}</string>
     </dict>
     <key>StandardOutPath</key>
     <string>${DATA_DIR}/neomind.log</string>
@@ -433,16 +440,14 @@ print_post_install() {
             echo "  Logs:    sudo journalctl -u neomind -f"
             echo ""
             echo "Access the application:"
-            if [ "$NO_NGINX" != "true" ] && available nginx; then
-                echo "  Web UI:  ${BOLD}http://${LAN_IP:-localhost}${NC}"
-                echo "  API:     http://${LAN_IP:-localhost}:${PORT}/api"
-                echo "  Docs:    http://${LAN_IP:-localhost}:${PORT}/api/docs"
+            if [ "$USE_NGINX" = "true" ] && available nginx; then
+                echo "  Web UI:  ${BOLD}http://${LAN_IP:-localhost}${NC} (nginx)"
+                echo "  Direct:  http://${LAN_IP:-localhost}:${PORT}"
             else
-                echo "  API:     http://${LAN_IP:-localhost}:${PORT}/api"
-                echo "  Docs:    http://${LAN_IP:-localhost}:${PORT}/api/docs"
-                echo ""
-                echo "Note: nginx not configured. Install nginx to serve the Web UI."
+                echo "  Web UI:  ${BOLD}http://${LAN_IP:-localhost}:${PORT}${NC}"
             fi
+            echo "  API:     http://${LAN_IP:-localhost}:${PORT}/api"
+            echo "  Docs:    http://${LAN_IP:-localhost}:${PORT}/api/docs"
         else
             echo "To start NeoMind:"
             echo "  ${INSTALL_DIR}/neomind serve"
@@ -465,8 +470,9 @@ print_post_install() {
         fi
         echo ""
         echo "Access the application:"
-        echo "  API:  http://localhost:${PORT}/api"
-        echo "  Docs: http://localhost:${PORT}/api/docs"
+        echo "  Web UI:  http://localhost:${PORT}"
+        echo "  API:     http://localhost:${PORT}/api"
+        echo "  Docs:    http://localhost:${PORT}/api/docs"
     fi
 
     echo ""

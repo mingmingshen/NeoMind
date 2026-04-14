@@ -10,6 +10,8 @@ use axum::{
     extract::Path,
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
+    routing::get,
+    Router,
 };
 
 #[cfg(feature = "static")]
@@ -231,6 +233,46 @@ pub fn list_embedded_assets() -> Vec<&'static str> {
 #[cfg(not(feature = "static"))]
 pub fn list_embedded_assets() -> Vec<&'static str> {
     vec![]
+}
+
+/// Configure static file serving using embedded assets (compile-time).
+#[cfg(feature = "static")]
+pub fn configure_static_file_serving<S>(router: Router<S>) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    let static_routes = Router::new()
+        .route("/assets/*path", get(serve_asset))
+        .route("/*path", get(serve_asset))
+        .route("/", get(serve_index));
+    router.merge(static_routes)
+}
+
+/// Configure static file serving using runtime directory.
+/// If `NEOMIND_WEB_DIR` contains frontend files, serves them via ServeDir.
+/// Otherwise falls back to API-only mode with a placeholder page.
+#[cfg(not(feature = "static"))]
+pub fn configure_static_file_serving<S>(router: Router<S>) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    let web_dir = std::env::var("NEOMIND_WEB_DIR")
+        .unwrap_or_else(|_| "/var/www/neomind".to_string());
+
+    let index_path = std::path::Path::new(&web_dir).join("index.html");
+    if index_path.exists() {
+        use tower_http::services::{ServeDir, ServeFile};
+        tracing::info!("Serving frontend static files from: {}", web_dir);
+        router.fallback_service(
+            ServeDir::new(&web_dir).fallback(ServeFile::new(index_path))
+        )
+    } else {
+        tracing::info!("No frontend files found at {}, serving API-only mode", web_dir);
+        let static_routes = Router::new()
+            .route("/*path", get(serve_asset))
+            .route("/", get(serve_index));
+        router.merge(static_routes)
+    }
 }
 
 #[cfg(test)]

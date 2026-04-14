@@ -19,7 +19,7 @@ import {
   Download,
   Loader2,
 } from "lucide-react"
-import { api } from "@/lib/api"
+import { api, isTauriEnv } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useUpdateCheck } from "@/hooks/useUpdateCheck"
 import { useAppStore } from "@/store"
@@ -145,7 +145,6 @@ export function AboutTab() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <img src="/logo-square.png" alt="NeoMind Logo" className="w-12 h-12" />
           <div>
             <h1 className="text-2xl font-bold"><BrandName /></h1>
             <p className="text-sm text-muted-foreground">
@@ -304,7 +303,7 @@ export function AboutTab() {
             <span className="text-muted-foreground">{t("settings:version")}</span>
             <div className="flex items-center gap-2">
               <Badge variant="secondary">{systemInfo?.version || "v0.1.0"}</Badge>
-              {updateInfo?.available && updateInfo.version !== systemInfo?.version && (
+              {isTauriEnv() && updateInfo?.available && updateInfo.version !== systemInfo?.version && (
                 <Badge variant="default" className="text-xs">
                   v{updateInfo.version} {t("settings:update")}
                 </Badge>
@@ -327,6 +326,7 @@ export function AboutTab() {
               github.com/camthink-ai/NeoMind
             </a>
           </div>
+          {isTauriEnv() && (
           <div className="pt-2">
             <Button
               variant={updateInfo?.available ? "default" : "outline"}
@@ -352,6 +352,7 @@ export function AboutTab() {
               )}
             </Button>
           </div>
+          )}
         </CardContent>
       </Card>
 
@@ -360,11 +361,13 @@ export function AboutTab() {
         © 2025 CamThink
       </div>
 
-      {/* Update Dialog */}
+      {/* Update Dialog - Tauri only */}
+      {isTauriEnv() && (
       <UpdateDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
       />
+      )}
     </div>
   )
 }
