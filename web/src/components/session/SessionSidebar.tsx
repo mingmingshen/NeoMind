@@ -4,7 +4,7 @@
  * - Mobile: Slide-out drawer (rendered via Portal to avoid stacking context issues)
  */
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate, useParams } from "react-router-dom"
 import { useStore } from "@/store"
@@ -91,6 +91,21 @@ export function SessionSidebar({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
+  const scrollViewportRef = useRef<HTMLDivElement>(null)
+  const savedScrollTop = useRef<number>(0)
+
+  // Save scroll position before re-render caused by session switch
+  useEffect(() => {
+    const viewport = scrollViewportRef.current
+    if (!viewport) return
+
+    const handleScroll = () => {
+      savedScrollTop.current = viewport.scrollTop
+    }
+
+    viewport.addEventListener('scroll', handleScroll, { passive: true })
+    return () => viewport.removeEventListener('scroll', handleScroll)
+  }, [])
 
   // Focus search when opened (mobile only)
   useEffect(() => {
@@ -119,22 +134,34 @@ export function SessionSidebar({
     return () => observer.disconnect()
   }, [sessionsHasMore, sessionsLoading, searchQuery, loadMoreSessions])
 
-  // Filter sessions
-  const filteredSessions = sessions.filter((session) => {
-    if (!searchQuery) return true
-    const query = searchQuery.toLowerCase()
-    return (
-      (session.title || "").toLowerCase().includes(query) ||
-      (session.preview || "").toLowerCase().includes(query)
-    )
-  })
+  // Filter and sort sessions - memoized to prevent unnecessary re-renders
+  const sortedSessions = useMemo(() => {
+    const filtered = searchQuery
+      ? sessions.filter((session) => {
+          const query = searchQuery.toLowerCase()
+          return (
+            (session.title || "").toLowerCase().includes(query) ||
+            (session.preview || "").toLowerCase().includes(query)
+          )
+        })
+      : sessions
 
-  // Sort by update time
-  const sortedSessions = [...filteredSessions].sort((a, b) => {
-    const timeA = a.updatedAt || a.createdAt || 0
-    const timeB = b.updatedAt || b.createdAt || 0
-    return timeB - timeA
-  })
+    return [...filtered].sort((a, b) => {
+      const timeA = a.updatedAt || a.createdAt || 0
+      const timeB = b.updatedAt || b.createdAt || 0
+      return timeB - timeA
+    })
+  }, [sessions, searchQuery])
+
+  // Restore scroll position after sessions list changes
+  useEffect(() => {
+    const viewport = scrollViewportRef.current
+    if (!viewport || savedScrollTop.current === 0) return
+
+    requestAnimationFrame(() => {
+      viewport.scrollTop = savedScrollTop.current
+    })
+  }, [sortedSessions])
 
   // Handle new session
   const handleNewSession = async () => {
@@ -389,7 +416,7 @@ export function SessionSidebar({
           </div>
 
           {/* Session List */}
-          <ScrollArea className="flex-1 min-h-0">
+          <ScrollArea className="flex-1 min-h-0" viewportRef={scrollViewportRef}>
             <div className="px-2 pb-2 space-y-0.5">
               {sortedSessions.length === 0 ? (
                 <div className="py-8 text-center">
@@ -545,7 +572,7 @@ export function SessionSidebar({
             collapsed ? "w-12" : "w-64"
           )}
         >
-          <SidebarContent />
+          {SidebarContent({})}
         </div>
 
         {/* Delete Confirmation Dialog */}
@@ -594,7 +621,7 @@ export function SessionSidebar({
           open ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <SidebarContent />
+        {SidebarContent({})}
       </div>
 
       {/* Delete Confirmation Dialog */}

@@ -80,6 +80,8 @@ enum Command {
         #[arg(long)]
         since: Option<String>,
     },
+    /// Check for updates.
+    CheckUpdate,
     /// Extension management commands.
     Extension {
         #[command(subcommand)]
@@ -206,6 +208,7 @@ async fn main() -> Result<()> {
             since,
         } => run_logs(tail, follow, level, since).await,
         Command::Extension { extension_cmd } => run_extension_cmd(extension_cmd).await,
+        Command::CheckUpdate => run_check_update().await,
     }
 }
 
@@ -500,6 +503,120 @@ async fn list_models(endpoint: String) -> Result<()> {
     println!("  export LLM_MODEL=<model_name>");
 
     Ok(())
+}
+
+/// Check for updates by comparing current version with latest GitHub release.
+async fn run_check_update() -> Result<()> {
+    use neomind_core::brand::APP_VERSION;
+
+    println!("NeoMind {}", APP_VERSION);
+    println!("Checking for updates...\n");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .user_agent(neomind_core::brand::user_agent())
+        .build()?;
+
+    let response = client
+        .get("https://api.github.com/repos/camthink-ai/NeoMind/releases/latest")
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to check for updates: {}", e))?;
+
+    if !response.status().is_success() {
+        eprintln!("Failed to fetch release info (HTTP {})", response.status());
+        return Ok(());
+    }
+
+    let release: serde_json::Value = response.json().await?;
+    let latest_tag = release["tag_name"]
+        .as_str()
+        .unwrap_or("unknown")
+        .trim_start_matches('v');
+
+    let current = semver(APP_VERSION);
+    let latest = semver(latest_tag);
+
+    if current[0] < latest[0]
+        || (current[0] == latest[0] && current[1] < latest[1])
+        || (current[0] == latest[0] && current[1] == latest[1] && current[2] < latest[2])
+    {
+        println!("Update available: {} → v{}", APP_VERSION, latest_tag);
+
+        if let Some(notes) = release["body"].as_str() {
+            println!();
+            // Show first 5 lines of release notes
+            for line in notes.lines().take(5) {
+                println!("  {}", line.trim());
+            }
+            let total_lines = notes.lines().count();
+            if total_lines > 5 {
+                println!("  ... ({} more lines)", total_lines - 5);
+            }
+        }
+
+        if let Some(url) = release["html_url"].as_str() {
+            println!("\nDownload: {}", url);
+        }
+
+        // Show relevant download assets
+        if let Some(assets) = release["assets"].as_array() {
+            let os_type = if cfg!(target_os = "macos") {
+                "darwin"
+            } else if cfg!(target_os = "linux") {
+                "linux"
+            } else {
+                "windows"
+            };
+            let arch_type = if cfg!(target_arch = "aarch64") {
+                "arm64"
+            } else {
+                "amd64"
+            };
+
+            let server_asset = assets.iter().find(|a| {
+                a["name"]
+                    .as_str()
+                    .map(|n| n.contains(&format!("server-{}", os_type)) && n.contains(arch_type))
+                    .unwrap_or(false)
+            });
+
+            if let Some(asset) = server_asset {
+                if let (Some(name), Some(size)) =
+                    (asset["name"].as_str(), asset["size"].as_u64())
+                {
+                    let size_mb = size as f64 / (1024.0 * 1024.0);
+                    println!(
+                        "\nServer binary for your platform: {} ({:.1} MB)",
+                        name, size_mb
+                    );
+                }
+            }
+
+            println!("\nUpdate command:");
+            println!(
+                "  curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | sh"
+            );
+        }
+    } else {
+        println!("Already up to date (v{})", APP_VERSION);
+    }
+
+    Ok(())
+}
+
+/// Parse a semver string like "0.6.6" into [u32, u32, u32].
+fn semver(v: &str) -> [u32; 3] {
+    let parts: Vec<u32> = v
+        .split('.')
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    match parts.as_slice() {
+        [a, b, c] => [*a, *b, *c],
+        [a, b] => [*a, *b, 0],
+        [a] => [*a, 0, 0],
+        _ => [0, 0, 0],
+    }
 }
 
 /// Run the web server.

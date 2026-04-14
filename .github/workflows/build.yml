@@ -523,48 +523,30 @@ jobs:
           - **Windows**: Download `.msi` installer or `.exe` portable
           - **Linux**: Download `.AppImage` (universal) or `.deb` (Debian/Ubuntu)
 
-          ### Server Deployment (Frontend-Backend Separation)
+          ### Server Deployment
           1. **Backend Server**: Download `neomind-server-{os}-{arch}.tar.gz`
              - Extract and run: `./neomind serve`
              - Default port: 9375
 
           2. **Frontend Static Files**: Download `neomind-web-{version}.tar.gz`
-             - Extract to web server directory
-             - Configure reverse proxy for `/api` to backend
 
-          ### Deployment Example
+          **All-in-One** (default, no nginx needed):
+          - Extract frontend to `/var/www/neomind` (or configure `NEOMIND_WEB_DIR`)
+          - The server serves both API and Web UI on the same port
 
-          **Nginx Config** (same server):
-          ```nginx
-          server {
-              listen 80;
-              server_name your-domain.com;
+          **Frontend-Backend Separation** (optional, with nginx):
+          - Add `USE_NGINX=true` during installation
+          - Frontend served by nginx on port 80, API on port 9375
 
-              # Frontend static files
-              root /var/www/neomind;
-              index index.html;
+          ### One-line Installation (Linux & macOS)
 
-              # SPA routing
-              location / {
-                  try_files $uri $uri/ /index.html;
-              }
+          ```bash
+          # All-in-one (default)
+          curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | sh
 
-              # API reverse proxy
-              location /api {
-                  proxy_pass http://127.0.0.1:9375;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection "upgrade";
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_read_timeout 86400;
-              }
-          }
+          # With nginx for frontend-backend separation
+          curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | USE_NGINX=true sh
           ```
-
-          **Cross-Origin**: Build frontend with `VITE_API_BASE_URL=https://api.your-domain.com/api`
-
-          See `deploy/README.md` for full deployment guide.
 
           ---
 
@@ -583,7 +565,6 @@ jobs:
             artifacts/**/*.exe
             artifacts/**/*.AppImage
             artifacts/**/*.deb
-            artifacts/neomind-updater-**/*.tar.gz
             artifacts/neomind-updater-**/*.app.tar.gz
             artifacts/neomind-server-linux-amd64/**/*.tar.gz
             artifacts/neomind-server-linux-arm64/**/*.tar.gz
