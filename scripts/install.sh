@@ -6,7 +6,10 @@
 #   VERSION        - Specific version to install (default: latest)
 #   INSTALL_DIR    - Installation directory (default: /usr/local/bin)
 #   DATA_DIR       - Data directory (default: /var/lib/neomind)
+#   WEB_DIR        - Frontend static files directory (default: /var/www/neomind)
 #   NO_SERVICE     - Skip service installation (default: false)
+#   NO_NGINX       - Skip nginx configuration (default: false)
+#   PORT           - Backend API port (default: 9375)
 
 set -eu
 
@@ -23,7 +26,10 @@ REPO="camthink-ai/NeoMind"
 VERSION="${VERSION:-}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 DATA_DIR="${DATA_DIR:-/var/lib/neomind}"
+WEB_DIR="${WEB_DIR:-/var/www/neomind}"
 NO_SERVICE="${NO_SERVICE:-false}"
+NO_NGINX="${NO_NGINX:-false}"
+PORT="${PORT:-9375}"
 
 status() { echo "${BLUE}[INFO]${NC} $*"; }
 success() { echo "${GREEN}[OK]${NC} $*"; }
@@ -71,7 +77,7 @@ get_arch() {
 
 get_latest_version() {
     status "Fetching latest version..."
-    VERSION=$(curl -sfL https://api.github.com/repos/${REPO}/releases/latest | 
+    VERSION=$(curl -sfL https://api.github.com/repos/${REPO}/releases/latest |
               grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
     if [ -z "$VERSION" ]; then
         error "Failed to fetch latest version from GitHub"
@@ -92,43 +98,59 @@ detect_sudo() {
 
 install_linux() {
     status "Installing NeoMind on Linux..."
-    
+
     # Create user if not exists
     if ! id -u neomind >/dev/null 2>&1; then
         status "Creating neomind user..."
         $SUDO useradd -r -s /bin/false -d "$DATA_DIR" neomind 2>/dev/null || true
     fi
-    
+
     # Create directories
     status "Creating directories..."
     $SUDO mkdir -p "$INSTALL_DIR"
     $SUDO mkdir -p "$DATA_DIR"
     $SUDO chown -R neomind:neomind "$DATA_DIR"
-    
-    # Download and extract
+
+    # Download and extract server binaries
     BINARY_FILE="neomind-server-linux-${ARCH}.tar.gz"
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${BINARY_FILE}"
-    
-    status "Downloading NeoMind v${VERSION} for ${OS}/${ARCH}..."
+
+    status "Downloading NeoMind server v${VERSION} for ${OS}/${ARCH}..."
     TEMP_DIR=$(mktemp -d)
-    
+
     if ! curl -fSL --progress-bar "$DOWNLOAD_URL" -o "$TEMP_DIR/neomind.tar.gz"; then
         error "Failed to download from $DOWNLOAD_URL"
     fi
-    
-    status "Extracting..."
+
+    status "Extracting server..."
     tar xzf "$TEMP_DIR/neomind.tar.gz" -C "$TEMP_DIR"
-    
+
     # Install binary
     status "Installing binary to $INSTALL_DIR..."
     $SUDO install -m 755 "$TEMP_DIR/neomind" "$INSTALL_DIR/neomind"
-    
+
     # Install extension runner if present
     if [ -f "$TEMP_DIR/neomind-extension-runner" ]; then
         $SUDO install -m 755 "$TEMP_DIR/neomind-extension-runner" "$INSTALL_DIR/neomind-extension-runner"
         success "Extension runner installed"
     fi
-    
+
+    # Download and extract frontend
+    WEB_FILE="neomind-web-${VERSION}.tar.gz"
+    WEB_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${WEB_FILE}"
+
+    status "Downloading frontend..."
+    if curl -fSL --progress-bar "$WEB_URL" -o "$TEMP_DIR/neomind-web.tar.gz" 2>/dev/null; then
+        $SUDO mkdir -p "$WEB_DIR"
+        $SUDO tar xzf "$TEMP_DIR/neomind-web.tar.gz" -C "$WEB_DIR"
+        $SUDO chown -R www-data:www-data "$WEB_DIR" 2>/dev/null || \
+            $SUDO chown -R neomind:neomind "$WEB_DIR"
+        success "Frontend installed to $WEB_DIR"
+    else
+        warning "Frontend package not found. Web UI will show a placeholder page."
+        warning "You can manually download it from the release page."
+    fi
+
     # Install systemd service
     if [ "$NO_SERVICE" != "true" ]; then
         status "Installing systemd service..."
@@ -144,7 +166,7 @@ Type=simple
 User=neomind
 Group=neomind
 WorkingDirectory=${DATA_DIR}
-ExecStart=${INSTALL_DIR}/neomind
+ExecStart=${INSTALL_DIR}/neomind serve --port ${PORT}
 Restart=always
 RestartSec=3
 TimeoutStopSec=30
@@ -152,7 +174,7 @@ TimeoutStopSec=30
 # Environment
 Environment=RUST_LOG=info
 Environment=NEOMIND_DATA_DIR=${DATA_DIR}
-Environment=NEOMIND_BIND_ADDR=0.0.0.0:9375
+Environment=NEOMIND_BIND_ADDR=127.0.0.1:${PORT}
 
 # Security hardening
 NoNewPrivileges=true
@@ -165,49 +187,157 @@ ReadWritePaths=${DATA_DIR}
 WantedBy=multi-user.target
 EOF
         $SUDO systemctl daemon-reload
+        $SUDO systemctl enable neomind
         success "Systemd service installed"
     fi
-    
+
+    # Configure nginx
+    if [ "$NO_NGINX" != "true" ]; then
+        if available nginx; then
+            status "Configuring nginx..."
+            $SUDO tee /etc/nginx/sites-available/neomind >/dev/null <<'EOF'
+server {
+    listen 80;
+    server_name _;
+
+    # Frontend static files
+    root WEB_DIR_PLACEHOLDER;
+    index index.html;
+
+    # Gzip compression
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript image/svg+xml;
+    gzip_min_length 256;
+
+    # SPA routing - serve index.html for all non-file routes
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # API reverse proxy
+    location /api/ {
+        proxy_pass http://127.0.0.1:PORT_PLACEHOLDER/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+
+    # WebSocket reverse proxy
+    location ~ ^/api/.*/ws$ {
+        proxy_pass http://127.0.0.1:PORT_PLACEHOLDER;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400;
+    }
+
+    # SSE reverse proxy
+    location /api/events/ {
+        proxy_pass http://127.0.0.1:PORT_PLACEHOLDER/api/events/;
+        proxy_http_version 1.1;
+        proxy_set_header Connection '';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 86400;
+    }
+
+    # Static asset caching
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+EOF
+            # Replace placeholders with actual values
+            $SUDO sed -i "s|WEB_DIR_PLACEHOLDER|${WEB_DIR}|g" /etc/nginx/sites-available/neomind
+            $SUDO sed -i "s|PORT_PLACEHOLDER|${PORT}|g" /etc/nginx/sites-available/neomind
+
+            # Enable site
+            if [ ! -L /etc/nginx/sites-enabled/neomind ]; then
+                $SUDO ln -sf /etc/nginx/sites-available/neomind /etc/nginx/sites-enabled/neomind
+            fi
+
+            # Remove default site if it exists and neomind is the only site
+            if [ -L /etc/nginx/sites-enabled/default ]; then
+                $SUDO rm -f /etc/nginx/sites-enabled/default
+            fi
+
+            # Test and reload nginx
+            if $SUDO nginx -t 2>/dev/null; then
+                $SUDO systemctl reload nginx 2>/dev/null || $SUDO systemctl restart nginx 2>/dev/null || true
+                success "Nginx configured and reloaded"
+            else
+                warning "Nginx config test failed. Please check /etc/nginx/sites-available/neomind"
+            fi
+        else
+            warning "nginx not found. Skipping nginx configuration."
+            warning "Install nginx and configure it manually, or use NO_NGINX=true."
+        fi
+    fi
+
     success "Installation complete!"
 }
 
 install_darwin() {
     status "Installing NeoMind on macOS..."
-    
+
     # Create directories
     mkdir -p "$INSTALL_DIR"
     mkdir -p "$DATA_DIR"
-    
+
     # Download and extract
     BINARY_FILE="neomind-server-darwin-${ARCH}.tar.gz"
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${BINARY_FILE}"
-    
+
     status "Downloading NeoMind v${VERSION} for ${OS}/${ARCH}..."
     TEMP_DIR=$(mktemp -d)
-    
+
     if ! curl -fSL --progress-bar "$DOWNLOAD_URL" -o "$TEMP_DIR/neomind.tar.gz"; then
         error "Failed to download from $DOWNLOAD_URL"
     fi
-    
+
     status "Extracting..."
     tar xzf "$TEMP_DIR/neomind.tar.gz" -C "$TEMP_DIR"
-    
+
     # Install binary
     status "Installing binary to $INSTALL_DIR..."
     install -m 755 "$TEMP_DIR/neomind" "$INSTALL_DIR/neomind"
-    
+
     # Install extension runner if present
     if [ -f "$TEMP_DIR/neomind-extension-runner" ]; then
         install -m 755 "$TEMP_DIR/neomind-extension-runner" "$INSTALL_DIR/neomind-extension-runner"
         success "Extension runner installed"
     fi
-    
+
+    # Download frontend for macOS
+    WEB_FILE="neomind-web-${VERSION}.tar.gz"
+    WEB_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${WEB_FILE}"
+
+    status "Downloading frontend..."
+    if curl -fSL --progress-bar "$WEB_URL" -o "$TEMP_DIR/neomind-web.tar.gz" 2>/dev/null; then
+        mkdir -p "$WEB_DIR"
+        tar xzf "$TEMP_DIR/neomind-web.tar.gz" -C "$WEB_DIR"
+        success "Frontend installed to $WEB_DIR"
+    else
+        warning "Frontend package not found."
+    fi
+
     # Create launchd plist for macOS
     if [ "$NO_SERVICE" != "true" ]; then
         status "Installing launchd service..."
         PLIST_PATH="$HOME/Library/LaunchAgents/com.neomind.server.plist"
         mkdir -p "$(dirname "$PLIST_PATH")"
-        
+
         cat > "$PLIST_PATH" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -218,6 +348,7 @@ install_darwin() {
     <key>ProgramArguments</key>
     <array>
         <string>${INSTALL_DIR}/neomind</string>
+        <string>serve</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -230,7 +361,7 @@ install_darwin() {
         <key>NEOMIND_DATA_DIR</key>
         <string>${DATA_DIR}</string>
         <key>NEOMIND_BIND_ADDR</key>
-        <string>0.0.0.0:9375</string>
+        <string>127.0.0.1:${PORT}</string>
     </dict>
     <key>StandardOutPath</key>
     <string>${DATA_DIR}/neomind.log</string>
@@ -241,7 +372,7 @@ install_darwin() {
 EOF
         success "Launchd service installed"
     fi
-    
+
     success "Installation complete!"
 }
 
@@ -253,42 +384,54 @@ print_post_install() {
     echo ""
     echo "Binary location: ${INSTALL_DIR}/neomind"
     echo "Data directory:  ${DATA_DIR}"
+    echo "Frontend:        ${WEB_DIR}"
     echo ""
-    echo "${GREEN}✨ Web UI is embedded - no additional setup required!${NC}"
-    echo ""
-    
+
     if [ "$OS" = "linux" ]; then
-        if [ "$NO_SERVICE" = "true" ]; then
-            echo "To start NeoMind:"
-            echo "  ${INSTALL_DIR}/neomind"
-            echo ""
-            echo "Then open: ${BOLD}http://localhost:9375${NC}"
-        else
+        if [ "$NO_SERVICE" != "true" ]; then
             echo "Starting NeoMind service..."
             $SUDO systemctl start neomind || true
-            
+            sleep 1
+
+            # Check if service is running
+            if $SUDO systemctl is-active --quiet neomind 2>/dev/null; then
+                success "NeoMind service is running"
+            else
+                warning "NeoMind service may not have started. Check: sudo journalctl -u neomind"
+            fi
+
             echo ""
             echo "Service commands:"
-            echo "  Status:  ${SUDO} systemctl status neomind"
-            echo "  Stop:    ${SUDO} systemctl stop neomind"
-            echo "  Restart: ${SUDO} systemctl restart neomind"
-            echo "  Logs:    ${SUDO} journalctl -u neomind -f"
+            echo "  Status:  sudo systemctl status neomind"
+            echo "  Stop:    sudo systemctl stop neomind"
+            echo "  Restart: sudo systemctl restart neomind"
+            echo "  Logs:    sudo journalctl -u neomind -f"
             echo ""
-            echo "Access the application:"
-            echo "  Web UI:  ${BOLD}http://localhost:9375${NC}"
-            echo "  API:     http://localhost:9375/api"
-            echo "  Docs:    http://localhost:9375/api/docs"
+            if [ "$NO_NGINX" != "true" ] && available nginx; then
+                echo "Access the application:"
+                echo "  Web UI:  ${BOLD}http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost')${NC}"
+                echo "  API:     http://localhost:${PORT}/api"
+                echo "  Docs:    http://localhost:${PORT}/api/docs"
+            else
+                echo "Access the API:"
+                echo "  API:     http://localhost:${PORT}/api"
+                echo "  Docs:    http://localhost:${PORT}/api/docs"
+                echo ""
+                echo "Note: nginx not configured. To serve the Web UI, either:"
+                echo "  - Install and configure nginx manually"
+                echo "  - Re-run this script on a system with nginx installed"
+            fi
+        else
+            echo "To start NeoMind:"
+            echo "  ${INSTALL_DIR}/neomind serve"
+            echo ""
+            echo "API:  http://localhost:${PORT}/api"
         fi
     elif [ "$OS" = "darwin" ]; then
-        if [ "$NO_SERVICE" = "true" ]; then
-            echo "To start NeoMind:"
-            echo "  ${INSTALL_DIR}/neomind"
-            echo ""
-            echo "Then open: ${BOLD}http://localhost:9375${NC}"
-        else
+        if [ "$NO_SERVICE" != "true" ]; then
             echo "Starting NeoMind service..."
             launchctl load ~/Library/LaunchAgents/com.neomind.server.plist 2>/dev/null || true
-            
+
             echo ""
             echo "Service commands:"
             echo "  Stop:   launchctl unload ~/Library/LaunchAgents/com.neomind.server.plist"
@@ -296,12 +439,16 @@ print_post_install() {
             echo "  Logs:   tail -f ${DATA_DIR}/neomind.log"
             echo ""
             echo "Access the application:"
-            echo "  Web UI:  ${BOLD}http://localhost:9375${NC}"
-            echo "  API:     http://localhost:9375/api"
-            echo "  Docs:    http://localhost:9375/api/docs"
+            echo "  API:     http://localhost:${PORT}/api"
+            echo "  Docs:    http://localhost:${PORT}/api/docs"
+        else
+            echo "To start NeoMind:"
+            echo "  ${INSTALL_DIR}/neomind serve"
+            echo ""
+            echo "API:  http://localhost:${PORT}/api"
         fi
     fi
-    
+
     echo ""
     echo "Documentation: https://github.com/camthink-ai/NeoMind"
     echo ""
@@ -313,32 +460,32 @@ main() {
     echo "${BOLD}║           NeoMind Edge AI Platform Installer             ║${NC}"
     echo "${BOLD}╚═══════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    
+
     # Check dependencies
     require curl
-    
+
     # Detect system
     get_os
     get_arch
     status "Detected: ${OS}/${ARCH}"
-    
+
     # Get version
     if [ -z "$VERSION" ]; then
         get_latest_version
     fi
     status "Installing version: ${VERSION}"
-    
+
     # Detect sudo for Linux
     if [ "$OS" = "linux" ]; then
         detect_sudo
     fi
-    
+
     # Install
     case "$OS" in
         linux) install_linux ;;
         darwin) install_darwin ;;
     esac
-    
+
     print_post_install
 }
 

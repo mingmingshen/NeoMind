@@ -151,11 +151,12 @@ On first launch, a setup wizard will guide you through:
 
 ### 🖥️ Server Binary Deployment
 
-> **✨ Out of the Box**: The server binary has the Web UI embedded. Just download and run - no additional frontend deployment needed!
+> **Frontend-Backend Separation**: The server provides the API. The Web UI is deployed separately via nginx (auto-configured by the install script).
 
 **What's included:**
-- **neomind** - Main server binary with embedded Web UI (~50 MB)
+- **neomind** - API server binary (~50 MB)
 - **neomind-extension-runner** - Extension process for sandboxed extensions (~8 MB)
+- **neomind-web-{version}.tar.gz** - Frontend static files (served by nginx)
 
 **One-line installation (Linux & macOS):**
 
@@ -193,54 +194,56 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 **Manual installation:**
 
 ```bash
-# 1. Download binary (replace VERSION and PLATFORM)
-# PLATFORM: linux-amd64, linux-arm64, darwin-amd64, darwin-arm64
-wget https://github.com/camthink-ai/NeoMind/releases/download/v0.6.6/neomind-server-linux-amd64.tar.gz
+# 1. Download server binary and frontend (replace VERSION and PLATFORM)
+# PLATFORM: linux-amd64, linux-arm64, darwin-arm64
+VERSION=0.6.6
 
-# 2. Extract package (contains neomind + neomind-extension-runner)
+wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-server-linux-amd64.tar.gz
+wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-web-${VERSION}.tar.gz
+
+# 2. Extract and install server
 tar xzf neomind-server-linux-amd64.tar.gz
-ls -lh
-# neomind                      # Main server (~50 MB, with embedded Web UI)
-# neomind-extension-runner     # Extension process (~8 MB)
-
-# 3. Run directly - Web UI included!
-./neomind serve
-
-# Or install system-wide
 sudo install -m 755 neomind /usr/local/bin/
 sudo install -m 755 neomind-extension-runner /usr/local/bin/
 
-# 4. (Optional) Create systemd service (Linux)
-sudo useradd -r -s /bin/false -d /var/lib/neomind neomind 2>/dev/null || true
-sudo mkdir -p /var/lib/neomind
-sudo chown -R neomind:neomind /var/lib/neomind
+# 3. Deploy frontend to nginx
+sudo mkdir -p /var/www/neomind
+sudo tar xzf neomind-web-${VERSION}.tar.gz -C /var/www/neomind
 
-sudo tee /etc/systemd/system/neomind.service >/dev/null <<'EOT'
-[Unit]
-Description=NeoMind Edge AI Platform
-After=network-online.target
-Wants=network-online.target
+# 4. Start the API server
+./neomind serve
+```
 
-[Service]
-Type=simple
-User=neomind
-Group=neomind
-WorkingDirectory=/var/lib/neomind
-ExecStart=/usr/local/bin/neomind serve
-Restart=always
-RestartSec=3
+**Nginx configuration** (required for Web UI):
 
-[Install]
-WantedBy=multi-user.target
-EOT
+```nginx
+server {
+    listen 80;
+    server_name _;
 
-sudo systemctl daemon-reload
-sudo systemctl enable neomind
-sudo systemctl start neomind
+    root /var/www/neomind;
+    index index.html;
+
+    # SPA routing
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # API reverse proxy
+    location /api/ {
+        proxy_pass http://127.0.0.1:9375/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400;
+    }
+}
 ```
 
 **Access the application:**
-- Web UI: http://localhost:9375
+- Web UI: http://your-server (port 80 via nginx)
 - API: http://localhost:9375/api
 - API Docs: http://localhost:9375/api/docs
 
@@ -301,9 +304,9 @@ The installer will be in `web/src-tauri/target/release/bundle/`
 
 | Method | Use Case | Platforms |
 |--------|----------|-----------|
-| **Desktop App** | End-user desktop application | macOS, Windows, Linux |
-| **Server Binary** | Server/headless deployment | Linux (amd64/arm64), macOS (Intel/ARM) |
-| **One-line Install** | Quick server setup | `curl -fsSL ... \| sh` |
+| **Desktop App** | End-user desktop application (all-in-one) | macOS, Windows, Linux |
+| **Server Binary** | Server/headless deployment (nginx + API server) | Linux (amd64/arm64), macOS (ARM) |
+| **One-line Install** | Quick server setup with nginx auto-config | `curl -fsSL ... \| sh` |
 
 ---
 
