@@ -93,7 +93,24 @@ impl MemoryCompressor {
         importance < self.config.min_importance
     }
 
+    /// Check if a compression result would be too aggressive.
+    /// Returns true if the ratio of kept entries to original entries is dangerously low.
+    fn is_overly_aggressive(&self, original_count: usize, result_count: usize) -> bool {
+        if original_count == 0 || result_count == 0 {
+            return true;
+        }
+        // If compression removes more than 80% of entries, it's suspicious
+        let ratio = result_count as f32 / original_count as f32;
+        ratio < 0.2
+    }
+
     /// Compress a category using LLM
+    ///
+    /// **Safety design:**
+    /// - Only entries exceeding max_entries threshold are sent to LLM for compression
+    /// - High-importance recent entries are preserved as-is
+    /// - If LLM compression is too aggressive (<20% retention), the original is kept
+    /// - Unreferenced entries survive compression
     pub async fn compress(
         &self,
         store: &Arc<tokio::sync::RwLock<MarkdownMemoryStore>>,
@@ -145,23 +162,22 @@ impl MemoryCompressor {
         }
 
         let min_importance = self.min_importance();
+        let max_entries = self.max_entries(&category);
 
-        // Filter out entries below threshold (deleted by decay)
-        let before_filter = entries.len();
-        let entries_to_compress: Vec<MemoryEntry> = entries
+        // === Separate into kept (preserved) and to-compress ===
+        let mut entries_above_threshold: Vec<MemoryEntry> = entries
             .into_iter()
             .filter(|e| e.importance >= min_importance)
             .collect();
-        let deleted_count = before_filter - entries_to_compress.len();
 
-        if entries_to_compress.is_empty() {
+        let deleted_by_decay = original_count - entries_above_threshold.len();
+
+        if entries_above_threshold.is_empty() {
             tracing::info!(
                 category = ?category,
-                deleted = deleted_count,
+                deleted = deleted_by_decay,
                 "All entries below importance threshold after decay"
             );
-
-            // Write empty content
             drop(store_guard);
             let store_guard = store.write().await;
             store_guard
@@ -172,21 +188,66 @@ impl MemoryCompressor {
                 total_before: original_count,
                 kept: 0,
                 compressed: 0,
-                deleted: deleted_count,
+                deleted: deleted_by_decay,
             });
         }
 
-        // Build compression prompt
-        let prompt = self.build_compression_prompt(&entries_to_compress, &category, min_importance);
+        // Only run LLM compression if we exceed the max_entries limit
+        if entries_above_threshold.len() <= max_entries {
+            // No compression needed — just apply decay by rewriting with updated importance values
+            tracing::info!(
+                category = ?category,
+                count = entries_above_threshold.len(),
+                max = max_entries,
+                "Within entry limits, skipping LLM compression"
+            );
+
+            // Check if any importance values actually changed (decay was applied)
+            if decayed_count > 0 {
+                drop(store_guard);
+                let mut new_content = String::new();
+                for entry in &entries_above_threshold {
+                    new_content.push_str(&format!(
+                        "- [{}] {} [importance: {}]\n",
+                        entry.timestamp, entry.content, entry.importance
+                    ));
+                }
+                let store_guard = store.write().await;
+                store_guard
+                    .write_category(&category, &new_content)
+                    .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
+            }
+
+            return Ok(CompressionResult {
+                total_before: original_count,
+                kept: entries_above_threshold.len(),
+                compressed: 0,
+                deleted: deleted_by_decay,
+            });
+        }
+
+        // Need LLM compression: keep the newest/highest-importance entries, compress the rest
+        // Sort by importance descending (highest first), then by date descending (newest first)
+        entries_above_threshold.sort_by(|a, b| {
+            b.importance.cmp(&a.importance)
+                .then_with(|| b.timestamp.cmp(&a.timestamp))
+        });
+
+        let preserve_count = max_entries / 2; // Keep top half untouched
+        let entries_to_compress: Vec<MemoryEntry> = entries_above_threshold.split_off(preserve_count);
+        let preserved_entries = entries_above_threshold; // The top portion
 
         tracing::info!(
             category = ?category,
-            model = %self.llm.model_name(),
-            entry_count = entries_to_compress.len(),
-            decayed = decayed_count,
-            deleted_by_decay = deleted_count,
-            "Calling LLM for memory compression"
+            total = original_count,
+            preserved = preserved_entries.len(),
+            to_compress = entries_to_compress.len(),
+            deleted_by_decay = deleted_by_decay,
+            "Starting selective compression"
         );
+
+        // Build compression prompt for only the entries that need compressing
+        let prompt = self.build_compression_prompt(&entries_to_compress, &category, min_importance);
 
         // Drop the lock before LLM call
         drop(store_guard);
@@ -195,7 +256,7 @@ impl MemoryCompressor {
         let input = LlmInput::new(prompt).with_params(GenerationParams {
             temperature: Some(0.3),
             max_tokens: Some(1024),
-            thinking_enabled: Some(false), // Disable thinking to avoid wasting tokens on reasoning
+            thinking_enabled: Some(false),
             ..Default::default()
         });
 
@@ -214,25 +275,61 @@ impl MemoryCompressor {
         // Parse response
         let summaries = self.parse_compression_response(&response.text);
 
-        // Write back - try to preserve original timestamps for merged entries
+        // === Safety check: is compression too aggressive? ===
+        if self.is_overly_aggressive(entries_to_compress.len(), summaries.len()) {
+            tracing::warn!(
+                category = ?category,
+                original = entries_to_compress.len(),
+                compressed = summaries.len(),
+                "Compression too aggressive, keeping original entries"
+            );
+            // Don't compress — just write back with decay applied
+            let mut new_content = String::new();
+            for entry in preserved_entries.iter().chain(entries_to_compress.iter()) {
+                new_content.push_str(&format!(
+                    "- [{}] {} [importance: {}]\n",
+                    entry.timestamp, entry.content, entry.importance
+                ));
+            }
+            let store_guard = store.write().await;
+            store_guard
+                .write_category(&category, &new_content)
+                .map_err(|e| crate::error::NeoMindError::Memory(e.to_string()))?;
+
+            return Ok(CompressionResult {
+                total_before: original_count,
+                kept: preserved_entries.len() + entries_to_compress.len(),
+                compressed: 0,
+                deleted: deleted_by_decay,
+            });
+        }
+
+        // === Merge: preserved entries + compressed summaries ===
         let store_guard = store.write().await;
         let mut new_content = String::new();
-        let mut compressed_count = 0;
 
+        // Write preserved entries first
+        for entry in &preserved_entries {
+            new_content.push_str(&format!(
+                "- [{}] {} [importance: {}]\n",
+                entry.timestamp, entry.content, entry.importance
+            ));
+        }
+
+        // Then write compressed summaries
+        let today_str = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let mut compressed_count = 0;
         for summary in &summaries {
-            // Find the earliest timestamp from source entries that contributed to this summary
-            let today_str = chrono::Utc::now().format("%Y-%m-%d").to_string();
             let preserved_date = summary.source_dates.iter().min()
                 .map(|d| d.as_str())
                 .unwrap_or(today_str.as_str());
 
-            let entry = format!(
+            new_content.push_str(&format!(
                 "- [{}] {} [importance: {}]\n",
                 preserved_date,
                 summary.content,
                 summary.importance
-            );
-            new_content.push_str(&entry);
+            ));
             compressed_count += 1;
         }
 
@@ -243,17 +340,17 @@ impl MemoryCompressor {
         tracing::info!(
             category = ?category,
             original = original_count,
-            kept = summaries.len(),
+            preserved = preserved_entries.len(),
             compressed = compressed_count,
-            deleted = deleted_count,
+            deleted_by_decay = deleted_by_decay,
             "Compression completed"
         );
 
         Ok(CompressionResult {
             total_before: original_count,
-            kept: summaries.len(),
+            kept: preserved_entries.len(),
             compressed: compressed_count,
-            deleted: deleted_count,
+            deleted: deleted_by_decay,
         })
     }
 
