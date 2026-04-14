@@ -660,6 +660,7 @@ mod tests {
     }
 
     /// Mock LLM that returns aggressive compression (1 summary from many entries)
+    #[allow(dead_code)]
     struct AggressiveMockLlm;
 
     #[async_trait::async_trait]
