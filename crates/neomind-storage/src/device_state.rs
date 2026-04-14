@@ -257,12 +257,9 @@ impl DeviceStateStore {
     /// Save or update device state.
     pub async fn save_state(&self, state: &DeviceState) -> Result<()> {
         let device_id = state.device_id.clone();
-        let old_online = self.get_state(&device_id).await.ok().map(|s| s.online);
-        let old_type = self
-            .get_state(&device_id)
-            .await
-            .ok()
-            .map(|s| s.device_type.clone());
+        let old_state = self.get_state(&device_id).await.ok();
+        let old_online = old_state.as_ref().map(|s| s.online);
+        let old_type = old_state.as_ref().map(|s| s.device_type.clone());
 
         // Save to storage
         let key = format!("device:{}", device_id);
