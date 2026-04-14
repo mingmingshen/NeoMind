@@ -215,15 +215,13 @@ export class ApiDashboardStorage implements DashboardStorage {
           // Backend returns full Dashboard
           return { data: fromDashboardDTO(result), error: null, source: 'api' }
         } catch (createError) {
-          // If create fails with 409 (conflict) or similar, it might already exist
-          // Try to fetch it by checking recent dashboards
-          console.warn('[ApiStorage] Dashboard creation failed, checking if already exists:', createError)
-          // Fall through to update logic
+          console.warn('[ApiStorage] Dashboard creation failed:', createError)
+          // Return local version - do NOT fall through to avoid querying server with local UUID
+          return { data: dashboard, error: null, source: 'local' }
         }
       }
 
-      // For server dashboards (or local dashboards that failed to create), try to update
-      // First check if it exists on server
+      // For server dashboards, try to update
       const existing = await api.getDashboard(dashboard.id).catch(() => null)
 
       if (existing) {
@@ -320,6 +318,11 @@ export class HybridDashboardStorage implements DashboardStorage {
   private apiStorage: ApiDashboardStorage
   private localStorage: LocalStorageDashboardStorage
   private cacheEnabled: boolean
+  // Track in-flight sync operations for local dashboards to prevent duplicate creation.
+  // Key: local UUID, Value: the Promise resolving to the server dashboard (or null).
+  private pendingSync: Map<string, Promise<StorageResult<Dashboard>>> = new Map()
+  // Map local UUID -> server ID so subsequent syncs use the server ID.
+  private localToServerId: Map<string, string> = new Map()
 
   constructor(options: { cacheEnabled?: boolean } = {}) {
     this.apiStorage = new ApiDashboardStorage()
@@ -381,31 +384,70 @@ export class HybridDashboardStorage implements DashboardStorage {
     const isLocalDashboard = dashboard.id && !dashboard.id.startsWith('dashboard_')
 
     if (isLocalDashboard) {
-      // For local dashboards, sync to API first to get server ID
-      // This prevents creating duplicate dashboards on every component update
+      // Check if we already have a pending sync for this local ID
+      const pending = this.pendingSync.get(dashboard.id)
+      if (pending) {
+        // A sync is already in progress for this dashboard.
+        // Wait for it, then update with our latest data using the server ID.
+        try {
+          const result = await pending
+          if (result.data) {
+            // Map the local ID to the server ID for future syncs
+            this.localToServerId.set(dashboard.id, result.data.id)
+            // Update the server dashboard with the latest component data
+            const updatedDashboard = { ...dashboard, id: result.data.id, createdAt: result.data.createdAt, updatedAt: Date.now() }
+            return this.doServerSync(updatedDashboard)
+          }
+        } catch {
+          // Pending sync failed, fall through to try ourselves
+        }
+      }
+
+      // Check if we already resolved this local ID to a server ID
+      const serverId = this.localToServerId.get(dashboard.id)
+      if (serverId) {
+        // Already synced before - just update the server dashboard
+        const updatedDashboard = { ...dashboard, id: serverId, updatedAt: Date.now() }
+        return this.doServerSync(updatedDashboard)
+      }
+
+      // First time syncing this local dashboard - lock it
+      const syncPromise = this.apiStorage.sync(dashboard)
+      this.pendingSync.set(dashboard.id, syncPromise)
+
       try {
-        const apiResult = await this.apiStorage.sync(dashboard)
+        const apiResult = await syncPromise
         if (apiResult.data && apiResult.data.id !== dashboard.id) {
-          // Server assigned a new ID - update localStorage with the server ID
+          // Server assigned a new ID - map it
+          this.localToServerId.set(dashboard.id, apiResult.data.id)
+          // Update localStorage with the server version
           await this.localStorage.sync(apiResult.data)
           return apiResult
         }
+        return apiResult
       } catch (apiError) {
         console.warn('[HybridStorage] API sync failed for new dashboard, using local only:', apiError)
         // Fall through to local sync
+        return this.localStorage.sync(dashboard)
+      } finally {
+        this.pendingSync.delete(dashboard.id)
       }
     }
 
-    // For server dashboards (or API failed), sync to both localStorage and API
+    // For server dashboards, sync to both localStorage and API
+    return this.doServerSync(dashboard)
+  }
+
+  /**
+   * Sync a dashboard that already has a server ID to both localStorage and API.
+   */
+  private async doServerSync(dashboard: Dashboard): Promise<StorageResult<Dashboard>> {
     const localResult = await this.localStorage.sync(dashboard)
 
-    // Try to sync to API in background (don't await)
-    if (localResult.data && !isLocalDashboard) {
-      this.apiStorage.sync(localResult.data).catch(() => {
-        // API sync failed - local version is already saved
-        console.warn('[HybridStorage] API sync failed for dashboard:', localResult.data?.id)
-      })
-    }
+    // Sync to API in background (don't await)
+    this.apiStorage.sync(localResult.data || dashboard).catch(() => {
+      console.warn('[HybridStorage] API sync failed for dashboard:', dashboard.id)
+    })
 
     return localResult
   }
