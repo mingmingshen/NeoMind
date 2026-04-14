@@ -1671,6 +1671,7 @@ fn detect_model_capabilities(model_name: &str) -> ModelCapability {
         || name_lower.contains("yi-vl")
         || name_lower.contains("deepseek-vl")
         || name_lower.contains("multimodal")
+        || name_lower.contains("qwen3.5")    // Qwen3.5 supports multimodal natively
         // Check for common vision model patterns with version numbers
         || name_lower.contains("qwen") && (name_lower.contains("-vl") || name_lower.contains(":vl"))
         || name_lower.contains("llama") && name_lower.contains("vision");
@@ -1879,17 +1880,32 @@ struct OllamaShowResponse {
     #[serde(default)]
     #[allow(dead_code)]
     name: Option<String>,
+    /// Model capabilities from Ollama API, e.g. ["completion", "vision", "tools", "thinking"]
+    #[serde(default)]
+    capabilities: Vec<String>,
     /// Model details - Ollama returns flat key-value pairs like "llama.context_length": 8192
     #[serde(default)]
     model_info: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl OllamaShowResponse {
-    /// Check if the model supports vision/multimodal
+    /// Check if the model supports vision/multimodal.
+    /// Prioritizes the Ollama API `capabilities` array (accurate) over model_info heuristic.
     fn supports_vision(&self) -> bool {
-        self.model_info.keys().any(|k| {
-            k.contains(".vision.") || k.contains("vision_encoder") || k.contains("projector")
-        })
+        // Priority 1: Check Ollama's capabilities array — the authoritative source
+        if self.capabilities.iter().any(|c| c == "vision") {
+            return true;
+        }
+        // Priority 2: Fallback to model_info keys for older Ollama versions
+        if self.model_info.keys().any(|k| {
+            k.contains(".vision.")
+                || k.contains("vision_encoder")
+                || k.contains("projector")
+                || k.contains("image_token_id")
+        }) {
+            return true;
+        }
+        false
     }
 
     /// Get the context length

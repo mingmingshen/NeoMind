@@ -12,12 +12,15 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Brain,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Loader2,
   Play,
   Zap,
   CheckCircle2,
   Clock,
   FileText,
+  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAgentEvents, type AgentThinkingStep } from "@/hooks/useAgentEvents"
@@ -44,6 +47,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
   // Track when we should show the panel
   const [showPanel, setShowPanel] = useState(false)
   const [dismissed, setDismissed] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
 
   // Fetch execution detail on completion to show conclusion
   const [executionDetail, setExecutionDetail] = useState<AgentExecutionDetail | null>(null)
@@ -84,6 +88,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
   useEffect(() => {
     if (isExecuting && currentExecution?.status === 'running') {
       setDismissed(false)
+      setCollapsed(false)
     }
   }, [isExecuting, currentExecution?.status])
 
@@ -91,20 +96,30 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
 
   const hasContent = thinkingSteps.length > 0 || decisions.length > 0
 
+  // Get a short thinking preview for the collapsed state
+  const lastStep = thinkingSteps.length > 0
+    ? thinkingSteps[thinkingSteps.length - 1]
+    : null
+  const thinkingPreview = lastStep?.description || (currentExecution.status === 'running' ? t('agents:thinking.waiting') : '')
+
   return (
     <div className="border-t bg-muted/30">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b">
-        <div className="flex items-center gap-2">
+      {/* Header - always visible, clickable to toggle */}
+      <button
+        type="button"
+        onClick={() => setCollapsed(!collapsed)}
+        className="w-full flex items-center justify-between px-4 py-2 hover:bg-muted/50 transition-colors"
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           {currentExecution.status === 'running' ? (
-            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+            <Loader2 className="h-4 w-4 animate-spin text-blue-500 shrink-0" />
           ) : (
             <CheckCircle2 className={cn(
-              "h-4 w-4",
+              "h-4 w-4 shrink-0",
               currentExecution.status === 'completed' ? "text-green-500" : "text-red-500"
             )} />
           )}
-          <span className="text-sm font-medium">
+          <span className="text-sm font-medium shrink-0">
             {currentExecution.status === 'running'
               ? t('agents:thinking.executing')
               : currentExecution.status === 'completed'
@@ -113,7 +128,7 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
             }
           </span>
           {currentExecution.duration_ms !== undefined && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1">
+            <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0">
               <Clock className="h-3 w-3" />
               {currentExecution.duration_ms < 1000
                 ? `${currentExecution.duration_ms}ms`
@@ -122,96 +137,113 @@ export function AgentThinkingPanel({ agentId, isExecuting }: AgentThinkingPanelP
             </span>
           )}
           {thinkingSteps.length > 0 && (
-            <Badge variant="outline" className="text-xs h-5">
+            <Badge variant="outline" className="text-xs h-5 shrink-0">
               {thinkingSteps.length} {t('agents:thinking.steps')}
             </Badge>
           )}
-        </div>
-        <button
-          onClick={() => {
-            setShowPanel(false)
-            setDismissed(true)
-          }}
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {t('common:close')}
-        </button>
-      </div>
-
-      {/* Content */}
-      <ScrollArea className="max-h-[300px]">
-        <div className="p-3 space-y-3">
-          {!hasContent ? (
-            <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              {t('agents:thinking.waiting')}
-            </div>
-          ) : (
-            <>
-              {/* Thinking Steps */}
-              {thinkingSteps.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
-                    <Brain className="h-3.5 w-3.5 text-purple-500" />
-                    {t('agents:thinking.reasoningSteps')}
-                  </h4>
-                  <div className="space-y-2">
-                    {thinkingSteps.map((step, idx) => (
-                      <ThinkingStep key={`${step.step_number}-${idx}`} step={step} />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Decisions */}
-              {decisions.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
-                    <Play className="h-3.5 w-3.5 text-green-500" />
-                    {t('agents:thinking.decisions')}
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {decisions.map((decision, idx) => (
-                      <Decision key={idx} decision={decision} />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Conclusion (fetched after execution completes) */}
-              {executionDetail && (() => {
-                const dp = executionDetail.decision_process
-                const conclusion = dp?.conclusion
-                const confidence = dp?.confidence
-                if (!conclusion && confidence === undefined) return null
-                return (
-                  <div>
-                    <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
-                      <FileText className="h-3.5 w-3.5 text-green-500" />
-                      {t('agents:memory.conclusion')}
-                    </h4>
-                    <div className="space-y-2">
-                      {conclusion && (
-                        <Card className="p-2.5 bg-muted/50">
-                          <p className="text-sm">{conclusion}</p>
-                        </Card>
-                      )}
-                      {confidence !== undefined && (
-                        <div className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded-lg">
-                          <span className="text-xs text-muted-foreground">{t('agents:memory.confidence')}</span>
-                          <Badge variant={confidence > 0.7 ? "default" : "secondary"} className="h-5">
-                            {(confidence * 100).toFixed(0)}%
-                          </Badge>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })()}
-            </>
+          {/* Collapsed: show thinking preview */}
+          {collapsed && thinkingPreview && (
+            <span className="text-xs text-muted-foreground truncate ml-1">
+              — {thinkingPreview}
+            </span>
           )}
         </div>
-      </ScrollArea>
+        <div className="flex items-center gap-2 shrink-0 ml-2">
+          {collapsed ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowPanel(false)
+              setDismissed(true)
+            }}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </button>
+
+      {/* Content - collapsible */}
+      {!collapsed && (
+        <ScrollArea className="max-h-[200px]">
+          <div className="p-3 pt-0 space-y-3">
+            {!hasContent ? (
+              <div className="flex items-center justify-center py-6 text-muted-foreground text-sm">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                {t('agents:thinking.waiting')}
+              </div>
+            ) : (
+              <>
+                {/* Thinking Steps */}
+                {thinkingSteps.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                      <Brain className="h-3.5 w-3.5 text-purple-500" />
+                      {t('agents:thinking.reasoningSteps')}
+                    </h4>
+                    <div className="space-y-2">
+                      {thinkingSteps.map((step, idx) => (
+                        <ThinkingStep key={`${step.step_number}-${idx}`} step={step} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Decisions */}
+                {decisions.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                      <Play className="h-3.5 w-3.5 text-green-500" />
+                      {t('agents:thinking.decisions')}
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {decisions.map((decision, idx) => (
+                        <Decision key={idx} decision={decision} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Conclusion (fetched after execution completes) */}
+                {executionDetail && (() => {
+                  const dp = executionDetail.decision_process
+                  const conclusion = dp?.conclusion
+                  const confidence = dp?.confidence
+                  if (!conclusion && confidence === undefined) return null
+                  return (
+                    <div>
+                      <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                        <FileText className="h-3.5 w-3.5 text-green-500" />
+                        {t('agents:memory.conclusion')}
+                      </h4>
+                      <div className="space-y-2">
+                        {conclusion && (
+                          <Card className="p-2.5 bg-muted/50">
+                            <p className="text-sm">{conclusion}</p>
+                          </Card>
+                        )}
+                        {confidence !== undefined && (
+                          <div className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded-lg">
+                            <span className="text-xs text-muted-foreground">{t('agents:memory.confidence')}</span>
+                            <Badge variant={confidence > 0.7 ? "default" : "secondary"} className="h-5">
+                              {(confidence * 100).toFixed(0)}%
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
+              </>
+            )}
+          </div>
+        </ScrollArea>
+      )}
     </div>
   )
 }

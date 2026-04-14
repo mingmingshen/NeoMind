@@ -11,7 +11,7 @@ use dashmap::DashMap;
 use neomind_core::llm::backend::{LlmError, LlmInput, LlmRuntime};
 use neomind_core::llm::detect_vision_capability;
 use neomind_storage::{
-    BackendCapabilities, ConnectionTestResult, LlmBackendInstance, LlmBackendStore, LlmBackendType,
+    ConnectionTestResult, LlmBackendInstance, LlmBackendStore, LlmBackendType,
 };
 
 use super::backends::create_backend;
@@ -19,62 +19,24 @@ use super::backends::ollama::{OllamaConfig, OllamaRuntime, detect_model_context}
 #[cfg(feature = "llamacpp")]
 use super::backends::llamacpp::{LlamaCppConfig, LlamaCppRuntime};
 
-/// Detect model capabilities from model name (for Ollama instances).
-/// This is a lightweight fallback when the Ollama API is unreachable.
-/// NOTE: max_context is always 0 here — the real value must come from /api/show.
-fn detect_ollama_capabilities_from_name(model_name: &str) -> BackendCapabilities {
-    let name_lower = model_name.to_lowercase();
-
-    // Thinking support: deepseek-r1, qwen3 variants
-    let supports_thinking = name_lower.contains("thinking")
-        || name_lower.contains("deepseek-r1")
-        || name_lower.starts_with("qwen3");
-
-    // Multimodal support: vl, vision models
-    let supports_multimodal =
-        name_lower.contains("vl") || name_lower.contains("vision") || name_lower.contains("mm");
-
-    // Tools support: exclude very small models
-    let supports_tools = !name_lower.contains("270m")
-        && !name_lower.contains("e4b")
-        && !name_lower.contains("0.5b")
-        && !name_lower.contains("0.6b")
-        && !name_lower.contains("1b")
-        && !name_lower.contains("embed-text");
-
-    BackendCapabilities {
-        supports_streaming: true,
-        supports_multimodal,
-        supports_thinking,
-        supports_tools,
-        max_context: 8192, // Safe default; overridden by /api/show at runtime
-    }
-}
-
-/// Ensure an instance has correct capabilities (sync, name-based fallback only).
-/// This function corrects capabilities that can be detected from the model name.
-/// For accurate context length detection, use `create_runtime()` which calls /api/show.
+/// Ensure an instance has correct capabilities.
+///
+/// IMPORTANT: For Ollama and llama.cpp, this function ONLY upgrades capabilities
+/// (false→true). It NEVER downgrades, because API-detected values (from /api/show
+/// or /props) are authoritative and already persisted to storage by create_runtime().
+///
+/// For cloud backends (OpenAI, Anthropic, etc.), name-based detection is the only
+/// source, so full correction is applied.
 fn ensure_instance_capabilities(mut instance: LlmBackendInstance) -> LlmBackendInstance {
     if matches!(instance.backend_type, LlmBackendType::Ollama) {
-        let detected = detect_ollama_capabilities_from_name(&instance.model);
-        // Fix tools support if name-based detection disagrees
-        if !instance.capabilities.supports_tools && detected.supports_tools {
-            instance.capabilities.supports_tools = true;
+        // Use neomind-core's unified detection as fallback.
+        // Only upgrade — never override API-detected values.
+        let detected_vision = detect_vision_capability(&instance.model);
+        if !instance.capabilities.supports_multimodal && detected_vision {
+            instance.capabilities.supports_multimodal = true;
         }
-        // Fix thinking support
-        if instance.capabilities.supports_thinking != detected.supports_thinking {
-            instance.capabilities.supports_thinking = detected.supports_thinking;
-        }
-        // Fix multimodal support
-        if instance.capabilities.supports_multimodal != detected.supports_multimodal {
-            instance.capabilities.supports_multimodal = detected.supports_multimodal;
-        }
-        // NOTE: max_context is NOT updated here — it must come from /api/show
-        // which happens in create_runtime() to get the real value from Ollama.
     } else if matches!(instance.backend_type, LlmBackendType::LlamaCpp) {
-        // For llama.cpp backends, detect multimodal from model name as fallback.
-        // The primary detection happens at startup via /props endpoint.
-        // Only upgrade from false to true here — never downgrade, as /props is authoritative.
+        // Only upgrade from false to true — /props is authoritative.
         if !instance.capabilities.supports_multimodal {
             let detected_multimodal = detect_vision_capability(&instance.model);
             if detected_multimodal {
@@ -87,12 +49,8 @@ fn ensure_instance_capabilities(mut instance: LlmBackendInstance) -> LlmBackendI
             }
         }
     } else {
-        // For cloud backends (OpenAI, Anthropic, etc.), correct the vision capability
-        // based on the actual model name. This fixes instances that were created
-        // before we had proper model-specific capability detection.
+        // Cloud backends: name-based detection is the primary source.
         let detected_multimodal = detect_vision_capability(&instance.model);
-
-        // Only update if there's a mismatch
         if instance.capabilities.supports_multimodal != detected_multimodal {
             tracing::info!(
                 backend_id = %instance.id,

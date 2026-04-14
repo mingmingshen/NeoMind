@@ -1047,17 +1047,13 @@ fn detect_thinking_from_name(model_name: &str) -> bool {
         || name_lower.contains("thinking")
 }
 
-/// Fallback: Detect capabilities from model name when /api/show is not available
+/// Fallback: Detect capabilities from model name when /api/show is not available.
+/// Uses neomind-core's unified detect_vision_capability for consistency.
 fn detect_ollama_model_capabilities_from_name(model_name: &str) -> BackendCapabilities {
     let name_lower = model_name.to_lowercase();
 
-    // Vision capability from name patterns (fallback only)
-    let supports_multimodal = name_lower.contains("-vl")
-        || name_lower.ends_with("vl")
-        || name_lower.contains("vision")
-        || name_lower.contains("llava")
-        || name_lower.contains("bakllava")
-        || name_lower.contains("minicpm-v");
+    // Use unified vision detection from neomind-core
+    let supports_multimodal = detect_vision_capability(model_name);
 
     let supports_thinking = detect_thinking_from_name(model_name);
 

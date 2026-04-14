@@ -25,7 +25,6 @@ import {
   Loader2,
   Clock,
   Plus,
-  Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
@@ -218,34 +217,30 @@ export function AgentCard({
         </div>
       </div>
 
-      {/* Real-time Thinking - shown when executing */}
-      {agent.status === 'Executing' && agent.currentThinking && (
-        <div className="mb-3 px-3 py-2 rounded-lg bg-blue-50/80 dark:bg-blue-900/20 border border-blue-200/50 dark:border-blue-800/50">
-          <div className="flex items-center gap-2 text-xs">
-            <Sparkles className="h-3.5 w-3.5 text-blue-500 animate-pulse shrink-0" />
-            <span className="text-blue-700 dark:text-blue-300 line-clamp-2">
-              {agent.currentThinking}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Footer: Last Execution + Toggle */}
-      <div className="flex items-center justify-between pt-1.5 border-t border-border/50">
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Clock className="h-3.5 w-3.5" />
-          <span className="truncate max-w-[120px]">
-            {agent.last_execution_at ? formatTimestamp(agent.last_execution_at, false) : t('agents:card.neverExecuted')}
+      {/* Footer: Executing status or Last Execution + Toggle */}
+      {agent.status === 'Executing' ? (
+        <div className="flex items-center gap-2 pt-1.5 border-t border-blue-200/50 dark:border-blue-800/50 bg-blue-50/60 dark:bg-blue-900/20 -mx-1 px-1">
+          <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin shrink-0" />
+          <span className="text-xs text-blue-700 dark:text-blue-300 truncate flex-1">
+            {agent.currentThinking || t('agents:thinking.executing')}
           </span>
         </div>
+      ) : (
+        <div className="flex items-center justify-between pt-1.5 border-t border-border/50">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Clock className="h-3.5 w-3.5" />
+            <span className="truncate max-w-[120px]">
+              {agent.last_execution_at ? formatTimestamp(agent.last_execution_at, false) : t('agents:card.neverExecuted')}
+            </span>
+          </div>
 
-        <Switch
-          checked={agent.status === 'Active' || agent.status === 'Executing'}
-          onCheckedChange={handleToggleStatus}
-          disabled={agent.status === 'Executing'}
-          onClick={(e) => e.stopPropagation()}
-        />
-      </div>
+          <Switch
+            checked={agent.status === 'Active'}
+            onCheckedChange={handleToggleStatus}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   )
 }

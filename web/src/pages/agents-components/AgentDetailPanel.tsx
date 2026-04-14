@@ -91,12 +91,13 @@ export function AgentDetailPanel({
   // Real-time status from WebSocket events
   const [realtimeStatus, setRealtimeStatus] = useState<string | null>(null)
 
-  // Load executions when history tab is active
+  // Load executions immediately when agent is selected (preload)
+  // and when switching back to history tab with stale data
   useEffect(() => {
-    if (agent && activeTab === 'history') {
+    if (agent?.id) {
       loadExecutions()
     }
-  }, [agent, activeTab])
+  }, [agent?.id])
 
   // Load memory when memory tab is active
   useEffect(() => {
@@ -141,6 +142,10 @@ export function AgentDetailPanel({
           if (completedData.agent_id === agent.id) {
             // Clear realtime status - agent's original status will be used
             setRealtimeStatus(null)
+            // Reload executions silently to include the just-completed one
+            if (activeTab === 'history') {
+              loadExecutions()
+            }
             // Reload agent data to get updated stats
             api.getAgent(agent.id).then(() => {
               // Notify parent to refresh if needed

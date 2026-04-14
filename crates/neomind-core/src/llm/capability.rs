@@ -185,7 +185,8 @@ impl CapabilityDetector {
         // qwen2.5-vl, qwen2-vl 系列
         // qvq 系列 (视觉推理): qvq-max, qvq-plus
         // qwen-omni 系列 (全模态): qwen-omni-turbo, qwen-omni-max, qwen3-omni-flash
-        // qwen3.5-plus (支持文本、图像、视频)
+        // qwen3.5 系列: 原生支持文本、图像、视频 (包括 qwen3.5:4b 等本地模型)
+        // qwen3.5-plus (云 API)
         // 注意: qwen-turbo, qwen-long, qwen-coder 不支持视觉
         if model.contains("qwen-vl")
             || model.contains("qwen2.5-vl")
@@ -194,7 +195,7 @@ impl CapabilityDetector {
             || model.contains("qwen-omni")
             || model.contains("qwen3-omni")
             || model.contains("qvq")
-            || model.contains("qwen3.5-plus")
+            || model.contains("qwen3.5")
         {
             return true;
         }

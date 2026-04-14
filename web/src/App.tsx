@@ -53,6 +53,22 @@ console.error = (...args) => {
   originalError.apply(console, args)
 }
 
+// Prevent Backspace/Delete from triggering browser back navigation in Tauri WebView
+// This is a known issue where these keys act as "go back" in embedded webviews
+if (isTauriEnv()) {
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      const target = e.target as HTMLElement
+      const isEditable = target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target.isContentEditable
+      if (!isEditable) {
+        e.preventDefault()
+      }
+    }
+  })
+}
+
 window.addEventListener('error', (event) => {
   if (
     event.message?.includes('NotFoundError') ||
