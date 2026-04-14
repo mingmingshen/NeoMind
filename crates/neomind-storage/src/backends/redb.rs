@@ -73,6 +73,26 @@ impl RedbBackendConfig {
     }
 }
 
+/// Increment the last byte of a string to create an exclusive upper bound for range scans.
+/// For "abc" returns "abd", for "ab\xff" carries over to "ac".
+/// If all bytes are 0xFF, appends "\x00".
+fn increment_prefix(s: &str) -> String {
+    let mut bytes = s.bytes().collect::<Vec<u8>>();
+    // Find the rightmost byte that can be incremented (< 0xFF)
+    for i in (0..bytes.len()).rev() {
+        if bytes[i] < 0xFF {
+            bytes[i] += 1;
+            // Truncate everything after the incremented byte
+            bytes.truncate(i + 1);
+            return String::from_utf8(bytes).expect("increment preserves UTF-8 validity");
+        }
+    }
+    // All bytes are 0xFF, append a byte to go beyond
+    let mut result = s.to_string();
+    result.push('\0');
+    result
+}
+
 /// Create a namespaced key for the unified table.
 /// Optimized with pre-allocated capacity to reduce reallocations.
 fn make_key(table: &str, key: &str) -> String {
@@ -253,7 +273,8 @@ impl StorageBackend for RedbBackend {
     }
 
     fn scan(&self, table: &str, prefix: &str) -> Result<Vec<(String, Vec<u8>)>> {
-        let table_prefix = format!("{}:{}", table, prefix);
+        let start_key = format!("{}:{}", table, prefix);
+        let end_key = increment_prefix(&start_key);
         let table_prefix_len = table.len() + 1; // "table:"
 
         let txn = self
@@ -265,14 +286,15 @@ impl StorageBackend for RedbBackend {
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         let mut results = Vec::new();
-        for item in t.iter().map_err(|e| StorageError::Backend(e.to_string()))? {
+        for item in t
+            .range(start_key.as_str()..end_key.as_str())
+            .map_err(|e| StorageError::Backend(e.to_string()))?
+        {
             let (key, value) = item.map_err(|e| StorageError::Backend(e.to_string()))?;
             let key_str = key.value();
-            if key_str.starts_with(&table_prefix) {
-                // Extract the original key (remove table: prefix)
-                if let Some(rest) = key_str.get(table_prefix_len..) {
-                    results.push((rest.to_string(), value.value().to_vec()));
-                }
+            // Extract the original key (remove table: prefix)
+            if let Some(rest) = key_str.get(table_prefix_len..) {
+                results.push((rest.to_string(), value.value().to_vec()));
             }
         }
 
