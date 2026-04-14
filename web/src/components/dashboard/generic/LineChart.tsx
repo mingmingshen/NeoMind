@@ -11,7 +11,7 @@
  * - Chart view modes: timeseries, snapshot
  */
 
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   LineChart as RechartsLineChart,
@@ -267,7 +267,7 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
   )
 }
 
-export function LineChart({
+const LineChartInner = function LineChart({
   dataSource,
   series: propSeries,
   labels: propLabels,
@@ -592,6 +592,8 @@ export function LineChart({
     </div>
   )
 }
+
+export const LineChart = memo(LineChartInner)
 
 /**
  * Area Chart Component

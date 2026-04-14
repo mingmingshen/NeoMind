@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
+import { shallow } from "zustand/shallow"
 import { useToast } from "@/hooks/use-toast"
 import { useEvents } from "@/hooks/useEvents"
 import { useIsMobile } from "@/hooks/useMobile"
@@ -47,32 +48,50 @@ export function DevicesPage() {
   const { handleError, withErrorHandling } = useErrorHandler()
   const { deviceId: urlDeviceId } = useParams<{ deviceId?: string }>()
   const isMobile = useIsMobile()
-  const devices = useStore((state) => state.devices)
-  const devicesLoading = useStore((state) => state.devicesLoading)
-  const fetchDevices = useStore((state) => state.fetchDevices)
-  const fetchDeviceDetails = useStore((state) => state.fetchDeviceDetails)
-  const fetchDeviceTypeDetails = useStore((state) => state.fetchDeviceTypeDetails)
-  const addDevice = useStore((state) => state.addDevice)
-  const updateDevice = useStore((state) => state.updateDevice)
-  const deleteDevice = useStore((state) => state.deleteDevice)
-  const deviceTypes = useStore((state) => state.deviceTypes)
-  const deviceTypesLoading = useStore((state) => state.deviceTypesLoading)
-  const fetchDeviceTypes = useStore((state) => state.fetchDeviceTypes)
-  const addDeviceType = useStore((state) => state.addDeviceType)
-  const deleteDeviceType = useStore((state) => state.deleteDeviceType)
-  const validateDeviceType = useStore((state) => state.validateDeviceType)
-  const addDeviceDialogOpen = useStore((state) => state.addDeviceDialogOpen)
-  const setAddDeviceDialogOpen = useStore((state) => state.setAddDeviceDialogOpen)
-  const sendCommand = useStore((state) => state.sendCommand)
-  const deviceTypeDetails = useStore((state) => state.deviceTypeDetails)
-  const deviceDetails = useStore((state) => state.deviceDetails)
-  const telemetryData = useStore((state) => state.telemetryData)
-  const telemetrySummary = useStore((state) => state.telemetrySummary)
-  const deviceCurrentState = useStore((state) => state.deviceCurrentState)
-  const telemetryLoading = useStore((state) => state.telemetryLoading)
-  const fetchTelemetryData = useStore((state) => state.fetchTelemetryData)
-  const fetchTelemetrySummary = useStore((state) => state.fetchTelemetrySummary)
-  const fetchDeviceCurrentState = useStore((state) => state.fetchDeviceCurrentState)
+
+  // Group device data selectors (change together)
+  const { devices, devicesLoading } = useStore((s) => ({
+    devices: s.devices,
+    devicesLoading: s.devicesLoading,
+  }), shallow)
+
+  // Group device type data selectors (change together)
+  const { deviceTypes, deviceTypesLoading } = useStore((s) => ({
+    deviceTypes: s.deviceTypes,
+    deviceTypesLoading: s.deviceTypesLoading,
+  }), shallow)
+
+  // Group dialog selectors
+  const { addDeviceDialogOpen, setAddDeviceDialogOpen } = useStore((s) => ({
+    addDeviceDialogOpen: s.addDeviceDialogOpen,
+    setAddDeviceDialogOpen: s.setAddDeviceDialogOpen,
+  }), shallow)
+
+  // Group detail view data selectors (change together when viewing a device)
+  const { deviceTypeDetails, deviceDetails, telemetryData, telemetrySummary, deviceCurrentState, telemetryLoading } = useStore((s) => ({
+    deviceTypeDetails: s.deviceTypeDetails,
+    deviceDetails: s.deviceDetails,
+    telemetryData: s.telemetryData,
+    telemetrySummary: s.telemetrySummary,
+    deviceCurrentState: s.deviceCurrentState,
+    telemetryLoading: s.telemetryLoading,
+  }), shallow)
+
+  // Action selectors (stable references, no need for shallow)
+  const fetchDevices = useStore((s) => s.fetchDevices)
+  const fetchDeviceDetails = useStore((s) => s.fetchDeviceDetails)
+  const fetchDeviceTypeDetails = useStore((s) => s.fetchDeviceTypeDetails)
+  const addDevice = useStore((s) => s.addDevice)
+  const updateDevice = useStore((s) => s.updateDevice)
+  const deleteDevice = useStore((s) => s.deleteDevice)
+  const fetchDeviceTypes = useStore((s) => s.fetchDeviceTypes)
+  const addDeviceType = useStore((s) => s.addDeviceType)
+  const deleteDeviceType = useStore((s) => s.deleteDeviceType)
+  const validateDeviceType = useStore((s) => s.validateDeviceType)
+  const sendCommand = useStore((s) => s.sendCommand)
+  const fetchTelemetryData = useStore((s) => s.fetchTelemetryData)
+  const fetchTelemetrySummary = useStore((s) => s.fetchTelemetrySummary)
+  const fetchDeviceCurrentState = useStore((s) => s.fetchDeviceCurrentState)
 
   // Pagination state
   const [devicePage, setDevicePage] = useState(1)
