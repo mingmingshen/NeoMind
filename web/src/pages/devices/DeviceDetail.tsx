@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { ChevronLeft, RefreshCw, Send, Clock, Zap, Settings, Info, ChevronRight, X, Image as ImageIcon, Database } from "lucide-react"
+import { ChevronLeft, RefreshCw, Send, Clock, Zap, Settings, Info, ChevronRight, X, Image as ImageIcon, Database, Download } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { formatTimestamp } from "@/lib/utils/format"
 import type { Device, DeviceType, CommandDefinition, TelemetryDataResponse, DeviceCurrentStateResponse } from "@/types"
@@ -230,6 +230,26 @@ export function DeviceDetail({
   const isMetricImage = (value: unknown): boolean => {
     if (typeof value === 'string' && isBase64Image(value)) return true
     return false
+  }
+
+  const downloadImage = (src: string, timestamp?: string) => {
+    try {
+      // Determine file extension from MIME type
+      const mimeMatch = src.match(/^data:image\/(\w+);/)
+      const ext = mimeMatch?.[1] === 'jpeg' ? 'jpg' : mimeMatch?.[1] || 'png'
+      const filename = `${device?.name || 'device'}_${selectedMetric || 'metric'}${timestamp ? '_' + timestamp.replace(/[:\s]/g, '-') : ''}.${ext}`
+
+      const link = document.createElement('a')
+      link.href = src
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast({ title: t('devices:detailPage.downloadSuccess') })
+    } catch {
+      toast({ variant: 'destructive', title: t('devices:detailPage.downloadFailed') })
+    }
   }
 
   if (!device) return null
@@ -520,14 +540,28 @@ export function DeviceDetail({
                           </TableCell>
                           <TableCell>
                             {isMetricImage(point.value) ? (
-                              <div
-                                className="cursor-pointer hover:opacity-80 transition-opacity inline-block"
-                                onClick={() => {
-                                  setPreviewImageSrc(String(point.value))
-                                  setImagePreviewOpen(true)
-                                }}
-                              >
-                                <img src={String(point.value)} alt="metric" className="h-12 w-12 object-cover rounded-lg" loading="lazy" />
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="cursor-pointer hover:opacity-80 transition-opacity inline-block"
+                                  onClick={() => {
+                                    setPreviewImageSrc(String(point.value))
+                                    setImagePreviewOpen(true)
+                                  }}
+                                >
+                                  <img src={String(point.value)} alt="metric" className="h-12 w-12 object-cover rounded-lg" loading="lazy" />
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    downloadImage(String(point.value), formatTimestamp(point.timestamp))
+                                  }}
+                                  title={t('devices:detailPage.downloadImage')}
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
                               </div>
                             ) : isComplexValue || isLongString ? (
                               <details className="group">
@@ -604,12 +638,23 @@ export function DeviceDetail({
             <DialogTitle>{t('devices:detailPage.preview')}</DialogTitle>
             <DialogDescription>{t('devices:detailPage.imagePreview')}</DialogDescription>
           </DialogHeader>
-          <button
-            onClick={() => setImagePreviewOpen(false)}
-            className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white hover:bg-black/70 transition-colors z-10"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="absolute right-4 top-4 flex items-center gap-2 z-10">
+            {previewImageSrc && (
+              <button
+                onClick={() => downloadImage(previewImageSrc)}
+                className="rounded-full bg-black/50 p-2 text-white hover:bg-black/70 transition-colors"
+                title={t('devices:detailPage.downloadImage')}
+              >
+                <Download className="h-5 w-5" />
+              </button>
+            )}
+            <button
+              onClick={() => setImagePreviewOpen(false)}
+              className="rounded-full bg-black/50 p-2 text-white hover:bg-black/70 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
           {previewImageSrc && (
             <div className="flex items-center justify-center min-h-[300px]">
               <img src={previewImageSrc} alt={t('devices:detailPage.preview')} className="max-w-full max-h-[70vh] object-contain rounded-lg" />
