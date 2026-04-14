@@ -1071,7 +1071,7 @@ export function AgentMonitorWidget({
                   handleSendMessage()
                 }
               }}
-              className="min-h-[36px] h-9 text-xs resize-none py-2"
+              className="min-h-[36px] max-h-[72px] h-9 text-xs placeholder:text-xs resize-none py-1.5"
               disabled={sendingMessage}
             />
             <Button
