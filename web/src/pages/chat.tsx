@@ -440,17 +440,18 @@ export function ChatPage() {
           if (capturedStreamingRef.current.content) {
             roundContentsAccumulatorRef.current[currentRoundRef.current] = capturedStreamingRef.current.content
           }
-          // Accumulate thinking across rounds (interleaved thinking pattern)
+          // Accumulate thinking across rounds into total (for final message)
           if (capturedStreamingRef.current.thinking) {
             thinkingAccumulatorRef.current += capturedStreamingRef.current.thinking
           }
-          // Reset captured content for next round - keep toolCalls and clear thinking for next round's accumulation
+          // Reset captured content for next round
+          // NOTE: Don't reset streamingThinking — keep showing all rounds' thinking continuously
+          // streamingThinking already has all thinking via cumulative appends in "Thinking" handler
           capturedStreamingRef.current.content = ""
           capturedStreamingRef.current.thinking = ""
           currentRoundRef.current += 1
           setRoundContents({ ...roundContentsAccumulatorRef.current })
           setStreamingContent("")
-          setStreamingThinking("")
           break
         }
 
@@ -1096,7 +1097,7 @@ export function ChatPage() {
                       <ChevronDown className="h-3 w-3 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-64">
+                  <DropdownMenuContent align="start" className="w-64 max-h-[50vh] overflow-y-auto">
                     <DropdownMenuLabel className="text-xs text-muted-foreground">
                       {t('chat:input.selectLLMModel')}
                     </DropdownMenuLabel>
