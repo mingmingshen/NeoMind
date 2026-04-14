@@ -50,6 +50,22 @@ pub trait StorageBackend: Send + Sync {
     /// Scan keys with a given prefix in the specified table.
     fn scan(&self, table: &str, prefix: &str) -> Result<Vec<(String, Vec<u8>)>>;
 
+    /// Scan keys with a given prefix, returning a paginated subset.
+    ///
+    /// Returns up to `limit` items starting from the `offset`-th match.
+    /// The default implementation falls back to `scan()` and slices in memory;
+    /// backends should override this with a more efficient approach when possible.
+    fn scan_paginated(
+        &self,
+        table: &str,
+        prefix: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<(String, Vec<u8>)>> {
+        let all = self.scan(table, prefix)?;
+        Ok(all.into_iter().skip(offset).take(limit).collect())
+    }
+
     /// Batch write multiple values to the specified table.
     fn write_batch(&self, table: &str, items: Vec<(String, Vec<u8>)>) -> Result<()>;
 

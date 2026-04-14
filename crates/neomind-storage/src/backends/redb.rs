@@ -4,7 +4,7 @@
 
 use lru::LruCache;
 use neomind_core::storage::{Result as CoreResult, StorageBackend, StorageError};
-use redb::{Database, ReadableTable, TableDefinition};
+use redb::{Database, TableDefinition};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock as StdRwLock};
@@ -295,6 +295,52 @@ impl StorageBackend for RedbBackend {
             // Extract the original key (remove table: prefix)
             if let Some(rest) = key_str.get(table_prefix_len..) {
                 results.push((rest.to_string(), value.value().to_vec()));
+            }
+        }
+
+        Ok(results)
+    }
+
+    fn scan_paginated(
+        &self,
+        table: &str,
+        prefix: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<(String, Vec<u8>)>> {
+        let start_key = format!("{}:{}", table, prefix);
+        let end_key = increment_prefix(&start_key);
+        let table_prefix_len = table.len() + 1; // "table:"
+
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+        let t = txn
+            .open_table(UNIFIED_TABLE)
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        let mut results = Vec::with_capacity(limit.min(256));
+        let mut skipped = 0usize;
+
+        for item in t
+            .range(start_key.as_str()..end_key.as_str())
+            .map_err(|e| StorageError::Backend(e.to_string()))?
+        {
+            let (key, value) = item.map_err(|e| StorageError::Backend(e.to_string()))?;
+            let key_str = key.value();
+
+            if skipped < offset {
+                skipped += 1;
+                continue;
+            }
+
+            if let Some(rest) = key_str.get(table_prefix_len..) {
+                results.push((rest.to_string(), value.value().to_vec()));
+            }
+
+            if results.len() >= limit {
+                break;
             }
         }
 
