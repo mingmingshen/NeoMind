@@ -163,7 +163,12 @@ pub async fn get_device_telemetry_handler(
                 let telemetry = state.devices.telemetry.clone();
                 let device_id = device_id.clone();
                 let metric_name = metric_name.clone();
+                let semaphore = state.telemetry_query_semaphore.clone();
                 async move {
+                    let _permit = match semaphore.acquire().await {
+                        Ok(p) => p,
+                        Err(_) => return (metric_name, json!([]), 0),
+                    };
                     let points = match telemetry
                         .aggregate(&device_id, &metric_name, start, end)
                         .await
@@ -201,7 +206,12 @@ pub async fn get_device_telemetry_handler(
                 let device_service = state.devices.service.clone();
                 let device_id = device_id.clone();
                 let metric_name = metric_name.clone();
+                let semaphore = state.telemetry_query_semaphore.clone();
                 async move {
+                    let _permit = match semaphore.acquire().await {
+                        Ok(p) => p,
+                        Err(_) => return (metric_name, json!([]), 0),
+                    };
                     let (points, total) = match device_service
                         .query_telemetry(&device_id, &metric_name, Some(start), Some(end))
                         .await

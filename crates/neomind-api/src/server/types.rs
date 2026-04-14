@@ -96,6 +96,9 @@ pub struct ServerState {
     /// Cached extension event subscription service instance (prevents duplicate instances).
     extension_event_subscription_service:
         Arc<tokio::sync::Mutex<Option<neomind_core::extension::ExtensionEventSubscriptionService>>>,
+
+    /// Semaphore to limit concurrent telemetry DB queries (max 16).
+    pub telemetry_query_semaphore: Arc<tokio::sync::Semaphore>,
 }
 
 // Backward compatibility: Provide direct field access as before
@@ -580,6 +583,7 @@ impl ServerState {
                 false,
             )),
             extension_event_subscription_service: Arc::new(tokio::sync::Mutex::new(None)),
+            telemetry_query_semaphore: Arc::new(tokio::sync::Semaphore::new(16)),
         }
     }
 
@@ -745,6 +749,7 @@ impl ServerState {
                 false,
             )),
             extension_event_subscription_service: Arc::new(tokio::sync::Mutex::new(None)),
+            telemetry_query_semaphore: Arc::new(tokio::sync::Semaphore::new(16)),
         }
     }
 
