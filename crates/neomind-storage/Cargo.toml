@@ -21,6 +21,7 @@ lru = { workspace = true }
 
 # Concurrent data structures
 dashmap = { workspace = true }
+parking_lot = { workspace = true }
 
 # Async utilities for parallel operations
 futures = { workspace = true }

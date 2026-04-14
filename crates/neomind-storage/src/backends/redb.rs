@@ -7,7 +7,8 @@ use neomind_core::storage::{Result as CoreResult, StorageBackend, StorageError};
 use redb::{Database, TableDefinition};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock as StdRwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 type Result<T> = CoreResult<T>;
 
@@ -113,8 +114,8 @@ pub struct RedbBackend {
     /// Actual file path for temporary databases (for cleanup).
     temp_path: Option<PathBuf>,
     /// LRU cache for frequently accessed keys (namespaced).
-    /// Uses std::sync::RwLock for compatibility with sync trait methods.
-    cache: Arc<StdRwLock<LruCache<String, Vec<u8>>>>,
+    /// Uses parking_lot::RwLock for efficient read-heavy workloads.
+    cache: Arc<RwLock<LruCache<String, Vec<u8>>>>,
 }
 
 impl RedbBackend {
@@ -153,7 +154,7 @@ impl RedbBackend {
             LruCache::new(NonZeroUsize::new(1).expect("1 > 0"))
         };
 
-        let cache = Arc::new(StdRwLock::new(cache));
+        let cache = Arc::new(RwLock::new(cache));
 
         Ok(Self {
             db: Arc::new(db),
@@ -190,7 +191,8 @@ impl StorageBackend for RedbBackend {
         let namespaced = make_key(table, key);
 
         // Update cache (write-through)
-        if let Ok(mut cache) = self.cache.write() {
+        {
+            let mut cache = self.cache.write();
             cache.put(namespaced.clone(), value.to_vec());
         }
 
@@ -213,9 +215,11 @@ impl StorageBackend for RedbBackend {
     fn read(&self, table: &str, key: &str) -> Result<Option<Vec<u8>>> {
         let namespaced = make_key(table, key);
 
-        // Try cache first - use write lock since get() updates LRU position
-        if let Ok(mut cache) = self.cache.write() {
-            if let Some(cached) = cache.get(&namespaced) {
+        // Try cache first - use read lock with peek() (no LRU position update)
+        // to allow concurrent reads without blocking
+        {
+            let cache = self.cache.read();
+            if let Some(cached) = cache.peek(&namespaced) {
                 return Ok(Some(cached.clone()));
             }
         }
@@ -236,7 +240,8 @@ impl StorageBackend for RedbBackend {
             Some(value) => {
                 let data = value.value().to_vec();
                 // Populate cache for future reads
-                if let Ok(mut cache) = self.cache.write() {
+                {
+                    let mut cache = self.cache.write();
                     cache.put(namespaced, data.clone());
                 }
                 Ok(Some(data))
@@ -249,7 +254,8 @@ impl StorageBackend for RedbBackend {
         let namespaced = make_key(table, key);
 
         // Remove from cache
-        if let Ok(mut cache) = self.cache.write() {
+        {
+            let mut cache = self.cache.write();
             cache.pop(&namespaced);
         }
 
