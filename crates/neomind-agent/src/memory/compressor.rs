@@ -637,4 +637,62 @@ mod tests {
             4096
         }
     }
+
+    #[test]
+    fn test_is_overly_aggressive() {
+        let llm = MockLlm;
+        let compressor = MemoryCompressor::new(Arc::new(llm));
+
+        // 10 -> 1 (10%) is too aggressive
+        assert!(compressor.is_overly_aggressive(10, 1));
+
+        // 10 -> 2 (20%) is borderline, not too aggressive
+        assert!(!compressor.is_overly_aggressive(10, 2));
+
+        // 10 -> 5 (50%) is fine
+        assert!(!compressor.is_overly_aggressive(10, 5));
+
+        // 0 originals is always aggressive
+        assert!(compressor.is_overly_aggressive(0, 0));
+
+        // 5 -> 0 is always aggressive
+        assert!(compressor.is_overly_aggressive(5, 0));
+    }
+
+    /// Mock LLM that returns aggressive compression (1 summary from many entries)
+    struct AggressiveMockLlm;
+
+    #[async_trait::async_trait]
+    impl LlmRuntime for AggressiveMockLlm {
+        fn backend_id(&self) -> neomind_core::llm::backend::BackendId {
+            neomind_core::llm::backend::BackendId::new("aggressive-mock")
+        }
+
+        fn model_name(&self) -> &str {
+            "aggressive-mock"
+        }
+
+        async fn generate(
+            &self,
+            _input: neomind_core::llm::backend::LlmInput,
+        ) -> std::result::Result<neomind_core::llm::backend::LlmOutput, neomind_core::llm::backend::LlmError> {
+            Ok(neomind_core::llm::backend::LlmOutput {
+                text: r#"{"summaries":[{"content":"Merged everything into one","importance":50,"source_dates":["2026-04-01"]}]}"#.to_string(),
+                finish_reason: neomind_core::llm::backend::FinishReason::Stop,
+                usage: None,
+                thinking: None,
+            })
+        }
+
+        async fn generate_stream(
+            &self,
+            _input: neomind_core::llm::backend::LlmInput,
+        ) -> std::result::Result<std::pin::Pin<Box<dyn futures::Stream<Item = neomind_core::llm::backend::StreamChunk> + Send>>, neomind_core::llm::backend::LlmError> {
+            unimplemented!()
+        }
+
+        fn max_context_length(&self) -> usize {
+            4096
+        }
+    }
 }
