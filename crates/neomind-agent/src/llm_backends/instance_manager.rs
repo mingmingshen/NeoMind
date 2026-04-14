@@ -47,7 +47,7 @@ fn detect_ollama_capabilities_from_name(model_name: &str) -> BackendCapabilities
         supports_multimodal,
         supports_thinking,
         supports_tools,
-        max_context: 0, // Must come from /api/show — filled in create_runtime()
+        max_context: 8192, // Safe default; overridden by /api/show at runtime
     }
 }
 
