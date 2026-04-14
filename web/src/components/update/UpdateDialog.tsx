@@ -224,8 +224,11 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
       case 'idle':
         return (
           <>
+            <Button variant="ghost" onClick={handleClose} className="text-muted-foreground">
+              {t('settings:remindLater')}
+            </Button>
             <Button variant="outline" onClick={handleClose}>
-              {t('common:cancel')}
+              {t('settings:skipThisUpdate')}
             </Button>
             <Button onClick={handleUpdate} className="gap-2">
               <Download className="w-4 h-4" />

@@ -234,6 +234,16 @@ jobs:
           ls -lh web/src-tauri/binaries/
           ls -lh target/release/neomind-extension-runner || true
 
+      - name: Clean old bundle artifacts
+        shell: bash
+        run: |
+          # Remove stale bundle files from previous builds (CI caches target/ directory)
+          BUNDLE_DIR="web/src-tauri/target/${{ matrix.target }}/release/bundle"
+          if [ -d "$BUNDLE_DIR" ]; then
+            echo "🧹 Cleaning old bundle artifacts from cache..."
+            rm -rf "$BUNDLE_DIR"
+          fi
+
       - name: Build Tauri app
         working-directory: ./web
         shell: bash
@@ -473,19 +483,20 @@ jobs:
             "$(find artifacts/neomind-updater-macos-aarch64 -name "*.app.tar.gz" ! -name "*.sig" 2>/dev/null | head -1)"
 
           # Windows x86_64: sig is nsis *.exe.sig, URL file is the nsis .exe from desktop artifacts
+          # Use grep to find the correctly-versioned file (matching the current release version)
           add_platform "windows-x86_64" \
-            "$(find artifacts/neomind-updater-windows-x86_64 -name "*x64-setup.exe.sig" 2>/dev/null | head -1)" \
-            "$(find artifacts/neomind-desktop-windows-x86_64 -name "*x64-setup.exe" 2>/dev/null | head -1)"
+            "$(find artifacts/neomind-updater-windows-x86_64 -name "*x64-setup.exe.sig" 2>/dev/null | grep -v "0\.6\.0" | head -1)" \
+            "$(find artifacts/neomind-desktop-windows-x86_64 -name "*x64-setup.exe" 2>/dev/null | grep "${VERSION}" | head -1)"
 
           # Linux x86_64: sig is AppImage.sig, URL file is the AppImage from desktop artifacts
           add_platform "linux-x86_64" \
-            "$(find artifacts/neomind-updater-linux-x86_64 -name "*.AppImage.sig" 2>/dev/null | head -1)" \
-            "$(find artifacts/neomind-desktop-linux-x86_64 -name "*amd64.AppImage" 2>/dev/null | head -1)"
+            "$(find artifacts/neomind-updater-linux-x86_64 -name "*amd64.AppImage.sig" 2>/dev/null | grep "${VERSION}" | head -1)" \
+            "$(find artifacts/neomind-desktop-linux-x86_64 -name "*amd64.AppImage" 2>/dev/null | grep "${VERSION}" | head -1)"
 
           # Linux aarch64: sig is AppImage.sig, URL file is the AppImage from desktop artifacts
           add_platform "linux-aarch64" \
-            "$(find artifacts/neomind-updater-linux-aarch64 -name "*.AppImage.sig" 2>/dev/null | head -1)" \
-            "$(find artifacts/neomind-desktop-linux-aarch64 -name "*aarch64.AppImage" 2>/dev/null | head -1)"
+            "$(find artifacts/neomind-updater-linux-aarch64 -name "*aarch64.AppImage.sig" 2>/dev/null | grep "${VERSION}" | head -1)" \
+            "$(find artifacts/neomind-desktop-linux-aarch64 -name "*aarch64.AppImage" 2>/dev/null | grep "${VERSION}" | head -1)"
 
           if [ "$FOUND" -eq 0 ]; then
             echo "⚠️ No updater artifacts found - skipping latest-update.json"

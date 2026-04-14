@@ -87,6 +87,8 @@
   "newVersionAvailable": "New Version Available",
   "updateAvailableDesc": "A new version of NeoMind is available. Would you like to update now?",
   "updateNow": "Update Now",
+  "remindLater": "Remind Me Later",
+  "skipThisUpdate": "Skip This Update",
   "downloadingUpdate": "Downloading update...",
   "downloadingUpdateDesc": "Please wait while the update is being downloaded.",
   "installingUpdate": "Installing update...",

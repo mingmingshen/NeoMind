@@ -96,26 +96,34 @@ pub async fn download_and_install(
         .map_err(|e| format!("Failed to check for updates: {}", e))?
         .ok_or("No update available")?;
 
-// Download and install with progress reporting
-    // The callback receives (chunk_length, content_length)
+    // Track cumulative downloaded bytes across callback invocations
+    let downloaded = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+
+    // Download and install with progress reporting
+    // The callback receives (chunk_length, content_length) for each chunk
     response
         .download_and_install(
-            |chunk_length, content_length| {
-                let total = content_length.unwrap_or(0);
-                let progress = if total > 0 {
-                    ((chunk_length as f64 / total as f64) * 100.0).min(100.0)
-                } else {
-                    0.0
-                };
+            {
+                let downloaded = downloaded.clone();
+                let window = window.clone();
+                move |chunk_length, content_length| {
+                    let total = content_length.unwrap_or(0);
+                    let current = downloaded.fetch_add(chunk_length as u64, std::sync::atomic::Ordering::Relaxed) + chunk_length as u64;
+                    let progress = if total > 0 {
+                        ((current as f64 / total as f64) * 100.0).min(100.0)
+                    } else {
+                        0.0
+                    };
 
-                let _ = window.emit(
-                    "update-progress",
-                    UpdateProgress {
-                        total,
-                        current: chunk_length as u64,
-                        progress,
-                    },
-                );
+                    let _ = window.emit(
+                        "update-progress",
+                        UpdateProgress {
+                            total,
+                            current,
+                            progress,
+                        },
+                    );
+                }
             },
             || {
                 // on_download_finish callback - optional cleanup
