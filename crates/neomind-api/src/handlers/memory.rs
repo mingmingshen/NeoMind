@@ -412,26 +412,13 @@ pub async fn trigger_extract(
             }
         }
 
-        // Run compression after extraction
+        // Note: compression is handled by the scheduler or manual trigger
+        // We don't auto-compress here to prevent over-aggressive memory loss
         if total_extracted > 0 {
-            use neomind_agent::memory::compressor::MemoryCompressor;
-
-            let compressor = MemoryCompressor::new(extractor.llm_clone());
-            for category in MemoryCategory::all() {
-                match compressor.compress(&extractor.store_clone(), category.clone()).await {
-                    Ok(result) => {
-                        tracing::info!(
-                            category = ?category,
-                            compressed = result.compressed,
-                            deleted = result.deleted,
-                            "Post-extraction compression done"
-                        );
-                    }
-                    Err(e) => {
-                        tracing::warn!(category = ?category, error = %e, "Post-extraction compression failed");
-                    }
-                }
-            }
+            tracing::info!(
+                total_extracted = total_extracted,
+                "Extraction complete. Compression will run on schedule or can be triggered manually."
+            );
         }
 
         tracing::info!(
