@@ -2178,7 +2178,7 @@ impl MessageTool {
 /// Aggregated extension tool with action-based routing.
 ///
 /// Provides a unified entry point for interacting with all installed extensions,
-/// replacing per-command tool registration (e.g., `weather-forecast-v2:get_weather`).
+/// replacing per-command tool registration.
 pub struct ExtensionAggregatedTool {
     registry: Arc<neomind_core::extension::registry::ExtensionRegistry>,
 }
@@ -2204,11 +2204,11 @@ Actions:
 - get: Get detailed info about a specific extension, including its commands and metrics. Use before executing a command.
 - status: Check the health and runtime status of an extension.
 
-To execute extension commands, call them directly using the format: extension-id:command (e.g., weather-forecast-v2:get_weather)
+To execute extension commands, first use list/get to discover available extensions and commands, then call them directly using the format: extension-id:command
 
 Tips:
 - Always call list first if you're unsure which extensions are available
-- Use get to discover available commands, then call them directly with extension-id:command format"#
+- Use get to discover available commands and their parameters, then call them directly with extension-id:command format"#
     }
 
     fn parameters(&self) -> Value {
@@ -2221,7 +2221,7 @@ Tips:
                 },
                 "extension_id": {
                     "type": "string",
-                    "description": "Extension ID or name. Supports fuzzy matching (e.g., 'weather' matches 'Weather Forecast'). Use list action to discover available extensions"
+                    "description": "Extension ID or name. Supports fuzzy matching. Use list action to discover available extensions"
                 },
                 "response_format": {
                     "type": "string",

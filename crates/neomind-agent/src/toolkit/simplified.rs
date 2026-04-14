@@ -575,14 +575,14 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
         // === Extension Tool (management only - execute via direct extension-id:command format) ===
         LlmToolDefinition {
             name: "extension".to_string(),
-            description: "Extension (plugin) management tool. Actions: list (show extensions), get (extension details and commands), status (health check). To execute extension commands, use the direct format: extension-id:command (e.g., weather-forecast-v2:get_weather(city=\"Beijing\"))".to_string(),
+            description: "Extension (plugin) management tool. Actions: list (show extensions), get (extension details and commands), status (health check). To execute extension commands, first use list/get to discover available extensions, then call directly: extension-id:command(params)".to_string(),
             aliases: vec!["extension".to_string(), "plugin".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
                 ("extension_id".to_string(), ParameterInfo {
                     description: "Extension ID (get/status actions). Use list first to discover available extensions".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["weather-forecast-v2".to_string(), "image-analyzer-v2".to_string()],
+                    examples: vec!["use list action to get real IDs".to_string()],
                 }),
                 ("response_format".to_string(), ParameterInfo {
                     description: "Output verbosity: 'concise' (summary only) or 'detailed' (full info)".to_string(),
@@ -597,13 +597,13 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     explanation: "List all installed extensions".to_string(),
                 },
                 Example {
-                    user_query: "What can the weather extension do?".to_string(),
-                    tool_call: r#"extension(action="get", extension_id="weather-forecast-v2")"#.to_string(),
+                    user_query: "What can extension X do?".to_string(),
+                    tool_call: r#"extension(action="get", extension_id="<id from list>")"#.to_string(),
                     explanation: "Get extension details including available commands".to_string(),
                 },
                 Example {
-                    user_query: "Is the weather extension healthy?".to_string(),
-                    tool_call: r#"extension(action="status", extension_id="weather-forecast-v2")"#.to_string(),
+                    user_query: "Is extension X healthy?".to_string(),
+                    tool_call: r#"extension(action="status", extension_id="<id from list>")"#.to_string(),
                     explanation: "Check extension health and status".to_string(),
                 },
             ],
