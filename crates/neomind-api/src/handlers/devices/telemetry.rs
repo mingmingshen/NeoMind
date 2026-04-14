@@ -227,14 +227,17 @@ pub async fn get_device_telemetry_handler(
                             (paginated, total)
                         }
                         Err(_) => {
-                            // Fallback to direct telemetry query
-                            match telemetry.query(&device_id, &metric_name, start, end).await {
-                                Ok(all_points) => {
+                            // Fallback to direct telemetry query with limit
+                            // When offset > 0 we still need all points for correct pagination,
+                            // but when offset == 0 we can push the limit to the DB layer.
+                            let db_limit = if offset == 0 { Some(limit) } else { None };
+                            match telemetry.query_with_limit(&device_id, &metric_name, start, end, db_limit).await {
+                                Ok((all_points, total_from_db)) => {
                                     // Sort by timestamp descending (newest first)
                                     let mut sorted_points = all_points;
                                     sorted_points.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
-                                    let total = sorted_points.len();
+                                    let total = total_from_db.unwrap_or_else(|| sorted_points.len());
                                     // Apply pagination: skip offset, take limit
                                     let paginated: Vec<_> = sorted_points
                                         .into_iter()

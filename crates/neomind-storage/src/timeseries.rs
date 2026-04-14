@@ -619,12 +619,18 @@ impl TimeSeriesStore {
     }
 
     /// Query data points in a time range.
+    ///
+    /// When `limit` is `Some(n)`, at most `n` data points are returned in `points`
+    /// and `total_count` is set to the actual total number of matching points.
+    /// When `limit` is `None`, all matching points are returned and `total_count`
+    /// is `None` (backward compatible).
     pub async fn query_range(
         &self,
         device_id: &str,
         metric: &str,
         start: i64,
         end: i64,
+        limit: Option<usize>,
     ) -> Result<TimeSeriesResult, Error> {
         let read_txn = self.db.begin_read()?;
 
@@ -651,19 +657,23 @@ impl TimeSeriesStore {
         let end_key = (device_id, metric, end);
 
         tracing::debug!(
-            "query_range: device_id={}, metric={}, start={}, end={}, start_key={:?}, end_key={:?}",
+            "query_range: device_id={}, metric={}, start={}, end={}, limit={:?}, start_key={:?}, end_key={:?}",
             device_id,
             metric,
             start,
             end,
+            limit,
             start_key,
             end_key
         );
 
-        let mut points = Vec::new();
-        let mut count = 0u32;
+        let cap = limit.map(|n| n.min(1000)).unwrap_or(0);
+        let mut points = Vec::with_capacity(cap);
+        let mut collected = 0usize;
+        let mut total_count = 0u32;
+
         for result in table.range(start_key..=end_key)? {
-            count += 1;
+            total_count += 1;
             let (key, value) = result?;
             let (did, met, ts) = key.value();
             tracing::trace!(
@@ -673,24 +683,31 @@ impl TimeSeriesStore {
                 ts,
                 value.value().len()
             );
-            let point: DataPoint = serde_json::from_slice(value.value())?;
-            points.push(point);
+
+            // Stop collecting into points once we hit the limit, but keep
+            // iterating to count the remaining entries for total_count.
+            if limit.map_or(true, |n| collected < n) {
+                let point: DataPoint = serde_json::from_slice(value.value())?;
+                points.push(point);
+                collected += 1;
+            }
         }
 
         tracing::debug!(
-            "query_range: device_id={}, metric={}, start={}, end={}, found {} points",
+            "query_range: device_id={}, metric={}, start={}, end={}, found {} points (total_count={})",
             device_id,
             metric,
             start,
             end,
-            count
+            collected,
+            total_count
         );
 
         Ok(TimeSeriesResult {
             device_id: device_id.to_string(),
             metric: metric.to_string(),
             points,
-            total_count: None,
+            total_count: limit.map(|_| total_count as usize),
         })
     }
 
@@ -701,6 +718,7 @@ impl TimeSeriesStore {
         metric: &str,
         start: i64,
         end: i64,
+        limit: Option<usize>,
     ) -> Result<TimeSeriesResult, Error> {
         let read_txn = db.begin_read()?;
         let table = match read_txn.open_table(TIMESERIES_TABLE) {
@@ -719,37 +737,46 @@ impl TimeSeriesStore {
         let start_key = (device_id, metric, start);
         let end_key = (device_id, metric, end);
 
-        let mut points = Vec::new();
-        let mut count = 0u32;
+        let cap = limit.map(|n| n.min(1000)).unwrap_or(0);
+        let mut points = Vec::with_capacity(cap);
+        let mut collected = 0usize;
+        let mut total_count = 0u32;
 
         for result in table.range(start_key..=end_key)? {
-            count += 1;
+            total_count += 1;
             let (_key, value) = result?;
-            match serde_json::from_slice(value.value()) {
-                Ok(point) => points.push(point),
-                Err(e) => {
-                    tracing::warn!(
-                        "query_single_metric: failed to deserialize data point: {}",
-                        e
-                    );
+
+            if limit.map_or(true, |n| collected < n) {
+                match serde_json::from_slice(value.value()) {
+                    Ok(point) => {
+                        points.push(point);
+                        collected += 1;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "query_single_metric: failed to deserialize data point: {}",
+                            e
+                        );
+                    }
                 }
             }
         }
 
         tracing::debug!(
-            "query_single_metric: device_id={}, metric={}, start={}, end={}, found {} points",
+            "query_single_metric: device_id={}, metric={}, start={}, end={}, found {} points (total_count={})",
             device_id,
             metric,
             start,
             end,
-            count
+            collected,
+            total_count
         );
 
         Ok(TimeSeriesResult {
             device_id: device_id.to_string(),
             metric: metric.to_string(),
             points,
-            total_count: None,
+            total_count: limit.map(|_| total_count as usize),
         })
     }
 
@@ -815,7 +842,7 @@ impl TimeSeriesStore {
                 let metric = metric.clone();
 
                 tokio::spawn(async move {
-                    Self::query_single_metric(db, &device_id, &metric, start, end).await
+                    Self::query_single_metric(db, &device_id, &metric, start, end, None).await
                 })
             })
             .collect();
@@ -921,7 +948,7 @@ impl TimeSeriesStore {
         end: i64,
         bucket_size_secs: i64,
     ) -> Result<Vec<TimeSeriesBucket>, Error> {
-        let result = self.query_range(device_id, metric, start, end).await?;
+        let result = self.query_range(device_id, metric, start, end, None).await?;
 
         let mut buckets: std::collections::HashMap<i64, TimeSeriesBucket> =
             std::collections::HashMap::new();
@@ -1249,7 +1276,7 @@ mod tests {
         }
 
         let result = store
-            .query_range("device1", "temperature", 1000, 1500)
+            .query_range("device1", "temperature", 1000, 1500, None)
             .await
             .unwrap();
         assert_eq!(result.points.len(), 6);
@@ -1320,7 +1347,7 @@ mod tests {
         assert_eq!(count, 4);
 
         let result = store
-            .query_range("device1", "temp", 1000, 2000)
+            .query_range("device1", "temp", 1000, 2000, None)
             .await
             .unwrap();
         assert_eq!(result.points.len(), 6);

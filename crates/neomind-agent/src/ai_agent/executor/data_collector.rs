@@ -348,7 +348,7 @@ impl AgentExecutor {
         );
 
         let result = storage
-            .query_range(device_id, metric_name, start_time, end_time)
+            .query_range(device_id, metric_name, start_time, end_time, None)
             .await
             .map_err(|e| NeoMindError::Storage(format!("Query failed: {}", e)))?;
 
@@ -592,7 +592,7 @@ impl AgentExecutor {
                 };
 
                 if let Ok(result) = storage
-                    .query_range(device_id, &metric_name, time_range.0, time_range.1)
+                    .query_range(device_id, &metric_name, time_range.0, time_range.1, None)
                     .await
                 {
                     if !result.points.is_empty() {
@@ -745,7 +745,7 @@ impl AgentExecutor {
 
                     let historical_result = tokio::time::timeout(
                         std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
-                        storage_clone.query_range(&device_part, metric_part, start_time, end_time)
+                        storage_clone.query_range(&device_part, metric_part, start_time, end_time, None)
                     ).await;
 
                     let points_count = match &historical_result {

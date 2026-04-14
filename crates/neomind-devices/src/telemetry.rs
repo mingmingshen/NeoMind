@@ -210,7 +210,7 @@ impl TimeSeriesStorage {
 
         let result = self
             .store
-            .query_range(device_id, metric, start_timestamp, end_timestamp)
+            .query_range(device_id, metric, start_timestamp, end_timestamp, None)
             .await
             .map_err(|e| {
                 tracing::error!("query_range failed for {}/{}: {}", device_id, metric, e);
@@ -242,6 +242,55 @@ impl TimeSeriesStorage {
         );
 
         Ok(filtered)
+    }
+
+    /// Query data points for a time range with an optional limit.
+    ///
+    /// When `limit` is `Some(n)`, at most `n` data points are collected and the
+    /// returned tuple includes the total count of matching points.
+    /// When `limit` is `None`, all points are returned (backward compatible).
+    pub async fn query_with_limit(
+        &self,
+        device_id: &str,
+        metric: &str,
+        start_timestamp: i64,
+        end_timestamp: i64,
+        limit: Option<usize>,
+    ) -> Result<(Vec<DataPoint>, Option<usize>), DeviceError> {
+        tracing::debug!(
+            "TimeSeriesStorage::query_with_limit: device_id={}, metric={}, start={}, end={}, limit={:?}",
+            device_id,
+            metric,
+            start_timestamp,
+            end_timestamp,
+            limit
+        );
+
+        let result = self
+            .store
+            .query_range(device_id, metric, start_timestamp, end_timestamp, limit)
+            .await
+            .map_err(|e| {
+                tracing::error!("query_range failed for {}/{}: {}", device_id, metric, e);
+                DeviceError::Io(std::io::Error::other(e.to_string()))
+            })?;
+
+        let total_count = result.total_count;
+        let filtered: Vec<DataPoint> = result
+            .points
+            .into_iter()
+            .filter_map(DataPoint::from_storage)
+            .collect();
+
+        tracing::debug!(
+            "query_with_limit result: {} points for {}/{} (total_count={:?})",
+            filtered.len(),
+            device_id,
+            metric,
+            total_count
+        );
+
+        Ok((filtered, total_count))
     }
 
     /// Get the latest data point

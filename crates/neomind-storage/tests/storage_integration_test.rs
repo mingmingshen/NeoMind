@@ -33,6 +33,7 @@ async fn test_timeseries_basic_write_read() {
             "temperature",
             point.timestamp - 1,
             point.timestamp + 1,
+            None,
         )
         .await
         .unwrap();
@@ -53,7 +54,7 @@ async fn test_timeseries_batch_write() {
         .unwrap();
 
     let results = store
-        .query_range("device1", "counter", now - 1, now + 10)
+        .query_range("device1", "counter", now - 1, now + 10, None)
         .await
         .unwrap();
 
@@ -74,7 +75,7 @@ async fn test_timeseries_query_range() {
 
     // Query a specific range (inclusive)
     let results = store
-        .query_range("device1", "metric", now + 5 * 60, now + 15 * 60)
+        .query_range("device1", "metric", now + 5 * 60, now + 15 * 60, None)
         .await
         .unwrap();
 
@@ -97,7 +98,7 @@ async fn test_timeseries_multiple_devices() {
     // Query each device
     for device in ["device1", "device2", "device3"] {
         let results = store
-            .query_range(device, "status", now - 1, now + 1)
+            .query_range(device, "status", now - 1, now + 1, None)
             .await
             .unwrap();
         assert_eq!(results.points.len(), 1);
@@ -109,7 +110,7 @@ async fn test_timeseries_empty_query() {
     let store = TimeSeriesStore::memory().unwrap();
 
     let results = store
-        .query_range("nonexistent", "metric", 0, Utc::now().timestamp())
+        .query_range("nonexistent", "metric", 0, Utc::now().timestamp(), None)
         .await
         .unwrap();
 
@@ -305,7 +306,7 @@ async fn test_timeseries_performance_write() {
     }
 
     let results = store
-        .query_range("perf-device", "metric", now, now + count)
+        .query_range("perf-device", "metric", now, now + count, None)
         .await
         .unwrap();
 
@@ -354,7 +355,7 @@ async fn test_timeseries_large_value() {
         .unwrap();
 
     let results = store
-        .query_range("device1", "large", point.timestamp - 1, point.timestamp + 1)
+        .query_range("device1", "large", point.timestamp - 1, point.timestamp + 1, None)
         .await
         .unwrap();
 
@@ -379,6 +380,7 @@ async fn test_timeseries_negative_values() {
             "negative",
             point.timestamp - 1,
             point.timestamp + 1,
+            None,
         )
         .await
         .unwrap();
@@ -441,6 +443,7 @@ async fn test_timeseries_concurrent_writes() {
                 "counter",
                 0,
                 Utc::now().timestamp() + 1,
+                None,
             )
             .await
             .unwrap();

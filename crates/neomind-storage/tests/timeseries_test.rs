@@ -60,7 +60,7 @@ async fn test_timeseries_batch_write() {
         .expect("Failed to write batch");
 
     let results = store
-        .query_range("device1", "temperature", now, now + 99)
+        .query_range("device1", "temperature", now, now + 99, None)
         .await
         .expect("Failed to query range");
 
@@ -113,7 +113,7 @@ async fn test_timeseries_delete_range() {
         .expect("Failed to delete range");
 
     let results = store
-        .query_range("device1", "temperature", now, now + 9)
+        .query_range("device1", "temperature", now, now + 9, None)
         .await
         .expect("Failed to query range");
 
@@ -248,7 +248,7 @@ async fn test_concurrent_writes() {
     }
 
     let results = store
-        .query_range("device1", "temperature", now, now + 9)
+        .query_range("device1", "temperature", now, now + 9, None)
         .await
         .unwrap();
 
@@ -408,7 +408,7 @@ async fn test_quality_scores() {
         .unwrap();
 
     let results = store
-        .query_range("device1", "temperature", now, now + 1)
+        .query_range("device1", "temperature", now, now + 1, None)
         .await
         .unwrap();
 
@@ -431,7 +431,7 @@ async fn test_empty_query_results() {
 
     // Query empty range
     let results = store
-        .query_range("device1", "temperature", 0, 1000)
+        .query_range("device1", "temperature", 0, 1000, None)
         .await
         .unwrap();
 
@@ -459,7 +459,7 @@ async fn test_time_range_query() {
     let start = now + 5 * 60;
     let end = now + 14 * 60;
     let results = store
-        .query_range("device1", "temperature", start, end)
+        .query_range("device1", "temperature", start, end, None)
         .await
         .unwrap();
 
