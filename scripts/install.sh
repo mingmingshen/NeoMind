@@ -174,7 +174,7 @@ TimeoutStopSec=30
 # Environment
 Environment=RUST_LOG=info
 Environment=NEOMIND_DATA_DIR=${DATA_DIR}
-Environment=NEOMIND_BIND_ADDR=127.0.0.1:${PORT}
+Environment=NEOMIND_BIND_ADDR=0.0.0.0:${PORT}
 
 # Security hardening
 NoNewPrivileges=true
@@ -285,6 +285,28 @@ EOF
         fi
     fi
 
+    # Configure firewall
+    status "Configuring firewall..."
+    if available ufw; then
+        # Allow nginx (port 80)
+        if ! $SUDO ufw status 2>/dev/null | grep -q "^80/tcp"; then
+            $SUDO ufw allow 80/tcp >/dev/null 2>&1 || true
+        fi
+        # Allow API port for direct access
+        if ! $SUDO ufw status 2>/dev/null | grep -q "^${PORT}/tcp"; then
+            $SUDO ufw allow ${PORT}/tcp >/dev/null 2>&1 || true
+        fi
+        success "Firewall rules added (ufw: 80, ${PORT})"
+    elif available firewall-cmd; then
+        $SUDO firewall-cmd --permanent --add-service=http >/dev/null 2>&1 || true
+        $SUDO firewall-cmd --permanent --add-port=${PORT}/tcp >/dev/null 2>&1 || true
+        $SUDO firewall-cmd --reload >/dev/null 2>&1 || true
+        success "Firewall rules added (firewalld: 80, ${PORT})"
+    else
+        warning "No firewall tool found (ufw/firewalld)."
+        warning "Make sure ports 80 and ${PORT} are open for LAN access."
+    fi
+
     success "Installation complete!"
 }
 
@@ -361,7 +383,7 @@ install_darwin() {
         <key>NEOMIND_DATA_DIR</key>
         <string>${DATA_DIR}</string>
         <key>NEOMIND_BIND_ADDR</key>
-        <string>127.0.0.1:${PORT}</string>
+        <string>0.0.0.0:${PORT}</string>
     </dict>
     <key>StandardOutPath</key>
     <string>${DATA_DIR}/neomind.log</string>
@@ -388,6 +410,9 @@ print_post_install() {
     echo ""
 
     if [ "$OS" = "linux" ]; then
+        # Get LAN IP for display
+        LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+
         if [ "$NO_SERVICE" != "true" ]; then
             echo "Starting NeoMind service..."
             $SUDO systemctl start neomind || true
@@ -407,25 +432,22 @@ print_post_install() {
             echo "  Restart: sudo systemctl restart neomind"
             echo "  Logs:    sudo journalctl -u neomind -f"
             echo ""
+            echo "Access the application:"
             if [ "$NO_NGINX" != "true" ] && available nginx; then
-                echo "Access the application:"
-                echo "  Web UI:  ${BOLD}http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost')${NC}"
-                echo "  API:     http://localhost:${PORT}/api"
-                echo "  Docs:    http://localhost:${PORT}/api/docs"
+                echo "  Web UI:  ${BOLD}http://${LAN_IP:-localhost}${NC}"
+                echo "  API:     http://${LAN_IP:-localhost}:${PORT}/api"
+                echo "  Docs:    http://${LAN_IP:-localhost}:${PORT}/api/docs"
             else
-                echo "Access the API:"
-                echo "  API:     http://localhost:${PORT}/api"
-                echo "  Docs:    http://localhost:${PORT}/api/docs"
+                echo "  API:     http://${LAN_IP:-localhost}:${PORT}/api"
+                echo "  Docs:    http://${LAN_IP:-localhost}:${PORT}/api/docs"
                 echo ""
-                echo "Note: nginx not configured. To serve the Web UI, either:"
-                echo "  - Install and configure nginx manually"
-                echo "  - Re-run this script on a system with nginx installed"
+                echo "Note: nginx not configured. Install nginx to serve the Web UI."
             fi
         else
             echo "To start NeoMind:"
             echo "  ${INSTALL_DIR}/neomind serve"
             echo ""
-            echo "API:  http://localhost:${PORT}/api"
+            echo "Access:  http://${LAN_IP:-localhost}:${PORT}/api"
         fi
     elif [ "$OS" = "darwin" ]; then
         if [ "$NO_SERVICE" != "true" ]; then
@@ -437,16 +459,14 @@ print_post_install() {
             echo "  Stop:   launchctl unload ~/Library/LaunchAgents/com.neomind.server.plist"
             echo "  Start:  launchctl load ~/Library/LaunchAgents/com.neomind.server.plist"
             echo "  Logs:   tail -f ${DATA_DIR}/neomind.log"
-            echo ""
-            echo "Access the application:"
-            echo "  API:     http://localhost:${PORT}/api"
-            echo "  Docs:    http://localhost:${PORT}/api/docs"
         else
             echo "To start NeoMind:"
             echo "  ${INSTALL_DIR}/neomind serve"
-            echo ""
-            echo "API:  http://localhost:${PORT}/api"
         fi
+        echo ""
+        echo "Access the application:"
+        echo "  API:  http://localhost:${PORT}/api"
+        echo "  Docs: http://localhost:${PORT}/api/docs"
     fi
 
     echo ""
