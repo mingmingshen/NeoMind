@@ -206,11 +206,11 @@ pub struct GenerationParams {
 pub const MAX_GENERATION_TOKENS: usize = 8192;
 
 fn default_temperature() -> f32 {
-    0.7
+    0.3
 }
 
 fn default_top_p() -> f32 {
-    0.9
+    0.7
 }
 
 fn default_max_tokens() -> usize {
@@ -298,8 +298,8 @@ mod tests {
     #[test]
     fn test_generation_params_default() {
         let params = GenerationParams::default();
-        assert_eq!(params.temperature, 0.7);
-        assert_eq!(params.top_p, 0.9);
+        assert_eq!(params.temperature, 0.3);
+        assert_eq!(params.top_p, 0.7);
         assert_eq!(params.max_tokens, 8192); // MAX_GENERATION_TOKENS
     }
 }

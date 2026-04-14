@@ -263,69 +263,22 @@ impl OllamaRuntime {
         }
     }
 
-    /// Format tools for text-based tool calling (for models without native tool support).
-    /// Uses JSON format instead of XML for better model compatibility.
+    /// Format tool calling format instructions for models without native tool support.
+    /// Only includes format rules and examples (tool descriptions are already in the system prompt).
     fn format_tools_for_text_calling(
-        tools: &[neomind_core::llm::backend::ToolDefinition],
+        _tools: &[neomind_core::llm::backend::ToolDefinition],
     ) -> String {
-        let mut result = String::from("## Tool Calling Requirements\n");
+        let mut result = String::from("## Tool Calling Format (JSON)\n");
         result.push_str(
             "You must call tools using JSON format. Do not just describe what to do.\n\n",
         );
         result.push_str("Format:\n");
         result.push_str("[{\"name\": \"tool_name\", \"arguments\": {\"param\": \"value\"}}]\n\n");
 
-        result.push_str("## Examples\n");
-        result.push_str("User: 有哪些设备？\n");
-        result.push_str("Assistant: [{\"name\": \"list_devices\", \"arguments\": {}}]\n\n");
-
-        result.push_str("User: 把客厅灯打开\n");
-        result.push_str("Assistant: [{\"name\": \"control_device\", \"arguments\": {\"device_id\": \"light_living\", \"action\": \"on\"}}]\n\n");
-
-        result.push_str("## Available Tools\n\n");
-
-        for tool in tools {
-            result.push_str(&format!("### {}\n", tool.name));
-            result.push_str(&format!("Description: {}\n", tool.description));
-
-            if let Some(props) = tool.parameters.get("properties") {
-                if let Some(obj) = props.as_object() {
-                    if !obj.is_empty() {
-                        result.push_str("Parameters:\n");
-                        for (name, prop) in obj {
-                            let desc = prop
-                                .get("description")
-                                .and_then(|d| d.as_str())
-                                .unwrap_or("No description");
-                            let type_name = prop
-                                .get("type")
-                                .and_then(|t| t.as_str())
-                                .unwrap_or("unknown");
-                            result.push_str(&format!("- {}: {} ({})\n", name, desc, type_name));
-                        }
-                    }
-                }
-            }
-
-            if let Some(required) = tool.parameters.get("required") {
-                if let Some(arr) = required.as_array() {
-                    if !arr.is_empty() {
-                        let required_names: Vec<&str> =
-                            arr.iter().filter_map(|v| v.as_str()).collect();
-                        result.push_str(&format!("Required: {}\n", required_names.join(", ")));
-                    }
-                }
-            }
-
-            result.push('\n');
-        }
-
         result.push_str("## Important Rules\n");
         result.push_str("1. ALWAYS output tool calls as a JSON array\n");
-        result.push_str("2. When user asks about devices, call list_devices\n");
-        result.push_str("3. When user asks about data, call query_data\n");
-        result.push_str("4. When user asks to control device, call control_device\n");
-        result.push_str("5. Don't explain, just call the tool directly\n");
+        result.push_str("2. Don't explain, just call the tool directly\n");
+        result.push_str("3. Use the exact tool names and parameters from the Available Tools section above\n");
 
         result
     }
@@ -545,13 +498,6 @@ impl LlmRuntime for OllamaRuntime {
             None
         };
 
-        // Build stop sequences
-        let stop_sequences = if has_tools {
-            Some(vec!["\n\nUser:".to_string()])
-        } else {
-            None
-        };
-
         // Determine context size: use max_context from params, or the model's real context length
         // from /api/show. Never hardcode — the API returns the accurate value (e.g., 131072 for qwen3.5).
         let num_ctx = input.params.max_context.or_else(|| {
@@ -566,7 +512,6 @@ impl LlmRuntime for OllamaRuntime {
             || num_predict.is_some()
             || input.params.top_p.is_some()
             || input.params.top_k.is_some()
-            || stop_sequences.is_some()
             || num_ctx.is_some()
         {
             Some(OllamaOptions {
@@ -575,8 +520,8 @@ impl LlmRuntime for OllamaRuntime {
                 top_p: input.params.top_p,
                 top_k: input.params.top_k,
                 num_ctx,
-                repeat_penalty: Some(1.1), // Prevent content repetition
-                stop: stop_sequences,
+                repeat_penalty: Some(1.05), // Prevent content repetition
+                stop: None,
             })
         } else {
             None
@@ -647,42 +592,14 @@ impl LlmRuntime for OllamaRuntime {
         let ollama_response: OllamaChatResponse =
             serde_json::from_str(&body).map_err(LlmError::Serialization)?;
 
-        // Handle response - detect if content is actually thinking
-        // Some models (qwen3-vl, qwen3:1.7b) put thinking in the content or thinking field
-        // We need to detect and filter this out
-        let (mut response_text, detected_thinking_in_content) =
-            if ollama_response.message.content.is_empty() {
-                // Content is empty - check if thinking field has the response
-                if ollama_response.message.thinking.is_empty() {
-                    // Both content and thinking are empty - truly empty response
-                    (String::new(), false)
-                } else {
-                    // Thinking field has content - use it as response
-                    // This is the expected behavior for models like qwen3:1.7b
-                    (ollama_response.message.thinking.clone(), true)
-                }
-            } else {
-                // Content is not empty - check if it's actually thinking
-                let content = &ollama_response.message.content;
-                let _thinking = &ollama_response.message.thinking;
-
-                // Check for common thinking patterns that should be filtered
-                let is_likely_thinking = content.starts_with("好的，用户")
-                    || content.starts_with("首先，")
-                    || content.starts_with("让我")
-                    || content.starts_with("我需要")
-                    || (content.len() > 200
-                        && content.contains("我需要确定")
-                        && content.contains("根据"));
-
-                if is_likely_thinking {
-                    // Content appears to be thinking - return empty and use thinking field instead
-                    (String::new(), true)
-                } else {
-                    // Content is actual response
-                    (content.clone(), false)
-                }
-            };
+        // Handle response - use content field directly; fall back to thinking if content is empty
+        // Ollama already separates content and thinking correctly in the API response.
+        let mut response_text = if ollama_response.message.content.is_empty() {
+            // Content is empty - use thinking field as fallback (for models like qwen3:1.7b)
+            ollama_response.message.thinking.clone()
+        } else {
+            ollama_response.message.content.clone()
+        };
 
         // Handle native tool calls from Ollama - preserve JSON format to keep tool ID
         if !ollama_response.message.tool_calls.is_empty() {
@@ -720,19 +637,7 @@ impl LlmRuntime for OllamaRuntime {
                 total_tokens: (ollama_response.prompt_eval_count.unwrap_or(0) + count) as u32,
             }),
             // Include thinking content if present
-            // If content was detected as thinking, include it in the thinking field
-            thinking: if detected_thinking_in_content {
-                // Content was thinking - combine content and thinking fields
-                let combined = if ollama_response.message.thinking.is_empty() {
-                    ollama_response.message.content.clone()
-                } else {
-                    format!(
-                        "{}\n{}",
-                        ollama_response.message.content, ollama_response.message.thinking
-                    )
-                };
-                Some(combined)
-            } else if ollama_response.message.thinking.is_empty() {
+            thinking: if ollama_response.message.thinking.is_empty() {
                 None
             } else {
                 Some(ollama_response.message.thinking.clone())
@@ -822,13 +727,6 @@ impl LlmRuntime for OllamaRuntime {
             None
         };
 
-        // Build stop sequences
-        let stop_sequences = if has_tools {
-            Some(vec!["\n\nUser:".to_string()])
-        } else {
-            None
-        };
-
         // Determine context size: use max_context from params, or the model's real context length
         // from /api/show. Never hardcode — the API returns the accurate value (e.g., 131072 for qwen3.5).
         let num_ctx = input.params.max_context.or_else(|| {
@@ -843,7 +741,6 @@ impl LlmRuntime for OllamaRuntime {
             || num_predict.is_some()
             || input.params.top_p.is_some()
             || input.params.top_k.is_some()
-            || stop_sequences.is_some()
             || num_ctx.is_some()
         {
             Some(OllamaOptions {
@@ -852,8 +749,8 @@ impl LlmRuntime for OllamaRuntime {
                 top_p: input.params.top_p,
                 top_k: input.params.top_k,
                 num_ctx,
-                repeat_penalty: Some(1.1), // Prevent content repetition
-                stop: stop_sequences,
+                repeat_penalty: Some(1.05), // Prevent content repetition
+                stop: None,
             })
         } else {
             None
@@ -972,8 +869,6 @@ impl LlmRuntime for OllamaRuntime {
                     let stream_start = Instant::now(); // Track stream duration
                     let mut last_progress_report = Instant::now(); // Track last progress report
                     let mut last_warning_index = 0usize; // Track last warning threshold sent
-                    let mut content_buffer = String::new(); // Buffer for detecting thinking in content
-                    let mut detected_thinking_in_content = false; // Flag for thinking detection
                     let mut thinking_content_history = String::new(); // Track thinking content for repetition detection
                     let mut terminate_early_reason: Option<String> = None; // Track reason for early termination
 
@@ -1322,80 +1217,11 @@ impl LlmRuntime for OllamaRuntime {
                                                 && !ollama_chunk.message.content.is_empty()
                                             {
                                                 let content = &ollama_chunk.message.content;
-                                                content_buffer.push_str(content);
-
-                                                // Detect if content is actually thinking (qwen3-vl puts thinking in content field)
-                                                // Skip this detection if we've exceeded thinking limit OR if model doesn't support thinking
-                                                // Non-thinking models should never have their content classified as thinking
-                                                if !detected_thinking_in_content
-                                                    && !skip_remaining_thinking
-                                                    && should_send_thinking
-                                                {
-                                                    // Check initial buffer for thinking patterns
-                                                    let is_likely_thinking = content_buffer
-                                                        .starts_with("好的，用户")
-                                                        || content_buffer.starts_with("首先，")
-                                                        || content_buffer.starts_with("让我")
-                                                        || content_buffer.starts_with("我需要")
-                                                        || (content_buffer.len() > 200
-                                                            && content_buffer
-                                                                .contains("我需要确定")
-                                                            && content_buffer.contains("根据"));
-
-                                                    if is_likely_thinking {
-                                                        detected_thinking_in_content = true;
-                                                    }
-                                                }
-
-                                                // If we've exceeded thinking limit, treat everything as content from now on
-                                                if skip_remaining_thinking
-                                                    && detected_thinking_in_content
-                                                {
-                                                    // Reset - treat remaining as real content
-                                                    detected_thinking_in_content = false;
-                                                    // Send any buffered thinking content first (if not already sent)
-                                                    if !content_buffer.is_empty() {
-                                                        let _ = tx
-                                                            .send(Ok((
-                                                                content_buffer.clone(),
-                                                                false,
-                                                            )))
-                                                            .await;
-                                                        content_buffer.clear();
-                                                    }
-                                                }
-
-                                                if detected_thinking_in_content {
-                                                    // Content is actually thinking - send as thinking
-                                                    thinking_chars += content.chars().count();
-                                                    total_chars += content.chars().count();
-                                                    tracing::debug!(
-                                                        "Ollama content detected as thinking: {}",
-                                                        content
-                                                    );
-
-                                                    // Check thinking limit
-                                                    if thinking_chars
-                                                        <= stream_config.max_thinking_chars
-                                                    {
-                                                        let _ = tx
-                                                            .send(Ok((content.clone(), true)))
-                                                            .await;
-                                                    } else if !skip_remaining_thinking {
-                                                        // Just exceeded limit - set flag and continue
-                                                        skip_remaining_thinking = true;
-                                                        tracing::warn!(
-                                                            "[ollama.rs] Max thinking chars reached in content ({} > {}). Switching to content mode.",
-                                                            thinking_chars,
-                                                            stream_config.max_thinking_chars
-                                                        );
-                                                    }
-                                                } else {
-                                                    // Track content characters and send content
-                                                    total_chars += content.chars().count();
-                                                    let _ =
-                                                        tx.send(Ok((content.clone(), false))).await;
-                                                }
+                                                // Content from Ollama's message.content is the actual response.
+                                                // Thinking is already separated in message.thinking field.
+                                                total_chars += content.chars().count();
+                                                let _ =
+                                                    tx.send(Ok((content.clone(), false))).await;
                                             }
 
                                             if ollama_chunk.done {

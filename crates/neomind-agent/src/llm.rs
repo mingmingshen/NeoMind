@@ -816,69 +816,8 @@ impl LlmInterface {
         prompt.push_str(&base_prompt);
         prompt.push_str("\n\n");
 
-        // Add tool calling instruction and format
-        prompt.push_str("## IMPORTANT: You MUST call tools to execute operations\n");
-        prompt
-            .push_str("1. Don't just say what you will do - directly output the tool call JSON!\n");
-        prompt.push_str("2. NEVER claim operation success without calling tools!\n");
-        prompt.push_str(
-            "3. Only use the \"✓\" mark after the tool actually executes and returns success.\n\n",
-        );
-        prompt.push_str("## Tool Call Format\n");
-        prompt
-            .push_str("Output in response: [{\"name\":\"tool_name\",\"arguments\":{\"param\":\"value\"}}]\n\n");
-
-        // Add simplified tools
-        use crate::toolkit::simplified;
-        let simplified_tools = simplified::get_simplified_tools();
-
-        prompt.push_str("## Available Tools\n\n");
-        for tool in simplified_tools.iter() {
-            prompt.push_str(&format!("### {} ({})\n", tool.name, tool.description));
-
-            if !tool.aliases.is_empty() {
-                prompt.push_str(&format!("**Aliases**: {}\n", tool.aliases.join(", ")));
-            }
-
-            prompt.push_str("**Parameters**:\n");
-            if tool.required.is_empty() && tool.optional.is_empty() {
-                prompt.push_str("  No parameters required\n");
-            } else {
-                for param in &tool.required {
-                    prompt.push_str(&format!("  - `{}` (required)\n", param));
-                }
-                for (param, info) in &tool.optional {
-                    prompt.push_str(&format!(
-                        "  - `{}` (optional, default: {}) - {}\n",
-                        param, info.default, info.description
-                    ));
-                }
-            }
-
-            if !tool.examples.is_empty() {
-                prompt.push_str("\n**Examples**:\n");
-                for ex in &tool.examples {
-                    prompt.push_str(&format!("  - User: \"{}\"\n", ex.user_query));
-                    prompt.push_str(&format!("    → `{}`\n", ex.tool_call));
-                }
-            }
-
-            prompt.push('\n');
-        }
-
-        // Add quick reference table
-        prompt.push_str("## Quick Reference\n");
-        prompt.push_str("| User Query | Tool Call |\n");
-        prompt.push_str("|------------|----------|\n");
-        prompt.push_str("| \"What devices?\" | `device(action=\"list\")` |\n");
-        prompt.push_str("| \"Temperature of ne101?\" | `device(action=\"query\", device_id=\"id\", metric=\"temperature\")` |\n");
-        prompt.push_str("| \"Turn on light\" | `device(action=\"control\", device_id=\"id\", command=\"turn_on\", confirm=true)` |\n");
-        prompt.push_str("| \"Create a rule\" | `rule(action=\"create\", dsl=\"RULE ...\")` |\n");
-        prompt.push_str("| \"Show all rules\" | `rule(action=\"list\")` |\n");
-        prompt.push_str("| \"List agents\" | `agent(action=\"list\")` |\n");
-        prompt.push_str("| \"Create an agent\" | `agent(action=\"create\", name=\"...\", user_prompt=\"...\", schedule_type=\"interval\")` |\n");
-        prompt.push_str("| \"Show alerts\" | `alert(action=\"list\")` |\n");
-        prompt.push('\n');
+        // Add tool calling section (centralized in PromptBuilder)
+        prompt.push_str(&PromptBuilder::build_tool_calling_section());
 
         // Cache the result
         let cache_key = "base_prompt".to_string();
@@ -2320,7 +2259,7 @@ impl Default for ChatConfig {
             model: "ministral-3:3b".to_string(),
             temperature: agent_env_vars::temperature(),
             top_p: agent_env_vars::top_p(),
-            top_k: 20, // Lowered for faster responses
+            top_k: 40,
             max_tokens: agent_env_vars::max_tokens(),
             concurrent_limit: agent_env_vars::concurrent_limit(),
         }
@@ -2351,7 +2290,7 @@ mod tests {
     fn test_chat_config_default() {
         let config = ChatConfig::default();
         assert_eq!(config.model, "ministral-3:3b");
-        assert_eq!(config.temperature, 0.4);
+        assert_eq!(config.temperature, 0.3);
         assert_eq!(config.top_p, 0.7);
         assert_eq!(config.max_tokens, 4096);
         assert_eq!(config.concurrent_limit, DEFAULT_CONCURRENT_LIMIT);

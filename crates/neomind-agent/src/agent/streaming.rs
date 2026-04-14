@@ -2248,106 +2248,26 @@ pub async fn process_stream_events_with_safeguards(
         history_for_llm.len()
     );
 
-    // === INTENT-BASED THINKING CONTROL ===
-    // Default: DISABLE thinking to prevent model loops and save tokens
-    // Only enable thinking for complex analysis/reasoning tasks
-    //
-    // Key insight: Qwen3 models can get stuck in thinking loops when:
-    // 1. The task is too simple (greetings, simple queries)
-    // 2. Tools are needed (thinking wastes tokens before tool calls)
-    // 3. The model has nothing meaningful to think about
-    //
-    // Solution: Only enable thinking for explicitly complex tasks
+    // === THINKING CONTROL ===
+    // Thinking is controlled by the user/instance thinking_enabled setting.
+    // The LlmInterface resolves the effective thinking state from:
+    //   1. Local override (per-request)
+    //   2. Instance manager setting (from storage/frontend)
+    //   3. Backend default
+    // No keyword-based filtering — model providers have inconsistent standards.
 
-    // Check for tool-related keywords (both Chinese and English)
-    let has_tool_keywords = user_message.contains("温度")
-        || user_message.contains("湿度")
-        || user_message.contains("查询")
-        || user_message.contains("多少")
-        || user_message.contains("状态")
-        || user_message.contains("设备")
-        || user_message.contains("打开")
-        || user_message.contains("关闭")
-        || user_message.contains("控制")
-        || user_message.contains("temperature")
-        || user_message.contains("humidity")
-        || user_message.contains("query")
-        || user_message.contains("status")
-        || user_message.contains("device")
-        || user_message.contains("turn on")
-        || user_message.contains("turn off")
-        || user_message.contains("control");
-
-    // Check for simple greeting patterns (disable thinking for these)
-    let is_simple_greeting = {
-        let lower = user_message.to_lowercase();
-        lower.len() < 20
-            && (
-                // English greetings
-                lower.starts_with("hello")
-            || lower.starts_with("hi ")
-            || lower.starts_with("hi,")
-            || lower == "hi"
-            || lower.starts_with("hey")
-            || lower.starts_with("good morning")
-            || lower.starts_with("good afternoon")
-            || lower.starts_with("good evening")
-            || lower.starts_with("how are you")
-            || lower.starts_with("thanks")
-            || lower.starts_with("thank you")
-            // Chinese greetings
-            || lower.starts_with("你好")
-            || lower.starts_with("您好")
-            || lower.starts_with("早上好")
-            || lower.starts_with("下午好")
-            || lower.starts_with("晚上好")
-            || lower.starts_with("谢谢")
-            || lower.contains("怎么样")
-            )
-    };
-
-    // Check for complex analysis keywords (enable thinking for these)
-    let needs_deep_analysis = user_message.contains("分析")
-        || user_message.contains("原因")
-        || user_message.contains("诊断")
-        || user_message.contains("问题")
-        || user_message.contains("异常")
-        || user_message.contains("优化")
-        || user_message.contains("建议")
-        || user_message.contains("方案")
-        || user_message.contains("analyze")
-        || user_message.contains("analysis")
-        || user_message.contains("why")
-        || user_message.contains("reason")
-        || user_message.contains("diagnose")
-        || user_message.contains("problem")
-        || user_message.contains("optimize")
-        || user_message.contains("suggest")
-        || user_message.contains("solution");
-
-    // Decision logic: DEFAULT to NO thinking
-    let use_thinking = !is_simple_greeting  // Never think for greetings
-        && !has_tool_keywords               // No thinking before tool calls
-        && needs_deep_analysis; // Only think for complex analysis
-
+    // Thinking control: Respect the user/instance thinking_enabled setting directly.
+    // The llm_interface already resolves thinking priority: local override > instance setting > None.
+    // No keyword-based filtering — model providers have different standards, keyword heuristics
+    // are unreliable and override user preference without good reason.
     tracing::info!(
-        "Thinking control: use_thinking={}, is_simple_greeting={}, has_tool_keywords={}, needs_deep_analysis={}",
-        use_thinking,
-        is_simple_greeting,
-        has_tool_keywords,
-        needs_deep_analysis
+        "Thinking control: respecting user/instance thinking_enabled setting directly"
     );
 
-    // Get the stream from llm_interface - with or without thinking based on intent
-    let stream_result = if use_thinking {
-        llm_interface
-            .chat_stream_with_history(&user_message, &history_for_llm)
-            .await
-    } else {
-        llm_interface
-            .chat_stream_no_thinking_with_history(&user_message, &history_for_llm)
-            .await
-    };
+    // Get the stream from llm_interface - thinking is controlled by instance/user settings
+    let stream_result = llm_interface
+        .chat_stream_with_history(&user_message, &history_for_llm)
+        .await;
 
     let stream = stream_result.map_err(|e| NeoMindError::Llm(e.to_string()))?;
 
