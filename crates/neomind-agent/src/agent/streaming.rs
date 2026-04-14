@@ -2372,8 +2372,8 @@ pub async fn process_stream_events_with_safeguards(
 
                 tracing::info!("Multi-round context: {}", context_msg);
 
-                // Use tools enabled, no thinking for subsequent rounds
-                let round_stream_result = llm_interface.chat_stream_no_thinking_with_history(
+                // Use tools enabled for subsequent rounds (thinking follows instance setting)
+                let round_stream_result = llm_interface.chat_stream_with_history(
                     &context_msg,
                     &history_for_llm
                 ).await;

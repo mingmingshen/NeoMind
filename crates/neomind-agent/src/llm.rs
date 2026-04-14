@@ -1501,13 +1501,12 @@ impl LlmInterface {
     }
 
     /// Send a chat message with streaming response, with conversation history.
+    /// Thinking is controlled by the instance/user thinking_enabled setting.
     pub async fn chat_stream_with_history(
         &self,
         user_message: impl Into<String>,
         history: &[Message],
     ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
-        // Enable thinking for complex queries (default behavior)
-        *self.thinking_enabled.write().await = Some(true);
         self.chat_stream_internal(user_message, Some(history), true)
             .await
     }
@@ -1529,23 +1528,6 @@ impl LlmInterface {
         history: &[Message],
     ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
         self.chat_stream_internal(user_message, Some(history), false)
-            .await
-    }
-
-    /// Send a chat message with streaming response, with tools, but without thinking.
-    /// This is for simple queries where we want fast responses without thinking overhead.
-    pub async fn chat_stream_no_thinking_with_history(
-        &self,
-        user_message: impl Into<String>,
-        history: &[Message],
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
-        // Set thinking to false for this call
-        *self.thinking_enabled.write().await = Some(false);
-        // Note: We DON'T restore the old value here because:
-        // 1. The async stream continues after this function returns
-        // 2. Restoring here would affect concurrent requests
-        // 3. The next request will set its own value
-        self.chat_stream_internal(user_message, Some(history), true)
             .await
     }
 
@@ -1573,19 +1555,6 @@ impl LlmInterface {
         user_message: Message, // Can contain text + images via Content::Parts
         history: &[Message],
     ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
-        self.chat_stream_internal_message(user_message, Some(history), true, false)
-            .await
-    }
-
-    /// Send a multimodal chat message (with images) with streaming response, without thinking.
-    /// For simple multimodal queries where we want fast responses.
-    pub async fn chat_stream_multimodal_no_thinking_with_history(
-        &self,
-        user_message: Message, // Can contain text + images via Content::Parts
-        history: &[Message],
-    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>> {
-        // Temporarily disable thinking for this call
-        *self.thinking_enabled.write().await = Some(false);
         self.chat_stream_internal_message(user_message, Some(history), true, false)
             .await
     }
