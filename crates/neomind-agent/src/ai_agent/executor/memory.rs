@@ -1,4 +1,5 @@
 use super::*;
+use crate::prompts::{CONVERSATION_CONTEXT_EN, CONVERSATION_CONTEXT_ZH};
 
 pub(crate) fn extract_semantic_patterns(
     decisions: &[Decision],

@@ -49,7 +49,7 @@ use neomind_core::datasource::DataSourceId;
 use crate::agent::semantic_mapper::SemanticToolMapper;
 use crate::agent::types::LlmBackend;
 use crate::error::{NeoMindError, Result as AgentResult};
-use crate::prompts::{LANGUAGE_POLICY, CONVERSATION_CONTEXT_EN, CONVERSATION_CONTEXT_ZH};
+use crate::prompts::LANGUAGE_POLICY;
 
 /// Internal representation of image content for multimodal LLM messages.
 #[allow(dead_code)]

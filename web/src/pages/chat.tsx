@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { forceViewportReset } from "@/hooks/useVisualViewport"
-import { mergeMessagesForDisplay } from "@/lib/messageUtils"
+import { mergeMessagesForDisplay, cleanToolCallJson } from "@/lib/messageUtils"
 
 /** Image gallery component for user messages */
 function MessageImages({ images }: { images: ChatImage[] }) {
@@ -954,6 +954,12 @@ export function ChatPage() {
                   }
                   // Streaming message: same shape as persisted messages
                   // content = final answer (streams at bottom), tool_calls = process (above)
+                  // Clean round_contents to remove JSON/markdown artifacts from small models
+                  const cleanedStreamingRoundContents = Object.keys(roundContents).length > 0
+                    ? Object.fromEntries(
+                        Object.entries(roundContents).map(([k, v]) => [k, cleanToolCallJson(v)])
+                      )
+                    : undefined;
                   allMessages.push({
                     id: streamingMessageIdRef.current || '__streaming__',
                     role: 'assistant' as const,
@@ -962,7 +968,7 @@ export function ChatPage() {
                     tool_calls: streamingToolCalls.length > 0 ? streamingToolCalls : undefined,
                     timestamp: Date.now(),
                     round_thinking: Object.keys(mergedRoundThinking).length > 0 ? mergedRoundThinking : undefined,
-                    round_contents: Object.keys(roundContents).length > 0 ? roundContents : undefined,
+                    round_contents: cleanedStreamingRoundContents,
                     _isStreaming: true,
                   } as Message & { _isStreaming?: boolean })
                 }
@@ -1003,6 +1009,14 @@ export function ChatPage() {
                       {/* Assistant messages: tool process + final content */}
                       {message.role === "assistant" && (() => {
                         const hasTools = message.tool_calls && message.tool_calls.length > 0
+                        // Clean embedded tool call JSON from content for display
+                        const displayContent = hasTools ? cleanToolCallJson(message.content || '') : (message.content || '')
+                        // Clean round contents to remove any JSON/markdown artifacts from small models
+                        const cleanedRoundContents = message.round_contents
+                          ? Object.fromEntries(
+                              Object.entries(message.round_contents).map(([k, v]) => [k, cleanToolCallJson(v)])
+                            )
+                          : undefined
 
                         // Three-layer design:
                         // 1. Thinking (top) - with per-round differentiation
@@ -1049,11 +1063,11 @@ export function ChatPage() {
                               )}
                               <ToolProcessBlock
                                 toolCalls={message.tool_calls!}
-                                roundContents={message.round_contents}
+                                roundContents={cleanedRoundContents}
                                 isStreaming={isCurrentlyStreaming}
                               />
-                              {message.content ? (
-                                <MarkdownMessage content={message.content} variant="assistant" />
+                              {displayContent ? (
+                                <MarkdownMessage content={displayContent} variant="assistant" />
                               ) : isCurrentlyStreaming ? (
                                 <div className="flex items-center gap-1">
                                   <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -1075,8 +1089,8 @@ export function ChatPage() {
                                 isStreaming={isCurrentlyStreaming}
                               />
                             )}
-                            {message.content ? (
-                              <MarkdownMessage content={message.content} variant="assistant" />
+                            {displayContent ? (
+                              <MarkdownMessage content={displayContent} variant="assistant" />
                             ) : isCurrentlyStreaming ? (
                               <div className="flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />

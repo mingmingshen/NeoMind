@@ -1,8 +1,7 @@
 use neomind_agent::prompts::builder::PromptBuilder;
-use neomind_agent::translation::Language;
 
 fn main() {
-    let builder = PromptBuilder::new().with_language(Language::English);
+    let builder = PromptBuilder::new();
     let prompt = builder.build_system_prompt();
 
     println!("=== First 800 characters of the prompt ===");
@@ -10,12 +9,8 @@ fn main() {
 
     println!("\n\n=== Checking for language policy ===");
     println!(
-        "Contains 'CRITICAL LANGUAGE RULE': {}",
-        prompt.contains("CRITICAL LANGUAGE RULE")
-    );
-    println!(
-        "Contains 'HIGHEST PRIORITY': {}",
-        prompt.contains("HIGHEST PRIORITY")
+        "Contains 'Highest Priority': {}",
+        prompt.contains("Highest Priority")
     );
     println!(
         "Contains 'EXACT SAME LANGUAGE': {}",

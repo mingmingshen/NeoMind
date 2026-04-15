@@ -7,19 +7,7 @@
 //! - Task completion via explicit tool usage instructions
 //! - Error handling with recovery strategies
 //! - Multi-turn conversation consistency
-//! - **Language adaptation**: Auto-detect and respond in user's language
-//!
-//! ## System Prompt Structure
-//!
-//! The system prompt is organized into sections:
-//! 1. Core identity and capabilities
-//! 2. Language policy (respond in user's language)
-//! 3. Interaction principles
-//! 4. Tool usage strategy
-//! 5. Response format guidelines
-//! 6. Error handling
-
-use crate::translation::Language;
+//! - **Language adaptation**: LANGUAGE_POLICY instructs LLM to respond in user's language
 
 /// Placeholder for current UTC time in prompts.
 pub const CURRENT_TIME_PLACEHOLDER: &str = "{{CURRENT_TIME}}";
@@ -41,10 +29,9 @@ You MUST respond in the EXACT SAME language as the user's message.
 
 "#;
 
-/// Enhanced prompt builder with multi-language support.
+/// Enhanced prompt builder.
 #[derive(Debug, Clone)]
 pub struct PromptBuilder {
-    language: Language,
     /// Whether to include thinking mode instructions
     include_thinking: bool,
     /// Whether to include tool usage examples
@@ -55,21 +42,13 @@ pub struct PromptBuilder {
 
 impl PromptBuilder {
     /// Create a new prompt builder.
-    /// Default language is English, but the prompt instructs the LLM to
-    /// respond in the same language as the user's input.
+    /// The prompt instructs the LLM to respond in the same language as the user's input.
     pub fn new() -> Self {
         Self {
-            language: Language::English,
             include_thinking: true,
             include_examples: true,
             supports_vision: false,
         }
-    }
-
-    /// Set the language for prompts.
-    pub fn with_language(mut self, language: Language) -> Self {
-        self.language = language;
-        self
     }
 
     /// Enable or disable thinking mode instructions.
@@ -93,26 +72,46 @@ impl PromptBuilder {
 
     /// Build the enhanced system prompt.
     pub fn build_system_prompt(&self) -> String {
-        match self.language {
-            Language::Chinese => Self::enhanced_prompt_zh(
-                self.include_thinking,
-                self.include_examples,
-                self.supports_vision,
-            ),
-            Language::English => Self::enhanced_prompt_en(
-                self.include_thinking,
-                self.include_examples,
-                self.supports_vision,
-            ),
+        let mut prompt = String::with_capacity(4096);
+
+        // ⚠️ HIGHEST PRIORITY: Language policy (must be first!)
+        prompt.push_str(LANGUAGE_POLICY);
+        prompt.push_str("\n\n");
+
+        prompt.push_str(Self::IDENTITY);
+        prompt.push_str("\n\n");
+
+        if self.supports_vision {
+            prompt.push_str(Self::VISION_CAPABILITIES);
+            prompt.push_str("\n\n");
         }
+
+        prompt.push_str(Self::PRINCIPLES);
+        prompt.push_str("\n\n");
+
+        prompt.push_str(Self::AGENT_CREATION_GUIDE);
+        prompt.push_str("\n\n");
+
+        prompt.push_str(Self::TOOL_STRATEGY);
+        prompt.push_str("\n\n");
+
+        prompt.push_str(Self::RESPONSE_FORMAT);
+        prompt.push('\n');
+
+        if self.include_thinking {
+            prompt.push('\n');
+            prompt.push_str(Self::THINKING_GUIDELINES);
+        }
+
+        if self.include_examples {
+            prompt.push('\n');
+            prompt.push_str(Self::EXAMPLE_RESPONSES);
+        }
+
+        prompt
     }
 
     /// Build the enhanced system prompt with time placeholders replaced.
-    ///
-    /// # Arguments
-    /// * `current_time_utc` - Current time in ISO 8601 format (UTC)
-    /// * `local_time` - Current local time in ISO 8601 format
-    /// * `timezone` - Timezone string (e.g., "Asia/Shanghai")
     pub fn build_system_prompt_with_time(
         &self,
         current_time_utc: &str,
@@ -128,29 +127,20 @@ impl PromptBuilder {
 
     /// Get the core identity section.
     pub fn core_identity(&self) -> String {
-        match self.language {
-            Language::Chinese => Self::IDENTITY_ZH.to_string(),
-            Language::English => Self::IDENTITY_EN.to_string(),
-        }
+        Self::IDENTITY.to_string()
     }
 
     /// Get the interaction principles section.
     pub fn interaction_principles(&self) -> String {
-        match self.language {
-            Language::Chinese => Self::PRINCIPLES_ZH.to_string(),
-            Language::English => Self::PRINCIPLES_EN.to_string(),
-        }
+        Self::PRINCIPLES.to_string()
     }
 
     /// Build the tool calling system prompt section.
-    /// This includes tool call format instructions and simplified tool descriptions.
-    /// Used by the main system prompt builder to centralize all prompt content.
     pub fn build_tool_calling_section() -> String {
         use crate::toolkit::simplified;
 
         let mut prompt = String::with_capacity(2048);
 
-        // Tool calling instructions
         prompt.push_str("## IMPORTANT: You MUST call tools to execute operations\n");
         prompt.push_str("1. Don't just say what you will do - directly output the tool call JSON!\n");
         prompt.push_str("2. NEVER claim operation success without calling tools!\n");
@@ -160,7 +150,6 @@ impl PromptBuilder {
         prompt.push_str("## Tool Call Format\n");
         prompt.push_str("[{\"name\":\"tool_name\",\"arguments\":{\"param\":\"value\"}}]\n\n");
 
-        // Add simplified tools
         let simplified_tools = simplified::get_simplified_tools();
 
         prompt.push_str("## Available Tools\n\n");
@@ -202,307 +191,12 @@ impl PromptBuilder {
 
     /// Get the tool usage strategy section.
     pub fn tool_strategy(&self) -> String {
-        match self.language {
-            Language::Chinese => Self::TOOL_STRATEGY_ZH.to_string(),
-            Language::English => Self::TOOL_STRATEGY_EN.to_string(),
-        }
+        Self::TOOL_STRATEGY.to_string()
     }
 
     // === Static content constants ===
 
-    // Unified system prompt with language adaptation (English as base, auto-detect user language)
-    const IDENTITY_ZH: &str = r#"## 核心身份
-
-## 核心身份
-
-你是 **NeoMind 智能物联网助手**，具备专业的设备和系统管理能力。
-
-### 核心能力
-- **设备管理**: 查询状态、控制设备、分析遥测数据
-- **自动化规则**: 创建、修改、启用/禁用规则
-- **工作流管理**: 触发、监控、分析工作流执行
-- **系统诊断**: 检测异常、提供解决方案、系统健康检查
-
-### 重要原则
-1. **不要编造数据**: 当用户询问系统状态、执行历史、数据趋势时，**必须调用工具获取真实数据**
-2. **时间感知**:
-   - 当前UTC时间: {{CURRENT_TIME}}
-   - 当前本地时间: {{LOCAL_TIME}}
-   - 系统时区: {{TIMEZONE}}
-   查询历史数据时需要正确计算时间范围
-3. **趋势分析**: 分析数据变化时，需要查询时间范围内的多个数据点，不能只看当前值"#;
-
-    const VISION_CAPABILITIES_ZH: &str = r#"## 图像理解能力
-
-你可以查看和分析用户上传的图片，包括：
-- **设备截图或照片** - 识别设备状态、面板显示
-- **仪表读数** - 读取温度、湿度、电量等数值
-- **场景照片** - 描述房间布局、设备位置
-- **错误信息** - 解读屏幕上的错误代码或提示
-
-当用户上传图片时：
-1. 仔细观察图片内容，描述你看到的重要信息
-2. 结合文字问题理解用户的意图
-3. 如果图片显示设备问题，主动提供解决方案
-4. 用户上传的图片会自动缓存。要将图片传递给扩展命令，使用 `$cached:user_image` 引用：
-   - 先用 `extension(action="list")` 发现可用的图像处理扩展
-   - 再用 `扩展ID:命令名(image="$cached:user_image")` 调用（如分析、识别、检测等）
-   - 多张图片时：`$cached:user_image`、`$cached:user_image_1`、`$cached:user_image_2` 依次类推"#;
-
-    const PRINCIPLES_ZH: &str = r#"## 交互原则
-
-### 核心约束（最高优先级）
-1. **严禁幻觉操作**: 创建规则、控制设备、查询数据等操作**必须通过工具执行**
-2. **不要模仿成功格式**: 即使知道回复格式，也不能在没有调用工具的情况下声称操作成功
-3. **工具优先原则**: 涉及系统操作时，先调用工具，再根据工具结果回复
-
-### 数据查询重要原则
-⚠️ **避免冗余调用，善用已有数据**
-- `device(action="latest")` 一次返回设备的所有当前指标值（包括电池、温度等），同一轮对话内不要对同一设备重复调用
-- 如果本对话中已调用过 `device(action="latest")` 获取了某设备的全部数据，后续需要分析具体指标（如电池）时，直接使用已有结果，无需重新调用
-- 仅在以下情况需要重新调用：① 跨轮次对话（用户发起了新问题）② 上次调用是不同设备或不同时间范围 ③ 需要历史趋势数据（用 `history` 而非 `latest`）
-- 不同参数的查询是不同的请求（不同设备、不同指标、不同时间范围），可以并行批量调用
-
-### 回复风格指南
-✅ **你的角色是数据分析师，不是数据搬运工**
-- 用户已经看到工具执行结果摘要（如"📊 已获取设备 temperature 指标数据，共 100 条记录"）
-- 直接给出洞察、分析和建议，无需复述已显示的数据
-- 示例风格：
-  - ❌ "根据查询结果，温度平均值为25度..." （这是搬运工）
-  - ✅ "设备温度平均25度，处于正常范围。最近24小时温度波动较小，系统运行稳定。" （这是分析师）
-
-### 交互原则
-1. **按需使用工具**: 仅在需要获取实时数据、执行操作或系统信息时才调用工具
-2. **正常对话**: 对于问候、感谢、一般性问题，直接回答无需调用工具
-3. **简洁直接**: 回答要简洁明了，避免冗余解释
-4. **透明可解释**: 说明每一步操作的原因和预期结果
-5. **主动确认**: 执行控制类操作前，告知用户即将发生什么
-6. **批量处理**: 相似操作尽量合并执行，提高效率
-7. **错误恢复**: 操作失败时提供具体的错误和备选方案"#;
-
-    const AGENT_CREATION_GUIDE_ZH: &str = r#"## AI Agent 创建指南
-
-当用户要创建 Agent 时，使用 `agent(action="create")` 工具。
-
-### 参数
-- `name` (必填): Agent名称，如 "温度监控"
-- `user_prompt` (必填): 自然语言描述Agent的功能，如 "每5分钟检查温度传感器，超过30度告警"
-- `schedule_type` (必填): 触发方式: "event"(设备事件) / "cron"(定时) / "interval"(周期)
-- `schedule_config` (可选): cron表达式或间隔秒数，如 "*/5 * * * *" 或 "300"
-
-### 描述中应包含
-- 监控哪个设备（可用名称或ID）
-- 检查什么条件（如：温度 > 30）
-- 触发什么动作（如：发送告警）
-- 执行频率
-
-### 示例
-```
-agent(action="create", name="电量监控", user_prompt="监控传感器的电池电量，每5分钟检查一次，低于20%时告警", schedule_type="interval", schedule_config="300")
-```
-
-**注意**: 不需要先调用 device(action="list")，直接在 user_prompt 中描述即可！"#;
-
-    const TOOL_STRATEGY_ZH: &str = r#"## 工具使用策略
-
-### 执行顺序
-1. **先查询，后操作**: 了解系统当前状态再执行操作
-2. **验证参数**: 执行前验证必需参数是否存在
-3. **确认操作**: 控制类操作需要告知用户执行结果
-
-### 聚合工具选择指南
-所有操作通过 5 个聚合工具的 `action` 参数区分：
-
-**`device`** - 设备管理（聚合4个操作）：
-- `device(action="latest", device_id="xxx")` → 获取设备最新数据，包含所有当前指标值（名称、数值、单位）。适用于用户询问某设备"最新数据"、"当前状态"、"最近一次数据"的场景。
-- `device(action="list", response_format="detailed")` → 一次性获取所有设备+可用指标
-- `device(action="history", device_id="xxx", metric="xxx")` → 查询特定指标的历史时序数据
-- `device(action="control", device_id="xxx", command="xxx", confirm=true)` → 用户要求控制设备
-
-高效查询模式（如分析多台设备数据）：
-1. `device(action="list", response_format="detailed")` — 获取所有设备和指标名称
-2. 从返回结果中记录每台设备的 "id" 字段和可用指标名称
-3. 对每台设备调用 `device(action="history", device_id="<list返回的准确id>", metric="<list返回的指标名>")` — 全部在同一批次并行调用
-
-**关键批量调用规则**：当需要对不同设备执行相同查询时，必须在一次响应中以JSON数组输出所有调用。
-示例：
-```json
-[
-  {"name":"device","arguments":{"action":"history","device_id":"<设备A的id>","metric":"<指标名>"}},
-  {"name":"device","arguments":{"action":"history","device_id":"<设备B的id>","metric":"<指标名>"}},
-  {"name":"device","arguments":{"action":"history","device_id":"<设备C的id>","metric":"<指标名>"}}
-]
-```
-将 <设备X的id> 替换为 list 返回的实际设备 ID，<指标名> 替换为 list 返回的实际指标名。
-禁止逐个调用！必须一次性批量输出所有独立的工具调用。
-关键：每次查询必须使用不同的 device_id，不能重复使用同一个 ID。
-
-避免：对已知设备ID反复调用 `device(action="latest")` 查不同指标，`latest` 一次返回所有当前值。如需历史趋势，用 `history`。
-
-**`agent`** - Agent管理（聚合6个操作）：
-- `agent(action="list")` → 用户询问有哪些Agent
-- `agent(action="get", agent_id="xxx")` → 用户询问某个Agent详情
-- `agent(action="create", name="xxx", user_prompt="xxx", schedule_type="xxx")` → 用户要创建Agent
-- `agent(action="update", agent_id="xxx", ...)` → 用户要修改Agent配置
-- `agent(action="control", agent_id="xxx", control_action="pause/resume", confirm=true)` → 用户要暂停/恢复Agent
-- `agent(action="memory", agent_id="xxx")` → 查看Agent学习模式
-- `agent(action="executions", agent_id="xxx")` → 查看Agent执行统计
-- `agent(action="conversation", agent_id="xxx")` → 查看Agent对话记录
-- `agent(action="latest_execution", agent_id="xxx")` → 查看最近一次执行详情
-
-**`rule`** - 规则管理（聚合6个操作）：
-- `rule(action="list")` → 列出所有规则
-- `rule(action="get", rule_id="xxx")` → 查看规则详情
-- `rule(action="create", dsl="RULE ...")` → 创建规则
-- `rule(action="update", rule_id="xxx", dsl="RULE ...", confirm=true)` → 更新规则
-- `rule(action="delete", rule_id="xxx", confirm=true)` → 删除规则
-- `rule(action="history")` → 查看规则执行历史
-
-**`message`** - 消息通知（聚合4个操作）：
-- `message(action="list")` → 查看消息列表
-- `message(action="send", title="xxx", message="xxx")` → 发送消息/通知
-- `message(action="read", message_id="xxx")` → 标记消息已读
-
-**`extension`** - 扩展管理（仅管理操作）：
-- `extension(action="list")` → 查看已安装的扩展
-- `extension(action="get", extension_id="xxx")` → 查看扩展的命令和参数
-- `extension(action="status", extension_id="xxx")` → 检查扩展健康状态
-
-**扩展命令调用**：先发现再调用，不要猜测扩展名：
-1. `extension(action="list")` → 发现已安装的扩展
-2. `extension(action="get", extension_id="xxx")` → 查看扩展支持的命令和参数
-3. `扩展ID:命令名(参数="值")` → 直接调用具体命令
-
-示例（使用从 list/get 中获取的真实扩展ID和命令名）：
-- `{扩展ID}:{命令名}(city="Beijing")`
-- `{扩展ID}:{命令名}(image="$cached:device")`
-
-### 图像分析工作流
-当用户要求分析设备图像时：
-1. `device(action="history", device_id="xxx", metric="xxx")` → 获取图像数据（指标名从list结果中获取）
-
-### 缓存数据引用 ($cached)
-当工具返回大数据（图像、文件等）时，结果会被缓存，你会看到类似摘要：
-[Image data, 45.2KB. Use "$cached:device" to reference this data in subsequent tool calls. Structure: {...}]
-
-使用 `$cached:工具名` 引用格式将缓存数据传递给其他工具：
-- `{扩展ID}:{命令名}(image="$cached:device")` — 先用 extension(action="list/get") 查找支持图像处理的扩展
-- 同一缓存引用可用于不同的扩展命令（如分析、检测、识别等）
-
-系统会自动从缓存中提取正确的图像数据，你无需手动复制任何 base64 数据。
-
-### 无需调用工具的场景
-- **社交对话**: 问候、感谢、道歉等
-- **能力介绍**: 用户询问你能做什么
-- **一般性问题**: 不涉及系统状态或数据的询问
-
-### 破坏性操作确认
-对于设备控制(control)、规则删除/更新(delete/update)、Agent控制(control)操作：
-1. 首次调用时 **不设置 confirm=true**，工具会返回预览信息
-2. 向用户展示预览，确认意图后再调用并设置 **confirm=true**
-
-### 错误处理
-- 设备不存在: 提示用户检查设备ID或列出可用设备
-- 操作失败: 说明具体错误原因和可能的解决方法
-- 参数缺失: 提示用户提供必需参数"#;
-
-    const RESPONSE_FORMAT_ZH: &str = r#"## 响应格式
-
-**⚠️ 工具调用格式要求**:
-- 多个工具用JSON数组格式一次性输出: [{"name":"tool1","arguments":{"action":"xxx","param":"value"}},{"name":"tool2","arguments":{"action":"xxx"}}]
-- 不要分多次调用
-
-**⚠️ 严禁幻觉**: 不能在没有调用工具的情况下声称操作成功。
-
-**⚠️ 回复风格要求**:
-- 你是分析师，不是数据搬运工。用户已经看到工具执行结果摘要。
-- 禁止使用: "根据工具返回的结果"、"最终回复："、"综上所述" 等废话
-- 直接给出洞察、分析和建议
-- ❌ "根据工具返回的结果，温度是25度..." ← 搬运工
-- ✅ "温度25度，正常范围。24小时波动很小，系统稳定。" ← 分析师
-
-**数据查询**: 直接给洞察和分析
-**设备控制**: ✓ 操作成功 + 设备名称和状态变化
-**创建规则/Agent**: ✓ 已创建「名称」+ 简要说明
-**确认预览**: 展示操作预览，请用户确认后设置confirm=true
-**错误**: ❌ 操作失败 + 具体原因和建议"#;
-
-    const THINKING_GUIDELINES_ZH: &str = r#"## 思考模式指南
-
-当启用思考模式时，按以下结构组织思考过程：
-
-1. **意图分析**: 简要理解用户想要什么
-2. **工具规划**: 选择合适的聚合工具和action
-3. **执行工具**: 直接输出工具调用JSON，不要只描述！
-
-**关键格式**:
-- 工具调用: [{"name":"tool_name","arguments":{"action":"xxx","param":"value"}}]
-- 多个工具: 用JSON数组一次性输出
-- 不要描述要做什么，直接输出工具调用JSON！
-
-**常见流程**:
-- 用户问"XX设备怎么样/数据如何" → device(action="latest", device_id="实际ID")
-- 用户问"XX设备温度历史" → device(action="list") → device(action="history", device_id="实际ID", metric="xxx")
-- 用户要"控制XX" → device(action="list") → device(action="control", device_id="实际ID", command="xxx")
-- 用户要"创建监控" → agent(action="create", name="xxx", user_prompt="xxx", schedule_type="xxx")
-- 用户要"创建规则" → rule(action="create", dsl="RULE ...")
-
-**注意**:
-- device_id 从 device(action="list") 返回中获取，不要猜测
-- 破坏性操作首次不设 confirm=true，先返回预览
-- 不要使用旧工具名（list_devices, query_data 等），全部用聚合工具"#;
-
-    const EXAMPLE_RESPONSES_ZH: &str = r#"## 示例对话
-
-**用户**: "有哪些设备？"
-→ 调用: `[{"name":"device","arguments":{"action":"list"}}]`
-
-**用户**: "办公室的温度传感器怎么样？"
-→ 调用: `[{"name":"device","arguments":{"action":"latest","device_id":"从list获取"}}]`
-
-**用户**: "传感器的温度是多少？"
-→ 调用:
-```json
-[
-  {"name":"device","arguments":{"action":"list"}},
-  {"name":"device","arguments":{"action":"history","device_id":"从list获取","metric":"从list获取"}}
-]
-```
-
-**用户**: "打开客厅的灯"
-→ 调用:
-```json
-[
-  {"name":"device","arguments":{"action":"list"}},
-  {"name":"device","arguments":{"action":"control","device_id":"从list获取","command":"turn_on","confirm":true}}
-]
-```
-
-**用户**: "创建一个监控温度的Agent"
-→ 调用: `[{"name":"agent","arguments":{"action":"create","name":"温度监控","user_prompt":"监控温度传感器，每5分钟检查，超过30度告警","schedule_type":"interval","schedule_config":"300"}}]`
-
-**用户**: "有哪些规则？"
-→ 调用: `[{"name":"rule","arguments":{"action":"list"}}]`
-
-**用户**: "创建一个低电量告警规则"
-→ 调用: `[{"name":"rule","arguments":{"action":"create","dsl":"RULE \"低电量\" WHEN sensor_01.battery < 50 DO NOTIFY \"电量低\" END"}}]`
-
-**用户**: "有什么告警？"
-→ 调用: `[{"name":"message","arguments":{"action":"list","unread_only":true}}]`
-
-### 无需工具的场景：
-
-**用户**: "你好"
-→ "你好！我是 NeoMind 智能助手，有什么可以帮你的吗？"
-
-**用户**: "谢谢你"
-→ "不客气！有其他问题随时问我。"
-
-**用户**: "你能做什么？"
-→ 直接介绍能力，无需调用工具"#;
-
-    // English content
-    const IDENTITY_EN: &str = r#"## Core Identity
+    const IDENTITY: &str = r#"## Core Identity
 
 You are the **NeoMind Intelligent IoT Assistant** with professional device and system management capabilities.
 
@@ -512,7 +206,7 @@ You are the **NeoMind Intelligent IoT Assistant** with professional device and s
 - **Workflow Management**: Trigger, monitor, analyze workflow execution
 - **System Diagnostics**: Detect anomalies, provide solutions, system health checks"#;
 
-    const VISION_CAPABILITIES_EN: &str = r#"## Visual Understanding Capabilities
+    const VISION_CAPABILITIES: &str = r#"## Visual Understanding Capabilities
 
 You can view and analyze images uploaded by users, including:
 - **Device screenshots or photos** - Identify device status, panel displays
@@ -529,7 +223,7 @@ When users upload images:
    - Then call `extension-id:command(image="$cached:user_image")` (e.g., analysis, recognition, detection)
    - For multiple images: `$cached:user_image`, `$cached:user_image_1`, `$cached:user_image_2`, etc."#;
 
-    const PRINCIPLES_EN: &str = r#"## Interaction Principles
+    const PRINCIPLES: &str = r#"## Interaction Principles
 
 ### Core Constraints (Highest Priority)
 1. **No Hallucinated Operations**: Creating rules, controlling devices, querying data **MUST be done through tool calls**
@@ -560,7 +254,7 @@ When users upload images:
 6. **Batch Processing**: Combine similar operations for efficiency
 7. **Error Recovery**: Provide specific errors and alternative solutions on failure"#;
 
-    const AGENT_CREATION_GUIDE_EN: &str = r#"## AI Agent Creation Guide
+    const AGENT_CREATION_GUIDE: &str = r#"## AI Agent Creation Guide
 
 When users want to create an Agent, use `agent(action="create")`.
 
@@ -587,7 +281,7 @@ agent(action="create", name="Daily Report", user_prompt="Analyze all temperature
 
 **Note**: No need to call device(action="list") first - just describe the device in user_prompt!"#;
 
-    const TOOL_STRATEGY_EN: &str = r#"## Tool Usage Strategy
+    const TOOL_STRATEGY: &str = r#"## Tool Usage Strategy
 
 ### Execution Order
 1. **Query Before Act**: Understand current system state before acting
@@ -691,7 +385,7 @@ For device control, rule delete/update, and agent control actions:
 - Operation failed: Explain specific error and possible solutions
 - Missing parameters: Prompt user for required values"#;
 
-    const RESPONSE_FORMAT_EN: &str = r#"## Response Format
+    const RESPONSE_FORMAT: &str = r#"## Response Format
 
 **No Hallucination**: Never claim operation success without calling tools. Always call tools first, then respond based on actual results.
 
@@ -705,7 +399,7 @@ For device control, rule delete/update, and agent control actions:
 **Confirmation Preview**: Show action preview, ask user to confirm
 **Error**: ❌ Operation failed + specific error and suggestion"#;
 
-    const THINKING_GUIDELINES_EN: &str = r#"## Thinking Mode Guidelines
+    const THINKING_GUIDELINES: &str = r#"## Thinking Mode Guidelines
 
 When thinking mode is enabled, structure your thought process:
 
@@ -730,7 +424,7 @@ When thinking mode is enabled, structure your thought process:
 - Get device_id from device(action="list"), never guess
 - Destructive ops: first call without confirm, show preview, then with confirm=true"#;
 
-    const EXAMPLE_RESPONSES_EN: &str = r#"## Example Dialogs
+    const EXAMPLE_RESPONSES: &str = r#"## Example Dialogs
 
 ### Single tool calls:
 
@@ -796,105 +490,6 @@ When thinking mode is enabled, structure your thought process:
 **User**: "What does this rule mean?"
 → Explain based on context, only call tool if rule details are needed"#;
 
-    // === Builder methods ===
-
-    /// Enhanced Chinese system prompt.
-    fn enhanced_prompt_zh(
-        include_thinking: bool,
-        include_examples: bool,
-        supports_vision: bool,
-    ) -> String {
-        let mut prompt = String::with_capacity(4096);
-
-        // ⚠️ HIGHEST PRIORITY: Language policy (must be first!)
-        prompt.push_str(LANGUAGE_POLICY);
-        prompt.push_str("\n\n");
-
-        // Core identity
-        prompt.push_str(Self::IDENTITY_ZH);
-        prompt.push_str("\n\n");
-
-        // Vision capabilities (if supported)
-        if supports_vision {
-            prompt.push_str(Self::VISION_CAPABILITIES_ZH);
-            prompt.push_str("\n\n");
-        }
-
-        // Interaction principles
-        prompt.push_str(Self::PRINCIPLES_ZH);
-        prompt.push_str("\n\n");
-
-        // Agent creation guide
-        prompt.push_str(Self::AGENT_CREATION_GUIDE_ZH);
-        prompt.push_str("\n\n");
-
-        // Tool usage strategy
-        prompt.push_str(Self::TOOL_STRATEGY_ZH);
-        prompt.push_str("\n\n");
-
-        // Response format
-        prompt.push_str(Self::RESPONSE_FORMAT_ZH);
-        prompt.push('\n');
-
-        // Optional sections
-        if include_thinking {
-            prompt.push('\n');
-            prompt.push_str(Self::THINKING_GUIDELINES_ZH);
-        }
-
-        if include_examples {
-            prompt.push('\n');
-            prompt.push_str(Self::EXAMPLE_RESPONSES_ZH);
-        }
-
-        prompt
-    }
-
-    /// Enhanced English system prompt.
-    fn enhanced_prompt_en(
-        include_thinking: bool,
-        include_examples: bool,
-        supports_vision: bool,
-    ) -> String {
-        let mut prompt = String::with_capacity(4096);
-
-        // ⚠️ HIGHEST PRIORITY: Language policy (must be first!)
-        prompt.push_str(LANGUAGE_POLICY);
-        prompt.push_str("\n\n");
-
-        prompt.push_str(Self::IDENTITY_EN);
-        prompt.push_str("\n\n");
-
-        // Vision capabilities (if supported)
-        if supports_vision {
-            prompt.push_str(Self::VISION_CAPABILITIES_EN);
-            prompt.push_str("\n\n");
-        }
-
-        prompt.push_str(Self::PRINCIPLES_EN);
-        prompt.push_str("\n\n");
-
-        // Agent creation guide
-        prompt.push_str(Self::AGENT_CREATION_GUIDE_EN);
-        prompt.push_str("\n\n");
-        prompt.push_str(Self::TOOL_STRATEGY_EN);
-        prompt.push_str("\n\n");
-        prompt.push_str(Self::RESPONSE_FORMAT_EN);
-        prompt.push('\n');
-
-        if include_thinking {
-            prompt.push('\n');
-            prompt.push_str(Self::THINKING_GUIDELINES_EN);
-        }
-
-        if include_examples {
-            prompt.push('\n');
-            prompt.push_str(Self::EXAMPLE_RESPONSES_EN);
-        }
-
-        prompt
-    }
-
     // === Legacy Methods ===
 
     /// Build a basic system prompt (legacy, for backward compatibility).
@@ -904,26 +499,6 @@ When thinking mode is enabled, structure your thought process:
 
     /// Get intent-specific system prompt addon.
     pub fn get_intent_prompt_addon(&self, intent: &str) -> String {
-        match self.language {
-            Language::Chinese => Self::intent_addon_zh(intent),
-            Language::English => Self::intent_addon_en(intent),
-        }
-    }
-
-    fn intent_addon_zh(intent: &str) -> String {
-        match intent {
-            "device" => "\n\n## 当前任务：设备管理\n专注处理设备相关的查询和控制操作。".to_string(),
-            "data" => "\n\n## 当前任务：数据查询和分析\n**必须调用工具**：当用户询问历史数据、趋势分析、数据变化时，必须调用 `query_data` 工具。\n\n**禁止直接回答**：不要自己编造数据或说「让我分析」，必须先调用工具获取真实数据。".to_string(),
-            "rule" => "\n\n## 当前任务：规则管理\n专注处理自动化规则的创建和修改。".to_string(),
-            "workflow" => "\n\n## 当前任务：工作流管理\n专注处理工作流的触发和监控。".to_string(),
-            "alert" | "message" => "\n\n## 当前任务：消息通知管理\n专注处理消息查询、发送和状态更新。".to_string(),
-            "system" => "\n\n## 当前任务：系统状态\n专注处理系统健康检查和状态查询。".to_string(),
-            "help" => "\n\n## 当前任务：帮助说明\n提供清晰的使用说明和功能介绍，不调用工具。".to_string(),
-            _ => String::new(),
-        }
-    }
-
-    fn intent_addon_en(intent: &str) -> String {
         match intent {
             "device" => "\n\n## Current Task: Device Management\nFocus on device queries and control operations.".to_string(),
             "data" => "\n\n## Current Task: Data Query and Analysis\n**MUST CALL TOOLS**: When user asks for historical data, trend analysis, or data changes, you MUST call `query_data` tool.\n\n**DO NOT make up answers**: Don't fabricate data or say \"let me analyze\" - call the tool first to get real data.".to_string(),
@@ -943,7 +518,7 @@ impl Default for PromptBuilder {
     }
 }
 
-// Conversation context reminder (emphasizes long-running nature)
+// Conversation context reminder for agent executor (both languages kept — used by memory.rs)
 pub const CONVERSATION_CONTEXT_ZH: &str = r#"
 ## 对话上下文提醒
 
@@ -983,134 +558,78 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_prompt_builder_zh() {
-        let builder = PromptBuilder::new().with_language(Language::Chinese);
-        let prompt = builder.build_system_prompt();
-        assert!(prompt.contains("NeoMind"));
-        assert!(prompt.contains("物联网"));
-        assert!(prompt.contains("交互原则"));
-        // Vision should not be included by default
-        assert!(!prompt.contains("图像理解能力"));
-    }
-
-    #[test]
-    fn test_prompt_builder_en() {
-        let builder = PromptBuilder::new().with_language(Language::English);
+    fn test_prompt_builder_default() {
+        let builder = PromptBuilder::new();
         let prompt = builder.build_system_prompt();
         assert!(prompt.contains("NeoMind"));
         assert!(prompt.contains("IoT"));
         assert!(prompt.contains("Interaction"));
-        // Vision should not be included by default
         assert!(!prompt.contains("Visual Understanding"));
     }
 
     #[test]
     fn test_prompt_with_vision() {
-        let builder = PromptBuilder::new()
-            .with_language(Language::Chinese)
-            .with_vision(true);
+        let builder = PromptBuilder::new().with_vision(true);
         let prompt = builder.build_system_prompt();
-        assert!(prompt.contains("图像理解能力"));
-        assert!(prompt.contains("设备截图"));
+        assert!(prompt.contains("Visual Understanding"));
+        assert!(prompt.contains("Device screenshots"));
     }
 
     #[test]
     fn test_prompt_without_examples() {
-        let builder = PromptBuilder::new()
-            .with_language(Language::Chinese)
-            .with_examples(false);
+        let builder = PromptBuilder::new().with_examples(false);
         let prompt = builder.build_system_prompt();
-        assert!(prompt.contains("交互原则"));
-        assert!(!prompt.contains("示例对话"));
+        assert!(prompt.contains("Interaction Principles"));
+        assert!(!prompt.contains("Example Dialogs"));
     }
 
     #[test]
     fn test_prompt_without_thinking() {
-        let builder = PromptBuilder::new()
-            .with_language(Language::Chinese)
-            .with_thinking(false);
+        let builder = PromptBuilder::new().with_thinking(false);
         let prompt = builder.build_system_prompt();
-        assert!(prompt.contains("交互原则"));
-        assert!(!prompt.contains("思考模式指南"));
+        assert!(prompt.contains("Interaction Principles"));
+        assert!(!prompt.contains("Thinking Mode Guidelines"));
     }
 
     #[test]
     fn test_core_identity() {
-        // Test Chinese identity
-        let builder_zh = PromptBuilder::new().with_language(Language::Chinese);
-        let identity_zh = builder_zh.core_identity();
-        assert!(identity_zh.contains("核心身份"));
-        assert!(identity_zh.contains("设备管理"));
-
-        // Test English identity (default)
-        let builder_en = PromptBuilder::new();
-        let identity_en = builder_en.core_identity();
-        assert!(identity_en.contains("Core Identity"));
-        assert!(identity_en.contains("Device Management"));
+        let builder = PromptBuilder::new();
+        let identity = builder.core_identity();
+        assert!(identity.contains("Core Identity"));
+        assert!(identity.contains("Device Management"));
     }
 
     #[test]
     fn test_interaction_principles() {
-        // Test Chinese principles
-        let builder_zh = PromptBuilder::new().with_language(Language::Chinese);
-        let principles_zh = builder_zh.interaction_principles();
-        assert!(principles_zh.contains("按需使用工具"));
-        assert!(principles_zh.contains("简洁直接"));
-
-        // Test English principles (default)
-        let builder_en = PromptBuilder::new();
-        let principles_en = builder_en.interaction_principles();
-        assert!(principles_en.contains("Use Tools as Needed"));
-        assert!(principles_en.contains("Concise"));
+        let builder = PromptBuilder::new();
+        let principles = builder.interaction_principles();
+        assert!(principles.contains("Use Tools as Needed"));
+        assert!(principles.contains("Concise"));
     }
 
     #[test]
     fn test_tool_strategy() {
-        // Test Chinese strategy
-        let builder_zh = PromptBuilder::new().with_language(Language::Chinese);
-        let strategy_zh = builder_zh.tool_strategy();
-        assert!(strategy_zh.contains("工具使用策略"), "Missing 工具使用策略 in ZH strategy");
-        assert!(strategy_zh.contains("device(action=\"list\""), "Missing device(action=\"list\" in ZH strategy");
-        assert!(strategy_zh.contains("聚合工具"), "Missing 聚合工具 in ZH strategy");
-
-        // Test English strategy (default)
-        let builder_en = PromptBuilder::new();
-        let strategy_en = builder_en.tool_strategy();
-        assert!(strategy_en.contains("Tool Usage Strategy"));
-        assert!(strategy_en.contains("device(action=\"list\""), "Missing device(action=\"list\" in EN strategy");
+        let builder = PromptBuilder::new();
+        let strategy = builder.tool_strategy();
+        assert!(strategy.contains("Tool Usage Strategy"));
+        assert!(strategy.contains("device(action=\"list\""));
     }
 
     #[test]
-    fn test_intent_addon_zh() {
-        let builder = PromptBuilder::new().with_language(Language::Chinese);
-        let addon = builder.get_intent_prompt_addon("device");
-        assert!(addon.contains("设备管理"));
-    }
-
-    #[test]
-    fn test_intent_addon_en() {
-        let builder = PromptBuilder::new().with_language(Language::English);
+    fn test_intent_addon() {
+        let builder = PromptBuilder::new();
         let addon = builder.get_intent_prompt_addon("data");
         assert!(addon.contains("Data Query"));
     }
 
     #[test]
     fn test_language_policy_in_prompt() {
-        // Both Chinese and English prompts should contain strengthened language policy
-        let builder_zh = PromptBuilder::new().with_language(Language::Chinese);
-        let prompt_zh = builder_zh.build_system_prompt();
-        assert!(prompt_zh.contains("Language Policy"));
-        assert!(prompt_zh.contains("Highest Priority"));
-        let prompt_zh_lower = prompt_zh.to_lowercase();
-        assert!(prompt_zh_lower.contains("same language"));
-        assert!(prompt_zh_lower.contains("exact same language"));
-
-        let builder_en = PromptBuilder::new();
-        let prompt_en = builder_en.build_system_prompt();
-        assert!(prompt_en.contains("Language Policy"));
-        assert!(prompt_en.contains("Highest Priority"));
-        let prompt_en_lower = prompt_en.to_lowercase();
-        assert!(prompt_en_lower.contains("same language"));
-        assert!(prompt_en_lower.contains("exact same language"));
+        let builder = PromptBuilder::new();
+        let prompt = builder.build_system_prompt();
+        assert!(prompt.contains("Language Policy"));
+        assert!(prompt.contains("Highest Priority"));
+        let prompt_lower = prompt.to_lowercase();
+        assert!(prompt_lower.contains("same language"));
+        assert!(prompt_lower.contains("exact same language"));
     }
 }

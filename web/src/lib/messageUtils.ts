@@ -157,3 +157,31 @@ export function getLastAssistantMessage(messages: Message[]): string | null {
   }
   return null
 }
+
+/**
+ * Remove embedded tool call JSON from content text.
+ * Some models output tool call JSON in the content field (e.g. `[{"name":"device","arguments":...}]`)
+ * wrapped in markdown code blocks or bare. This strips them for clean display.
+ */
+export function cleanToolCallJson(content: string): string {
+  if (!content) return content
+
+  let cleaned = content
+
+  // Remove ```json ... ``` blocks containing tool call JSON
+  cleaned = cleaned.replace(/```(?:json)?\s*\n?\s*(\[\s*\{[\s\S]*?"name"\s*:[\s\S]*?\}\s*\])\s*\n?\s*```/g, '')
+
+  // Remove bare JSON arrays that look like tool calls: [{"name":"...", ...}]
+  cleaned = cleaned.replace(/\[\s*\{\s*"name"\s*:\s*"[^"]*"\s*,\s*"arguments"\s*:\s*\{[^}]*\}\s*\}\s*\]/g, '')
+
+  // Remove markdown-wrapped single object tool calls
+  cleaned = cleaned.replace(/```(?:json)?\s*\n?\s*(\{\s*"name"\s*:\s*"[^"]*"\s*,\s*"arguments"\s*:[\s\S]*?\})\s*\n?\s*```/g, '')
+
+  // Remove bare JSON objects that look like tool calls: {"name":"...", "arguments":{...}}
+  cleaned = cleaned.replace(/\{\s*"name"\s*:\s*"[^"]*"\s*,\s*"arguments"\s*:\s*\{[^}]*\}\s*\}/g, '')
+
+  // Clean up empty lines left behind
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim()
+
+  return cleaned
+}

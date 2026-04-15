@@ -16,7 +16,7 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use super::staged::{IntentCategory, IntentClassifier};
-use super::tool_parser::parse_tool_calls;
+use super::tool_parser::{parse_tool_calls, remove_tool_calls_from_response};
 use super::types::{AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, LargeDataCache, ToolCall};
 use super::planner::types::ExecutionPlan;
 use crate::error::{NeoMindError, Result};
@@ -2589,7 +2589,7 @@ pub async fn process_stream_events_with_safeguards(
                         // Check for tool calls in buffer (support both XML and JSON formats)
                         // Try JSON format first: [{"name": "tool", "arguments": {...}}]
                         let json_tool_check = detect_json_tool_calls(&buffer);
-                        if let Some((json_start, tool_json, remaining)) = json_tool_check {
+                        if let Some((json_start, tool_json, _remaining)) = json_tool_check {
                             // Found JSON tool calls - only yield content NOT already yielded
                             if json_start > yielded_up_to {
                                 let new_content = &buffer[yielded_up_to..json_start];
@@ -2612,9 +2612,12 @@ pub async fn process_stream_events_with_safeguards(
                                 }
                             }
 
-                            // Update buffer with remaining content
-                            buffer = remaining.to_string();
-                            yielded_up_to = 0; // Reset for new buffer
+                            // Discard remaining content after embedded tool calls.
+                            // Models often fabricate tool results after outputting JSON tool calls
+                            // in text — these hallucinated results should not be shown to the user.
+                            // The real results will come from actual tool execution.
+                            buffer.clear();
+                            yielded_up_to = 0;
                         } else {
                             // No JSON tool calls detected - check for XML format
                             if let Some(tool_start) = buffer.find("<tool_calls>") {
@@ -2633,8 +2636,9 @@ pub async fn process_stream_events_with_safeguards(
 
                                 if let Some(tool_end) = buffer.find("</tool_calls>") {
                                     let tool_content = buffer[tool_start..tool_end + 13].to_string();
-                                    buffer = buffer[tool_end + 13..].to_string();
-                                    yielded_up_to = 0; // Reset for new buffer
+                                    // Discard remaining content after XML tool calls (same reason as JSON)
+                                    buffer.clear();
+                                    yielded_up_to = 0;
 
                                     if let Ok((_, calls)) = parse_tool_calls(&tool_content) {
                                         if !calls.is_empty() {
@@ -2644,12 +2648,42 @@ pub async fn process_stream_events_with_safeguards(
                                     }
                                 }
                             } else {
-                                // No tool calls detected in this chunk - yield the content immediately
-                                // This ensures real-time streaming even when no tools are being called
-                                if !text.is_empty() {
+                                // Check if buffer might contain the START of a JSON tool call.
+                                // Hold back suspicious content to prevent partial JSON
+                                // from being yielded before the full JSON is detected.
+                                let might_be_json_start = buffer.ends_with('[')
+                                    || buffer.ends_with("[{")
+                                    || buffer.ends_with("{\"")
+                                    || buffer.ends_with("\"name\"")
+                                    || buffer.ends_with("```")
+                                    || buffer.ends_with("```json")
+                                    || (buffer.contains("[{\"name") && !buffer.contains("]}"))
+                                    || (buffer.contains("{\"name\"") && !buffer.contains("}]}"));
+
+                                if might_be_json_start {
+                                    // Don't yield yet — wait for more chunks to determine
+                                    // if this is a tool call JSON or normal text
+                                    // Find the earliest suspicious position
+                                    let suspicious_pos = {
+                                        let mut pos = buffer.len();
+                                        if let Some(p) = buffer.rfind('[') { pos = pos.min(p); }
+                                        if let Some(p) = buffer.rfind("{\"") { pos = pos.min(p); }
+                                        if let Some(p) = buffer.rfind("```") { pos = pos.min(p); }
+                                        pos
+                                    };
+                                    if suspicious_pos > yielded_up_to {
+                                        let safe_content = &buffer[yielded_up_to..suspicious_pos];
+                                        if !safe_content.is_empty() {
+                                            content_before_tools.push_str(safe_content);
+                                            yield AgentEvent::content(safe_content.to_string());
+                                        }
+                                        yielded_up_to = suspicious_pos;
+                                    }
+                                } else if !text.is_empty() {
+                                    // Safe to yield — no JSON pattern detected
                                     yield AgentEvent::content(text.clone());
+                                    yielded_up_to = buffer.len();
                                 }
-                                yielded_up_to = buffer.len(); // Mark all buffer content as yielded
                             }
                         }
                     }
@@ -2677,6 +2711,18 @@ pub async fn process_stream_events_with_safeguards(
                         break;
                     }
                 }
+            }
+
+            // Release any held-back content if it turned out NOT to be a tool call.
+            // If tool_calls_detected is true, the held content IS part of the tool call JSON
+            // and should be discarded (it will not be displayed).
+            if !tool_calls_detected && yielded_up_to < buffer.len() {
+                let remaining = &buffer[yielded_up_to..];
+                if !remaining.is_empty() {
+                    content_before_tools.push_str(remaining);
+                    yield AgentEvent::content(remaining.to_string());
+                }
+                yielded_up_to = buffer.len();
             }
 
             // === PHASE 2: Handle tool calls if detected ===
@@ -2869,7 +2915,7 @@ pub async fn process_stream_events_with_safeguards(
                         let response_to_save = if content_before_tools.is_empty() {
                             String::new()
                         } else {
-                            content_before_tools.clone()
+                            remove_tool_calls_from_response(&content_before_tools)
                         };
                         let initial_msg = if !thinking_content.is_empty() {
                             let cleaned_thinking = cleanup_thinking_content(&thinking_content);
@@ -2901,7 +2947,15 @@ pub async fn process_stream_events_with_safeguards(
                             all_rounds_thinking.push_str(&thinking_content);
                         }
                         if !content_before_tools.is_empty() {
-                            round_contents_map.insert(round_num, content_before_tools.clone());
+                            // Clean any JSON/markdown artifacts from content before storing
+                            let cleaned = remove_tool_calls_from_response(&content_before_tools);
+                            // Also strip markdown code block prefixes that small models emit
+                            let cleaned = cleaned.trim()
+                                .trim_start_matches("```json").trim_start_matches("```")
+                                .trim();
+                            if !cleaned.is_empty() {
+                                round_contents_map.insert(round_num, cleaned.to_string());
+                            }
                         }
 
                         tool_calls_detected = false;
@@ -3234,35 +3288,33 @@ pub async fn process_stream_events_with_safeguards(
                     None
                 };
 
-                // Accumulated thinking across all rounds for the message's thinking field
-                let all_thinking_cleaned = if all_rounds_thinking.is_empty() {
-                    None
-                } else {
-                    Some(cleanup_thinking_content(&all_rounds_thinking))
-                };
+                // Clean any embedded tool call JSON from the final response content
+                // Some models echo tool call JSON in their text response, which should not
+                // be stored in message.content as it's already tracked in tool_calls
+                let cleaned_response_content = remove_tool_calls_from_response(&final_response_content);
 
                 {
                     let mut state = internal_state.write().await;
                     // Register response for cross-turn repetition detection
-                    state.register_response(&final_response_content);
+                    state.register_response(&cleaned_response_content);
                     if let Some(last_msg) = state.memory.last_mut() {
                         if last_msg.role == "assistant" && last_msg.tool_calls.is_some() {
                             // Update the last assistant message (which has tool_calls) with the content
-                            last_msg.content = final_response_content.clone();
-                            last_msg.thinking = all_thinking_cleaned.clone();
+                            last_msg.content = cleaned_response_content.clone();
+                            last_msg.thinking = if all_rounds_thinking.is_empty() { None } else { Some(all_rounds_thinking.clone()) };
                             last_msg.round_thinking = round_thinking_val.clone();
                             last_msg.round_contents = round_contents_val.clone();
                         } else {
                             // Fallback: push a new message if the last one isn't what we expect
-                            let mut final_msg = AgentMessage::assistant(&final_response_content);
-                            final_msg.thinking = all_thinking_cleaned.clone();
+                            let mut final_msg = AgentMessage::assistant(&cleaned_response_content);
+                            final_msg.thinking = if all_rounds_thinking.is_empty() { None } else { Some(all_rounds_thinking.clone()) };
                             final_msg.round_thinking = round_thinking_val.clone();
                             final_msg.round_contents = round_contents_val.clone();
                             state.memory.push(final_msg);
                         }
                     } else {
-                        let mut final_msg = AgentMessage::assistant(&final_response_content);
-                        final_msg.thinking = all_thinking_cleaned.clone();
+                        let mut final_msg = AgentMessage::assistant(&cleaned_response_content);
+                        final_msg.thinking = if all_rounds_thinking.is_empty() { None } else { Some(all_rounds_thinking.clone()) };
                         final_msg.round_thinking = round_thinking_val.clone();
                         final_msg.round_contents = round_contents_val.clone();
                         state.memory.push(final_msg);
@@ -3273,12 +3325,15 @@ pub async fn process_stream_events_with_safeguards(
             } else {
                 // No tool calls - save response directly
                 // Use buffer if content_before_tools is empty (buffer contains all content chunks when no tools)
-                let response_to_save = if content_before_tools.is_empty() {
+                let raw_response = if content_before_tools.is_empty() {
                     // When no tool calls were detected, buffer contains all the content
                     buffer.clone()
                 } else {
                     content_before_tools.clone()
                 };
+
+                // Clean any embedded tool call JSON from response
+                let response_to_save = remove_tool_calls_from_response(&raw_response);
 
                 let initial_msg = if !thinking_content.is_empty() {
                     let cleaned_thinking = cleanup_thinking_content(&thinking_content);
@@ -3512,7 +3567,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
 
                     // Check for tool calls in buffer
                     let json_tool_check = detect_json_tool_calls(&buffer);
-                    if let Some((json_start, tool_json, remaining)) = json_tool_check {
+                    if let Some((json_start, tool_json, _remaining)) = json_tool_check {
                         let before_tool = &buffer[..json_start];
                         if !before_tool.is_empty() {
                             content_before_tools.push_str(before_tool);
@@ -3524,7 +3579,8 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                             tool_calls.extend(calls);
                         }
 
-                        buffer = remaining.to_string();
+                        // Discard remaining hallucinated content after embedded tool calls
+                        buffer.clear();
                     } else {
                         // No JSON tool calls detected - check for XML format
                         if let Some(tool_start) = buffer.find("<tool_calls>") {
@@ -3536,7 +3592,8 @@ pub async fn process_multimodal_stream_events_with_safeguards(
 
                             if let Some(tool_end) = buffer.find("</tool_calls>") {
                                 let tool_content = buffer[tool_start..tool_end + 13].to_string();
-                                buffer = buffer[tool_end + 13..].to_string();
+                                // Discard remaining hallucinated content after XML tool calls
+                                buffer.clear();
 
                                 if let Ok((_, calls)) = parse_tool_calls(&tool_content) {
                                     tool_calls_detected = true;
@@ -3805,18 +3862,21 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                 final_response_content = fallback;
             }
 
+            // Clean any embedded tool call JSON from the final response content
+            let cleaned_response_content = remove_tool_calls_from_response(&final_response_content);
+
             // Update the initial message with follow-up content
             {
                 let mut state = internal_state.write().await;
                 if let Some(last_msg) = state.memory.last_mut() {
                     if last_msg.role == "assistant" && last_msg.tool_calls.is_some() {
-                        last_msg.content = final_response_content.clone();
+                        last_msg.content = cleaned_response_content.clone();
                     } else {
-                        let final_msg = AgentMessage::assistant(&final_response_content);
+                        let final_msg = AgentMessage::assistant(&cleaned_response_content);
                         state.memory.push(final_msg);
                     }
                 } else {
-                    let final_msg = AgentMessage::assistant(&final_response_content);
+                    let final_msg = AgentMessage::assistant(&cleaned_response_content);
                     state.memory.push(final_msg);
                 }
             }
@@ -3824,11 +3884,14 @@ pub async fn process_multimodal_stream_events_with_safeguards(
             tracing::info!("Multimodal tool execution and Phase 2 response complete");
         } else {
             // No tool calls - save response directly
-            let response_to_save = if buffer.is_empty() {
+            let raw_response = if buffer.is_empty() {
                 String::new()
             } else {
                 buffer.clone()
             };
+
+            // Clean any embedded tool call JSON from response
+            let response_to_save = remove_tool_calls_from_response(&raw_response);
 
             let initial_msg = AgentMessage::assistant(&response_to_save);
             internal_state.write().await.push_message(initial_msg);
