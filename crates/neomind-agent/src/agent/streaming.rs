@@ -330,14 +330,15 @@ fn detect_json_tool_calls(buffer: &str) -> Option<(usize, String, String)> {
 
 
 /// Simple in-memory cache for tool results with TTL and size limit
-struct ToolResultCache {
+#[derive(Debug)]
+pub struct ToolResultCache {
     entries: HashMap<String, (crate::toolkit::ToolOutput, Instant)>,
     ttl: Duration,
     max_entries: usize,
 }
 
 impl ToolResultCache {
-    fn new(ttl: Duration) -> Self {
+    pub fn new(ttl: Duration) -> Self {
         Self {
             entries: HashMap::new(),
             ttl,
@@ -2753,13 +2754,10 @@ pub async fn process_stream_events_with_safeguards(
                 let tool_calls_to_execute = tool_calls.clone();
 
                 // Resolve cached data references in tool arguments
-                let large_cache = {
+                let (large_cache, cache) = {
                     let state = internal_state.read().await;
-                    state.large_data_cache.clone()
+                    (state.large_data_cache.clone(), state.tool_result_cache.clone())
                 };
-
-                // Create cache for this batch of tool executions
-                let cache = Arc::new(RwLock::new(ToolResultCache::new(Duration::from_secs(300))));
 
                 // Execute tool calls with bounded concurrency (max 6 parallel)
                 const MAX_TOOL_CONCURRENCY: usize = 6;
@@ -3634,12 +3632,10 @@ pub async fn process_multimodal_stream_events_with_safeguards(
             let tool_calls_to_execute = tool_calls.clone();
 
             // Resolve cached data references in tool arguments
-            let large_cache = {
+            let (large_cache, cache) = {
                 let state = internal_state.read().await;
-                state.large_data_cache.clone()
+                (state.large_data_cache.clone(), state.tool_result_cache.clone())
             };
-
-            let cache = Arc::new(RwLock::new(ToolResultCache::new(Duration::from_secs(300))));
 
             // Execute tool calls with bounded concurrency (max 6 parallel)
             let tool_inputs: Vec<(String, serde_json::Value)> = tool_calls_to_execute

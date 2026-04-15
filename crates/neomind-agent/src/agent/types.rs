@@ -561,10 +561,33 @@ impl AgentMessage {
                 Message::user(&self.content)
             }
             "assistant" => {
-                // Tool call information is already stored in the tool_calls field
-                // and rendered by the frontend's ToolCallVisualization component.
-                // No need to add placeholder text to the content.
-                Message::assistant(&self.content)
+                let mut content = self.content.clone();
+                // When tool_calls exist and content is empty, inject a concise summary
+                // so the LLM knows what tools were called in previous turns.
+                if let Some(ref tool_calls) = self.tool_calls {
+                    if !tool_calls.is_empty() && content.is_empty() {
+                        let summaries: Vec<String> = tool_calls.iter().map(|tc| {
+                            let args_summary = summarize_tool_args(&tc.name, &tc.arguments);
+                            let result_preview = tc.result.as_ref()
+                                .and_then(|r| {
+                                    if let Some(s) = r.as_str() {
+                                        Some(s.chars().take(120).collect::<String>())
+                                    } else {
+                                        let s = r.to_string();
+                                        Some(s.chars().take(120).collect::<String>())
+                                    }
+                                })
+                                .unwrap_or_default();
+                            if result_preview.is_empty() {
+                                format!("{}({})", tc.name, args_summary)
+                            } else {
+                                format!("{}({}) → {}...", tc.name, args_summary, result_preview)
+                            }
+                        }).collect();
+                        content = format!("[Called: {}]", summaries.join("; "));
+                    }
+                }
+                Message::assistant(&content)
             }
             "system" => Message::system(&self.content),
             "tool" => {
@@ -710,6 +733,67 @@ impl SessionState {
     }
 }
 
+/// Find the array of items from a tool response JSON.
+/// Tries: `val[list_key]` → `val["data"][list_key]` → `val["data"]` (if array) → `val` (if array)
+fn find_json_list<'a>(val: &'a serde_json::Value, list_key: &str) -> Option<&'a Vec<serde_json::Value>> {
+    val.get(list_key).and_then(|v| v.as_array())
+        .or_else(|| val.get("data").and_then(|d| d.get(list_key)).and_then(|v| v.as_array()))
+        .or_else(|| val.get("data").and_then(|v| v.as_array()))
+        .or_else(|| val.as_array())
+}
+
+/// Summarize tool call arguments into a concise string.
+/// E.g., `{"action":"list"}` → `"list"`,
+///       `{"action":"history","device_id":"b626d0","metric":"battery"}` → `"history b626d0/battery"`
+fn summarize_tool_args(tool_name: &str, args: &Value) -> String {
+    let obj = match args.as_object() {
+        Some(o) => o,
+        None => return args.to_string().chars().take(80).collect(),
+    };
+
+    // Extract the action field if present
+    let action = obj.get("action").and_then(|v| v.as_str()).unwrap_or("");
+
+    match tool_name {
+        "device" => {
+            match action {
+                "list" => "list".to_string(),
+                "get" | "query" | "history" => {
+                    let device_id = obj.get("device_id").and_then(|v| v.as_str()).unwrap_or("?");
+                    let metric = obj.get("metric").and_then(|v| v.as_str()).unwrap_or("");
+                    if metric.is_empty() {
+                        format!("{} {}", action, device_id)
+                    } else {
+                        format!("{} {}/{}", action, device_id, metric)
+                    }
+                }
+                _ => action.to_string(),
+            }
+        }
+        "agent" => {
+            match action {
+                "list" => "list".to_string(),
+                _ => action.to_string(),
+            }
+        }
+        _ => {
+            // Generic: show action + up to 2 key params
+            let mut parts = vec![];
+            if !action.is_empty() {
+                parts.push(action.to_string());
+            }
+            for (k, v) in obj.iter() {
+                if k == "action" { continue; }
+                if parts.len() >= 3 { break; }
+                if let Some(s) = v.as_str() {
+                    parts.push(format!("{}={}", k, s.chars().take(20).collect::<String>()));
+                }
+            }
+            if parts.is_empty() { "?".to_string() } else { parts.join(",") }
+        }
+    }
+}
+
 /// Cached large tool result data (images, big base64 blobs, etc.).
 /// This data is stored outside LLM message history to prevent token bloat.
 #[derive(Debug, Clone)]
@@ -774,11 +858,11 @@ impl LargeDataCache {
                 human_size, cached_ref, structure_preview
             )
         } else if content_type == "application/json" {
-            // JSON data: show structure without leaking raw content
-            let structure_preview = Self::describe_structure(result);
+            // JSON data: extract key summary values for LLM context
+            let summary = Self::smart_json_summary(tool_name, result, 500);
             format!(
-                "[Data: {}, {}. Use \"{}\" to reference. Structure: {}]",
-                content_type, human_size, cached_ref, structure_preview
+                "[Data: {}, {}. Use \"{}\" to reference. {}]",
+                content_type, human_size, cached_ref, summary
             )
         } else {
             let preview: String = result.chars().take(300).collect();
@@ -945,6 +1029,182 @@ impl LargeDataCache {
         }
     }
 
+    /// Generate a smart summary of JSON data preserving key identifiers.
+    /// Falls back to structure description if data shape is unrecognized.
+    fn smart_json_summary(tool_name: &str, data: &str, max_len: usize) -> String {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(data) {
+            let summary = match tool_name {
+                "device" => Self::extract_device_summary(&val),
+                "agent" => Self::extract_agent_summary(&val),
+                "rule" => Self::extract_rule_summary(&val),
+                "message" | "alert" => Self::extract_message_summary(&val),
+                "extension" => Self::extract_extension_summary(&val),
+                _ => Self::generic_json_summary(&val),
+            };
+            // Truncate to max_len
+            let chars: Vec<char> = summary.chars().collect();
+            if chars.len() > max_len {
+                format!("{}...", chars[..max_len].iter().collect::<String>())
+            } else {
+                summary
+            }
+        } else {
+            // Not valid JSON, just truncate
+            let s: String = data.chars().take(max_len).collect();
+            format!("Preview: {}", s)
+        }
+    }
+
+    /// Extract device names and IDs from device tool results.
+    /// E.g., "6 devices: NE101-Shelf(b62730), NE101-Refrigerator(b65020), ..."
+    fn extract_device_summary(val: &serde_json::Value) -> String {
+        Self::extract_list_summary(
+            val, "devices",
+            &["name", "device_name"],
+            &["id", "device_id"],
+            "devices",
+        )
+    }
+
+    /// Extract agent names and IDs from agent tool results.
+    fn extract_agent_summary(val: &serde_json::Value) -> String {
+        Self::extract_list_summary(
+            val, "agents",
+            &["name", "agent_name"],
+            &["id", "agent_id"],
+            "agents",
+        )
+    }
+
+    /// Extract rule names and IDs from rule tool results.
+    fn extract_rule_summary(val: &serde_json::Value) -> String {
+        Self::extract_list_summary(
+            val, "rules",
+            &["name"],
+            &["id", "rule_id"],
+            "rules",
+        )
+    }
+
+    /// Generic list summary extractor.
+    /// Looks for an array under `list_key` (or "data"), extracts name+id pairs.
+    fn extract_list_summary(
+        val: &serde_json::Value,
+        list_key: &str,
+        name_keys: &[&str],
+        id_keys: &[&str],
+        label: &str,
+    ) -> String {
+        let arr = find_json_list(val, list_key);
+        if let Some(arr) = arr {
+            let count = arr.len();
+            let items: Vec<String> = arr.iter().take(10).filter_map(|item: &serde_json::Value| {
+                let name = name_keys.iter()
+                    .find_map(|k| item.get(*k).and_then(|v| v.as_str()))
+                    .unwrap_or("?");
+                let id = id_keys.iter()
+                    .find_map(|k| item.get(*k).and_then(|v| v.as_str()))
+                    .unwrap_or("?");
+                Some(format!("{}({})", name, id))
+            }).collect();
+            if items.is_empty() {
+                return format!("{} {}", count, label);
+            }
+            let suffix = if count > 10 { ", ..." } else { "" };
+            format!("{} {}: {}{}", count, label, items.join(", "), suffix)
+        } else {
+            Self::describe_value(val, 0)
+        }
+    }
+
+    /// Extract message/alert titles and IDs from message tool results.
+    fn extract_message_summary(val: &serde_json::Value) -> String {
+        let arr = find_json_list(val, "messages");
+        if let Some(arr) = arr {
+            let count = arr.len();
+            let items: Vec<String> = arr.iter().take(10).filter_map(|item: &serde_json::Value| {
+                let title = item.get("title").or_else(|| item.get("subject"))
+                    .and_then(|v| v.as_str()).unwrap_or("?");
+                let level = item.get("level").and_then(|v| v.as_str())
+                    .map(|l| format!("[{}]", l)).unwrap_or_default();
+                Some(format!("{}{}", title, level))
+            }).collect();
+            if items.is_empty() {
+                return format!("{} messages", count);
+            }
+            let suffix = if count > 10 { ", ..." } else { "" };
+            format!("{} messages: {}{}", count, items.join(", "), suffix)
+        } else {
+            Self::describe_value(val, 0)
+        }
+    }
+
+    /// Extract extension names, IDs, and state from extension tool results.
+    fn extract_extension_summary(val: &serde_json::Value) -> String {
+        let arr = find_json_list(val, "extensions");
+        if let Some(arr) = arr {
+            let count = arr.len();
+            let items: Vec<String> = arr.iter().take(10).filter_map(|item: &serde_json::Value| {
+                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+                let state = item.get("state").and_then(|v| v.as_str())
+                    .map(|s| format!(":{}", s)).unwrap_or_default();
+                Some(format!("{}({}){}", name, id, state))
+            }).collect();
+            if items.is_empty() {
+                return format!("{} extensions", count);
+            }
+            let suffix = if count > 10 { ", ..." } else { "" };
+            format!("{} extensions: {}{}", count, items.join(", "), suffix)
+        } else {
+            Self::describe_value(val, 0)
+        }
+    }
+
+    /// Generic JSON summary: show first N items' key fields.
+    fn generic_json_summary(val: &serde_json::Value) -> String {
+        match val {
+            serde_json::Value::Array(arr) => {
+                let count = arr.len();
+                if count == 0 { return "[]".to_string(); }
+                // Show first 3 items concisely
+                let previews: Vec<String> = arr.iter().take(3).map(|item| {
+                    match item {
+                        serde_json::Value::Object(map) => {
+                            let fields: Vec<String> = map.iter().take(3).map(|(k, v)| {
+                                let vs = match v {
+                                    serde_json::Value::String(s) => s.chars().take(20).collect::<String>(),
+                                    other => other.to_string().chars().take(20).collect::<String>(),
+                                };
+                                format!("{}={}", k, vs)
+                            }).collect();
+                            format!("{{{}}}", fields.join(", "))
+                        }
+                        other => other.to_string().chars().take(60).collect(),
+                    }
+                }).collect();
+                let suffix = if count > 3 { format!(", ... ({} items)", count) } else { "".to_string() };
+                format!("[{}{}]", previews.join(", "), suffix)
+            }
+            serde_json::Value::Object(map) => {
+                let fields: Vec<String> = map.iter().take(5).map(|(k, v)| {
+                    let vs = match v {
+                        serde_json::Value::String(s) if s.len() > 40 => format!("{}...", &s[..40]),
+                        serde_json::Value::Array(a) => format!("Array({})", a.len()),
+                        serde_json::Value::Object(_) => "{...}".to_string(),
+                        other => other.to_string(),
+                    };
+                    format!("{}: {}", k, vs)
+                }).collect();
+                format!("{{{}}}", fields.join(", "))
+            }
+            other => {
+                let s = other.to_string();
+                s.chars().take(200).collect()
+            }
+        }
+    }
+
     /// Recursively describe a JSON value's structure.
     fn describe_value(value: &serde_json::Value, depth: usize) -> String {
         if depth > 3 {
@@ -1021,6 +1281,9 @@ pub struct AgentInternalState {
     pub recent_response_hashes: Vec<u64>,
     /// Cache for large tool results (images, base64) that must not enter LLM context
     pub large_data_cache: LargeDataCache,
+    /// Session-level tool result cache for deduplication across turns.
+    /// Shared via Arc<RwLock<>> so streaming code can access it concurrently.
+    pub tool_result_cache: std::sync::Arc<tokio::sync::RwLock<super::streaming::ToolResultCache>>,
 }
 
 impl AgentInternalState {
@@ -1034,6 +1297,9 @@ impl AgentInternalState {
             memory: Vec::new(),
             recent_response_hashes: Vec::new(),
             large_data_cache: LargeDataCache::new(),
+            tool_result_cache: std::sync::Arc::new(tokio::sync::RwLock::new(
+                super::streaming::ToolResultCache::new(std::time::Duration::from_secs(300))
+            )),
         }
     }
 
