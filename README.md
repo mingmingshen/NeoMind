@@ -169,7 +169,7 @@ After installation, access `http://your-server:9375` in your browser.
 **Install specific version:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.6.7 sh
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.6.8 sh
 ```
 
 **Custom installation:**
@@ -201,7 +201,7 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 ```bash
 # 1. Download server binary and frontend (replace VERSION and PLATFORM)
 # PLATFORM: linux-amd64, linux-arm64, darwin-arm64
-VERSION=0.6.7
+VERSION=0.6.8
 
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-server-linux-amd64.tar.gz
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-web-${VERSION}.tar.gz
