@@ -365,6 +365,7 @@ mod tests {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp,
         }
     }

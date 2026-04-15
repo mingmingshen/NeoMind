@@ -10,7 +10,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 
 [![Build Status](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml/badge.svg)](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.6.7](https://img.shields.io/badge/v-0.6.7-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
+[![Version: 0.6.8](https://img.shields.io/badge/v-0.6.8-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.85+-orange.svg)](https://www.rust-lang.org)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](https://github.com/camthink-ai/NeoMind/releases)
 

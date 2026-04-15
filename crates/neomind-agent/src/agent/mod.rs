@@ -169,6 +169,7 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
                     thinking: None, // Never keep thinking in compacted messages
                     images: None,
                     round_contents: None,
+                    round_thinking: None,
                     timestamp: msg.timestamp,
                 });
             }
@@ -297,6 +298,7 @@ pub fn compact_conversation(
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp,
         });
     }

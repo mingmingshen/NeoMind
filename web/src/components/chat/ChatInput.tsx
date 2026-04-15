@@ -110,7 +110,7 @@ const ModelSelector = memo(function ModelSelector({
           <ChevronDown className="h-3 w-3 shrink-0" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
+      <DropdownMenuContent align="start" className="w-64 max-h-[50vh] overflow-y-auto">
         <DropdownMenuLabel className="text-xs text-muted-foreground">
           {t('chat:input.selectLLMModel')}
         </DropdownMenuLabel>

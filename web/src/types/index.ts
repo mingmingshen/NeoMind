@@ -476,13 +476,15 @@ export interface Message {
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   timestamp: number
-  thinking?: string
+  thinking?: string // Legacy: combined thinking across all rounds
   tool_calls?: ToolCall[]
   images?: ChatImage[]  // Images sent with user messages (multimodal)
   // Indicates if this message is still being streamed (partial)
   isPartial?: boolean
   // Per-round intermediate text for multi-round tool calling
   round_contents?: Record<number, string>
+  // Per-round thinking content for grouped rendering
+  round_thinking?: Record<number, string>
 }
 
 /**

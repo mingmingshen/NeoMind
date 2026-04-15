@@ -362,6 +362,7 @@ impl SessionManager {
                     thinking: msg.thinking.clone(),
                     images,
                     round_contents: msg.round_contents.clone(),
+                    round_thinking: msg.round_thinking.clone(),
                     timestamp: msg.timestamp,
                 }
             })
@@ -449,6 +450,7 @@ impl SessionManager {
                     thinking: sm.thinking,
                     images,
                     round_contents: sm.round_contents,
+                    round_thinking: sm.round_thinking,
                     timestamp: sm.timestamp,
                 }
             })

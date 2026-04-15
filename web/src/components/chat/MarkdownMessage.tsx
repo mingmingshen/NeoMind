@@ -47,7 +47,7 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
       const inline = (props as any).inline
       if (inline) {
         return (
-          <code className={cn("bg-muted px-1 py-0.5 rounded text-xs font-mono", className)} {...(props as any)}>
+          <code className={cn("bg-muted px-1 py-0.5 rounded text-[12px] font-mono", className)} {...(props as any)}>
             {children}
           </code>
         )
@@ -76,16 +76,16 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
     <div className={cn("relative", className)}>
       <div
         className={cn(
-          // Base prose classes
-          "prose prose-sm max-w-none",
+          // Base prose classes — use prose for structure, override size to 13px
+          "prose max-w-none text-[13px]",
           // Text wrapping
           "break-words overflow-wrap-anywhere",
           "prose-p:leading-relaxed prose-p:my-1",
           "prose-headings:font-semibold prose-headings:my-2",
-          "prose-h1:text-base prose-h2:text-sm prose-h3:text-xs",
+          "prose-h1:text-[15px] prose-h2:text-[13px] prose-h3:text-[12px]",
           "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
           "prose-strong:font-semibold",
-          "prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:font-mono",
+          "prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-[12px] prose-code:font-mono",
           "prose-code:break-all prose-code:whitespace-pre-wrap",
           "prose-pre:bg-muted prose-pre:p-3 prose-pre:rounded-lg prose-pre:my-2",
           "prose-pre:overflow-x-auto prose-pre:max-w-full",
@@ -94,7 +94,7 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
           "prose-ul:my-1 prose-ul:pl-4 prose-ul:list-disc",
           "prose-ol:my-1 prose-ol:pl-4 prose-ol:list-decimal",
           "prose-li:my-0.5",
-          "prose-table:my-2 prose-table:text-xs",
+          "prose-table:my-2 prose-table:text-[12px]",
           "prose-th:px-2 prose-th:py-1 prose-th:border prose-th:border-border prose-th:bg-muted/50",
           "prose-td:px-2 prose-td:py-1 prose-td:border prose-td:border-border",
           "prose-hr:my-2 prose-hr:border-border"

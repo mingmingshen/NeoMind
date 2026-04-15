@@ -855,6 +855,10 @@ async fn send_session_history(
                     if let Some(ref rc) = msg.round_contents {
                         history_json.as_object_mut().unwrap().insert("round_contents".to_string(), rc.clone());
                     }
+                    // Include round_thinking if present (for per-round thinking display)
+                    if let Some(ref rt) = msg.round_thinking {
+                        history_json.as_object_mut().unwrap().insert("round_thinking".to_string(), rt.clone());
+                    }
                     let history_msg = history_json.to_string();
 
                     if socket.send(AxumMessage::Text(history_msg)).await.is_err() {

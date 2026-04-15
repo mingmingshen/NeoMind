@@ -1,6 +1,10 @@
 /**
  * ThinkingBlock - Displays AI reasoning process
- * Clean, modern design
+ *
+ * Supports two modes:
+ * 1. Per-round thinking (roundThinking provided): shows thinking grouped by round
+ *    with visual labels, differentiated styling per round
+ * 2. Simple thinking (only `thinking` provided): shows as single block
  */
 
 import { useState } from "react"
@@ -9,27 +13,81 @@ import { BrainCircuit, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface ThinkingBlockProps {
-  thinking: string
+  thinking?: string
+  /** Per-round thinking for grouped rendering with visual differentiation */
+  roundThinking?: Record<number, string>
   isStreaming?: boolean
   defaultExpanded?: boolean
+  /** Inline mode: no outer card border, for embedding inside ToolProcessBlock */
+  inline?: boolean
 }
 
 export function ThinkingBlock({
   thinking,
+  roundThinking,
   isStreaming = false,
-  defaultExpanded = false
+  defaultExpanded = false,
+  inline = false,
 }: ThinkingBlockProps) {
   const { t } = useTranslation("chat")
   const [isExpanded, setIsExpanded] = useState(defaultExpanded)
 
-  if (!thinking) return null
+  // Determine what to render
+  const hasRoundThinking = roundThinking && Object.keys(roundThinking).length > 0
+  const hasSimpleThinking = !!thinking
+
+  if (!hasRoundThinking && !hasSimpleThinking) return null
+
+  // Calculate total thinking length for summary
+  const totalLength = hasRoundThinking
+    ? Object.values(roundThinking!).reduce((sum, s) => sum + s.length, 0)
+    : (thinking?.length ?? 0)
+
+  const roundCount = hasRoundThinking ? Object.keys(roundThinking!).length : 0
+
+  if (inline) {
+    return (
+      <div className="border-b border-border/20">
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/30 transition-colors"
+        >
+          <BrainCircuit className={cn(
+            "h-3.5 w-3.5",
+            isStreaming ? "text-blue-500 animate-pulse" : "text-muted-foreground"
+          )} />
+          <span className="text-[13px] font-medium">{t("thinking.title")}</span>
+          {isStreaming && (
+            <span className="text-[10px] text-muted-foreground">{t("thinking.thinking")}</span>
+          )}
+          <div className="flex-1" />
+          <ChevronDown className={cn(
+            "h-3 w-3 text-muted-foreground transition-transform duration-200",
+            isExpanded && "rotate-180"
+          )} />
+        </button>
+        {isExpanded && (
+          <div className="px-3 pb-2">
+            {hasRoundThinking ? (
+              <PerRoundThinking rounds={roundThinking!} isStreaming={isStreaming} compact />
+            ) : (
+              <div className="text-[13px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-words">
+                {thinking}
+                {isStreaming && <span className="inline-block w-1 h-3.5 bg-muted-foreground/30 animate-pulse ml-0.5 align-middle" />}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
-    <div className="my-3 rounded-xl border border-border/60 bg-muted/30 overflow-hidden">
+    <div className="my-3 rounded-lg bg-muted/30 overflow-hidden">
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-muted/50 transition-colors"
+        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-muted/30 transition-colors"
       >
         <BrainCircuit className={cn(
           "h-4 w-4",
@@ -42,10 +100,16 @@ export function ThinkingBlock({
           <span className="text-xs text-muted-foreground">{t("thinking.thinking")}</span>
         )}
 
+        {roundCount > 1 && (
+          <span className="text-xs text-muted-foreground/70">
+            {roundCount} {t("thinking.rounds", "rounds")}
+          </span>
+        )}
+
         <div className="flex-1" />
 
         <span className="text-xs text-muted-foreground/70 mr-2">
-          {thinking.length} {t("thinking.characters")}
+          {totalLength} {t("thinking.characters")}
         </span>
 
         <ChevronDown className={cn(
@@ -57,12 +121,98 @@ export function ThinkingBlock({
       {/* Content */}
       {isExpanded && (
         <div className="px-4 pb-3">
-          <div className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap break-words">
-            {thinking}
-            {isStreaming && <span className="inline-block w-1 h-4 bg-muted-foreground/30 animate-pulse ml-1 align-middle" />}
-          </div>
+          {hasRoundThinking ? (
+            <PerRoundThinking rounds={roundThinking!} isStreaming={isStreaming} />
+          ) : (
+            <div className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap break-words">
+              {thinking}
+              {isStreaming && <span className="inline-block w-1 h-4 bg-muted-foreground/30 animate-pulse ml-1 align-middle" />}
+            </div>
+          )}
         </div>
       )}
     </div>
   )
+}
+
+/** Per-round thinking with visual differentiation */
+function PerRoundThinking({
+  rounds,
+  isStreaming,
+  compact = false,
+}: {
+  rounds: Record<number, string>
+  isStreaming: boolean
+  compact?: boolean
+}) {
+  const sortedRounds = Object.entries(rounds)
+    .map(([k, v]) => [Number(k), v] as [number, string])
+    .sort((a, b) => a[0] - b[0])
+
+  if (sortedRounds.length === 0) return null
+
+  // If only one round, render without label
+  if (sortedRounds.length === 1) {
+    const [, text] = sortedRounds[0]
+    return (
+      <div className={cn(
+        "leading-relaxed text-muted-foreground whitespace-pre-wrap break-words text-[13px]"
+      )}>
+        {text}
+        {isStreaming && <span className={cn(
+          "bg-muted-foreground/30 animate-pulse align-middle ml-0.5 inline-block w-1 h-3.5"
+        )} />}
+      </div>
+    )
+  }
+
+  // Multiple rounds - show with round labels
+  return (
+    <div className="space-y-2">
+      {sortedRounds.map(([round, text], idx) => (
+        <div key={round}>
+          {/* Round label */}
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className={cn(
+              "inline-flex items-center justify-center rounded-full font-medium",
+              "h-5 px-2 text-[11px]",
+              getRoundColor(round)
+            )}>
+              R{round}
+            </span>
+            {idx === sortedRounds.length - 1 && isStreaming && (
+              <span className={cn(
+                "text-muted-foreground animate-pulse text-[11px]"
+              )}>
+                {compact ? "" : "thinking..."}
+              </span>
+            )}
+          </div>
+          {/* Round thinking text */}
+          <div className={cn(
+            "leading-relaxed text-muted-foreground whitespace-pre-wrap break-words text-[13px] pl-6"
+          )}>
+            {text}
+            {idx === sortedRounds.length - 1 && isStreaming && (
+              <span className={cn(
+                "bg-muted-foreground/30 animate-pulse align-middle ml-0.5 inline-block w-1 h-3.5"
+              )} />
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Get round badge color - cycles through a subtle palette */
+function getRoundColor(round: number): string {
+  const colors = [
+    "bg-blue-500/10 text-blue-600",
+    "bg-emerald-500/10 text-emerald-600",
+    "bg-amber-500/10 text-amber-600",
+    "bg-purple-500/10 text-purple-600",
+    "bg-rose-500/10 text-rose-600",
+  ]
+  return colors[(round - 1) % colors.length]
 }

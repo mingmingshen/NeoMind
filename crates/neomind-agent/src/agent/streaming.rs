@@ -1811,6 +1811,7 @@ fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
                     thinking: None, // Never keep thinking in compacted messages
                     images: None,
                     round_contents: None,
+                    round_thinking: None,
                     timestamp: msg.timestamp,
                 });
             }
@@ -2034,6 +2035,7 @@ fn compact_tool_results_stream_with_config(
                     thinking: None,
                     images: None,
                     round_contents: None,
+                    round_thinking: None,
                     timestamp: msg.timestamp,
                 };
                 result.push(summary_msg);
@@ -2315,6 +2317,11 @@ pub async fn process_stream_events_with_safeguards(
         const MAX_TOOL_ITERATIONS: usize = 10;
         // Accumulate ALL tool results across rounds for final summary
         let mut all_round_tool_results: Vec<(String, String)> = Vec::new();
+        // Track per-round thinking and content for persistence (round number → text)
+        let mut round_thinking_map: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        let mut round_contents_map: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        // Accumulate ALL rounds' thinking for the message's thinking field
+        let mut all_rounds_thinking = String::new();
 
         // === INTENT & PLAN VISUALIZATION ===
         // Send intent and plan events first to show user what's happening
@@ -2886,6 +2893,17 @@ pub async fn process_stream_events_with_safeguards(
 
                         // Increment iteration count and loop back
                         tool_iteration_count += 1;
+
+                        // Save per-round thinking and content for persistence
+                        let round_num = tool_iteration_count as u32; // current round that just ended
+                        if !thinking_content.is_empty() {
+                            round_thinking_map.insert(round_num, thinking_content.clone());
+                            all_rounds_thinking.push_str(&thinking_content);
+                        }
+                        if !content_before_tools.is_empty() {
+                            round_contents_map.insert(round_num, content_before_tools.clone());
+                        }
+
                         tool_calls_detected = false;
                         tool_calls.clear();
                         content_before_tools.clear();
@@ -3133,47 +3151,96 @@ pub async fn process_stream_events_with_safeguards(
                 // Detect and extract these embedded tool calls so they get executed
                 // instead of being shown as raw JSON to the user.
                 if let Ok((cleaned_text, embedded_tool_calls)) = parse_tool_calls(&final_response_content) {
-                    if !embedded_tool_calls.is_empty() && tool_iteration_count < MAX_TOOL_ITERATIONS - 1 {
-                        tracing::info!(
-                            "Phase 2: Recovered {} embedded tool calls from follow-up response, continuing execution",
-                            embedded_tool_calls.len()
-                        );
+                    if !embedded_tool_calls.is_empty() {
+                        if tool_iteration_count < MAX_TOOL_ITERATIONS - 1 {
+                            tracing::info!(
+                                "Phase 2: Recovered {} embedded tool calls from follow-up response, continuing execution",
+                                embedded_tool_calls.len()
+                            );
 
-                        // Replace final_response_content with cleaned text (JSON removed)
-                        final_response_content = cleaned_text;
+                            // Replace final_response_content with cleaned text (JSON removed)
+                            final_response_content = cleaned_text;
 
-                        // IMPORTANT: Save the current state before continuing
-                        {
-                            let mut state = internal_state.write().await;
-                            state.register_response(&final_response_content);
-                            if let Some(last_msg) = state.memory.last_mut() {
-                                if last_msg.role == "assistant" && last_msg.tool_calls.is_some() {
-                                    last_msg.content = final_response_content.clone();
+                            // IMPORTANT: Save the current state before continuing
+                            {
+                                let mut state = internal_state.write().await;
+                                state.register_response(&final_response_content);
+                                if let Some(last_msg) = state.memory.last_mut() {
+                                    if last_msg.role == "assistant" && last_msg.tool_calls.is_some() {
+                                        last_msg.content = final_response_content.clone();
+                                    } else {
+                                        let final_msg = AgentMessage::assistant(&final_response_content);
+                                        state.push_message(final_msg);
+                                    }
                                 } else {
                                     let final_msg = AgentMessage::assistant(&final_response_content);
                                     state.push_message(final_msg);
                                 }
-                            } else {
-                                let final_msg = AgentMessage::assistant(&final_response_content);
-                                state.push_message(final_msg);
                             }
+
+                            // Set up for next round with the recovered tool calls
+                            tool_calls = embedded_tool_calls;
+                            tool_calls_detected = true;
+
+                            // Save per-round thinking and content for persistence
+                            let round_num = (tool_iteration_count + 1) as u32;
+                            if !thinking_content.is_empty() {
+                                round_thinking_map.insert(round_num, thinking_content.clone());
+                                all_rounds_thinking.push_str(&thinking_content);
+                            }
+
+                            tool_iteration_count += 1;
+                            content_before_tools.clear();
+                            thinking_content.clear();
+
+                            yield AgentEvent::IntermediateEnd;
+                            continue 'multi_round_loop;
+                        } else {
+                            // Max iterations reached - can't execute more rounds
+                            // But still clean the raw JSON from content to avoid showing it to user
+                            tracing::info!(
+                                "Phase 2: Found {} embedded tool calls but max iterations reached, cleaning JSON from content",
+                                embedded_tool_calls.len()
+                            );
+                            final_response_content = cleaned_text;
                         }
-
-                        // Set up for next round with the recovered tool calls
-                        tool_calls = embedded_tool_calls;
-                        tool_calls_detected = true;
-                        tool_iteration_count += 1;
-                        content_before_tools.clear();
-                        thinking_content.clear();
-
-                        yield AgentEvent::IntermediateEnd;
-                        continue 'multi_round_loop;
                     }
                 }
 
                 // IMPORTANT: Update the initial message with the follow-up content
                 // instead of saving a separate message. This ensures the message
                 // has both tool_calls and content in one place.
+
+                // Save last round's thinking and content for persistence
+                // Backend stores all raw data faithfully; frontend handles dedup/rendering
+                let last_round = (tool_iteration_count + 1) as u32;
+                if !thinking_content.is_empty() {
+                    let cleaned = cleanup_thinking_content(&thinking_content);
+                    round_thinking_map.insert(last_round, cleaned.clone());
+                    all_rounds_thinking.push_str(&cleaned);
+                }
+                if !final_response_content.is_empty() {
+                    round_contents_map.insert(last_round, final_response_content.clone());
+                }
+                // Convert round maps to serde_json::Value for AgentMessage
+                let round_thinking_val = if !round_thinking_map.is_empty() {
+                    Some(serde_json::to_value(&round_thinking_map).unwrap_or(serde_json::Value::Null))
+                } else {
+                    None
+                };
+                let round_contents_val = if !round_contents_map.is_empty() {
+                    Some(serde_json::to_value(&round_contents_map).unwrap_or(serde_json::Value::Null))
+                } else {
+                    None
+                };
+
+                // Accumulated thinking across all rounds for the message's thinking field
+                let all_thinking_cleaned = if all_rounds_thinking.is_empty() {
+                    None
+                } else {
+                    Some(cleanup_thinking_content(&all_rounds_thinking))
+                };
+
                 {
                     let mut state = internal_state.write().await;
                     // Register response for cross-turn repetition detection
@@ -3182,13 +3249,22 @@ pub async fn process_stream_events_with_safeguards(
                         if last_msg.role == "assistant" && last_msg.tool_calls.is_some() {
                             // Update the last assistant message (which has tool_calls) with the content
                             last_msg.content = final_response_content.clone();
+                            last_msg.thinking = all_thinking_cleaned.clone();
+                            last_msg.round_thinking = round_thinking_val.clone();
+                            last_msg.round_contents = round_contents_val.clone();
                         } else {
                             // Fallback: push a new message if the last one isn't what we expect
-                            let final_msg = AgentMessage::assistant(&final_response_content);
+                            let mut final_msg = AgentMessage::assistant(&final_response_content);
+                            final_msg.thinking = all_thinking_cleaned.clone();
+                            final_msg.round_thinking = round_thinking_val.clone();
+                            final_msg.round_contents = round_contents_val.clone();
                             state.memory.push(final_msg);
                         }
                     } else {
-                        let final_msg = AgentMessage::assistant(&final_response_content);
+                        let mut final_msg = AgentMessage::assistant(&final_response_content);
+                        final_msg.thinking = all_thinking_cleaned.clone();
+                        final_msg.round_thinking = round_thinking_val.clone();
+                        final_msg.round_contents = round_contents_val.clone();
                         state.memory.push(final_msg);
                     }
                 }

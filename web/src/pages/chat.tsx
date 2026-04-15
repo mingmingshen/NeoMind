@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { useParams, useNavigate } from "react-router-dom"
 import { generateId } from "@/lib/id"
-import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, Wrench, RotateCcw } from "lucide-react"
+import { Settings, Send, Sparkles, PanelLeft, MessageSquare, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, Wrench, RotateCcw, BookOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -17,7 +17,7 @@ import { SessionSidebar } from "@/components/session/SessionSidebar"
 import { WelcomeArea } from "@/components/chat/WelcomeArea"
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage"
 import { ThinkingBlock } from "@/components/chat/ThinkingBlock"
-import { ToolCallVisualization } from "@/components/chat/ToolCallVisualization"
+import { ToolProcessBlock, isThinkingDuplicate } from "@/components/chat/ToolCallVisualization"
 import { ConnectionStatus } from "@/components/chat/ConnectionStatus"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ws, type ConnectionState } from "@/lib/websocket"
@@ -169,6 +169,7 @@ export function ChatPage() {
     sessionId,
     messages,
     addMessage,
+    clearMessages,
     createSession,
     switchSession,
     loadSessions,
@@ -216,10 +217,13 @@ export function ChatPage() {
   const capturedStreamingRef = useRef({ content: "", thinking: "", toolCalls: [] as any[] })
   // Round tracking for multi-round tool calling
   const [roundContents, setRoundContents] = useState<Record<number, string>>({})
+  const [streamingRoundThinking, setStreamingRoundThinking] = useState<Record<number, string>>({})
   const currentRoundRef = useRef(1)
   const roundContentsAccumulatorRef = useRef<Record<number, string>>({})
   // Accumulate thinking across all rounds (interleaved thinking pattern)
   const thinkingAccumulatorRef = useRef("")
+  // Per-round thinking for grouped rendering
+  const roundThinkingAccumulatorRef = useRef<Record<number, string>>({})
 
   // Load LLM backends and sessions on mount
   useEffect(() => {
@@ -252,8 +256,12 @@ export function ChatPage() {
       switchSession(urlSessionId).catch((err) => {
         handleError(err, { operation: 'Load session from URL', showToast: false })
       })
+    } else {
+      // Navigated to /chat (welcome mode) — clear stale messages from previous session
+      clearMessages()
+      setLastTokenUsage(null)
     }
-  }, [urlSessionId, switchSession, handleError])
+  }, [urlSessionId, switchSession, handleError, clearMessages])
 
   // Handle deleted session redirects and root path
   useEffect(() => {
@@ -392,8 +400,10 @@ export function ChatPage() {
           }
           const toolCalls = capturedStreamingRef.current.toolCalls
           // Accumulate thinking from current round into total
+          // Store all raw data; PerRoundBlocks handles dedup during rendering
           if (capturedStreamingRef.current.thinking) {
             thinkingAccumulatorRef.current += capturedStreamingRef.current.thinking
+            roundThinkingAccumulatorRef.current[currentRoundRef.current] = capturedStreamingRef.current.thinking
           }
           const thinking = thinkingAccumulatorRef.current
           // Last round's content is the current captured content
@@ -402,9 +412,8 @@ export function ChatPage() {
           if (lastRoundContent) {
             roundContentsAccumulatorRef.current[currentRoundRef.current] = lastRoundContent
           }
-          const hasMultipleRounds = Object.keys(roundContentsAccumulatorRef.current).length > 1
-          // For multi-round: message.content = last round's content, earlier rounds in round_contents
-          // For single-round: message.content = the only content (no round_contents needed)
+          const hasRoundContents = Object.keys(roundContentsAccumulatorRef.current).length > 0
+          const hasRoundThinking = Object.keys(roundThinkingAccumulatorRef.current).length > 0
           const messageContent = lastRoundContent
           if (messageContent || thinking || toolCalls.length > 0) {
             const messageId = streamingMessageIdRef.current || generateId()
@@ -415,7 +424,8 @@ export function ChatPage() {
               timestamp: Date.now(),
               thinking: thinking || undefined,
               tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-              round_contents: hasMultipleRounds ? roundContentsAccumulatorRef.current : undefined,
+              round_contents: hasRoundContents ? roundContentsAccumulatorRef.current : undefined,
+              round_thinking: hasRoundThinking ? roundThinkingAccumulatorRef.current : undefined,
             }
             addMessage(completeMessage)
             setLastAssistantMessageId(messageId)
@@ -425,12 +435,14 @@ export function ChatPage() {
           setStreamingThinking("")
           setStreamingToolCalls([])
           setRoundContents({})
+          setStreamingRoundThinking({})
           // Reset captured ref
           capturedStreamingRef.current = { content: "", thinking: "", toolCalls: [] }
           streamingMessageIdRef.current = null
           currentRoundRef.current = 1
           roundContentsAccumulatorRef.current = {}
           thinkingAccumulatorRef.current = ""
+          roundThinkingAccumulatorRef.current = {}
           break
         }
 
@@ -440,9 +452,10 @@ export function ChatPage() {
           if (capturedStreamingRef.current.content) {
             roundContentsAccumulatorRef.current[currentRoundRef.current] = capturedStreamingRef.current.content
           }
-          // Accumulate thinking across rounds into total (for final message)
+          // Save per-round thinking for grouped rendering
           if (capturedStreamingRef.current.thinking) {
             thinkingAccumulatorRef.current += capturedStreamingRef.current.thinking
+            roundThinkingAccumulatorRef.current[currentRoundRef.current] = capturedStreamingRef.current.thinking
           }
           // Reset captured content for next round
           // NOTE: Don't reset streamingThinking — keep showing all rounds' thinking continuously
@@ -451,6 +464,7 @@ export function ChatPage() {
           capturedStreamingRef.current.thinking = ""
           currentRoundRef.current += 1
           setRoundContents({ ...roundContentsAccumulatorRef.current })
+          setStreamingRoundThinking({ ...roundThinkingAccumulatorRef.current })
           setStreamingContent("")
           break
         }
@@ -496,7 +510,7 @@ export function ChatPage() {
 
     const unsubscribe = ws.onMessage(handleMessage)
     return () => { void unsubscribe() }
-  }, [addMessage, switchSession, lastAssistantMessageId, sessionId, isStreaming])
+  }, [addMessage, switchSession, sessionId])
 
   // Check for pending stream after reconnection
   useEffect(() => {
@@ -587,6 +601,7 @@ export function ChatPage() {
     currentRoundRef.current = 1
     roundContentsAccumulatorRef.current = {}
     thinkingAccumulatorRef.current = ""
+    roundThinkingAccumulatorRef.current = {}
     setRoundContents({})
 
     ws.sendMessage(trimmedInput, attachedImages.length > 0 ? attachedImages : undefined)
@@ -924,14 +939,46 @@ export function ChatPage() {
             }}
           >
             <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
-              {displayMessages.map((message) => (
+              {(() => {
+                // Build display list including streaming message (same loop = same React key = no flicker)
+                const allMessages = [...displayMessages]
+                if (isStreaming) {
+                  // Build per-round thinking: completed rounds + current round
+                  const mergedRoundThinking = { ...streamingRoundThinking }
+                  const completedThinking = Object.values(streamingRoundThinking).join("")
+                  const currentRoundThinking = streamingThinking.startsWith(completedThinking)
+                    ? streamingThinking.slice(completedThinking.length)
+                    : streamingThinking
+                  if (currentRoundThinking) {
+                    mergedRoundThinking[currentRoundRef.current] = currentRoundThinking
+                  }
+                  // Streaming message: same shape as persisted messages
+                  // content = final answer (streams at bottom), tool_calls = process (above)
+                  allMessages.push({
+                    id: streamingMessageIdRef.current || '__streaming__',
+                    role: 'assistant' as const,
+                    content: streamingContent,
+                    thinking: streamingThinking || undefined,
+                    tool_calls: streamingToolCalls.length > 0 ? streamingToolCalls : undefined,
+                    timestamp: Date.now(),
+                    round_thinking: Object.keys(mergedRoundThinking).length > 0 ? mergedRoundThinking : undefined,
+                    round_contents: Object.keys(roundContents).length > 0 ? roundContents : undefined,
+                    _isStreaming: true,
+                  } as Message & { _isStreaming?: boolean })
+                }
+                return allMessages.map((message) => {
+                  const isCurrentlyStreaming = !!(message as any)._isStreaming
+                  return (
                 <div
                   key={message.id}
                   className={`flex gap-2 sm:gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   {message.role === "assistant" && (
                     <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-foreground flex items-center justify-center">
-                      <Sparkles className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-background" />
+                      <Sparkles className={cn(
+                        "h-3.5 w-3.5 sm:h-4 sm:w-4 text-background",
+                        isCurrentlyStreaming && "animate-pulse"
+                      )} />
                     </div>
                   )}
 
@@ -949,13 +996,97 @@ export function ChatPage() {
                       {message.role === "user" && message.images && message.images.length > 0 && (
                         <MessageImages images={message.images} />
                       )}
-                      {message.thinking && <ThinkingBlock thinking={message.thinking} />}
-                      {message.tool_calls && message.tool_calls.length > 0 && (
-                        <ToolCallVisualization toolCalls={message.tool_calls} isStreaming={false} roundContents={message.round_contents} />
+                      {/* User messages: just content */}
+                      {message.role === "user" && message.content && (
+                        <MarkdownMessage content={message.content} variant="user" />
                       )}
-                      {message.content && (
-                        <MarkdownMessage content={message.content} variant={message.role as 'user' | 'assistant'} />
-                      )}
+                      {/* Assistant messages: tool process + final content */}
+                      {message.role === "assistant" && (() => {
+                        const hasTools = message.tool_calls && message.tool_calls.length > 0
+
+                        // Three-layer design:
+                        // 1. Thinking (top) - with per-round differentiation
+                        // 2. Task Process (middle) - tool calls + round content
+                        // 3. Final Answer (bottom) - markdown content
+
+                        // Determine thinking to show
+                        const hasRoundThinking = message.round_thinking && Object.keys(message.round_thinking).length > 0
+                        const hasThinking = !!message.thinking
+                        // Skip thinking if it duplicates final content (Phase 2 LLM echo)
+                        const thinkingDupesContent = hasThinking && message.content
+                          && isThinkingDuplicate(message.thinking, message.content)
+                        // For round_thinking, dedup last round against content
+                        let filteredRoundThinking = message.round_thinking
+                        if (hasRoundThinking && message.content) {
+                          const rounds = Object.entries(message.round_thinking!)
+                            .map(([k, v]) => [Number(k), v] as [number, string])
+                            .sort((a, b) => a[0] - b[0])
+                          if (rounds.length > 0) {
+                            const lastRound = rounds[rounds.length - 1]
+                            if (isThinkingDuplicate(lastRound[1], message.content)) {
+                              // Remove last round if it duplicates content
+                              filteredRoundThinking = { ...message.round_thinking! }
+                              delete filteredRoundThinking[lastRound[0]]
+                              if (Object.keys(filteredRoundThinking).length === 0) {
+                                filteredRoundThinking = undefined
+                              }
+                            }
+                          }
+                        }
+
+                        const showThinking = (hasRoundThinking && !!filteredRoundThinking) || (hasThinking && !thinkingDupesContent && !hasRoundThinking)
+
+                        if (hasTools) {
+                          return (
+                            <>
+                              {showThinking && (
+                                <ThinkingBlock
+                                  thinking={!hasRoundThinking ? message.thinking : undefined}
+                                  roundThinking={filteredRoundThinking}
+                                  isStreaming={isCurrentlyStreaming}
+                                  defaultExpanded={false}
+                                />
+                              )}
+                              <ToolProcessBlock
+                                toolCalls={message.tool_calls!}
+                                roundContents={message.round_contents}
+                                isStreaming={isCurrentlyStreaming}
+                              />
+                              {message.content ? (
+                                <MarkdownMessage content={message.content} variant="assistant" />
+                              ) : isCurrentlyStreaming ? (
+                                <div className="flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
+                                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '150ms' }} />
+                                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '300ms' }} />
+                                </div>
+                              ) : null}
+                            </>
+                          )
+                        }
+
+                        // Path B: simple response → Thinking + Content
+                        return (
+                          <>
+                            {showThinking && (
+                              <ThinkingBlock
+                                thinking={message.thinking}
+                                roundThinking={filteredRoundThinking}
+                                isStreaming={isCurrentlyStreaming}
+                              />
+                            )}
+                            {message.content ? (
+                              <MarkdownMessage content={message.content} variant="assistant" />
+                            ) : isCurrentlyStreaming ? (
+                              <div className="flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
+                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '150ms' }} />
+                                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '300ms' }} />
+                              </div>
+                            ) : null}
+                          </>
+                        )
+                      })()}
                       </div>
                     </div>
 
@@ -972,43 +1103,8 @@ export function ChatPage() {
                     </Avatar>
                   )}
                 </div>
-              ))}
-
-              {/* Streaming message */}
-              {isStreaming && (
-                <div className="flex gap-2 sm:gap-3 justify-start">
-                  <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-foreground flex items-center justify-center">
-                    <Sparkles className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-background animate-pulse" />
-                  </div>
-                  <div className="max-w-[85%] sm:max-w-[80%]">
-                    <div className="rounded-2xl px-3 py-2 sm:px-4 sm:py-3 bg-muted text-foreground">
-                      <div className="message-bubble-assistant">
-                      {/* Thinking block with loading indicator */}
-                      {streamingThinking && <ThinkingBlock thinking={streamingThinking} isStreaming={true} />}
-
-                      {/* Tool calls with loading indicator */}
-                      {streamingToolCalls.length > 0 && (
-                        <ToolCallVisualization toolCalls={streamingToolCalls} isStreaming={true} roundContents={roundContents} />
-                      )}
-
-                      {/* Content */}
-                      {streamingContent && (
-                        <MarkdownMessage content={streamingContent} variant="assistant" />
-                      )}
-
-                      {/* Loading states for different phases */}
-                      {!streamingContent && (
-                        <div className="flex items-center gap-1">
-                          <span className="w-2 h-2 rounded-full bg-current animate-bounce" style={{ animationDelay: '0ms' }} />
-                          <span className="w-2 h-2 rounded-full bg-current animate-bounce" style={{ animationDelay: '150ms' }} />
-                          <span className="w-2 h-2 rounded-full bg-current animate-bounce" style={{ animationDelay: '300ms' }} />
-                        </div>
-                      )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+                )})
+              })()}
 
               <div ref={messagesEndRef} />
             </div>
@@ -1162,7 +1258,7 @@ export function ChatPage() {
                   ? t('chat:memory.enabled', 'Memory on')
                   : t('chat:memory.disabled', 'Memory off')}
               >
-                <Brain className="h-3 w-3 shrink-0" />
+                <BookOpen className="h-3 w-3 shrink-0" />
                 <span className="hidden sm:inline">{t('chat:memory.label', 'Memory')}</span>
               </Button>
 
@@ -1185,7 +1281,7 @@ export function ChatPage() {
                   displayTokens = Math.ceil((msgChars + streamChars) / 3)
                   ratio = displayTokens / maxContext
                 }
-                if (messages.length === 0) return null
+                if (messages.length === 0 || isWelcomeMode) return null
                 return (
                   <span className={cn(
                     "text-[11px] shrink-0 transition-colors",
@@ -1239,18 +1335,18 @@ export function ChatPage() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={t('chat:input.placeholder')}
-                rows={1}
+                rows={2}
                 className={cn(
-                  "flex-1 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl resize-none text-base scroll-mb-32",
-                  "bg-muted/50 text-foreground placeholder:text-muted-foreground placeholder:text-sm",
+                  "flex-1 px-4 py-3 rounded-2xl resize-none text-sm leading-5 scroll-mb-32",
+                  "bg-muted/50 text-foreground placeholder:text-muted-foreground",
                   "focus:outline-none focus:ring-2 focus:ring-foreground/20",
-                  "transition-all max-h-32"
+                  "transition-all max-h-40"
                 )}
-                style={{ minHeight: "40px", height: "40px" }}
+                style={{ minHeight: "64px" }}
                 onInput={(e) => {
                   const target = e.target as HTMLTextAreaElement
-                  target.style.height = "40px"
-                  target.style.height = Math.min(target.scrollHeight, 128) + "px"
+                  target.style.height = "auto"
+                  target.style.height = Math.max(64, Math.min(target.scrollHeight, 160)) + "px"
                 }}
               />
 

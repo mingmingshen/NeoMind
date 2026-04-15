@@ -66,6 +66,9 @@ pub struct SessionMessage {
     /// Round contents for multi-step tool calls (round number → intermediate text).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub round_contents: Option<serde_json::Value>,
+    /// Per-round thinking content for grouped rendering (round number → thinking text).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub round_thinking: Option<serde_json::Value>,
     /// Message timestamp.
     pub timestamp: i64,
 }
@@ -92,6 +95,7 @@ impl SessionMessage {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -107,6 +111,7 @@ impl SessionMessage {
             thinking: None,
             images: Some(images),
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -122,6 +127,7 @@ impl SessionMessage {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -137,6 +143,7 @@ impl SessionMessage {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -152,6 +159,7 @@ impl SessionMessage {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -947,6 +955,7 @@ mod tests {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         };
         let msg2 = SessionMessage {
@@ -958,6 +967,7 @@ mod tests {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         };
         let messages = vec![msg1, msg2];
@@ -1041,6 +1051,7 @@ mod tests {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: 12345,
         };
 

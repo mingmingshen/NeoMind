@@ -392,6 +392,9 @@ pub struct AgentMessage {
     /// Per-round intermediate text for multi-round tool calling
     #[serde(skip_serializing_if = "Option::is_none")]
     pub round_contents: Option<Value>,
+    /// Per-round thinking content for grouped rendering
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub round_thinking: Option<Value>,
     /// Timestamp
     pub timestamp: i64,
 }
@@ -418,6 +421,7 @@ impl AgentMessage {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -433,6 +437,7 @@ impl AgentMessage {
             thinking: None,
             images: Some(images),
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -448,6 +453,7 @@ impl AgentMessage {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -466,6 +472,7 @@ impl AgentMessage {
             thinking: Some(thinking.into()),
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -481,6 +488,7 @@ impl AgentMessage {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -496,6 +504,7 @@ impl AgentMessage {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -511,6 +520,7 @@ impl AgentMessage {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -530,6 +540,7 @@ impl AgentMessage {
             thinking: Some(thinking.into()),
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
@@ -621,6 +632,7 @@ impl AgentMessage {
             thinking: None,
             images: None,
             round_contents: None,
+            round_thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
