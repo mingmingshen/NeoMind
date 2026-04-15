@@ -1093,7 +1093,7 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
         } else if let Some(agent_id) = json.get("agent_id").or_else(|| json.get("id")).and_then(|a| a.as_str()) {
             response.push_str(&format!("✓ Created successfully (ID: {})\n", agent_id));
         } else if json.get("success").and_then(|s| s.as_bool()).unwrap_or(false) {
-            response.push_str(&format!("✓ {} completed successfully.\n", tool_name));
+            response.push_str(&format!("**[OK]** {} operation succeeded\n", tool_name));
         } else {
             // Has error
             let error = json.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error");
@@ -1108,7 +1108,7 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
     } else if json.is_array() {
         format_json_data(json, response);
     } else {
-        response.push_str(&format!("✓ {} completed.\n", tool_name));
+        response.push_str(&format!("**[OK]** {} completed.\n", tool_name));
     }
 }
 
@@ -1526,7 +1526,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                     }
                 }
                 "control_device" | "send_command" => {
-                    response.push_str("✓ Command executed successfully.\n");
+                    response.push_str("**[OK]** command sent\n");
                 }
                 "list_agents" => {
                     // Format agent list with statistics
@@ -1753,7 +1753,10 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
             }
         } else {
             // Result is not valid JSON, use as-is
-            response.push_str(&format!("✓ {} executed successfully.\n", tool_name));
+            // Use a structured format with result prefix to prevent LLM hallucination
+            // of tool results (model can learn the simple "✓ tool executed" pattern)
+            let preview: String = result.chars().take(80).collect();
+            response.push_str(&format!("**[ToolResult:{}]** {}\n", tool_name, preview));
         }
     }
 
