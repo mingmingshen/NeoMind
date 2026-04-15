@@ -77,6 +77,9 @@ Actions:
   Requires device_id and metric. Returns time-ordered data points. Defaults to last 24 hours.
   Use when user asks about trends, changes over time, or past data with a time range.
 - control: Send control commands to devices. Requires confirm=true to execute.
+- write_metric: Write a value to a device metric (virtual or existing). Use for calibration values, status flags,
+  computed results, or any data the AI wants to persist on a device. Requires device_id, metric, value.
+  Cannot overwrite physical device template metrics — use control action for that.
 
 IMPORTANT - Batch Tool Calls:
 When querying history for MULTIPLE devices, you MUST output ALL history calls in ONE
@@ -94,8 +97,8 @@ Important:
             serde_json::json!({
                 "action": {
                     "type": "string",
-                    "enum": ["list", "latest", "history", "control"],
-                    "description": "Operation type: 'list' (list devices), 'latest' (all current metric values), 'history' (historical time-series for one metric), 'control' (send command)"
+                    "enum": ["list", "latest", "history", "control", "write_metric"],
+                    "description": "Operation type: 'list' (list devices), 'latest' (all current metric values), 'history' (historical time-series for one metric), 'control' (send command), 'write_metric' (write a value to a device metric)"
                 },
                 "device_id": {
                     "type": "string",
@@ -138,6 +141,10 @@ Important:
                     "enum": ["concise", "detailed"],
                     "description": "Output format. 'concise': key info only (default). 'detailed': full data with IDs and metadata for follow-up chained calls"
                 },
+                "value": {
+                    "type": ["string", "number", "boolean", "null"],
+                    "description": "Value to write to the metric (write action). Can be number, string, boolean, or null."
+                },
                 "confirm": {
                     "type": "boolean",
                     "description": "Set to true after user confirms. Required for control action. Without confirmation, the tool returns a preview instead of executing"
@@ -161,8 +168,9 @@ Important:
             "latest" | "get" => self.execute_get(&args).await,
             "history" | "query" => self.execute_query(&args).await,
             "control" => self.execute_control(&args).await,
+            "write_metric" => self.execute_write(&args).await,
             _ => Err(ToolError::InvalidArguments(format!(
-                "Unknown action: '{}'. Valid actions: list, latest, history, control",
+                "Unknown action: '{}'. Valid actions: list, latest, history, control, write_metric",
                 action
             ))),
         }
@@ -255,6 +263,27 @@ impl DeviceTool {
                         })
                         .collect();
                     device_json["commands"] = serde_json::json!(commands_info);
+                }
+            }
+
+            // Discover virtual metrics from time-series storage
+            if let Some(storage) = &self.storage {
+                if let Ok(all_stored_metrics) = storage.list_metrics(&d.device_id).await {
+                    let template_metric_set: std::collections::HashSet<&str> = device_json
+                        .get("metrics")
+                        .and_then(|m| m.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+                        .unwrap_or_default();
+
+                    let virtual_metrics: Vec<&str> = all_stored_metrics
+                        .iter()
+                        .filter(|m| !template_metric_set.contains(m.as_str()))
+                        .map(|m| m.as_str())
+                        .collect();
+
+                    if !virtual_metrics.is_empty() {
+                        device_json["virtual_metrics"] = serde_json::json!(virtual_metrics);
+                    }
                 }
             }
 
@@ -359,6 +388,50 @@ impl DeviceTool {
                     metrics_info.push(metric_json);
                 }
                 device_json["metrics"] = serde_json::json!(metrics_info);
+            }
+
+            // Append virtual metrics (not in device template) with latest values
+            if let Some(storage) = &self.storage {
+                if let Ok(all_stored) = storage.list_metrics(&device_id).await {
+                    let template_set: std::collections::HashSet<&str> = device_json
+                        .get("metrics")
+                        .and_then(|m| m.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.get("name")?.as_str())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    let virtual_names: Vec<&String> = all_stored
+                        .iter()
+                        .filter(|m| !template_set.contains(m.as_str()))
+                        .collect();
+
+                    let mut virtual_metrics: Vec<Value> = Vec::new();
+                    for m in &virtual_names {
+                        let mut mj = serde_json::json!({
+                            "name": m,
+                            "display_name": m,
+                        });
+                        if let Ok(Some(latest)) = storage.latest(&device_id, m).await {
+                            mj["value"] = latest.value.to_json_value();
+                            if detailed {
+                                mj["timestamp"] = serde_json::json!(latest.timestamp);
+                            }
+                        }
+                        virtual_metrics.push(mj);
+                    }
+
+                    if !virtual_metrics.is_empty() {
+                        // Merge into existing metrics array or create it
+                        if let Some(arr) = device_json.get_mut("metrics").and_then(|v| v.as_array_mut()) {
+                            arr.extend(virtual_metrics);
+                        } else {
+                            device_json["metrics"] = serde_json::json!(virtual_metrics);
+                        }
+                    }
+                }
             }
 
             // Commands: only include in detailed mode
@@ -647,6 +720,65 @@ impl DeviceTool {
             "device_id": device_id,
             "command": command,
             "status": "executed"
+        })))
+    }
+
+    /// Write a value to a device metric (virtual or existing).
+    async fn execute_write(&self, args: &Value) -> Result<ToolOutput> {
+        let device_id_input = args["device_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("device_id is required".into()))?;
+
+        let device_id = self.resolve_device_id(device_id_input).await?;
+
+        let metric = args["metric"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("metric is required".into()))?;
+
+        // value is required — accept any JSON primitive
+        let json_value = args.get("value");
+        let metric_value = match json_value {
+            None | Some(Value::Null) => neomind_devices::mdl::MetricValue::Null,
+            Some(Value::Bool(b)) => neomind_devices::mdl::MetricValue::Boolean(*b),
+            Some(Value::Number(n)) => {
+                if let Some(i) = n.as_i64() {
+                    neomind_devices::mdl::MetricValue::Integer(i)
+                } else {
+                    neomind_devices::mdl::MetricValue::Float(n.as_f64().unwrap_or(0.0))
+                }
+            }
+            Some(Value::String(s)) => neomind_devices::mdl::MetricValue::String(s.clone()),
+            Some(_) => {
+                return Err(ToolError::InvalidArguments(
+                    "value must be a string, number, boolean, or null".into(),
+                ))
+            }
+        };
+
+        let storage = self
+            .storage
+            .as_ref()
+            .ok_or_else(|| ToolError::Execution("Storage not configured".into()))?;
+
+        let timestamp = args["timestamp"]
+            .as_i64()
+            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+
+        let point = neomind_devices::DataPoint {
+            timestamp,
+            value: metric_value,
+            quality: Some(1.0),
+        };
+
+        storage
+            .write(&device_id, metric, point)
+            .await
+            .map_err(|e| ToolError::Execution(format!("Failed to write metric: {}", e)))?;
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "device_id": device_id,
+            "metric": metric,
+            "status": "written"
         })))
     }
 }
