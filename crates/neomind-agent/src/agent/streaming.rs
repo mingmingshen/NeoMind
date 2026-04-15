@@ -1030,7 +1030,41 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
         return;
     }
 
-    // Agent conversation history: has "messages" array
+    // Message/alert list: has "count" and "messages" array with message objects (id, title, level)
+    if let Some(messages) = extract_array(json, "messages") {
+        // Distinguish from agent conversation history:
+        // message tool returns objects with "title", "level", "read" fields
+        // agent conversation returns objects with "role", "content" fields
+        let is_message_list = messages.first().map_or(false, |m| {
+            m.get("title").is_some() || m.get("level").is_some() || m.get("read").is_some()
+        });
+
+        if is_message_list {
+            let count = json.get("count").and_then(|c| c.as_u64()).unwrap_or(messages.len() as u64);
+            response.push_str(&format!("## Messages & Alerts ({} total)\n\n", count));
+            for msg in messages.iter().take(15) {
+                let title = msg.get("title").and_then(|t| t.as_str()).unwrap_or("unknown");
+                let level = msg.get("level").and_then(|l| l.as_str()).unwrap_or("info");
+                let read = msg.get("read").and_then(|r| r.as_bool()).unwrap_or(false);
+                let id = msg.get("id").and_then(|i| i.as_str()).unwrap_or("");
+
+                let icon = match level {
+                    "urgent" | "critical" => "🔴",
+                    "important" => "🟠",
+                    "notice" | "warning" => "🟡",
+                    _ => "⚪",
+                };
+                let read_icon = if read { "✓" } else { "●" };
+                response.push_str(&format!("{} {} [{}] {} (`{}`)\n", icon, read_icon, level, title, &id[..8.min(id.len())]));
+            }
+            if messages.len() > 15 {
+                response.push_str(&format!("\n... ({} more)\n", messages.len() - 15));
+            }
+            return;
+        }
+    }
+
+    // Agent conversation history: has "messages" array with role/content
     if let Some(messages) = extract_array(json, "messages") {
         response.push_str(&format!("## Conversation Log ({} messages)\n\n", messages.len()));
         for msg in messages.iter().take(10) {
@@ -1789,19 +1823,40 @@ fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
             if tool_result_count <= KEEP_RECENT_TOOL_RESULTS {
                 result.push(msg.clone());
             } else {
-                // Compress old tool results
-                let tool_names: Vec<&str> = msg
+                // Compress old tool results with descriptive summary
+                let summaries: Vec<String> = msg
                     .tool_calls
                     .as_ref()
                     .iter()
-                    .flat_map(|calls| calls.iter().map(|t| t.name.as_str()))
+                    .flat_map(|calls| calls.iter())
+                    .map(|tc| {
+                        let args_summary = super::types::summarize_tool_args(&tc.name, &tc.arguments);
+                        let result_preview = tc
+                            .result
+                            .as_ref()
+                            .and_then(|r| {
+                                let s = if let Some(s) = r.as_str() {
+                                    s.to_string()
+                                } else {
+                                    r.to_string()
+                                };
+                                // Read actions need more preview to preserve data
+                                let is_data_action = args_summary.contains("list")
+                                    || args_summary.contains("get")
+                                    || args_summary.contains("history");
+                                let preview_len = if is_data_action { 300 } else { 80 };
+                                Some(s.chars().take(preview_len).collect::<String>())
+                            })
+                            .unwrap_or_default();
+                        if result_preview.is_empty() {
+                            format!("{}({})", tc.name, args_summary)
+                        } else {
+                            format!("{}({}) → {}", tc.name, args_summary, result_preview)
+                        }
+                    })
                     .collect();
 
-                let summary = if tool_names.len() == 1 {
-                    format!("[Previously called tool: {}]", tool_names[0])
-                } else {
-                    format!("[Previously called tools: {}]", tool_names.join(", "))
-                };
+                let summary = format!("[Called: {}]", summaries.join("; "));
 
                 result.push(AgentMessage {
                     role: msg.role.clone(),
@@ -1809,7 +1864,7 @@ fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
                     tool_calls: None,
                     tool_call_id: None,
                     tool_call_name: None,
-                    thinking: None, // Never keep thinking in compacted messages
+                    thinking: None,
                     images: None,
                     round_contents: None,
                     round_thinking: None,
@@ -1851,7 +1906,8 @@ fn build_context_window_with_summary(
     summary: Option<&str>,
     summary_up_to_index: Option<u64>,
 ) -> Vec<AgentMessage> {
-    let config = CompactionConfig::default();
+    // Adapt compaction to model capacity — larger contexts get gentler treatment
+    let config = CompactionConfig::for_context_size(max_tokens);
 
     // Filter out summarized messages if summary exists
     let filtered: Vec<AgentMessage> = if let (Some(_summary), Some(up_to)) = (summary, summary_up_to_index) {
@@ -1906,8 +1962,11 @@ pub fn build_context_window_with_config(
         let priority = message_priority(&msg.role);
         let is_recent = selected_messages.len() < config.min_recent_messages;
 
-        // Always keep system messages and recent messages
-        let should_keep = priority == MessagePriority::System || is_recent;
+        // Keep messages by priority:
+        // - System: always keep
+        // - User: always keep (represents conversation intent, critical for context)
+        // - Recent: always keep (ensures continuity)
+        let should_keep = priority >= MessagePriority::User || is_recent;
 
         if !should_keep && current_tokens + msg_tokens > max_tokens {
             // Budget exceeded, skip this message
@@ -2025,11 +2084,36 @@ fn compact_tool_results_stream_with_config(
             if tool_result_count <= config.keep_recent_tool_results {
                 result.push(msg.clone());
             } else {
-                // Summarize old tool result
-                let tool_name = msg.tool_call_name.as_deref().unwrap_or("tool");
+                // Build descriptive summary preserving action + args + result preview
+                let summary_content = if let Some(ref tool_calls) = msg.tool_calls {
+                    let summaries: Vec<String> = tool_calls.iter().map(|tc| {
+                        let args_summary = super::types::summarize_tool_args(&tc.name, &tc.arguments);
+                        let result_preview = tc.result.as_ref()
+                            .and_then(|r| {
+                                let s = if let Some(s) = r.as_str() { s.to_string() } else { r.to_string() };
+                                // Read actions need more preview to preserve data
+                                let is_data_action = args_summary.contains("list")
+                                    || args_summary.contains("get")
+                                    || args_summary.contains("history");
+                                let preview_len = if is_data_action { 300 } else { 80 };
+                                Some(s.chars().take(preview_len).collect::<String>())
+                            })
+                            .unwrap_or_default();
+                        if result_preview.is_empty() {
+                            format!("{}({})", tc.name, args_summary)
+                        } else {
+                            format!("{}({}) → {}", tc.name, args_summary, result_preview)
+                        }
+                    }).collect();
+                    format!("[Called: {}]", summaries.join("; "))
+                } else {
+                    let tool_name = msg.tool_call_name.as_deref().unwrap_or("tool");
+                    format!("[Called: {}]", tool_name)
+                };
+
                 let summary_msg = AgentMessage {
                     role: "assistant".to_string(),
-                    content: format!("[Previously called tool: {}]", tool_name),
+                    content: summary_content,
                     tool_calls: None,
                     tool_call_id: None,
                     tool_call_name: None,
@@ -2222,16 +2306,16 @@ pub async fn process_stream_events_with_safeguards(
 
     // === DYNAMIC CONTEXT WINDOW: Get model's actual capacity ===
     let max_context = llm_interface.max_context_length().await;
-    // Use more conservative limits for small context windows:
-    // - Small contexts (< 8k): 60% for history (system prompt + tools take a large share)
-    // - Medium contexts (< 16k): 70%
-    // - Large contexts (>= 16k): 90%
+    // Allocate history budget proportionally to model capacity:
+    // - Small contexts (< 8k): 65% (system prompt + tools take a large share)
+    // - Medium contexts (< 16k): 80%
+    // - Large contexts (>= 16k): 95% (modern models have ample room)
     let effective_max = if max_context < 8192 {
-        (max_context * 60) / 100
+        (max_context * 65) / 100
     } else if max_context < 16384 {
-        (max_context * 70) / 100
+        (max_context * 80) / 100
     } else {
-        (max_context * 90) / 100
+        (max_context * 95) / 100
     };
 
     tracing::debug!(

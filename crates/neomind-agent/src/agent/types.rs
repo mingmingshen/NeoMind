@@ -745,7 +745,7 @@ fn find_json_list<'a>(val: &'a serde_json::Value, list_key: &str) -> Option<&'a 
 /// Summarize tool call arguments into a concise string.
 /// E.g., `{"action":"list"}` → `"list"`,
 ///       `{"action":"history","device_id":"b626d0","metric":"battery"}` → `"history b626d0/battery"`
-fn summarize_tool_args(tool_name: &str, args: &Value) -> String {
+pub fn summarize_tool_args(tool_name: &str, args: &Value) -> String {
     let obj = match args.as_object() {
         Some(o) => o,
         None => return args.to_string().chars().take(80).collect(),

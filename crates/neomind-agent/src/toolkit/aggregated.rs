@@ -14,7 +14,7 @@
 //! 1. `device` - Device operations (list, get, query, control)
 //! 2. `agent` - Agent management (list, get, create, update, control, memory, executions, conversation, latest_execution)
 //! 3. `rule` - Rule management (list, get, delete, history)
-//! 4. `alert` - Alert management (list, create, acknowledge)
+//! 4. `message` - Message and alert management (list, send, read/acknowledge)
 //! 5. `extension` - Extension management (list, get, status)
 
 use std::collections::HashMap;
@@ -2611,7 +2611,7 @@ impl AggregatedToolsBuilder {
         self
     }
 
-    /// Set message manager for alert tool persistence.
+    /// Set message manager for message tool persistence.
     pub fn with_message_manager(mut self, manager: Arc<neomind_messages::MessageManager>) -> Self {
         self.message_manager = Some(manager);
         self

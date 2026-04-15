@@ -253,7 +253,7 @@ pub struct Example {
 /// - device: list, get, query, control
 /// - agent: list, get, create, update, control, memory, send_message, executions, conversation, latest_execution
 /// - rule: list, get, delete, history
-/// - alert: list, create, acknowledge
+/// - message: list, send, read/acknowledge (aliases: alert, notification)
 /// - extension: list, get, execute, status
 pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
     vec![
@@ -518,12 +518,12 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
         // === Message Tool ===
         LlmToolDefinition {
             name: "message".to_string(),
-            description: "Message and notification tool. Actions: list (view messages with filters), send (new message), read (mark as read). Priority levels: info, notice, important, urgent.".to_string(),
+            description: "Message, alert and notification tool. Actions: list (view messages with filters), send (new message/alert), read (mark as read/acknowledge). Priority levels: info, notice, important, urgent.".to_string(),
             aliases: vec!["message".to_string(), "alert".to_string(), "notification".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
                 ("message_id".to_string(), ParameterInfo {
-                    description: "Message ID to read (read action)".to_string(),
+                    description: "Message ID for read/get action".to_string(),
                     default: serde_json::json!(null),
                     examples: vec!["msg_1".to_string()],
                 }),
@@ -543,7 +543,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     examples: vec!["info".to_string(), "notice".to_string(), "urgent".to_string()],
                 }),
                 ("unacknowledged_only".to_string(), ParameterInfo {
-                    description: "Only return unacknowledged alerts (list action). Default: false".to_string(),
+                    description: "Only return unread messages (list action). Default: false".to_string(),
                     default: serde_json::json!(false),
                     examples: vec!["true".to_string()],
                 }),
@@ -555,20 +555,25 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             ]),
             examples: vec![
                 Example {
-                    user_query: "Are there any active alerts?".to_string(),
-                    tool_call: r#"alert(action="list", unacknowledged_only=true)"#.to_string(),
-                    explanation: "List unacknowledged alerts".to_string(),
+                    user_query: "Are there any unread messages?".to_string(),
+                    tool_call: r#"message(action="list", unacknowledged_only=true)"#.to_string(),
+                    explanation: "List unread messages".to_string(),
                 },
                 Example {
-                    user_query: "Acknowledge alert 123".to_string(),
-                    tool_call: r#"alert(action="acknowledge", alert_id="123")"#.to_string(),
-                    explanation: "Mark alert as acknowledged".to_string(),
+                    user_query: "Mark message 123 as read".to_string(),
+                    tool_call: r#"message(action="read", message_id="123")"#.to_string(),
+                    explanation: "Mark message as read".to_string(),
+                },
+                Example {
+                    user_query: "Send an urgent alert about device offline".to_string(),
+                    tool_call: r#"message(action="send", title="Device Offline", message="Sensor #5 is not responding", level="urgent")"#.to_string(),
+                    explanation: "Send an urgent message/alert".to_string(),
                 },
             ],
             use_when: vec![
-                "User asks about alerts, notifications, or warnings".to_string(),
-                "User wants to acknowledge or dismiss alerts".to_string(),
-                "User wants to create a custom alert".to_string(),
+                "User asks about messages, alerts, or notifications".to_string(),
+                "User wants to acknowledge, dismiss, or read messages".to_string(),
+                "User wants to send a message or create an alert".to_string(),
             ],
         },
 
@@ -626,7 +631,7 @@ pub fn format_tools_for_llm() -> String {
     prompt.push_str("- device(action=\"list|get|history|control\", ...)\n");
     prompt.push_str("- agent(action=\"list|get|create|update|control|memory|send_message|executions|conversation|latest_execution\", ...)\n");
     prompt.push_str("- rule(action=\"list|get|create|delete|history\", ...)\n");
-    prompt.push_str("- alert(action=\"list|create|acknowledge\", ...)\n");
+    prompt.push_str("- message(action=\"list|send|read\", ...) [Aliases: alert, notification]\n");
     prompt.push_str("- extension(action=\"list|get|status\", ...)\n\n");
     prompt.push_str(
         "Format: [{\"name\":\"tool_name\",\"arguments\":{\"action\":\"operation\",\"param\":\"value\"}}]\n\n",

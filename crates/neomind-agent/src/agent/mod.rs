@@ -145,28 +145,49 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
             if tool_result_count <= keep_recent {
                 result.push(msg.clone());
             } else {
-                // Compress old tool results to a brief summary
-                let tool_names: Vec<&str> = msg
+                // Compress old tool results to a descriptive summary
+                // that preserves action type, key arguments, and result preview
+                let summaries: Vec<String> = msg
                     .tool_calls
                     .as_ref()
                     .iter()
-                    .flat_map(|calls| calls.iter().map(|t| t.name.as_str()))
+                    .flat_map(|calls| calls.iter())
+                    .map(|tc| {
+                        let args_summary = types::summarize_tool_args(&tc.name, &tc.arguments);
+                        let result_preview = tc
+                            .result
+                            .as_ref()
+                            .and_then(|r| {
+                                let s = if let Some(s) = r.as_str() {
+                                    s.to_string()
+                                } else {
+                                    r.to_string()
+                                };
+                                // Read actions need more preview to preserve data
+                                let is_data_action = args_summary.contains("list")
+                                    || args_summary.contains("get")
+                                    || args_summary.contains("history");
+                                let preview_len = if is_data_action { 300 } else { 80 };
+                                Some(s.chars().take(preview_len).collect::<String>())
+                            })
+                            .unwrap_or_default();
+                        if result_preview.is_empty() {
+                            format!("{}({})", tc.name, args_summary)
+                        } else {
+                            format!("{}({}) → {}", tc.name, args_summary, result_preview)
+                        }
+                    })
                     .collect();
 
-                // Create a compacted summary message
-                let summary = if tool_names.len() == 1 {
-                    format!("[Previously called tool: {}]", tool_names[0])
-                } else {
-                    format!("[Previously called tools: {}]", tool_names.join(", "))
-                };
+                let summary = format!("[Called: {}]", summaries.join("; "));
 
                 result.push(AgentMessage {
                     role: msg.role.clone(),
                     content: summary,
-                    tool_calls: None, // Remove actual tool data to save tokens
+                    tool_calls: None,
                     tool_call_id: None,
                     tool_call_name: None,
-                    thinking: None, // Never keep thinking in compacted messages
+                    thinking: None,
                     images: None,
                     round_contents: None,
                     round_thinking: None,
@@ -403,13 +424,22 @@ fn build_context_window(messages: &[AgentMessage], max_tokens: usize) -> Vec<Age
     // Use the improved tokenizer module for accurate token estimation
     use tokenizer::select_messages_with_importance;
 
+    // Adaptive compaction: scale parameters with model context capacity
+    // Larger contexts (32k+) should preserve far more history
+    let (keep_tools, compress_threshold, keep_recent, min_recent) = if max_tokens > 16000 {
+        (6, 30, 14, 8)  // Large context: very gentle
+    } else if max_tokens > 8000 {
+        (4, 20, 10, 6)  // Medium context: moderate
+    } else {
+        (2, 12, 6, 4)   // Small context: aggressive (original)
+    };
+
     // First, apply tool result clearing
-    let tool_compacted = compact_tool_results(messages, 2); // Default: keep 2 recent results
+    let tool_compacted = compact_tool_results(messages, keep_tools);
 
     // Then apply conversation-level compression if we have many messages
-    let conversation_compacted = if tool_compacted.len() > 12 {
-        // Only compress if we have more than 12 messages after tool clearing
-        compact_conversation(&tool_compacted, 6, max_tokens)
+    let conversation_compacted = if tool_compacted.len() > compress_threshold {
+        compact_conversation(&tool_compacted, keep_recent, max_tokens)
     } else {
         tool_compacted
     };
@@ -419,7 +449,7 @@ fn build_context_window(messages: &[AgentMessage], max_tokens: usize) -> Vec<Age
     let selected_refs = select_messages_with_importance(
         &conversation_compacted,
         max_tokens,
-        4,    // Always keep at least 4 recent messages
+        min_recent,
         0.15, // Minimum importance threshold
     );
 
@@ -650,7 +680,6 @@ impl ToolResultCache {
     }
 
     /// Invalidate all cache entries for a specific tool or prefix.
-    #[allow(dead_code)]
     fn invalidate(&mut self, tool_prefix: &str) {
         let keys_to_remove: Vec<_> = self
             .entries
@@ -664,17 +693,37 @@ impl ToolResultCache {
         }
         tracing::debug!(prefix = %tool_prefix, count = count, "Invalidated cache entries");
     }
-
-    #[allow(dead_code)]
-    fn clear(&mut self) {
-        self.entries.clear();
-    }
 }
 
 impl Default for ToolResultCache {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Check if a tool action modifies state and should trigger cache invalidation.
+///
+/// Write actions (create, update, delete, control, send, acknowledge, etc.)
+/// modify persisted state. After these operations, any cached read results
+/// for the same tool are stale and must be evicted so subsequent reads
+/// reflect the updated state.
+fn is_write_action(arguments: &serde_json::Value) -> bool {
+    let action = match arguments.get("action").and_then(|v| v.as_str()) {
+        Some(a) => a,
+        None => return false,
+    };
+
+    matches!(
+        action,
+        // CRUD write operations
+        "create" | "update" | "delete"
+        // Device state changes
+        | "control" | "write_metric"
+        // Messaging
+        | "send" | "send_message" | "read"
+        // Alert acknowledgment
+        | "acknowledge"
+    )
 }
 
 /// AI Agent that orchestrates components.
@@ -2987,11 +3036,18 @@ END"#
                     let sanitized =
                         self.sanitize_tool_output_for_llm(&real_tool_name, &output.data);
 
-                    // === CACHE: Store successful result ===
-                    self.tool_result_cache
-                        .write()
-                        .await
-                        .put(name, args_key, sanitized.clone());
+                    // === CACHE: Handle write vs read operations ===
+                    if is_write_action(arguments) {
+                        // Invalidate all cached reads for this tool so subsequent
+                        // queries reflect the updated state
+                        self.tool_result_cache.write().await.invalidate(name);
+                    } else {
+                        // Cache read results to avoid redundant calls
+                        self.tool_result_cache
+                            .write()
+                            .await
+                            .put(name, args_key, sanitized.clone());
+                    }
 
                     return Ok(sanitized);
                 }

@@ -69,7 +69,7 @@ impl Default for CompactionConfig {
             min_recent_messages: 4,
             max_message_length: 4096,
             compact_tool_results: true,
-            keep_recent_tool_results: 2,
+            keep_recent_tool_results: 4,
         }
     }
 }
@@ -118,6 +118,34 @@ impl CompactionConfig {
     pub fn with_keep_recent_tool_results(mut self, count: usize) -> Self {
         self.keep_recent_tool_results = count;
         self
+    }
+
+    /// Create a compaction config adapted to the model's context capacity.
+    ///
+    /// Larger contexts preserve more history (gentler compaction),
+    /// smaller contexts use aggressive compaction to stay within limits.
+    pub fn for_context_size(context_window: usize) -> Self {
+        if context_window > 16000 {
+            Self {
+                reserve_tokens_floor: 1024,
+                max_history_share: 0.92,
+                min_recent_messages: 8,
+                max_message_length: 8192,
+                compact_tool_results: true,
+                keep_recent_tool_results: 6,
+            }
+        } else if context_window > 8000 {
+            Self {
+                reserve_tokens_floor: 1024,
+                max_history_share: 0.88,
+                min_recent_messages: 6,
+                max_message_length: 6144,
+                compact_tool_results: true,
+                keep_recent_tool_results: 4,
+            }
+        } else {
+            Self::default()
+        }
     }
 
     /// Calculate the maximum tokens available for history given a context window size.

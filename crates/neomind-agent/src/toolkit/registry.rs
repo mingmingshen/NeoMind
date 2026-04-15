@@ -285,7 +285,7 @@ impl ToolRegistryBuilder {
     // Aggregated Tools (Action-based design for token efficiency)
     // ============================================================================
 
-    /// Add aggregated tools with optional message manager for alert tool.
+    /// Add aggregated tools with optional message manager for message tool.
     ///
     /// This consolidates 34+ individual tools into 5 action-based tools,
     /// reducing tool definition token usage by ~60%.
