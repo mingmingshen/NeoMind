@@ -120,6 +120,9 @@ export const useStore = create<NeoMindStore>()(
           sessionId: state.sessionId,
           // Only persist essential UI state
           sidebarOpen: state.sidebarOpen,
+          // Persist update state so users are reminded after app restart
+          updateInfo: state.updateInfo,
+          updateDialogOpen: state.updateDialogOpen,
         }),
       }
     ),

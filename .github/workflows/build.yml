@@ -483,9 +483,8 @@ jobs:
             "$(find artifacts/neomind-updater-macos-aarch64 -name "*.app.tar.gz" ! -name "*.sig" 2>/dev/null | head -1)"
 
           # Windows x86_64: sig is nsis *.exe.sig, URL file is the nsis .exe from desktop artifacts
-          # Use grep to find the correctly-versioned file (matching the current release version)
           add_platform "windows-x86_64" \
-            "$(find artifacts/neomind-updater-windows-x86_64 -name "*x64-setup.exe.sig" 2>/dev/null | grep -v "0\.6\.0" | head -1)" \
+            "$(find artifacts/neomind-updater-windows-x86_64 -name "*x64-setup.exe.sig" 2>/dev/null | grep "${VERSION}" | head -1)" \
             "$(find artifacts/neomind-desktop-windows-x86_64 -name "*x64-setup.exe" 2>/dev/null | grep "${VERSION}" | head -1)"
 
           # Linux x86_64: sig is AppImage.sig, URL file is the AppImage from desktop artifacts

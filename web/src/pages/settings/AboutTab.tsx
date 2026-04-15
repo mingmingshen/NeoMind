@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { BrandName } from "@/components/shared/BrandName"
-import { UpdateDialog } from "@/components/update"
 import {
   Server,
   Clock,
@@ -23,7 +22,6 @@ import { api, isTauriEnv } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useUpdateCheck } from "@/hooks/useUpdateCheck"
 import { useAppStore } from "@/store"
-import { useToast } from "@/hooks/use-toast"
 
 interface GpuInfo {
   name: string
@@ -48,32 +46,19 @@ interface SystemInfo {
 export function AboutTab() {
   const { t } = useTranslation(["common", "settings"])
   const { handleError, showSuccess } = useErrorHandler()
-  const { toast } = useToast()
-  const { updateInfo, setUpdateStatus, setError } = useAppStore()
+  const { updateInfo, setUpdateDialogOpen } = useAppStore()
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
-  const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
 
-  // Use useCallback to prevent infinite loop - this function reference stays stable
-  const handleUpdateAvailable = useCallback((info: { version?: string }) => {
-    setUpdateDialogOpen(true)
-    toast({
-      title: t('settings:newVersionAvailable'),
-      description: info.version
-        ? t('settings:updateAvailableWithVersion', { version: info.version })
-        : t('settings:updateAvailableDesc'),
-    })
-  }, [toast, t])
-
+  // Reuse global useUpdateCheck - only need checkUpdate for manual trigger
   const handleUpToDate = useCallback(() => {
     showSuccess(t('settings:alreadyUpToDate'))
   }, [showSuccess, t])
 
-  const { checkUpdate, getAppVersion } = useUpdateCheck({
-    autoCheck: false, // Only check manually when user clicks button
-    onUpdateAvailable: handleUpdateAvailable,
+  const { checkUpdate } = useUpdateCheck({
+    autoCheck: false,
     onUpToDate: handleUpToDate,
   })
 
@@ -94,10 +79,13 @@ export function AboutTab() {
     setCheckingUpdate(true)
     try {
       await checkUpdate()
-      // If update is available, dialog will open automatically via onUpdateAvailable
-      // If no update is available, show a message
-      if (!updateInfo?.available) {
-        // You could show a toast here
+      // checkUpdate sets store updateInfo; if available, global useUpdateCheck in App.tsx
+      // will open the dialog. Read latest state directly from store to decide toast.
+      const latestInfo = useAppStore.getState().updateInfo
+      if (!latestInfo?.available) {
+        showSuccess(t('settings:alreadyUpToDate'))
+      } else {
+        setUpdateDialogOpen(true)
       }
     } catch (error) {
       console.error('[AboutTab] checkUpdate error:', error)
@@ -360,14 +348,6 @@ export function AboutTab() {
       <div className="text-center text-sm text-muted-foreground">
         © 2025 CamThink
       </div>
-
-      {/* Update Dialog - Tauri only */}
-      {isTauriEnv() && (
-      <UpdateDialog
-        open={updateDialogOpen}
-        onClose={() => setUpdateDialogOpen(false)}
-      />
-      )}
     </div>
   )
 }

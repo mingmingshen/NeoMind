@@ -4,7 +4,8 @@
 //! using the Tauri updater plugin.
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Window};
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, Manager, Window};
 use tauri_plugin_updater::UpdaterExt;
 
 /// Update information returned to the frontend
@@ -46,10 +47,14 @@ pub struct UpdateProgress {
     pub progress: f64,
 }
 
+/// Manages the cached update check result to avoid redundant network requests.
+pub struct UpdateCache(pub Mutex<Option<tauri_plugin_updater::Update>>);
+
 /// Check for available updates
 ///
 /// This command checks the configured update endpoint for a new version
 /// and returns information about any available update.
+/// The result is cached so `download_and_install` can reuse it.
 #[tauri::command]
 #[allow(unused_variables, unreachable_code)] // unreachable_code: early return in debug mode is intentional
 pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, String> {
@@ -66,6 +71,12 @@ pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, String> {
         .await
         .map_err(|e| format!("Failed to check for updates: {}", e))?;
 
+    // Cache the raw update response for download_and_install to reuse
+    let cache = app.state::<UpdateCache>();
+    if let Ok(mut guard) = cache.0.lock() {
+        *guard = response.clone();
+    }
+
     if let Some(update) = response {
         Ok(UpdateInfo {
             available: true,
@@ -80,21 +91,32 @@ pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, String> {
 
 /// Download and install an available update
 ///
-/// This command downloads the update package and installs it.
+/// Uses the cached check result from `check_update` when available,
+/// falling back to a fresh check if the cache is empty.
 /// Progress events are emitted to the frontend via "update-progress" events.
-/// After successful download and installation, the app should be restarted.
 #[tauri::command]
 pub async fn download_and_install(
     app: AppHandle,
     window: Window,
 ) -> Result<String, String> {
-    let response = app
-        .updater()
-        .map_err(|e| format!("Updater not initialized: {}", e))?
-        .check()
-        .await
-        .map_err(|e| format!("Failed to check for updates: {}", e))?
-        .ok_or("No update available")?;
+    // Try to use cached update from the last check_update call
+    let cached = {
+        let cache = app.state::<UpdateCache>();
+        cache.0.lock().ok().and_then(|mut guard| guard.take())
+    };
+
+    let response = match cached {
+        Some(update) => update,
+        None => {
+            // Fallback: fresh check if cache was empty (e.g. app restarted)
+            app.updater()
+                .map_err(|e| format!("Updater not initialized: {}", e))?
+                .check()
+                .await
+                .map_err(|e| format!("Failed to check for updates: {}", e))?
+                .ok_or("No update available")?
+        }
+    };
 
     // Track cumulative downloaded bytes across callback invocations
     let downloaded = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));

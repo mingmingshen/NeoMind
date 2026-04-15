@@ -155,7 +155,7 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
 
       await invoke('download_and_install')
 
-      setUpdateStatus('installing')
+      setUpdateStatus('done')
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       setError(errorMessage)

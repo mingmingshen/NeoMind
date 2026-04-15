@@ -65,7 +65,7 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
 
       await downloadAndInstall()
 
-      setInstallStatus('installing')
+      setInstallStatus('done')
     } catch (error) {
       setInstallStatus('error')
       setInstallError(error instanceof Error ? error.message : String(error))

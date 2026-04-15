@@ -20,7 +20,7 @@ export interface UpdateProgress {
   progress: number
 }
 
-export type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'installing' | 'up-to-date' | 'error'
+export type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'installing' | 'done' | 'up-to-date' | 'error'
 
 export interface UpdateState {
   // State

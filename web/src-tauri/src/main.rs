@@ -200,6 +200,7 @@ pub fn run() {
             show_main_window(app);
         }))
         .manage(server_state)
+        .manage(update::UpdateCache(std::sync::Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             update::check_update,
             update::download_and_install,
