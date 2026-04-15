@@ -1596,7 +1596,8 @@ export function SimpleRuleBuilderSplit({
           const validateCondition = (cond: UICondition): string[] => {
             const errs: string[] = []
             if (cond.type === 'simple' || cond.type === 'range') {
-              if (!cond.device_id) errs.push(tBuilder('selectDevice'))
+              const hasSourceId = cond.source_type === 'extension' ? !!cond.extension_id : !!cond.device_id
+              if (!hasSourceId) errs.push(cond.source_type === 'extension' ? (tBuilder('selectExtension') || 'Select extension') : tBuilder('selectDevice'))
               if (!cond.metric) errs.push(tBuilder('selectMetric'))
               if (cond.type === 'simple') {
                 const hasValue = cond.threshold !== undefined || cond.threshold_value !== undefined
@@ -1673,7 +1674,7 @@ export function SimpleRuleBuilderSplit({
       } else if (triggerType === 'manual') {
         trigger = { type: 'manual' }
       } else {
-        trigger = { type: 'device_state', device_id: finalCondition?.device_id || '', state: 'changed' }
+        trigger = { type: 'device_state', device_id: finalCondition?.extension_id ? undefined : (finalCondition?.device_id || ''), extension_id: finalCondition?.extension_id || undefined, state: 'changed' }
       }
 
       const dsl = generateRuleDSL(name, finalCondition || null, actions, resources.devices, resources.extensions || [], forDuration, forUnit, tags, triggerType, cronExpression)

@@ -903,7 +903,7 @@ export interface Rule {
 }
 
 export type RuleTrigger =
-  | { type: 'device_state'; device_id: string; state: string }
+  | { type: 'device_state'; device_id?: string; extension_id?: string; state: string }
   | { type: 'schedule'; cron: string }
   | { type: 'manual' }
   | { type: 'event'; event_type: string; filters?: Record<string, unknown> }

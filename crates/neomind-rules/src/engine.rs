@@ -1017,37 +1017,80 @@ impl RuleEngine {
                 property,
                 value,
             } => {
-                // Try to use DeviceActionExecutor if available
-                let executor = self.device_action_executor.read().await;
-                if let Some(ex) = executor.as_ref() {
-                    // Convert Set to Execute command
-                    let params = std::collections::HashMap::from([
-                        ("property".to_string(), serde_json::json!(property)),
-                        (
-                            "value".to_string(),
-                            serde_json::to_value(value).unwrap_or(serde_json::Value::Null),
-                        ),
-                    ]);
-
-                    match ex
-                        .execute_command_with_retry(device_id, "set", &params)
-                        .await
-                    {
-                        Ok(_) => Ok(format!("SET: {}.{} = {:?}", device_id, property, value)),
-                        Err(e) => Err(format!("SET failed: {}", e)),
+                // First, check if this is an extension action
+                if let Some(ext_action) = try_parse_extension_action(action) {
+                    let ext_executor = self.extension_action_executor.read().await;
+                    if let Some(ex) = ext_executor.as_ref() {
+                        match ex.execute(&ext_action).await {
+                            Ok(result) if result.success => {
+                                tracing::info!(
+                                    "EXTENSION SET: {}.{} = {:?} -> success",
+                                    result.extension_id,
+                                    property,
+                                    value
+                                );
+                                Ok(format!(
+                                    "EXTENSION SET: {}.{} = {:?}",
+                                    result.extension_id, property, value
+                                ))
+                            }
+                            Ok(result) => {
+                                let err = result
+                                    .error
+                                    .unwrap_or_else(|| "Extension SET failed".to_string());
+                                tracing::error!("EXTENSION SET failed: {}", err);
+                                Err(err)
+                            }
+                            Err(e) => {
+                                tracing::error!("EXTENSION SET error: {}", e);
+                                Err(e)
+                            }
+                        }
+                    } else {
+                        tracing::warn!(
+                            "EXTENSION SET: {}.{} = {:?} (no ExtensionActionExecutor - logged only)",
+                            ext_action.extension_id,
+                            property,
+                            value
+                        );
+                        Ok(format!(
+                            "EXTENSION SET: {}.{} = {:?} (logged only)",
+                            ext_action.extension_id, property, value
+                        ))
                     }
                 } else {
-                    // Fallback: just log (no actual execution)
-                    tracing::info!(
-                        "SET: {}.{} = {} (no DeviceActionExecutor - logging only)",
-                        device_id,
-                        property,
-                        value
-                    );
-                    Ok(format!(
-                        "SET: {}.{} = {} (logged only)",
-                        device_id, property, value
-                    ))
+                    // Device action - use DeviceActionExecutor
+                    let executor = self.device_action_executor.read().await;
+                    if let Some(ex) = executor.as_ref() {
+                        // Convert Set to Execute command
+                        let params = std::collections::HashMap::from([
+                            ("property".to_string(), serde_json::json!(property)),
+                            (
+                                "value".to_string(),
+                                serde_json::to_value(value).unwrap_or(serde_json::Value::Null),
+                            ),
+                        ]);
+
+                        match ex
+                            .execute_command_with_retry(device_id, "set", &params)
+                            .await
+                        {
+                            Ok(_) => Ok(format!("SET: {}.{} = {:?}", device_id, property, value)),
+                            Err(e) => Err(format!("SET failed: {}", e)),
+                        }
+                    } else {
+                        // Fallback: just log (no actual execution)
+                        tracing::info!(
+                            "SET: {}.{} = {} (no DeviceActionExecutor - logging only)",
+                            device_id,
+                            property,
+                            value
+                        );
+                        Ok(format!(
+                            "SET: {}.{} = {} (logged only)",
+                            device_id, property, value
+                        ))
+                    }
                 }
             }
             RuleAction::Delay { duration } => {

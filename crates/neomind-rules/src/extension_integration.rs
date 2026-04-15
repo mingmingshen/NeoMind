@@ -423,6 +423,44 @@ pub fn try_parse_extension_action(action: &RuleAction) -> Option<ExtensionComman
             // Not a valid extension format
             None
         }
+        RuleAction::Set {
+            device_id,
+            property,
+            value,
+        } => {
+            // Try parsing as standard DataSourceId (e.g. "extension:weather")
+            if let Some(ds_id) = DataSourceId::parse(device_id) {
+                if ds_id.source_type == neomind_core::datasource::DataSourceType::Extension {
+                    let args = serde_json::json!({
+                        "property": property,
+                        "value": value,
+                    });
+                    return Some(ExtensionCommandAction {
+                        extension_id: ds_id.source_id.clone(),
+                        command: format!("set_{}", property),
+                        args,
+                        timeout_ms: None,
+                    });
+                }
+            }
+
+            // Fallback: check for "extension:" prefix
+            if device_id.starts_with("extension:") {
+                let ext_id = device_id.strip_prefix("extension:").unwrap_or(device_id);
+                let args = serde_json::json!({
+                    "property": property,
+                    "value": value,
+                });
+                return Some(ExtensionCommandAction {
+                    extension_id: ext_id.to_string(),
+                    command: format!("set_{}", property),
+                    args,
+                    timeout_ms: None,
+                });
+            }
+
+            None
+        }
         _ => None,
     }
 }
