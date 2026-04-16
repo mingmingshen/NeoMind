@@ -91,7 +91,7 @@ export function ResponsiveTable({
   return (
     <>
       {/* Desktop Table - uses page scroll with sticky header */}
-      <div className="hidden md:block rounded-xl border bg-card">
+      <div className="hidden md:block rounded-xl border bg-card overflow-hidden">
         <table className={cn("w-full caption-bottom text-sm", className)}>
           <thead className={cn(
             "[&_tr]:border-b",

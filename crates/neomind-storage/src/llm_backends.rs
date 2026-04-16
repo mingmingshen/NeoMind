@@ -319,6 +319,16 @@ impl LlmBackendInstance {
     /// Ensure capabilities are populated (for backends loaded from old data)
     /// This fixes the case where old backends in the database don't have capabilities set
     pub fn ensure_capabilities(&mut self) {
+        let defaults = Self::default_capabilities(&self.backend_type);
+
+        // Fix max_context if it's still the serde default (4096) but should be higher
+        // This handles the case where old backends got the wrong default on deserialization
+        if self.capabilities.max_context == default_max_context()
+            && defaults.max_context > default_max_context()
+        {
+            self.capabilities.max_context = defaults.max_context;
+        }
+
         // If all capabilities are false (the default), populate with proper defaults
         if !self.capabilities.supports_streaming
             && !self.capabilities.supports_multimodal
@@ -326,7 +336,7 @@ impl LlmBackendInstance {
             && !self.capabilities.supports_tools
             && self.capabilities.max_context == default_max_context()
         {
-            self.capabilities = Self::default_capabilities(&self.backend_type);
+            self.capabilities = defaults;
         }
     }
 

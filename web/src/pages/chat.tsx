@@ -406,12 +406,11 @@ export function ChatPage() {
             roundThinkingAccumulatorRef.current[currentRoundRef.current] = capturedStreamingRef.current.thinking
           }
           const thinking = thinkingAccumulatorRef.current
-          // Last round's content is the current captured content
+          // Last round's content becomes the final message content
           const lastRoundContent = capturedStreamingRef.current.content
-          // Save last round's content to round contents
-          if (lastRoundContent) {
-            roundContentsAccumulatorRef.current[currentRoundRef.current] = lastRoundContent
-          }
+          // NOTE: Do NOT save last round's content to roundContents — it is the
+          // final message content and will be shown as the main response.
+          // Only intermediate rounds' content (saved in IntermediateEnd) goes into round_contents.
           const hasRoundContents = Object.keys(roundContentsAccumulatorRef.current).length > 0
           const hasRoundThinking = Object.keys(roundThinkingAccumulatorRef.current).length > 0
           const messageContent = lastRoundContent

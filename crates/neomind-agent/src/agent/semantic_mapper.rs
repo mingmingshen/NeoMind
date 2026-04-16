@@ -493,7 +493,92 @@ impl SemanticToolMapper {
         let mut mapping_applied = false;
 
         match tool_name {
-            // Device control tools
+            // ===== Aggregated tools (primary path) =====
+            // The "device" tool handles all device operations: list, get, history, latest, control, write_metric
+            "device" => {
+                let device_name = params
+                    .get("device_id")
+                    .or(params.get("device"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                if let Some(name) = device_name {
+                    // Only resolve if it doesn't look like a technical ID (contains non-ASCII or spaces)
+                    let looks_technical = name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ':');
+                    if !looks_technical {
+                        if let Some(mapping) = self.resolve_device(&name).await {
+                            params["device_id"] = Value::String(mapping.device_id.clone());
+                            params["_device_name"] = Value::String(name);
+                            params["_match_type"] = Value::String(format!("{:?}", mapping.match_type));
+                            mapping_applied = true;
+                        }
+                    }
+                }
+
+                // Also resolve device_type if it's a natural language reference
+                if let Some(dt) = params.get("device_type").and_then(|v| v.as_str()) {
+                    let translated = Self::translate_term(dt);
+                    if !translated.is_empty() {
+                        // Use the first translation as the canonical device type
+                        params["device_type"] = Value::String(translated[0].clone());
+                    }
+                }
+            }
+
+            // The "rule" tool handles: list, get, create, update, delete, history
+            "rule" => {
+                let rule_name = params
+                    .get("rule_id")
+                    .or(params.get("rule"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                if let Some(name) = rule_name {
+                    let looks_technical = name.contains('-') || name.contains(':') || (name.len() > 20 && name.chars().all(|c| c.is_ascii_alphanumeric()));
+                    if !looks_technical {
+                        if let Some(mapping) = self.resolve_rule(&name).await {
+                            params["rule_id"] = Value::String(mapping.rule_id.clone());
+                            params["_rule_name"] = Value::String(name);
+                            mapping_applied = true;
+                        }
+                    }
+                }
+            }
+
+            // The "agent" tool handles: list, get, create, update, control, memory, send_message, etc.
+            "agent" => {
+                let agent_name = params
+                    .get("agent_id")
+                    .or(params.get("agent"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                if let Some(name) = agent_name {
+                    // Agent IDs are typically UUIDs or short alphanumeric IDs
+                    let looks_technical = name.contains('-') && name.len() > 10;
+                    if !looks_technical {
+                        // Try to resolve agent name from resource index
+                        let index = self.resource_index.read().await;
+                        let results = index.search_string(&name).await;
+                        for result in &results {
+                            if result.resource.id.resource_type == "agent" {
+                                params["agent_id"] = Value::String(result.resource.id.id.clone());
+                                params["_agent_name"] = Value::String(name);
+                                mapping_applied = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // The "message" tool handles: list, send, read
+            "message" => {
+                // Message tool doesn't typically need semantic mapping for IDs
+                // But we can resolve recipient names for send action
+            }
+
+            // ===== Legacy tool names (backward compatibility) =====
             "device.control" | "control_device" | "control" => {
                 let device_name = params
                     .get("device")
@@ -511,7 +596,6 @@ impl SemanticToolMapper {
                 }
             }
 
-            // Data query tools
             "data.query" | "query_data" | "query" => {
                 let device_name = params
                     .get("device")
@@ -528,7 +612,6 @@ impl SemanticToolMapper {
                 }
             }
 
-            // Device status query
             "device.status" | "query_device_status" => {
                 let device_name = params
                     .get("device")
@@ -544,7 +627,6 @@ impl SemanticToolMapper {
                 }
             }
 
-            // Device configuration
             "device.config.set" | "set_device_config" => {
                 let device_name = params
                     .get("device")
@@ -560,7 +642,6 @@ impl SemanticToolMapper {
                 }
             }
 
-            // Rule management tools
             "rule.delete" | "delete_rule" => {
                 let rule_name = params
                     .get("rule")
@@ -607,7 +688,6 @@ impl SemanticToolMapper {
                 }
             }
 
-            // Workflow tools
             "workflow.trigger" | "trigger_workflow" => {
                 let wf_name = params
                     .get("workflow")
@@ -624,7 +704,6 @@ impl SemanticToolMapper {
                 }
             }
 
-            // Batch device control
             "devices.batch_control" | "batch_control_devices" => {
                 if let Some(devices_array) = params.get_mut("devices") {
                     if let Some(devices) = devices_array.as_array_mut() {

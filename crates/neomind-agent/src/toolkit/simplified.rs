@@ -364,14 +364,40 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     examples: vec!["Monitors living room temperature".to_string()],
                 }),
                 ("user_prompt".to_string(), ParameterInfo {
-                    description: "Natural language description of what the agent should do (create action). Be specific with device names and thresholds".to_string(),
+                    description: "DETAILED agent instructions (create action, REQUIRED). Write a structured prompt: what to check, thresholds, actions on trigger, output format. NOT just user's words — expand into proper agent system prompt. Example: 'You are a temperature monitoring agent. Every execution: 1) Query all temperature sensors for latest readings. 2) If any sensor reads above 30°C, send an urgent notification with device name and current value. 3) Generate a brief summary of all sensor statuses. Respond in Chinese.'".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["Check temperature sensor every 5 minutes, alert if above 30C".to_string()],
+                    examples: vec![
+                        "You are a temperature monitoring agent. Every execution: 1) Query all temperature sensors for latest readings. 2) If any sensor reads above 30°C, send an urgent notification with device name and current value. 3) Generate a brief summary of all sensor statuses. Respond in Chinese.".to_string(),
+                        "Check device online status. If any device goes offline, immediately send an important notification. Provide a daily health summary.".to_string(),
+                    ],
                 }),
                 ("schedule_type".to_string(), ParameterInfo {
-                    description: "How agent is triggered (create): 'event' (device events), 'cron' (cron schedule), 'interval' (periodic)".to_string(),
+                    description: "How agent is triggered (create, REQUIRED): 'cron' (time schedule like daily 8am), 'interval' (every N seconds), 'event' (when device data changes). User says 'every X minutes/hours' → interval. 'daily/weekly at X' → cron. 'when X happens' → event.".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["event".to_string(), "cron".to_string(), "interval".to_string()],
+                    examples: vec!["interval".to_string(), "cron".to_string(), "event".to_string()],
+                }),
+                ("schedule_config".to_string(), ParameterInfo {
+                    description: "Schedule config (create): For cron: 5-field expression ('0 8 * * *'=daily 8am, '*/30 * * * *'=every 30min). For interval: seconds ('300'=5min, '3600'=1hour). For event: comma-separated DataSourceIds to watch ('device:sensor_001:temperature,extension:weather:humidity')".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["0 8 * * *".to_string(), "300".to_string(), "3600".to_string(), "device:sensor_001:temperature".to_string()],
+                }),
+                ("execution_mode".to_string(), ParameterInfo {
+                    description: "Agent mode (create): 'chat' = single-pass (default, for monitoring/reporting), 'react' = multi-round tool loop (for automation needing device control or multi-step actions)".to_string(),
+                    default: serde_json::json!("chat"),
+                    examples: vec!["chat".to_string(), "react".to_string()],
+                }),
+                ("resources".to_string(), ParameterInfo {
+                    description: "Resources to bind (create, multi-select, finest granularity preferred). JSON array: [{\"type\":\"...\",\"id\":\"...\"}]. Types: 'device' (id=device_id), 'metric' (id='device_id:metric_name'), 'command' (id='device_id:cmd'), 'extension_metric' (id='extension:ext_id:metric'), 'extension_tool' (id='extension:ext_id:tool'). Prefer specific metrics over whole devices. Example: [{\"type\":\"metric\",\"id\":\"sensor_001:temperature\"},{\"type\":\"extension_tool\",\"id\":\"extension:weather:forecast\"}]".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec![
+                        "[{\"type\":\"metric\",\"id\":\"sensor_001:temperature\"}]".to_string(),
+                        "[{\"type\":\"device\",\"id\":\"camera_001\"},{\"type\":\"extension_tool\",\"id\":\"extension:image_analyzer:detect\"}]".to_string(),
+                    ],
+                }),
+                ("enable_tool_chaining".to_string(), ParameterInfo {
+                    description: "Allow tool output chaining in react mode (create, optional). Default: false. Set true for complex automation.".to_string(),
+                    default: serde_json::json!(false),
+                    examples: vec!["true".to_string(), "false".to_string()],
                 }),
                 ("control_action".to_string(), ParameterInfo {
                     description: "Control operation (control action): 'pause' or 'resume'".to_string(),
@@ -422,8 +448,13 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 },
                 Example {
                     user_query: "Create a temperature monitoring agent".to_string(),
-                    tool_call: r#"agent(action="create", name="Temperature Monitor", user_prompt="Check temperature sensor every 5 minutes, alert if above 30C", schedule_type="interval", schedule_config="300")"#.to_string(),
-                    explanation: "Create an interval-based monitoring agent".to_string(),
+                    tool_call: r#"agent(action="create", name="Temperature Monitor", user_prompt="You are a temperature monitoring agent. Every execution: 1) Query all temperature sensors for latest readings. 2) If any sensor reads above 30C, send an urgent notification. 3) Provide a brief status summary.", schedule_type="interval", schedule_config="300")"#.to_string(),
+                    explanation: "Create an interval-based monitoring agent with detailed prompt".to_string(),
+                },
+                Example {
+                    user_query: "Create a daily patrol agent that runs at 8am".to_string(),
+                    tool_call: r#"agent(action="create", name="Daily Patrol", user_prompt="You are a daily device patrol agent. Check all devices status, verify online/offline, report any anomalies. Send a summary notification.", schedule_type="cron", schedule_config="0 8 * * *", execution_mode="react", enable_tool_chaining=true)"#.to_string(),
+                    explanation: "Create a cron-based agent with react mode for multi-step automation".to_string(),
                 },
                 Example {
                     user_query: "Pause the temperature monitor".to_string(),
@@ -434,11 +465,6 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     user_query: "How is the temperature monitor performing?".to_string(),
                     tool_call: r#"agent(action="executions", agent_id="agent_1")"#.to_string(),
                     explanation: "View execution statistics".to_string(),
-                },
-                Example {
-                    user_query: "What did the agent do recently?".to_string(),
-                    tool_call: r#"agent(action="conversation", agent_id="agent_1", limit=5)"#.to_string(),
-                    explanation: "View recent conversation history".to_string(),
                 },
             ],
             use_when: vec![
@@ -456,19 +482,29 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
         // === Rule Tool (aggregates rule operations) ===
         LlmToolDefinition {
             name: "rule".to_string(),
-            description: "Rule management tool for automation rules. Actions: list, get, create, update, delete, history. Rules trigger actions when device conditions are met. DSL format: RULE \"name\" WHEN device.metric OP value DO ACTION END".to_string(),
+            description: "Rule management tool for automation rules. Actions: list (with status), get, create, update, delete, history, enable (pause/resume). Rules use DSL: RULE \"name\" WHEN condition [FOR duration] DO actions END. Conditions: device/extension metrics, BETWEEN range, AND/OR/NOT logic. Actions: NOTIFY, EXECUTE, SET, LOG, ALERT, HTTP, DELAY.".to_string(),
             aliases: vec!["rule".to_string(), "automation rule".to_string(), "trigger".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
                 ("rule_id".to_string(), ParameterInfo {
-                    description: "Rule ID (get/update/delete actions). Use list action to find IDs".to_string(),
+                    description: "Rule ID (get/update/delete/enable actions). Use list action to find IDs".to_string(),
                     default: serde_json::json!(null),
                     examples: vec!["rule_1".to_string()],
                 }),
                 ("dsl".to_string(), ParameterInfo {
-                    description: "Rule DSL definition (create/update). Example: RULE \"Low Battery\" WHEN sensor_01.battery < 50 DO NOTIFY \"Battery low\" END".to_string(),
+                    description: "Rule DSL definition (create/update). Syntax: RULE \"name\" WHEN condition [FOR duration] DO actions END. Conditions: device.metric OP value, EXTENSION ext.metric OP value, BETWEEN min AND max, AND/OR/NOT. Actions: NOTIFY \"msg\", EXECUTE dev.cmd(k=v), SET dev.prop=v, LOG level \"msg\", ALERT \"title\" \"msg\", HTTP METHOD url, DELAY duration.".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec![r#"RULE "Low Battery" WHEN sensor_01.battery < 50 DO NOTIFY "Battery low" END"#.to_string()],
+                    examples: vec![
+                        r#"RULE "Low Battery" WHEN sensor_01.battery < 20 DO NOTIFY "Battery critical" END"#.to_string(),
+                        r#"RULE "Temp Control" WHEN sensor_01.temperature > 30 FOR 5 minutes DO SET ac_01.power = "on" END"#.to_string(),
+                        r#"RULE "Weather Alert" WHEN EXTENSION weather.temperature > 35 DO ALERT "Heat Wave" "Hot" severity=CRITICAL END"#.to_string(),
+                        r#"RULE "Safety" WHEN (smoke_01.level > 50) AND (temp_01.temperature > 60) DO EXECUTE alarm_01.trigger(mode=emergency) END"#.to_string(),
+                    ],
+                }),
+                ("enabled".to_string(), ParameterInfo {
+                    description: "For 'enable' action: true to resume rule, false to pause it (default: true)".to_string(),
+                    default: serde_json::json!(true),
+                    examples: vec!["true".to_string(), "false".to_string()],
                 }),
                 ("name_filter".to_string(), ParameterInfo {
                     description: "Filter rules by name substring (list action)".to_string(),
@@ -495,12 +531,27 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 Example {
                     user_query: "What rules are configured?".to_string(),
                     tool_call: r#"rule(action="list")"#.to_string(),
-                    explanation: "List all rules".to_string(),
+                    explanation: "List all rules with status".to_string(),
                 },
                 Example {
-                    user_query: "Alert me when battery drops below 50%".to_string(),
-                    tool_call: r#"rule(action="create", dsl="RULE \"Low Battery\" WHEN sensor_01.battery < 50 DO NOTIFY \"Battery below 50%\" END")"#.to_string(),
-                    explanation: "Create an automation rule".to_string(),
+                    user_query: "Alert me when battery drops below 20%".to_string(),
+                    tool_call: r#"rule(action="create", dsl="RULE \"Low Battery\" WHEN sensor_01.battery < 20 DO NOTIFY \"Battery critical\" END")"#.to_string(),
+                    explanation: "Create a device condition rule with NOTIFY action".to_string(),
+                },
+                Example {
+                    user_query: "Turn on AC when temperature is above 30 for 5 minutes".to_string(),
+                    tool_call: r#"rule(action="create", dsl="RULE \"Temp Control\" WHEN sensor_01.temperature > 30 FOR 5 minutes DO SET ac_01.power = \"on\" END")"#.to_string(),
+                    explanation: "Create rule with FOR duration and SET action".to_string(),
+                },
+                Example {
+                    user_query: "Create a weather alert rule".to_string(),
+                    tool_call: r#"rule(action="create", dsl="RULE \"Weather Alert\" WHEN EXTENSION weather.temperature > 35 DO ALERT \"Heat Wave\" \"Too hot\" severity=CRITICAL END")"#.to_string(),
+                    explanation: "Create rule with Extension condition and ALERT action".to_string(),
+                },
+                Example {
+                    user_query: "Disable the low battery rule".to_string(),
+                    tool_call: r#"rule(action="enable", rule_id="Low Battery Alert", enabled=false)"#.to_string(),
+                    explanation: "Pause a rule by setting enabled=false".to_string(),
                 },
                 Example {
                     user_query: "Delete rule 123".to_string(),
@@ -509,9 +560,12 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 },
             ],
             use_when: vec![
-                "User asks about automation rules".to_string(),
-                "User wants to create a rule triggered by device conditions".to_string(),
+                "User asks about automation rules or triggers".to_string(),
+                "User wants to create a rule triggered by device or extension conditions".to_string(),
                 "User wants to delete or modify a rule".to_string(),
+                "User wants to pause or resume a rule".to_string(),
+                "User wants to control devices automatically based on conditions".to_string(),
+                "User wants multi-condition logic (AND/OR) for automation".to_string(),
             ],
         },
 
@@ -628,10 +682,10 @@ pub fn format_tools_for_llm() -> String {
     // Concise guide
     prompt.push_str("### Usage\n\n");
     prompt.push_str("All tools use an `action` parameter to differentiate operations:\n");
-    prompt.push_str("- device(action=\"list|get|history|control\", ...)\n");
-    prompt.push_str("- agent(action=\"list|get|create|update|control|memory|send_message|executions|conversation|latest_execution\", ...)\n");
-    prompt.push_str("- rule(action=\"list|get|create|delete|history\", ...)\n");
-    prompt.push_str("- message(action=\"list|send|read\", ...) [Aliases: alert, notification]\n");
+    prompt.push_str("- device(action=\"list|latest|get|history|control|write_metric\", ...)\n");
+    prompt.push_str("- agent(action=\"list|get|create|update|control|memory|send_message|executions|conversation|latest_execution\", ...) — use send_message to contact an agent\n");
+    prompt.push_str("- rule(action=\"list|get|create|update|delete|history\", ...)\n");
+    prompt.push_str("- message(action=\"list|send|read\", ...) — for system messages/notifications only, NOT for contacting agents\n");
     prompt.push_str("- extension(action=\"list|get|status\", ...)\n\n");
     prompt.push_str(
         "Format: [{\"name\":\"tool_name\",\"arguments\":{\"action\":\"operation\",\"param\":\"value\"}}]\n\n",

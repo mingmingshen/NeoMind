@@ -256,11 +256,93 @@ pub fn resolve_tool_name(input: &str) -> String {
 ///
 /// 将简化参数名映射到真实参数名
 /// 支持新旧工具名称的向后兼容
+/// 当旧工具名被映射到聚合工具时，自动推断 action 参数
 pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
     let real_tool_name = resolve_tool_name(tool_name);
 
     if let Some(obj) = arguments.as_object() {
         let mut mapped = serde_json::Map::new();
+
+        // Auto-infer action when old tool names are mapped to aggregated tools
+        // OR when the LLM calls an aggregated tool without specifying action
+        if !obj.contains_key("action") {
+            let inferred_action = match tool_name {
+                // Device aliases (legacy)
+                "device_discover" | "list_devices" | "get_device_data" | "device_query" => Some("list"),
+                "device_analyze" => Some("latest"),
+                "device_control" | "control_device" => Some("control"),
+                "query_data" => Some("history"),
+                // Rule aliases (legacy)
+                "list_rules" | "get_rule" => Some("list"),
+                "create_rule" => Some("create"),
+                "delete_rule" => Some("delete"),
+                // Agent aliases (legacy)
+                "list_agents" | "get_agent" => Some("list"),
+                "create_agent" => Some("create"),
+                "execute_agent" | "control_agent" => Some("control"),
+                // Message/Alert aliases (legacy)
+                "list_alerts" => Some("list"),
+                "create_alert" => Some("send"),
+                "acknowledge_alert" => Some("read"),
+
+                // Default actions for aggregated tools when LLM omits action
+                // Infer from other parameters present
+                "device" => {
+                    if obj.contains_key("command") || obj.contains_key("value") || obj.contains_key("params") {
+                        Some("control")
+                    } else if obj.contains_key("metric_name") || obj.contains_key("metric_value") {
+                        Some("write_metric")
+                    } else if obj.contains_key("device_id") || obj.contains_key("device") {
+                        Some("latest")
+                    } else {
+                        Some("list")
+                    }
+                }
+                "rule" => {
+                    if obj.contains_key("dsl") || obj.contains_key("conditions") {
+                        Some("create")
+                    } else if obj.contains_key("enabled") {
+                        Some("enable")
+                    } else if obj.contains_key("rule_id") || obj.contains_key("rule") {
+                        Some("get")
+                    } else {
+                        Some("list")
+                    }
+                }
+                "agent" => {
+                    if obj.contains_key("prompt") || (obj.contains_key("name") && !obj.contains_key("agent_id")) {
+                        Some("create")
+                    } else if obj.contains_key("content") || obj.contains_key("message") {
+                        Some("send_message")
+                    } else if obj.contains_key("agent_id") || obj.contains_key("agent") {
+                        Some("get")
+                    } else {
+                        Some("list")
+                    }
+                }
+                "message" => {
+                    if obj.contains_key("title") || obj.contains_key("content") || obj.contains_key("message") {
+                        Some("send")
+                    } else if obj.contains_key("message_id") {
+                        Some("read")
+                    } else {
+                        Some("list")
+                    }
+                }
+                "extension" => {
+                    if obj.contains_key("extension_id") {
+                        Some("get")
+                    } else {
+                        Some("list")
+                    }
+                }
+
+                _ => None,
+            };
+            if let Some(action) = inferred_action {
+                mapped.insert("action".to_string(), Value::String(action.to_string()));
+            }
+        }
 
         for (key, value) in obj {
             let actual_key = match (real_tool_name.as_str(), key.as_str()) {
@@ -272,6 +354,21 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                     if let Some(action_val) = value.as_str() {
                         if ["on", "off", "set", "toggle", "open", "close"].contains(&action_val) {
                             mapped.insert("command".to_string(), value.clone());
+                            // Also set action=control when the LLM passes a command as action
+                            if !mapped.contains_key("action") {
+                                mapped.insert("action".to_string(), Value::String("control".to_string()));
+                            }
+                            continue;
+                        }
+                        // Normalize action aliases
+                        let normalized = match action_val {
+                            "query" | "data" | "历史" => "history",
+                            "status" | "info" => "latest",
+                            "discover" | "search" | "find" => "list",
+                            _ => action_val,
+                        };
+                        if normalized != action_val {
+                            mapped.insert("action".to_string(), Value::String(normalized.to_string()));
                             continue;
                         }
                     }
@@ -298,6 +395,30 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                 // ===== rule tool (aggregated) =====
                 ("rule", "rule") => "rule_id",
                 ("rule", "dsl") => "dsl",
+                ("rule", "action") => {
+                    if let Some(action_val) = value.as_str() {
+                        let normalized = match action_val {
+                            "pause" | "disable" => {
+                                mapped.insert("enabled".to_string(), Value::Bool(false));
+                                "enable"
+                            }
+                            "resume" | "enable" => {
+                                mapped.insert("enabled".to_string(), Value::Bool(true));
+                                "enable"
+                            }
+                            "add" | "new" => "create",
+                            "remove" => "delete",
+                            "edit" | "modify" => "update",
+                            "search" | "find" => "list",
+                            _ => action_val,
+                        };
+                        if normalized != action_val || mapped.contains_key("action") {
+                            mapped.insert("action".to_string(), Value::String(normalized.to_string()));
+                            continue;
+                        }
+                    }
+                    "action"
+                }
                 ("rule", other) => other,
 
                 // ===== agent tool (aggregated) =====

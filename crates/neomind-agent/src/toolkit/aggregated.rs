@@ -18,6 +18,12 @@
 //! 5. `extension` - Extension management (list, get, status)
 
 use std::collections::HashMap;
+
+/// Check if a metric should be skipped entirely in LLM tool output
+/// because it contains raw/large payloads (e.g. base64 images, full MQTT messages).
+fn is_raw_payload_metric(name: &str) -> bool {
+    name == "_raw" || name.ends_with("_raw")
+}
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -377,6 +383,18 @@ impl DeviceTool {
                                         }
                                     ));
                                 }
+                            } else if is_raw_payload_metric(&m.name) {
+                                // Skip raw payload metrics - contain large base64/JSON blobs useless to LLM
+                                let size = if let Some(s) = latest.value.as_str() {
+                                    if s.len() > 1024 {
+                                        format!("{:.1}KB", s.len() as f64 / 1024.0)
+                                    } else {
+                                        format!("{}B", s.len())
+                                    }
+                                } else {
+                                    "N/A".to_string()
+                                };
+                                metric_json["value"] = serde_json::json!(format!("[raw payload, {}]", size));
                             } else {
                                 metric_json["value"] = latest.value.to_json_value();
                             }
@@ -406,6 +424,7 @@ impl DeviceTool {
                     let virtual_names: Vec<&String> = all_stored
                         .iter()
                         .filter(|m| !template_set.contains(m.as_str()))
+                        .filter(|m| !is_raw_payload_metric(m.as_str()))
                         .collect();
 
                     let mut virtual_metrics: Vec<Value> = Vec::new();
@@ -857,15 +876,27 @@ When creating agents:
                 },
                 "user_prompt": {
                     "type": "string",
-                    "description": "Natural language description of what the agent should do. Required for create, optional for update. Be specific with device names and thresholds."
+                    "description": "DETAILED requirements for the agent (create action). Write a structured, specific prompt describing: 1) What to monitor/check, 2) Thresholds/conditions, 3) Actions to take when conditions met, 4) Output format. Example: '检查所有温度传感器的最新读数。如果任何传感器温度超过30°C，立即发送紧急通知。同时每小时生成一份温度摘要报告。使用中文回复。' NOT just copying user input — expand into a proper agent instruction."
                 },
                 "schedule_type": {
                     "type": "string",
-                    "description": "How the agent is triggered (create action): 'event' (device data changes), 'cron' (time schedule), 'interval' (periodic execution)"
+                    "description": "How the agent is triggered (create action): 'cron' (fixed time schedule, e.g., daily at 8am), 'interval' (periodic execution every N seconds), 'event' (triggered when device data changes in real-time). Choose based on user intent: daily/weekly = cron, every X minutes = interval, react to data changes = event."
                 },
                 "schedule_config": {
                     "type": "string",
-                    "description": "Schedule configuration (create action). For cron: cron expression like '*/5 * * * *'. For interval: seconds like '300'"
+                    "description": "Schedule configuration (create action). For cron: standard 5-field expression (e.g., '0 8 * * *' = daily 8am, '*/30 * * * *' = every 30min). For interval: number of seconds (e.g., '300' = every 5min, '3600' = hourly). For event: comma-separated DataSourceIds to watch, format '{type}:{id}:{field}' (e.g., 'device:sensor_001:temperature,extension:weather:humidity')."
+                },
+                "execution_mode": {
+                    "type": "string",
+                    "description": "Agent execution mode (create action): 'chat' = single-pass analysis (default, good for monitoring/reporting), 'react' = multi-round tool calling loop (good for complex automation needing device control or multiple tool calls). Use 'react' if agent needs to control devices, query multiple tools, or perform multi-step actions."
+                },
+                "resources": {
+                    "type": "string",
+                    "description": "Resources to bind to this agent (create action, multi-select). Format: JSON array of objects, each with 'type' and 'id'. Supported types: 'device' (full device, id=device_id), 'metric' (device metric, id='device_id:metric_name'), 'command' (device command, id='device_id:command_name'), 'extension_metric' (extension metric, id='extension:ext_id:metric_name'), 'extension_tool' (extension command, id='extension:ext_id:tool_name'). Prefer finest granularity: bind specific metrics/commands rather than whole devices. Example: [{\"type\":\"metric\",\"id\":\"sensor_001:temperature\"},{\"type\":\"extension_tool\",\"id\":\"extension:weather:forecast\"}]"
+                },
+                "enable_tool_chaining": {
+                    "type": "boolean",
+                    "description": "Enable tool chaining for react mode (create action). When true, agent can use output from one tool as input to another. Default: false. Set true for complex automation workflows."
                 },
                 "control_action": {
                     "type": "string",
@@ -877,7 +908,7 @@ When creating agents:
                 },
                 "limit": {
                     "type": "number",
-                    "description": "Max results to return (list/memory actions). Default: 20"
+                    "description": "Max results to return (list/memory actions). Omit to return all results."
                 },
                 "memory_type": {
                     "type": "string",
@@ -967,8 +998,12 @@ impl AgentTool {
             };
         }
 
+        // Only apply limit if explicitly requested and reasonable (>5).
+        // LLMs sometimes pass arbitrary small limits; ignore those to show complete data.
         if let Some(limit) = args["limit"].as_u64() {
-            filter.limit = Some(limit as usize);
+            if limit > 5 {
+                filter.limit = Some(limit as usize);
+            }
         }
 
         let agents = self
@@ -1058,6 +1093,67 @@ impl AgentTool {
         };
 
         let now = chrono::Utc::now().timestamp();
+
+        // Parse execution_mode
+        let execution_mode = match args["execution_mode"].as_str() {
+            Some("react") => neomind_storage::agents::ExecutionMode::React,
+            _ => neomind_storage::agents::ExecutionMode::Chat, // default
+        };
+
+        // Parse resources — supports JSON array of {type, id} objects
+        let agent_resources: Vec<neomind_storage::agents::AgentResource> = if let Some(res_val) = args.get("resources") {
+            if let Some(arr) = res_val.as_array() {
+                // JSON array format: [{"type":"metric","id":"sensor_001:temperature"}, ...]
+                arr.iter().filter_map(|item| {
+                    let type_str = item.get("type")?.as_str()?;
+                    let id = item.get("id")?.as_str()?.to_string();
+                    let resource_type = match type_str {
+                        "device" => neomind_storage::agents::ResourceType::Device,
+                        "metric" => neomind_storage::agents::ResourceType::Metric,
+                        "command" => neomind_storage::agents::ResourceType::Command,
+                        "extension_metric" => neomind_storage::agents::ResourceType::ExtensionMetric,
+                        "extension_tool" => neomind_storage::agents::ResourceType::ExtensionTool,
+                        "data_stream" => neomind_storage::agents::ResourceType::DataStream,
+                        _ => return None,
+                    };
+                    Some(neomind_storage::agents::AgentResource {
+                        resource_type,
+                        resource_id: id.clone(),
+                        name: id,
+                        config: serde_json::json!({}),
+                    })
+                }).collect()
+            } else if let Some(s) = res_val.as_str() {
+                // Fallback: comma-separated device IDs (backward compat)
+                s.split(',')
+                    .filter(|id| !id.trim().is_empty())
+                    .map(|id| neomind_storage::agents::AgentResource {
+                        resource_type: neomind_storage::agents::ResourceType::Device,
+                        resource_id: id.trim().to_string(),
+                        name: id.trim().to_string(),
+                        config: serde_json::json!({}),
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+
+        // Parse event_filter from schedule_config when schedule_type is event
+        let is_event = matches!(schedule_type, ScheduleType::Event);
+        let is_cron = matches!(schedule_type, ScheduleType::Cron);
+        let is_interval = matches!(schedule_type, ScheduleType::Interval);
+        let event_filter = if is_event {
+            args["schedule_config"].as_str().map(|s| s.to_string())
+        } else {
+            None
+        };
+
+        // Parse enable_tool_chaining
+        let enable_tool_chaining = args["enable_tool_chaining"].as_bool().unwrap_or(false);
+
         let agent = AiAgent {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.to_string(),
@@ -1065,12 +1161,20 @@ impl AgentTool {
             user_prompt: user_prompt.to_string(),
             llm_backend_id: None,
             parsed_intent: None,
-            resources: Vec::new(),
+            resources: agent_resources,
             schedule: AgentSchedule {
                 schedule_type,
-                cron_expression: args["schedule_config"].as_str().map(|s| s.to_string()),
-                interval_seconds: args["schedule_config"].as_u64(),
-                event_filter: None,
+                cron_expression: if is_cron {
+                    args["schedule_config"].as_str().map(|s| s.to_string())
+                } else {
+                    None
+                },
+                interval_seconds: if is_interval {
+                    args["schedule_config"].as_u64()
+                } else {
+                    None
+                },
+                event_filter,
                 timezone: None,
             },
             status: AgentStatus::Active,
@@ -1084,10 +1188,10 @@ impl AgentTool {
             user_messages: Vec::new(),
             conversation_summary: None,
             context_window_size: 10,
-            enable_tool_chaining: false,
+            enable_tool_chaining,
             max_chain_depth: 3,
             tool_config: None,
-            execution_mode: Default::default(),
+            execution_mode,
             error_message: None,
             max_retries: 0,
             consecutive_failures: 0,
@@ -1513,22 +1617,59 @@ impl Tool for RuleTool {
     }
 
     fn description(&self) -> &str {
-        r#"Rule management tool for automation rules that trigger actions based on device conditions.
+        r#"Rule management tool for automation rules that trigger actions based on conditions.
 
 Actions:
-- list: List all rules or filter by name. Use when user asks about existing automation rules.
-- get: Get rule details including full DSL definition. Use when user asks about a specific rule's logic.
-- create: Create a new automation rule from DSL. Requires: dsl. Use when user wants to automate a response to device conditions.
-- update: Replace a rule's DSL definition. WARNING: Deletes old rule and creates new one. Requires: rule_id, dsl.
-- delete: Permanently remove a rule. WARNING: This is irreversible. Requires confirmation.
-- history: View rule execution history (when rules triggered and what they did).
+- list: List all rules (with status). Filter by name. Use when user asks about existing rules.
+- get: Get rule details including DSL, status, trigger stats. Use when user asks about a specific rule.
+- create: Create a new rule from DSL. Requires: dsl.
+- update: Replace a rule's DSL. WARNING: Deletes old rule, creates new one. Requires: rule_id, dsl.
+- delete: Permanently remove a rule. Requires confirmation.
+- history: View rule execution history.
+- enable: Enable (resume) or disable (pause) a rule. Requires: rule_id, enabled.
 
-Rule DSL format:
-RULE "rule_name" WHEN device_id.metric OPERATOR value DO ACTION END
-Example: RULE "Low Battery Alert" WHEN sensor_01.battery < 50 DO NOTIFY "Battery below 50%" END
+Rule DSL Syntax:
+RULE "rule_name" [DESCRIPTION "desc"] WHEN condition [FOR duration] DO actions END
+
+Conditions:
+- Device: device_id.metric OPERATOR value
+  Example: sensor_01.temperature > 30
+- Extension: EXTENSION ext_id.metric OPERATOR value
+  Example: EXTENSION weather.temperature > 35
+- Range: device_id.metric BETWEEN min AND max
+  Example: sensor_01.humidity BETWEEN 40 AND 60
+- AND: cond1 AND cond2  (higher precedence than OR)
+  Example: sensor.temp > 30 AND sensor.humidity < 20
+- OR: cond1 OR cond2
+  Example: device.status == "on" OR device.status == "standby"
+- NOT: NOT condition
+  Example: NOT device.power == 0
+- Parentheses for grouping: (cond1) AND (cond2)
 
 Operators: <, >, <=, >=, ==, !=
-Actions: NOTIFY (send alert), CONTROL (send device command)"#
+FOR duration: FOR 5 seconds / FOR 10 minutes / FOR 1 hour
+
+Actions (one or more, each on its own line):
+- NOTIFY "message" — send alert notification
+  NOTIFY "Temperature is {temperature}"
+- EXECUTE device_id.command(param=value, ...) — send device command
+  EXECUTE fan_01.set_speed(speed=100, mode=auto)
+- SET device_id.property = value — set device property
+  SET thermostat_01.target_temp = 25.5
+- LOG level, "message" — log entry (level: info/warning/error)
+  LOG warning, "Device overheating"
+- ALERT "title" "message" [severity=LEVEL] — create alert (severity: INFO/WARNING/CRITICAL)
+  ALERT "High Temp" "Device overheating" severity=CRITICAL
+- HTTP METHOD url — make HTTP request (GET/POST/PUT/DELETE)
+  HTTP POST https://api.example.com/webhook
+- DELAY duration — wait before next action (5 seconds, 10 minutes, 1 hour)
+  DELAY 5 seconds
+
+Full examples:
+RULE "Low Battery Alert" WHEN sensor_01.battery < 20 DO NOTIFY "Battery critical" END
+RULE "Temp Control" WHEN sensor_01.temperature > 30 FOR 5 minutes DO SET ac_01.power = "on" END
+RULE "Weather Alert" WHEN EXTENSION weather.temperature > 35 DO ALERT "Heat Wave" "External temp above 35C" severity=CRITICAL END
+RULE "Safety Check" WHEN (smoke_01.level > 50) AND (temp_01.temperature > 60) DO EXECUTE alarm_01.trigger(mode=emergency) END"#
     }
 
     fn parameters(&self) -> Value {
@@ -1536,8 +1677,8 @@ Actions: NOTIFY (send alert), CONTROL (send device command)"#
             serde_json::json!({
                 "action": {
                     "type": "string",
-                    "enum": ["list", "get", "create", "update", "delete", "history"],
-                    "description": "Operation type: 'list' (all rules), 'get' (rule details), 'create' (new rule), 'update' (modify rule), 'delete' (remove rule), 'history' (execution log)"
+                    "enum": ["list", "get", "create", "update", "delete", "history", "enable"],
+                    "description": "Operation type: 'list' (all rules with status), 'get' (rule details), 'create' (new rule), 'update' (modify rule), 'delete' (remove rule), 'history' (execution log), 'enable' (pause/resume rule)"
                 },
                 "rule_id": {
                     "type": "string",
@@ -1545,7 +1686,11 @@ Actions: NOTIFY (send alert), CONTROL (send device command)"#
                 },
                 "dsl": {
                     "type": "string",
-                    "description": "Rule DSL definition. Required for create/update. Format: RULE \"name\" WHEN device_id.metric OP value DO ACTION END. Example: RULE \"Low Battery\" WHEN sensor_01.battery < 50 DO NOTIFY \"Battery low\" END"
+                    "description": "Rule DSL definition. Required for create/update.\nSyntax: RULE \"name\" WHEN condition [FOR duration] DO actions END\nConditions: device.metric OP value, EXTENSION ext.metric OP value, BETWEEN min AND max, AND/OR/NOT, parentheses.\nActions: NOTIFY \"msg\", EXECUTE dev.cmd(k=v), SET dev.prop = v, LOG level \"msg\", ALERT \"title\" \"msg\", HTTP METHOD url, DELAY duration.\nExamples:\nRULE \"Low Battery\" WHEN sensor_01.battery < 20 DO NOTIFY \"Battery critical\" END\nRULE \"Temp Control\" WHEN sensor_01.temperature > 30 FOR 5 minutes DO SET ac_01.power = \"on\" END\nRULE \"Weather\" WHEN EXTENSION weather.temp > 35 DO ALERT \"Heat\" \"Hot\" severity=CRITICAL END"
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "description": "For 'enable' action: true to resume (activate) the rule, false to pause it. Requires rule_id"
                 },
                 "name_filter": {
                     "type": "string",
@@ -1593,6 +1738,7 @@ Actions: NOTIFY (send alert), CONTROL (send device command)"#
             "update" => self.execute_update(&args).await,
             "delete" => self.execute_delete(&args).await,
             "history" => self.execute_history(&args).await,
+            "enable" => self.execute_enable(&args).await,
             _ => Err(ToolError::InvalidArguments(format!(
                 "Unknown action: {}",
                 action
@@ -1644,17 +1790,27 @@ impl RuleTool {
             })
             .take(limit)
             .map(|r| {
+                let status_str = match r.status {
+                    neomind_rules::RuleStatus::Active => "active",
+                    neomind_rules::RuleStatus::Paused => "paused",
+                    neomind_rules::RuleStatus::Triggered => "triggered",
+                    neomind_rules::RuleStatus::Disabled => "disabled",
+                };
                 if detailed {
                     serde_json::json!({
                         "id": r.id.to_string(),
                         "name": r.name,
                         "description": r.description,
-                        "dsl": r.dsl
+                        "status": status_str,
+                        "dsl": r.dsl,
+                        "trigger_count": r.state.trigger_count,
+                        "last_triggered": r.state.last_triggered.map(|t| t.to_rfc3339()),
                     })
                 } else {
                     serde_json::json!({
                         "id": r.id.to_string(),
                         "name": r.name,
+                        "status": status_str,
                         "description": r.description
                     })
                 }
@@ -1683,11 +1839,22 @@ impl RuleTool {
             .await
             .ok_or_else(|| ToolError::Execution(format!("Rule not found: {}", resolved_id)))?;
 
+        let status_str = match rule.status {
+            neomind_rules::RuleStatus::Active => "active",
+            neomind_rules::RuleStatus::Paused => "paused",
+            neomind_rules::RuleStatus::Triggered => "triggered",
+            neomind_rules::RuleStatus::Disabled => "disabled",
+        };
+
         Ok(ToolOutput::success(serde_json::json!({
             "id": rule.id.to_string(),
             "name": rule.name,
             "description": rule.description,
-            "dsl": rule.dsl
+            "status": status_str,
+            "dsl": rule.dsl,
+            "trigger_count": rule.state.trigger_count,
+            "last_triggered": rule.state.last_triggered.map(|t| t.to_rfc3339()),
+            "created_at": rule.created_at.to_rfc3339(),
         })))
     }
 
@@ -1816,6 +1983,45 @@ impl RuleTool {
         Ok(ToolOutput::success(serde_json::json!({
             "history": history
         })))
+    }
+
+    async fn execute_enable(&self, args: &Value) -> Result<ToolOutput> {
+        let rule_id_input = args["rule_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("rule_id is required".into()))?;
+
+        let enabled = args["enabled"].as_bool().unwrap_or(true);
+
+        let resolved_id = self.resolve_rule_id(rule_id_input).await?;
+
+        let rule_id = neomind_rules::RuleId::from_string(&resolved_id)
+            .map_err(|e| ToolError::InvalidArguments(format!("Invalid rule_id: {}", e)))?;
+
+        if enabled {
+            self.rule_engine
+                .resume_rule(&rule_id)
+                .await
+                .map_err(|e| ToolError::Execution(format!("Failed to resume rule: {}", e)))?;
+
+            Ok(ToolOutput::success(serde_json::json!({
+                "id": resolved_id,
+                "status": "resumed",
+                "enabled": true,
+                "message": "Rule resumed successfully"
+            })))
+        } else {
+            self.rule_engine
+                .pause_rule(&rule_id)
+                .await
+                .map_err(|e| ToolError::Execution(format!("Failed to pause rule: {}", e)))?;
+
+            Ok(ToolOutput::success(serde_json::json!({
+                "id": resolved_id,
+                "status": "paused",
+                "enabled": false,
+                "message": "Rule paused successfully"
+            })))
+        }
     }
 }
 

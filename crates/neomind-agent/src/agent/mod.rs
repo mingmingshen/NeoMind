@@ -2401,10 +2401,12 @@ impl Agent {
             // Process results in original order
             for (name, id, arguments, result) in results {
                 tracing::debug!(name = %name, result = ?result, "Tool execution result");
+                // Push the resolved tool name (e.g., "rule" instead of "list_rules")
+                let resolved = self.resolve_tool_name(&name);
+                tools_used.push(resolved);
+                tracing::debug!(name = %name, count = tools_used.len(), "Added to tools_used");
                 match result {
                     Ok(ok_result) => {
-                        tools_used.push(name.clone());
-                        tracing::debug!(name = %name, count = tools_used.len(), "Added to tools_used");
                         tool_results.push((name.clone(), ok_result.clone()));
                         tool_calls_with_results.push(ToolCall {
                             name,
@@ -2429,11 +2431,61 @@ impl Agent {
             }
         }
 
-        tracing::debug!(tools_used = ?tools_used, "Before format_tool_results");
+        tracing::debug!(tools_used = ?tools_used, "Before Phase 2 summarization");
 
-        // Format tool results directly (without calling LLM again)
-        // This prevents excessive thinking and model looping
-        let final_text = crate::agent::streaming::format_tool_results(&tool_results);
+        // === PHASE 2: Summarize tool results with LLM ===
+        // Instead of directly returning formatted tool results, ask the LLM to
+        // analyze the results and generate a natural language response.
+        // This matches the streaming path behavior.
+        let final_text = {
+            // Build Phase 2 prompt with tool results
+            let original_question = {
+                let state = self.internal_state.read().await;
+                state.memory.iter().rev()
+                    .find(|msg| msg.role == "user" && !msg.content.starts_with("[Tool:"))
+                    .map(|msg| msg.content.clone())
+            };
+
+            let phase2_prompt = crate::agent::streaming::build_phase2_prompt_with_tool_results(
+                original_question,
+                &tool_results,
+            );
+
+            // Get history for context
+            let history_messages: Vec<neomind_core::Message> = {
+                let state = self.internal_state.read().await;
+                let max_context = self.llm_interface.max_context_length().await;
+                let max_history_tokens = (max_context * 70) / 100;
+                let trimmed = crate::agent::streaming::build_context_window(
+                    &state.memory, max_history_tokens
+                );
+                trimmed.iter().map(|msg| msg.to_core()).collect()
+            };
+
+            // Call LLM to summarize (no tools, no thinking)
+            match self.llm_interface.chat_without_tools_with_history(
+                &phase2_prompt, &history_messages
+            ).await {
+                Ok(response) => {
+                    let mut text = response.text.trim().to_string();
+                    if text.is_empty() {
+                        // Fallback to formatted results if LLM returns empty
+                        tracing::warn!("Phase 2 returned empty, using formatted tool results");
+                        crate::agent::streaming::format_tool_results(&tool_results)
+                    } else {
+                        // Clean any embedded tool call JSON from Phase 2 response
+                        // (LLM may output tool call syntax as text even though tools are disabled)
+                        text = crate::agent::tool_parser::remove_tool_calls_from_response(&text);
+                        text
+                    }
+                }
+                Err(e) => {
+                    // Fallback to formatted results on LLM error
+                    tracing::warn!("Phase 2 LLM call failed: {}, using formatted tool results", e);
+                    crate::agent::streaming::format_tool_results(&tool_results)
+                }
+            }
+        };
 
         // Save a complete message with tool_calls, results, and optionally thinking
         let final_message = if let Some(thinking_content) = thinking {
@@ -2993,6 +3045,9 @@ END"#
             "Executing tool"
         );
 
+        let mut last_error = String::new();
+        let mut last_attempt = 0u32;
+
         for attempt in 0..=MAX_RETRIES {
             match self
                 .tools
@@ -3052,7 +3107,8 @@ END"#
                     return Ok(sanitized);
                 }
                 Err(e) => {
-                    let last_error = e.to_string();
+                    last_error = e.to_string();
+                    last_attempt = attempt;
                     let elapsed = start.elapsed();
 
                     // Categorize the error for better debugging
@@ -3091,6 +3147,9 @@ END"#
                         tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                         continue;
                     }
+
+                    // Non-transient errors: fail immediately, no retry
+                    break;
                 }
             }
         }
@@ -3108,11 +3167,12 @@ END"#
         );
 
         Err(super::error::NeoMindError::Tool(format!(
-            "工具 {} 执行失败 (session: {}, 尝试: {}次, 耗时: {}ms)",
+            "Tool {} failed (session: {}, attempts: {}, elapsed: {}ms): {}",
             real_tool_name,
             self.session_id,
-            MAX_RETRIES + 1,
-            elapsed.as_millis()
+            last_attempt + 1,
+            elapsed.as_millis(),
+            last_error
         )))
     }
 

@@ -644,7 +644,7 @@ fn make_result_dedup_key(name: &str, result: &str) -> String {
 }
 
 /// Build Phase 2 user prompt with tool results explicitly included so the second LLM always sees them.
-fn build_phase2_prompt_with_tool_results(
+pub(crate) fn build_phase2_prompt_with_tool_results(
     original_question: Option<String>,
     tool_call_results: &[(String, String)],
 ) -> String {
@@ -954,9 +954,26 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
         response.push_str(&format!("## Automation Rules ({} total)\n\n", rules.len()));
         for rule in rules {
             let name = rule.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
-            let enabled = rule.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false);
-            let status = if enabled { "✓ Enabled" } else { "✗ Disabled" };
-            response.push_str(&format!("- **{}** {}\n", name, status));
+            // Support both new "status" string field and legacy "enabled" boolean
+            let status_display = if let Some(status) = rule.get("status").and_then(|s| s.as_str()) {
+                match status {
+                    "active" => "[Active]",
+                    "paused" => "[Paused]",
+                    "triggered" => "[Triggered]",
+                    "disabled" => "[Disabled]",
+                    _ => status,
+                }
+            } else if rule.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false) {
+                "[Active]"
+            } else {
+                "[Disabled]"
+            };
+            let desc = rule.get("description").and_then(|d| d.as_str()).unwrap_or("");
+            if desc.is_empty() {
+                response.push_str(&format!("- **{}** {}\n", name, status_display));
+            } else {
+                response.push_str(&format!("- **{}** {} -- {}\n", name, status_display, desc));
+            }
         }
         return;
     }
@@ -968,12 +985,12 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
             let title = alert.get("title").or_else(|| alert.get("message"))
                 .and_then(|t| t.as_str()).unwrap_or("unknown");
             let severity = alert.get("severity").and_then(|s| s.as_str()).unwrap_or("info");
-            let icon = match severity {
-                "critical" => "🔴",
-                "warning" => "🟡",
-                _ => "ℹ️",
+            let tag = match severity {
+                "critical" => "[CRITICAL]",
+                "warning" => "[WARN]",
+                _ => "[INFO]",
             };
-            response.push_str(&format!("- {} **{}** ({})\n", icon, title, severity));
+            response.push_str(&format!("- {} **{}** ({})\n", tag, title, severity));
         }
         if alerts.len() > 10 {
             response.push_str(&format!("\n... ({} more alerts)\n", alerts.len() - 10));
@@ -987,8 +1004,8 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
         for ext in extensions {
             let name = ext.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
             let status = ext.get("status").and_then(|s| s.as_str()).unwrap_or("unknown");
-            let icon = if status == "running" { "🟢" } else { "⚪" };
-            response.push_str(&format!("- {} **{}** ({})\n", icon, name, status));
+            let tag = if status == "running" { "[running]" } else { "[stopped]" };
+            response.push_str(&format!("- {} **{}** ({})\n", tag, name, status));
         }
         return;
     }
@@ -1049,12 +1066,12 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
                 let id = msg.get("id").and_then(|i| i.as_str()).unwrap_or("");
 
                 let icon = match level {
-                    "urgent" | "critical" => "🔴",
-                    "important" => "🟠",
-                    "notice" | "warning" => "🟡",
-                    _ => "⚪",
+                    "urgent" | "critical" => "[CRITICAL]",
+                    "important" => "[IMPORTANT]",
+                    "notice" | "warning" => "[WARN]",
+                    _ => "[INFO]",
                 };
-                let read_icon = if read { "✓" } else { "●" };
+                let read_icon = if read { "[read]" } else { "[unread]" };
                 response.push_str(&format!("{} {} [{}] {} (`{}`)\n", icon, read_icon, level, title, &id[..8.min(id.len())]));
             }
             if messages.len() > 15 {
@@ -1087,17 +1104,17 @@ fn format_aggregated_tool_result(tool_name: &str, json: &serde_json::Value, resp
             return;
         }
         if let Some(exec_id) = json.get("execution_id").and_then(|e| e.as_str()) {
-            response.push_str(&format!("✓ Executed successfully (ID: {})\n", exec_id));
+            response.push_str(&format!("[OK] Executed successfully (ID: {})\n", exec_id));
         } else if let Some(rule_id) = json.get("rule_id").and_then(|r| r.as_str()) {
-            response.push_str(&format!("✓ Created successfully (ID: {})\n", rule_id));
+            response.push_str(&format!("[OK] Created successfully (ID: {})\n", rule_id));
         } else if let Some(agent_id) = json.get("agent_id").or_else(|| json.get("id")).and_then(|a| a.as_str()) {
-            response.push_str(&format!("✓ Created successfully (ID: {})\n", agent_id));
+            response.push_str(&format!("[OK] Created successfully (ID: {})\n", agent_id));
         } else if json.get("success").and_then(|s| s.as_bool()).unwrap_or(false) {
             response.push_str(&format!("**[OK]** {} operation succeeded\n", tool_name));
         } else {
             // Has error
             let error = json.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error");
-            response.push_str(&format!("✗ {} failed: {}\n", tool_name, error));
+            response.push_str(&format!("!! {} failed: {}\n", tool_name, error));
         }
         return;
     }
@@ -1122,15 +1139,15 @@ fn format_agent_list(json: &serde_json::Value, response: &mut String) {
 
     if let Some(agents) = agents_array {
         if agents.is_empty() {
-            response.push_str("🤖 **AI Agent List**\n\n🔍 No AI Agents configured.");
+            response.push_str("**AI Agent List**\n\nNo AI Agents configured.");
         } else {
-            response.push_str(&format!("🤖 **AI Agent List** ({} total)\n\n", agents.len()));
+            response.push_str(&format!("**AI Agent List** ({} total)\n\n", agents.len()));
             for agent in agents {
                 let name = agent.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
                 let status = agent.get("status").and_then(|s| s.as_str()).unwrap_or("unknown");
                 let icon = match status {
-                    "active" | "Active" => "🟢",
-                    _ => "🔴",
+                    "active" | "Active" => "[on]",
+                    _ => "[off]",
                 };
                 response.push_str(&format!("- {} **{}** ({})\n", icon, name, status));
 
@@ -1142,9 +1159,9 @@ fn format_agent_list(json: &serde_json::Value, response: &mut String) {
             }
         }
     } else if let Some(count) = json.get("count").and_then(|c| c.as_u64()) {
-        response.push_str(&format!("🤖 **AI Agent List** ({} total)\n", count));
+        response.push_str(&format!("**AI Agent List** ({} total)\n", count));
     } else {
-        response.push_str("🤖 **AI Agent List**\n\n🔍 No AI Agents found.");
+        response.push_str("**AI Agent List**\n\nNo AI Agents found.");
     }
 }
 
@@ -1225,7 +1242,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                         let online = summary.get("online").and_then(|o| o.as_u64()).unwrap_or(0);
                         let offline = summary.get("offline").and_then(|o| o.as_u64()).unwrap_or(0);
 
-                        response.push_str(&format!("📊 Device Overview ({} total)\n\n", total));
+                        response.push_str(&format!("Device Overview ({} total)\n\n", total));
                         response
                             .push_str(&format!("- Online: {} | Offline: {}\n\n", online, offline));
 
@@ -1314,9 +1331,9 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                 .and_then(|e| e.as_bool())
                                 .unwrap_or(false);
                             let status = if enabled {
-                                "✓ Enabled"
+                                "[Enabled]"
                             } else {
-                                "✗ Disabled"
+                                "!! Disabled"
                             };
                             response.push_str(&format!("- **{}** {}\n", name, status));
                         }
@@ -1379,7 +1396,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                 .get("success")
                                 .and_then(|s| s.as_bool())
                                 .unwrap_or(false);
-                            let status = if success { "✓ Success" } else { "✗ Failed" };
+                            let status = if success { "[OK]" } else { "!! Failed" };
                             response.push_str(&format!("- **{}** {}\n", name, status));
                             if i == 9 {
                                 response.push_str(&format!(
@@ -1543,11 +1560,11 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
 
                     if let Some(agents) = agents_array {
                         if agents.is_empty() {
-                            response.push_str("🤖 **AI Agent List**\n\n");
-                            response.push_str("🔍 No AI Agents configured in the system.");
+                            response.push_str("**AI Agent List**\n\n");
+                            response.push_str("No AI Agents configured in the system.");
                         } else {
                             response.push_str(&format!(
-                                "🤖 **AI Agent List** ({} total)\n\n",
+                                "**AI Agent List** ({} total)\n\n",
                                 agents.len()
                             ));
                             for agent in agents {
@@ -1587,8 +1604,8 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                                     .unwrap_or("Not executed");
 
                                 let status_icon = match status {
-                                    "active" | "Active" => "🟢",
-                                    _ => "🔴",
+                                    "active" | "Active" => "[on]",
+                                    _ => "[off]",
                                 };
 
                                 response.push_str(&format!(
@@ -1627,14 +1644,14 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                         }
                     } else if let Some(count) = json_value.get("count").and_then(|c| c.as_u64()) {
                         if count == 0 {
-                            response.push_str("🤖 **AI Agent List**\n\n");
-                            response.push_str("🔍 No AI Agents configured in the system.");
+                            response.push_str("**AI Agent List**\n\n");
+                            response.push_str("No AI Agents configured in the system.");
                         } else {
-                            response.push_str(&format!("🤖 **AI Agent List** ({} total)\n", count));
+                            response.push_str(&format!("**AI Agent List** ({} total)\n", count));
                         }
                     } else {
-                        response.push_str("🤖 **AI Agent List**\n\n");
-                        response.push_str("🔍 No AI Agents configured in the system.");
+                        response.push_str("**AI Agent List**\n\n");
+                        response.push_str("No AI Agents configured in the system.");
                     }
                 }
                 "get_agent" => {
@@ -1691,9 +1708,9 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 "create_rule" => {
                     if let Some(rule_id) = json_value.get("rule_id").and_then(|r| r.as_str()) {
                         response
-                            .push_str(&format!("✓ Rule created successfully (ID: {})\n", rule_id));
+                            .push_str(&format!("[OK] Rule created successfully (ID: {})\n", rule_id));
                     } else {
-                        response.push_str("✓ Rule created successfully.\n");
+                        response.push_str("[OK] Rule created successfully.\n");
                     }
                 }
                 "trigger_workflow" => {
@@ -1701,23 +1718,23 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                         json_value.get("execution_id").and_then(|e| e.as_str())
                     {
                         response.push_str(&format!(
-                            "✓ Workflow triggered (Execution ID: {})\n",
+                            "[OK] Workflow triggered (Execution ID: {})\n",
                             execution_id
                         ));
                     } else {
-                        response.push_str("✓ Workflow triggered.\n");
+                        response.push_str("[OK] Workflow triggered.\n");
                     }
                 }
                 "create_agent" => {
                     if let Some(agent_id) = json_value.get("agent_id").and_then(|a| a.as_str()) {
                         response.push_str(&format!(
-                            "✓ Agent created successfully (ID: {})\n",
+                            "[OK] Agent created successfully (ID: {})\n",
                             agent_id
                         ));
                     } else if let Some(id) = json_value.get("id").and_then(|i| i.as_str()) {
-                        response.push_str(&format!("✓ Agent created successfully (ID: {})\n", id));
+                        response.push_str(&format!("[OK] Agent created successfully (ID: {})\n", id));
                     } else {
-                        response.push_str("✓ Agent created successfully.\n");
+                        response.push_str("[OK] Agent created successfully.\n");
                     }
                 }
                 "execute_agent" => {
@@ -1725,24 +1742,24 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                         json_value.get("execution_id").and_then(|e| e.as_str())
                     {
                         response.push_str(&format!(
-                            "✓ Agent execution triggered (ID: {})\n",
+                            "[OK] Agent execution triggered (ID: {})\n",
                             execution_id
                         ));
                     } else if let Some(result) = json_value.get("result").and_then(|r| r.as_str()) {
-                        response.push_str(&format!("✓ Agent execution completed: {}\n", result));
+                        response.push_str(&format!("[OK] Agent execution completed: {}\n", result));
                     } else {
-                        response.push_str("✓ Agent execution completed.\n");
+                        response.push_str("[OK] Agent execution completed.\n");
                     }
                 }
                 "control_agent" => {
                     if let Some(new_status) = json_value.get("status").and_then(|s| s.as_str()) {
-                        response.push_str(&format!("✓ Agent status updated: {}\n", new_status));
+                        response.push_str(&format!("[OK] Agent status updated: {}\n", new_status));
                     } else {
-                        response.push_str("✓ Agent control command executed.\n");
+                        response.push_str("[OK] Agent control command executed.\n");
                     }
                 }
                 "delete_rule" => {
-                    response.push_str("✓ Rule deleted.\n");
+                    response.push_str("[OK] Rule deleted.\n");
                 }
                 _ => {
                     // Aggregated tools (device, agent, rule, alert, extension) share the
@@ -1754,8 +1771,11 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
         } else {
             // Result is not valid JSON, use as-is
             // Use a structured format with result prefix to prevent LLM hallucination
-            // of tool results (model can learn the simple "✓ tool executed" pattern)
-            let preview: String = result.chars().take(80).collect();
+            // of tool results (model can learn the simple "tool executed" pattern)
+            // Show more for error messages to preserve diagnostic info
+            let is_error = result.starts_with("Error:");
+            let max_chars = if is_error { 500 } else { 80 };
+            let preview: String = result.chars().take(max_chars).collect();
             response.push_str(&format!("**[ToolResult:{}]** {}\n", tool_name, preview));
         }
     }
@@ -1892,7 +1912,7 @@ fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
 /// 4. Always keep recent messages for context continuity
 ///
 /// The `max_tokens` parameter allows dynamic context sizing based on the model's actual capacity.
-fn build_context_window(
+pub(crate) fn build_context_window(
     messages: &[AgentMessage],
     max_tokens: usize,
 ) -> Vec<AgentMessage> {
@@ -3350,17 +3370,16 @@ pub async fn process_stream_events_with_safeguards(
                 // instead of saving a separate message. This ensures the message
                 // has both tool_calls and content in one place.
 
-                // Save last round's thinking and content for persistence
-                // Backend stores all raw data faithfully; frontend handles dedup/rendering
+                // Save last round's thinking for persistence
                 let last_round = (tool_iteration_count + 1) as u32;
                 if !thinking_content.is_empty() {
                     let cleaned = cleanup_thinking_content(&thinking_content);
                     round_thinking_map.insert(last_round, cleaned.clone());
                     all_rounds_thinking.push_str(&cleaned);
                 }
-                if !final_response_content.is_empty() {
-                    round_contents_map.insert(last_round, final_response_content.clone());
-                }
+                // NOTE: Do NOT store final_response_content in round_contents_map for the last round.
+                // It is already the message content (merged.content) — storing it here causes
+                // the frontend to display it twice (once in tool round, once as final message).
                 // Convert round maps to serde_json::Value for AgentMessage
                 let round_thinking_val = if !round_thinking_map.is_empty() {
                     Some(serde_json::to_value(&round_thinking_map).unwrap_or(serde_json::Value::Null))
@@ -4315,7 +4334,7 @@ mod tests {
         }
 
         assert_eq!(full_content, "你好，我是NeoMind助手。");
-        println!("✓ Pure content stream test passed: {}", full_content);
+        println!("Pure content stream test passed: {}", full_content);
     }
 
     /// Test scenario 2: Thinking + content response
@@ -4345,7 +4364,7 @@ mod tests {
 
         assert_eq!(thinking_content, "让我分析一下这个问题");
         assert_eq!(actual_content, "好的，我来回答这是答案");
-        println!("✓ Thinking + content stream test passed");
+        println!("Thinking + content stream test passed");
         println!("  Thinking: {}", thinking_content);
         println!("  Content: {}", actual_content);
     }
@@ -4386,7 +4405,7 @@ mod tests {
 
         assert_eq!(content_before_tools, "让我帮您查询设备");
         assert!(tool_calls_found, "Tool calls should be detected");
-        println!("✓ Content with tool call test passed");
+        println!("Content with tool call test passed");
         println!("  Content before tools: {}", content_before_tools);
     }
 
@@ -4426,7 +4445,7 @@ mod tests {
         assert_eq!(thinking, "用户想查询设备需要调用list_devices");
         assert!(content.contains("好的，我来查询一下"));
         assert!(has_tool_calls, "Should have tool calls");
-        println!("✓ Thinking + content + tool call test passed");
+        println!("Thinking + content + tool call test passed");
     }
 
     /// Test scenario 5: Empty content with thinking (edge case for think=true models)
@@ -4457,7 +4476,7 @@ mod tests {
             content.is_empty(),
             "Content should be empty for thinking-only response"
         );
-        println!("✓ Thinking-only test passed");
+        println!("Thinking-only test passed");
         println!("  Thinking: {}", thinking);
     }
 
@@ -4483,7 +4502,7 @@ mod tests {
         }
 
         assert_eq!(full_content, "你好世界，这是一个测试");
-        println!("✓ Multi-byte chunk handling test passed");
+        println!("Multi-byte chunk handling test passed");
         println!("  Content: {}", full_content);
     }
 
@@ -4521,7 +4540,7 @@ mod tests {
         assert_eq!(content, "好的，我来帮您");
         assert!(buffer.contains("<invoke name=\"set_device_state\">"));
         assert!(buffer.contains("<parameter name=\"device_id\">lamp_1</parameter>"));
-        println!("✓ Tool call with arguments test passed");
+        println!("Tool call with arguments test passed");
     }
 
     /// Test scenario 8: Empty chunks handling
@@ -4548,7 +4567,7 @@ mod tests {
         assert!(full_content.contains("开始"));
         assert!(full_content.contains("继续"));
         assert!(full_content.contains("结束"));
-        println!("✓ Empty chunk handling test passed");
+        println!("Empty chunk handling test passed");
         println!("  Content: {}", full_content);
     }
 
@@ -4564,7 +4583,7 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "test_tool");
         assert_eq!(calls[0].arguments["param1"], "value1");
-        println!("✓ Tool parser test passed");
+        println!("Tool parser test passed");
     }
 
     /// Test token estimation
@@ -4581,7 +4600,7 @@ mod tests {
         // Chinese: ~12 chars × 1.8 × 1.1 buffer ≈ 24 tokens
         assert!(chinese_tokens > 10 && chinese_tokens < 30);
 
-        println!("✓ Token estimation test passed");
+        println!("Token estimation test passed");
         println!(
             "  English ({} chars): ~{} tokens",
             english.chars().count(),
@@ -4604,7 +4623,7 @@ mod tests {
         assert_eq!(key1, key3, "Same args should produce same key");
         assert_ne!(key1, key2, "Different args should produce different keys");
 
-        println!("✓ Cache key generation test passed");
+        println!("Cache key generation test passed");
     }
 
     /// Test that malformed tool call JSON is not detected as tool calls
@@ -4646,7 +4665,7 @@ mod tests {
             "Should detect valid tool call with 'function' field"
         );
 
-        println!("✓ Malformed tool call detection test passed");
+        println!("Malformed tool call detection test passed");
     }
 
     /// Run all streaming tests and print summary
