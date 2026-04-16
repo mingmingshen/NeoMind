@@ -69,7 +69,7 @@ pub mod env_vars {
 /// Agent 配置常量
 pub mod agent {
     /// 默认最大上下文 token 数
-    pub const DEFAULT_MAX_CONTEXT_TOKENS: usize = 8000;
+    pub const DEFAULT_MAX_CONTEXT_TOKENS: usize = 128000;
     /// 默认 LLM 温度（工具调用场景需要确定性）
     pub const DEFAULT_TEMPERATURE: f32 = 0.3;
     /// 默认 top-p 采样

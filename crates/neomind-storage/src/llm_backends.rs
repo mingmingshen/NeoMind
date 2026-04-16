@@ -158,7 +158,7 @@ fn default_thinking_enabled() -> bool {
 }
 
 fn default_max_context() -> usize {
-    4096
+    128000
 }
 
 impl LlmBackendInstance {

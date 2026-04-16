@@ -1185,6 +1185,16 @@ fn detect_model_context(model_name: &str) -> usize {
         return 128000;
     }
 
+    // GLM models (智谱)
+    if name_lower.contains("glm") {
+        return 128000;
+    }
+
+    // MiniMax models
+    if name_lower.contains("abab") || name_lower.contains("minimax") {
+        return 512000;
+    }
+
     // Fallback to Ollama model detection for local models
     detect_ollama_model_context(model_name)
 }
@@ -1230,7 +1240,7 @@ fn detect_ollama_model_context(model_name: &str) -> usize {
     }
 
     // Default fallback
-    8192
+    128000
 }
 
 /// Get default capabilities for a backend type

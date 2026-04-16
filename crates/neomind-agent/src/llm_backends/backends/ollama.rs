@@ -182,7 +182,7 @@ impl OllamaRuntime {
                         let supports_multimodal = show_response.supports_vision();
                         let supports_tools = true; // Most modern Ollama models support tools
                         let supports_thinking = show_response.has_attention_heads();
-                        let max_context = show_response.context_length().unwrap_or(4096);
+                        let max_context = show_response.context_length().unwrap_or(128000);
 
                         tracing::info!(
                             model = %self.model,
@@ -1639,8 +1639,8 @@ pub fn detect_model_context(model_name: &str) -> usize {
     }
 
     // Safe default for unknown models
-    // Using 4096 as a conservative baseline that most models should support
-    4_096
+    // Using 128k as modern models generally support this
+    128_000
 }
 
 /// Detect backend capabilities for an Ollama model from its name.

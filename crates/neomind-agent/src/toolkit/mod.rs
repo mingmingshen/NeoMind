@@ -77,6 +77,7 @@ pub use session_search::SessionSearchTool;
 pub use aggregated::{
     AgentTool, AggregatedMessageInfo, AggregatedMessageLevel,
     AggregatedToolsBuilder, DeviceTool, ExtensionAggregatedTool, MessageTool, RuleTool,
+    TransformStore,
 };
 
 /// Version information

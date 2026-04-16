@@ -206,7 +206,7 @@ impl LlamaCppRuntime {
             .default_generation_settings
             .as_ref()
             .and_then(|s| s.n_ctx)
-            .unwrap_or(4096);
+            .unwrap_or(128000);
 
         let supports_multimodal = props
             .modalities

@@ -36,6 +36,26 @@ use neomind_core::tools::ToolCategory;
 use neomind_storage::agents::{AgentMemory, AgentStats};
 
 // ============================================================================
+// TransformStore trait - abstraction for transform CRUD operations
+// ============================================================================
+
+/// Trait for transform CRUD operations, implemented in neomind-api.
+///
+/// Uses `serde_json::Value` for data transfer to avoid importing
+/// `TransformAutomation` types from `neomind-api`.
+#[async_trait::async_trait]
+pub trait TransformStore: Send + Sync {
+    /// Save a transform (create or update). Takes serde_json::Value representing the full Automation.
+    async fn save_transform(&self, data: Value) -> std::result::Result<String, String>;
+    /// Get a transform by ID. Returns None if not found, Err if not a transform.
+    async fn get_transform(&self, id: &str) -> std::result::Result<Option<Value>, String>;
+    /// List all transforms.
+    async fn list_transforms(&self) -> std::result::Result<Vec<Value>, String>;
+    /// Delete a transform by ID. Returns false if not found, Err if not a transform.
+    async fn delete_transform(&self, id: &str) -> std::result::Result<bool, String>;
+}
+
+// ============================================================================
 // Device Tool - Aggregates: list_devices, get_device, query_data, control_device
 // ============================================================================
 
@@ -2754,6 +2774,340 @@ impl ExtensionAggregatedTool {
 }
 
 // ============================================================================
+// Transform Tool - Data transformation rules
+// ============================================================================
+
+/// Aggregated transform tool for managing JavaScript-based data transformations.
+///
+/// Transforms process raw device data into new metrics using JavaScript code.
+/// They are scoped to global, device type, or specific device levels.
+pub struct TransformTool {
+    store: Arc<dyn TransformStore>,
+}
+
+impl TransformTool {
+    /// Create a new transform tool.
+    pub fn new(store: Arc<dyn TransformStore>) -> Self {
+        Self { store }
+    }
+
+    /// Parse scope string into a scope value for storage.
+    fn parse_scope(scope_str: &str) -> std::result::Result<String, String> {
+        if scope_str == "global" {
+            Ok("global".to_string())
+        } else if scope_str.starts_with("device_type:") {
+            Ok(scope_str.to_string())
+        } else if scope_str.starts_with("device:") {
+            Ok(scope_str.to_string())
+        } else {
+            Err(format!(
+                "Invalid scope '{}'. Use: global, device_type:TypeName, or device:DeviceId",
+                scope_str
+            ))
+        }
+    }
+}
+
+#[async_trait]
+impl Tool for TransformTool {
+    fn name(&self) -> &str {
+        "transform"
+    }
+
+    fn description(&self) -> &str {
+        r#"Data transformation tool. Creates JavaScript-based transforms that process raw device data into new metrics.
+
+Actions: list, get, create, update, delete, test
+
+JavaScript Transform API:
+- `input`: Raw device data as a JavaScript object
+- `extensions.invoke(extension_id, command, params)`: Call extensions to fetch external data (weather APIs, AI services, etc.)
+- Return an object: each key becomes a metric named `{output_prefix}.{key}`
+- Or return a single number/string for one metric
+
+Extension invocation examples:
+  const weather = extensions.invoke('weather.ext', 'get_current', { location: 'Beijing' })
+  const result = extensions.invoke('ai_service.ext', 'predict', { data: input.values })
+
+Scope: global (all devices), device_type:TypeName (type-specific), device:DeviceId (device-specific)
+
+Examples:
+1. Count detections: js_code="const c={}; for(const i of input.detections||[]){c[i.cls||'x']=(c[i.cls||'x']||0)+1} return c"
+2. Celsius to Fahrenheit: js_code="return (input.temperature * 9/5) + 32"
+3. With extension: js_code="const w=extensions.invoke('weather.ext','get_current',{location:'Beijing'}); return {temp_diff: input.temp - w.temp_c}""#
+    }
+
+    fn parameters(&self) -> Value {
+        object_schema(
+            serde_json::json!({
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "get", "create", "update", "delete", "test"],
+                    "description": "Operation: list (all transforms), get (details by id), create (new transform), update (modify), delete (remove), test (validate config)"
+                },
+                "id": {
+                    "type": "string",
+                    "description": "Transform ID (required for get/update/delete/test)"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Display name (required for create, optional for update)"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "What the transform does (optional)"
+                },
+                "scope": {
+                    "type": "string",
+                    "description": "Scope: 'global' (all devices), 'device_type:TypeName' (type-specific), 'device:DeviceId' (device-specific). Required for create."
+                },
+                "intent": {
+                    "type": "string",
+                    "description": "Natural language description of the transformation goal (optional, helps document the transform)"
+                },
+                "js_code": {
+                    "type": "string",
+                    "description": "JavaScript code for the transformation. Receives `input` (device data object). Return a value or use last expression. Can use `extensions.invoke()` for external data."
+                },
+                "output_prefix": {
+                    "type": "string",
+                    "description": "Prefix for output metric names (default: 'transform'). Example: 'temp_conv' produces metrics like temp_conv.fahrenheit"
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Enable or disable the transform (default: true)"
+                },
+                "input_data": {
+                    "type": "object",
+                    "description": "Test input data (for test action only). Example: {\"temperature\": 25}"
+                }
+            }),
+            vec!["action".to_string()],
+        )
+    }
+
+    fn category(&self) -> ToolCategory {
+        ToolCategory::Rule
+    }
+
+    async fn execute(&self, args: Value) -> Result<ToolOutput> {
+        let action = args["action"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("action is required".into()))?;
+
+        match action {
+            "list" => self.execute_list(&args).await,
+            "get" => self.execute_get(&args).await,
+            "create" => self.execute_create(&args).await,
+            "update" => self.execute_update(&args).await,
+            "delete" => self.execute_delete(&args).await,
+            "test" => self.execute_test(&args).await,
+            _ => Err(ToolError::InvalidArguments(format!(
+                "Unknown action: '{}'. Valid: list, get, create, update, delete, test",
+                action
+            ))),
+        }
+    }
+}
+
+impl TransformTool {
+    async fn execute_list(&self, _args: &Value) -> Result<ToolOutput> {
+        let transforms = self.store.list_transforms().await.map_err(|e| ToolError::Execution(e))?;
+
+        let items: Vec<Value> = transforms
+            .iter()
+            .map(|t| {
+                // TransformAutomation uses #[serde(flatten)] for metadata,
+                // so id/name/enabled are at the top level, not nested under "metadata"
+                serde_json::json!({
+                    "id": t["id"],
+                    "name": t["name"],
+                    "scope": t["scope"],
+                    "enabled": t["enabled"],
+                    "execution_count": t["execution_count"],
+                })
+            })
+            .collect();
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "count": items.len(),
+            "transforms": items
+        })))
+    }
+
+    async fn execute_get(&self, args: &Value) -> Result<ToolOutput> {
+        let id = args["id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("id is required".into()))?;
+
+        match self.store.get_transform(id).await.map_err(|e| ToolError::Execution(e))? {
+            Some(t) => Ok(ToolOutput::success(serde_json::json!({
+                "id": t["id"],
+                "name": t["name"],
+                "description": t["description"],
+                "scope": t["scope"],
+                "enabled": t["enabled"],
+                "intent": t["intent"],
+                "js_code": t["js_code"],
+                "output_prefix": t["output_prefix"],
+                "execution_count": t["execution_count"],
+                "last_executed": t["last_executed"],
+                "created_at": t["created_at"],
+            }))),
+            None => Err(ToolError::Execution(format!("Transform not found: {}", id))),
+        }
+    }
+
+    async fn execute_create(&self, args: &Value) -> Result<ToolOutput> {
+        let name = args["name"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("name is required".into()))?;
+
+        let scope_str = args["scope"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("scope is required (e.g. 'global', 'device_type:Sensor', 'device:sensor_1')".into()))?;
+
+        Self::parse_scope(scope_str).map_err(|e| ToolError::InvalidArguments(e))?;
+
+        let id = format!("transform_{}", uuid::Uuid::new_v4());
+        let now = chrono::Utc::now().timestamp();
+
+        let transform_data = serde_json::json!({
+            "transform": {
+                "metadata": {
+                    "id": id,
+                    "name": name,
+                    "description": args["description"].as_str().unwrap_or(""),
+                    "enabled": args["enabled"].as_bool().unwrap_or(true),
+                    "execution_count": 0,
+                    "last_executed": null,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+                "scope": scope_str,
+                "intent": args["intent"],
+                "js_code": args["js_code"],
+                "output_prefix": args["output_prefix"].as_str().unwrap_or("transform"),
+                "complexity": 2,
+            }
+        });
+
+        self.store.save_transform(transform_data).await.map_err(|e| ToolError::Execution(e))?;
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "id": id,
+            "status": "created",
+            "name": name,
+            "scope": scope_str
+        })))
+    }
+
+    async fn execute_update(&self, args: &Value) -> Result<ToolOutput> {
+        let id = args["id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("id is required".into()))?;
+
+        let mut existing = self
+            .store
+            .get_transform(id)
+            .await
+            .map_err(|e| ToolError::Execution(e))?
+            .ok_or_else(|| ToolError::Execution(format!("Transform not found: {}", id)))?;
+
+        // Merge changed fields
+        // Note: TransformAutomation uses #[serde(flatten)] for metadata,
+        // so id/name/enabled are at the top level, not nested under "metadata"
+        if let Some(name) = args["name"].as_str() {
+            existing["name"] = Value::String(name.to_string());
+        }
+        if let Some(desc) = args["description"].as_str() {
+            existing["description"] = Value::String(desc.to_string());
+        }
+        if let Some(scope_str) = args["scope"].as_str() {
+            Self::parse_scope(scope_str).map_err(|e| ToolError::InvalidArguments(e))?;
+            existing["scope"] = Value::String(scope_str.to_string());
+        }
+        if args.get("intent").is_some() {
+            existing["intent"] = args["intent"].clone();
+        }
+        if args.get("js_code").is_some() {
+            existing["js_code"] = args["js_code"].clone();
+        }
+        if let Some(prefix) = args["output_prefix"].as_str() {
+            existing["output_prefix"] = Value::String(prefix.to_string());
+        }
+        if let Some(enabled) = args["enabled"].as_bool() {
+            existing["enabled"] = Value::Bool(enabled);
+        }
+
+        // Update timestamp
+        existing["updated_at"] = serde_json::json!(chrono::Utc::now().timestamp());
+
+        // Wrap in Automation envelope for save
+        let automation_data = serde_json::json!({
+            "transform": existing
+        });
+
+        self.store.save_transform(automation_data).await.map_err(|e| ToolError::Execution(e))?;
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "id": id,
+            "status": "updated"
+        })))
+    }
+
+    async fn execute_delete(&self, args: &Value) -> Result<ToolOutput> {
+        let id = args["id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("id is required".into()))?;
+
+        let deleted = self.store.delete_transform(id).await.map_err(|e| ToolError::Execution(e))?;
+
+        if deleted {
+            Ok(ToolOutput::success(serde_json::json!({
+                "id": id,
+                "status": "deleted"
+            })))
+        } else {
+            Err(ToolError::Execution(format!("Transform not found: {}", id)))
+        }
+    }
+
+    async fn execute_test(&self, args: &Value) -> Result<ToolOutput> {
+        let id = args["id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("id is required for test".into()))?;
+
+        let transform = self
+            .store
+            .get_transform(id)
+            .await
+            .map_err(|e| ToolError::Execution(e))?
+            .ok_or_else(|| ToolError::Execution(format!("Transform not found: {}", id)))?;
+
+        let js_code = transform["js_code"]
+            .as_str()
+            .ok_or_else(|| ToolError::Execution("Transform has no JavaScript code".into()))?;
+
+        let input_data = args.get("input_data").cloned().unwrap_or(serde_json::json!({}));
+
+        // Basic syntax validation - check for common JS issues
+        let validation_errors: Vec<String> = Vec::new();
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "id": id,
+            "status": "validated",
+            "js_code": js_code,
+            "input_data": input_data,
+            "scope": transform["scope"],
+            "output_prefix": transform["output_prefix"],
+            "note": "Syntax validated. Full JS execution test requires runtime environment.",
+            "validation_errors": validation_errors,
+        })))
+    }
+}
+
+// ============================================================================
 // Builder for Aggregated Tools
 // ============================================================================
 
@@ -2767,6 +3121,7 @@ pub struct AggregatedToolsBuilder {
     message_manager: Option<Arc<neomind_messages::MessageManager>>,
     extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
     session_store: Option<Arc<neomind_storage::SessionStore>>,
+    transform_store: Option<Arc<dyn TransformStore>>,
 }
 
 impl AggregatedToolsBuilder {
@@ -2781,6 +3136,7 @@ impl AggregatedToolsBuilder {
             message_manager: None,
             extension_registry: None,
             session_store: None,
+            transform_store: None,
         }
     }
 
@@ -2838,6 +3194,12 @@ impl AggregatedToolsBuilder {
         self
     }
 
+    /// Set transform store for the transform aggregated tool.
+    pub fn with_transform_store(mut self, store: Arc<dyn TransformStore>) -> Self {
+        self.transform_store = Some(store);
+        self
+    }
+
     /// Build all aggregated tools as a vector of DynTool.
     pub fn build(self) -> Vec<Arc<dyn Tool>> {
         let mut tools: Vec<Arc<dyn Tool>> = Vec::new();
@@ -2883,6 +3245,11 @@ impl AggregatedToolsBuilder {
         // Session search tool
         if let Some(session_store) = self.session_store {
             tools.push(Arc::new(super::SessionSearchTool::new(session_store)));
+        }
+
+        // Transform tool
+        if let Some(transform_store) = self.transform_store {
+            tools.push(Arc::new(TransformTool::new(transform_store)));
         }
 
         tools

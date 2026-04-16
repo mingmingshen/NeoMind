@@ -417,7 +417,7 @@ pub fn get_max_context(model: &str) -> usize {
     detector
         .detect(model)
         .and_then(|r| r.capabilities.max_context)
-        .unwrap_or(8192)
+        .unwrap_or(128000)
 }
 
 /// Detect vision/multimodal capability from model name.

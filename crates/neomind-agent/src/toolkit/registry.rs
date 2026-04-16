@@ -297,6 +297,7 @@ impl ToolRegistryBuilder {
         rule_engine: Arc<neomind_rules::RuleEngine>,
         rule_history: Option<Arc<neomind_rules::RuleHistoryStorage>>,
         message_manager: Option<Arc<neomind_messages::MessageManager>>,
+        transform_store: Option<Arc<dyn super::aggregated::TransformStore>>,
     ) -> Self {
         use super::aggregated::AggregatedToolsBuilder;
 
@@ -312,6 +313,10 @@ impl ToolRegistryBuilder {
 
         if let Some(manager) = message_manager {
             builder = builder.with_message_manager(manager);
+        }
+
+        if let Some(ts) = transform_store {
+            builder = builder.with_transform_store(ts);
         }
 
         if let Some(ext_reg) = self.extension_registry.clone() {

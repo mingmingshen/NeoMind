@@ -42,6 +42,7 @@ impl ToolNameMapper {
         self.register_simplified("rule", "rule");
         self.register_simplified("alert", "message");
         self.register_simplified("message", "message");
+        self.register_simplified("transform", "transform");
 
         // ===== 设备工具别名 =====
         // 设备工具别名 - 指向聚合工具
@@ -77,6 +78,27 @@ impl ToolNameMapper {
         self.register_alias("列出告警", "message");
         self.register_alias("查看告警", "message");
         self.register_alias("创建告警", "message");
+
+        // ===== 转换工具别名 =====
+        self.register_alias("转换列表", "transform");
+        self.register_alias("列出转换", "transform");
+        self.register_alias("查看转换", "transform");
+        self.register_alias("创建转换", "transform");
+        self.register_alias("新建转换", "transform");
+        self.register_alias("删除转换", "transform");
+        self.register_alias("数据转换", "transform");
+        self.register_alias("数据解析", "transform");
+        self.register_alias("数据处理", "transform");
+        self.register_alias("数据加工", "transform");
+        // English aliases for transform tool
+        self.register_alias("data_transform", "transform");
+        self.register_alias("data_transforms", "transform");
+        self.register_alias("list_transforms", "transform");
+        self.register_alias("get_transform", "transform");
+        self.register_alias("create_transform", "transform");
+        self.register_alias("delete_transform", "transform");
+        self.register_alias("update_transform", "transform");
+        self.register_alias("test_transform", "transform");
 
         // ===== 旧工具名称兼容映射 =====
         // 将旧工具名称映射到新的聚合工具
@@ -284,6 +306,12 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                 "list_alerts" => Some("list"),
                 "create_alert" => Some("send"),
                 "acknowledge_alert" => Some("read"),
+                // Transform aliases (legacy)
+                "list_transforms" | "data_transforms" | "data_transform" | "get_transform" => Some("list"),
+                "create_transform" => Some("create"),
+                "delete_transform" => Some("delete"),
+                "update_transform" => Some("update"),
+                "test_transform" => Some("test"),
 
                 // Default actions for aggregated tools when LLM omits action
                 // Infer from other parameters present
@@ -331,6 +359,15 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                 }
                 "extension" => {
                     if obj.contains_key("extension_id") {
+                        Some("get")
+                    } else {
+                        Some("list")
+                    }
+                }
+                "transform" => {
+                    if obj.contains_key("js_code") || obj.contains_key("intent") {
+                        Some("create")
+                    } else if obj.contains_key("id") {
                         Some("get")
                     } else {
                         Some("list")

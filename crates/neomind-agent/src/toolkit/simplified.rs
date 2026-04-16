@@ -671,6 +671,106 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 "User wants to check if an extension is working properly".to_string(),
             ],
         },
+
+        // === Transform Tool (data transformation rules) ===
+        LlmToolDefinition {
+            name: "transform".to_string(),
+            description: "Data transformation tool. Creates JavaScript-based transforms that process raw device data into new metrics. Actions: list, get, create, update, delete, test. JS code receives `input` (device data) and can use `extensions.invoke()` for external API data. Return object → metrics named {prefix}.{key}. Scope: global, device_type:Type, device:DeviceId".to_string(),
+            aliases: vec!["transform".to_string(), "数据转换".to_string()],
+            required: vec!["action".to_string()],
+            optional: HashMap::from_iter(vec![
+                ("id".to_string(), ParameterInfo {
+                    description: "Transform ID (for get/update/delete/test)".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["transform_xxx".to_string()],
+                }),
+                ("name".to_string(), ParameterInfo {
+                    description: "Display name (required for create)".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["Temperature Conversion".to_string()],
+                }),
+                ("description".to_string(), ParameterInfo {
+                    description: "What the transform does".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["Converts Celsius to Fahrenheit".to_string()],
+                }),
+                ("scope".to_string(), ParameterInfo {
+                    description: "Scope: global, device_type:TypeName, device:DeviceId".to_string(),
+                    default: serde_json::json!("global"),
+                    examples: vec!["global".to_string(), "device_type:temperature_sensor".to_string(), "device:sensor_1".to_string()],
+                }),
+                ("intent".to_string(), ParameterInfo {
+                    description: "Natural language description of transformation goal".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["Count detections by class".to_string()],
+                }),
+                ("js_code".to_string(), ParameterInfo {
+                    description: "JavaScript code. Receives `input`. Return value becomes metrics. Can use extensions.invoke() for external data.".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec![
+                        "return (input.temperature * 9/5) + 32".to_string(),
+                        "const c={}; for(const i of input.detections||[]){c[i.cls]=(c[i.cls]||0)+1} return c".to_string(),
+                    ],
+                }),
+                ("output_prefix".to_string(), ParameterInfo {
+                    description: "Prefix for output metric names (default: transform)".to_string(),
+                    default: serde_json::json!("transform"),
+                    examples: vec!["temp_conv".to_string(), "detection_count".to_string()],
+                }),
+                ("enabled".to_string(), ParameterInfo {
+                    description: "Enable or disable the transform".to_string(),
+                    default: serde_json::json!(true),
+                    examples: vec!["true".to_string(), "false".to_string()],
+                }),
+                ("input_data".to_string(), ParameterInfo {
+                    description: "Test input data (for test action only)".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec![r#"{"temperature": 25}"#.to_string()],
+                }),
+            ]),
+            examples: vec![
+                Example {
+                    user_query: "List all transforms".to_string(),
+                    tool_call: r#"transform(action="list")"#.to_string(),
+                    explanation: "List all data transformation rules".to_string(),
+                },
+                Example {
+                    user_query: "Create a transform to convert Celsius to Fahrenheit".to_string(),
+                    tool_call: r#"transform(action="create", name="Celsius to Fahrenheit", scope="global", js_code="return (input.temperature * 9/5) + 32", output_prefix="temp_conv")"#.to_string(),
+                    explanation: "Create a simple unit conversion transform".to_string(),
+                },
+                Example {
+                    user_query: "Create a transform that counts YOLO detections by class".to_string(),
+                    tool_call: r#"transform(action="create", name="Detection Counter", scope="global", js_code="const c={}; for(const i of input.detections||[]){c[i.cls||'x']=(c[i.cls||'x']||0)+1} return c", output_prefix="det_count")"#.to_string(),
+                    explanation: "Count detections by class name".to_string(),
+                },
+                Example {
+                    user_query: "Create a transform that fetches weather and compares with device temperature".to_string(),
+                    tool_call: r#"transform(action="create", name="Temp Comparison", scope="global", js_code="const w=extensions.invoke('weather.ext','get_current',{location:'Beijing'}); return {temp_diff: input.temp - w.temp_c, outdoor: w.temp_c}", output_prefix="weather")"#.to_string(),
+                    explanation: "Use extension to get external weather data and compare".to_string(),
+                },
+                Example {
+                    user_query: "Update transform output prefix to temp_conv".to_string(),
+                    tool_call: r#"transform(action="update", id="transform_xxx", output_prefix="temp_conv")"#.to_string(),
+                    explanation: "Update a transform's output prefix".to_string(),
+                },
+                Example {
+                    user_query: "Delete that transform".to_string(),
+                    tool_call: r#"transform(action="delete", id="transform_xxx")"#.to_string(),
+                    explanation: "Delete a transform by ID".to_string(),
+                },
+            ],
+            use_when: vec![
+                "convert units".to_string(),
+                "process data".to_string(),
+                "calculate derived metrics".to_string(),
+                "transform sensor data".to_string(),
+                "call extension API".to_string(),
+                "aggregate detection data".to_string(),
+                "create data transformation rule".to_string(),
+                "manage transforms".to_string(),
+            ],
+        },
     ]
 }
 
@@ -686,7 +786,8 @@ pub fn format_tools_for_llm() -> String {
     prompt.push_str("- agent(action=\"list|get|create|update|control|memory|send_message|executions|conversation|latest_execution\", ...) — use send_message to contact an agent\n");
     prompt.push_str("- rule(action=\"list|get|create|update|delete|history\", ...)\n");
     prompt.push_str("- message(action=\"list|send|read\", ...) — for system messages/notifications only, NOT for contacting agents\n");
-    prompt.push_str("- extension(action=\"list|get|status\", ...)\n\n");
+    prompt.push_str("- extension(action=\"list|get|status\", ...)\n");
+    prompt.push_str("- transform(action=\"list|get|create|update|delete|test\", ...)\n\n");
     prompt.push_str(
         "Format: [{\"name\":\"tool_name\",\"arguments\":{\"action\":\"operation\",\"param\":\"value\"}}]\n\n",
     );
@@ -786,8 +887,8 @@ mod tests {
     #[test]
     fn test_get_simplified_tools_count() {
         let tools = get_simplified_tools();
-        // Should have 5 aggregated tools
-        assert_eq!(tools.len(), 5);
+        // Should have 6 aggregated tools
+        assert_eq!(tools.len(), 6);
     }
 
     #[test]
@@ -799,6 +900,7 @@ mod tests {
         assert!(names.contains(&"rule"));
         assert!(names.contains(&"message"));
         assert!(names.contains(&"extension"));
+        assert!(names.contains(&"transform"));
     }
 
     #[test]

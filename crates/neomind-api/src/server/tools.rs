@@ -10,11 +10,177 @@ use crate::automation::types::{
     Automation, AutomationMetadata, TransformAutomation, TransformScope,
 };
 use async_trait::async_trait;
+use neomind_agent::toolkit::aggregated::TransformStore;
 use neomind_agent::toolkit::{
     object_schema, string_property, Tool, ToolCategory, ToolDefinition, ToolError, ToolExample,
     ToolOutput, ToolRelationships, UsageScenario,
 };
 use serde_json::Value;
+
+// ============================================================================
+// TransformStore trait impl for SharedAutomationStore
+// ============================================================================
+
+#[async_trait]
+impl TransformStore for SharedAutomationStore {
+    async fn save_transform(&self, data: Value) -> std::result::Result<String, String> {
+        // The tool sends a custom JSON format. We need to build Automation manually
+        // because the tool's JSON doesn't match the serde format of the Automation enum.
+        //
+        // Tool sends: { "metadata": { "id": ..., ... }, "scope": "global", ... }
+        // Or for create: data is the inner transform fields directly
+        // Or for update: data is the existing TransformAutomation with merged fields
+        //
+        // We try to extract the inner transform data from possible envelope shapes:
+        let inner = if data.is_object() && data.get("transform").is_some() {
+            // Wrapped: {"transform": {...}}
+            data.get("transform").cloned().unwrap()
+        } else if data.is_object() && data.get("type").is_some() {
+            // Already an Automation serde format: {"type": "transform", ...}
+            let automation: Automation =
+                serde_json::from_value(data).map_err(|e| format!("Invalid transform data: {}", e))?;
+            let id = automation.id().to_string();
+            self.save_automation(&automation)
+                .await
+                .map_err(|e| e.to_string())?;
+            return Ok(id);
+        } else {
+            // Direct: the fields are at the top level
+            data.clone()
+        };
+
+        // Build TransformAutomation from the inner JSON
+        // Fields can be either nested under "metadata" (create format) or flat (update format)
+        let metadata_obj = inner.get("metadata");
+        let get_str = |key: &str| -> Option<String> {
+            // Try metadata nested first, then flat
+            metadata_obj
+                .and_then(|m| m.get(key))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or_else(|| inner.get(key).and_then(|v| v.as_str()).map(|s| s.to_string()))
+        };
+        let get_bool = |key: &str| -> Option<bool> {
+            metadata_obj
+                .and_then(|m| m.get(key))
+                .and_then(|v| v.as_bool())
+                .or_else(|| inner.get(key).and_then(|v| v.as_bool()))
+        };
+        let get_u64 = |key: &str| -> Option<u64> {
+            metadata_obj
+                .and_then(|m| m.get(key))
+                .and_then(|v| v.as_u64())
+                .or_else(|| inner.get(key).and_then(|v| v.as_u64()))
+        };
+        let get_i64 = |key: &str| -> Option<i64> {
+            metadata_obj
+                .and_then(|m| m.get(key))
+                .and_then(|v| v.as_i64())
+                .or_else(|| inner.get(key).and_then(|v| v.as_i64()))
+        };
+
+        let id = get_str("id").unwrap_or_default();
+        let name = get_str("name").unwrap_or_else(|| "Unnamed Transform".to_string());
+        let description = get_str("description").unwrap_or_default();
+        let enabled = get_bool("enabled").unwrap_or(true);
+        let execution_count = get_u64("execution_count").unwrap_or(0);
+        let last_executed = get_i64("last_executed");
+        let created_at = get_i64("created_at").unwrap_or_else(|| chrono::Utc::now().timestamp());
+        let updated_at = get_i64("updated_at").unwrap_or_else(|| chrono::Utc::now().timestamp());
+
+        let scope_str = inner
+            .get("scope")
+            .and_then(|v| v.as_str())
+            .unwrap_or("global");
+        let scope = parse_scope(scope_str).map_err(|e| e.to_string())?;
+
+        let intent = inner.get("intent").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let js_code = inner.get("js_code").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let output_prefix = inner
+            .get("output_prefix")
+            .and_then(|v| v.as_str())
+            .unwrap_or("transform")
+            .to_string();
+        let complexity = inner
+            .get("complexity")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(2) as u8;
+
+        let mut meta = AutomationMetadata::new(&id, &name).with_description(description);
+        meta.enabled = enabled;
+        meta.execution_count = execution_count;
+        meta.last_executed = last_executed;
+        meta.created_at = created_at;
+        meta.updated_at = updated_at;
+
+        let transform = TransformAutomation {
+            metadata: meta,
+            scope,
+            intent,
+            js_code,
+            output_prefix,
+            complexity,
+            operations: None,
+        };
+
+        let automation = Automation::Transform(transform);
+        self.save_automation(&automation)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(id)
+    }
+
+    async fn get_transform(&self, id: &str) -> std::result::Result<Option<Value>, String> {
+        match self
+            .get_automation(id)
+            .await
+            .map_err(|e| e.to_string())?
+        {
+            Some(Automation::Transform(t)) => {
+                let mut val = serde_json::to_value(&t).map_err(|e| e.to_string())?;
+                // Replace enum scope with human-readable string
+                val["scope"] = Value::String(t.scope.as_str());
+                Ok(Some(val))
+            }
+            Some(_) => Err(format!("{} is not a transform", id)),
+            None => Ok(None),
+        }
+    }
+
+    async fn list_transforms(&self) -> std::result::Result<Vec<Value>, String> {
+        let all = self
+            .list_automations()
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(all
+            .into_iter()
+            .filter_map(|a| match a {
+                Automation::Transform(t) => {
+                    let mut val = serde_json::to_value(&t).ok()?;
+                    // Replace enum scope with human-readable string
+                    val["scope"] = Value::String(t.scope.as_str());
+                    Some(val)
+                }
+                _ => None,
+            })
+            .collect())
+    }
+
+    async fn delete_transform(&self, id: &str) -> std::result::Result<bool, String> {
+        match self
+            .get_automation(id)
+            .await
+            .map_err(|e| e.to_string())?
+        {
+            Some(Automation::Transform(_)) => self
+                .delete_automation(id)
+                .await
+                .map_err(|e| e.to_string()),
+            Some(_) => Err(format!("{} is not a transform", id)),
+            None => Ok(false),
+        }
+    }
+}
 
 // ============================================================================
 // Transform Tool - Data transformation rules

@@ -53,7 +53,7 @@ impl KeywordPlanner {
     pub fn plan_sync(&self, intent: &IntentResult, message: &str) -> Option<ExecutionPlan> {
         match intent.category {
             IntentCategory::Device => self.plan_device(intent, message),
-            IntentCategory::Rule => self.plan_rule(),
+            IntentCategory::Rule => self.plan_rule(intent, message),
             IntentCategory::Data => self.plan_data(),
             IntentCategory::Alert => self.plan_alert(),
             IntentCategory::System => None, // Skip planning
@@ -96,21 +96,64 @@ impl KeywordPlanner {
     }
 
     /// Plan for rule-related intents.
-    /// Single step: list rules.
-    fn plan_rule(&self) -> Option<ExecutionPlan> {
-        let step = PlanStep {
-            id: 0,
-            tool_name: "rule".to_string(),
-            action: "list".to_string(),
-            params: serde_json::json!({}),
-            depends_on: vec![],
-            description: "列出自动化规则".to_string(),
-        };
+    /// Detects transform vs rule from message keywords.
+    #[allow(unused_variables)]
+    fn plan_rule(&self, intent: &IntentResult, message: &str) -> Option<ExecutionPlan> {
+        let message_lower = message.to_lowercase();
 
-        Some(ExecutionPlan {
-            steps: vec![step],
-            mode: PlanningMode::Keyword,
-        })
+        // Transform-related keywords
+        let transform_keywords = [
+            "transform",
+            "transforms",
+            "数据转换",
+            "数据解析",
+            "数据处理",
+            "数据加工",
+            "转换规则",
+            "转换",
+            "js_code",
+            "js transform",
+            "javascript",
+            "convert",
+            "conversion",
+            "data transform",
+            "data processing",
+            "data parsing",
+            "parse data",
+            "process data",
+        ];
+
+        let is_transform = transform_keywords
+            .iter()
+            .any(|kw| message_lower.contains(&kw.to_lowercase()));
+
+        if is_transform {
+            let step = PlanStep {
+                id: 0,
+                tool_name: "transform".to_string(),
+                action: "list".to_string(),
+                params: serde_json::json!({}),
+                depends_on: vec![],
+                description: "列出数据转换规则".to_string(),
+            };
+            Some(ExecutionPlan {
+                steps: vec![step],
+                mode: PlanningMode::Keyword,
+            })
+        } else {
+            let step = PlanStep {
+                id: 0,
+                tool_name: "rule".to_string(),
+                action: "list".to_string(),
+                params: serde_json::json!({}),
+                depends_on: vec![],
+                description: "列出自动化规则".to_string(),
+            };
+            Some(ExecutionPlan {
+                steps: vec![step],
+                mode: PlanningMode::Keyword,
+            })
+        }
     }
 
     /// Plan for data-related intents.

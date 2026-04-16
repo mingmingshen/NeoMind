@@ -912,14 +912,14 @@ impl Agent {
                         multimodal = %caps.multimodal,
                         thinking_display = %caps.thinking_display,
                         function_calling = %caps.function_calling,
-                        max_context = %caps.max_context.unwrap_or(8192),
+                        max_context = %caps.max_context.unwrap_or(128000),
                         "Applying capabilities override to OllamaRuntime"
                     );
                     runtime = runtime.with_capabilities_override(
                         caps.multimodal,
                         caps.thinking_display,
                         caps.function_calling,
-                        caps.max_context.unwrap_or(8192),
+                        caps.max_context.unwrap_or(128000),
                     );
                 } else {
                     tracing::warn!(
@@ -1145,14 +1145,14 @@ impl Agent {
                         multimodal = %caps.multimodal,
                         thinking_display = %caps.thinking_display,
                         function_calling = %caps.function_calling,
-                        max_context = %caps.max_context.unwrap_or(4096),
+                        max_context = %caps.max_context.unwrap_or(128000),
                         "Applying capabilities override to LlamaCppRuntime"
                     );
                     runtime = runtime.with_capabilities_override(
                         caps.multimodal,
                         caps.thinking_display,
                         caps.function_calling,
-                        caps.max_context.unwrap_or(4096),
+                        caps.max_context.unwrap_or(128000),
                     );
                 }
 

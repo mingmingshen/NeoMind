@@ -321,7 +321,7 @@ impl LlmRuntime for MockRuntime {
     }
 
     fn max_context_length(&self) -> usize {
-        4096
+        128000
     }
 
     fn supports_multimodal(&self) -> bool {
@@ -334,7 +334,7 @@ impl LlmRuntime for MockRuntime {
             .multimodal()
             .function_calling()
             .thinking_display()
-            .max_context(4096)
+            .max_context(128000)
             .build()
     }
 }

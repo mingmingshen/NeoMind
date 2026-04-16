@@ -1066,9 +1066,17 @@ impl ServerState {
         use neomind_agent::toolkit::ToolRegistryBuilder;
         use std::sync::Arc;
 
+        // Build transform store from automation store
+        let transform_store: Option<Arc<dyn neomind_agent::toolkit::aggregated::TransformStore>> =
+            self.automation.automation_store.as_ref().map(|s| {
+                let store: Arc<dyn neomind_agent::toolkit::aggregated::TransformStore> =
+                    Arc::new((**s).clone());
+                store
+            });
+
         // Build tool registry with aggregated tools (action-based design for token efficiency)
         // This consolidates 34+ individual tools into 5 aggregated tools
-        let mut registry = ToolRegistryBuilder::new()
+        let registry = ToolRegistryBuilder::new()
             // Extension registry for scanning extension-provided tools
             .with_extension_registry(self.extensions.registry.clone())
             // Aggregated tools with full dependencies including message_manager
@@ -1079,18 +1087,12 @@ impl ServerState {
                 self.automation.rule_engine.clone(),
                 None,                                    // rule_history
                 Some(self.core.message_manager.clone()), // message_manager for alert tool
+                transform_store,                         // transform store for transform tool
             )
             // Scan extensions and register their tools
             .with_extensions_scanned()
             .await
             .build();
-
-        // Register API-level tools (require access to API-layer dependencies)
-        if let Some(automation_store) = &self.automation.automation_store {
-            use crate::server::tools::TransformTool;
-            registry.register(Arc::new(TransformTool::new((**automation_store).clone())));
-            tracing::debug!(category = "ai", "TransformTool registered");
-        }
 
         let tool_registry = Arc::new(registry);
         self.agents
@@ -1115,7 +1117,16 @@ impl ServerState {
         use std::sync::Arc;
 
         // Rebuild the entire registry with extensions now loaded
-        let mut registry = ToolRegistryBuilder::new()
+
+        // Build transform store from automation store
+        let transform_store: Option<Arc<dyn neomind_agent::toolkit::aggregated::TransformStore>> =
+            self.automation.automation_store.as_ref().map(|s| {
+                let store: Arc<dyn neomind_agent::toolkit::aggregated::TransformStore> =
+                    Arc::new((**s).clone());
+                store
+            });
+
+        let registry = ToolRegistryBuilder::new()
             .with_extension_registry(self.extensions.registry.clone())
             .with_aggregated_tools_full(
                 self.devices.service.clone(),
@@ -1124,16 +1135,11 @@ impl ServerState {
                 self.automation.rule_engine.clone(),
                 None,
                 Some(self.core.message_manager.clone()),
+                transform_store,
             )
             .with_extensions_scanned()
             .await
             .build();
-
-        // Register API-level tools
-        if let Some(automation_store) = &self.automation.automation_store {
-            use crate::server::tools::TransformTool;
-            registry.register(Arc::new(TransformTool::new((**automation_store).clone())));
-        }
 
         let tool_registry = Arc::new(registry);
         let tool_count = tool_registry.len();
