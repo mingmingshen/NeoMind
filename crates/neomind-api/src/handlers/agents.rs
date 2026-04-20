@@ -983,8 +983,8 @@ pub async fn create_agent(
         max_chain_depth: request.max_chain_depth.unwrap_or(3),
         tool_config: None,
         execution_mode: match request.execution_mode.as_deref() {
-            Some("react") => neomind_storage::agents::ExecutionMode::React,
-            _ => neomind_storage::agents::ExecutionMode::Chat,
+            Some("free") | Some("react") => neomind_storage::agents::ExecutionMode::Free,
+            _ => neomind_storage::agents::ExecutionMode::Focused,
         },
     };
 
@@ -1209,8 +1209,8 @@ pub async fn update_agent(
     }
     if let Some(mode) = request.execution_mode {
         agent.execution_mode = match mode.as_str() {
-            "react" => neomind_storage::agents::ExecutionMode::React,
-            _ => neomind_storage::agents::ExecutionMode::Chat,
+            "free" | "react" => neomind_storage::agents::ExecutionMode::Free,
+            _ => neomind_storage::agents::ExecutionMode::Focused,
         };
     }
 

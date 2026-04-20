@@ -313,11 +313,11 @@ impl AgentExecutor {
     ) -> bool {
         use neomind_storage::agents::ExecutionMode;
 
-        // If execution_mode is explicitly set to Chat, skip tool mode
-        if agent.execution_mode == ExecutionMode::Chat {
+        // If execution_mode is explicitly set to Focused, skip tool mode
+        if agent.execution_mode == ExecutionMode::Focused {
             tracing::info!(
                 agent_id = %agent.id,
-                "Execution mode is Chat - using direct LLM analysis"
+                "Execution mode is Focused - using direct LLM analysis"
             );
             return false;
         }
@@ -646,7 +646,7 @@ impl AgentExecutor {
                 all_reasoning_texts.push(remaining_text.clone());
             }
 
-            tracing::info!(
+            tracing::debug!(
                 agent_id = %agent.id, round = round + 1, tool_count = tool_calls.len(),
                 "Tool calls received"
             );
@@ -825,7 +825,7 @@ impl AgentExecutor {
                     if !text.is_empty() {
                         final_text = text;
                     }
-                    tracing::info!(
+                    tracing::debug!(
                         agent_id = %agent.id,
                         response_len,
                         "Phase 2 analysis generated successfully"
@@ -1079,7 +1079,7 @@ impl AgentExecutor {
             success_rate,
         };
 
-        tracing::info!(
+        tracing::debug!(
             agent_id = %agent.id,
             tool_calls = all_tool_results.len(),
             success_rate,
@@ -1446,7 +1446,7 @@ impl AgentExecutor {
                             // Store in cache
                             let mut cache = self.llm_runtime_cache.write().await;
                             cache.insert(cache_key, rt.clone());
-                            tracing::info!(
+                            tracing::debug!(
                                 agent_id = %agent.id,
                                 backend = %backend_id,
                                 "LLM runtime created and cached"
@@ -1538,7 +1538,7 @@ impl AgentExecutor {
                         recent.insert(dedup_key, now);
                     }
 
-                    tracing::info!(
+                    tracing::debug!(
                         agent_name = %agent.name,
                         device_id = %device_id,
                         metric = %metric,
@@ -1629,7 +1629,7 @@ impl AgentExecutor {
                                     .await
                                 {
                                     Ok(record) => {
-                                        tracing::info!(
+                                        tracing::debug!(
                                             agent_id = %agent_id_for_log,
                                             execution_id = %record.id,
                                             status = ?record.status,
@@ -1769,7 +1769,7 @@ impl AgentExecutor {
     pub async fn remove_event_agent(&self, agent_id: &str) {
         let mut cache = self.event_agents.write().await;
         if cache.remove(agent_id).is_some() {
-            tracing::info!(
+            tracing::debug!(
                 agent_id = %agent_id,
                 "[EVENT] Removed agent from event-triggered cache"
             );
@@ -1856,7 +1856,7 @@ impl AgentExecutor {
         };
 
         // Emit agent execution started event
-        tracing::info!(
+        tracing::debug!(
             agent_id = %agent_id,
             execution_id = %execution_id,
             trigger_type = %trigger_type,
@@ -2278,7 +2278,7 @@ impl AgentExecutor {
         let mut all_notifications_sent: Vec<neomind_storage::NotificationSent> = Vec::new();
 
         if let Some(ref ed) = event_data {
-            tracing::info!(
+            tracing::debug!(
                 agent_id = %agent.id,
                 enable_chaining = agent.enable_tool_chaining,
                 max_depth = max_depth,
@@ -2287,7 +2287,7 @@ impl AgentExecutor {
                 "Starting event-triggered agent execution"
             );
         } else {
-            tracing::info!(
+            tracing::debug!(
                 agent_id = %agent.id,
                 enable_chaining = agent.enable_tool_chaining,
                 max_depth = max_depth,
@@ -2466,7 +2466,7 @@ impl AgentExecutor {
             success_rate,
         };
 
-        tracing::info!(
+        tracing::debug!(
             agent_id = %agent.id,
             total_rounds = chain_state.depth,
             total_actions = total_actions,
@@ -2657,7 +2657,7 @@ impl AgentExecutor {
                     .await;
                 }
 
-                tracing::info!(
+                tracing::debug!(
                     agent_id = %agent_id,
                     "[REACT] Returning direct results — skipped Chat post-processing"
                 );

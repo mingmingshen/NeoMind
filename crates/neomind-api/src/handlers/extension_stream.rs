@@ -367,7 +367,7 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
     let msg = ServerMessage::Capability {
         capability: StreamCapabilityDto::from(&cap),
     };
-    tracing::info!(
+    tracing::debug!(
         "Sending capability: mode={:?}, direction={:?}",
         cap.mode,
         cap.direction
@@ -408,7 +408,7 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                         }
                         None => {
                             // Channel closed
-                            tracing::info!("Push output channel closed");
+                            tracing::debug!("Push output channel closed");
                             break;
                         }
                     }
@@ -466,7 +466,7 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                             .await;
                                             continue;
                                         }
-                                        tracing::info!("Session {} initialized successfully", sid);
+                                        tracing::debug!("Session {} initialized successfully", sid);
 
                                         // For Push mode: bridge runner PushOutput IPC into the websocket router.
                                         if cap.mode == StreamMode::Push {
@@ -544,7 +544,7 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                         )
                                         .await;
 
-                                        tracing::info!(
+                                        tracing::debug!(
                                             "Session created: {} for extension: {} (mode: {:?})",
                                             sid,
                                             extension_id,
@@ -560,7 +560,7 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                     }
                                 }
                                 ClientMessage::Close => {
-                                    tracing::info!("Client requested close");
+                                    tracing::debug!("Client requested close");
                                     break;
                                 }
                                 ClientMessage::Ack { sequence } => {
@@ -701,7 +701,7 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                         // Received pong, ignore
                     }
                     WsMessage::Close(_) => {
-                        tracing::info!("Client disconnected");
+                        tracing::debug!("Client disconnected");
                         break;
                     }
                 }
@@ -712,7 +712,6 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
             }
             None => {
                 // socket.recv() returned None - connection closed
-                tracing::info!("WebSocket connection closed");
                 break;
             }
         }

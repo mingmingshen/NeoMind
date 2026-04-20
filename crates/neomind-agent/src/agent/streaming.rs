@@ -2472,7 +2472,7 @@ pub async fn process_stream_events_with_safeguards(
         // For complex intents, we may need multiple rounds of tool calling
         'multi_round_loop: loop {
             if tool_iteration_count > 0 {
-                tracing::info!("Starting tool iteration round {}", tool_iteration_count + 1);
+                tracing::debug!("Starting tool iteration round {}", tool_iteration_count + 1);
 
                 // For subsequent rounds, we need a new LLM call with tools enabled.
                 // Apply tool result compaction to prevent context bloat from accumulated
@@ -2513,7 +2513,7 @@ pub async fn process_stream_events_with_safeguards(
                     )
                 };
 
-                tracing::info!("Multi-round context: {}", context_msg);
+                tracing::debug!("Multi-round context: {}", context_msg);
 
                 // Use tools enabled for subsequent rounds (thinking follows instance setting)
                 let round_stream_result = llm_interface.chat_stream_with_history(
@@ -2553,7 +2553,7 @@ pub async fn process_stream_events_with_safeguards(
                     // Don't break here - let tool calls be processed
                     // Just log the timeout and continue to check for tool calls
                     if tool_calls_detected {
-                        tracing::info!("Timeout with tool calls detected, proceeding to execution");
+                        tracing::debug!("Timeout with tool calls detected, proceeding to execution");
                         break;
                     } else {
                         yield AgentEvent::error(format!("Request timeout ({:.1}s elapsed), completing processing...", elapsed.as_secs_f64()));
@@ -2674,7 +2674,7 @@ pub async fn process_stream_events_with_safeguards(
                                             thinking_content = format!("{}{}", &thinking_with_new[..tool_start], &thinking_with_new[tool_end + 13..]);
                                             // Don't yield tool call XML as thinking content
                                             text_to_yield = String::new();
-                                            tracing::info!("Extracted {} tool calls from thinking content", tool_calls.len());
+                                            tracing::debug!("Extracted {} tool calls from thinking content", tool_calls.len());
                                         }
                                     }
                                 }
@@ -2690,7 +2690,7 @@ pub async fn process_stream_events_with_safeguards(
                                         thinking_content = format!("{}{}", &thinking_with_new[..json_start], remaining);
                                         // Don't yield tool call JSON as thinking content
                                         text_to_yield = String::new();
-                                        tracing::info!("Extracted {} JSON tool calls from thinking content", tool_calls.len());
+                                        tracing::debug!("Extracted {} JSON tool calls from thinking content", tool_calls.len());
                                     }
                                 }
                             }
@@ -2840,7 +2840,7 @@ pub async fn process_stream_events_with_safeguards(
                                 AgentMessage::assistant(&partial_content)
                             };
                             internal_state.write().await.push_message(partial_msg);
-                            tracing::info!("Saved partial response on error: {} chars content, {} chars thinking",
+                            tracing::debug!("Saved partial response on error: {} chars content, {} chars thinking",
                                 partial_content.len(), thinking_content.len());
                         }
                         break;
@@ -2862,7 +2862,7 @@ pub async fn process_stream_events_with_safeguards(
 
             // === PHASE 2: Handle tool calls if detected ===
             if tool_calls_detected {
-                tracing::info!("Starting tool execution round {}", tool_iteration_count + 1);
+                tracing::debug!("Starting tool execution round {}", tool_iteration_count + 1);
 
                 // Send progress event to inform user about tool iteration
                 let current_elapsed = stream_start.elapsed();
@@ -2987,7 +2987,7 @@ pub async fn process_stream_events_with_safeguards(
                 // === PHASE 3: Generate follow-up response ===
                 // For complex intents, check if we need more tool calls
                 if is_complex_intent && tool_iteration_count < MAX_TOOL_ITERATIONS - 1 {
-                    tracing::info!("Complex intent: Checking if more tool calls needed (iteration {}/{})",
+                    tracing::debug!("Complex intent: Checking if more tool calls needed (iteration {}/{})",
                         tool_iteration_count + 1, MAX_TOOL_ITERATIONS);
 
                     // === DUPLICATE DETECTION ===
@@ -3165,7 +3165,7 @@ pub async fn process_stream_events_with_safeguards(
                 let max_context = llm_interface.max_context_length().await;
                 let max_history_tokens = (max_context * 70) / 100;
 
-                tracing::info!(
+                tracing::debug!(
                     "Phase 2 history: {} messages, max_tokens={} (70% of {})",
                     history_agent_messages.len(),
                     max_history_tokens,
@@ -3191,14 +3191,14 @@ pub async fn process_stream_events_with_safeguards(
                 // For simple list/query operations, the formatted tool result is the final answer.
                 // No need for another LLM call to "interpret" the data.
                 if should_return_directly(&tool_call_results) {
-                    tracing::info!(
+                    tracing::debug!(
                         "Simple query detected (tools: {:?}), skipping Phase 2 LLM call",
                         tool_call_results.iter().map(|(n, _)| n).collect::<Vec<_>>()
                     );
 
                     // Format tool results directly for user display
                     let formatted_response = format_tool_results(&tool_call_results);
-                    tracing::info!("Direct response length: {} chars", formatted_response.len());
+                    tracing::debug!("Direct response length: {} chars", formatted_response.len());
 
                     // Stream the formatted response
                     for chunk in formatted_response.chars().collect::<Vec<_>>().chunks(30) {
@@ -3223,12 +3223,12 @@ pub async fn process_stream_events_with_safeguards(
 
                 // === PHASE 2: Generate follow-up response ===
                 // For complex queries that need LLM analysis/summarization
-                tracing::info!("Phase 2: Generating follow-up response (complex query)");
+                tracing::debug!("Phase 2: Generating follow-up response (complex query)");
 
                 // Deduplicate accumulated tool results across all rounds.
                 // Keep the latest result for each (tool_name, key_params) combination.
                 let deduped_results = deduplicate_tool_results(&all_round_tool_results);
-                tracing::info!(
+                tracing::debug!(
                     "Phase 2: {} accumulated results → {} deduplicated",
                     all_round_tool_results.len(),
                     deduped_results.len()
@@ -3258,7 +3258,7 @@ pub async fn process_stream_events_with_safeguards(
                         &deduped_results,
                     )
                 };
-                tracing::info!("Phase 2 prompt length: {} chars (with tool results)", phase2_prompt.len());
+                tracing::debug!("Phase 2 prompt length: {} chars (with tool results)", phase2_prompt.len());
 
                 let followup_stream_result = llm_interface.chat_stream_no_tools_no_thinking_with_history(
                     &phase2_prompt, &history_messages
@@ -3299,7 +3299,7 @@ pub async fn process_stream_events_with_safeguards(
                     match result {
                         Ok((chunk, is_thinking)) => {
                             if chunk.is_empty() {
-                                tracing::debug!("Phase 2: Received empty chunk #{}, skipping", chunk_count);
+                                tracing::trace!("Phase 2: Received empty chunk #{}, skipping", chunk_count);
                                 continue;
                             }
                             if !is_thinking {
@@ -3307,15 +3307,15 @@ pub async fn process_stream_events_with_safeguards(
                                 let ct = chunk.trim();
                                 if !ct.is_empty() {
                                     if final_response_content.ends_with(ct) {
-                                        tracing::debug!("Phase 2: Skipping duplicate chunk");
+                                        tracing::trace!("Phase 2: Skipping duplicate chunk");
                                         continue;
                                     }
                                     if ct.len() > 30 && final_response_content.contains(ct) {
-                                        tracing::debug!("Phase 2: Skipping contained chunk");
+                                        tracing::trace!("Phase 2: Skipping contained chunk");
                                         continue;
                                     }
                                 }
-                                tracing::debug!("Phase 2: Yielding content chunk #{}: {} chars", chunk_count, chunk.len());
+                                tracing::trace!("Phase 2: Yielding content chunk #{}: {} chars", chunk_count, chunk.len());
                                 yield AgentEvent::content(chunk.clone());
                                 final_response_content.push_str(&chunk);
                             }
@@ -3326,17 +3326,17 @@ pub async fn process_stream_events_with_safeguards(
                         }
                     }
                 }
-                tracing::info!("Phase 2 stream consumed: {} chunks, {} chars total", chunk_count, final_response_content.len());
+                tracing::debug!("Phase 2 stream consumed: {} chunks, {} chars total", chunk_count, final_response_content.len());
 
                 // Check for empty response OR hallucination detection
                 let hallucination_detected = detect_hallucination(&final_response_content, &deduped_results);
-                tracing::info!("Phase 2 fallback check: empty={}, hallucination={}, tools={}",
+                tracing::debug!("Phase 2 fallback check: empty={}, hallucination={}, tools={}",
                     final_response_content.is_empty(), hallucination_detected, tool_call_results.len());
 
                 if final_response_content.is_empty() || hallucination_detected {
                     // Use rich formatter instead of simple fallback
                     let fallback = format_tool_results(&deduped_results);
-                    tracing::info!("Phase 2: Yielding fallback content: {} chars", fallback.len());
+                    tracing::debug!("Phase 2: Yielding fallback content: {} chars", fallback.len());
                     yield AgentEvent::content(fallback.clone());
                     final_response_content = fallback;
                 }
@@ -3349,7 +3349,7 @@ pub async fn process_stream_events_with_safeguards(
                 if let Ok((cleaned_text, embedded_tool_calls)) = parse_tool_calls(&final_response_content) {
                     if !embedded_tool_calls.is_empty() {
                         if tool_iteration_count < MAX_TOOL_ITERATIONS - 1 {
-                            tracing::info!(
+                            tracing::debug!(
                                 "Phase 2: Recovered {} embedded tool calls from follow-up response, continuing execution",
                                 embedded_tool_calls.len()
                             );
@@ -3394,7 +3394,7 @@ pub async fn process_stream_events_with_safeguards(
                         } else {
                             // Max iterations reached - can't execute more rounds
                             // But still clean the raw JSON from content to avoid showing it to user
-                            tracing::info!(
+                            tracing::debug!(
                                 "Phase 2: Found {} embedded tool calls but max iterations reached, cleaning JSON from content",
                                 embedded_tool_calls.len()
                             );
@@ -3462,7 +3462,7 @@ pub async fn process_stream_events_with_safeguards(
                     }
                 }
 
-                tracing::info!("Tool execution and Phase 2 response complete");
+                tracing::debug!("Tool execution and Phase 2 response complete");
             } else {
                 // No tool calls - save response directly
                 // Use buffer if content_before_tools is empty (buffer contains all content chunks when no tools)
@@ -3764,7 +3764,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                         };
                         let partial_msg = AgentMessage::assistant(&partial_content);
                         internal_state.write().await.push_message(partial_msg);
-                        tracing::info!("Saved partial multimodal response on error: {} chars", partial_content.len());
+                        tracing::debug!("Saved partial multimodal response on error: {} chars", partial_content.len());
                     }
                     break;
                 }
@@ -3773,7 +3773,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
 
         // Handle tool calls if detected
         if tool_calls_detected {
-            tracing::info!("Tool calls detected in multimodal response, executing {} tools", tool_calls.len());
+            tracing::debug!("Tool calls detected in multimodal response, executing {} tools", tool_calls.len());
 
             let tool_calls_to_execute = tool_calls.clone();
 
@@ -3924,11 +3924,11 @@ pub async fn process_multimodal_stream_events_with_safeguards(
 
             if history_messages.len() > 6 {
                 let keep_count = 6;
-                tracing::info!("Trimming history from {} to {} messages", history_messages.len(), keep_count);
+                tracing::debug!("Trimming history from {} to {} messages", history_messages.len(), keep_count);
             }
 
             // Phase 2: Generate follow-up response (no tools, with thinking)
-            tracing::info!("Phase 2: Generating follow-up response (multimodal)");
+            tracing::debug!("Phase 2: Generating follow-up response (multimodal)");
 
             // Build Phase 2 prompt with tool results explicitly included so the second LLM
             // always receives them (history alone can be dropped or mishandled by backends).
@@ -3936,7 +3936,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                 original_user_question.clone(),
                 &tool_call_results,
             );
-            tracing::info!("Phase 2 prompt (multimodal) length: {} chars (with tool results)", phase2_prompt.len());
+            tracing::debug!("Phase 2 prompt (multimodal) length: {} chars (with tool results)", phase2_prompt.len());
 
             let followup_stream_result = llm_interface.chat_stream_no_tools_no_thinking_with_history(
                 &phase2_prompt, &history_messages
@@ -4028,7 +4028,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                 }
             }
 
-            tracing::info!("Multimodal tool execution and Phase 2 response complete");
+            tracing::debug!("Multimodal tool execution and Phase 2 response complete");
         } else {
             // No tool calls - save response directly
             let raw_response = if buffer.is_empty() {

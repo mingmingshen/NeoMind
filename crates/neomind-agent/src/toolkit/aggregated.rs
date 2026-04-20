@@ -1123,8 +1123,8 @@ impl AgentTool {
 
         // Parse execution_mode
         let execution_mode = match args["execution_mode"].as_str() {
-            Some("react") => neomind_storage::agents::ExecutionMode::React,
-            _ => neomind_storage::agents::ExecutionMode::Chat, // default
+            Some("free") | Some("react") => neomind_storage::agents::ExecutionMode::Free,
+            _ => neomind_storage::agents::ExecutionMode::Focused, // default
         };
 
         // Parse resources — supports JSON array of {type, id} objects

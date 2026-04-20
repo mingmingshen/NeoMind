@@ -231,7 +231,7 @@ impl LoadTestContext {
                 long_term: LongTermMemory::default(),
             },
             tool_config: None,
-            execution_mode: ExecutionMode::Chat,
+            execution_mode: ExecutionMode::Focused,
             error_message: None,
             max_retries: 0,
             consecutive_failures: 0,

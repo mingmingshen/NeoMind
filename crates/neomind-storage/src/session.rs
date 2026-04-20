@@ -305,10 +305,6 @@ impl SessionStore {
     /// Uses a singleton pattern to prevent multiple opens of the same database.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Arc<Self>, Error> {
         let path_str = path.as_ref().to_string_lossy().to_string();
-        tracing::debug!(
-            "[SessionStore::open] Opening session store at: {}",
-            path_str
-        );
 
         // Check if we already have a store for this path
         {
@@ -319,10 +315,6 @@ impl SessionStore {
             };
             if let Some(store) = singleton.as_ref() {
                 if store.path == path_str {
-                    tracing::debug!(
-                        "[SessionStore::open] Returning cached store for: {}",
-                        path_str
-                    );
                     return Ok(store.clone());
                 }
             }
@@ -330,16 +322,9 @@ impl SessionStore {
 
         // Create new store and save to singleton
         let path_ref = path.as_ref();
-        tracing::debug!(
-            "[SessionStore::open] Path exists: {}, is_file: {}",
-            path_ref.exists(),
-            path_ref.is_file()
-        );
         let db = if path_ref.exists() {
-            tracing::debug!("[SessionStore::open] Opening existing database");
             Database::open(path_ref)?
         } else {
-            tracing::debug!("[SessionStore::open] Creating new database");
             Database::create(path_ref)?
         };
 
@@ -356,7 +341,7 @@ impl SessionStore {
             };
             *singleton = Some(store.clone());
         }
-        tracing::debug!("[SessionStore::open] Session store created/loaded successfully");
+        tracing::debug!("[SessionStore] Opened session store at: {}", store.path);
         Ok(store)
     }
 
@@ -610,34 +595,28 @@ impl SessionStore {
 
     /// Delete a session.
     pub fn delete_session(&self, session_id: &str) -> Result<(), Error> {
-        tracing::debug!("[SessionStore] delete_session called for: {}", session_id);
+        tracing::debug!("[SessionStore] Deleting session: {}", session_id);
         let write_txn = self.db.begin_write()?;
-        tracing::debug!("[SessionStore] write transaction started");
 
         // Delete from sessions table
         {
             let mut sessions_table = write_txn.open_table(SESSIONS_TABLE)?;
-            tracing::debug!("[SessionStore] removing from SESSIONS_TABLE");
             sessions_table.remove(session_id)?;
-            tracing::debug!("[SessionStore] removed from SESSIONS_TABLE");
         }
 
         // Delete from metadata table
         {
             let mut meta_table = write_txn.open_table(SESSIONS_META_TABLE)?;
             let _ = meta_table.remove(session_id); // Ignore error if not exists
-            tracing::debug!("[SessionStore] removed from SESSIONS_META_TABLE");
         }
 
         // Delete from history table - we need to collect the actual key tuples
         {
-            tracing::debug!("[SessionStore] opening HISTORY_TABLE");
             let mut history_table = write_txn.open_table(HISTORY_TABLE)?;
             let start_key = (session_id, 0u64);
             let end_key = (session_id, u64::MAX);
 
             let mut keys_to_delete: Vec<(String, u64)> = Vec::new();
-            tracing::debug!("[SessionStore] collecting history keys to delete");
             let mut range = history_table.range(start_key..=end_key)?;
             for result in range.by_ref() {
                 let (key_ref, _val_ref) = result?;

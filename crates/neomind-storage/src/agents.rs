@@ -225,13 +225,14 @@ pub enum AgentStatus {
 
 /// Agent execution mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
 pub enum ExecutionMode {
-    /// Direct LLM conversation - single pass analysis
+    /// Focused mode — user-defined scope, single-pass analysis with bound resources
     #[default]
-    Chat,
-    /// ReAct mode - multi-round reasoning + tool calling loop
-    React,
+    #[serde(rename = "focused", alias = "chat")]
+    Focused,
+    /// Free mode — LLM freely explores with full tool access, multi-round reasoning
+    #[serde(rename = "free", alias = "react")]
+    Free,
 }
 
 /// Agent execution statistics.
@@ -1919,7 +1920,7 @@ mod tests {
             enable_tool_chaining: false,
             max_chain_depth: 3,
             tool_config: None,
-            execution_mode: ExecutionMode::Chat,
+            execution_mode: ExecutionMode::Focused,
             error_message: None,
             max_retries: 0,
             consecutive_failures: 0,
@@ -1964,7 +1965,7 @@ mod tests {
             enable_tool_chaining: false,
             max_chain_depth: 3,
             tool_config: None,
-            execution_mode: ExecutionMode::Chat,
+            execution_mode: ExecutionMode::Focused,
             error_message: None,
             max_retries: 0,
             consecutive_failures: 0,
@@ -2042,7 +2043,7 @@ mod tests {
             enable_tool_chaining: false,
             max_chain_depth: 3,
             tool_config: None,
-            execution_mode: ExecutionMode::Chat,
+            execution_mode: ExecutionMode::Focused,
             error_message: None,
             max_retries: 0,
             consecutive_failures: 0,
@@ -2110,7 +2111,7 @@ mod tests {
             enable_tool_chaining: false,
             max_chain_depth: 3,
             tool_config: None,
-            execution_mode: ExecutionMode::Chat,
+            execution_mode: ExecutionMode::Focused,
             error_message: None,
             max_retries: 0,
             consecutive_failures: 0,

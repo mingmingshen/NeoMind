@@ -454,8 +454,8 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 },
                 Example {
                     user_query: "Create a daily patrol agent that runs at 8am".to_string(),
-                    tool_call: r#"agent(action="create", name="Daily Patrol", user_prompt="You are a daily device patrol agent. Check all devices status, verify online/offline, report any anomalies. Send a summary notification.", schedule_type="cron", schedule_config="0 8 * * *", execution_mode="react", enable_tool_chaining=true)"#.to_string(),
-                    explanation: "Create a cron-based agent with react mode for multi-step automation".to_string(),
+                    tool_call: r#"agent(action="create", name="Daily Patrol", user_prompt="You are a daily device patrol agent. Check all devices status, verify online/offline, report any anomalies. Send a summary notification.", schedule_type="cron", schedule_config="0 8 * * *", execution_mode="free", enable_tool_chaining=true)"#.to_string(),
+                    explanation: "Create a cron-based agent with free mode for multi-step automation".to_string(),
                 },
                 Example {
                     user_query: "Pause the temperature monitor".to_string(),

@@ -108,7 +108,7 @@ impl LlmTestContext {
             conversation_summary: None,
             context_window_size: 5,
             tool_config: None,
-            execution_mode: ExecutionMode::Chat,
+            execution_mode: ExecutionMode::Focused,
             error_message: None,
             max_retries: 0,
             consecutive_failures: 0,
