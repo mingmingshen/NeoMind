@@ -342,6 +342,66 @@ impl AgentExecutor {
         descriptions.join("\n")
     }
 
+    /// Build structured data table for Focused Mode prompt.
+    /// Returns markdown tables of current data and available commands.
+    pub(crate) fn build_focused_data_table(
+        agent: &AiAgent,
+        data: &[DataCollected],
+    ) -> String {
+        let mut sections = Vec::new();
+
+        // --- Current Data Table ---
+        let data_entries: Vec<&DataCollected> = data.iter()
+            .filter(|d| {
+                d.source != "system"
+                && !d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false)
+            })
+            .take(15)
+            .collect();
+
+        if !data_entries.is_empty() {
+            sections.push("## Current Data (live from bound resources)".to_string());
+            sections.push("| Resource | Type | Value |".to_string());
+            sections.push("|----------|------|-------|".to_string());
+            for d in &data_entries {
+                let value = if let Some(v) = d.values.get("value") {
+                    format!("{}", v)
+                } else {
+                    let json_str = serde_json::to_string(&d.values).unwrap_or_default();
+                    if json_str.len() > 100 { json_str[..100].to_string() + "..." } else { json_str }
+                };
+                sections.push(format!("| {} | {} | {} |", d.source, d.data_type, value));
+            }
+        }
+
+        // --- Available Commands Table ---
+        let commands: Vec<&AgentResource> = agent.resources.iter()
+            .filter(|r| matches!(r.resource_type, ResourceType::Command | ResourceType::ExtensionTool))
+            .collect();
+
+        if !commands.is_empty() {
+            sections.push(String::new());
+            sections.push("## Available Commands (only execute when needed)".to_string());
+            sections.push("| Name | Action Value |".to_string());
+            sections.push("|------|-------------|".to_string());
+            for cmd in &commands {
+                let display_name = if cmd.name.is_empty() { &cmd.resource_id } else { &cmd.name };
+                sections.push(format!("| {} | `{}` |", display_name, cmd.resource_id));
+            }
+        }
+
+        // --- Decision Template ---
+        if !commands.is_empty() {
+            sections.push(String::new());
+            sections.push("### Decision Format".to_string());
+            sections.push("If you need to execute a command:".to_string());
+            sections.push("`\"decisions\": [{\"decision_type\": \"command\", \"action\": \"<copy Action Value>\", \"description\": \"<reason>\"}]`".to_string());
+            sections.push("If no action needed: `\"decisions\": []`".to_string());
+        }
+
+        sections.join("\n")
+    }
+
 
     pub(crate) async fn analyze_situation_with_intent(
         &self,
@@ -831,18 +891,20 @@ impl AgentExecutor {
         // Get current time context for temporal understanding
         let _time_context = get_time_context();
 
-        // Build available commands description for LLM
-        let available_commands = Self::build_available_commands_description(agent);
-
-        // Build available data sources description for LLM
-        // This tells the agent what data sources are configured, even if no data is currently available
-        let available_data_sources = Self::build_available_data_sources_description(agent);
-
-        // Combine commands and data sources for system prompt
-        let resources_info = if available_data_sources.is_empty() {
-            available_commands
-        } else {
-            format!("{}\n\n{}", available_commands, available_data_sources)
+        // Build resources info based on execution mode
+        let resources_info = match agent.execution_mode {
+            neomind_storage::agents::ExecutionMode::Focused => {
+                Self::build_focused_data_table(agent, data)
+            }
+            neomind_storage::agents::ExecutionMode::Free => {
+                let available_commands = Self::build_available_commands_description(agent);
+                let available_data_sources = Self::build_available_data_sources_description(agent);
+                if available_data_sources.is_empty() {
+                    available_commands
+                } else {
+                    format!("{}\n\n{}", available_commands, available_data_sources)
+                }
+            }
         };
 
         // Language-specific templates
