@@ -25,7 +25,7 @@ use serde_json::Value;
 impl TransformStore for SharedAutomationStore {
     async fn save_transform(&self, data: Value) -> std::result::Result<String, String> {
         // The tool sends a custom JSON format. We need to build Automation manually
-        // because the tool's JSON doesn't match the serde format of the Automation enum.
+        // because the tool's JSON doesn't match the serde format of the Automation type.
         //
         // Tool sends: { "metadata": { "id": ..., ... }, "scope": "global", ... }
         // Or for create: data is the inner transform fields directly
@@ -37,6 +37,8 @@ impl TransformStore for SharedAutomationStore {
             data.get("transform").cloned().unwrap()
         } else if data.is_object() && data.get("type").is_some() {
             // Already an Automation serde format: {"type": "transform", ...}
+            // Note: Automation is now a type alias for TransformAutomation, but serde may still
+            // expect the {"type": "transform", ...} envelope if the data was serialized that way.
             let automation: Automation =
                 serde_json::from_value(data).map_err(|e| format!("Invalid transform data: {}", e))?;
             let id = automation.id().to_string();
@@ -123,7 +125,7 @@ impl TransformStore for SharedAutomationStore {
             operations: None,
         };
 
-        let automation = Automation::Transform(transform);
+        let automation = transform;
         self.save_automation(&automation)
             .await
             .map_err(|e| e.to_string())?;
@@ -136,13 +138,12 @@ impl TransformStore for SharedAutomationStore {
             .await
             .map_err(|e| e.to_string())?
         {
-            Some(Automation::Transform(t)) => {
+            Some(t) => {
                 let mut val = serde_json::to_value(&t).map_err(|e| e.to_string())?;
                 // Replace enum scope with human-readable string
                 val["scope"] = Value::String(t.scope.as_str());
                 Ok(Some(val))
             }
-            Some(_) => Err(format!("{} is not a transform", id)),
             None => Ok(None),
         }
     }
@@ -154,14 +155,11 @@ impl TransformStore for SharedAutomationStore {
             .map_err(|e| e.to_string())?;
         Ok(all
             .into_iter()
-            .filter_map(|a| match a {
-                Automation::Transform(t) => {
-                    let mut val = serde_json::to_value(&t).ok()?;
-                    // Replace enum scope with human-readable string
-                    val["scope"] = Value::String(t.scope.as_str());
-                    Some(val)
-                }
-                _ => None,
+            .map(|t| {
+                let mut val = serde_json::to_value(&t).unwrap_or_default();
+                // Replace enum scope with human-readable string
+                val["scope"] = Value::String(t.scope.as_str());
+                val
             })
             .collect())
     }
@@ -172,11 +170,10 @@ impl TransformStore for SharedAutomationStore {
             .await
             .map_err(|e| e.to_string())?
         {
-            Some(Automation::Transform(_)) => self
+            Some(_) => self
                 .delete_automation(id)
                 .await
                 .map_err(|e| e.to_string()),
-            Some(_) => Err(format!("{} is not a transform", id)),
             None => Ok(false),
         }
     }
@@ -325,19 +322,15 @@ impl TransformTool {
 
         let transforms: Vec<Value> = automations
             .into_iter()
-            .filter(|a| matches!(a, Automation::Transform(_)))
             .take(limit)
-            .map(|a| match a {
-                Automation::Transform(t) => serde_json::json!({
-                    "id": t.metadata.id,
-                    "name": t.metadata.name,
-                    "description": t.metadata.description,
-                    "scope": t.scope.as_str(),
-                    "enabled": t.metadata.enabled,
-                    "execution_count": t.metadata.execution_count
-                }),
-                _ => unreachable!(),
-            })
+            .map(|t| serde_json::json!({
+                "id": t.metadata.id,
+                "name": t.metadata.name,
+                "description": t.metadata.description,
+                "scope": t.scope.as_str(),
+                "enabled": t.metadata.enabled,
+                "execution_count": t.metadata.execution_count
+            }))
             .collect();
 
         Ok(ToolOutput::success(serde_json::json!({
@@ -358,7 +351,7 @@ impl TransformTool {
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
         match automation {
-            Some(Automation::Transform(t)) => Ok(ToolOutput::success(serde_json::json!({
+            Some(t) => Ok(ToolOutput::success(serde_json::json!({
                 "id": t.metadata.id,
                 "name": t.metadata.name,
                 "description": t.metadata.description,
@@ -370,10 +363,6 @@ impl TransformTool {
                 "execution_count": t.metadata.execution_count,
                 "last_executed": t.metadata.last_executed
             }))),
-            Some(_) => Err(ToolError::Execution(format!(
-                "{} is not a transform",
-                transform_id
-            ))),
             None => Err(ToolError::Execution(format!(
                 "Transform not found: {}",
                 transform_id
@@ -414,7 +403,7 @@ impl TransformTool {
             operations: None,
         };
 
-        let automation = Automation::Transform(transform);
+        let automation = transform;
 
         self.automation_store
             .save_automation(&automation)
@@ -441,7 +430,7 @@ impl TransformTool {
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
         match automation {
-            Some(Automation::Transform(mut t)) => {
+            Some(mut t) => {
                 // Update fields if provided
                 if let Some(name) = args["name"].as_str() {
                     t.metadata.name = name.to_string();
@@ -462,9 +451,8 @@ impl TransformTool {
                     t.output_prefix = output_prefix.to_string();
                 }
 
-                let automation = Automation::Transform(t);
                 self.automation_store
-                    .save_automation(&automation)
+                    .save_automation(&t)
                     .await
                     .map_err(|e| ToolError::Execution(e.to_string()))?;
 
@@ -474,10 +462,6 @@ impl TransformTool {
                     "message": "转换规则更新成功"
                 })))
             }
-            Some(_) => Err(ToolError::Execution(format!(
-                "{} is not a transform",
-                transform_id
-            ))),
             None => Err(ToolError::Execution(format!(
                 "Transform not found: {}",
                 transform_id
@@ -498,7 +482,7 @@ impl TransformTool {
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
         match automation {
-            Some(Automation::Transform(_)) => {
+            Some(_) => {
                 self.automation_store
                     .delete_automation(transform_id)
                     .await
@@ -509,10 +493,6 @@ impl TransformTool {
                     "status": "deleted"
                 })))
             }
-            Some(_) => Err(ToolError::Execution(format!(
-                "{} is not a transform",
-                transform_id
-            ))),
             None => Err(ToolError::Execution(format!(
                 "Transform not found: {}",
                 transform_id
@@ -535,7 +515,7 @@ impl TransformTool {
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
         match automation {
-            Some(Automation::Transform(t)) => {
+            Some(t) => {
                 let js_code = t.js_code.ok_or_else(|| {
                     ToolError::Execution("Transform has no JavaScript code".into())
                 })?;
@@ -561,10 +541,6 @@ impl TransformTool {
                     "metrics_count": result.len()
                 })))
             }
-            Some(_) => Err(ToolError::Execution(format!(
-                "{} is not a transform",
-                transform_id
-            ))),
             None => Err(ToolError::Execution(format!(
                 "Transform not found: {}",
                 transform_id

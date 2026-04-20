@@ -2,8 +2,6 @@
 export { SimpleRuleBuilderSplit } from "./SimpleRuleBuilderSplit"
 export { AutomationCreatorDialog } from "./AutomationCreatorDialog"
 export type { AutomationCreatorDialogProps } from "./AutomationCreatorDialog"
-export { AutomationConverterDialog } from "./AutomationConverterDialog"
-export type { AutomationConverterDialogProps } from "./AutomationConverterDialog"
 export { AutomationsTab } from "./AutomationsTab"
 export type { AutomationsTabProps } from "./AutomationsTab"
 export { TransformsTabContent } from "./TransformsTabContent"

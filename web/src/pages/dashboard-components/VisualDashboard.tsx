@@ -12,6 +12,7 @@ import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { useExtensionLifecycle } from '@/hooks/useExtensionLifecycle'
 import { logError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
+import { PageLoading } from '@/components/shared/PageLoading'
 import { useIsMobile, useTouchHover } from '@/hooks/useMobile'
 import {
   LayoutDashboard,
@@ -4971,13 +4972,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   if (!currentDashboard) {
     // Show loading state only if we're still loading
     if (dashboardsLoading) {
-      return (
-        <div className="flex items-center justify-center h-screen">
-          <div className="text-center">
-            <h2 className="text-lg font-medium mb-2">Loading Dashboard...</h2>
-          </div>
-        </div>
-      )
+      return <PageLoading size="lg" text="Loading Dashboard..." />
     }
 
     // No dashboard found - show empty state with create button

@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { BrandName } from "@/components/shared/BrandName"
+import { PageLoading } from "@/components/shared/PageLoading"
 import {
   Server,
   Clock,
@@ -166,9 +167,7 @@ export function AboutTab() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              {t("common:loading")}
-            </div>
+            <PageLoading size="sm" text={t("common:loading")} />
           ) : systemInfo ? (
             <div className="space-y-4">
               {/* Platform & Architecture */}

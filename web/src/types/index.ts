@@ -1566,7 +1566,7 @@ export interface AdapterType {
 /**
  * Automation type enumeration
  */
-export type AutomationType = 'transform' | 'rule'
+export type AutomationType = 'transform'
 
 /**
  * Transform scope - determines what data the transform applies to
@@ -1680,7 +1680,7 @@ export interface TransformAutomation extends BaseAutomation {
 /**
  * Unified Automation type - can be Transform or Rule
  */
-export type Automation = TransformAutomation | RuleAutomation
+export type Automation = TransformAutomation
 
 /**
  * Base automation interface with common fields
@@ -1695,17 +1695,6 @@ export interface BaseAutomation {
   updated_at: number
   execution_count: number
   last_executed: number | null
-}
-
-/**
- * Rule automation - simple if-then conditions
- */
-export interface RuleAutomation extends BaseAutomation {
-  type: 'rule'
-  trigger: RuleTrigger
-  condition: RuleCondition
-  actions: RuleAction[]
-  complexity: number // 1-5
 }
 
 /**
@@ -1725,16 +1714,6 @@ export interface IntentResult {
   reasoning: string
   suggested_automation: Partial<Automation> | null
   warnings: string[]
-}
-
-/**
- * Conversion recommendation
- */
-export interface ConversionRecommendation {
-  can_convert: boolean
-  target_type: AutomationType
-  reason: string
-  estimated_complexity: number
 }
 
 /**
@@ -1763,13 +1742,6 @@ export interface UpdateAutomationRequest {
  */
 export interface SetAutomationStatusRequest {
   enabled: boolean
-}
-
-/**
- * Convert automation request
- */
-export interface ConvertAutomationRequest {
-  type: AutomationType
 }
 
 /**
@@ -1814,7 +1786,7 @@ export interface TemplateParameter {
  * Automation filter parameters
  */
 export interface AutomationFilter {
-  type?: 'transform' | 'rule' | 'all'
+  type?: 'transform' | 'all'
   enabled?: boolean
   search?: string
 }

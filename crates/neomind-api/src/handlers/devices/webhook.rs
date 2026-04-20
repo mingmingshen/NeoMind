@@ -20,8 +20,6 @@ use crate::models::ErrorResponse;
 
 // Import DataPoint from neomind_devices (not neomind_storage)
 use neomind_devices::DataPoint;
-// Import automation types for transform processing
-use crate::automation::Automation;
 // Import auto-onboarding types
 
 /// Webhook data from device
@@ -326,10 +324,6 @@ async fn process_device_transforms(
     let transforms: Vec<_> = match transforms_result {
         Ok(automations) => automations
             .into_iter()
-            .filter_map(|a| match a {
-                Automation::Transform(t) => Some(t),
-                _ => None,
-            })
             .collect(),
         Err(e) => {
             warn!("Failed to load transforms: {}", e);

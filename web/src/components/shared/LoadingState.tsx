@@ -31,10 +31,13 @@ export function LoadingState({ size = 'md', variant = 'default', text, className
 
   if (variant === 'page') {
     return (
-      <div className={cn('flex flex-col items-center justify-center gap-4 py-16 min-h-[200px]', className)}>
-        <Loader2 className={cn('animate-spin text-muted-foreground', 'w-10 h-10')} />
+      <div className={cn('flex flex-col items-center justify-center flex-1 px-4', className)}>
+        <div className="relative">
+          <div className="absolute inset-0 blur-xl bg-primary/20 rounded-full" />
+          <Loader2 className={cn('animate-spin text-primary relative', 'w-10 h-10')} />
+        </div>
         {text && (
-          <p className="text-sm text-muted-foreground">{text}</p>
+          <p className="mt-4 text-sm text-muted-foreground animate-pulse">{text}</p>
         )}
       </div>
     )

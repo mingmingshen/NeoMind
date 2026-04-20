@@ -111,8 +111,3 @@ impl From<neomind_core::LlmError> for AutomationError {
     }
 }
 
-impl From<neomind_rules::RuleError> for AutomationError {
-    fn from(err: neomind_rules::RuleError) -> Self {
-        AutomationError::InvalidDefinition(format!("Rule error: {}", err))
-    }
-}

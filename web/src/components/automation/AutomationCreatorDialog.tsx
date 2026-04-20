@@ -71,7 +71,7 @@ export function AutomationCreatorDialog({
   useEffect(() => {
     if (open) {
       setDescription(initialDescription)
-      setSelectedType(suggestedType || 'rule')
+      setSelectedType(suggestedType || 'transform')
       setAutomationName('')
       setEnabled(true)
       setSelectedTemplate(null)
@@ -274,9 +274,7 @@ export function AutomationCreatorDialog({
                                   <Badge
                                     variant="outline"
                                     className={cn(
-                                      template.automation_type === 'rule'
-                                        ? 'bg-blue-500/10 text-blue-500'
-                                        : 'bg-purple-500/10 text-purple-500'
+                                      'bg-purple-500/10 text-purple-500'
                                     )}
                                   >
                                     <Zap className="h-3 w-3 mr-1" />
@@ -465,28 +463,10 @@ export function AutomationCreatorDialog({
 
               <div className="space-y-2">
                 <Label>{t('automation:automationType')}</Label>
-                <Select
-                  value={selectedType || ''}
-                  onValueChange={(v) => setSelectedType(v as AutomationType)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={t('automation:selectType')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="rule">
-                      <div className="flex items-center gap-2">
-                        <Zap className="h-4 w-4" />
-                        {t('automation:rule')}
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="transform">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="h-4 w-4" />
-                        {t('automation:transform')}
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-muted">
+                  <Sparkles className="h-4 w-4" />
+                  <span className="text-sm">{t('automation:transform')}</span>
+                </div>
               </div>
 
               <div className="p-4 bg-muted rounded-md">

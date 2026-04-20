@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::automation::{store::SharedAutomationStore, Automation, TransformEngine};
+use crate::automation::{store::SharedAutomationStore, TransformEngine};
 use neomind_core::eventbus::EventBus;
 use neomind_core::{MetricValue, NeoMindEvent};
 use neomind_devices::DeviceRegistry;
@@ -233,10 +233,7 @@ impl TransformEventService {
                             let transforms = match automation_store_clone.list_automations().await {
                                 Ok(all) => all
                                     .into_iter()
-                                    .filter_map(|a| match a {
-                                        Automation::Transform(t) if t.metadata.enabled => Some(t),
-                                        _ => None,
-                                    })
+                                    .filter(|t| t.metadata.enabled)
                                     .collect::<Vec<_>>(),
                                 Err(e) => {
                                     tracing::debug!("Failed to load transforms: {}", e);

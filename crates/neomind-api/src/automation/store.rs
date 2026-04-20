@@ -365,7 +365,9 @@ impl SharedAutomationStore {
     }
 }
 
+#[cfg(test)]
 mod tests {
+    use super::super::types::{Automation, TransformScope};
     use super::*;
 
     #[test]

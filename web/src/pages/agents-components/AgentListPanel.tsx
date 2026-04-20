@@ -32,6 +32,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { PageLoading } from "@/components/shared/PageLoading"
 import type { AiAgent, AiAgentDetail } from "@/types"
 
 interface AgentListPanelProps {
@@ -245,11 +246,7 @@ export function AgentListPanel({
   const selectedAgentId = useMemo(() => selectedAgent?.id ?? null, [selectedAgent?.id])
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-      </div>
-    )
+    return <PageLoading size="sm" className="min-h-[30vh]" />
   }
 
   if (agents.length === 0) {

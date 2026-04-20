@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
-import type { Automation, AutomationType } from '@/types'
+import type { Automation } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { LoadingState, EmptyState, ResponsiveTable } from '@/components/shared'
-import { AutomationCreatorDialog, AutomationConverterDialog } from '@/components/automation'
+import { AutomationCreatorDialog } from '@/components/automation'
 import { formatTimestamp } from '@/lib/utils/format'
 import { useToast } from '@/hooks/use-toast'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
@@ -25,7 +25,6 @@ import {
   Play,
   Edit,
   Trash2,
-  ArrowRightLeft,
   Sparkles,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
@@ -35,7 +34,7 @@ export interface AutomationsTabProps {
   onSearchChange?: (query: string) => void
 }
 
-type FilterType = 'all' | 'rule' | 'transform'
+type FilterType = 'all' | 'transform'
 type StatusFilter = 'all' | 'enabled' | 'disabled'
 
 export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChange }: AutomationsTabProps) {
@@ -54,8 +53,6 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
 
   // Dialog state
   const [creatorOpen, setCreatorOpen] = useState(false)
-  const [converterOpen, setConverterOpen] = useState(false)
-  const [selectedAutomation, setSelectedAutomation] = useState<Automation | null>(null)
 
   // Sync external search query
   useEffect(() => {
@@ -104,9 +101,6 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
 
   const handleExecute = async (automation: Automation) => {
     try {
-      if (automation.type === 'rule') {
-        await api.testRule(automation.id)
-      }
       toast({
         title: t('common:success'),
         description: t('automation:executed'),
@@ -146,33 +140,16 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
     }
   }
 
-  const handleConvert = (automation: Automation) => {
-    setSelectedAutomation(automation)
-    setConverterOpen(true)
-  }
-
-  const handleConversionComplete = (_newId: string, _newType: AutomationType) => {
-    setConverterOpen(false)
-    setSelectedAutomation(null)
-    toast({
-      title: t('common:success'),
-      description: t('automation:conversionComplete', { defaultValue: 'Automation converted successfully' }),
-    })
-    loadAutomations()
-  }
-
   const handleSearchChange = (value: string) => {
     setSearchQuery(value)
     onSearchChange?.(value)
   }
 
-  const getTypeLabel = (type: AutomationType) =>
-    type === 'rule' ? t('automation:rules') : t('automation:transforms')
+  const getTypeLabel = (_type: string) =>
+    t('automation:transforms')
 
-  const getTypeColor = (type: AutomationType) =>
-    type === 'rule'
-      ? 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900 dark:text-blue-300'
-      : 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900 dark:text-green-300'
+  const getTypeColor = (_type: string) =>
+    'bg-green-100 text-green-700 border-green-200 dark:bg-green-900 dark:text-green-300'
 
   const getComplexityDots = (complexity: number) => {
     return Array.from({ length: 5 }, (_, i) => (
@@ -196,7 +173,6 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t('automation:all')}</SelectItem>
-              <SelectItem value="rule">{t('automation:rules')}</SelectItem>
               <SelectItem value="transform">{t('automation:transforms')}</SelectItem>
             </SelectContent>
           </Select>
@@ -349,14 +325,6 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
               onClick: () => {},
             },
             {
-              label: t('automation:convertAutomation'),
-              icon: <ArrowRightLeft className="h-4 w-4" />,
-              onClick: (rowData) => {
-                const automation = rowData as unknown as Automation
-                handleConvert(automation)
-              },
-            },
-            {
               label: t('automation:delete'),
               icon: <Trash2 className="h-4 w-4" />,
               variant: 'destructive',
@@ -375,17 +343,6 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
         onOpenChange={setCreatorOpen}
         onAutomationCreated={loadAutomations}
       />
-
-      {selectedAutomation && (
-        <AutomationConverterDialog
-          open={converterOpen}
-          onOpenChange={setConverterOpen}
-          automationId={selectedAutomation.id}
-          automationName={selectedAutomation.name}
-          currentType={selectedAutomation.type}
-          onConversionComplete={handleConversionComplete}
-        />
-      )}
     </>
   )
 }

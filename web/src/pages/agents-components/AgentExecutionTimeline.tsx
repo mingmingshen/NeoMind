@@ -23,6 +23,7 @@ import {
   Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { PageLoading } from "@/components/shared/PageLoading"
 import { formatTimestamp } from "@/lib/utils/format"
 import { api } from "@/lib/api"
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage"
@@ -106,9 +107,7 @@ export function AgentExecutionTimeline({
       <ScrollArea className="flex-1">
         <div className="p-4">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
+            <PageLoading size="sm" className="min-h-[30vh]" />
           ) : executions.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Clock className="h-12 w-12 mx-auto mb-3 opacity-20" />

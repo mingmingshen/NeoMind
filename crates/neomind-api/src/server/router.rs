@@ -567,14 +567,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             post(automations::set_automation_status_handler),
         )
         .route(
-            "/api/automations/:id/convert",
-            post(automations::convert_automation_handler),
-        )
-        .route(
-            "/api/automations/:id/conversion-info",
-            get(automations::get_conversion_info_handler),
-        )
-        .route(
             "/api/automations/:id/executions",
             get(automations::get_automations_executions_handler),
         )

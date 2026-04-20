@@ -1074,7 +1074,7 @@ export const api = {
   // ========== Unified Automations API ==========
   // Matches backend: crates/api/src/handlers/automations.rs
   listAutomations: (params?: {
-    type?: 'rule' | 'transform' | 'all'
+    type?: 'transform' | 'all'
     enabled?: boolean
     search?: string
   }) =>
@@ -1091,7 +1091,7 @@ export const api = {
   createAutomation: (req: {
     name: string
     description?: string
-    type?: 'transform' | 'rule'
+    type?: 'transform'
     enabled?: boolean
     definition: unknown
   }) =>
@@ -1123,13 +1123,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ description }),
     }),
-  convertAutomation: (id: string, targetType: 'transform' | 'rule') =>
-    fetchAPI<{ automation: import('@/types').Automation; message: string; original_id: string; new_id: string }>(`/automations/${id}/convert`, {
-      method: 'POST',
-      body: JSON.stringify({ type: targetType }),
-    }),
-  getConversionInfo: (id: string) =>
-    fetchAPI<{ automation_id: string; current_type: string; can_convert: boolean; target_type?: string; reason: string; estimated_complexity?: number }>(`/automations/${id}/conversion-info`),
   getAutomationExecutions: (id: string, limit?: number) =>
     fetchAPI<{ automation_id: string; executions: unknown[]; count: number }>(
       `/automations/${id}/executions${limit ? `?limit=${limit}` : ''}`
