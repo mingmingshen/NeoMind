@@ -121,7 +121,7 @@ struct AgentDto {
     priority: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     context_window_size: Option<usize>,
-    /// Execution mode: "chat" or "react"
+    /// Execution mode: "focused" or "free"
     execution_mode: String,
 }
 
@@ -156,7 +156,7 @@ struct AgentDetailDto {
     priority: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     context_window_size: Option<usize>,
-    /// Execution mode: "chat" or "react"
+    /// Execution mode: "focused" or "free"
     execution_mode: String,
 }
 
@@ -419,7 +419,7 @@ pub struct CreateAgentRequest {
     /// Context window size (default: 10)
     #[serde(default)]
     pub context_window_size: Option<usize>,
-    /// Execution mode: "chat" for single-pass, "react" for multi-round tool calling
+    /// Execution mode: "focused" for single-pass with bound resources, "free" for multi-round tool calling
     #[serde(default)]
     pub execution_mode: Option<String>,
 }
@@ -503,7 +503,7 @@ pub struct UpdateAgentRequest {
     pub priority: Option<u8>,
     #[serde(default)]
     pub context_window_size: Option<usize>,
-    /// Execution mode: "chat" for single-pass, "react" for multi-round tool calling
+    /// Execution mode: "focused" for single-pass with bound resources, "free" for multi-round tool calling
     #[serde(default)]
     pub execution_mode: Option<String>,
 }

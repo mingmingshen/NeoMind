@@ -86,7 +86,7 @@ pub struct AiAgent {
     /// Tool configuration for function calling mode
     #[serde(default)]
     pub tool_config: Option<AgentToolConfig>,
-    /// Execution mode: chat (single-pass) or react (multi-round tool calling)
+    /// Execution mode: focused (single-pass with bound resources) or free (multi-round tool calling)
     #[serde(default)]
     pub execution_mode: ExecutionMode,
     /// Error message (if status is error)

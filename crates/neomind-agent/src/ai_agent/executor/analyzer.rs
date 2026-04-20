@@ -2,11 +2,11 @@ use super::*;
 
 /// Result of situation analysis, branching by execution path.
 ///
-/// - `React`: Tool-calling (ReAct) mode — the LLM autonomously called tools and
+/// - `Free`: Tool-calling mode — the LLM autonomously called tools and
 ///   produced a full `DecisionProcess` + `ExecutionResult`.  The caller should
-///   return these directly, skipping Chat post-processing (execute_decisions,
+///   return these directly, skipping Focused post-processing (execute_decisions,
 ///   report generation, truncation).
-/// - `Chat`: Standard single-pass LLM or rule-based analysis — returns the four
+/// - `Focused`: Standard single-pass LLM or rule-based analysis — returns the four
 ///   classical fields that `execute_internal` assembles into `DecisionProcess`.
 pub(crate) enum AnalysisResult {
     Focused {
