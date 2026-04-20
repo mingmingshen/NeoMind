@@ -63,7 +63,7 @@ pub fn from_storage_parts(device_id: &str, metric: &str) -> Option<Self> {
 }
 ```
 
-Add constructor and constants:
+Add constructor:
 
 ```rust
 impl DataSourceId {
@@ -71,9 +71,20 @@ impl DataSourceId {
         Self { source_type: DataSourceType::Ai, source_id: group.to_string(), field: field.to_string() }
     }
 }
-
-pub const AI_SOURCE_TYPE: &str = "ai";
 ```
+
+Update `storage_key()` to include the `Ai` case:
+
+```rust
+pub fn storage_key(&self) -> String {
+    match &self.source_type {
+        // ... existing cases ...
+        DataSourceType::Ai => format!("ai:{}:{}", self.source_id, self.field),
+    }
+}
+```
+
+**Note**: `display_name()` and any other methods on `DataSourceId` that match on `DataSourceType` must also add an `Ai` arm. The compiler will flag all missing match arms.
 
 ### 2. Unified Data Sources API
 
@@ -119,18 +130,41 @@ Writes a single data point to telemetry.redb under `ai:{group}:{field}`.
 | action       | string | yes      | Must be `"write"` |
 | group        | string | yes      | Logical grouping (e.g. "anomaly", "trend", "prediction") |
 | field        | string | yes      | Metric field name (e.g. "score", "direction") |
-| value        | any    | yes      | The metric value (number, string, boolean) |
+| value        | any    | yes      | The metric value (number, string, boolean, or JSON object/array) |
 | unit         | string | no       | Unit of measurement (e.g. "%", "°C", "0-1") |
 | description  | string | no       | Human-readable description of this metric |
 
+**Value conversion** (JSON → `MetricValue`):
+
+```rust
+let metric_value = match value {
+    Value::Number(n) => {
+        if let Some(i) = n.as_i64() {
+            MetricValue::Integer(i)
+        } else {
+            MetricValue::Float(n.as_f64().unwrap())
+        }
+    }
+    Value::String(s) => MetricValue::String(s),
+    Value::Bool(b) => MetricValue::Boolean(b),
+    Value::Null => MetricValue::Null,
+    other => MetricValue::Json(other), // objects, arrays
+}
+```
+
 **Behavior**:
-1. Validate group and field are non-empty alphanumeric strings (hyphens/underscores allowed).
+1. Validate group and field: non-empty, only `[a-zA-Z0-9_-]` allowed. Return error on invalid input.
 2. Construct `DataSourceId::ai(group, field)`.
-3. Convert value to `MetricValue`.
+3. Convert value to `MetricValue` using the mapping above.
 4. Create `DataPoint { timestamp: now, value, quality: Some(1.0) }`.
 5. Write via `TimeSeriesStorage::write(&id.device_part(), &id.metric_part(), point)`.
-6. If `unit` or `description` provided, store as metadata for display in Data Explorer.
+6. If `unit` or `description` provided, store in `AiMetricsRegistry` (see Section 6).
 7. Return `{ "status": "written", "id": "ai:anomaly:score" }`.
+
+**Error responses**:
+- Missing required field: `{ "success": false, "error": "Missing required parameter: {field}" }`
+- Invalid group/field: `{ "success": false, "error": "Invalid group/field: only alphanumeric, hyphens, underscores allowed" }`
+- Storage write failure: `{ "success": false, "error": "Failed to write metric: {detail}" }`
 
 #### Action: `read`
 
@@ -185,12 +219,12 @@ The tool requires `SharedTimeSeriesStorage` as a dependency, same as existing to
 
 #### Changes
 
-1. **Remove hardcoded `SourceType` union**:
+1. **Relax `SourceType` to accept dynamic values**:
    ```typescript
    // Before
    type SourceType = 'all' | 'device' | 'extension' | 'transform'
-   // After
-   type SourceType = string
+   // After — keep 'all' as special, rest is dynamic
+   type SourceType = 'all' | string
    ```
 
 2. **Generate tabs dynamically from source data**:
@@ -208,10 +242,12 @@ The tool requires `SharedTimeSeriesStorage` as a dependency, same as existing to
    }, [sources, t])
    ```
 
-3. **Add type-to-icon and type-to-label maps**:
+3. **Add type-to-icon and type-to-label maps** (add `Brain` to lucide-react imports):
    ```typescript
-   const iconMap: Record<string, LucideIcon> = {
-     device: Cpu, extension: Puzzle, transform: Workflow, ai: Brain, system: Monitor
+   import { ..., Brain } from 'lucide-react'
+
+   const iconMap: Record<string, typeof Database> = {
+     device: Cpu, extension: Puzzle, transform: Workflow, ai: Brain,
    }
    const defaultIcon = Database
 
@@ -233,13 +269,27 @@ The tool requires `SharedTimeSeriesStorage` as a dependency, same as existing to
 
 ### 6. Metadata Storage for AI Metrics
 
-AI metrics need `unit` and `description` metadata that persists beyond the data point. Two options:
+AI metrics need `unit` and `description` metadata that persists beyond the data point.
 
-**Option A (Recommended): In-memory registry.** A simple `DashMap<(String, String), AiMetricMeta>` keyed by `(group, field)` that stores `{ display_name, unit, description }`. Populated on write, used when building `UnifiedDataSourceInfo`. Lost on restart, but AI metrics are ephemeral by nature and the tool can re-register metadata on each write.
+**Design: In-memory registry owned by `ServerState`.**
 
-**Option B: Metadata in DataPoint.** Use the existing `metadata` field on `DataPoint`. This persists but only the latest write carries the metadata, and it's per-data-point rather than per-metric.
+```rust
+/// Ephemeral registry for AI metric metadata.
+/// Stored in ServerState, shared between AiMetricTool and data handler.
+pub struct AiMetricsRegistry {
+    metrics: DashMap<(String, String), AiMetricMeta>, // key: (group, field)
+}
 
-Option A is simpler and separates concerns cleanly.
+pub struct AiMetricMeta {
+    pub unit: Option<String>,
+    pub description: Option<String>,
+}
+```
+
+- Owned by `ServerState` as `Arc<AiMetricsRegistry>`.
+- Passed to `AiMetricTool` on creation.
+- Passed to `collect_ai_sources()` to enrich `UnifiedDataSourceInfo` with unit/description.
+- Lost on server restart — acceptable because AI metrics are ephemeral and the tool re-registers metadata on each write.
 
 ## Impact Analysis
 
@@ -261,3 +311,13 @@ Option A is simpler and separates concerns cleanly.
 | `web/src/types/index.ts` | No changes needed (`source_type` is already `string`) |
 | `web/src/i18n/locales/en/data.json` | Add `tabs.ai` key |
 | `web/src/i18n/locales/zh/data.json` | Add `tabs.ai` key |
+
+## Testing
+
+- **Unit test**: `DataSourceType::Ai` — `device_part()`, `from_storage_parts()`, `storage_key()` roundtrip.
+- **Unit test**: `AiMetricTool::write` — write a metric, verify it's stored under `"ai:{group}"` key.
+- **Unit test**: `AiMetricTool::read` — write then read back, verify values match.
+- **Unit test**: Input validation — reject empty group/field, reject special characters.
+- **Unit test**: `AiMetricsRegistry` — metadata stored and retrieved correctly.
+- **Integration**: `collect_ai_sources()` returns written AI metrics in the unified data sources list.
+- **Frontend**: Dynamic tabs show correct types from API response; AI tab appears when AI metrics exist.
