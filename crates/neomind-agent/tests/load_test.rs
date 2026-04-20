@@ -177,6 +177,7 @@ impl LoadTestContext {
             tool_registry: None,
             memory_store: None,
             backend_semaphores: None,
+            skill_registry: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -307,6 +308,7 @@ impl LoadTestContext {
                     value: MetricValue::Float(value),
                     timestamp: chrono::Utc::now().timestamp(),
                     quality: None,
+                    is_virtual: None,
                 };
 
                 let _ = self.event_bus.publish(event).await;

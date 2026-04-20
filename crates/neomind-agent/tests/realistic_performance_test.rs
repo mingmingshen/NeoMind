@@ -53,6 +53,7 @@ impl RealPerfTestContext {
             tool_registry: None,
             memory_store: None,
             backend_semaphores: None,
+            skill_registry: None,
         };
         let executor = AgentExecutor::new(executor_config).await?;
 
@@ -284,7 +285,7 @@ async fn test_real_llm_performance() -> anyhow::Result<()> {
     let (response5, elapsed5) = ctx.llm_analyze(system_prompt, report_request).await;
     println!("   响应时间: {}ms", elapsed5);
     println!("   响应长度: {} 字符", response5.len());
-    println!("   响应预览: {}...", &response5[..response5.len().min(100)]);
+    println!("   响应预览: {}...", response5.chars().take(100).collect::<String>());
 
     println!("\n============================================================");
     println!("真实性能测试完成");
@@ -330,6 +331,7 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
         tool_registry: None,
         memory_store: None,
         backend_semaphores: None,
+        skill_registry: None,
     };
 
     let executor = AgentExecutor::new(executor_config).await?;

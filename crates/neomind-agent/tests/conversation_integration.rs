@@ -35,6 +35,7 @@ impl TestContext {
             tool_registry: None,
             memory_store: None,
             backend_semaphores: None,
+            skill_registry: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;

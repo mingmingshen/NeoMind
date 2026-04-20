@@ -369,30 +369,36 @@ impl DeviceService {
                         value,
                         timestamp,
                         quality: _,
+                        is_virtual,
+                        ..
                     } => {
-                        // Update last_seen when receiving metrics
-                        let mut status = device_status.write().await;
-                        let entry = status.entry(device_id.clone()).or_default();
-                        entry.last_seen = chrono::Utc::now().timestamp();
-                        // If status was disconnected, mark as connected
-                        if entry.status == ConnectionStatus::Disconnected {
-                            entry.status = ConnectionStatus::Connected;
-                            tracing::info!(
-                                "Device {} marked as connected due to metric activity",
-                                device_id
-                            );
-                            drop(status);
-                            // Publish DeviceOnline event so frontend can refresh
-                            let device_type = "_unknown".to_string(); // Will be looked up by frontend
-                            event_bus_for_publish
-                                .publish(neomind_core::NeoMindEvent::DeviceOnline {
-                                    device_id: device_id.clone(),
-                                    device_type,
-                                    timestamp: chrono::Utc::now().timestamp(),
-                                })
-                                .await;
-                        } else {
-                            drop(status);
+                        // Skip virtual metrics for device status tracking.
+                        // Virtual metrics come from extensions/transforms, not real devices.
+                        // We still write them to telemetry storage below.
+                        if neomind_core::NeoMindEvent::is_virtual_device_metric(is_virtual, &metric) {
+                            let mut status = device_status.write().await;
+                            let entry = status.entry(device_id.clone()).or_default();
+                            entry.last_seen = chrono::Utc::now().timestamp();
+                            // If status was disconnected, mark as connected
+                            if entry.status == ConnectionStatus::Disconnected {
+                                entry.status = ConnectionStatus::Connected;
+                                tracing::info!(
+                                    "Device {} marked as connected due to metric activity",
+                                    device_id
+                                );
+                                drop(status);
+                                // Publish DeviceOnline event so frontend can refresh
+                                let device_type = "_unknown".to_string(); // Will be looked up by frontend
+                                event_bus_for_publish
+                                    .publish(neomind_core::NeoMindEvent::DeviceOnline {
+                                        device_id: device_id.clone(),
+                                        device_type,
+                                        timestamp: chrono::Utc::now().timestamp(),
+                                    })
+                                    .await;
+                            } else {
+                                drop(status);
+                            }
                         }
 
                         // Write to telemetry storage if available.
@@ -1005,8 +1011,9 @@ impl DeviceService {
 
     // ========== Command Sending ==========
 
-    /// Send a command to a device
-    /// Automatically uses the device's template to validate and build the command payload
+    /// Send a command to a device.
+    /// Validates against the device template, sends via adapter, and records in command history
+    /// with Success/Failed status based on the send result.
     pub async fn send_command(
         &self,
         device_id: &str,
@@ -1029,7 +1036,7 @@ impl DeviceService {
             })?;
 
         // Validate and convert parameters
-        let validated_params = self.validate_command_params(command_def, params)?;
+        let validated_params = self.validate_command_params(command_def, params.clone())?;
 
         // Build command payload from template
         let payload = self.build_command_payload(command_def, &validated_params)?;
@@ -1048,19 +1055,41 @@ impl DeviceService {
         };
 
         // Determine command topic from device connection config
-        // For MQTT, this would be the command_topic field
         let command_topic = config.connection_config.command_topic.clone();
 
-        // Send command via adapter
-        adapter
+        // Record in command history and update status based on send result
+        let command_id = self
+            .add_command_to_history(device_id, command_name, params)
+            .await;
+
+        match adapter
             .send_command(device_id, command_name, payload, command_topic)
             .await
-            .map_err(|e| {
-                DeviceError::InvalidParameter(format!("Failed to send command via adapter: {}", e))
-            })?;
-
-        // Return None for now (could return command result in the future)
-        Ok(None)
+        {
+            Ok(()) => {
+                self.update_command_status(
+                    device_id,
+                    &command_id,
+                    CommandStatus::Success,
+                    Some("Command sent successfully".into()),
+                    None,
+                )
+                .await;
+                Ok(None)
+            }
+            Err(e) => {
+                let err_msg = format!("Failed to send command via adapter: {}", e);
+                self.update_command_status(
+                    device_id,
+                    &command_id,
+                    CommandStatus::Failed,
+                    None,
+                    Some(err_msg.clone()),
+                )
+                .await;
+                Err(DeviceError::InvalidParameter(err_msg))
+            }
+        }
     }
 
     /// Validate command parameters against template definition

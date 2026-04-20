@@ -830,6 +830,11 @@ impl Agent {
         Arc::clone(&self.llm_interface)
     }
 
+    /// Set pinned skill IDs for this session (user-selected skills).
+    pub async fn set_pinned_skills(&self, skills: Vec<String>) {
+        self.llm_interface.set_pinned_skills(skills).await;
+    }
+
     /// Create a new agent with empty tool registry.
     /// Tools should be configured externally through the session manager.
     pub fn new(config: AgentConfig, session_id: String) -> Self {
@@ -1207,13 +1212,21 @@ impl Agent {
 
                 for param in &tool.required {
                     required.push(param.clone());
-                    properties.insert(
-                        param.clone(),
+
+                    // Build parameter description with enum constraint for "action"
+                    let prop = if param == "action" && !tool.actions.is_empty() {
+                        serde_json::json!({
+                            "type": "string",
+                            "description": format!("Action to perform. Options: {}", tool.actions.join(", ")),
+                            "enum": tool.actions,
+                        })
+                    } else {
                         serde_json::json!({
                             "type": "string",
                             "description": param
-                        }),
-                    );
+                        })
+                    };
+                    properties.insert(param.clone(), prop);
                 }
                 for (param, info) in &tool.optional {
                     properties.insert(
@@ -1242,22 +1255,23 @@ impl Agent {
             })
             .collect();
 
-        // Add extension tools from the tool registry
-        let extension_names: Vec<String> = self
-            .tools
-            .list()
-            .into_iter()
-            .filter(|name| name.contains(':'))
-            .collect();
+        // Add tools from the registry that are not already in simplified definitions
+        let simplified_names: std::collections::HashSet<String> =
+            simplified_tools.iter().map(|t| t.name.clone()).collect();
+        let mut extra_count = 0usize;
 
-        for ext_name in &extension_names {
-            if let Some(tool) = self.tools.get(ext_name) {
+        for tool_name in self.tools.list() {
+            if simplified_names.contains(&tool_name) {
+                continue;
+            }
+            if let Some(tool) = self.tools.get(&tool_name) {
                 let def = tool.definition();
                 core_defs.push(CoreToolDefinition {
                     name: def.name.clone(),
                     description: def.description.clone(),
                     parameters: def.parameters.clone(),
                 });
+                extra_count += 1;
             }
         }
 
@@ -1269,10 +1283,10 @@ impl Agent {
         self.llm_interface.set_system_prompt(&dynamic_prompt).await;
 
         tracing::debug!(
-            "Updated {} tool definitions for LLM ({} core + {} extension)",
+            "Updated {} tool definitions for LLM ({} core + {} extra)",
             tool_count,
-            tool_count - extension_names.len(),
-            extension_names.len()
+            tool_count - extra_count,
+            extra_count
         );
     }
 

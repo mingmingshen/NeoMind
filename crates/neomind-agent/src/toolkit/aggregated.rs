@@ -107,6 +107,9 @@ Actions:
   computed results, or any data the AI wants to persist on a device. Requires device_id, metric, value.
   Cannot overwrite physical device template metrics — use control action for that.
 
+CRITICAL: For control action, first call WITHOUT confirm=true to get a preview, then call again WITH confirm=true after user confirms.
+  Exception: if user explicitly says "yes"/"确认"/"执行" or intent is unambiguous, go directly with confirm=true.
+
 IMPORTANT - Batch Tool Calls:
 When querying history for MULTIPLE devices, you MUST output ALL history calls in ONE
 JSON array in a single response. Do NOT call one device at a time.
@@ -848,6 +851,8 @@ impl Tool for AgentTool {
     fn description(&self) -> &str {
         r#"AI Agent management tool for creating and managing automated agents.
 
+CRITICAL: Always use list or get first to obtain the agent_id before update/control/memory operations. agent_id is a system-generated ID, not the agent name.
+
 Actions:
 - list: List all agents or filter by status (active/paused/stopped/error). Use when user asks about existing agents.
 - get: Get agent details including config, schedule, and execution stats. Use when user asks about a specific agent.
@@ -863,7 +868,9 @@ Actions:
 When creating agents:
 - schedule_type: 'event' (triggered by device events), 'cron' (cron schedule), 'interval' (periodic, e.g., every 5 minutes)
 - user_prompt should be specific, e.g., 'Check temperature every 5 minutes, alert if above 30C'
-- Use response_format="detailed" to get full agent config including IDs"#
+- Use response_format="detailed" to get full agent config including IDs
+
+NOTE: There is NO delete action for agents. Agent deletion is only available through the web UI."#
     }
 
     fn parameters(&self) -> Value {
@@ -1639,6 +1646,8 @@ impl Tool for RuleTool {
     fn description(&self) -> &str {
         r#"Rule management tool for automation rules that trigger actions based on conditions.
 
+CRITICAL: Always use list first to get rule_id before update/delete/enable. rule_id is a system-generated ID, not the rule name.
+
 Actions:
 - list: List all rules (with status). Filter by name. Use when user asks about existing rules.
 - get: Get rule details including DSL, status, trigger stats. Use when user asks about a specific rule.
@@ -2113,13 +2122,20 @@ Actions:
 - list: List messages with optional level and read/unread filters. Use when user asks about messages or notifications.
 - get: Get a single message by ID. Use when you need full details of a specific message.
 - send: Send a new message/notification. Use when user wants to notify someone or when an agent needs to report something.
+  Required fields for send: title, message. Optional: level (default: notice), source.
 - read: Mark a message as read. Use when user confirms they've seen a message.
 
-Priority levels:
+Priority levels (use as level parameter for send action):
 - info: General information, no action needed (e.g., 'Device came online')
 - notice: Worth noting (e.g., 'Battery below 30%')
 - important: Needs attention (e.g., 'Device communication failed')
 - urgent: Immediate action required (e.g., 'Temperature exceeds safety limit')
+
+Decision guide:
+- User asks "any messages?" or "any notifications?" → list with unread_only=true
+- User asks "urgent messages?" → list with level=urgent
+- User wants to send a notification → send with appropriate level
+- User says "mark as read" → read with message_id
 
 Tips:
 - Use unread_only=true to see only unread messages
@@ -2557,16 +2573,22 @@ impl Tool for ExtensionAggregatedTool {
     fn description(&self) -> &str {
         r#"Extension management tool for interacting with installed extensions (plugins).
 
+CRITICAL: Always call list or get first to discover available extensions and their commands before executing. Extension commands are called with the format: extension-id:command
+
 Actions:
 - list: List all installed extensions with their status and command count. Use when user asks what extensions or plugins are available.
-- get: Get detailed info about a specific extension, including its commands and metrics. Use before executing a command.
+- get: Get detailed info about a specific extension, including its commands and metrics. Use response_format="detailed" to see full command parameters. Always call this before executing extension commands.
 - status: Check the health and runtime status of an extension.
 
-To execute extension commands, first use list/get to discover available extensions and commands, then call them directly using the format: extension-id:command
+Workflow:
+1. list → discover available extensions
+2. get (with extension_id) → see available commands and their parameters
+3. Call commands directly using format: extension-id:command (not through this tool)
 
 Tips:
 - Always call list first if you're unsure which extensions are available
-- Use get to discover available commands and their parameters, then call them directly with extension-id:command format"#
+- Use get with response_format="detailed" to see command parameters
+- Extension command execution uses the extension-id:command format, not this tool's actions"#
     }
 
     fn parameters(&self) -> Value {
@@ -2816,6 +2838,8 @@ impl Tool for TransformTool {
 
     fn description(&self) -> &str {
         r#"Data transformation tool. Creates JavaScript-based transforms that process raw device data into new metrics.
+
+CRITICAL: Always use list first to get transform ID before update/delete. Use test action to validate before creating.
 
 Actions: list, get, create, update, delete, test
 
@@ -3108,6 +3132,282 @@ impl TransformTool {
 }
 
 // ============================================================================
+// Skill Tool - Query skill guides and best practices
+// ============================================================================
+
+/// Skill query tool for searching and retrieving operation guides.
+pub struct SkillTool {
+    registry: crate::skills::SharedSkillRegistry,
+    data_dir: Option<std::path::PathBuf>,
+}
+
+impl SkillTool {
+    /// Create a new skill tool.
+    pub fn new(registry: crate::skills::SharedSkillRegistry) -> Self {
+        Self {
+            registry,
+            data_dir: None,
+        }
+    }
+
+    /// Create a skill tool with persistence support.
+    pub fn with_data_dir(
+        registry: crate::skills::SharedSkillRegistry,
+        data_dir: std::path::PathBuf,
+    ) -> Self {
+        Self {
+            registry,
+            data_dir: Some(data_dir),
+        }
+    }
+
+    /// Validate a skill ID contains only safe characters.
+    fn is_safe_id(id: &str) -> bool {
+        !id.is_empty()
+            && id.len() <= 128
+            && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    }
+
+    /// Persist a skill file to disk.
+    fn persist(&self, id: &str, content: &str) {
+        if let Some(ref dir) = self.data_dir {
+            let skills_dir = dir.join("skills");
+            let _ = std::fs::create_dir_all(&skills_dir);
+            let path = skills_dir.join(format!("{}.md", id));
+            if let Err(e) = std::fs::write(&path, content) {
+                tracing::error!(path = %path.display(), error = %e, "Failed to persist skill");
+            }
+        }
+    }
+
+    /// Delete a skill file from disk.
+    fn remove_file(&self, id: &str) {
+        if let Some(ref dir) = self.data_dir {
+            let path = dir.join("skills").join(format!("{}.md", id));
+            if path.exists() {
+                if let Err(e) = std::fs::remove_file(&path) {
+                    tracing::error!(path = %path.display(), error = %e, "Failed to delete skill file");
+                }
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl Tool for SkillTool {
+    fn name(&self) -> &str {
+        "skill"
+    }
+
+    fn description(&self) -> &str {
+        r#"Query and manage operation guides (skills). Skills are reusable step-by-step guides built from available tools (device, agent, rule, message, extension, transform).
+
+Actions:
+- search: Search skills by keywords. Returns formatted guide content.
+- list: List all available skills with summaries.
+- get: Get full skill content by ID. Use before update to retrieve current content.
+- create: Create a new user skill. Only 'id' and 'name' are required. Body contains step-by-step tool call guides.
+- update: Update an existing skill by ID (full content replacement). Get first, then update.
+- delete: Delete a user skill by ID.
+
+Skill format (YAML frontmatter + Markdown body):
+---
+id: my-skill
+name: My Skill
+category: general
+triggers:
+  keywords: [keyword1]
+anti_triggers:
+  keywords: []
+---
+
+# Guide Title
+
+Goal: What this guide accomplishes.
+
+Steps:
+1. device(action="list") — find target device
+2. device(action="latest", device_id="<id>") — get current state
+
+Tips: Common pitfalls and best practices."#
+    }
+
+    fn parameters(&self) -> Value {
+        object_schema(
+            serde_json::json!({
+                "action": {
+                    "type": "string",
+                    "enum": ["search", "list", "get", "create", "update", "delete"],
+                    "description": "Operation: 'search' (keyword search), 'list' (all skills), 'get' (by ID), 'create' (new skill), 'update' (modify skill), 'delete' (remove skill)"
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Search query for keyword matching (search action). Example: '删除规则', 'device control', 'create agent'"
+                },
+                "id": {
+                    "type": "string",
+                    "description": "Skill ID for exact lookup, update, or delete. Example: 'rule-management', 'device-control'"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Full skill file content for create/update. Only 'id' and 'name' are required in frontmatter. Body can be empty for minimal skills. Format:\n---\nid: my-skill\nname: My Skill\ncategory: general\npriority: 50\ntoken_budget: 500\ntriggers:\n  keywords: [keyword1]\nanti_triggers:\n  keywords: []\n---\n\n# My Skill\n\nGuide content here."
+                }
+            }),
+            vec!["action".to_string()],
+        )
+    }
+
+    fn category(&self) -> ToolCategory {
+        ToolCategory::System
+    }
+
+    async fn execute(&self, args: Value) -> Result<ToolOutput> {
+        let action = args["action"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("action is required".into()))?;
+
+        match action {
+            "search" => {
+                let query = args["query"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::InvalidArguments("query is required for search".into()))?;
+
+                let registry_guard = self.registry.read().await;
+                // Use generous budget since user explicitly requested skill search
+                let budget = crate::skills::TokenBudgetConfig::for_context(32000);
+                let matches = crate::skills::match_skills(&registry_guard, query, budget);
+
+                if matches.is_empty() {
+                    return Ok(ToolOutput::success(serde_json::json!({
+                        "found": false,
+                        "message": format!("No guides found for '{}'. Use 'list' to see all available guides.", query)
+                    })));
+                }
+
+                let formatted = crate::skills::format_skill_matches(&matches);
+                let summaries: Vec<Value> = matches.iter().map(|m| {
+                    serde_json::json!({
+                        "id": m.skill_id,
+                        "name": m.skill_name,
+                        "score": (m.score * 100.0) as u32,
+                    })
+                }).collect();
+
+                Ok(ToolOutput::success(serde_json::json!({
+                    "found": true,
+                    "matches": summaries,
+                    "guide": formatted,
+                })))
+            }
+            "list" => {
+                let registry_guard = self.registry.read().await;
+                let skills = registry_guard.list();
+                let summaries: Vec<Value> = skills.iter().map(|s| {
+                    serde_json::json!({
+                        "id": s.metadata.id,
+                        "name": s.metadata.name,
+                        "category": format!("{:?}", s.metadata.category).to_lowercase(),
+                        "keywords": s.metadata.triggers.keywords,
+                    })
+                }).collect();
+
+                Ok(ToolOutput::success(serde_json::json!({
+                    "count": summaries.len(),
+                    "skills": summaries,
+                })))
+            }
+            "get" => {
+                let id = args["id"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::InvalidArguments("id is required for get".into()))?;
+
+                let registry_guard = self.registry.read().await;
+                match registry_guard.get(id) {
+                    Some(skill) => {
+                        Ok(ToolOutput::success(serde_json::json!({
+                            "id": skill.metadata.id,
+                            "name": skill.metadata.name,
+                            "category": format!("{:?}", skill.metadata.category).to_lowercase(),
+                            "origin": format!("{:?}", skill.metadata.origin).to_lowercase(),
+                            "content": skill.body,
+                        })))
+                    }
+                    None => {
+                        Ok(ToolOutput::error(format!("Skill '{}' not found. Use 'list' to see available skills.", id)))
+                    }
+                }
+            }
+            "create" => {
+                let content = args["content"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::InvalidArguments("content is required for create (YAML frontmatter + Markdown body)".into()))?;
+
+                let mut registry_guard = self.registry.write().await;
+                match registry_guard.add_user_skill(content) {
+                    Ok(id) => {
+                        let skill = registry_guard.get(&id).unwrap();
+                        self.persist(&id, content);
+                        Ok(ToolOutput::success(serde_json::json!({
+                            "id": skill.metadata.id,
+                            "name": skill.metadata.name,
+                            "category": format!("{:?}", skill.metadata.category).to_lowercase(),
+                            "message": format!("Skill '{}' created successfully", id),
+                        })))
+                    }
+                    Err(e) => Ok(ToolOutput::error(format!("Failed to create skill: {}", e))),
+                }
+            }
+            "update" => {
+                let id = args["id"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::InvalidArguments("id is required for update".into()))?;
+                let content = args["content"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::InvalidArguments("content is required for update (YAML frontmatter + Markdown body)".into()))?;
+
+                let mut registry_guard = self.registry.write().await;
+                match registry_guard.update_user_skill(id, content) {
+                    Ok(()) => {
+                        let skill = registry_guard.get(id).unwrap();
+                        self.persist(id, content);
+                        Ok(ToolOutput::success(serde_json::json!({
+                            "id": skill.metadata.id,
+                            "name": skill.metadata.name,
+                            "message": format!("Skill '{}' updated successfully", id),
+                        })))
+                    }
+                    Err(e) => Ok(ToolOutput::error(format!("Failed to update skill: {}", e))),
+                }
+            }
+            "delete" => {
+                let id = args["id"]
+                    .as_str()
+                    .ok_or_else(|| ToolError::InvalidArguments("id is required for delete".into()))?;
+
+                if !Self::is_safe_id(id) {
+                    return Ok(ToolOutput::error(format!("Invalid skill ID '{}'", id)));
+                }
+
+                let mut registry_guard = self.registry.write().await;
+                match registry_guard.delete_skill(id) {
+                    Ok(skill) => {
+                        self.remove_file(id);
+                        Ok(ToolOutput::success(serde_json::json!({
+                            "message": format!("Skill '{}' ('{}') deleted successfully", id, skill.metadata.name),
+                        })))
+                    }
+                    Err(e) => Ok(ToolOutput::error(format!("Failed to delete skill: {}", e))),
+                }
+            }
+            _ => Err(ToolError::InvalidArguments(format!(
+                "Unknown action '{}'. Use: search, list, get, create, update, delete",
+                action
+            ))),
+        }
+    }
+}
+
+// ============================================================================
 // Builder for Aggregated Tools
 // ============================================================================
 
@@ -3122,6 +3422,8 @@ pub struct AggregatedToolsBuilder {
     extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
     session_store: Option<Arc<neomind_storage::SessionStore>>,
     transform_store: Option<Arc<dyn TransformStore>>,
+    skill_registry: Option<crate::skills::SharedSkillRegistry>,
+    data_dir: Option<std::path::PathBuf>,
 }
 
 impl AggregatedToolsBuilder {
@@ -3137,6 +3439,8 @@ impl AggregatedToolsBuilder {
             extension_registry: None,
             session_store: None,
             transform_store: None,
+            skill_registry: None,
+            data_dir: None,
         }
     }
 
@@ -3200,6 +3504,18 @@ impl AggregatedToolsBuilder {
         self
     }
 
+    /// Set skill registry for the skill query tool.
+    pub fn with_skill_registry(mut self, registry: crate::skills::SharedSkillRegistry) -> Self {
+        self.skill_registry = Some(registry);
+        self
+    }
+
+    /// Set data directory for skill persistence.
+    pub fn with_data_dir(mut self, dir: std::path::PathBuf) -> Self {
+        self.data_dir = Some(dir);
+        self
+    }
+
     /// Build all aggregated tools as a vector of DynTool.
     pub fn build(self) -> Vec<Arc<dyn Tool>> {
         let mut tools: Vec<Arc<dyn Tool>> = Vec::new();
@@ -3250,6 +3566,16 @@ impl AggregatedToolsBuilder {
         // Transform tool
         if let Some(transform_store) = self.transform_store {
             tools.push(Arc::new(TransformTool::new(transform_store)));
+        }
+
+        // Skill tool (query + management)
+        if let Some(skill_registry) = self.skill_registry {
+            let tool = if let Some(ref dir) = self.data_dir {
+                SkillTool::with_data_dir(skill_registry, dir.clone())
+            } else {
+                SkillTool::new(skill_registry)
+            };
+            tools.push(Arc::new(tool));
         }
 
         tools

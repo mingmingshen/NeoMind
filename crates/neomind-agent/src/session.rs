@@ -227,6 +227,8 @@ pub struct SessionManager {
     cleanup_config: SessionCleanupConfig,
     /// Whether cleanup task is running
     cleanup_running: Arc<RwLock<bool>>,
+    /// Skill registry for scenario-driven prompt injection
+    skill_registry: crate::skills::SharedSkillRegistry,
 }
 
 impl SessionManager {
@@ -256,6 +258,7 @@ impl SessionManager {
             tool_registry: Arc::new(RwLock::new(None)),
             cleanup_config: SessionCleanupConfig::default(),
             cleanup_running: Arc::new(RwLock::new(false)),
+            skill_registry: crate::skills::create_shared_registry(None),
         }
     }
 
@@ -265,6 +268,7 @@ impl SessionManager {
         let store = SessionStore::open(path)
             .map_err(|e| NeoMindError::Storage(format!("Failed to open session store: {}", e)))?;
 
+        let data_dir = std::path::Path::new("data");
         let manager = Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             session_messages: Arc::new(RwLock::new(HashMap::new())),
@@ -274,6 +278,7 @@ impl SessionManager {
             tool_registry: Arc::new(RwLock::new(None)),
             cleanup_config: SessionCleanupConfig::default(),
             cleanup_running: Arc::new(RwLock::new(false)),
+            skill_registry: crate::skills::create_shared_registry(Some(data_dir)),
         };
 
         // Restore sessions from database on startup
@@ -570,6 +575,11 @@ impl SessionManager {
         self.tool_registry.read().await.clone()
     }
 
+    /// Get the shared skill registry.
+    pub fn skill_registry(&self) -> crate::skills::SharedSkillRegistry {
+        self.skill_registry.clone()
+    }
+
     /// P0.3: Get the session store for direct access (for pending stream state management).
     pub fn session_store(&self) -> Arc<SessionStore> {
         self.store.clone()
@@ -599,6 +609,12 @@ impl SessionManager {
         if let Some(backend) = llm_backend {
             let _ = agent.configure_llm(backend).await;
         }
+
+        // Inject skill registry into agent's LLM interface
+        agent
+            .llm_interface()
+            .set_skill_registry(self.skill_registry.clone())
+            .await;
 
         let agent = Arc::new(agent);
 
@@ -656,6 +672,12 @@ impl SessionManager {
         if let Some(backend) = llm_backend {
             let _ = agent.configure_llm(backend).await;
         }
+
+        // Inject skill registry into agent's LLM interface
+        agent
+            .llm_interface()
+            .set_skill_registry(self.skill_registry.clone())
+            .await;
 
         let agent = Arc::new(agent);
 
@@ -1088,6 +1110,17 @@ impl SessionManager {
         message: &str,
         backend_id: Option<&str>,
     ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
+        self.process_message_events_with_backend_and_skills(session_id, message, backend_id, &[]).await
+    }
+
+    /// Process a message in a session with event streaming, optional backend override, and pinned skills.
+    pub async fn process_message_events_with_backend_and_skills(
+        &self,
+        session_id: &str,
+        message: &str,
+        backend_id: Option<&str>,
+        selected_skills: &[String],
+    ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
         // If a specific backend is requested, configure the agent with it
         if let Some(backend) = backend_id {
             if let Err(e) = self.configure_agent_by_backend_id(session_id, backend).await {
@@ -1099,6 +1132,14 @@ impl SessionManager {
                 );
             }
         }
+
+        // Update pinned skills on the agent if provided
+        if !selected_skills.is_empty() {
+            if let Ok(agent) = self.get_session(session_id).await {
+                agent.set_pinned_skills(selected_skills.to_vec()).await;
+            }
+        }
+
         self.process_message_events(session_id, message).await
     }
 
@@ -1557,6 +1598,7 @@ impl Default for SessionManager {
                 tool_registry: Arc::new(RwLock::new(None)),
                 cleanup_config: SessionCleanupConfig::default(),
                 cleanup_running: Arc::new(RwLock::new(false)),
+                skill_registry: crate::skills::create_shared_registry(None),
             }
         })
     }

@@ -78,6 +78,12 @@ pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, String> {
     }
 
     if let Some(update) = response {
+        // Defensive check: if remote version matches current version, skip
+        let current_version = app.config().version.clone().unwrap_or_default();
+        if update.version == current_version {
+            return Ok(UpdateInfo::none());
+        }
+
         Ok(UpdateInfo {
             available: true,
             version: Some(update.version.clone()),

@@ -97,7 +97,9 @@
   "tabs": {
     "agents": "Agents",
     "executions": "Executions",
-    "memory": "Memory"
+    "memory": "Memory",
+    "skills": "Skills",
+    "createSkill": "Add Skill"
   },
   "agentName": "Agent Name",
   "userPrompt": "User Prompt",
@@ -489,7 +491,15 @@
   },
   "tabs": {
     "agents": "Agents",
-    "memory": "Memory"
+    "memory": "Memory",
+    "skills": "Skills",
+    "createSkill": "Add Skill"
+  },
+  "skills": {
+    "originAll": "All",
+    "originBuiltin": "Builtin",
+    "originUser": "User",
+    "createSkill": "Add Skill"
   },
   "systemMemory": {
     "title": "System Memory",

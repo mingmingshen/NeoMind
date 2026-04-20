@@ -81,6 +81,7 @@ impl SimulationContext {
             tool_registry: None,
             memory_store: None,
             backend_semaphores: None,
+            skill_registry: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -140,6 +141,7 @@ impl SimulationContext {
                 value: MetricValue::Float(current),
                 timestamp: chrono::Utc::now().timestamp(),
                 quality: Some(1.0),
+                is_virtual: None,
             };
             let _ = self.event_bus.publish(event).await;
 

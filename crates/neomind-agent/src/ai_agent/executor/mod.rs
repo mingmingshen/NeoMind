@@ -181,8 +181,10 @@ pub struct AgentExecutorConfig {
     pub tool_registry: Option<Arc<crate::toolkit::ToolRegistry>>,
     /// Memory store for extracting learned patterns
     pub memory_store: Option<Arc<MarkdownMemoryStore>>,
-    /// Per-LLM-backend semaphores for concurrency limiting (shared with scheduler)
+    /// Per-LLM-backend semaphores concurrency limiting (shared with scheduler)
     pub backend_semaphores: Option<crate::ai_agent::scheduler::BackendSemaphores>,
+    /// Skill registry for querying operation guides
+    pub skill_registry: Option<crate::skills::SharedSkillRegistry>,
 }
 
 /// Context for agent execution.
@@ -505,7 +507,8 @@ impl AgentExecutor {
              Guidelines:\n\
              - Do NOT call the same tool with the same parameters if it already returned results.\n\
              - If a metric query returns empty data, try a different metric or move on.\n\
-             - Max 3 rounds of tool calls. Be efficient.\n\n\
+             - Max 3 rounds of tool calls. Be efficient.\n\
+             - For complex operations (rules, device control, messaging), use the `skill` tool to search for relevant guides before executing.\n\n\
              When you have enough information, respond with your analysis in natural language. \
              Do NOT wrap your response in JSON or code blocks — just write your analysis directly.\n\
              Keep your conclusion concise and structured (2-5 sentences). \
@@ -580,8 +583,23 @@ impl AgentExecutor {
         let mut all_reasoning_texts: Vec<String> = Vec::new();
         let mut final_text = String::new();
         let mut step_num = 1u32;
+        // Accumulate skill tool results separately — inject as concise prompt, not full history
+        let mut skill_reference = String::new();
+        let mut skill_injected = false;
 
         for round in 0..max_rounds {
+            // Inject accumulated skill reference into system prompt once, after first tool round
+            if round > 0 && !skill_reference.is_empty() && !skill_injected {
+                if let Some(sys_msg) = messages.first_mut() {
+                    sys_msg.content = Content::text(format!(
+                        "{}\n\n## Skill Reference\n{}",
+                        sys_msg.content.as_text(),
+                        skill_reference
+                    ));
+                }
+                skill_injected = true;
+            }
+
             let input = LlmInput {
                 messages: messages.clone(),
                 params: GenerationParams {
@@ -691,10 +709,24 @@ impl AgentExecutor {
                     }
                     Err(e) => format!("Error: {}", e),
                 };
-                messages.push(Message::new(
-                    MessageRole::User,
-                    Content::text(&format!("Tool '{}' result:\n{}", result.name, result_text)),
-                ));
+
+                // Skill tool results go to separate reference buffer, not messages history
+                if result.name == "skill" {
+                    if !skill_reference.is_empty() {
+                        skill_reference.push_str("\n\n");
+                    }
+                    skill_reference.push_str(&result_text);
+                    // Add a concise acknowledgment to messages so LLM knows the skill was retrieved
+                    messages.push(Message::new(
+                        MessageRole::User,
+                        Content::text("Skill guide retrieved and will be used as reference."),
+                    ));
+                } else {
+                    messages.push(Message::new(
+                        MessageRole::User,
+                        Content::text(&format!("Tool '{}' result:\n{}", result.name, result_text)),
+                    ));
+                }
 
                 // Send thinking event for each tool result
                 let result_preview = match &result.result {
@@ -1530,6 +1562,10 @@ impl AgentExecutor {
                     let executor_llm_store = self.llm_backend_store.clone();
                     let agent_id_for_log = agent.id.clone();
                     let backend_sems = self.backend_semaphores.clone();
+                    let executor_skill_registry = self._config.skill_registry.clone();
+                    let executor_tool_registry = self.tool_registry.clone();
+                    let executor_extension_registry = self.extension_registry.clone();
+                    let executor_memory_store = self.memory_store.clone();
                     let backend_id = agent.llm_backend_id
                         .clone()
                         .unwrap_or_else(|| "default".to_string());
@@ -1571,10 +1607,11 @@ impl AgentExecutor {
                             message_manager: executor_message_manager,
                             llm_runtime: executor_llm,
                             llm_backend_store: executor_llm_store,
-                            extension_registry: None,
-                            tool_registry: None,
-                            memory_store: None,
+                            extension_registry: executor_extension_registry,
+                            tool_registry: executor_tool_registry,
+                            memory_store: executor_memory_store,
                             backend_semaphores: backend_sems,
+                            skill_registry: executor_skill_registry,
                         };
 
                         match AgentExecutor::new(executor_config).await {

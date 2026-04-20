@@ -50,6 +50,13 @@ lru = { workspace = true }
 dashmap = { workspace = true }
 anyhow = { workspace = true }
 
+# Platform-specific dependencies for shell tool
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_Threading"] }
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
 tracing-subscriber = { workspace = true }

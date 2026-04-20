@@ -120,6 +120,7 @@ mod tests {
             session_id: None,
             images: None,
             backend_id: None,
+            selected_skills: vec![],
         };
         let result = chat_handler(
             State(state),
@@ -154,6 +155,7 @@ mod tests {
             session_id: None,
             images: None,
             backend_id: None,
+            selected_skills: vec![],
         };
         let result = chat_handler(State(state), Path(session_id.clone()), Json(req)).await;
         // Either Ok with timeout message or Err with something other than NOT_FOUND
@@ -207,6 +209,7 @@ mod tests {
             session_id: Some("session123".to_string()),
             images: None,
             backend_id: None,
+            selected_skills: vec![],
         };
         assert_eq!(req.message, "Test message");
         assert_eq!(req.session_id.unwrap(), "session123");

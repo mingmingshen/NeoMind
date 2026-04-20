@@ -37,6 +37,7 @@ pub mod extension_tools;
 pub mod registry;
 pub mod resolver;
 pub mod session_search;
+pub mod shell;
 pub mod simplified;
 pub mod tool;
 
@@ -69,6 +70,8 @@ pub use extension_tools::{
 };
 
 pub use session_search::SessionSearchTool;
+
+pub use shell::{ShellConfig, ShellTool};
 
 // ============================================================================
 // Aggregated Tools (Action-based design for token efficiency)

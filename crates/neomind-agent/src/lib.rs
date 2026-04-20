@@ -46,6 +46,7 @@ pub mod memory;
 pub mod memory_extraction;
 pub mod prompts;
 pub mod session;
+pub mod skills;
 pub mod smart_conversation;
 pub mod toolkit;
 pub mod tools;

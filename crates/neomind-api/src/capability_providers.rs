@@ -106,12 +106,13 @@ impl DeviceCapabilityProvider {
             .get("value")
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing value".to_string()))?;
 
-        // Optional timestamp parameter (milliseconds since epoch)
-        // If not provided, use current time
-        let timestamp = params
+        // Optional timestamp parameter (seconds since epoch).
+        // Extension SDK sends milliseconds, convert to seconds for internal storage.
+        let timestamp_ms = params
             .get("timestamp")
             .and_then(|v| v.as_i64())
             .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let timestamp_secs = timestamp_ms / 1000;
 
         let telemetry_storage: Arc<TimeSeriesStorage> = self
             .services
@@ -131,9 +132,9 @@ impl DeviceCapabilityProvider {
             MetricValue::String(value.to_string())
         };
 
-        // Create DataPoint with cloned value (we need the original for event publishing)
+        // Store with seconds timestamp (internal storage unit is seconds)
         let data_point = neomind_devices::telemetry::DataPoint {
-            timestamp,
+            timestamp: timestamp_secs,
             value: metric_value.clone(),
             quality: Some(1.0),
         };
@@ -143,8 +144,10 @@ impl DeviceCapabilityProvider {
             .await
             .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
 
-        // Publish DeviceMetric event to EventBus so frontend receives real-time updates
-        // This is essential for virtual metrics written by extensions to trigger UI updates
+        // Publish DeviceMetric event to EventBus so frontend receives real-time updates.
+        // The is_virtual flag prevents feedback loops: ExtensionEventSubscriptionService
+        // skips re-dispatching virtual DeviceMetric events to extensions, breaking the
+        // cycle: extension → write metric → DeviceMetric → extension → write metric → ...
         if let Some(event_bus) = self.services.get::<EventBus>(keys::EVENT_BUS) {
             use neomind_core::event::MetricValue as EventMetricValue;
 
@@ -167,8 +170,9 @@ impl DeviceCapabilityProvider {
                     device_id: device_id.to_string(),
                     metric: metric.to_string(),
                     value: event_value,
-                    timestamp: timestamp / 1000, // Convert milliseconds to seconds
+                    timestamp: timestamp_secs,
                     quality: Some(1.0),
+                    is_virtual: Some(true),
                 })
                 .await;
         }
@@ -492,11 +496,11 @@ impl TelemetryCapabilityProvider {
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing metric".to_string()))?;
 
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = chrono::Utc::now().timestamp();
         let start = params
             .get("start")
             .and_then(|v| v.as_i64())
-            .unwrap_or(now - 24 * 60 * 60 * 1000);
+            .unwrap_or(now - 86400);
         let end = params.get("end").and_then(|v| v.as_i64()).unwrap_or(now);
 
         let telemetry_storage: Arc<TimeSeriesStorage> = self
@@ -548,11 +552,11 @@ impl TelemetryCapabilityProvider {
             .and_then(|v| v.as_str())
             .unwrap_or("avg");
 
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = chrono::Utc::now().timestamp();
         let start = params
             .get("start")
             .and_then(|v| v.as_i64())
-            .unwrap_or(now - 24 * 60 * 60 * 1000);
+            .unwrap_or(now - 86400);
         let end = params.get("end").and_then(|v| v.as_i64()).unwrap_or(now);
 
         let telemetry_storage: Arc<TimeSeriesStorage> = self
@@ -940,12 +944,12 @@ impl StorageCapabilityProvider {
                 let start = query_params
                     .get("start")
                     .and_then(|v| v.as_i64())
-                    .unwrap_or(chrono::Utc::now().timestamp_millis() - 3600000); // Default: 1 hour ago
+                    .unwrap_or(chrono::Utc::now().timestamp() - 3600); // Default: 1 hour ago
 
                 let end = query_params
                     .get("end")
                     .and_then(|v| v.as_i64())
-                    .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+                    .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
                 let results = telemetry_storage
                     .query(device_id, metric, start, end)

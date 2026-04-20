@@ -257,6 +257,7 @@ async fn publish_metric_event(
         value: value.clone(),
         timestamp,
         quality,
+        is_virtual: None,
     };
 
     if let Some(ref event_bus) = state.core.event_bus {
@@ -364,6 +365,7 @@ async fn process_device_transforms(
                                 value: neomind_core::event::MetricValue::Float(metric.value),
                                 timestamp: metric.timestamp,
                                 quality: metric.quality,
+                                is_virtual: Some(true),
                             })
                             .await;
                     }

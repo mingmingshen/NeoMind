@@ -43,6 +43,8 @@ impl ToolNameMapper {
         self.register_simplified("alert", "message");
         self.register_simplified("message", "message");
         self.register_simplified("transform", "transform");
+        self.register_simplified("skill", "skill");
+        self.register_simplified("shell", "shell");
 
         // ===== 设备工具别名 =====
         // 设备工具别名 - 指向聚合工具
@@ -135,6 +137,27 @@ impl ToolNameMapper {
         self.register_alias("list_scenarios", "rule"); // 场景暂用rule
         self.register_alias("create_scenario", "rule");
         self.register_alias("execute_scenario", "rule");
+
+        // ===== Shell 工具别名 =====
+        self.register_alias("命令行", "shell");
+        self.register_alias("终端", "shell");
+        self.register_alias("执行命令", "shell");
+        self.register_alias("运行命令", "shell");
+        self.register_alias("系统命令", "shell");
+        self.register_alias("cli", "shell");
+        self.register_alias("bash", "shell");
+        self.register_alias("command", "shell");
+        self.register_alias("terminal", "shell");
+        self.register_alias("cmd", "shell");
+
+        // ===== Skill 工具别名 =====
+        self.register_alias("技能", "skill");
+        self.register_alias("指南", "skill");
+        self.register_alias("教程", "skill");
+        self.register_alias("操作指南", "skill");
+        self.register_alias("skills", "skill");
+        self.register_alias("guide", "skill");
+        self.register_alias("guides", "skill");
     }
 
     /// 注册简化名称映射

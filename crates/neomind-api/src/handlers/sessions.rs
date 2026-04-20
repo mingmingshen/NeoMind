@@ -52,12 +52,12 @@ async fn process_stream_to_channel(
     // Track stream start time for progress reporting
     let stream_start = std::time::Instant::now();
 
-    // Stream timeout: 300 seconds (5 minutes) to support thinking models
+    // Stream timeout: 1200 seconds (20 minutes) to support thinking models
     // This is synchronized with StreamConfig::max_stream_duration_secs
     // qwen3-vl:2b with extended thinking can take significant time for complex queries
     // with image analysis or multi-step reasoning.
-    let stream_timeout = Duration::from_secs(300);
-    let max_duration_secs = 300u64;
+    let stream_timeout = Duration::from_secs(1200);
+    let max_duration_secs = 1200u64;
 
     loop {
         let next_event = tokio::time::timeout(stream_timeout, StreamExt::next(&mut stream)).await;
@@ -1081,6 +1081,14 @@ async fn handle_ws_socket(
                                         let task_session_id = session_id.clone();
                                         let task_state = state.clone();
 
+                                        // Apply pinned skills for multimodal messages
+                                        let selected_skills = chat_req.selected_skills.clone();
+                                        if !selected_skills.is_empty() {
+                                            if let Ok(agent) = task_state.agents.session_manager.get_session(&task_session_id).await {
+                                                agent.set_pinned_skills(selected_skills).await;
+                                            }
+                                        }
+
                                         // Use streaming for multimodal messages
                                         match task_state.agents.session_manager.process_message_multimodal_with_backend_stream(
                                             &task_session_id,
@@ -1128,7 +1136,8 @@ async fn handle_ws_socket(
                                         }
                                     } else {
                                         // Regular text-only message - use streaming
-                                        match state.agents.session_manager.process_message_events_with_backend(&session_id, &chat_req.message, backend_id).await {
+                                        let selected_skills = chat_req.selected_skills.clone();
+                                        match state.agents.session_manager.process_message_events_with_backend_and_skills(&session_id, &chat_req.message, backend_id, &selected_skills).await {
                                             Ok(stream) => {
                                                 // Clone the channel sender and session ID for the spawned task
                                                 let task_tx = stream_tx.clone();

@@ -38,7 +38,7 @@ pub struct OllamaConfig {
 
 /// Default timeout in seconds for deserialization.
 fn default_timeout_secs() -> u64 {
-    180
+    300
 }
 
 impl OllamaConfig {
@@ -52,7 +52,7 @@ impl OllamaConfig {
         Self {
             endpoint: "http://localhost:11434".to_string(),
             model: model.into(),
-            timeout_secs: 180,
+            timeout_secs: 300,
         }
     }
 
@@ -124,11 +124,14 @@ impl OllamaRuntime {
         );
 
         // Configure HTTP client with connection pooling for better performance
+        // Note: Don't set a global timeout — it kills long-running streaming responses
+        // from thinking models (qwen3.x, deepseek-r1) that can take many minutes.
+        // Instead, we use per-request timeouts only for non-streaming requests.
+        // Streaming responses have their own timeout via stream_config.max_stream_duration_secs.
         let client = Client::builder()
-            .timeout(config.timeout())
             .pool_max_idle_per_host(10)
             .pool_idle_timeout(Duration::from_secs(120))
-            .connect_timeout(Duration::from_secs(5))
+            .connect_timeout(Duration::from_secs(10))
             .http2_keep_alive_interval(Duration::from_secs(30))
             .http2_keep_alive_timeout(Duration::from_secs(10))
             .http2_adaptive_window(true)
@@ -175,7 +178,7 @@ impl OllamaRuntime {
             "verbose": false
         });
 
-        match self.client.post(&url).json(&request).send().await {
+        match self.client.post(&url).json(&request).timeout(self.config.timeout()).send().await {
             Ok(response) if response.status().is_success() => {
                 match response.json::<OllamaShowResponse>().await {
                     Ok(show_response) => {
@@ -243,6 +246,7 @@ impl OllamaRuntime {
             .client
             .post(&url)
             .json(&warmup_request)
+            .timeout(self.config.timeout())
             .send()
             .await
             .map_err(|e| LlmError::Network(e.to_string()))?;
@@ -425,6 +429,7 @@ impl LlmRuntime for OllamaRuntime {
         if let Ok(resp) = self
             .client
             .get(format!("{}/api/tags", self.config.endpoint))
+            .timeout(Duration::from_secs(10))
             .send()
             .await
         {
@@ -568,6 +573,7 @@ impl LlmRuntime for OllamaRuntime {
             .post(&url)
             .header("Content-Type", "application/json")
             .body(request_json)
+            .timeout(self.config.timeout())
             .send()
             .await
             .map_err(|e| LlmError::Network(e.to_string()))?;
@@ -869,7 +875,6 @@ impl LlmRuntime for OllamaRuntime {
                     let stream_start = Instant::now(); // Track stream duration
                     let mut last_progress_report = Instant::now(); // Track last progress report
                     let mut last_warning_index = 0usize; // Track last warning threshold sent
-                    let mut thinking_content_history = String::new(); // Track thinking content for repetition detection
                     let mut terminate_early_reason: Option<String> = None; // Track reason for early termination
 
                     while let Some(chunk_result) = byte_stream.next().await {
@@ -1085,9 +1090,6 @@ impl LlmRuntime for OllamaRuntime {
                                                 thinking_chars += thinking_content.chars().count();
                                                 total_chars += thinking_content.chars().count();
 
-                                                // Track thinking content for repetition detection
-                                                thinking_content_history.push_str(thinking_content);
-
                                                 // SAFETY CHECK 1: Total characters limit (hard cutoff)
                                                 if total_chars > stream_config.max_total_chars {
                                                     tracing::error!(
@@ -1142,40 +1144,7 @@ impl LlmRuntime for OllamaRuntime {
                                                     last_thinking_chunk = thinking_content.clone();
                                                 }
 
-                                                // SAFETY CHECK 2: Thinking content repetition rate detection
-                                                // Detect if model is generating repetitive thinking content
-                                                if thinking_chars > 5000
-                                                    && thinking_content_history.len() > 5000
-                                                {
-                                                    // Calculate repetition rate by checking unique vs total chars
-                                                    let unique_chars = thinking_content_history
-                                                        .chars()
-                                                        .collect::<std::collections::HashSet<_>>()
-                                                        .len();
-                                                    let repetition_rate = 1.0
-                                                        - (unique_chars as f64
-                                                            / thinking_content_history.len()
-                                                                as f64);
-
-                                                    if repetition_rate
-                                                        > stream_config.max_thinking_repetition_rate
-                                                    {
-                                                        tracing::error!(
-                                                            "[ollama.rs] CRITICAL: High thinking repetition detected (rate: {:.2}%, threshold: {:.2}%). Model is stuck in loop. Terminating stream.",
-                                                            repetition_rate * 100.0,
-                                                            stream_config.max_thinking_repetition_rate * 100.0
-                                                        );
-                                                        // Terminate immediately - model is stuck
-                                                        terminate_early_reason = Some(format!(
-                                                            "Model stuck in thinking loop (repetition rate: {:.1}%)",
-                                                            repetition_rate * 100.0
-                                                        ));
-                                                        terminate_early = true;
-                                                        break;
-                                                    }
-                                                }
-
-                                                // SAFETY CHECK 3: Detect if model is stuck in thinking loop
+                                                // SAFETY CHECK 2: Detect if model is stuck in thinking loop
                                                 if thinking_chars > stream_config.max_thinking_chars
                                                 {
                                                     tracing::warn!(

@@ -145,10 +145,12 @@ async fn test_chat_extraction_skips_system_evolution() -> anyhow::Result<()> {
 
     let se = store_guard.read_category(&MemoryCategory::SystemEvolution).unwrap_or_default();
 
-    // Chat extraction should NEVER produce system_evolution
+    // Chat extraction should NEVER produce system_evolution entries
+    // The file may contain header/metadata but no actual entries (lines starting with "- ")
+    let se_has_entries = se.lines().any(|line| line.trim().starts_with("- ["));
     assert!(
-        se.trim().is_empty(),
-        "system_evolution should be empty after chat extraction, but got: {:?}",
+        !se_has_entries,
+        "system_evolution should have no entries after chat extraction, but got: {:?}",
         se
     );
 

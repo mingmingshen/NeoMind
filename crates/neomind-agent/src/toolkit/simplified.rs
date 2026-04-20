@@ -214,6 +214,8 @@ pub struct LlmToolDefinition {
     pub examples: Vec<Example>,
     /// When to use this tool
     pub use_when: Vec<String>,
+    /// Available action values (for tools with action parameter)
+    pub actions: Vec<String>,
 }
 
 /// Parameter information for LLM.
@@ -260,7 +262,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
         // === Device Tool (aggregates 4 device operations) ===
         LlmToolDefinition {
             name: "device".to_string(),
-            description: "Device management tool. Actions: list (list devices), get (all current metric values), history (historical time-series data for one metric), control (send commands). Supports fuzzy device name matching.".to_string(),
+            description: "Device management tool. Actions: list (list devices), latest (all current metric values), history (historical time-series data for one metric), control (send commands), write_metric (write a data point). Supports fuzzy device name matching.".to_string(),
             aliases: vec!["device".to_string(), "devices".to_string(), "sensor".to_string(), "iot".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
@@ -339,9 +341,8 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 "User wants to control a device (turn on/off, adjust)".to_string(),
                 "User asks for historical sensor data or trends".to_string(),
             ],
+            actions: vec!["list".into(), "latest".into(), "history".into(), "control".into(), "write_metric".into()],
         },
-
-        // === Agent Tool (aggregates 7 agent operations) ===
         LlmToolDefinition {
             name: "agent".to_string(),
             description: "AI Agent management tool for creating and managing automated monitoring/control agents. Actions: list, get, create, update, control (pause/resume), memory (view learned patterns), send_message (send instruction to agent), executions (execution stats), conversation (conversation log), latest_execution (most recent execution details).".to_string(),
@@ -477,6 +478,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 "User wants to debug why an agent made a decision".to_string(),
                 "User asks about the latest execution result or whether it succeeded".to_string(),
             ],
+            actions: vec!["list".into(), "get".into(), "create".into(), "update".into(), "control".into(), "memory".into(), "send_message".into(), "executions".into(), "conversation".into(), "latest_execution".into()],
         },
 
         // === Rule Tool (aggregates rule operations) ===
@@ -567,12 +569,13 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 "User wants to control devices automatically based on conditions".to_string(),
                 "User wants multi-condition logic (AND/OR) for automation".to_string(),
             ],
+            actions: vec!["list".into(), "get".into(), "create".into(), "update".into(), "delete".into(), "history".into(), "enable".into()],
         },
 
         // === Message Tool ===
         LlmToolDefinition {
             name: "message".to_string(),
-            description: "Message, alert and notification tool. Actions: list (view messages with filters), send (new message/alert), read (mark as read/acknowledge). Priority levels: info, notice, important, urgent.".to_string(),
+            description: "Message, alert and notification tool. Actions: list (view messages with filters), get (get message details), send (new message/alert), read (mark as read/acknowledge). Priority levels: info, notice, important, urgent.".to_string(),
             aliases: vec!["message".to_string(), "alert".to_string(), "notification".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
@@ -629,6 +632,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 "User wants to acknowledge, dismiss, or read messages".to_string(),
                 "User wants to send a message or create an alert".to_string(),
             ],
+            actions: vec!["list".into(), "get".into(), "send".into(), "read".into()],
         },
 
         // === Extension Tool (management only - execute via direct extension-id:command format) ===
@@ -670,6 +674,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 "User asks about installed extensions, plugins, or add-ons".to_string(),
                 "User wants to check if an extension is working properly".to_string(),
             ],
+            actions: vec!["list".into(), "get".into(), "status".into()],
         },
 
         // === Transform Tool (data transformation rules) ===
@@ -770,6 +775,121 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 "create data transformation rule".to_string(),
                 "manage transforms".to_string(),
             ],
+            actions: vec!["list".into(), "get".into(), "create".into(), "update".into(), "delete".into(), "test".into()],
+        },
+
+        // === Skill Tool (operation guides & skill management) ===
+        LlmToolDefinition {
+            name: "skill".to_string(),
+            description: "Query and manage operation guides (skills). Search for relevant step-by-step guides before complex operations, or create/update/delete user-defined skills. Skills contain best practices and tool call examples for specific scenarios.".to_string(),
+            aliases: vec!["skill".to_string(), "skills".to_string(), "guide".to_string(), "指南".to_string(), "技能".to_string()],
+            required: vec!["action".to_string()],
+            optional: HashMap::from_iter(vec![
+                ("query".to_string(), ParameterInfo {
+                    description: "Search query for keyword matching (search action). Example: 'delete rule', 'device control'".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["删除规则".to_string(), "device control".to_string(), "create agent".to_string()],
+                }),
+                ("id".to_string(), ParameterInfo {
+                    description: "Skill ID for exact lookup, update, or delete".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["rule-management".to_string(), "device-control".to_string()],
+                }),
+                ("content".to_string(), ParameterInfo {
+                    description: "Full skill file content for create/update. Format: YAML frontmatter (---) + Markdown body. Only id and name are required in frontmatter. Body can be empty.".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec![
+                        "---\nid: my-skill\nname: My Skill\ncategory: general\ntriggers:\n  keywords: [keyword1]\n---\n\n# My Skill\n\nStep-by-step guide.".to_string(),
+                        "---\nid: minimal\nname: Minimal\n---\n".to_string(),
+                    ],
+                }),
+            ]),
+            examples: vec![
+                Example {
+                    user_query: "Search for guides about rule management".to_string(),
+                    tool_call: r#"skill(action="search", query="rule management")"#.to_string(),
+                    explanation: "Search for relevant skill guides by keywords".to_string(),
+                },
+                Example {
+                    user_query: "List all available skills".to_string(),
+                    tool_call: r#"skill(action="list")"#.to_string(),
+                    explanation: "List all available operation guides".to_string(),
+                },
+                Example {
+                    user_query: "Get the full content of a specific skill".to_string(),
+                    tool_call: r#"skill(action="get", id="rule-management")"#.to_string(),
+                    explanation: "Get full skill content by ID".to_string(),
+                },
+                Example {
+                    user_query: "Create a new skill guide".to_string(),
+                    tool_call: r#"skill(action="create", content="---\nid: my-guide\nname: My Guide\ncategory: general\npriority: 50\ntoken_budget: 500\ntriggers:\n  keywords: [my keyword, example]\nanti_triggers:\n  keywords: []\n---\n\n# My Guide\n\nStep-by-step instructions here.")"#.to_string(),
+                    explanation: "Create a new user-defined skill. Only id and name are required; body can be empty for minimal skills.".to_string(),
+                },
+            ],
+            use_when: vec![
+                "user asks about available skills or guides".to_string(),
+                "user wants to create a skill or guide".to_string(),
+                "need step-by-step instructions for complex operations".to_string(),
+                "user asks what skills or capabilities are available".to_string(),
+                "search for best practices before executing complex workflows".to_string(),
+            ],
+            actions: vec!["search".into(), "list".into(), "get".into(), "create".into(), "update".into(), "delete".into()],
+        },
+
+        // === Shell Tool (system command execution) ===
+        LlmToolDefinition {
+            name: "shell".to_string(),
+            description: "Execute shell commands on the host system. Network diagnostics, system monitoring, file inspection, device discovery, container management.".to_string(),
+            aliases: vec!["shell".to_string(), "cli".to_string(), "command".to_string(), "终端".to_string(), "命令行".to_string()],
+            required: vec!["command".to_string()],
+            optional: HashMap::from_iter(vec![
+                ("timeout".to_string(), ParameterInfo {
+                    description: "Per-command timeout in seconds (max 600, default: 30)".to_string(),
+                    default: serde_json::json!(30),
+                    examples: vec!["10".to_string(), "60".to_string()],
+                }),
+                ("working_dir".to_string(), ParameterInfo {
+                    description: "Working directory for command execution".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["/tmp".to_string(), "/home/user".to_string()],
+                }),
+                ("description".to_string(), ParameterInfo {
+                    description: "Brief description of what this command does (for logging)".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["Check disk usage".to_string(), "Ping gateway".to_string()],
+                }),
+            ]),
+            examples: vec![
+                Example {
+                    user_query: "Check network connectivity to 192.168.1.1".to_string(),
+                    tool_call: r#"shell(command="ping -c 3 192.168.1.1")"#.to_string(),
+                    explanation: "Ping a device to check network connectivity".to_string(),
+                },
+                Example {
+                    user_query: "Show disk usage".to_string(),
+                    tool_call: r#"shell(command="df -h")"#.to_string(),
+                    explanation: "Check disk space usage".to_string(),
+                },
+                Example {
+                    user_query: "List running Docker containers".to_string(),
+                    tool_call: r#"shell(command="docker ps")"#.to_string(),
+                    explanation: "List active containers".to_string(),
+                },
+                Example {
+                    user_query: "Find devices on the local network".to_string(),
+                    tool_call: r#"shell(command="arp -a")"#.to_string(),
+                    explanation: "List devices in ARP table".to_string(),
+                },
+            ],
+            use_when: vec![
+                "network diagnostics (ping, traceroute, curl)".to_string(),
+                "system monitoring (ps, df, top, systemctl)".to_string(),
+                "file inspection (ls, cat, grep, find)".to_string(),
+                "device discovery (arp, avahi-browse, bluetoothctl)".to_string(),
+                "container management (docker, podman)".to_string(),
+                "user explicitly asks to run a command".to_string(),
+            ],
+            actions: vec![], // shell has no action parameter
         },
     ]
 }
@@ -787,7 +907,9 @@ pub fn format_tools_for_llm() -> String {
     prompt.push_str("- rule(action=\"list|get|create|update|delete|history\", ...)\n");
     prompt.push_str("- message(action=\"list|send|read\", ...) — for system messages/notifications only, NOT for contacting agents\n");
     prompt.push_str("- extension(action=\"list|get|status\", ...)\n");
-    prompt.push_str("- transform(action=\"list|get|create|update|delete|test\", ...)\n\n");
+    prompt.push_str("- transform(action=\"list|get|create|update|delete|test\", ...)\n");
+    prompt.push_str("- skill(action=\"search|list|get|create|update|delete\", ...) — operation guides & skill management\n");
+    prompt.push_str("- shell(command=\"...\") — execute system commands (network, disk, processes, files)\n\n");
     prompt.push_str(
         "Format: [{\"name\":\"tool_name\",\"arguments\":{\"action\":\"operation\",\"param\":\"value\"}}]\n\n",
     );
@@ -887,8 +1009,8 @@ mod tests {
     #[test]
     fn test_get_simplified_tools_count() {
         let tools = get_simplified_tools();
-        // Should have 6 aggregated tools
-        assert_eq!(tools.len(), 6);
+        // Should have 8 aggregated tools (device, agent, rule, message, extension, transform, skill, shell)
+        assert_eq!(tools.len(), 8);
     }
 
     #[test]
@@ -901,6 +1023,8 @@ mod tests {
         assert!(names.contains(&"message"));
         assert!(names.contains(&"extension"));
         assert!(names.contains(&"transform"));
+        assert!(names.contains(&"skill"));
+        assert!(names.contains(&"shell"));
     }
 
     #[test]

@@ -20,28 +20,14 @@ use neomind_agent::{OllamaConfig, OllamaRuntime};
 
 /// Actual available tools in the system:
 ///
-/// **Device Tools:**
-///   - device_discover - 列出所有设备
-///   - get_device_data - 获取设备当前所有数据
-///   - query_data - 查询设备历史数据
-///   - device_control - 控制设备
-///   - device_analyze - 分析设备数据趋势
+/// **Device Tool:**
+///   - device - 设备管理（action参数区分操作：list/latest/history/control/analyze）
 ///
-/// **Rule Tools:**
-///   - list_rules - 列出所有自动化规则
-///   - create_rule - 创建自动化规则
-///   - delete_rule - 删除规则
+/// **Rule Tool:**
+///   - rule - 规则管理（action参数区分操作：list/create/delete/enable）
 ///
-/// **Agent Tools:**
-///   - list_agents - 列出所有AI Agent
-///   - get_agent - 获取Agent详细信息
-///   - execute_agent - 执行Agent
-///   - control_agent - 控制Agent（暂停/恢复/删除）
-///   - create_agent - 创建Agent
-///   - agent_memory - 查询Agent记忆
-///   - get_agent_executions - 获取Agent执行历史
-///   - get_agent_execution_detail - 获取单次执行详情
-///   - get_agent_conversation - 获取Agent对话历史
+/// **Agent Tool:**
+///   - agent - Agent管理（action参数区分操作：list/create/control/executions/detail等）
 
 #[derive(Debug, Clone)]
 struct TestCase {
@@ -58,90 +44,90 @@ fn get_test_cases() -> Vec<TestCase> {
         TestCase {
             name: "设备发现".to_string(),
             query: "列出所有设备".to_string(),
-            expected_tools: vec!["device_discover".to_string()],
+            expected_tools: vec!["device".to_string()],
             min_tools: 1,
-            description: "应该调用设备发现工具".to_string(),
+            description: "应该调用设备工具".to_string(),
         },
         TestCase {
             name: "设备列表查询".to_string(),
             query: "查看有哪些设备".to_string(),
-            expected_tools: vec!["device_discover".to_string()],
+            expected_tools: vec!["device".to_string()],
             min_tools: 1,
-            description: "应该调用设备发现工具".to_string(),
+            description: "应该调用设备工具".to_string(),
         },
         TestCase {
             name: "设备数据查询".to_string(),
             query: "查询设备 abc123 的当前数据".to_string(),
-            expected_tools: vec!["get_device_data".to_string()],
+            expected_tools: vec!["device".to_string()],
             min_tools: 1,
-            description: "应该调用获取设备数据工具".to_string(),
+            description: "应该调用设备工具".to_string(),
         },
         TestCase {
             name: "设备历史数据".to_string(),
             query: "查看设备 abc123 的电池电量历史趋势".to_string(),
-            expected_tools: vec!["query_data".to_string(), "get_device_data".to_string()],
+            expected_tools: vec!["device".to_string()],
             min_tools: 1,
-            description: "应该调用数据查询工具".to_string(),
+            description: "应该调用设备工具".to_string(),
         },
         // === Rule Tools Tests ===
         TestCase {
             name: "规则列表".to_string(),
             query: "列出所有自动化规则".to_string(),
-            expected_tools: vec!["list_rules".to_string()],
+            expected_tools: vec!["rule".to_string()],
             min_tools: 1,
-            description: "应该调用规则列表工具".to_string(),
+            description: "应该调用规则工具".to_string(),
         },
         TestCase {
             name: "查看规则".to_string(),
             query: "显示所有规则".to_string(),
-            expected_tools: vec!["list_rules".to_string()],
+            expected_tools: vec!["rule".to_string()],
             min_tools: 1,
-            description: "应该调用规则列表工具".to_string(),
+            description: "应该调用规则工具".to_string(),
         },
         // === Agent Tools Tests ===
         TestCase {
             name: "Agent列表".to_string(),
             query: "列出所有AI Agent".to_string(),
-            expected_tools: vec!["list_agents".to_string()],
+            expected_tools: vec!["agent".to_string()],
             min_tools: 1,
-            description: "应该调用Agent列表工具".to_string(),
+            description: "应该调用Agent工具".to_string(),
         },
         TestCase {
             name: "Agent详情".to_string(),
             query: "查看Agent agent_1的详细信息".to_string(),
-            expected_tools: vec!["get_agent".to_string()],
+            expected_tools: vec!["agent".to_string()],
             min_tools: 1,
-            description: "应该调用获取Agent详情工具".to_string(),
+            description: "应该调用Agent工具".to_string(),
         },
         TestCase {
             name: "Agent执行历史".to_string(),
             query: "查看Agent agent_1的执行历史".to_string(),
-            expected_tools: vec!["get_agent_executions".to_string(), "get_agent".to_string()],
+            expected_tools: vec!["agent".to_string()],
             min_tools: 1,
-            description: "应该调用Agent执行历史工具".to_string(),
+            description: "应该调用Agent工具".to_string(),
         },
         // === Multi-Tool Tests ===
         TestCase {
             name: "设备+规则".to_string(),
             query: "请同时列出所有设备和所有自动化规则".to_string(),
-            expected_tools: vec!["device_discover".to_string(), "list_rules".to_string()],
+            expected_tools: vec!["device".to_string(), "rule".to_string()],
             min_tools: 2,
             description: "应该同时调用设备和规则工具".to_string(),
         },
         TestCase {
             name: "设备发现+数据".to_string(),
             query: "发现设备后查看第一个设备的详细数据".to_string(),
-            expected_tools: vec!["device_discover".to_string(), "get_device_data".to_string()],
+            expected_tools: vec!["device".to_string()],
             min_tools: 1,
-            description: "应该调用设备发现工具".to_string(),
+            description: "应该调用设备工具".to_string(),
         },
         TestCase {
             name: "全面查询".to_string(),
             query: "我需要查看：所有设备、所有规则、所有Agent".to_string(),
             expected_tools: vec![
-                "device_discover".to_string(),
-                "list_rules".to_string(),
-                "list_agents".to_string(),
+                "device".to_string(),
+                "rule".to_string(),
+                "agent".to_string(),
             ],
             min_tools: 2,
             description: "应该调用多个工具".to_string(),
@@ -150,23 +136,23 @@ fn get_test_cases() -> Vec<TestCase> {
         TestCase {
             name: "设备控制".to_string(),
             query: "打开设备 light_001".to_string(),
-            expected_tools: vec!["device_control".to_string()],
+            expected_tools: vec!["device".to_string()],
             min_tools: 1,
-            description: "应该调用设备控制工具".to_string(),
+            description: "应该调用设备工具".to_string(),
         },
         TestCase {
             name: "创建规则".to_string(),
             query: "创建一个温度超过30度时告警的规则".to_string(),
-            expected_tools: vec!["create_rule".to_string()],
+            expected_tools: vec!["rule".to_string()],
             min_tools: 1,
-            description: "应该调用创建规则工具".to_string(),
+            description: "应该调用规则工具".to_string(),
         },
         TestCase {
             name: "创建Agent".to_string(),
             query: "创建一个监控温度的Agent".to_string(),
-            expected_tools: vec!["create_agent".to_string()],
+            expected_tools: vec!["agent".to_string()],
             min_tools: 1,
-            description: "应该调用创建Agent工具".to_string(),
+            description: "应该调用Agent工具".to_string(),
         },
     ]
 }

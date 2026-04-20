@@ -41,6 +41,9 @@ pub struct ChatRequest {
     /// Optional LLM backend ID to use for this request.
     #[serde(rename = "backendId")]
     pub backend_id: Option<String>,
+    /// Optional skill IDs pinned by the user for this session.
+    #[serde(rename = "selectedSkills", default)]
+    pub selected_skills: Vec<String>,
 }
 
 /// Chat response to the web client.

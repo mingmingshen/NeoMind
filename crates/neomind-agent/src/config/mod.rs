@@ -65,7 +65,7 @@ pub struct StreamingConfig {
 
 // 默认值函数
 fn default_stream_timeout() -> u64 {
-    300
+    1200
 }
 fn default_heartbeat_interval() -> u64 {
     30
@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = StreamingConfig::default();
-        assert_eq!(config.max_stream_duration_secs, 300);
+        assert_eq!(config.max_stream_duration_secs, 1200);
         assert_eq!(config.heartbeat_interval_secs, 30);
         assert_eq!(config.max_tool_iterations, 10);
     }
@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn test_duration_converters() {
         let config = StreamingConfig::default();
-        assert_eq!(config.stream_timeout(), Duration::from_secs(300));
+        assert_eq!(config.stream_timeout(), Duration::from_secs(1200));
         assert_eq!(config.heartbeat_interval(), Duration::from_secs(30));
         assert_eq!(config.heartbeat_timeout(), Duration::from_secs(60));
     }

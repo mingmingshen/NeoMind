@@ -17,7 +17,11 @@
     "attachment": "Attachment",
     "moreOptions": "More options",
     "newChat": "New chat",
-    "startNewConversation": "Start typing to chat with AI assistant"
+    "startNewConversation": "Start typing to chat with AI assistant",
+    "skills": "Skills",
+    "selectSkills": "Select skills",
+    "noSkills": "No skills available",
+    "activeSkills": "Active skills"
   },
   "model": {
     "supportsVision": "Supports vision",

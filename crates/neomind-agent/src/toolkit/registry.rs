@@ -298,6 +298,8 @@ impl ToolRegistryBuilder {
         rule_history: Option<Arc<neomind_rules::RuleHistoryStorage>>,
         message_manager: Option<Arc<neomind_messages::MessageManager>>,
         transform_store: Option<Arc<dyn super::aggregated::TransformStore>>,
+        skill_registry: Option<crate::skills::SharedSkillRegistry>,
+        data_dir: Option<std::path::PathBuf>,
     ) -> Self {
         use super::aggregated::AggregatedToolsBuilder;
 
@@ -319,6 +321,14 @@ impl ToolRegistryBuilder {
             builder = builder.with_transform_store(ts);
         }
 
+        if let Some(sr) = skill_registry {
+            builder = builder.with_skill_registry(sr);
+        }
+
+        if let Some(dir) = data_dir {
+            builder = builder.with_data_dir(dir);
+        }
+
         if let Some(ext_reg) = self.extension_registry.clone() {
             builder = builder.with_extension_registry(ext_reg);
         }
@@ -329,6 +339,18 @@ impl ToolRegistryBuilder {
             self.registry.register(tool);
         }
 
+        self
+    }
+
+    /// Add shell tool for system command execution.
+    ///
+    /// Only registers the tool when config is `Some` and `enabled: true`.
+    pub fn with_shell_tool(mut self, config: Option<super::shell::ShellConfig>) -> Self {
+        if let Some(shell_config) = config {
+            if shell_config.enabled {
+                self.registry.register(Arc::new(super::shell::ShellTool::new(shell_config)));
+            }
+        }
         self
     }
 

@@ -241,7 +241,7 @@ impl MemoryExtractor {
             .memories
             .into_iter()
             .map(|mut m| {
-                if m.category == "system_evolution" {
+                if m.category.to_lowercase() == "system_evolution" {
                     tracing::debug!(
                         content = %m.content,
                         "Reclassifying system_evolution from chat to task_patterns"

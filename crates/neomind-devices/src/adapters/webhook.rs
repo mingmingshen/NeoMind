@@ -405,6 +405,7 @@ impl WebhookAdapter {
                 value: core_value,
                 timestamp,
                 quality: None,
+                is_virtual: None,
             })
             .await;
         }

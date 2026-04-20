@@ -635,6 +635,7 @@ export interface ClientChatMessage {
   images?: ChatImage[]  // Optional images for multimodal models
   sessionId?: string
   backendId?: string  // Optional LLM backend ID to use for this message
+  selectedSkills?: string[]  // Skill IDs pinned by user for this session
 }
 
 // MQTT Broker Types

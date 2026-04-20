@@ -41,6 +41,7 @@ async fn test_device_to_rule_action_flow() {
         value: MetricValue::float(55.0),
         timestamp: 0,
         quality: None,
+        is_virtual: None,
     })
     .await;
 
@@ -195,6 +196,7 @@ async fn test_event_streaming_performance() {
         value: MetricValue::float(25.0),
         timestamp: 0,
         quality: None,
+        is_virtual: None,
     })
     .await;
 
@@ -233,6 +235,7 @@ async fn test_broadcast_to_multiple_subscribers() {
         value: MetricValue::float(25.0),
         timestamp: 0,
         quality: None,
+        is_virtual: None,
     })
     .await;
 
@@ -268,6 +271,7 @@ async fn test_filtered_subscriptions() {
         value: MetricValue::float(25.0),
         timestamp: 0,
         quality: None,
+        is_virtual: None,
     })
     .await;
 
@@ -311,6 +315,7 @@ async fn test_event_metadata_preserved() {
             value: MetricValue::float(25.0),
             timestamp: 12345,
             quality: None,
+            is_virtual: None,
         },
         "test_adapter",
     )

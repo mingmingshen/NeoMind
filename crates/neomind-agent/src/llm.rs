@@ -266,6 +266,14 @@ pub struct LlmInterface {
     /// Global timezone for time-aware prompts (IANA format, e.g., "Asia/Shanghai").
     /// Loaded from settings and used for all time-related context.
     global_timezone: Arc<RwLock<Option<String>>>,
+    /// Skill registry for scenario-driven prompt injection.
+    skill_registry: Arc<RwLock<Option<crate::skills::SharedSkillRegistry>>>,
+    /// Transient skill context: skill tool results injected into system prompt during current turn.
+    /// Cleared at the start of each new user message. Not stored in session history.
+    skill_context: Arc<RwLock<Option<String>>>,
+    /// Pinned skill IDs selected by the user for this session.
+    /// These skills are injected as full guides (not just hints) into the system prompt.
+    pinned_skills: Arc<RwLock<Vec<String>>>,
 }
 
 impl LlmInterface {
@@ -292,6 +300,9 @@ impl LlmInterface {
             tool_filter: ToolFilter::default(),
             context_manager: None,
             global_timezone: Arc::new(RwLock::new(None)), // Will be loaded from settings
+            skill_registry: Arc::new(RwLock::new(None)),
+            skill_context: Arc::new(RwLock::new(None)),
+            pinned_skills: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -321,6 +332,9 @@ impl LlmInterface {
             tool_filter: ToolFilter::default(),
             context_manager: None,
             global_timezone: Arc::new(RwLock::new(None)), // Will be loaded from settings
+            skill_registry: Arc::new(RwLock::new(None)),
+            skill_context: Arc::new(RwLock::new(None)),
+            pinned_skills: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -712,6 +726,49 @@ impl LlmInterface {
         self.context_manager = Some(manager);
     }
 
+    /// Set the skill registry for scenario-driven prompt injection.
+    pub async fn set_skill_registry(&self, registry: crate::skills::SharedSkillRegistry) {
+        *self.skill_registry.write().await = Some(registry);
+    }
+
+    /// Get the skill registry (for external access).
+    pub async fn get_skill_registry(&self) -> Option<crate::skills::SharedSkillRegistry> {
+        self.skill_registry.read().await.clone()
+    }
+
+    /// Clear transient skill context (called at start of each new user message).
+    pub async fn clear_skill_context(&self) {
+        *self.skill_context.write().await = None;
+    }
+
+    /// Append transient skill context (from skill tool results).
+    /// Multiple calls accumulate content instead of overwriting.
+    pub async fn set_skill_context(&self, content: String) {
+        let mut guard = self.skill_context.write().await;
+        match guard.as_mut() {
+            Some(existing) => {
+                existing.push_str("\n\n");
+                existing.push_str(&content);
+            }
+            None => *guard = Some(content),
+        }
+    }
+
+    /// Get transient skill context.
+    pub async fn get_skill_context(&self) -> Option<String> {
+        self.skill_context.read().await.clone()
+    }
+
+    /// Set pinned skill IDs for this session (user-selected skills).
+    pub async fn set_pinned_skills(&self, skills: Vec<String>) {
+        *self.pinned_skills.write().await = skills;
+    }
+
+    /// Get pinned skill IDs for this session.
+    pub async fn get_pinned_skills(&self) -> Vec<String> {
+        self.pinned_skills.read().await.clone()
+    }
+
     /// Get context builder section for system prompt.
     async fn build_business_context_section(&self, query: &str) -> String {
         if let Some(ref cm) = self.context_manager {
@@ -898,6 +955,54 @@ impl LlmInterface {
         // Get base prompt with time placeholders replaced
         let mut prompt = self.build_base_system_prompt_with_time(None).await;
 
+        // Inject pinned skills (user-selected) as full guides
+        let pinned = self.pinned_skills.read().await.clone();
+        if !pinned.is_empty() {
+            let registry_opt = self.skill_registry.read().await.clone();
+            if let Some(registry) = registry_opt {
+                let registry_guard = registry.read().await;
+                for skill_id in &pinned {
+                    if let Some(skill) = registry_guard.get(skill_id) {
+                        prompt.push_str(&format!(
+                            "\n## Pinned Skill: {}\n{}\n",
+                            skill.metadata.name, skill.body
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Inject lightweight skill hints (not full content) to guide the model to use the skill tool
+        if let Some(msg) = user_message {
+            let registry_opt = self.skill_registry.read().await.clone();
+            if let Some(registry) = registry_opt {
+                let registry_guard = registry.read().await;
+                let budget = crate::skills::TokenBudgetConfig::for_context(self.max_tokens);
+                let matches = crate::skills::match_skills(&registry_guard, msg, budget);
+                // Filter out pinned skills from auto-matched hints (already injected above)
+                let auto_matches: Vec<_> = matches
+                    .into_iter()
+                    .filter(|m| !pinned.contains(&m.skill_id))
+                    .collect();
+                if !auto_matches.is_empty() {
+                    let names: Vec<&str> = auto_matches.iter().map(|m| m.skill_name.as_str()).collect();
+                    prompt.push_str(&format!(
+                        "\n## Skill Hints\nThis conversation may involve the following operation domains: {}. \
+                         For detailed steps and parameter formats, use the skill tool to search for relevant guides.\n",
+                        names.join(", ")
+                    ));
+                }
+            }
+        }
+
+        // Inject transient skill context (from skill tool calls in current turn's multi-round loop)
+        // This content is NOT in session history — only available during the current turn.
+        if let Some(skill_content) = self.skill_context.read().await.as_ref() {
+            prompt.push_str("\n## Skill Reference\n");
+            prompt.push_str(skill_content);
+            prompt.push('\n');
+        }
+
         // Add intent-specific addon if we can classify the user's message
         if let Some(msg) = user_message {
             let intent = self.intent_classifier.classify(msg);
@@ -1072,6 +1177,10 @@ impl LlmInterface {
         history: Option<&[Message]>,
     ) -> AgentResult<ChatResponse> {
         let user_message: String = user_message.into();
+
+        // Clear transient skill context from previous turn
+        self.clear_skill_context().await;
+
         let max_ctx = self.max_context_length().await;
 
         // === FAST PATH: Simple greetings ===
@@ -1299,6 +1408,9 @@ impl LlmInterface {
         user_message: Message, // Can contain text + images
         history: Option<&[Message]>,
     ) -> AgentResult<ChatResponse> {
+        // Clear transient skill context from previous turn
+        self.clear_skill_context().await;
+
         let max_ctx = self.max_context_length().await;
 
         // Acquire permit for concurrency limiting

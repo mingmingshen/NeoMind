@@ -17,7 +17,11 @@
     "attachment": "附件",
     "moreOptions": "更多选项",
     "newChat": "新对话",
-    "startNewConversation": "开始输入消息，与 AI 助手对话"
+    "startNewConversation": "开始输入消息，与 AI 助手对话",
+    "skills": "技能",
+    "selectSkills": "选择技能",
+    "noSkills": "暂无可用技能",
+    "activeSkills": "已激活技能"
   },
   "model": {
     "supportsVision": "支持图像",

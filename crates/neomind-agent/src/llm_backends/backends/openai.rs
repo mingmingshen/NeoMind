@@ -298,8 +298,11 @@ struct CloudCapabilities {
 impl CloudRuntime {
     /// Create a new cloud runtime.
     pub fn new(config: CloudConfig) -> Result<Self, LlmError> {
+        // Note: Don't set a global timeout — it kills long-running streaming responses
+        // from thinking models that can take many minutes.
+        // Instead, we use per-request timeouts only for non-streaming requests.
+        // Streaming responses have their own timeout via stream_config.max_stream_duration_secs.
         let http_client = Client::builder()
-            .timeout(config.timeout())
             .pool_max_idle_per_host(10) // Performance: Keep 10 idle connections for concurrent requests
             .pool_idle_timeout(Duration::from_secs(120)) // Close after 120s idle
             .connect_timeout(Duration::from_secs(10)) // Cloud services: 10s connection timeout
@@ -614,6 +617,7 @@ impl CloudRuntime {
             .inner()
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.config.api_key))
+            .timeout(self.config.timeout())
             .json(&request);
 
         let response = self
@@ -728,6 +732,7 @@ impl CloudRuntime {
             .header("x-api-key", &self.config.api_key)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
+            .timeout(self.config.timeout())
             .json(&request);
 
         let response = self

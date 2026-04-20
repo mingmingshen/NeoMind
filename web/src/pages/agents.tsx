@@ -18,7 +18,7 @@ import { confirm } from "@/hooks/use-confirm"
 import { useEvents } from "@/hooks/useEvents"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useIsMobile } from "@/hooks/useMobile"
-import { Loader2, Bot, Plus, Brain, Cpu, RefreshCw, Settings, Sparkles, Zap } from "lucide-react"
+import { Loader2, Bot, Plus, Brain, Cpu, RefreshCw, Settings, Sparkles, Zap, BookOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/shared/EmptyState"
 import type { AiAgent, AiAgentDetail, Extension, ExtensionDataSourceInfo, TransformDataSourceInfo } from "@/types"
@@ -30,6 +30,7 @@ import { AgentEditorFullScreen } from "./agents-components/AgentEditorFullScreen
 import { ExecutionDetailDialog } from "./agents-components/ExecutionDetailDialog"
 import { AgentDetailPanel } from "./agents-components/AgentDetailPanel"
 import { MemoryPanel } from "./agents-components/MemoryPanel"
+import { SkillsPanel, type SkillsPanelHandle } from "./agents-components/SkillsPanel"
 import {
   Dialog,
   DialogContent,
@@ -50,6 +51,9 @@ export function AgentsPage() {
     if (location.pathname.includes('/agents/memory')) {
       return 'memory'
     }
+    if (location.pathname.includes('/agents/skills')) {
+      return 'skills'
+    }
     return 'agents'
   }
   const activeTab = getTabFromPath()
@@ -58,6 +62,8 @@ export function AgentsPage() {
   const handleTabChange = (tab: string) => {
     if (tab === 'memory') {
       navigate('/agents/memory')
+    } else if (tab === 'skills') {
+      navigate('/agents/skills')
     } else {
       navigate('/agents')
     }
@@ -86,6 +92,7 @@ export function AgentsPage() {
     triggerExtract: () => void
     isExtracting: boolean
   }>(null)
+  const skillsPanelRef = useRef<SkillsPanelHandle>(null)
 
   // Track executing agents for real-time updates with timestamps for timeout
   const [executingAgents, setExecutingAgents] = useState<Map<string, number>>(new Map())
@@ -461,6 +468,7 @@ export function AgentsPage() {
   const tabs = [
     { value: 'agents', label: tAgent('tabs.agents'), icon: <Cpu className="h-4 w-4" /> },
     { value: 'memory', label: tAgent('tabs.memory'), icon: <Brain className="h-4 w-4" /> },
+    { value: 'skills', label: tAgent('tabs.skills'), icon: <BookOpen className="h-4 w-4" /> },
   ]
 
   const tabActions = activeTab === 'agents' && agents.length > 0
@@ -471,7 +479,13 @@ export function AgentsPage() {
         { label: tAgent('systemMemory.extract', 'Extract'), icon: isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />, onClick: handleTriggerExtract, loading: isExtracting, disabled: isExtracting },
         { label: tCommon('refresh'), icon: <RefreshCw className="h-4 w-4" />, onClick: () => setMemoryRefreshKey(k => k + 1), disabled: isExtracting },
       ]
+    : activeTab === 'skills'
+    ? [
+        { label: tAgent('skills.createSkill', 'Add Skill'), icon: <Plus className="h-4 w-4" />, onClick: () => skillsPanelRef.current?.openCreate() },
+      ]
     : []
+
+  const skillsActionsExtra = undefined
 
   return (
     <PageLayout
@@ -483,6 +497,7 @@ export function AgentsPage() {
           activeTab={activeTab}
           onTabChange={handleTabChange}
           actions={tabActions}
+          actionsExtra={skillsActionsExtra}
         />
       }
       hideFooterOnMobile
@@ -523,6 +538,10 @@ export function AgentsPage() {
 
       <PageTabsContent value="memory" activeTab={activeTab}>
         <MemoryPanel ref={memoryPanelRef} refreshKey={memoryRefreshKey} />
+      </PageTabsContent>
+
+      <PageTabsContent value="skills" activeTab={activeTab}>
+        <SkillsPanel ref={skillsPanelRef} />
       </PageTabsContent>
 
       {/* Mobile: Bottom navigation bar */}

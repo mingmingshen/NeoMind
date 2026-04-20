@@ -97,7 +97,9 @@
   "tabs": {
     "agents": "智能体",
     "executions": "执行记录",
-    "memory": "记忆"
+    "memory": "记忆",
+    "skills": "技能",
+    "createSkill": "添加技能"
   },
   "agentName": "智能体名称",
   "userPrompt": "用户指令",
@@ -489,7 +491,15 @@
   },
   "tabs": {
     "agents": "智能体",
-    "memory": "记忆"
+    "memory": "记忆",
+    "skills": "技能",
+    "createSkill": "添加技能"
+  },
+  "skills": {
+    "originAll": "全部",
+    "originBuiltin": "内置",
+    "originUser": "自定义",
+    "createSkill": "添加技能"
   },
   "systemMemory": {
     "title": "系统记忆",

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.6.10] - 2025-04-20
+
+### Added
+
+- **Shell Tool** — New `shell` tool enables AI agents to execute system commands on the host. Features: login shell (`$SHELL -l -c`) for full user environment (PATH, aliases), cross-platform support (Unix/macOS/Windows), configurable timeout (max 600s), output truncation (10K chars), UTF-8 safe truncation, process group isolation for clean timeout kill. Parameters: `command` (required), `timeout`, `working_dir`, `description` (audit log).
+- **Agent Skill System** — User-defined skill management via the `skill` tool. Actions: `search`, `list`, `get`, `create`, `update`, `delete`. Skills are YAML frontmatter + Markdown files that provide scenario-driven operation guides for the AI agent. Includes keyword matching, token budget injection, and persistence.
+- **Skills Panel UI** — Frontend panel in agent settings for creating, editing, and deleting user skills with a code editor. Supports YAML frontmatter syntax highlighting.
+- **Action Enum Constraints** — LLM tool definitions now include `enum` constraints on the `action` parameter for all aggregated tools, so the LLM knows exactly which actions are available (e.g., `device` supports `list|latest|history|control|write_metric`).
+
+### Changed
+
+- **Removed Builtin Skills** — Removed 8 hardcoded builtin skills (753 lines) that duplicated tool descriptions. The skill system now focuses on user-defined multi-tool workflow skills only.
+- **Enhanced Tool Descriptions** — All 6 aggregated tool descriptions (device, agent, rule, message, extension, transform) enhanced with critical workflow hints (confirm flow, list-first pattern, required fields) to compensate for removed builtin skills.
+- **Login Shell for Shell Tool** — Uses `$SHELL` environment variable with `-l` flag for full user environment; falls back to `/bin/sh -c` without `-l` in minimal environments (Docker, IoT edge).
+- **Adaptive Tool Timeout** — Outer tool execution timeout in `execute_with_retry_impl` now adapts to shell tool's internal timeout (`shell_timeout + 5s` buffer) instead of hardcoded 30s.
+- **Tool Name Mapper** — Added `skill` and `shell` with Chinese/English aliases (命令行, 终端, bash, cli, 技能, 指南, etc.) for fuzzy tool name resolution.
+- **Non-Simplified Tool Registration** — `update_tool_definitions` now registers ALL tools from the registry (not just extension tools) that aren't already in simplified definitions, fixing shell tool not being visible to the LLM.
+
+### Fixed
+
+- **Shell Timeout Parameter** — `timeout` parameter now accepts both number (`30`) and string (`"30"`) forms, fixing LLM passing string values through simplified schema.
+- **Simplified Tool Description Accuracy** — Fixed `device` tool description: `get` → `latest`, added missing `write_metric` action. Fixed `message` tool: added missing `get` action.
+- **Cross-Platform Shell Dependencies** — `libc` moved to Unix-only target dependency, `windows-sys` added as Windows-only dependency for proper cross-compilation.
+
+---
+
 ## [v0.6.9] - 2025-04-16
 
 ### Added

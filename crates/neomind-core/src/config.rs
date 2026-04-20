@@ -158,7 +158,7 @@ pub mod agent_env_vars {
 
     /// 获取 Ollama 后端的超时时间（秒）
     pub fn ollama_timeout_secs() -> u64 {
-        llm_timeout_secs().unwrap_or(180)
+        llm_timeout_secs().unwrap_or(300)
     }
 
     /// 获取 OpenAI/Cloud 后端的超时时间（秒）

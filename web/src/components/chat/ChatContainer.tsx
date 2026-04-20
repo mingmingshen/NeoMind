@@ -10,8 +10,10 @@ import { useStore } from "@/store"
 import { shallow } from "zustand/shallow"
 import { generateId } from "@/lib/id"
 import { ws } from "@/lib/websocket"
+import { fetchAPI } from "@/lib/api"
 import type { Message, ServerMessage, ExecutionPlan } from "@/types"
 import type { StreamProgress as StreamProgressType } from "@/types"
+import type { SkillSummary } from "@/types/skill"
 import { filterPartialMessages } from "@/lib/messageUtils"
 import {
   selectSessionId,
@@ -31,7 +33,9 @@ import {
   Paperclip,
   MoreVertical,
   Zap,
-  ChevronDown
+  ChevronDown,
+  BookOpen,
+  X
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -266,6 +270,9 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   const [input, setInput] = useState("")
   const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([])
+  const [availableSkills, setAvailableSkills] = useState<SkillSummary[]>([])
+  const [skillPopoverOpen, setSkillPopoverOpen] = useState(false)
 
   // Track the ID of the current streaming message (generated once per stream)
   const [currentStreamMessageId, setCurrentStreamMessageId] = useState<string | null>(null)
@@ -299,6 +306,14 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   useEffect(() => {
     messagesRef.current = messages
   }, [messages])
+
+  // Fetch available skills once
+  useEffect(() => {
+    fetchAPI<{ skills: SkillSummary[] }>("/api/skills")
+      .then(data => setAvailableSkills(data.skills || []))
+      .catch(() => setAvailableSkills([]))
+  }, [])
+
 
   // Handle WebSocket events - optimized with useReducer for batched state updates
   useEffect(() => {
@@ -522,13 +537,22 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     setLastAssistantMessageId(null)
 
     // Send via WebSocket
-    ws.sendMessage(trimmedInput)
+    ws.sendMessage(trimmedInput, undefined, selectedSkills.length > 0 ? selectedSkills : undefined)
 
     // Focus input after sending
     setTimeout(() => {
       inputRef.current?.focus()
     }, 100)
   }
+
+  // Toggle skill selection
+  const toggleSkill = useCallback((skillId: string) => {
+    setSelectedSkills(prev =>
+      prev.includes(skillId)
+        ? prev.filter(id => id !== skillId)
+        : [...prev, skillId]
+    )
+  }, [])
 
   // Handle suggestion select
   const handleSuggestionSelect = (prompt: string) => {
@@ -747,6 +771,72 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
               >
                 <Paperclip className="h-4 w-4" />
               </Button>
+
+              {/* Skill selector */}
+              {availableSkills.length > 0 && (
+                <DropdownMenu open={skillPopoverOpen} onOpenChange={setSkillPopoverOpen}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        "h-7 px-2 rounded-lg text-xs gap-1",
+                        selectedSkills.length > 0
+                          ? "text-foreground bg-muted"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <BookOpen className="h-3 w-3 shrink-0" />
+                      <span className="truncate">
+                        {selectedSkills.length > 0
+                          ? t("input.activeSkills", `${selectedSkills.length}`)
+                          : t("input.skills")}
+                      </span>
+                      {selectedSkills.length > 0 && (
+                        <span className="bg-primary text-primary-foreground text-[10px] rounded-full h-4 min-w-4 px-1 flex items-center justify-center">
+                          {selectedSkills.length}
+                        </span>
+                      )}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-64 max-h-[50vh] overflow-y-auto">
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">
+                      {t("input.selectSkills")}
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {availableSkills.map((skill) => (
+                      <DropdownMenuItem
+                        key={skill.id}
+                        onSelect={(e) => { e.preventDefault(); toggleSkill(skill.id) }}
+                        className={cn(
+                          "flex items-center gap-2",
+                          selectedSkills.includes(skill.id) && "bg-muted"
+                        )}
+                      >
+                        <div className={cn(
+                          "w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0",
+                          selectedSkills.includes(skill.id)
+                            ? "bg-primary border-primary text-primary-foreground"
+                            : "border-muted-foreground/40"
+                        )}>
+                          {selectedSkills.includes(skill.id) && (
+                            <svg viewBox="0 0 12 12" fill="none" className="h-2.5 w-2.5">
+                              <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm truncate">{skill.name}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {skill.category}
+                          </p>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+
               <span
                 className="text-xs text-muted-foreground"
                 dangerouslySetInnerHTML={{ __html: t("input.sendHint") }}
@@ -760,6 +850,26 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                 <MoreVertical className="h-4 w-4" />
               </Button>
             </div>
+
+            {/* Active skill chips */}
+            {selectedSkills.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2 px-1">
+                {selectedSkills.map(skillId => {
+                  const skill = availableSkills.find(s => s.id === skillId)
+                  return (
+                    <button
+                      key={skillId}
+                      onClick={() => toggleSkill(skillId)}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                    >
+                      <BookOpen className="h-3 w-3" />
+                      <span>{skill?.name || skillId}</span>
+                      <X className="h-2.5 w-2.5 opacity-60" />
+                    </button>
+                  )
+                })}
+              </div>
+            )}
 
             {/* Input */}
             <div className="flex items-end gap-2">

@@ -139,11 +139,13 @@ impl TransformEventService {
                         value,
                         timestamp,
                         quality: _,
+                        is_virtual,
+                        ..
                     } = event
                     {
-                        // Skip transform output metrics to prevent infinite loop
-                        // Transforms publish metrics with "transform." prefix, which should not be re-processed
-                        if metric.starts_with("transform.") {
+                        // Skip virtual metrics (transform outputs, extension writes)
+                        // to prevent feedback loops.
+                        if NeoMindEvent::is_virtual_device_metric(is_virtual, &metric) {
                             continue;
                         }
 
@@ -293,6 +295,7 @@ impl TransformEventService {
                                                     ),
                                                     timestamp: transformed_metric.timestamp,
                                                     quality: transformed_metric.quality,
+                                                    is_virtual: Some(true),
                                                 })
                                                 .await;
 

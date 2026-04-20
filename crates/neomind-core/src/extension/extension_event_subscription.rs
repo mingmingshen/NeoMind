@@ -120,6 +120,15 @@ impl ExtensionEventSubscriptionService {
     /// This converts NeoMindEvent to a standardized JSON format that extensions
     /// can understand, then forwards it to the EventDispatcher for distribution.
     async fn handle_event(event_dispatcher: &EventDispatcher, event: NeoMindEvent) {
+        // Prevent feedback loops: skip re-dispatching virtual DeviceMetric events
+        // to extensions. These are metrics written by extensions via device_metrics_write.
+        // Without this filter, extensions would receive their own virtual metric writes
+        // and potentially re-process them, creating infinite loops.
+        if event.is_virtual_metric() {
+            trace!("Skipping virtual DeviceMetric dispatch to extensions (feedback loop prevention)");
+            return;
+        }
+
         // Convert NeoMindEvent to extension format (automatic)
         let (event_type, payload) = Self::convert_to_extension_format(&event);
 
@@ -249,6 +258,7 @@ mod tests {
             value: MetricValue::Float(25.5),
             timestamp: 1234567890,
             quality: Some(0.95),
+            is_virtual: None,
         };
 
         let (event_type, payload) =

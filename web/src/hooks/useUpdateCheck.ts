@@ -119,6 +119,16 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
       console.log('[Update] Got response from backend:', info)
 
       if (info.available) {
+        // Skip if this version was just installed (hot update restart scenario)
+        const installedVersion = localStorage.getItem('neomind_installed_version')
+        if (installedVersion && info.version === installedVersion) {
+          console.log('[Update] Skipping update dialog - version was just installed:', installedVersion)
+          localStorage.removeItem('neomind_installed_version')
+          setUpdateStatus('up-to-date')
+          onUpToDateRef.current?.()
+          return
+        }
+
         setUpdateInfo(info)
         setUpdateStatus('available')
 
@@ -133,6 +143,8 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
         // Use ref to get latest callback without including it in dependencies
         onUpdateAvailableRef.current?.(info)
       } else {
+        // Update applied successfully, clear the marker
+        localStorage.removeItem('neomind_installed_version')
         setUpdateStatus('up-to-date')
         onUpToDateRef.current?.()
       }
@@ -154,6 +166,11 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
       setError(null)
 
       await invoke('download_and_install')
+
+      // Persist the installed version so next restart won't re-show the dialog
+      if (updateInfo?.version) {
+        localStorage.setItem('neomind_installed_version', updateInfo.version)
+      }
 
       setUpdateStatus('done')
     } catch (error) {

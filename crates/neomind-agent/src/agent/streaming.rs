@@ -78,10 +78,10 @@ pub struct StreamSafeguards {
 impl Default for StreamSafeguards {
     fn default() -> Self {
         Self {
-            // Synchronized with StreamConfig::max_stream_duration_secs (300s)
+            // Synchronized with StreamConfig::max_stream_duration_secs (1200s)
             // This provides adequate time for thinking models like qwen3-vl:2b
             // to complete extended reasoning before generating content.
-            max_stream_duration: Duration::from_secs(300),
+            max_stream_duration: Duration::from_secs(1200),
 
             // No limit on thinking content - let the LLM backend enforce limits
             max_thinking_length: usize::MAX,
@@ -1761,6 +1761,31 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 "delete_rule" => {
                     response.push_str("[OK] Rule deleted.\n");
                 }
+                "shell" => {
+                    let cmd = json_value.get("command").and_then(|c| c.as_str()).unwrap_or("?");
+                    let desc = json_value.get("description").and_then(|d| d.as_str());
+                    if let Some(desc) = desc {
+                        response.push_str(&format!("## Shell: {}\n**Command**: `{}`\n", desc, cmd));
+                    } else {
+                        response.push_str(&format!("## Shell: `{}`\n", cmd));
+                    }
+                    if json_value.get("timed_out").and_then(|t| t.as_bool()).unwrap_or(false) {
+                        response.push_str("**Timed out**\n");
+                    }
+                    if let Some(exit_code) = json_value.get("exit_code") {
+                        response.push_str(&format!("**Exit code**: {}\n", exit_code));
+                    }
+                    if let Some(stdout) = json_value.get("stdout").and_then(|s| s.as_str()) {
+                        if !stdout.is_empty() {
+                            response.push_str(&format!("```\n{}\n```\n", stdout));
+                        }
+                    }
+                    if let Some(stderr) = json_value.get("stderr").and_then(|s| s.as_str()) {
+                        if !stderr.is_empty() {
+                            response.push_str(&format!("**stderr:**\n```\n{}\n```\n", stderr));
+                        }
+                    }
+                }
                 _ => {
                     // Aggregated tools (device, agent, rule, alert, extension) share the
                     // same JSON output format as the legacy tools. Detect the format by
@@ -2389,6 +2414,9 @@ pub async fn process_stream_events_with_safeguards(
         let mut tool_calls: Vec<ToolCall> = Vec::new();
         let mut content_before_tools = String::new();
         let mut thinking_content = String::new();
+
+        // === SKILL CONTEXT: Clear transient skill context from previous turn ===
+        llm_interface.clear_skill_context().await;
         let mut has_content = false;
         let mut has_thinking = false;
 
@@ -2759,8 +2787,7 @@ pub async fn process_stream_events_with_safeguards(
                                 // Check if buffer might contain the START of a JSON tool call.
                                 // Hold back suspicious content to prevent partial JSON
                                 // from being yielded before the full JSON is detected.
-                                let might_be_json_start = buffer.ends_with('[')
-                                    || buffer.ends_with("[{")
+                                let might_be_json_start = buffer.ends_with("[{")
                                     || buffer.ends_with("{\"")
                                     || buffer.ends_with("\"name\"")
                                     || buffer.ends_with("```")
@@ -2774,7 +2801,7 @@ pub async fn process_stream_events_with_safeguards(
                                     // Find the earliest suspicious position
                                     let suspicious_pos = {
                                         let mut pos = buffer.len();
-                                        if let Some(p) = buffer.rfind('[') { pos = pos.min(p); }
+                                        if let Some(p) = buffer.rfind("[{") { pos = pos.min(p); }
                                         if let Some(p) = buffer.rfind("{\"") { pos = pos.min(p); }
                                         if let Some(p) = buffer.rfind("```") { pos = pos.min(p); }
                                         pos
@@ -3035,11 +3062,16 @@ pub async fn process_stream_events_with_safeguards(
                         internal_state.write().await.push_message(initial_msg);
 
                         // Save tool results to memory (large results go through cache → summary)
+                        // Skill tool results go to transient skill_context instead of history
                         for (tool_name, result_str) in &tool_call_results {
-                            let mut state = internal_state.write().await;
-                            let history_content = state.large_data_cache.store(tool_name, result_str);
-                            let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
-                            state.push_message(tool_result_msg);
+                            if tool_name == "skill" {
+                                llm_interface.set_skill_context(result_str.clone()).await;
+                            } else {
+                                let mut state = internal_state.write().await;
+                                let history_content = state.large_data_cache.store(tool_name, result_str);
+                                let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
+                                state.push_message(tool_result_msg);
+                            }
                         }
 
                         // Increment iteration count and loop back
@@ -3099,11 +3131,16 @@ pub async fn process_stream_events_with_safeguards(
                 internal_state.write().await.push_message(initial_msg);
 
                 // Add tool result messages to history (large results go through cache → summary)
+                // Skill tool results go to transient skill_context instead of history
                 for (tool_name, result_str) in &tool_call_results {
-                    let mut state = internal_state.write().await;
-                    let history_content = state.large_data_cache.store(tool_name, result_str);
-                    let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
-                    state.push_message(tool_result_msg);
+                    if tool_name == "skill" {
+                        llm_interface.set_skill_context(result_str.clone()).await;
+                    } else {
+                        let mut state = internal_state.write().await;
+                        let history_content = state.large_data_cache.store(tool_name, result_str);
+                        let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
+                        state.push_message(tool_result_msg);
+                    }
                 }
 
                 // Trim history
@@ -3629,6 +3666,9 @@ pub async fn process_multimodal_stream_events_with_safeguards(
         let mut tool_calls: Vec<ToolCall> = Vec::new();
         let mut content_before_tools = String::new();
 
+        // === SKILL CONTEXT: Clear transient skill context from previous turn ===
+        llm_interface.clear_skill_context().await;
+
         let stream_start = Instant::now();
         let mut last_event_time = Instant::now();
 
@@ -3830,11 +3870,16 @@ pub async fn process_multimodal_stream_events_with_safeguards(
             internal_state.write().await.push_message(initial_msg);
 
             // Add tool result messages (large results go through cache → summary)
+            // Skill tool results go to transient skill_context instead of history
             for (tool_name, result_str) in &tool_call_results {
-                let mut state = internal_state.write().await;
-                let history_content = state.large_data_cache.store(tool_name, result_str);
-                let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
-                state.push_message(tool_result_msg);
+                if tool_name == "skill" {
+                    llm_interface.set_skill_context(result_str.clone()).await;
+                } else {
+                    let mut state = internal_state.write().await;
+                    let history_content = state.large_data_cache.store(tool_name, result_str);
+                    let tool_result_msg = AgentMessage::tool_result(tool_name, &history_content);
+                    state.push_message(tool_result_msg);
+                }
             }
 
             // Get updated history for Phase 2
@@ -4244,18 +4289,29 @@ async fn execute_with_retry_impl(
     // Map simplified tool name to real tool name
     let real_tool_name = resolve_tool_name(name);
 
-    // Tool execution timeout (30 seconds default)
-    const TOOL_TIMEOUT_SECS: u64 = 30;
+    // Tool execution timeout: 30s default, but respect shell tool's internal timeout
+    const DEFAULT_TIMEOUT_SECS: u64 = 30;
+    let timeout_secs = if real_tool_name == "shell" {
+        // Shell tool manages its own timeout internally; give it room to breathe
+        let shell_timeout: u64 = arguments
+            .get("timeout")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(30)
+            .min(600);
+        shell_timeout + 5 // buffer for process cleanup
+    } else {
+        DEFAULT_TIMEOUT_SECS
+    };
 
     for attempt in 0..=max_retries {
         let result = tokio::time::timeout(
-            tokio::time::Duration::from_secs(TOOL_TIMEOUT_SECS),
+            tokio::time::Duration::from_secs(timeout_secs),
             tools.execute(&real_tool_name, arguments.clone()),
         )
         .await
         .unwrap_or(Err(crate::toolkit::ToolError::Execution(format!(
             "Tool '{}' timed out after {}s",
-            name, TOOL_TIMEOUT_SECS
+            name, timeout_secs
         ))));
 
         match &result {

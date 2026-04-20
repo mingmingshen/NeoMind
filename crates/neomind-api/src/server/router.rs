@@ -24,8 +24,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
         agents, auth as auth_handlers, auth_users, automations, basic, capabilities, config,
         dashboards, data, devices, events, extension_stream, extensions, llm_backends, memory,
-        message_channels, messages, mqtt, rules, sessions, settings, setup, stats, suggestions,
-        tools,
+        message_channels, messages, mqtt, rules, sessions, settings, setup, skills, stats,
+        suggestions, tools,
     };
 
     // Public routes (no authentication required)
@@ -132,6 +132,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         // Tools API (public - read-only metadata about available tools)
         .route("/api/tools", get(tools::list_tools_handler))
         .route("/api/tools/:name", get(tools::get_tool_handler))
+        // Skills API (public - read-only)
+        .route("/api/skills", get(skills::list_skills_handler))
+        .route("/api/skills/match", post(skills::match_skills_handler))
+        .route("/api/skills/:id", get(skills::get_skill_handler))
         // Extension-specific routes ( :id must come after specific paths)
         .route(
             "/api/extensions/:id",
@@ -284,6 +288,13 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             delete(sessions::delete_session_handler),
         )
         .route("/api/sessions/:id/chat", post(sessions::chat_handler))
+        // Skills API (protected - write operations)
+        .route("/api/skills", post(skills::create_skill_handler))
+        .route("/api/skills/reload", post(skills::reload_skills_handler))
+        .route(
+            "/api/skills/:id",
+            put(skills::update_skill_handler).delete(skills::delete_skill_handler),
+        )
         // P0.3: Pending stream state management (for recovery after disconnection)
         .route(
             "/api/sessions/:id/pending",

@@ -68,6 +68,9 @@ pub struct ServerState {
     /// Rate limiter for API request throttling.
     pub rate_limiter: Arc<RateLimiter>,
 
+    /// Data directory for persistent storage (e.g. skills, extensions).
+    pub data_dir: std::path::PathBuf,
+
     /// Auto-onboarding manager for zero-config device discovery (lazy-initialized).
     pub auto_onboard_manager: Arc<tokio::sync::RwLock<Option<Arc<AutoOnboardManager>>>>,
 
@@ -584,6 +587,9 @@ impl ServerState {
             )),
             extension_event_subscription_service: Arc::new(tokio::sync::Mutex::new(None)),
             telemetry_query_semaphore: Arc::new(tokio::sync::Semaphore::new(16)),
+            data_dir: std::path::PathBuf::from(
+                std::env::var("NEOMIND_DATA_DIR").unwrap_or_else(|_| "data".to_string())
+            ),
         }
     }
 
@@ -750,6 +756,7 @@ impl ServerState {
             )),
             extension_event_subscription_service: Arc::new(tokio::sync::Mutex::new(None)),
             telemetry_query_semaphore: Arc::new(tokio::sync::Semaphore::new(16)),
+            data_dir: std::path::PathBuf::from("data"),
         }
     }
 
@@ -1088,7 +1095,15 @@ impl ServerState {
                 None,                                    // rule_history
                 Some(self.core.message_manager.clone()), // message_manager for alert tool
                 transform_store,                         // transform store for transform tool
+                Some(self.agents.session_manager.skill_registry()), // skill registry
+                Some(self.data_dir.clone()),             // data_dir for skill persistence
             )
+            // Shell tool for system command execution (enabled by default for edge scenarios)
+            .with_shell_tool(Some(neomind_agent::toolkit::ShellConfig {
+                enabled: true,
+                timeout_secs: 30,
+                max_output_chars: 10000,
+            }))
             // Scan extensions and register their tools
             .with_extensions_scanned()
             .await
@@ -1136,7 +1151,14 @@ impl ServerState {
                 None,
                 Some(self.core.message_manager.clone()),
                 transform_store,
+                Some(self.agents.session_manager.skill_registry()),
+                Some(self.data_dir.clone()),
             )
+            .with_shell_tool(Some(neomind_agent::toolkit::ShellConfig {
+                enabled: true,
+                timeout_secs: 30,
+                max_output_chars: 10000,
+            }))
             .with_extensions_scanned()
             .await
             .build();
@@ -1307,6 +1329,7 @@ impl ServerState {
                     value,
                     timestamp: _,
                     quality: _,
+                    ..
                 } = event
                 {
                     tracing::debug!(
@@ -1822,6 +1845,7 @@ impl ServerState {
             tool_registry: self.agents.session_manager.get_tool_registry().await,
             memory_store: Some(self.agents.system_memory_store.clone()),
             backend_semaphores: None,
+            skill_registry: Some(self.agents.session_manager.skill_registry()),
         };
 
         let manager = neomind_agent::ai_agent::AiAgentManager::new(executor_config)
@@ -1922,6 +1946,7 @@ impl ServerState {
                     value,
                     timestamp: _,
                     quality: _,
+                    ..
                 } = event
                 {
                     // Trigger agents that have this device/metric in their event filter

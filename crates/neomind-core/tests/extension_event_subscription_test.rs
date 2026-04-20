@@ -330,6 +330,7 @@ async fn test_extension_event_subscription_exact_match() {
             value: MetricValue::Float(25.5),
             timestamp: 1234567890,
             quality: Some(0.95),
+            is_virtual: None,
         })
         .await;
 
@@ -444,6 +445,7 @@ async fn test_extension_event_subscription_prefix_match() {
             value: MetricValue::Float(25.5),
             timestamp: 0,
             quality: None,
+            is_virtual: None,
         })
         .await;
 
@@ -566,6 +568,7 @@ async fn test_extension_event_subscription_multiple_extensions() {
             value: MetricValue::Float(25.5),
             timestamp: 0,
             quality: None,
+            is_virtual: None,
         })
         .await;
 
@@ -636,6 +639,7 @@ async fn test_extension_event_subscription_isolated_extension() {
             value: MetricValue::Float(25.5),
             timestamp: 0,
             quality: None,
+            is_virtual: None,
         })
         .await;
 
@@ -794,6 +798,7 @@ async fn test_extension_event_subscription_event_format() {
             value: MetricValue::Float(25.5),
             timestamp: 1234567890,
             quality: Some(0.95),
+            is_virtual: None,
         })
         .await;
 
@@ -856,6 +861,7 @@ async fn test_extension_event_subscription_unregister() {
             value: MetricValue::Float(25.5),
             timestamp: 0,
             quality: None,
+            is_virtual: None,
         })
         .await;
 
@@ -882,6 +888,7 @@ async fn test_extension_event_subscription_unregister() {
             value: MetricValue::Float(26.0),
             timestamp: 0,
             quality: None,
+            is_virtual: None,
         })
         .await;
 
@@ -1005,6 +1012,7 @@ async fn test_extension_event_subscription_error_handling() {
             value: MetricValue::Float(25.5),
             timestamp: 0,
             quality: None,
+            is_virtual: None,
         })
         .await;
 

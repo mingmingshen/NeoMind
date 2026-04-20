@@ -118,6 +118,7 @@ impl DeviceEvent {
                 value: convert_metric_value(value),
                 timestamp,
                 quality: None,
+                is_virtual: None,
             },
             Self::State {
                 device_id,

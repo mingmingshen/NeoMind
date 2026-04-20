@@ -332,15 +332,6 @@ pub struct StreamConfig {
     #[serde(default = "StreamConfig::default_max_total_chars")]
     pub max_total_chars: usize,
 
-    /// Maximum thinking content repetition rate threshold.
-    ///
-    /// When the model's thinking content has this percentage or more
-    /// repetition (compared to total thinking chars), it's considered
-    /// stuck in a loop and will be terminated.
-    ///
-    /// Default: 0.8 (80% repetition)
-    #[serde(default = "StreamConfig::default_max_thinking_repetition_rate")]
-    pub max_thinking_repetition_rate: f64,
 }
 
 impl StreamConfig {
@@ -353,11 +344,11 @@ impl StreamConfig {
     }
 
     fn default_max_stream_duration_secs() -> u64 {
-        300
+        1200
     }
 
     fn default_warning_thresholds() -> Vec<u64> {
-        vec![60, 120, 180, 240]
+        vec![60, 300, 600, 900]
     }
 
     fn default_max_thinking_loop() -> usize {
@@ -370,10 +361,6 @@ impl StreamConfig {
 
     fn default_max_total_chars() -> usize {
         200_000
-    }
-
-    fn default_max_thinking_repetition_rate() -> f64 {
-        0.8
     }
 
     /// Get the max stream duration as a Duration.
@@ -399,7 +386,6 @@ impl StreamConfig {
             max_thinking_loop: 5,
             progress_enabled: true,
             max_total_chars: 50_000,
-            max_thinking_repetition_rate: 0.9,
         }
     }
 
@@ -416,7 +402,6 @@ impl StreamConfig {
             max_thinking_loop: 15,
             progress_enabled: true,
             max_total_chars: 300_000,
-            max_thinking_repetition_rate: 0.85,
         }
     }
 }
@@ -431,7 +416,6 @@ impl Default for StreamConfig {
             max_thinking_loop: Self::default_max_thinking_loop(),
             progress_enabled: Self::default_progress_enabled(),
             max_total_chars: Self::default_max_total_chars(),
-            max_thinking_repetition_rate: Self::default_max_thinking_repetition_rate(),
         }
     }
 }

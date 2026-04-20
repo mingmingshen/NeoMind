@@ -336,6 +336,7 @@ async fn test_event_bus_publish() {
         value: neomind_core::event::MetricValue::Float(25.5),
         timestamp: chrono::Utc::now().timestamp_millis(),
         quality: None,
+        is_virtual: None,
     };
 
     // Should not panic

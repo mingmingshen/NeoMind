@@ -40,6 +40,11 @@ pub enum NeoMindEvent {
         timestamp: i64,
         #[serde(skip_serializing_if = "Option::is_none")]
         quality: Option<f32>,
+        /// Whether this metric was written by an extension (virtual metric).
+        /// Used to prevent feedback loops: virtual DeviceMetric events are not
+        /// re-dispatched to extensions via ExtensionEventSubscriptionService.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        is_virtual: Option<bool>,
     },
 
     /// Device command result
@@ -510,6 +515,28 @@ impl NeoMindEvent {
         )
     }
 
+    /// Check if this is a virtual (non-physical) DeviceMetric event.
+    ///
+    /// Virtual metrics originate from extensions, transforms, or computed values
+    /// rather than real physical devices. Used to prevent feedback loops and
+    /// to skip device status updates for synthetic metrics.
+    pub fn is_virtual_metric(&self) -> bool {
+        match self {
+            Self::DeviceMetric { is_virtual, metric, .. } => {
+                is_virtual.unwrap_or(false) || metric.starts_with("transform.")
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if a DeviceMetric is virtual, using already-destructured fields.
+    ///
+    /// Use this in match arms where the event has already been destructured
+    /// and `&self` is no longer available.
+    pub fn is_virtual_device_metric(is_virtual: Option<bool>, metric: &str) -> bool {
+        is_virtual.unwrap_or(false) || metric.starts_with("transform.")
+    }
+
     /// Check if this is a rule event.
     pub fn is_rule_event(&self) -> bool {
         matches!(
@@ -884,6 +911,7 @@ mod tests {
             value: MetricValue::float(25.0),
             timestamp: 0,
             quality: None,
+            is_virtual: None,
         };
         assert!(event.is_device_event());
         assert!(!event.is_rule_event());
@@ -920,6 +948,7 @@ mod tests {
             value: MetricValue::float(23.5),
             timestamp: 1234567890,
             quality: Some(1.0),
+            is_virtual: None,
         };
 
         let json = serde_json::to_string(&event).unwrap();

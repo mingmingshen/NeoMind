@@ -163,6 +163,7 @@ async fn test_event_bus_custom_filter() {
         value: MetricValue::Float(25.5),
         timestamp: 1000,
         quality: None,
+        is_virtual: None,
     })
     .await;
 
@@ -281,6 +282,7 @@ async fn test_event_bus_device_metric_event() {
         value: MetricValue::Float(25.5),
         timestamp: 1000,
         quality: Some(0.95),
+        is_virtual: None,
     })
     .await;
 

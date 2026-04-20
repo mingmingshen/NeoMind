@@ -528,6 +528,7 @@ mod tests {
             value: MetricValue::float(25.0),
             timestamp: 0,
             quality: None,
+            is_virtual: None,
         })
         .await;
 

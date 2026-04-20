@@ -38,35 +38,35 @@ async fn test_tool_calling_chain() -> anyhow::Result<()> {
 
     // Test cases with dependency chains
     let test_cases = vec![
-        // Chain 1: device_discover → get_device_data
+        // Chain 1: device (list → latest)
         (
             "设备数据链路",
             "查看 ne101 test 设备的当前数据",
-            vec!["device_discover", "get_device_data"],
+            vec!["device", "device"],
         ),
-        // Chain 2: device_discover → query_data (历史趋势)
+        // Chain 2: device (list → history)
         (
             "设备历史趋势链路",
             "分析 ne101 test 设备今天的电池电量变化趋势",
-            vec!["device_discover", "get_device_data", "query_data"],
+            vec!["device", "device", "device"],
         ),
-        // Chain 3: list_agents → get_agent_executions
+        // Chain 3: agent (list → executions)
         (
             "Agent执行历史链路",
             "查看第一个Agent的最近执行记录",
-            vec!["list_agents", "get_agent_executions"],
+            vec!["agent", "agent"],
         ),
-        // Chain 4: list_agents → get_agent → get_agent_executions
+        // Chain 4: agent (list → detail → executions)
         (
             "Agent详情链路",
             "列出所有Agent，然后查看第一个Agent的详细信息和执行历史",
-            vec!["list_agents", "get_agent", "get_agent_executions"],
+            vec!["agent", "agent", "agent"],
         ),
         // Chain 5: Multi-device data
         (
             "多设备数据链路",
             "获取前两个设备的详细数据",
-            vec!["device_discover", "get_device_data"],
+            vec!["device", "device"],
         ),
     ];
 

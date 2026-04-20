@@ -451,6 +451,7 @@ function App() {
                       {/* Agents with tab routes */}
                       <Route path="/agents" element={<AgentsPage />} />
                       <Route path="/agents/memory" element={<AgentsPage />} />
+                      <Route path="/agents/skills" element={<AgentsPage />} />
                       <Route path="/settings" element={<SettingsPage />} />
                       {/* Messages with tab routes */}
                       <Route path="/messages" element={<MessagesPage />} />
