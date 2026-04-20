@@ -416,7 +416,7 @@ export function PageTabsContent({ value, activeTab, children, className }: PageT
   if (value !== activeTab) return null
 
   return (
-    <div className={cn('mt-3', className)}>
+    <div className={cn('mt-3 h-full', className)}>
       {children}
     </div>
   )

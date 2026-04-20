@@ -93,12 +93,12 @@ export function PageLayout({
         {/* Scrollable content - adjust padding based on footer visibility */}
         <div
           className={cn(
-            'flex-1 overflow-auto px-4 sm:px-6 md:px-8',
+            'flex-1 flex flex-col overflow-auto px-4 sm:px-6 md:px-8',
             showFooter ? 'pb-20' : 'pb-4 sm:pb-6'
           )}
           data-page-scroll-container
         >
-          <div className={cn('mx-auto w-full', maxWidthClass[maxWidth])}>
+          <div className={cn('mx-auto w-full h-full', maxWidthClass[maxWidth])}>
             {children}
           </div>
         </div>

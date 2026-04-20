@@ -7,7 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v0.6.10] - 2025-04-20
+## [v0.6.10] - 2026-04-20
+
+### Added
+
+- **AI Metrics Tool** — New `ai_metric` tool enables LLM agents to create and query custom time-series metrics (anomaly scores, predictions, derived indicators). Actions: `write` (persist data point + metadata), `read` (list all metrics with latest values or query time-series for a specific metric). Metrics appear in the Data Explorer via `ai:{group}:{field}` data source IDs. Metadata persists across restarts via JSON file.
+- **AI Metrics Registry** — `AiMetricsRegistry` provides shared metadata storage between `AiMetricTool` (writes) and the data sources handler (reads), with disk persistence in `data/ai_metrics_metadata.json`.
+- **Dynamic Data Explorer Tabs** — Frontend Data Explorer now dynamically creates tabs for all registered data source types, including AI Metrics. Tab content auto-refreshes when new sources are discovered.
+- **Unified Data Sources Collector** — `collect_ai_sources` handler collects AI metric data sources alongside device, extension, and transform sources for the unified data API.
+
+### Changed
+
+- **Agent Execution Mode Redesign** — Renamed Chat Mode → **Focused Mode** and React Mode → **Free Mode** with clear differentiation across all layers (backend, API, frontend, LLM tools).
+  - **Focused Mode**: User binds resources (required), LLM works within defined scope using structured data tables and decision templates. Single-pass, token-efficient. Best for monitoring, alerts, data analysis.
+  - **Free Mode**: LLM freely explores with all 8 tools (device, agent, rule, message, extension, transform, skill, shell), no resource binding needed. Multi-round reasoning. Best for complex automation and device control.
+- **Structured Prompt for Focused Mode** — Focused Mode prompt now uses structured Markdown tables (data table + command table + decision template) instead of loose text, improving LLM reliability for command execution.
+- **Scope Validation** — Focused Mode command execution validates that commands are within bound resources, rejecting out-of-scope commands with warning logs.
+- **Data Collection Config UI** — Focused Mode metric resources now show configurable data collection settings (time range, include history, trend analysis, baseline comparison) in the agent editor.
+- **Notification/Alert in Focused Mode** — Focused Mode can send notifications and alerts without binding, as inherent agent capabilities.
+- **Focused Mode API Validation** — Create/update agent API returns 400 error if Focused Mode has no resource binding.
+- **ExecutionMode Enum** — `Chat`/`React` renamed to `Focused`/`Free` with serde aliases for backward compatibility. Old values (`"chat"`, `"react"`) still accepted via deserialization.
+- **Frontend Mode Cards** — Agent editor mode selection updated with new names, icons, descriptions, and "Required" badge for Focused Mode.
+- **Free Mode Resource Binding Removed** — Free Mode no longer shows resource binding section. Resources cleared when switching to Free Mode.
+- **LLM Tool Descriptions** — Agent tool parameter descriptions (`execution_mode`, `resources`, `enable_tool_chaining`) in both `aggregated.rs` and `simplified.rs` updated to reflect Focused/Free semantics and resource binding rules.
+- **Internal Naming Unified** — `AnalysisResult` enum variants, all doc comments, tracing messages, and log strings updated from Chat/React to Focused/Free across `neomind-agent`, `neomind-storage`, and `neomind-api`.
+- **Shell Tool** — New `shell` tool enables AI agents to execute system commands on the host. Features: login shell (`$SHELL -l -c`) for full user environment (PATH, aliases), cross-platform support (Unix/macOS/Windows), configurable timeout (max 600s), output truncation (10K chars), UTF-8 safe truncation, process group isolation for clean timeout kill. Parameters: `command` (required), `timeout`, `working_dir`, `description` (audit log).
+- **Agent Skill System** — User-defined skill management via the `skill` tool. Actions: `search`, `list`, `get`, `create`, `update`, `delete`. Skills are YAML frontmatter + Markdown files that provide scenario-driven operation guides for the AI agent. Includes keyword matching, token budget injection, and persistence.
+- **Skills Panel UI** — Frontend panel in agent settings for creating, editing, and deleting user skills with a code editor. Supports YAML frontmatter syntax highlighting.
+- **Action Enum Constraints** — LLM tool definitions now include `enum` constraints on the `action` parameter for all aggregated tools, so the LLM knows exactly which actions are available (e.g., `device` supports `list|latest|history|control|write_metric`).
+- **Removed Builtin Skills** — Removed 8 hardcoded builtin skills (753 lines) that duplicated tool descriptions. The skill system now focuses on user-defined multi-tool workflow skills only.
+- **Enhanced Tool Descriptions** — All 6 aggregated tool descriptions (device, agent, rule, message, extension, transform) enhanced with critical workflow hints (confirm flow, list-first pattern, required fields) to compensate for removed builtin skills.
+- **Login Shell for Shell Tool** — Uses `$SHELL` environment variable with `-l` flag for full user environment; falls back to `/bin/sh -c` without `-l` in minimal environments (Docker, IoT edge).
+- **Adaptive Tool Timeout** — Outer tool execution timeout in `execute_with_retry_impl` now adapts to shell tool's internal timeout (`shell_timeout + 5s` buffer) instead of hardcoded 30s.
+- **Tool Name Mapper** — Added `skill` and `shell` with Chinese/English aliases (命令行, 终端, bash, cli, 技能, 指南, etc.) for fuzzy tool name resolution.
+- **Non-Simplified Tool Registration** — `update_tool_definitions` now registers ALL tools from the registry (not just extension tools) that aren't already in simplified definitions, fixing shell tool not being visible to the LLM.
+- **Automation Simplified** — Removed complex automation modes, simplified to transform-only workflow. Unified loading states across frontend components.
+
+### Fixed
+
+- **Tool Result Compaction Echoing** — The old `[Called: tool(args) → result]` compaction format was being echoed verbatim by smaller LLMs instead of generating new tool calls. Replaced with natural language sentences that clearly indicate past results and instruct the model not to repeat them.
+- **AI Metric Discoverability** — `ai_metric` `read_list` returned empty when metrics were written without optional `unit`/`description` fields because metadata was only registered conditionally. Now always registers metadata on write so all metrics are discoverable.
+- **AI Metric Tool Description** — Improved `ai_metric` tool description with clear examples for write and read actions, making it easier for LLMs to use correctly.
+- **AI Metric Metadata Persistence** — AI metrics metadata now persists to `data/ai_metrics_metadata.json` across server restarts via `AiMetricsRegistry` disk persistence.
+- **Shell Timeout Parameter** — `timeout` parameter now accepts both number (`30`) and string (`"30"`) forms, fixing LLM passing string values through simplified schema.
+- **Simplified Tool Description Accuracy** — Fixed `device` tool description: `get` → `latest`, added missing `write_metric` action. Fixed `message` tool: added missing `get` action.
+- **Cross-Platform Shell Dependencies** — `libc` moved to Unix-only target dependency, `windows-sys` added as Windows-only dependency for proper cross-compilation.
 
 ### Added
 
