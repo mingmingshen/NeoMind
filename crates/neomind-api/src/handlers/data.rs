@@ -72,7 +72,10 @@ pub async fn list_all_data_sources_handler(
     // 3. Collect transform data sources
     collect_transform_sources(&state, &mut sources).await;
 
-    // 4. Populate latest telemetry values
+    // 4. Collect AI agent metrics
+    collect_ai_sources(&state, &mut sources).await;
+
+    // 5. Populate latest telemetry values
     populate_latest_values(&state, &mut sources).await;
 
     // Sort by id for consistent ordering
@@ -256,4 +259,51 @@ async fn collect_transform_sources(state: &ServerState, sources: &mut Vec<Unifie
             quality: None,
         });
     }
+}
+
+/// Collect data sources from AI agent metrics.
+///
+/// AI metrics are registered by agents via the `ai_metric` tool.
+/// They are stored in telemetry with device_id = `"ai:{group}"` and metric = field name.
+async fn collect_ai_sources(state: &ServerState, sources: &mut Vec<UnifiedDataSourceInfo>) {
+    let registry = &state.agents.ai_metrics_registry;
+    let keys = registry.all_keys();
+
+    for (group, field) in keys {
+        let source_id = DataSourceId::ai(&group, &field);
+        let meta = registry.get(&group, &field);
+
+        sources.push(UnifiedDataSourceInfo {
+            id: source_id.storage_key(),
+            source_type: "ai".to_string(),
+            source_name: group.clone(),
+            source_display_name: format!("AI {}", title_case(&group)),
+            field: field.clone(),
+            field_display_name: field.clone(),
+            data_type: "unknown".to_string(), // will be inferred by populate_latest_values
+            unit: meta.as_ref().and_then(|m| m.unit.clone()),
+            description: meta.as_ref().and_then(|m| m.description.clone()),
+            current_value: None,
+            last_update: None,
+            quality: None,
+        });
+    }
+}
+
+/// Convert a snake_case or kebab-case string to Title Case.
+fn title_case(s: &str) -> String {
+    let mut result = String::new();
+    let mut capitalize = true;
+    for c in s.chars() {
+        if c == '-' || c == '_' {
+            result.push(' ');
+            capitalize = true;
+        } else if capitalize {
+            result.extend(c.to_uppercase());
+            capitalize = false;
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
