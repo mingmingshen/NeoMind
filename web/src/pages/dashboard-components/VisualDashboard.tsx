@@ -2279,7 +2279,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
               },
             },
           ],
@@ -2414,7 +2414,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
               },
             },
           ],
@@ -2562,7 +2562,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
               },
             },
           ],
@@ -2700,7 +2700,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
               },
             },
           ],
@@ -2803,7 +2803,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
                 multiple: true,
                 maxSources: 5,
               },
@@ -2897,7 +2897,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
                 multiple: true,
                 maxSources: 5,
               },
@@ -3011,7 +3011,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
                 multiple: true,
                 maxSources: 3,
               },
@@ -3120,7 +3120,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
               },
             },
           ],
@@ -3194,7 +3194,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
               },
             },
           ],
@@ -3313,7 +3313,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
               },
             },
           ],
@@ -3476,7 +3476,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
               },
             },
           ],
@@ -3583,7 +3583,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system', 'extension'],
+                allowedTypes: ['device-metric', 'system', 'extension', 'transform', 'ai-metric'],
               },
             },
           ],

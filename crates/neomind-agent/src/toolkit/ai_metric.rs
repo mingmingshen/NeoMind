@@ -84,7 +84,8 @@ impl AiMetricsRegistry {
         }
         match std::fs::read_to_string(&self.path) {
             Ok(content) => {
-                let map: std::collections::HashMap<(String, String), AiMetricMeta> =
+                // Keys are stored as "group\0field" strings for JSON compatibility.
+                let map: std::collections::HashMap<String, AiMetricMeta> =
                     match serde_json::from_str(&content) {
                         Ok(m) => m,
                         Err(e) => {
@@ -93,7 +94,12 @@ impl AiMetricsRegistry {
                         }
                     };
                 for (k, v) in map {
-                    self.metrics.insert(k, v);
+                    let mut parts = k.splitn(2, '\0');
+                    let group = parts.next().unwrap_or_default().to_string();
+                    let field = parts.next().unwrap_or_default().to_string();
+                    if !group.is_empty() && !field.is_empty() {
+                        self.metrics.insert((group, field), v);
+                    }
                 }
                 let count = self.metrics.len();
                 tracing::info!(count, "Loaded AI metrics metadata from disk");
@@ -105,10 +111,14 @@ impl AiMetricsRegistry {
     }
 
     fn save_to_disk(&self) {
-        let map: std::collections::HashMap<(String, String), AiMetricMeta> = self
+        // Use "group\0field" as string key since JSON requires string keys.
+        let map: std::collections::HashMap<String, AiMetricMeta> = self
             .metrics
             .iter()
-            .map(|e| (e.key().clone(), e.value().clone()))
+            .map(|e| {
+                let (g, f) = e.key();
+                (format!("{}\0{}", g, f), e.value().clone())
+            })
             .collect();
 
         if let Some(parent) = self.path.parent() {
@@ -206,9 +216,13 @@ impl AiMetricTool {
             .ok_or_else(|| ToolError::InvalidArguments("value is required".into()))?;
         let metric_value = Self::json_to_metric_value(json_value);
 
+        // Use seconds-level timestamps to match the telemetry system convention.
+        // Device telemetry uses `chrono::Utc::now().timestamp()` (seconds) everywhere,
+        // and the API handler queries with second-based ranges.
         let timestamp = args["timestamp"]
             .as_i64()
-            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+            .map(|ts| if ts > 1e12 as i64 { ts / 1000 } else { ts }) // normalize ms → s
+            .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
         let point = neomind_devices::DataPoint {
             timestamp,
@@ -319,9 +333,10 @@ impl AiMetricTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("field is required for data query".into()))?;
 
-        let now = chrono::Utc::now().timestamp_millis();
-        let start = args["start_time"].as_i64().unwrap_or(now - 86_400_000); // default: 24h ago
-        let end = args["end_time"].as_i64().unwrap_or(now);
+        // Use seconds-level timestamps to match telemetry system convention.
+        let now = chrono::Utc::now().timestamp();
+        let start = args["start_time"].as_i64().map(|ts| if ts > 1e12 as i64 { ts / 1000 } else { ts }).unwrap_or(now - 86400); // default: 24h ago
+        let end = args["end_time"].as_i64().map(|ts| if ts > 1e12 as i64 { ts / 1000 } else { ts }).unwrap_or(now);
 
         let device_id = format!("ai:{}", group);
         let points = self

@@ -10,7 +10,7 @@
 // Data Source Types
 // ============================================================================
 
-export type DataSourceType = 'device' | 'metric' | 'command' | 'telemetry' | 'device-info' | 'system' | 'extension' | 'extension-metric' | 'extension-command'
+export type DataSourceType = 'device' | 'metric' | 'command' | 'telemetry' | 'device-info' | 'system' | 'extension' | 'extension-metric' | 'extension-command' | 'transform' | 'ai-metric'
 
 export interface ValueMapping {
   on?: unknown
@@ -161,6 +161,12 @@ export interface DataSource {
   extensionDisplayName?: string
   extensionDataType?: string
   extensionUnit?: string
+
+  // === Transform fields ===
+  transformId?: string      // transform automation ID
+
+  // === AI Metric fields ===
+  aiGroup?: string          // AI metric group name
 }
 
 // Union type for single or multiple data sources

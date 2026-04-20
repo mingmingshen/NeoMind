@@ -8,7 +8,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Search, Check, Server, Zap, Info, X, ChevronRight, ChevronLeft, Circle, Loader2, Database, MapPin, Activity, Puzzle } from 'lucide-react'
+import { Search, Check, Server, Zap, Info, X, ChevronRight, ChevronLeft, Circle, Loader2, Database, MapPin, Activity, Puzzle, Workflow, Brain } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -20,7 +20,7 @@ import { useDataAvailability } from '@/hooks/useDataAvailability'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
 import { api } from '@/lib/api'
-import type { Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor, TransformDataSourceInfo } from '@/types'
+import type { Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor, TransformDataSourceInfo, UnifiedDataSourceInfo } from '@/types'
 
 // ============================================================================
 // Types
@@ -29,15 +29,15 @@ import type { Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor, Tr
 export interface UnifiedDataSourceConfigProps {
   value?: DataSourceOrList
   onChange: (dataSource: DataSourceOrList | undefined) => void
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension' | 'extension-command'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension' | 'extension-command' | 'transform' | 'ai-metric'>
   multiple?: boolean
   maxSources?: number
   className?: string
   disabled?: boolean
 }
 
-type CategoryType = 'device-metric' | 'device-command' | 'device' | 'system' | 'extension' | 'extension-command'
-type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" or "device:deviceId" or "system:metric" or "extension:extensionId:metric" or "extension-command:extensionId:command"
+type CategoryType = 'device-metric' | 'device-command' | 'device' | 'system' | 'extension' | 'extension-command' | 'transform' | 'ai-metric'
+type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" or "device:deviceId" or "system:metric" or "extension:extensionId:metric" or "extension-command:extensionId:command" or "transform:transformId:field" or "ai-metric:group:field"
 
 // ============================================================================
 // Constants
@@ -81,6 +81,8 @@ function getCategories(t: (key: string) => string) {
     { id: 'system' as const, name: t('systemDataSource.title'), icon: Activity, description: t('systemDataSource.description') },
     { id: 'extension' as const, name: t('extensions:dataSource.extensionSource') || 'Extension Metrics', icon: Puzzle, description: t('extensions:dataSource.selectExtension') || 'Select extension metrics' },
     { id: 'extension-command' as const, name: t('extensions:dataSource.extensionCommand') || 'Extension Commands', icon: Zap, description: t('extensions:dataSource.selectExtensionCommand') || 'Select extension commands' },
+    { id: 'transform' as const, name: t('dataSource.transform'), icon: Workflow, description: t('dataSource.transformDesc') },
+    { id: 'ai-metric' as const, name: t('dataSource.aiMetric'), icon: Brain, description: t('dataSource.aiMetricDesc') },
   ]
 }
 
@@ -90,9 +92,9 @@ function getCategories(t: (key: string) => string) {
 
 // Convert old allowedTypes format to new format
 function normalizeAllowedTypes(
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension' | 'extension-command'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension' | 'extension-command' | 'transform' | 'ai-metric'>
 ): CategoryType[] {
-  if (!allowedTypes) return ['device', 'device-metric', 'device-command', 'system', 'extension', 'extension-command']
+  if (!allowedTypes) return ['device', 'device-metric', 'device-command', 'system', 'extension', 'extension-command', 'transform', 'ai-metric']
 
   const result: CategoryType[] = []
 
@@ -105,6 +107,8 @@ function normalizeAllowedTypes(
   if (allowedTypes.includes('system')) result.push('system')
   if (allowedTypes.includes('extension')) result.push('extension')
   if (allowedTypes.includes('extension-command')) result.push('extension-command')
+  if (allowedTypes.includes('transform')) result.push('transform')
+  if (allowedTypes.includes('ai-metric')) result.push('ai-metric')
 
   // Old format types - map to new format (but not 'device' since it's distinct now)
   if (allowedTypes.includes('metric')) {
@@ -116,7 +120,7 @@ function normalizeAllowedTypes(
     if (!result.includes('extension-command')) result.push('extension-command')
   }
 
-  return result.length > 0 ? result : ['device', 'device-metric', 'device-command', 'system', 'extension', 'extension-command']
+  return result.length > 0 ? result : ['device', 'device-metric', 'device-command', 'system', 'extension', 'extension-command', 'transform', 'ai-metric']
 }
 
 /**
@@ -190,6 +194,32 @@ function selectedItemsToDataSource(
           extensionId: parts[1],
           command: parts.slice(2).join(':'),
         } as any
+      case 'transform':
+        // Format: transform:transformId:field
+        return {
+          type: 'transform',
+          deviceId: `transform:${parts[1]}`,
+          metricId: parts.slice(2).join(':'),
+          transformId: parts[1],
+          timeRange: 1,
+          limit: 50,
+          aggregate: 'raw',
+          params: { includeRawPoints: true },
+          transform: 'raw',
+        }
+      case 'ai-metric':
+        // Format: ai-metric:group:field
+        return {
+          type: 'ai-metric',
+          deviceId: `ai:${parts[1]}`,
+          metricId: parts.slice(2).join(':'),
+          aiGroup: parts[1],
+          timeRange: 1,
+          limit: 50,
+          aggregate: 'raw',
+          params: { includeRawPoints: true },
+          transform: 'raw',
+        }
       default:
         return undefined
     }
@@ -262,6 +292,32 @@ function selectedItemsToDataSource(
           command: parts.slice(2).join(':'),
         } as any)
         break
+      case 'transform':
+        result.push({
+          type: 'transform',
+          deviceId: `transform:${parts[1]}`,
+          metricId: parts.slice(2).join(':'),
+          transformId: parts[1],
+          timeRange: 1,
+          limit: 50,
+          aggregate: 'raw',
+          params: { includeRawPoints: true },
+          transform: 'raw',
+        })
+        break
+      case 'ai-metric':
+        result.push({
+          type: 'ai-metric',
+          deviceId: `ai:${parts[1]}`,
+          metricId: parts.slice(2).join(':'),
+          aiGroup: parts[1],
+          timeRange: 1,
+          limit: 50,
+          aggregate: 'raw',
+          params: { includeRawPoints: true },
+          transform: 'raw',
+        })
+        break
     }
   }
 
@@ -308,6 +364,24 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
         // For extension-command type, check if it has extensionId and command
         if ((dataSource as any).extensionId && (dataSource as any).command) {
           items.add(`extension-command:${(dataSource as any).extensionId}:${(dataSource as any).command}` as SelectedItem)
+        }
+        break
+      case 'transform':
+        // For transform type, parse from transformId or deviceId prefix
+        if (dataSource.transformId) {
+          items.add(`transform:${dataSource.transformId}:${dataSource.metricId || 'value'}` as SelectedItem)
+        } else if (dataSource.deviceId?.startsWith('transform:')) {
+          const id = dataSource.deviceId.slice(10) // Remove "transform:" prefix
+          items.add(`transform:${id}:${dataSource.metricId || 'value'}` as SelectedItem)
+        }
+        break
+      case 'ai-metric':
+        // For ai-metric type, parse from aiGroup or deviceId prefix
+        if ((dataSource as any).aiGroup) {
+          items.add(`ai-metric:${(dataSource as any).aiGroup}:${dataSource.metricId || 'value'}` as SelectedItem)
+        } else if (dataSource.deviceId?.startsWith('ai:')) {
+          const group = dataSource.deviceId.slice(3) // Remove "ai:" prefix
+          items.add(`ai-metric:${group}:${dataSource.metricId || 'value'}` as SelectedItem)
         }
         break
     }
@@ -362,6 +436,14 @@ function getSelectedItemLabel(item: SelectedItem, devices: any[], t: (key: strin
       // Format: extension-command:extensionId:commandName
       return `Extension · ${parts.slice(2).join(':')}`
     }
+    case 'transform': {
+      // Format: transform:transformId:field
+      return `${t('dataSource.transform')} · ${parts.slice(2).join(':')}`
+    }
+    case 'ai-metric': {
+      // Format: ai-metric:group:field
+      return `${t('dataSource.aiMetric')} · ${parts[1]} · ${parts.slice(2).join(':')}`
+    }
     default:
       return item
   }
@@ -397,6 +479,11 @@ export function UnifiedDataSourceConfig({
   const [extensionDataSources, setExtensionDataSources] = useState<ExtensionDataSourceInfo[]>([])
   const [extensionsLoading, setExtensionsLoading] = useState(false)
   const [extensionError, setExtensionError] = useState<string | null>(null)
+
+  // Unified data sources state (for transform/ai-metric tabs)
+  const [unifiedDataSources, setUnifiedDataSources] = useState<UnifiedDataSourceInfo[]>([])
+  const [unifiedSourcesLoading, setUnifiedSourcesLoading] = useState(false)
+  const hasFetchedUnifiedSources = useRef(false)
 
   // Data availability checking - now includes summaries with virtual metrics
   const { availability, summaries, loading: checkingData, checkDevice } = useDataAvailability()
@@ -544,6 +631,40 @@ export function UnifiedDataSourceConfig({
 
     fetchExtensionData()
   }, [availableCategories, extensions.length])
+
+  // Fetch unified data sources when transform/ai-metric categories are available
+  useEffect(() => {
+    const needsUnified = availableCategories.some(c => c.id === 'transform' || c.id === 'ai-metric')
+    if (!needsUnified) {
+      hasFetchedUnifiedSources.current = false
+      return
+    }
+    if (hasFetchedUnifiedSources.current && unifiedDataSources.length > 0) return
+
+    const fetchUnified = async () => {
+      setUnifiedSourcesLoading(true)
+      try {
+        const sources = await api.listUnifiedDataSources()
+        setUnifiedDataSources(sources)
+        hasFetchedUnifiedSources.current = true
+      } catch (err) {
+        console.error('[UnifiedDataSourceConfig] Error fetching unified data sources:', err)
+      } finally {
+        setUnifiedSourcesLoading(false)
+      }
+    }
+    fetchUnified()
+  }, [availableCategories, unifiedDataSources.length])
+
+  // Computed lists for transform and AI metric sources
+  const transformSources = useMemo(() =>
+    unifiedDataSources.filter(s => s.source_type === 'transform'),
+    [unifiedDataSources]
+  )
+  const aiMetricSources = useMemo(() =>
+    unifiedDataSources.filter(s => s.source_type === 'ai'),
+    [unifiedDataSources]
+  )
 
   // Restore extension selection from saved value (only runs once after extensions are loaded)
   useEffect(() => {
@@ -1445,6 +1566,152 @@ export function UnifiedDataSourceConfig({
           </div>
         )
 
+      case 'transform':
+        // Transform data sources - flat list layout
+        return (
+          <div className="space-y-1">
+            {unifiedSourcesLoading ? (
+              <div className="p-4 text-center text-muted-foreground text-sm flex items-center justify-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading...
+              </div>
+            ) : transformSources.length === 0 ? (
+              <div className="p-4 text-center text-muted-foreground text-sm">{t('dataSource.noTransforms')}</div>
+            ) : (
+              transformSources.map(source => {
+                const itemKey = `transform:${source.source_name}:${source.field}` as SelectedItem
+                const isSelected = selectedItems.has(itemKey)
+                return (
+                  <button
+                    key={source.id}
+                    type="button"
+                    onClick={() => handleSelectItem(itemKey)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all duration-150',
+                      isSelected
+                        ? 'bg-primary/10 border-primary/50'
+                        : 'bg-card border-border hover:bg-accent/40 hover:border-primary/20'
+                    )}
+                  >
+                    <div className={cn(
+                      'shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-colors',
+                      isSelected
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-muted-foreground'
+                    )}>
+                      <Check className={cn(
+                        'h-3.5 w-3.5',
+                        isSelected ? 'opacity-100' : 'opacity-0'
+                      )} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={cn(
+                        'text-sm truncate',
+                        isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground/80'
+                      )}>
+                        {source.source_display_name} · {source.field_display_name}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground truncate flex items-center gap-1.5">
+                        <code className="px-1 py-0.5 bg-muted/40 rounded text-[9px] font-mono">
+                          {source.source_name}:{source.field}
+                        </code>
+                        {source.unit && source.unit !== '-' && (
+                          <>
+                            <span className="text-muted-foreground/20">·</span>
+                            <span className="text-muted-foreground/40">{source.unit}</span>
+                          </>
+                        )}
+                        {source.current_value !== undefined && source.current_value !== null && (
+                          <>
+                            <span className="text-muted-foreground/20">·</span>
+                            <span className="text-foreground/60">{String(source.current_value)}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-600 border border-violet-500/20">
+                      {t('dataSource.transform')}
+                    </span>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        )
+
+      case 'ai-metric':
+        // AI metric sources - flat list layout
+        return (
+          <div className="space-y-1">
+            {unifiedSourcesLoading ? (
+              <div className="p-4 text-center text-muted-foreground text-sm flex items-center justify-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading...
+              </div>
+            ) : aiMetricSources.length === 0 ? (
+              <div className="p-4 text-center text-muted-foreground text-sm">{t('dataSource.noAiMetrics')}</div>
+            ) : (
+              aiMetricSources.map(source => {
+                const itemKey = `ai-metric:${source.source_name}:${source.field}` as SelectedItem
+                const isSelected = selectedItems.has(itemKey)
+                return (
+                  <button
+                    key={source.id}
+                    type="button"
+                    onClick={() => handleSelectItem(itemKey)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all duration-150',
+                      isSelected
+                        ? 'bg-primary/10 border-primary/50'
+                        : 'bg-card border-border hover:bg-accent/40 hover:border-primary/20'
+                    )}
+                  >
+                    <div className={cn(
+                      'shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-colors',
+                      isSelected
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-muted-foreground'
+                    )}>
+                      <Check className={cn(
+                        'h-3.5 w-3.5',
+                        isSelected ? 'opacity-100' : 'opacity-0'
+                      )} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={cn(
+                        'text-sm truncate',
+                        isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground/80'
+                      )}>
+                        {source.source_display_name} · {source.field_display_name}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground truncate flex items-center gap-1.5">
+                        <code className="px-1 py-0.5 bg-muted/40 rounded text-[9px] font-mono">
+                          {source.source_name}:{source.field}
+                        </code>
+                        {source.unit && source.unit !== '-' && (
+                          <>
+                            <span className="text-muted-foreground/20">·</span>
+                            <span className="text-muted-foreground/40">{source.unit}</span>
+                          </>
+                        )}
+                        {source.current_value !== undefined && source.current_value !== null && (
+                          <>
+                            <span className="text-muted-foreground/20">·</span>
+                            <span className="text-foreground/60">{String(source.current_value)}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                      AI
+                    </span>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        )
+
       default:
         return null
     }
@@ -1499,6 +1766,12 @@ export function UnifiedDataSourceConfig({
               } else if (type === 'extension-command') {
                 TypeIcon = Zap
                 iconColor = 'text-orange-500'
+              } else if (type === 'transform') {
+                TypeIcon = Workflow
+                iconColor = 'text-violet-500'
+              } else if (type === 'ai-metric') {
+                TypeIcon = Brain
+                iconColor = 'text-emerald-500'
               }
 
               return (

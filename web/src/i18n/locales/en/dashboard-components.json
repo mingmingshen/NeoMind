@@ -635,7 +635,13 @@
     "statusDesc": "Current status text",
     "onlineStatusDesc": "Whether the device is online",
     "commandToggle": "Toggle",
-    "commandSetValue": "Set Value"
+    "commandSetValue": "Set Value",
+    "transform": "Transforms",
+    "transformDesc": "Data transformation outputs",
+    "aiMetric": "AI Metrics",
+    "aiMetricDesc": "AI agent generated metrics",
+    "noTransforms": "No transform data sources",
+    "noAiMetrics": "No AI metrics"
   },
   "systemDataSource": {
     "title": "System",

@@ -151,20 +151,14 @@ export function DataExplorerPage() {
   useEffect(() => { setSelectedSourceName('__all__') }, [activeType])
 
   // Tabs config for PageTabsBar / PageTabsBottomNav
-  const tabs = useMemo(() => {
-    const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-      device: Cpu, extension: Puzzle, transform: Workflow, ai: Brain,
-    }
-    const typeSet = new Set(sources.map(s => s.source_type))
-    return [
-      { value: 'all', label: t('data:tabs.all', 'All'), icon: <Database className="h-4 w-4" /> },
-      ...Array.from(typeSet).sort().map(type => {
-        const Icon = iconMap[type] || Database
-        const label = t(`data:tabs.${type}`, type.charAt(0).toUpperCase() + type.slice(1))
-        return { value: type, label, icon: <Icon className="h-4 w-4" /> }
-      }),
-    ]
-  }, [sources, t])
+  // Fixed tabs - always shown for discoverability, even when empty
+  const tabs = useMemo(() => [
+    { value: 'all', label: t('data:tabs.all', 'All'), icon: <Database className="h-4 w-4" /> },
+    { value: 'device', label: t('data:tabs.device', 'Device'), icon: <Cpu className="h-4 w-4" /> },
+    { value: 'extension', label: t('data:tabs.extension', 'Extension'), icon: <Puzzle className="h-4 w-4" /> },
+    { value: 'transform', label: t('data:tabs.transform', 'Transform'), icon: <Workflow className="h-4 w-4" /> },
+    { value: 'ai', label: t('data:tabs.ai', 'AI Metrics'), icon: <Brain className="h-4 w-4" /> },
+  ], [t])
 
   // Table columns
   const columns: TableColumn[] = [
@@ -247,7 +241,6 @@ export function DataExplorerPage() {
         title={t('data:title', 'Data Explorer')}
         subtitle={t('data:subtitle', 'Browse all data sources across devices, extensions, and transforms')}
         hideFooterOnMobile
-        scrollable={false}
         headerContent={
           <PageTabsBar
             tabs={tabs}

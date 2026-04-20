@@ -1068,7 +1068,7 @@ export function useDataSource<T = unknown>(
 
     try {
       // Filter out telemetry, system, and extension sources - they are handled separately by fetch effects
-      const nonTelemetrySources = currentDataSources.filter((ds) => ds.type !== 'telemetry' && ds.type !== 'system' && ds.type !== 'extension')
+      const nonTelemetrySources = currentDataSources.filter((ds) => ds.type !== 'telemetry' && ds.type !== 'system' && ds.type !== 'extension' && ds.type !== 'transform' && ds.type !== 'ai-metric')
 
       // Only process non-telemetry sources here
       const results = nonTelemetrySources.map((ds) => {
@@ -2324,7 +2324,7 @@ export function useDataSource<T = unknown>(
   // Use stable key for dependency to prevent infinite re-renders
   const telemetryKey = useMemo(() => {
     return dataSources
-      .filter((ds) => ds.type === 'telemetry')
+      .filter((ds) => ds.type === 'telemetry' || ds.type === 'transform' || ds.type === 'ai-metric')
       .map((ds) => {
         // Use actual values that will be used for fetching, to ensure key matches cache
         const isImageDataSource = (ds.params?.includeRawPoints === true || ds.transform === 'raw') ||
@@ -2347,7 +2347,7 @@ export function useDataSource<T = unknown>(
   }, [dataSources])
 
   const telemetryDataSources = useMemo(() => {
-    return dataSources.filter((ds) => ds.type === 'telemetry')
+    return dataSources.filter((ds) => ds.type === 'telemetry' || ds.type === 'transform' || ds.type === 'ai-metric')
   }, [dataSources])
 
   const hasTelemetrySource = telemetryDataSources.length > 0

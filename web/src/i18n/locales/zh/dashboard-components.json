@@ -583,7 +583,13 @@
     "statusDesc": "当前状态文本",
     "onlineStatusDesc": "是否在线",
     "commandToggle": "切换",
-    "commandSetValue": "设置值"
+    "commandSetValue": "设置值",
+    "transform": "数据转换",
+    "transformDesc": "数据转换输出",
+    "aiMetric": "AI 指标",
+    "aiMetricDesc": "AI 代理生成的指标",
+    "noTransforms": "暂无数据转换",
+    "noAiMetrics": "暂无 AI 指标"
   },
   "systemDataSource": {
     "title": "系统",
