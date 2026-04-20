@@ -383,20 +383,21 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     examples: vec!["0 8 * * *".to_string(), "300".to_string(), "3600".to_string(), "device:sensor_001:temperature".to_string()],
                 }),
                 ("execution_mode".to_string(), ParameterInfo {
-                    description: "Agent mode (create): 'chat' = single-pass (default, for monitoring/reporting), 'react' = multi-round tool loop (for automation needing device control or multi-step actions)".to_string(),
-                    default: serde_json::json!("chat"),
-                    examples: vec!["chat".to_string(), "react".to_string()],
+                    description: "Agent mode (create): 'focused' = must bind resources, LLM works within defined scope. Fast, precise, token-efficient. Best for monitoring, alerts, data analysis. 'free' = LLM freely explores with all tools, multi-round reasoning. Best for complex automation and device control.".to_string(),
+                    default: serde_json::json!("focused"),
+                    examples: vec!["focused".to_string(), "free".to_string()],
                 }),
                 ("resources".to_string(), ParameterInfo {
-                    description: "Resources to bind (create, multi-select, finest granularity preferred). JSON array: [{\"type\":\"...\",\"id\":\"...\"}]. Types: 'device' (id=device_id), 'metric' (id='device_id:metric_name'), 'command' (id='device_id:cmd'), 'extension_metric' (id='extension:ext_id:metric'), 'extension_tool' (id='extension:ext_id:tool'). Prefer specific metrics over whole devices. Example: [{\"type\":\"metric\",\"id\":\"sensor_001:temperature\"},{\"type\":\"extension_tool\",\"id\":\"extension:weather:forecast\"}]".to_string(),
+                    description: "Resources to bind (create, multi-select). REQUIRED for focused mode (at least 1), optional for free mode. JSON array: [{\"type\":\"...\",\"id\":\"...\",\"config\":{...}}]. Types: 'device', 'metric' (id='device_id:metric'), 'command' (id='device_id:cmd'), 'extension_metric' (id='extension:ext_id:metric'), 'extension_tool' (id='extension:ext_id:tool'). Focused mode: these define the exact scope. Free mode: recommended focus areas. For metrics in focused mode, config.data_collection controls pre-collection: {\"data_collection\":{\"time_range_minutes\":60,\"include_history\":false,\"include_trend\":false}}".to_string(),
                     default: serde_json::json!(null),
                     examples: vec![
                         "[{\"type\":\"metric\",\"id\":\"sensor_001:temperature\"}]".to_string(),
                         "[{\"type\":\"device\",\"id\":\"camera_001\"},{\"type\":\"extension_tool\",\"id\":\"extension:image_analyzer:detect\"}]".to_string(),
+                        "[{\"type\":\"metric\",\"id\":\"sensor_001:temperature\",\"config\":{\"data_collection\":{\"time_range_minutes\":360}}}]".to_string(),
                     ],
                 }),
                 ("enable_tool_chaining".to_string(), ParameterInfo {
-                    description: "Allow tool output chaining in react mode (create, optional). Default: false. Set true for complex automation.".to_string(),
+                    description: "Allow tool output chaining in free mode (create, optional). Default: false. Set true for complex automation. Only applies to free mode.".to_string(),
                     default: serde_json::json!(false),
                     examples: vec!["true".to_string(), "false".to_string()],
                 }),

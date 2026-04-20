@@ -1461,7 +1461,7 @@ pub async fn set_agent_status(
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update status: {}", e)))?;
 
-    tracing::info!("Updated AI Agent {} status to: {}", id, status_str);
+    tracing::debug!("Updated AI Agent {} status to: {}", id, status_str);
 
     ok(json!({
         "id": id,
@@ -1673,7 +1673,7 @@ pub async fn add_user_message(
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to add message: {}", e)))?;
 
-    tracing::info!("Added user message {} to agent {}", message.id, id);
+    tracing::debug!("Added user message {} to agent {}", message.id, id);
 
     ok(json!(UserMessageDto::from(message)))
 }
@@ -1719,7 +1719,7 @@ pub async fn delete_user_message(
         )));
     }
 
-    tracing::info!("Deleted user message {} from agent {}", message_id, id);
+    tracing::debug!("Deleted user message {} from agent {}", message_id, id);
 
     ok(json!({ "ok": true }))
 }
@@ -1738,7 +1738,7 @@ pub async fn clear_user_messages(
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to clear messages: {}", e)))?;
 
-    tracing::info!("Cleared {} user messages from agent {}", count, id);
+    tracing::debug!("Cleared {} user messages from agent {}", count, id);
 
     ok(json!({
         "ok": true,
