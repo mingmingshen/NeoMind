@@ -504,7 +504,7 @@ export function AgentsPage() {
     >
       <PageTabsContent value="agents" activeTab={activeTab}>
         {loading ? (
-          <div className="flex items-center justify-center py-20">
+          <div className="h-full flex items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : agents.length === 0 ? (
