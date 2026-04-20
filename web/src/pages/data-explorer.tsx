@@ -20,22 +20,25 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { Search, Database, RefreshCw, Cpu, Puzzle, Workflow } from 'lucide-react'
+import { Search, Database, RefreshCw, Cpu, Puzzle, Workflow, Brain } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { UnifiedDataSourceInfo } from '@/types'
 import { useIsMobile } from '@/hooks/useMobile'
 import { useEvents } from '@/hooks/useEvents'
 
-type SourceType = 'all' | 'device' | 'extension' | 'transform'
+type SourceType = 'all' | string
 
 function SourceTypeBadge({ type }: { type: string }) {
   const colorMap: Record<string, string> = {
     device: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
     extension: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
     transform: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
-    system: 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20',
+    ai: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
   }
-  const Icon = { device: Cpu, extension: Puzzle, transform: Workflow }[type] || Database
+  const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+    device: Cpu, extension: Puzzle, transform: Workflow, ai: Brain,
+  }
+  const Icon = iconMap[type] || Database
   return (
     <Badge variant="outline" className={`text-[11px] px-1.5 py-0 h-6 gap-1 ${colorMap[type] || ''}`}>
       <Icon className="h-3 w-3" />
@@ -148,12 +151,20 @@ export function DataExplorerPage() {
   useEffect(() => { setSelectedSourceName('__all__') }, [activeType])
 
   // Tabs config for PageTabsBar / PageTabsBottomNav
-  const tabs = useMemo(() => [
-    { value: 'all', label: t('data:tabs.all', 'All'), icon: <Database className="h-4 w-4" /> },
-    { value: 'device', label: t('data:tabs.devices', 'Devices'), icon: <Cpu className="h-4 w-4" /> },
-    { value: 'extension', label: t('data:tabs.extensions', 'Extensions'), icon: <Puzzle className="h-4 w-4" /> },
-    { value: 'transform', label: t('data:tabs.transforms', 'Transforms'), icon: <Workflow className="h-4 w-4" /> },
-  ], [t])
+  const tabs = useMemo(() => {
+    const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+      device: Cpu, extension: Puzzle, transform: Workflow, ai: Brain,
+    }
+    const typeSet = new Set(sources.map(s => s.source_type))
+    return [
+      { value: 'all', label: t('data:tabs.all', 'All'), icon: <Database className="h-4 w-4" /> },
+      ...Array.from(typeSet).sort().map(type => {
+        const Icon = iconMap[type] || Database
+        const label = t(`data:tabs.${type}`, type.charAt(0).toUpperCase() + type.slice(1))
+        return { value: type, label, icon: <Icon className="h-4 w-4" /> }
+      }),
+    ]
+  }, [sources, t])
 
   // Table columns
   const columns: TableColumn[] = [
@@ -236,11 +247,12 @@ export function DataExplorerPage() {
         title={t('data:title', 'Data Explorer')}
         subtitle={t('data:subtitle', 'Browse all data sources across devices, extensions, and transforms')}
         hideFooterOnMobile
+        scrollable={false}
         headerContent={
           <PageTabsBar
             tabs={tabs}
             activeTab={activeType}
-            onTabChange={(v) => setActiveType(v as SourceType)}
+            onTabChange={(v) => setActiveType(v)}
             actions={[
               {
                 label: t('common:refresh', 'Refresh'),
@@ -277,16 +289,7 @@ export function DataExplorerPage() {
           ) : undefined
         }
       >
-        <PageTabsContent value="all" activeTab={activeType}>
-          {dataTable}
-        </PageTabsContent>
-        <PageTabsContent value="device" activeTab={activeType}>
-          {dataTable}
-        </PageTabsContent>
-        <PageTabsContent value="extension" activeTab={activeType}>
-          {dataTable}
-        </PageTabsContent>
-        <PageTabsContent value="transform" activeTab={activeType}>
+        <PageTabsContent value={activeType} activeTab={activeType}>
           {dataTable}
         </PageTabsContent>
       </PageLayout>
@@ -295,7 +298,7 @@ export function DataExplorerPage() {
       <PageTabsBottomNav
         tabs={tabs}
         activeTab={activeType}
-        onTabChange={(v) => setActiveType(v as SourceType)}
+        onTabChange={(v) => setActiveType(v)}
       />
 
       {/* Detail dialog */}

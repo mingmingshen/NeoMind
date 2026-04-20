@@ -1,0 +1,23 @@
+{
+  "title": "数据浏览器",
+  "subtitle": "浏览设备、扩展和转换中的所有数据源",
+  "tabs": {
+    "all": "全部",
+    "device": "设备",
+    "extension": "扩展",
+    "transform": "转换",
+    "ai": "AI 指标"
+  },
+  "columns": {
+    "type": "类型",
+    "source": "来源",
+    "field": "字段",
+    "dataType": "数据类型",
+    "updated": "更新时间"
+  },
+  "noResults": "没有匹配的数据源",
+  "noSources": "未找到数据源",
+  "search": "搜索数据源...",
+  "filterSource": "筛选来源...",
+  "allSources": "全部来源"
+}

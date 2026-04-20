@@ -1,0 +1,23 @@
+{
+  "title": "Data Explorer",
+  "subtitle": "Browse all data sources across devices, extensions, and transforms",
+  "tabs": {
+    "all": "All",
+    "device": "Devices",
+    "extension": "Extensions",
+    "transform": "Transforms",
+    "ai": "AI Metrics"
+  },
+  "columns": {
+    "type": "Type",
+    "source": "Source",
+    "field": "Field",
+    "dataType": "Data Type",
+    "updated": "Updated"
+  },
+  "noResults": "No data sources match your search",
+  "noSources": "No data sources found",
+  "search": "Search data sources...",
+  "filterSource": "Filter source...",
+  "allSources": "All Sources"
+}
