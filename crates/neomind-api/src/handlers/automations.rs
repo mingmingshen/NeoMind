@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 
 use crate::automation::{
-    transform::JsTransformExecutor, Automation, AutomationConverter, AutomationType, IntentResult,
+    transform::JsTransformExecutor, Automation, AutomationType, IntentResult,
 };
 
 use super::{

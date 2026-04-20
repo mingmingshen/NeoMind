@@ -118,6 +118,13 @@ interface CommandInfo {
   parameters?: Record<string, unknown>
 }
 
+interface DataCollectionConfig {
+  time_range_minutes: number
+  include_history: boolean
+  include_trend: boolean
+  include_baseline: boolean
+}
+
 interface SelectedResource {
   id: string
   name: string
@@ -129,6 +136,10 @@ interface SelectedResource {
   // Selected metric/command names
   selectedMetrics: Set<string>
   selectedCommands: Set<string>
+  // Data collection config for Focused Mode
+  config?: {
+    data_collection?: DataCollectionConfig
+  }
 }
 
 interface ResourceRecommendation {
@@ -480,6 +491,9 @@ export function AgentEditorFullScreen({
     const extMetricNames = new Map<string, Set<string>>()
     const extCommandNames = new Map<string, Set<string>>()
 
+    // Store data collection config per resource (first encountered metric's config will be used for the resource)
+    const resourceDataCollectionConfigs = new Map<string, DataCollectionConfig>()
+
     for (const res of agent.resources || []) {
       const parts = res.resource_id.split(':')
 
@@ -491,6 +505,16 @@ export function AgentEditorFullScreen({
           selectedMetricNames.set(deviceId, new Set())
         }
         selectedMetricNames.get(deviceId)!.add(itemName)
+        // Store data collection config from the first metric
+        if (res.config?.data_collection && !resourceDataCollectionConfigs.has(deviceId)) {
+          const dc = res.config.data_collection as any
+          resourceDataCollectionConfigs.set(deviceId, {
+            time_range_minutes: dc.time_range_minutes ?? 60,
+            include_history: dc.include_history ?? false,
+            include_trend: dc.include_trend ?? false,
+            include_baseline: dc.include_baseline ?? false,
+          })
+        }
       } else if (res.resource_type === 'command') {
         // Device command format: device_id:command_name
         const deviceId = parts[0]
@@ -508,6 +532,16 @@ export function AgentEditorFullScreen({
             extMetricNames.set(extId, new Set())
           }
           extMetricNames.get(extId)!.add(itemName)
+          // Store data collection config from the first metric
+          if (res.config?.data_collection && !resourceDataCollectionConfigs.has(extId)) {
+            const dc = res.config.data_collection as any
+            resourceDataCollectionConfigs.set(extId, {
+              time_range_minutes: dc.time_range_minutes ?? 60,
+              include_history: dc.include_history ?? false,
+              include_trend: dc.include_trend ?? false,
+              include_baseline: dc.include_baseline ?? false,
+            })
+          }
         }
       } else if (res.resource_type === 'extension_tool') {
         // Extension tool format: extension:extension_id:command_name
@@ -556,6 +590,9 @@ export function AgentEditorFullScreen({
         allCommands,
         selectedMetrics: selectedMetrics,
         selectedCommands: selectedCmds,
+        config: {
+          data_collection: resourceDataCollectionConfigs.get(deviceId),
+        },
       })
     }
 
@@ -592,6 +629,9 @@ export function AgentEditorFullScreen({
         allCommands,
         selectedMetrics: selectedMetrics,
         selectedCommands: selectedCmds,
+        config: {
+          data_collection: resourceDataCollectionConfigs.get(extKey),
+        },
       })
     }
 
@@ -628,6 +668,9 @@ export function AgentEditorFullScreen({
         allCommands,
         selectedMetrics: new Set(),
         selectedCommands: selectedCmds,
+        config: {
+          data_collection: resourceDataCollectionConfigs.get(extKey),
+        },
       })
     }
 
@@ -946,6 +989,8 @@ export function AgentEditorFullScreen({
               config: {
                 extension_id: r.id.replace('extension:', ''),
                 metric_name: metricName,
+                // Include data collection config for Focused Mode
+                ...(r.config?.data_collection && { data_collection: r.config.data_collection }),
               },
             })
           } else {
@@ -957,6 +1002,8 @@ export function AgentEditorFullScreen({
               config: {
                 device_id: r.id,
                 metric_name: metricName,
+                // Include data collection config for Focused Mode
+                ...(r.config?.data_collection && { data_collection: r.config.data_collection }),
               },
             })
           }
@@ -1732,6 +1779,7 @@ export function AgentEditorFullScreen({
                         )
                       }}
                       isMobile={isMobile}
+                      isFocusedMode={isFocusedMode}
                     />
                   ))}
                 </div>
@@ -2285,10 +2333,13 @@ interface SelectedResourceItemProps {
   onToggleMetric: (resourceId: string, metricName: string) => void
   onToggleCommand: (resourceId: string, commandName: string) => void
   isMobile?: boolean
+  isFocusedMode?: boolean
 }
 
-function SelectedResourceItem({ resource, setSelectedResources, onRemove, onToggleMetric, onToggleCommand, isMobile = false }: SelectedResourceItemProps) {
+function SelectedResourceItem({ resource, setSelectedResources, onRemove, onToggleMetric, onToggleCommand, isMobile = false, isFocusedMode = false }: SelectedResourceItemProps) {
   const [expanded, setExpanded] = useState(false)
+  const [dataCollectionExpanded, setDataCollectionExpanded] = useState(false)
+  const { t: tAgent } = useTranslation('agents')
   const selectedMetricCount = resource.selectedMetrics.size
   const selectedCommandCount = resource.selectedCommands.size
   const allMetricCount = resource.allMetrics.length
@@ -2296,6 +2347,35 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
 
   const hasMetrics = resource.allMetrics.length > 0
   const hasCommands = resource.allCommands.length > 0
+
+  // Helper functions for data collection config
+  const getResourceConfig = () => {
+    return resource?.config?.data_collection
+  }
+
+  const updateResourceDataCollection = (field: string, value: number | boolean) => {
+    setSelectedResources((prev: SelectedResource[]) =>
+      prev.map(r =>
+        r.id === resource.id
+          ? {
+              ...r,
+              config: {
+                ...r.config,
+                data_collection: {
+                  ...(r.config?.data_collection || {
+                    time_range_minutes: 60,
+                    include_history: false,
+                    include_trend: false,
+                    include_baseline: false,
+                  }),
+                  [field]: value,
+                },
+              },
+            }
+          : r
+      )
+    )
+  }
 
   return (
     <div className={cn("rounded-lg bg-background border group", isMobile ? "px-4 py-3" : "px-3 py-2")}>
@@ -2453,6 +2533,70 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
 
           {!hasMetrics && !hasCommands && (
             <p className={cn("text-muted-foreground italic", isMobile ? "text-xs" : "text-xs")}>No metrics or commands available</p>
+          )}
+
+          {/* Data Collection Config for Focused Mode */}
+          {isFocusedMode && hasMetrics && (
+            <div className="ml-0 mt-2 border-t border-muted pt-2 space-y-2">
+              <button
+                type="button"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setDataCollectionExpanded(!dataCollectionExpanded)}
+              >
+                <ChevronRight className={`h-3 w-3 transition-transform ${dataCollectionExpanded ? 'rotate-90' : ''}`} />
+                {tAgent('creator.advanced.dataCollection', 'Data Collection')}
+              </button>
+              {dataCollectionExpanded && (
+                <div className="space-y-2 pt-2 pl-4">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs whitespace-nowrap">{tAgent('creator.advanced.timeRange', 'Time Range')}</Label>
+                    <select
+                      className="h-7 rounded-md border border-input bg-background px-2 text-xs flex-1 max-w-[120px]"
+                      value={getResourceConfig()?.time_range_minutes ?? 60}
+                      onChange={(e) => updateResourceDataCollection('time_range_minutes', parseInt(e.target.value))}
+                    >
+                      <option value="5">5 min</option>
+                      <option value="15">15 min</option>
+                      <option value="30">30 min</option>
+                      <option value="60">1 hour</option>
+                      <option value="360">6 hours</option>
+                      <option value="720">12 hours</option>
+                      <option value="1440">24 hours</option>
+                      <option value="10080">7 days</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="rounded border-input"
+                        checked={getResourceConfig()?.include_history ?? false}
+                        onChange={(e) => updateResourceDataCollection('include_history', e.target.checked)}
+                      />
+                      {tAgent('creator.advanced.includeHistory', 'Include History')}
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="rounded border-input"
+                        checked={getResourceConfig()?.include_trend ?? false}
+                        onChange={(e) => updateResourceDataCollection('include_trend', e.target.checked)}
+                      />
+                      {tAgent('creator.advanced.includeTrend', 'Include Trend')}
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="rounded border-input"
+                        checked={getResourceConfig()?.include_baseline ?? false}
+                        onChange={(e) => updateResourceDataCollection('include_baseline', e.target.checked)}
+                      />
+                      {tAgent('creator.advanced.includeBaseline', 'Include Baseline')}
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}

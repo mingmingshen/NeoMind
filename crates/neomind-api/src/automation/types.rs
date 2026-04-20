@@ -848,7 +848,6 @@ impl TransformAutomation {
         match &self.scope {
             TransformScope::Global => true,
             TransformScope::DeviceType(dt) => {
-                // Direct comparison: scope.DeviceType(type) applies to devices of that type
                 device_type.map(|t| t == dt).unwrap_or(false)
             }
             TransformScope::Device(d) => d == device_id,
@@ -856,143 +855,184 @@ impl TransformAutomation {
     }
 }
 
+/// Intent analysis result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntentResult {
+    /// Recommended automation type
+    pub recommended_type: AutomationType,
+    /// Confidence score (0-100)
+    pub confidence: u8,
+    /// Explanation of why this type was recommended
+    pub reasoning: String,
+    /// Suggested automation based on the description
+    pub suggested_automation: Option<SuggestedAutomation>,
+    /// Any warnings about the suggestion
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
 
+/// Suggested automation from intent analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuggestedAutomation {
+    /// Suggested name
+    pub name: String,
+    /// Suggested description
+    pub description: String,
+    /// Automation type (always Transform)
+    pub automation_type: AutomationType,
+    /// Suggested transform
+    pub transform: Option<TransformAutomation>,
+    /// Estimated complexity
+    pub estimated_complexity: u8,
+}
 
-impl RuleAutomation {
-    /// Create a new rule automation
-    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            metadata: AutomationMetadata::new(id, name),
-            trigger: Trigger::default(),
-            condition: Condition::default(),
-            actions: Vec::new(),
-        }
+/// Template parameter
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateParameter {
+    /// Parameter name
+    pub name: String,
+    /// Display label
+    pub label: String,
+    /// Parameter type
+    #[serde(rename = "type")]
+    pub param_type: TemplateParameterType,
+    /// Whether this parameter is required
+    #[serde(default)]
+    pub required: bool,
+    /// Default value
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+    /// Options for enum types
+    #[serde(default)]
+    pub options: Vec<String>,
+    /// Parameter description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Template parameter types
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TemplateParameterType {
+    String,
+    Number,
+    Boolean,
+    Device,
+    Metric,
+    Enum,
+}
+
+/// Automation template
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutomationTemplate {
+    /// Template ID
+    pub id: String,
+    /// Template name
+    pub name: String,
+    /// Template description
+    pub description: String,
+    /// Which automation type this template creates
+    pub automation_type: AutomationType,
+    /// Template category
+    pub category: String,
+    /// Parameters for this template
+    pub parameters: Vec<TemplateParameter>,
+    /// Example usage
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub example: Option<String>,
+}
+
+/// Automation execution record
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionRecord {
+    /// Unique execution ID
+    pub id: String,
+    /// Automation ID
+    pub automation_id: String,
+    /// Automation type
+    pub automation_type: AutomationType,
+    /// Start time
+    pub started_at: i64,
+    /// End time (null if still running)
+    pub ended_at: Option<i64>,
+    /// Execution status
+    pub status: ExecutionStatus,
+    /// Error message if failed
+    pub error: Option<String>,
+    /// Output from the execution
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<serde_json::Value>,
+}
+
+/// Execution status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExecutionStatus {
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+/// Filter options for listing automations
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AutomationFilter {
+    /// Filter by automation type
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<AutomationType>,
+    /// Filter by enabled status
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// Search in name and description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search: Option<String>,
+    /// Filter by category
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// Pagination offset
+    #[serde(default)]
+    pub offset: usize,
+    /// Pagination limit
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+}
+
+fn default_limit() -> usize {
+    50
+}
+
+/// Result for listing automations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutomationList {
+    /// List of automations
+    pub automations: Vec<Automation>,
+    /// Total count (for pagination)
+    pub total_count: usize,
+    /// Count by type
+    pub counts: TypeCounts,
+}
+
+/// Count breakdown by automation type
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TypeCounts {
+    pub total: usize,
+    pub transforms: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_automation_type_display() {
+        assert_eq!(AutomationType::Transform.as_str(), "transform");
     }
 
-    /// Set description
-    pub fn with_description(mut self, description: impl Into<String>) -> Self {
-        self.metadata.description = description.into();
-        self
-    }
-
-    /// Set trigger
-    pub fn with_trigger(mut self, trigger: Trigger) -> Self {
-        self.trigger = trigger;
-        self
-    }
-
-    /// Set condition
-    pub fn with_condition(mut self, condition: Condition) -> Self {
-        self.condition = condition;
-        self
-    }
-
-    /// Add an action
-    pub fn with_action(mut self, action: Action) -> Self {
-        self.actions.push(action);
-        self
-    }
-
-    /// Convert to simplified DSL representation
-    pub fn to_dsl(&self) -> String {
-        let mut dsl = format!("RULE \"{}\"\n", self.metadata.name.replace('"', r#"\""#));
-
-        // Add trigger/condition
-        match &self.trigger.r#type {
-            TriggerType::DeviceState => {
-                dsl.push_str(&format!(
-                    "WHEN device_state(\"{}\", \"{}\") {} {}\n",
-                    self.trigger.device_id.as_ref().unwrap_or(&String::new()),
-                    self.trigger.metric.as_ref().unwrap_or(&String::new()),
-                    self.condition.operator.as_str(),
-                    self.condition.threshold
-                ));
-            }
-            TriggerType::Schedule => {
-                if let Some(cron) = &self.trigger.cron_schedule {
-                    dsl.push_str(&format!("WHEN schedule(\"{}\")\n", cron));
-                }
-            }
-            TriggerType::Manual => {
-                dsl.push_str("WHEN manual()\n");
-            }
-            TriggerType::Event => {
-                dsl.push_str(&format!(
-                    "WHEN event(\"{}\")\n",
-                    self.trigger.event_type.as_ref().unwrap_or(&String::new())
-                ));
-            }
-        }
-
-        // Add actions
-        dsl.push_str("DO\n");
-        for action in &self.actions {
-            match action {
-                Action::Notify { message } => {
-                    dsl.push_str(&format!(
-                        "    NOTIFY \"{}\"\n",
-                        message.replace('"', r#"\""#)
-                    ));
-                }
-                Action::ExecuteCommand {
-                    device_id,
-                    command,
-                    parameters,
-                } => {
-                    dsl.push_str(&format!(
-                        "    EXECUTE device(\"{}\").command(\"{}\")",
-                        device_id, command
-                    ));
-                    if !parameters.is_empty() {
-                        let params: Vec<String> = parameters
-                            .iter()
-                            .map(|(k, v)| format!("{}={}", k, v))
-                            .collect();
-                        dsl.push_str(&format!(" WITH {}", params.join(", ")));
-                    }
-                    dsl.push('\n');
-                }
-                Action::Log {
-                    level,
-                    message,
-                    severity,
-                } => {
-                    dsl.push_str(&format!(
-                        "    LOG {} \"{}\"",
-                        level.as_str(),
-                        message.replace('"', r#"\""#)
-                    ));
-                    if let Some(sev) = severity {
-                        dsl.push_str(&format!(" SEVERITY \"{}\"", sev));
-                    }
-                    dsl.push('\n');
-                }
-                Action::CreateAlert {
-                    title,
-                    message,
-                    severity,
-                } => {
-                    dsl.push_str(&format!(
-                        "    ALERT {} \"{}\" \"{}\"\n",
-                        severity, title, message
-                    ));
-                }
-                Action::Delay { duration } => {
-                    dsl.push_str(&format!("    DELAY {}s\n", duration));
-                }
-                Action::SetVariable { name, value } => {
-                    dsl.push_str(&format!("    SET {} = {}\n", name, value));
-                }
-            }
-        }
-        dsl.push_str("END");
-
-        dsl
-    }
-
-    /// Get complexity score - rules are always simple
-    pub fn complexity_score(&self) -> u8 {
-        1
+    #[test]
+    fn test_complexity_calculation() {
+        let transform =
+            TransformAutomation::new("test", "Test", TransformScope::Global).with_complexity(2);
+        assert_eq!(transform.complexity_score(), 2);
     }
 }
 
@@ -1190,12 +1230,10 @@ pub struct SuggestedAutomation {
     pub name: String,
     /// Suggested description
     pub description: String,
-    /// Whether this is a transform or rule
+    /// Automation type (always Transform)
     pub automation_type: AutomationType,
-    /// Suggested transform (if applicable)
+    /// Suggested transform
     pub transform: Option<TransformAutomation>,
-    /// Suggested rule (if applicable)
-    pub rule: Option<RuleAutomation>,
     /// Estimated complexity
     pub estimated_complexity: u8,
 }
@@ -1331,10 +1369,9 @@ pub struct AutomationList {
 pub struct TypeCounts {
     pub total: usize,
     pub transforms: usize,
-    pub rules: usize,
 }
 
-#[cfg(test)]
+
 mod tests {
     use super::*;
 

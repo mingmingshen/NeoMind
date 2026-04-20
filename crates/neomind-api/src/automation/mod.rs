@@ -8,7 +8,6 @@
 //! - **Unified Types**: Single `Automation` enum that wraps transforms and rules
 //! - **Shared Resources**: Common templates, devices, and metrics for all types
 
-pub mod conversion;
 pub mod device_type_generator;
 pub mod discovery;
 pub mod error;
@@ -21,7 +20,6 @@ pub mod types;
 pub use types::*;
 
 // Re-export core types with common aliases
-pub use conversion::AutomationConverter;
 pub use device_type_generator::{
     DeviceCapabilities, DeviceTypeGenerator, GenerationConfig, ValidationResult,
 };
@@ -37,11 +35,11 @@ pub use discovery::{
 
 // Re-export transform-specific types
 pub use types::{
-    Action, AggregationFunc, AlertSeverity, Automation, AutomationFilter, AutomationList,
-    AutomationMetadata, AutomationTemplate, AutomationType, ComparisonOperator, Condition,
-    ExecutionRecord, ExecutionStatus, IntentResult, LogLevel, RuleAutomation, SuggestedAutomation,
+    AggregationFunc, Automation, AutomationFilter, AutomationList,
+    AutomationMetadata, AutomationTemplate, AutomationType,
+    ExecutionRecord, ExecutionStatus, IntentResult, SuggestedAutomation,
     TemplateParameter, TemplateParameterType, TimeWindow, TransformAutomation, TransformOperation,
-    TransformScope, Trigger, TriggerType, TypeCounts,
+    TransformScope, TypeCounts,
 };
 
 // Re-export transform engine

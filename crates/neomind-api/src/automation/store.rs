@@ -62,15 +62,20 @@ impl AutomationStore {
         Ok(Self { db: Arc::new(db) })
     }
 
-    /// Save an automation
+    /// Save an automation (TransformAutomation)
     pub fn save_automation(&self, automation: &Automation) -> Result<()> {
         let key = automation.id();
-        let value = serde_json::to_vec(automation)?;
+        // Add type tag for API compatibility
+        let mut value = serde_json::to_value(automation)?;
+        if let Some(obj) = value.as_object_mut() {
+            obj.insert("type".to_string(), serde_json::json!("transform"));
+        }
+        let bytes = serde_json::to_vec(&value)?;
 
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(AUTOMATIONS_TABLE)?;
-            table.insert(key, value.as_slice())?;
+            table.insert(key, bytes.as_slice())?;
         }
         write_txn.commit()?;
 
@@ -84,7 +89,12 @@ impl AutomationStore {
 
         match table.get(id)? {
             Some(value) => {
-                let automation: Automation = serde_json::from_slice(value.value())?;
+                let mut v: serde_json::Value = serde_json::from_slice(value.value())?;
+                // Remove type tag for direct TransformAutomation deserialization
+                if let Some(obj) = v.as_object_mut() {
+                    obj.remove("type");
+                }
+                let automation: Automation = serde_json::from_value(v)?;
                 Ok(Some(automation))
             }
             None => Ok(None),
@@ -99,7 +109,12 @@ impl AutomationStore {
         let mut automations = Vec::new();
         for result in table.iter()? {
             let (_, value) = result?;
-            let automation: Automation = serde_json::from_slice(value.value())?;
+            let mut v: serde_json::Value = serde_json::from_slice(value.value())?;
+            // Remove type tag for direct TransformAutomation deserialization
+            if let Some(obj) = v.as_object_mut() {
+                obj.remove("type");
+            }
+            let automation: Automation = serde_json::from_value(v)?;
             automations.push(automation);
         }
 
@@ -350,7 +365,6 @@ impl SharedAutomationStore {
     }
 }
 
-#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -358,19 +372,8 @@ mod tests {
     fn test_memory_store() {
         let store = AutomationStore::memory().unwrap();
 
-        let automation = Automation::Rule(
-            RuleAutomation::new("test-1", "Test Rule")
-                .with_trigger(Trigger::manual())
-                .with_condition(Condition::new(
-                    "device-1",
-                    "temp",
-                    ComparisonOperator::GreaterThan,
-                    30.0,
-                ))
-                .with_action(Action::Notify {
-                    message: "Test".to_string(),
-                }),
-        );
+        let automation = Automation::new("test-1", "Test Transform", TransformScope::Global)
+            .with_description("A test transform");
 
         store.save_automation(&automation).unwrap();
         let retrieved = store.get_automation("test-1").unwrap();
@@ -387,19 +390,8 @@ mod tests {
     async fn test_shared_store() {
         let store = SharedAutomationStore::memory().unwrap();
 
-        let automation = Automation::Rule(
-            RuleAutomation::new("test-2", "Test Rule 2")
-                .with_trigger(Trigger::manual())
-                .with_condition(Condition::new(
-                    "device-1",
-                    "temp",
-                    ComparisonOperator::GreaterThan,
-                    30.0,
-                ))
-                .with_action(Action::Notify {
-                    message: "Test".to_string(),
-                }),
-        );
+        let automation = Automation::new("test-2", "Test Transform 2", TransformScope::DeviceType("sensor".to_string()))
+            .with_description("Another test");
 
         store.save_automation(&automation).await.unwrap();
         let retrieved = store.get_automation("test-2").await.unwrap();
