@@ -1211,7 +1211,7 @@ export function AgentEditorFullScreen({
 
                 <button
                   type="button"
-                  onClick={() => setExecutionMode('free')}
+                  onClick={() => { setExecutionMode('free'); setSelectedResources([]) }}
                   className={cn(
                     "relative flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all",
                     isFreeMode
@@ -1703,8 +1703,9 @@ export function AgentEditorFullScreen({
               </div>
             </div>
 
-            {/* Resources Section */}
-            <div className={cn("space-y-3", isFocusedMode && "bg-primary/5 rounded-lg p-3 -mx-3 border border-primary/20")}>
+            {/* Resources Section — only for Focused Mode */}
+            {isFocusedMode && (
+            <div className="space-y-3 bg-primary/5 rounded-lg p-3 -mx-3 border border-primary/20">
               <div className={cn(
                 "flex items-center justify-between",
                 isMobile ? "flex-col items-start gap-3" : ""
@@ -1785,6 +1786,7 @@ export function AgentEditorFullScreen({
                 </div>
               )}
             </div>
+            )}
           </div>
         </div>
         </FullScreenDialogMain>
