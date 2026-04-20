@@ -73,6 +73,7 @@ fn infer_resource_type_from_id(resource_id: &str) -> ResourceType {
                 ResourceType::ExtensionMetric
             }
             neomind_core::datasource::DataSourceType::Transform => ResourceType::DataStream,
+            neomind_core::datasource::DataSourceType::Ai => ResourceType::DataStream,
         }
     } else if let Some(_ds_id) = DataSourceId::parse_extension_command(resource_id) {
         // Four-part format: extension:id:command:field

@@ -42,6 +42,8 @@ pub enum DataSourceType {
     Extension,
     #[serde(rename = "transform")]
     Transform,
+    #[serde(rename = "ai")]
+    Ai,
 }
 
 impl DataSourceId {
@@ -80,6 +82,15 @@ impl DataSourceId {
         }
     }
 
+    /// Create an AI data source ID
+    pub fn ai(group: &str, field: &str) -> Self {
+        Self {
+            source_type: DataSourceType::Ai,
+            source_id: group.to_string(),
+            field_path: field.to_string(),
+        }
+    }
+
     /// Parse from string representation
     ///
     /// Expected format: "type:id:field" (3 parts, unified)
@@ -93,6 +104,7 @@ impl DataSourceId {
             "device" => DataSourceType::Device,
             "extension" => DataSourceType::Extension,
             "transform" => DataSourceType::Transform,
+            "ai" => DataSourceType::Ai,
             _ => return None,
         };
 
@@ -115,6 +127,9 @@ impl DataSourceId {
             DataSourceType::Transform => {
                 format!("transform:{}:{}", self.source_id, self.field_path)
             }
+            DataSourceType::Ai => {
+                format!("ai:{}:{}", self.source_id, self.field_path)
+            }
         }
     }
 
@@ -127,6 +142,9 @@ impl DataSourceId {
             }
             DataSourceType::Transform => {
                 format!("Transform {} / {}", self.source_id, self.field_path)
+            }
+            DataSourceType::Ai => {
+                format!("AI {} / {}", self.source_id, self.field_path)
             }
         }
     }
@@ -146,6 +164,7 @@ impl DataSourceId {
             DataSourceType::Device => self.source_id.clone(),
             DataSourceType::Extension => format!("extension:{}", self.source_id),
             DataSourceType::Transform => format!("transform:{}", self.source_id),
+            DataSourceType::Ai => format!("ai:{}", self.source_id),
         }
     }
 
@@ -161,15 +180,12 @@ impl DataSourceId {
     /// This is the inverse of device_part() and metric_part()
     /// Handles parsing both "device:id" and "extension:id" formats
     pub fn from_storage_parts(device_id: &str, metric: &str) -> Option<Self> {
-        if let Some(rest) = device_id.strip_prefix("extension:") {
-            // Extension: "extension:weather" + "temperature"
-            return Some(Self::extension(rest, metric));
-        } else if let Some(rest) = device_id.strip_prefix("transform:") {
-            // Transform: "transform:processor" + "output"
-            return Some(Self::transform(rest, metric));
-        } else {
-            // Device: "sensor1" + "temperature"
-            return Some(Self::device(device_id, metric));
+        match device_id.split_once(':') {
+            Some(("extension", id)) => Some(Self::extension(id, metric)),
+            Some(("transform", id)) => Some(Self::transform(id, metric)),
+            Some(("ai", id))        => Some(Self::ai(id, metric)),
+            Some(("device", id))    => Some(Self::device(id, metric)),
+            _                       => Some(Self::device(device_id, metric)),
         }
     }
 
@@ -451,6 +467,7 @@ pub struct DataSourceCatalog {
     pub devices: Vec<DataSourceInfo>,
     pub extensions: Vec<DataSourceInfo>,
     pub transforms: Vec<DataSourceInfo>,
+    pub ai: Vec<DataSourceInfo>,
 }
 
 impl DataSourceCatalog {
@@ -459,6 +476,7 @@ impl DataSourceCatalog {
             devices: Vec::new(),
             extensions: Vec::new(),
             transforms: Vec::new(),
+            ai: Vec::new(),
         }
     }
 
@@ -474,11 +492,16 @@ impl DataSourceCatalog {
         self.transforms.push(info);
     }
 
+    pub fn add_ai(&mut self, info: DataSourceInfo) {
+        self.ai.push(info);
+    }
+
     pub fn all(&self) -> Vec<&DataSourceInfo> {
         let mut all = Vec::new();
         all.extend(self.devices.iter());
         all.extend(self.extensions.iter());
         all.extend(self.transforms.iter());
+        all.extend(self.ai.iter());
         all
     }
 
@@ -487,6 +510,7 @@ impl DataSourceCatalog {
             DataSourceType::Device => self.devices.iter().collect(),
             DataSourceType::Extension => self.extensions.iter().collect(),
             DataSourceType::Transform => self.transforms.iter().collect(),
+            DataSourceType::Ai => self.ai.iter().collect(),
         }
     }
 }
