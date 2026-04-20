@@ -16,5 +16,4 @@ export * from './MonitorStatsGrid'
 export * from './FullScreenEditor'
 export * from './BrandName'
 export * from './ResponsiveTable'
-export * from './PageLoading'
 

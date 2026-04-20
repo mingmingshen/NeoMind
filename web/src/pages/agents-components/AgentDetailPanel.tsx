@@ -35,7 +35,6 @@ import {
   Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { PageLoading } from "@/components/shared/PageLoading"
 import { api } from "@/lib/api"
 import type { AiAgentDetail } from "@/types"
 import type { AgentExecutionStartedEvent, AgentExecutionCompletedEvent } from "@/lib/events"
@@ -606,7 +605,11 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
   const { t } = useTranslation(['common', 'agents'])
 
   if (loading) {
-    return <PageLoading size="sm" className="min-h-[30vh]" />
+    return (
+      <div className="h-full flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
   if (!memory) {

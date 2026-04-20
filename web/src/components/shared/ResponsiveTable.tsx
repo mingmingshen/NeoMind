@@ -10,9 +10,8 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { MoreVertical } from 'lucide-react'
+import { MoreVertical, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { PageLoading } from '@/components/shared/PageLoading'
 
 export interface TableColumn {
   key: string
@@ -81,7 +80,12 @@ export function ResponsiveTable({
   const showEmptyState = data.length === 0 && !loading
 
   if (loading) {
-    return <PageLoading size="sm" />
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+        <p className="text-sm text-muted-foreground font-medium">Loading data...</p>
+      </div>
+    )
   }
 
   return (
