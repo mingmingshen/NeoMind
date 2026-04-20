@@ -3430,6 +3430,7 @@ pub struct AggregatedToolsBuilder {
     session_store: Option<Arc<neomind_storage::SessionStore>>,
     transform_store: Option<Arc<dyn TransformStore>>,
     skill_registry: Option<crate::skills::SharedSkillRegistry>,
+    ai_metrics_registry: Option<Arc<super::ai_metric::AiMetricsRegistry>>,
     data_dir: Option<std::path::PathBuf>,
 }
 
@@ -3447,6 +3448,7 @@ impl AggregatedToolsBuilder {
             session_store: None,
             transform_store: None,
             skill_registry: None,
+            ai_metrics_registry: None,
             data_dir: None,
         }
     }
@@ -3517,6 +3519,15 @@ impl AggregatedToolsBuilder {
         self
     }
 
+    /// Set AI metrics registry for the AI metric tool.
+    pub fn with_ai_metrics_registry(
+        mut self,
+        registry: Arc<super::ai_metric::AiMetricsRegistry>,
+    ) -> Self {
+        self.ai_metrics_registry = Some(registry);
+        self
+    }
+
     /// Set data directory for skill persistence.
     pub fn with_data_dir(mut self, dir: std::path::PathBuf) -> Self {
         self.data_dir = Some(dir);
@@ -3529,8 +3540,8 @@ impl AggregatedToolsBuilder {
 
         // Device tool
         if let Some(ds) = self.device_service {
-            let device_tool = if let Some(storage) = self.time_series_storage {
-                DeviceTool::with_storage(ds, storage)
+            let device_tool = if let Some(ref storage) = self.time_series_storage {
+                DeviceTool::with_storage(ds, storage.clone())
             } else {
                 DeviceTool::new(ds)
             };
@@ -3583,6 +3594,15 @@ impl AggregatedToolsBuilder {
                 SkillTool::new(skill_registry)
             };
             tools.push(Arc::new(tool));
+        }
+
+        // AI metric tool
+        if let (Some(storage), Some(registry)) = (&self.time_series_storage, &self.ai_metrics_registry)
+        {
+            tools.push(Arc::new(super::ai_metric::AiMetricTool::new(
+                storage.clone(),
+                registry.clone(),
+            )));
         }
 
         tools

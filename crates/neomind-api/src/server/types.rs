@@ -528,6 +528,7 @@ impl ServerState {
             agent_store,
             Arc::new(tokio::sync::RwLock::new(None)),
             system_memory_store,
+            neomind_agent::toolkit::ai_metric::AiMetricsRegistry::new(),
         );
 
         // ========== Build AUTH STATE ==========
@@ -717,6 +718,7 @@ impl ServerState {
             agent_store,
             Arc::new(tokio::sync::RwLock::new(None)),
             system_memory_store,
+            neomind_agent::toolkit::ai_metric::AiMetricsRegistry::new(),
         );
 
         // ========== Build AUTH STATE ==========
@@ -1097,6 +1099,7 @@ impl ServerState {
                 transform_store,                         // transform store for transform tool
                 Some(self.agents.session_manager.skill_registry()), // skill registry
                 Some(self.data_dir.clone()),             // data_dir for skill persistence
+                Some(self.agents.ai_metrics_registry.clone()), // ai_metrics_registry
             )
             // Shell tool for system command execution (enabled by default for edge scenarios)
             .with_shell_tool(Some(neomind_agent::toolkit::ShellConfig {
@@ -1153,6 +1156,7 @@ impl ServerState {
                 transform_store,
                 Some(self.agents.session_manager.skill_registry()),
                 Some(self.data_dir.clone()),
+                Some(self.agents.ai_metrics_registry.clone()), // ai_metrics_registry
             )
             .with_shell_tool(Some(neomind_agent::toolkit::ShellConfig {
                 enabled: true,

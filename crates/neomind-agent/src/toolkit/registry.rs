@@ -300,6 +300,7 @@ impl ToolRegistryBuilder {
         transform_store: Option<Arc<dyn super::aggregated::TransformStore>>,
         skill_registry: Option<crate::skills::SharedSkillRegistry>,
         data_dir: Option<std::path::PathBuf>,
+        ai_metrics_registry: Option<Arc<crate::toolkit::ai_metric::AiMetricsRegistry>>,
     ) -> Self {
         use super::aggregated::AggregatedToolsBuilder;
 
@@ -327,6 +328,10 @@ impl ToolRegistryBuilder {
 
         if let Some(dir) = data_dir {
             builder = builder.with_data_dir(dir);
+        }
+
+        if let Some(reg) = ai_metrics_registry {
+            builder = builder.with_ai_metrics_registry(reg);
         }
 
         if let Some(ext_reg) = self.extension_registry.clone() {

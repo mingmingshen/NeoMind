@@ -12,6 +12,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use neomind_agent::memory::{MemoryScheduler, TieredMemory};
+use neomind_agent::toolkit::ai_metric::AiMetricsRegistry;
 use neomind_agent::SessionManager;
 use neomind_core::llm::backend::LlmRuntime;
 use neomind_storage::{AgentStore, MarkdownMemoryStore, MemoryConfig};
@@ -41,6 +42,9 @@ pub struct AgentState {
 
     /// Memory scheduler for background extraction/compression (lazy-initialized).
     pub memory_scheduler: Arc<RwLock<Option<MemoryScheduler>>>,
+
+    /// AI metrics registry for the AI metric tool and data handler.
+    pub ai_metrics_registry: Arc<AiMetricsRegistry>,
 }
 
 impl AgentState {
@@ -51,6 +55,7 @@ impl AgentState {
         agent_store: Arc<AgentStore>,
         agent_manager: Arc<RwLock<Option<AgentManager>>>,
         system_memory_store: Arc<MarkdownMemoryStore>,
+        ai_metrics_registry: Arc<AiMetricsRegistry>,
     ) -> Self {
         Self {
             session_manager,
@@ -59,6 +64,7 @@ impl AgentState {
             agent_manager,
             system_memory_store,
             memory_scheduler: Arc::new(RwLock::new(None)),
+            ai_metrics_registry,
         }
     }
 
@@ -130,6 +136,7 @@ impl AgentState {
                 std::env::temp_dir().join("test-memory"),
             )),
             memory_scheduler: Arc::new(RwLock::new(None)),
+            ai_metrics_registry: AiMetricsRegistry::new(),
         }
     }
 }
