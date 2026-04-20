@@ -9,13 +9,13 @@ use super::*;
 /// - `Chat`: Standard single-pass LLM or rule-based analysis — returns the four
 ///   classical fields that `execute_internal` assembles into `DecisionProcess`.
 pub(crate) enum AnalysisResult {
-    Chat {
+    Focused {
         situation_analysis: String,
         reasoning_steps: Vec<ReasoningStep>,
         decisions: Vec<Decision>,
         conclusion: String,
     },
-    React {
+    Free {
         decision_process: DecisionProcess,
         execution_result: neomind_storage::ExecutionResult,
     },
@@ -443,8 +443,8 @@ impl AgentExecutor {
                                 agent_id = %agent.id,
                                 "Tool-based analysis completed successfully"
                             );
-                            // React path: return full (DP, ER) — caller uses them directly
-                            return Ok(AnalysisResult::React {
+                            // Free path: return full (DP, ER) — caller uses them directly
+                            return Ok(AnalysisResult::Free {
                                 decision_process: dp,
                                 execution_result: exec_result,
                             });
@@ -459,7 +459,7 @@ impl AgentExecutor {
                     }
                 }
 
-                // Standard LLM-based analysis (Chat path)
+                // Standard LLM-based analysis (Focused path)
                 match self
                     .analyze_with_llm(llm, agent, data, parsed_intent, execution_id)
                     .await
@@ -469,7 +469,7 @@ impl AgentExecutor {
                             agent_id = %agent.id,
                             "LLM-based analysis completed successfully"
                         );
-                        return Ok(AnalysisResult::Chat {
+                        return Ok(AnalysisResult::Focused {
                             situation_analysis,
                             reasoning_steps,
                             decisions,
@@ -500,10 +500,10 @@ impl AgentExecutor {
             }
         }
 
-        // Fall back to rule-based logic (Chat path)
+        // Fall back to rule-based logic (Focused path)
         let (situation_analysis, reasoning_steps, decisions, conclusion) =
             self.analyze_rule_based(agent, data, parsed_intent).await?;
-        Ok(AnalysisResult::Chat {
+        Ok(AnalysisResult::Focused {
             situation_analysis,
             reasoning_steps,
             decisions,

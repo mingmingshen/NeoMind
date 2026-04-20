@@ -915,15 +915,15 @@ NOTE: There is NO delete action for agents. Agent deletion is only available thr
                 },
                 "execution_mode": {
                     "type": "string",
-                    "description": "Agent execution mode (create action): 'chat' = single-pass analysis (default, good for monitoring/reporting), 'react' = multi-round tool calling loop (good for complex automation needing device control or multiple tool calls). Use 'react' if agent needs to control devices, query multiple tools, or perform multi-step actions."
+                    "description": "Agent execution mode (create action): 'focused' = must bind resources, single-pass analysis within defined scope. Fast, precise, token-efficient. Best for monitoring, alerts, data analysis. 'free' = multi-round tool calling with all 8 tools (device, agent, rule, message, extension, transform, skill, shell). Best for complex automation needing device control or multi-step actions."
                 },
                 "resources": {
                     "type": "string",
-                    "description": "Resources to bind to this agent (create action, multi-select). Format: JSON array of objects, each with 'type' and 'id'. Supported types: 'device' (full device, id=device_id), 'metric' (device metric, id='device_id:metric_name'), 'command' (device command, id='device_id:command_name'), 'extension_metric' (extension metric, id='extension:ext_id:metric_name'), 'extension_tool' (extension command, id='extension:ext_id:tool_name'). Prefer finest granularity: bind specific metrics/commands rather than whole devices. Example: [{\"type\":\"metric\",\"id\":\"sensor_001:temperature\"},{\"type\":\"extension_tool\",\"id\":\"extension:weather:forecast\"}]"
+                    "description": "Resources to bind (create action). REQUIRED for focused mode (at least 1). Free mode does NOT use resources — it queries live via tools. Format: JSON array of objects with 'type' and 'id'. Types: 'device' (full device, id=device_id), 'metric' (device metric, id='device_id:metric_name'), 'command' (device command, id='device_id:command_name'), 'extension_metric' (extension metric, id='extension:ext_id:metric_name'), 'extension_tool' (extension command, id='extension:ext_id:tool_name'). Prefer finest granularity. Example: [{\"type\":\"metric\",\"id\":\"sensor_001:temperature\"},{\"type\":\"command\",\"id\":\"light_living:turn_on\"}]"
                 },
                 "enable_tool_chaining": {
                     "type": "boolean",
-                    "description": "Enable tool chaining for react mode (create action). When true, agent can use output from one tool as input to another. Default: false. Set true for complex automation workflows."
+                    "description": "Enable tool chaining for free mode (create action). When true, agent can use output from one tool as input to another. Default: false. Only applies to free mode."
                 },
                 "control_action": {
                     "type": "string",
@@ -1180,6 +1180,13 @@ impl AgentTool {
 
         // Parse enable_tool_chaining
         let enable_tool_chaining = args["enable_tool_chaining"].as_bool().unwrap_or(false);
+
+        // Validate: Focused mode requires at least one resource
+        if execution_mode == neomind_storage::agents::ExecutionMode::Focused && agent_resources.is_empty() {
+            return Ok(ToolOutput::error(
+                "Focused mode requires at least one resource binding. Provide the 'resources' parameter with metric/command bindings, or use 'free' mode for tool-based exploration."
+            ));
+        }
 
         let agent = AiAgent {
             id: uuid::Uuid::new_v4().to_string(),

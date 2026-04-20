@@ -376,10 +376,10 @@ impl AgentExecutor {
         }
     }
 
-    /// Build the system prompt for tool-calling (React) mode.
+    /// Build the system prompt for tool-calling (Free) mode.
     ///
-    /// Unlike the Chat analysis path which filters out memory data for small
-    /// models, the React prompt intentionally **includes** historical context
+    /// Unlike the Focused analysis path which filters out memory data for small
+    /// models, the Free prompt intentionally **includes** historical context
     /// (learned patterns, baselines, recent conclusions, user messages) so the
     /// agent can leverage accumulated experience and make progressively better
     /// decisions.
@@ -387,7 +387,7 @@ impl AgentExecutor {
         let time_ctx = get_time_context();
 
         // Collect non-image, non-placeholder data.
-        // Keep memory / baselines / patterns data — they are valuable for React mode.
+        // Keep memory / baselines / patterns data — they are valuable for Free mode.
         let data_text: Vec<String> = data_collected
             .iter()
             .filter(|d| {
@@ -430,7 +430,7 @@ impl AgentExecutor {
             &format!("\n## Current Data\n{}\n", data_text.join("\n\n"))
         };
 
-        // ── Historical Context (React mode exclusive) ──
+        // ── Historical Context (Free mode exclusive) ──
         // Build a rich context from agent memory so the LLM can learn from
         // past executions and user feedback.
         let mut history_parts: Vec<String> = Vec::new();
@@ -745,11 +745,11 @@ impl AgentExecutor {
         }
 
         // If all rounds exhausted without LLM producing final text, OR if LLM failed
-        // mid-loop (error message in final_text), use Chat's Phase 2 pattern to
+        // mid-loop (error message in final_text), use Focused's Phase 2 pattern to
         // generate a natural language conclusion.
         //
         // Unlike the old JSON-template approach, this sends full tool results (truncated
-        // to 8KB each) in [tool_name]\nresult\n\n format — same as Chat Phase 2 — so
+        // to 8KB each) in [tool_name]\nresult\n\n format — same as Focused Phase 2 — so
         // the LLM has enough data to produce a real analysis.
         let needs_summary = final_text.is_empty()
             || final_text == "LLM generation failed during tool execution."
@@ -759,7 +759,7 @@ impl AgentExecutor {
             final_text.clear();
 
             // Build Phase 2 prompt — natural language, NOT JSON template.
-            // Pattern mirrors Chat's build_phase2_prompt_with_tool_results.
+            // Pattern mirrors Focused's build_phase2_prompt_with_tool_results.
             let task = &agent.user_prompt;
             let mut phase2_user = format!(
                 "{}\n\n[Completed {} rounds of tool execution, {} tool results collected]\n\
@@ -2596,7 +2596,7 @@ impl AgentExecutor {
         }
 
         // Step 2: Analyze situation — returns AnalysisResult which branches
-        // React vs Chat.
+        // Free vs Focused.
         let analysis = self
             .analyze_situation_with_intent(
                 &agent,
@@ -2607,10 +2607,10 @@ impl AgentExecutor {
             .await?;
 
         match analysis {
-            // ── React path ──────────────────────────────────────────────
+            // ── Free path ──────────────────────────────────────────────
             // Tool-calling mode already produced a full DecisionProcess and
             // ExecutionResult.  We only need to update memory and return.
-            AnalysisResult::React {
+            AnalysisResult::Free {
                 decision_process,
                 execution_result,
             } => {
@@ -2619,14 +2619,14 @@ impl AgentExecutor {
                     &execution_id,
                     step_num,
                     &format!(
-                        "React analysis completed: {} tool call(s), confidence {:.0}%",
+                        "Free mode analysis completed: {} tool call(s), confidence {:.0}%",
                         decision_process.decisions.len(),
                         decision_process.confidence * 100.0
                     ),
                 )
                 .await;
 
-                // Update memory with React results
+                // Update memory with Free mode results
                 let updated_memory = self
                     .update_memory(
                         &agent,
@@ -2659,16 +2659,16 @@ impl AgentExecutor {
 
                 tracing::debug!(
                     agent_id = %agent_id,
-                    "[REACT] Returning direct results — skipped Chat post-processing"
+                    "[FREE] Returning direct results — skipped Focused post-processing"
                 );
 
                 Ok((decision_process, execution_result))
             }
 
-            // ── Chat path ───────────────────────────────────────────────
+            // ── Focused path ───────────────────────────────────────────────
             // Standard single-pass LLM or rule-based analysis.  Follow the
             // original pipeline: execute_decisions → report → memory → store.
-            AnalysisResult::Chat {
+            AnalysisResult::Focused {
                 situation_analysis,
                 reasoning_steps,
                 decisions,

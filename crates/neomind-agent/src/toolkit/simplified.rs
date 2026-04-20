@@ -388,7 +388,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     examples: vec!["focused".to_string(), "free".to_string()],
                 }),
                 ("resources".to_string(), ParameterInfo {
-                    description: "Resources to bind (create, multi-select). REQUIRED for focused mode (at least 1), optional for free mode. JSON array: [{\"type\":\"...\",\"id\":\"...\",\"config\":{...}}]. Types: 'device', 'metric' (id='device_id:metric'), 'command' (id='device_id:cmd'), 'extension_metric' (id='extension:ext_id:metric'), 'extension_tool' (id='extension:ext_id:tool'). Focused mode: these define the exact scope. Free mode: recommended focus areas. For metrics in focused mode, config.data_collection controls pre-collection: {\"data_collection\":{\"time_range_minutes\":60,\"include_history\":false,\"include_trend\":false}}".to_string(),
+                    description: "Resources to bind (create, multi-select). REQUIRED for focused mode (at least 1). Free mode does NOT use resources — it queries live via tools. JSON array: [{\"type\":\"...\",\"id\":\"...\",\"config\":{...}}]. Types: 'device', 'metric' (id='device_id:metric'), 'command' (id='device_id:cmd'), 'extension_metric' (id='extension:ext_id:metric'), 'extension_tool' (id='extension:ext_id:tool'). For metrics in focused mode, config.data_collection controls pre-collection: {\"data_collection\":{\"time_range_minutes\":60,\"include_history\":false,\"include_trend\":false}}".to_string(),
                     default: serde_json::json!(null),
                     examples: vec![
                         "[{\"type\":\"metric\",\"id\":\"sensor_001:temperature\"}]".to_string(),
