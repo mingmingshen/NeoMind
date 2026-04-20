@@ -528,7 +528,7 @@ impl ServerState {
             agent_store,
             Arc::new(tokio::sync::RwLock::new(None)),
             system_memory_store,
-            neomind_agent::toolkit::ai_metric::AiMetricsRegistry::new(),
+            neomind_agent::toolkit::ai_metric::AiMetricsRegistry::new(std::path::Path::new("data")),
         );
 
         // ========== Build AUTH STATE ==========
@@ -718,7 +718,7 @@ impl ServerState {
             agent_store,
             Arc::new(tokio::sync::RwLock::new(None)),
             system_memory_store,
-            neomind_agent::toolkit::ai_metric::AiMetricsRegistry::new(),
+            neomind_agent::toolkit::ai_metric::AiMetricsRegistry::new(std::path::Path::new("data")),
         );
 
         // ========== Build AUTH STATE ==========

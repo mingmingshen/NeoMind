@@ -136,7 +136,7 @@ impl AgentState {
                 std::env::temp_dir().join("test-memory"),
             )),
             memory_scheduler: Arc::new(RwLock::new(None)),
-            ai_metrics_registry: AiMetricsRegistry::new(),
+            ai_metrics_registry: AiMetricsRegistry::new(&std::env::temp_dir()),
         }
     }
 }

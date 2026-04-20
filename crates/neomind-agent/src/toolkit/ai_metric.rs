@@ -13,6 +13,7 @@
 //! - `write`: persist a data point and register its metadata
 //! - `read`:  list all AI metrics with latest values, or query time-series data
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -25,31 +26,46 @@ use super::tool::{object_schema, Tool, ToolOutput};
 use neomind_core::tools::ToolCategory;
 
 // ============================================================================
-// AiMetricsRegistry — in-memory metadata store
+// AiMetricsRegistry — persisted metadata store
 // ============================================================================
 
-/// Metadata for an AI metric, stored in-memory.
+/// Metadata for an AI metric.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiMetricMeta {
     pub unit: Option<String>,
     pub description: Option<String>,
 }
 
-/// Ephemeral registry for AI metric metadata.
+const METADATA_FILE: &str = "ai_metrics_metadata.json";
+
+/// Persisted registry for AI metric metadata.
+///
+/// Metadata is stored both in-memory (DashMap) for fast reads and persisted
+/// to a JSON file (`{data_dir}/ai_metrics_metadata.json`) for survival across restarts.
 /// Shared between AiMetricTool (writes metadata) and data handler (reads metadata).
-#[derive(Debug, Default)]
 pub struct AiMetricsRegistry {
-    metrics: DashMap<(String, String), AiMetricMeta>, // key: (group, field)
+    metrics: DashMap<(String, String), AiMetricMeta>,
+    path: PathBuf,
 }
 
 impl AiMetricsRegistry {
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self::default())
+    /// Create a new registry backed by a JSON file in `data_dir`.
+    /// Loads existing metadata from disk if the file exists.
+    pub fn new(data_dir: &Path) -> Arc<Self> {
+        let path = data_dir.join(METADATA_FILE);
+        let registry = Self {
+            metrics: DashMap::new(),
+            path,
+        };
+        registry.load_from_disk();
+        Arc::new(registry)
     }
 
+    /// Register (or update) metadata for a metric and persist to disk.
     pub fn register(&self, group: &str, field: &str, meta: AiMetricMeta) {
         self.metrics
             .insert((group.to_string(), field.to_string()), meta);
+        self.save_to_disk();
     }
 
     pub fn get(&self, group: &str, field: &str) -> Option<AiMetricMeta> {
@@ -60,6 +76,55 @@ impl AiMetricsRegistry {
 
     pub fn all_keys(&self) -> Vec<(String, String)> {
         self.metrics.iter().map(|e| e.key().clone()).collect()
+    }
+
+    fn load_from_disk(&self) {
+        if !self.path.exists() {
+            return;
+        }
+        match std::fs::read_to_string(&self.path) {
+            Ok(content) => {
+                let map: std::collections::HashMap<(String, String), AiMetricMeta> =
+                    match serde_json::from_str(&content) {
+                        Ok(m) => m,
+                        Err(e) => {
+                            tracing::warn!("Failed to parse AI metrics metadata: {}", e);
+                            return;
+                        }
+                    };
+                for (k, v) in map {
+                    self.metrics.insert(k, v);
+                }
+                let count = self.metrics.len();
+                tracing::info!(count, "Loaded AI metrics metadata from disk");
+            }
+            Err(e) => {
+                tracing::warn!("Failed to read AI metrics metadata file: {}", e);
+            }
+        }
+    }
+
+    fn save_to_disk(&self) {
+        let map: std::collections::HashMap<(String, String), AiMetricMeta> = self
+            .metrics
+            .iter()
+            .map(|e| (e.key().clone(), e.value().clone()))
+            .collect();
+
+        if let Some(parent) = self.path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
+        match serde_json::to_string_pretty(&map) {
+            Ok(content) => {
+                if let Err(e) = std::fs::write(&self.path, content) {
+                    tracing::warn!("Failed to write AI metrics metadata: {}", e);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to serialize AI metrics metadata: {}", e);
+            }
+        }
     }
 }
 
