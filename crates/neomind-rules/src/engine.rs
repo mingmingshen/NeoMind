@@ -903,7 +903,7 @@ impl RuleEngine {
 
                     match manager.create_message(msg).await {
                         Ok(_) => {
-                            tracing::info!(
+                            tracing::debug!(
                                 "NOTIFY: {} (channels: {:?}) - Message created",
                                 message,
                                 channels
@@ -941,7 +941,7 @@ impl RuleEngine {
                     if let Some(ex) = ext_executor.as_ref() {
                         match ex.execute(&ext_action).await {
                             Ok(result) if result.success => {
-                                tracing::info!(
+                                tracing::debug!(
                                     "EXTENSION EXECUTE: {}.{} -> success ({:?})",
                                     result.extension_id,
                                     result.command,
@@ -989,7 +989,7 @@ impl RuleEngine {
                         }
                     } else {
                         // Fallback: just log (no actual execution)
-                        tracing::info!(
+                        tracing::debug!(
                             "EXECUTE: {}.{} with params {:?} (no DeviceActionExecutor - logging only)",
                             device_id,
                             command,
@@ -1023,7 +1023,7 @@ impl RuleEngine {
                     if let Some(ex) = ext_executor.as_ref() {
                         match ex.execute(&ext_action).await {
                             Ok(result) if result.success => {
-                                tracing::info!(
+                                tracing::debug!(
                                     "EXTENSION SET: {}.{} = {:?} -> success",
                                     result.extension_id,
                                     property,
@@ -1080,7 +1080,7 @@ impl RuleEngine {
                         }
                     } else {
                         // Fallback: just log (no actual execution)
-                        tracing::info!(
+                        tracing::debug!(
                             "SET: {}.{} = {} (no DeviceActionExecutor - logging only)",
                             device_id,
                             property,
@@ -1094,7 +1094,7 @@ impl RuleEngine {
                 }
             }
             RuleAction::Delay { duration } => {
-                tracing::info!("DELAY: {:?} (sleeping...)", duration);
+                tracing::debug!("DELAY: {:?} (sleeping...)", duration);
                 tokio::time::sleep(*duration).await;
                 Ok(format!("DELAY: {:?} completed", duration))
             }
@@ -1127,7 +1127,7 @@ impl RuleEngine {
 
                     match manager.create_message(msg).await {
                         Ok(created) => {
-                            tracing::info!(
+                            tracing::debug!(
                                 "Message created from rule: {} [{}] - {}",
                                 title,
                                 sev,
@@ -1217,7 +1217,7 @@ impl RuleEngine {
                             Err(e) => format!("Failed to read response: {}", e),
                         };
 
-                        tracing::info!(
+                        tracing::debug!(
                             "HTTP request completed: {} {} -> {}",
                             method_str,
                             url,

@@ -900,7 +900,7 @@ impl Agent {
                 model,
                 capabilities,
             } => {
-                tracing::info!(
+                tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = ollama_timeout,
                     capabilities = ?capabilities,
                     "Creating OllamaRuntime"
@@ -940,7 +940,7 @@ impl Agent {
                 model,
                 capabilities: _,
             } => {
-                tracing::info!(
+                tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for Qwen"
                 );
@@ -964,7 +964,7 @@ impl Agent {
                 model,
                 capabilities: _,
             } => {
-                tracing::info!(
+                tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for DeepSeek"
                 );
@@ -988,7 +988,7 @@ impl Agent {
                 model,
                 capabilities: _,
             } => {
-                tracing::info!(
+                tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for GLM"
                 );
@@ -1012,7 +1012,7 @@ impl Agent {
                 model,
                 capabilities: _,
             } => {
-                tracing::info!(
+                tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for MiniMax"
                 );
@@ -1036,7 +1036,7 @@ impl Agent {
                 model,
                 capabilities: _,
             } => {
-                tracing::info!(
+                tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for Anthropic"
                 );
@@ -1060,7 +1060,7 @@ impl Agent {
                 model,
                 capabilities: _,
             } => {
-                tracing::info!(
+                tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for Google"
                 );
@@ -1084,7 +1084,7 @@ impl Agent {
                 model,
                 capabilities: _,
             } => {
-                tracing::info!(
+                tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for xAI"
                 );
@@ -1108,7 +1108,7 @@ impl Agent {
                 model,
                 capabilities: _,
             } => {
-                tracing::info!(
+                tracing::debug!(
                     endpoint = %endpoint, model = %model, timeout = cloud_timeout,
                     "Creating CloudRuntime for OpenAI"
                 );
@@ -1172,7 +1172,7 @@ impl Agent {
         // Update model override
         self.llm_interface.update_model(model_name).await;
 
-        tracing::info!(
+        tracing::debug!(
             backend_id = %llm.backend_id().as_str(),
             model = %llm.model_name(),
             "Setting LLM runtime on interface"
@@ -1849,7 +1849,7 @@ impl Agent {
 
         // === INTENT ANALYSIS: Use ContextSelector to analyze user intent ===
         let (intent_analysis, _context_bundle) = self.analyze_intent(user_message).await;
-        tracing::info!(
+        tracing::debug!(
             intent = ?intent_analysis.intent_type,
             confidence = intent_analysis.confidence,
             entities = intent_analysis.entities.len(),
@@ -2352,7 +2352,7 @@ impl Agent {
         });
         let dedup_count = tool_calls.len();
         if original_count > dedup_count {
-            tracing::info!(
+            tracing::debug!(
                 "Deduplicated tool calls: {} -> {} (removed {} duplicates)",
                 original_count,
                 dedup_count,
@@ -2845,7 +2845,7 @@ END"#
                 let original_size = serde_json::to_string(data).unwrap_or_default().len();
 
                 if result.len() != original_size {
-                    tracing::info!(
+                    tracing::debug!(
                         session_id = %self.session_id,
                         tool = %tool_name,
                         original_bytes = original_size,
@@ -3297,7 +3297,7 @@ impl Drop for Agent {
         // Note: This is a synchronous drop, so we can't access the async internal_state
         // However, we can log basic information about the session being destroyed
 
-        tracing::info!(
+        tracing::debug!(
             session_id = %self.session_id,
             agent_name = %self.config.name,
             model = %self.config.model,

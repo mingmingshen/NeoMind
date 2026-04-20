@@ -178,7 +178,7 @@ impl AgentExecutor {
                 .map(|d| clean_and_truncate_text(&d.description, 100))
                 .collect();
 
-            tracing::info!(
+            tracing::debug!(
                 agent_id = %agent.id,
                 execution_id = %execution_id,
                 analysis_len = cleaned_analysis.len(),
@@ -195,7 +195,7 @@ impl AgentExecutor {
                 success,
             );
 
-            tracing::info!(
+            tracing::debug!(
                 agent_id = %agent.id,
                 execution_id = %execution_id,
                 short_term_count = memory.short_term.summaries.len(),

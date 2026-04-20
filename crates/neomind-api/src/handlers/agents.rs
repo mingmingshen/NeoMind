@@ -942,6 +942,17 @@ pub async fn create_agent(
         }
     }
 
+    // Validate execution_mode and check Focused mode requires resources
+    let execution_mode = match request.execution_mode.as_deref() {
+        Some("free") | Some("react") => neomind_storage::agents::ExecutionMode::Free,
+        _ => neomind_storage::agents::ExecutionMode::Focused,
+    };
+    if execution_mode == neomind_storage::agents::ExecutionMode::Focused && resources.is_empty() {
+        return Err(ErrorResponse::bad_request(
+            "Focused mode requires at least one resource binding".to_string(),
+        ));
+    }
+
     // Create the agent
     let agent = AiAgent {
         id: uuid::Uuid::new_v4().to_string(),
@@ -982,10 +993,7 @@ pub async fn create_agent(
         enable_tool_chaining: request.enable_tool_chaining.unwrap_or(false),
         max_chain_depth: request.max_chain_depth.unwrap_or(3),
         tool_config: None,
-        execution_mode: match request.execution_mode.as_deref() {
-            Some("free") | Some("react") => neomind_storage::agents::ExecutionMode::Free,
-            _ => neomind_storage::agents::ExecutionMode::Focused,
-        },
+        execution_mode,
     };
 
     // Save to storage
@@ -1212,6 +1220,15 @@ pub async fn update_agent(
             "free" | "react" => neomind_storage::agents::ExecutionMode::Free,
             _ => neomind_storage::agents::ExecutionMode::Focused,
         };
+    }
+
+    // Validate: Focused mode requires resources
+    // Check both the (possibly updated) execution_mode and resources
+    if agent.execution_mode == neomind_storage::agents::ExecutionMode::Focused
+        && agent.resources.is_empty() {
+        return Err(ErrorResponse::bad_request(
+            "Focused mode requires at least one resource binding".to_string(),
+        ));
     }
 
     agent.updated_at = chrono::Utc::now().timestamp();
