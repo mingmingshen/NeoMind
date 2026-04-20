@@ -212,7 +212,7 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
 
       {/* Content */}
       {loading ? (
-        <LoadingState text={t('automation:loading')} />
+        <LoadingState variant="page" text={t('automation:loading')} />
       ) : !automations || automations.length === 0 ? (
         <EmptyState
           icon={<Sparkles className="h-12 w-12 text-muted-foreground" />}

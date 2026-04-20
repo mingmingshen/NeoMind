@@ -269,7 +269,7 @@ export function ExecutionDetailDialog({
   const ExecutionContent = () => {
     if (loading) {
       return (
-        <div className="flex items-center justify-center py-12">
+        <div className="h-full flex items-center justify-center">
           <Clock className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       )

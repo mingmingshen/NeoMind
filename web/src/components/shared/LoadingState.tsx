@@ -31,7 +31,7 @@ export function LoadingState({ size = 'md', variant = 'default', text, className
 
   if (variant === 'page') {
     return (
-      <div className={cn('flex flex-col items-center justify-center gap-4 py-16 min-h-[200px]', className)}>
+      <div className={cn('flex flex-col items-center justify-center gap-4 h-full min-h-[200px]', className)}>
         <Loader2 className={cn('animate-spin text-muted-foreground', 'w-10 h-10')} />
         {text && (
           <p className="text-sm text-muted-foreground">{text}</p>
