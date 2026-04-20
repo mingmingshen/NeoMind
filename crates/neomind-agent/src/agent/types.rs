@@ -579,12 +579,12 @@ impl AgentMessage {
                                 })
                                 .unwrap_or_default();
                             if result_preview.is_empty() {
-                                format!("{}({})", tc.name, args_summary)
+                                format!("the {} tool with {}", tc.name, args_summary)
                             } else {
-                                format!("{}({}) → {}...", tc.name, args_summary, result_preview)
+                                format!("the {} tool with {} and received: {}", tc.name, args_summary, result_preview)
                             }
                         }).collect();
-                        content = format!("[Called: {}]", summaries.join("; "));
+                        content = format!("In a previous turn I called {}. These results are from earlier and should not be repeated.", summaries.join(", then "));
                     }
                 }
                 Message::assistant(&content)

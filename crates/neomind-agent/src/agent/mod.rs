@@ -172,14 +172,14 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
                             })
                             .unwrap_or_default();
                         if result_preview.is_empty() {
-                            format!("{}({})", tc.name, args_summary)
+                            format!("the {} tool with {}", tc.name, args_summary)
                         } else {
-                            format!("{}({}) → {}", tc.name, args_summary, result_preview)
+                            format!("the {} tool with {} and received: {}", tc.name, args_summary, result_preview)
                         }
                     })
                     .collect();
 
-                let summary = format!("[Called: {}]", summaries.join("; "));
+                let summary = format!("Previously called {}. These are past results, do not repeat.", summaries.join(", then "));
 
                 result.push(AgentMessage {
                     role: msg.role.clone(),

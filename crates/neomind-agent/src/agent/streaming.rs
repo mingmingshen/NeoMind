@@ -1897,14 +1897,14 @@ fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
                             })
                             .unwrap_or_default();
                         if result_preview.is_empty() {
-                            format!("{}({})", tc.name, args_summary)
+                            format!("the {} tool with {}", tc.name, args_summary)
                         } else {
-                            format!("{}({}) → {}", tc.name, args_summary, result_preview)
+                            format!("the {} tool with {} and received: {}", tc.name, args_summary, result_preview)
                         }
                     })
                     .collect();
 
-                let summary = format!("[Called: {}]", summaries.join("; "));
+                let summary = format!("Previously called {}. These are past results, do not repeat.", summaries.join(", then "));
 
                 result.push(AgentMessage {
                     role: msg.role.clone(),
@@ -2148,15 +2148,15 @@ fn compact_tool_results_stream_with_config(
                             })
                             .unwrap_or_default();
                         if result_preview.is_empty() {
-                            format!("{}({})", tc.name, args_summary)
+                            format!("the {} tool with {}", tc.name, args_summary)
                         } else {
-                            format!("{}({}) → {}", tc.name, args_summary, result_preview)
+                            format!("the {} tool with {} and received: {}", tc.name, args_summary, result_preview)
                         }
                     }).collect();
-                    format!("[Called: {}]", summaries.join("; "))
+                    format!("Previously called {}. These are past results, do not repeat.", summaries.join(", then "))
                 } else {
                     let tool_name = msg.tool_call_name.as_deref().unwrap_or("tool");
-                    format!("[Called: {}]", tool_name)
+                    format!("Previously called the {} tool. These are past results, do not repeat.", tool_name)
                 };
 
                 let summary_msg = AgentMessage {

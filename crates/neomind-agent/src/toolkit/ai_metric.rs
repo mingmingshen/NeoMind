@@ -222,14 +222,22 @@ impl AiMetricTool {
             .await
             .map_err(|e| ToolError::Execution(format!("Failed to write AI metric: {}", e)))?;
 
-        // Register metadata if provided
-        if args.get("unit").is_some() || args.get("description").is_some() {
-            let meta = AiMetricMeta {
-                unit: args["unit"].as_str().map(|s| s.to_string()),
-                description: args["description"].as_str().map(|s| s.to_string()),
-            };
-            self.registry.register(group, field, meta);
-        }
+        // Always register metadata so the metric is discoverable via read_list.
+        // Merge with existing metadata: keep unit/description if already set and not overridden.
+        let existing = self.registry.get(group, field);
+        let existing_unit = existing.as_ref().and_then(|m| m.unit.clone());
+        let existing_desc = existing.and_then(|m| m.description);
+        let meta = AiMetricMeta {
+            unit: args["unit"]
+                .as_str()
+                .map(|s| s.to_string())
+                .or(existing_unit),
+            description: args["description"]
+                .as_str()
+                .map(|s| s.to_string())
+                .or(existing_desc),
+        };
+        self.registry.register(group, field, meta);
 
         Ok(ToolOutput::success(serde_json::json!({
             "device_id": device_id,
