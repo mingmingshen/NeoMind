@@ -111,6 +111,19 @@ async fn populate_latest_values(state: &ServerState, sources: &mut Vec<UnifiedDa
                 neomind_devices::mdl::MetricValue::Null => serde_json::Value::Null,
             };
             source.current_value = Some(value);
+
+            // Infer data_type from actual value if still unknown
+            if source.data_type == "unknown" {
+                source.data_type = match &data_point.value {
+                    neomind_devices::mdl::MetricValue::Float(_) => "float".to_string(),
+                    neomind_devices::mdl::MetricValue::Integer(_) => "integer".to_string(),
+                    neomind_devices::mdl::MetricValue::Boolean(_) => "boolean".to_string(),
+                    neomind_devices::mdl::MetricValue::String(_) => "string".to_string(),
+                    neomind_devices::mdl::MetricValue::Array(_) => "array".to_string(),
+                    neomind_devices::mdl::MetricValue::Binary(_) => "binary".to_string(),
+                    neomind_devices::mdl::MetricValue::Null => "null".to_string(),
+                };
+            }
         }
     }
 }
