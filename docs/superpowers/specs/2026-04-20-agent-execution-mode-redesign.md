@@ -197,6 +197,7 @@ Update the two mode cards in `AgentEditorFullScreen.tsx`:
 | Field | Focused Mode | Free Mode |
 |---|---|---|
 | Resource binding | **Required**, highlighted, validation error if empty | Optional |
+| Data collection config per resource | **Shown** (time range, history, trend) | Hidden (LLM queries live) |
 | Tool chaining toggle | Hidden | Shown |
 | Max chain depth | Hidden | Shown (when chaining enabled) |
 | Priority slider | Shown (advanced) | Shown (advanced) |
@@ -214,7 +215,38 @@ if (executionMode === 'focused' && resources.length === 0) {
 }
 ```
 
-#### 4. Type Updates
+#### 4. Data Collection Configuration UI (Focused Mode Only)
+
+The backend `collect_data()` already supports configurable data ranges via `resource.config.data_collection`:
+- `time_range_minutes` (default: 60)
+- `include_history` (default: false)
+- `max_points` (default: 1000)
+- `include_trend` (default: false)
+- `include_baseline` (default: false)
+
+**Currently this config is not exposed in the frontend.** For Focused Mode, this is critical because the LLM cannot query data itself — it only sees what's pre-collected.
+
+**Frontend changes**: When a metric/extension_metric resource is selected in Focused Mode, show a collapsible "Data Collection" config section below each resource:
+
+```
+┌─ temperature (temp_living:temperature) ──────────────┐
+│  Data Collection Settings                     ▼      │
+│  ┌────────────────────────────────────────────────┐  │
+│  │ Time Range: [60 ▾] minutes                     │  │
+│  │ ☐ Include History Data                         │  │
+│  │ ☐ Include Trend Analysis                       │  │
+│  │ ☐ Include Baseline Comparison                  │  │
+│  └────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────┘
+```
+
+Time range presets: 5min, 15min, 30min, 1h, 6h, 12h, 24h, 7d, custom.
+
+This config is saved into the resource's `config.data_collection` field and used by `collect_data()` at execution time.
+
+**Free Mode**: No data collection config needed — LLM queries data live via tools during execution.
+
+#### 5. Type Updates
 
 ```typescript
 // web/src/types/index.ts
@@ -251,7 +283,9 @@ Add new keys to the `agents` namespace in both locales:
 
 ### LLM Tool Description Changes
 
-In `crates/neomind-agent/src/toolkit/simplified.rs`, update the `agent` tool's description for `execution_mode` and `resources` parameters:
+**Consistency requirement**: The LLM tool descriptions in `simplified.rs` must stay consistent with the frontend form. Both are entry points for creating agents — one for LLM (chat), one for humans (UI). The same rules apply: Focused requires resources, Free is optional.
+
+In `crates/neomind-agent/src/toolkit/simplified.rs`, update the `agent` tool's description for `execution_mode`, `resources`, and add `data_collection` config:
 
 ```
 execution_mode:
@@ -260,9 +294,21 @@ execution_mode:
 
 resources:
   Required for Focused mode (at least 1), optional for Free mode.
-  Format: [{"resource_type":"device|metric|command|extension_tool|extension_metric", "resource_id":"..."}]
+  Format: [{"resource_type":"device|metric|command|extension_tool|extension_metric", "resource_id":"...", "config": {...}}]
   Focused mode: these define the exact scope of what the agent can read and control.
   Free mode: these are recommended focus areas, the agent can access anything.
+
+  For metric resources in Focused mode, config.data_collection controls what data is pre-collected:
+  {
+    "data_collection": {
+      "time_range_minutes": 60,    // How far back to look (default: 60)
+      "include_history": false,    // Include historical time-series (default: false)
+      "max_points": 1000,          // Max data points when include_history=true
+      "include_trend": false,      // Include trend analysis (default: false)
+      "include_baseline": false    // Compare against learned baselines (default: false)
+    }
+  }
+  Note: data_collection only applies to Focused mode. Free mode agents query data live via tools.
 ```
 
 ### Files to Modify
@@ -272,9 +318,9 @@ resources:
 | `crates/neomind-storage/src/agents.rs` | Rename `ExecutionMode` variants, add serde alias for backward compat |
 | `crates/neomind-agent/src/ai_agent/executor/analyzer.rs` | Structured data/command table in prompt, decision templates |
 | `crates/neomind-agent/src/ai_agent/executor/command_executor.rs` | Fuzzy matching fallback, scope validation for Focused mode |
-| `crates/neomind-agent/src/toolkit/simplified.rs` | Update tool descriptions for mode and resources params |
+| `crates/neomind-agent/src/toolkit/simplified.rs` | Update tool descriptions for mode, resources, and data_collection params |
 | `crates/neomind-api/src/handlers/agents.rs` | Validation: Focused mode requires resources |
-| `web/src/pages/agents-components/AgentEditorFullScreen.tsx` | Mode card UI, form field visibility, validation |
+| `web/src/pages/agents-components/AgentEditorFullScreen.tsx` | Mode card UI, form field visibility, data collection config, validation |
 | `web/src/types/index.ts` | Update execution_mode type |
 | `web/src/i18n/locales/en/agents.json` | New i18n keys |
 | `web/src/i18n/locales/zh/agents.json` | New i18n keys |
