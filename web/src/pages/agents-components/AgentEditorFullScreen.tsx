@@ -303,7 +303,7 @@ export function AgentEditorFullScreen({
   const [activeBackendId, setActiveBackendId] = useState<string | null>(null)
 
   // Advanced configuration state
-  const [executionMode, setExecutionMode] = useState<'focused' | 'free' | 'chat' | 'react'>('chat')
+  const [executionMode, setExecutionMode] = useState<'focused' | 'free' | 'chat' | 'react'>('focused')
   const [enableToolChaining, setEnableToolChaining] = useState(false)
   const [maxChainDepth, setMaxChainDepth] = useState(3)
   const [priority, setPriority] = useState(5)
@@ -314,6 +314,13 @@ export function AgentEditorFullScreen({
   const [llmValidating, setLlmValidating] = useState(false)
   const [llmValid, setLlmValid] = useState<boolean | null>(null)
   const [llmValidationError, setLlmValidationError] = useState<string | null>(null)
+
+  // ========================================================================
+  // Mode Helpers
+  // ========================================================================
+
+  const isFocusedMode = executionMode === 'focused' || executionMode === 'chat'
+  const isFreeMode = executionMode === 'free' || executionMode === 'react'
 
   // ========================================================================
   // Effects
@@ -347,7 +354,7 @@ export function AgentEditorFullScreen({
         setLlmBackendId(agent.llm_backend_id || null)
         // Load advanced config from agent
         setEnableToolChaining(agent.enable_tool_chaining ?? false)
-        setExecutionMode(agent.execution_mode ?? 'chat')
+        setExecutionMode(agent.execution_mode ?? 'focused')
         setMaxChainDepth(agent.max_chain_depth ?? 3)
         setPriority(agent.priority ?? 5)
         setContextWindowSize(agent.context_window_size ?? 8192)
@@ -360,7 +367,7 @@ export function AgentEditorFullScreen({
         setUserPrompt("")
         setLlmBackendId(null)
         // Reset to defaults
-        setExecutionMode('chat')
+        setExecutionMode('focused')
         setEnableToolChaining(false)
         setMaxChainDepth(3)
         setPriority(5)
@@ -882,6 +889,16 @@ export function AgentEditorFullScreen({
   const handleSave = async () => {
     if (!isValid) return
 
+    // Validation: Focused Mode requires at least one resource binding
+    if (isFocusedMode && selectedResources.length === 0) {
+      toast({
+        title: tCommon('error'),
+        description: tAgent('focusedModeRequiresResources'),
+        variant: 'destructive',
+      })
+      return
+    }
+
     setSaving(true)
     try {
       let cronExpression: string | undefined = undefined
@@ -1029,7 +1046,7 @@ export function AgentEditorFullScreen({
         max_chain_depth: enableToolChaining ? maxChainDepth : undefined,
         priority: priority !== 5 ? priority : undefined,
         context_window_size: contextWindowSize !== 8192 ? contextWindowSize : undefined,
-        execution_mode: executionMode,
+        execution_mode: isFocusedMode ? 'focused' : 'free',
       }
 
       await onSave(data)
@@ -1116,10 +1133,10 @@ export function AgentEditorFullScreen({
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={() => setExecutionMode('chat')}
+                  onClick={() => setExecutionMode('focused')}
                   className={cn(
                     "relative flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all",
-                    executionMode === 'chat'
+                    isFocusedMode
                       ? "border-primary bg-primary/5 shadow-sm"
                       : "border-border hover:border-primary/30"
                   )}
@@ -1127,25 +1144,30 @@ export function AgentEditorFullScreen({
                   <div className="flex items-center gap-2 w-full">
                     <div className={cn(
                       "h-8 w-8 rounded-lg flex items-center justify-center",
-                      executionMode === 'chat' ? "bg-primary text-primary-foreground" : "bg-muted"
+                      isFocusedMode ? "bg-primary text-primary-foreground" : "bg-muted"
                     )}>
-                      <MessageSquare className="h-4 w-4" />
+                      <Target className="h-4 w-4" />
                     </div>
                     <div className="flex-1">
-                      <div className="text-sm font-medium">{tAgent('chatMode', 'Chat Mode')}</div>
+                      <div className="text-sm font-medium">{tAgent('focusedMode', 'Focused Mode')}</div>
+                      {isFocusedMode && (
+                        <Badge variant="secondary" className="text-xs h-4 mt-0.5">
+                          {tAgent('saveToken', 'Save Tokens')}
+                        </Badge>
+                      )}
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground pl-10">
-                    {tAgent('chatModeDesc', 'Single-pass LLM analysis. Fast responses, no tool calling.')}
+                    {tAgent('focusedModeDescription', 'Bind specific resources and actions for fast, precise analysis. Best for monitoring, alerts, data analysis.')}
                   </p>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => setExecutionMode('react')}
+                  onClick={() => setExecutionMode('free')}
                   className={cn(
                     "relative flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all",
-                    executionMode === 'react'
+                    isFreeMode
                       ? "border-primary bg-primary/5 shadow-sm"
                       : "border-border hover:border-primary/30"
                   )}
@@ -1153,13 +1175,13 @@ export function AgentEditorFullScreen({
                   <div className="flex items-center gap-2 w-full">
                     <div className={cn(
                       "h-8 w-8 rounded-lg flex items-center justify-center",
-                      executionMode === 'react' ? "bg-primary text-primary-foreground" : "bg-muted"
+                      isFreeMode ? "bg-primary text-primary-foreground" : "bg-muted"
                     )}>
-                      <Wrench className="h-4 w-4" />
+                      <Zap className="h-4 w-4" />
                     </div>
                     <div className="flex-1">
-                      <div className="text-sm font-medium">{tAgent('reactMode', 'ReAct Mode')}</div>
-                      {executionMode === 'react' && (
+                      <div className="text-sm font-medium">{tAgent('freeMode', 'Free Mode')}</div>
+                      {isFreeMode && (
                         <Badge variant="secondary" className="text-xs h-4 mt-0.5">
                           {tAgent('recommended', 'Recommended')}
                         </Badge>
@@ -1167,7 +1189,7 @@ export function AgentEditorFullScreen({
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground pl-10">
-                    {tAgent('reactModeDesc', 'Multi-round reasoning + tool calling. Plans actions, executes tools, analyzes results.')}
+                    {tAgent('freeModeDescription', 'LLM freely explores and decides with multi-round tool calling. Best for complex automation and device control.')}
                   </p>
                 </button>
               </div>
@@ -1317,8 +1339,8 @@ export function AgentEditorFullScreen({
 
               {showAdvanced && (
                 <div className="bg-muted/50 rounded-xl p-4 border space-y-4">
-                  {/* Tool Chaining - Only for ReAct Mode */}
-                  {executionMode === 'react' && (
+                  {/* Tool Chaining - Only for Free Mode */}
+                  {isFreeMode && (
                     <>
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
@@ -1635,12 +1657,19 @@ export function AgentEditorFullScreen({
             </div>
 
             {/* Resources Section */}
-            <div className="space-y-3">
+            <div className={cn("space-y-3", isFocusedMode && "bg-primary/5 rounded-lg p-3 -mx-3 border border-primary/20")}>
               <div className={cn(
                 "flex items-center justify-between",
                 isMobile ? "flex-col items-start gap-3" : ""
               )}>
-                <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>{tAgent('creator.resources.title')}</Label>
+                <div className="flex items-center gap-2">
+                  <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>{tAgent('creator.resources.title')}</Label>
+                  {isFocusedMode && (
+                    <Badge variant="destructive" className="text-xs h-5">
+                      Required
+                    </Badge>
+                  )}
+                </div>
                 <Button
                   type="button"
                   variant="outline"

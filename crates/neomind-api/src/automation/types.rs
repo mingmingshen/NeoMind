@@ -1,82 +1,71 @@
-//! Unified automation types
+//! Automation types for the transform system.
 //!
-//! This module provides a unified abstraction for transforms, rules, and workflows,
-//! allowing them to be managed through a common interface while preserving
-//! their specific capabilities.
+//! This module provides types for data transform automations.
+//! Rules are managed separately through the `neomind-rules` crate.
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Unified automation type that can be a Transform or Rule
-///
-/// Note: Workflow support has been removed as it was unused in production.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum Automation {
-    /// Data transformation (process raw device data)
-    #[serde(rename = "transform")]
-    Transform(TransformAutomation),
-    /// Simple rule-based automation (if-then)
-    #[serde(rename = "rule")]
-    Rule(RuleAutomation),
+/// Automation is now an alias for TransformAutomation.
+/// Rules are managed separately through the `neomind-rules` crate.
+pub type Automation = TransformAutomation;
+
+/// Automation type discriminator (kept for API compatibility)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AutomationType {
+    Transform,
 }
 
+impl AutomationType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AutomationType::Transform => "transform",
+        }
+    }
+}
+
+impl std::fmt::Display for AutomationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// Helper methods on Automation (TransformAutomation alias)
 impl Automation {
     /// Get the automation ID
     pub fn id(&self) -> &str {
-        match self {
-            Automation::Transform(t) => &t.metadata.id,
-            Automation::Rule(r) => &r.metadata.id,
-        }
+        &self.metadata.id
     }
 
     /// Get the automation name
     pub fn name(&self) -> &str {
-        match self {
-            Automation::Transform(t) => &t.metadata.name,
-            Automation::Rule(r) => &r.metadata.name,
-        }
+        &self.metadata.name
     }
 
     /// Get the automation type
     pub fn automation_type(&self) -> AutomationType {
-        match self {
-            Automation::Transform(_) => AutomationType::Transform,
-            Automation::Rule(_) => AutomationType::Rule,
-        }
+        AutomationType::Transform
     }
 
     /// Check if the automation is enabled
     pub fn is_enabled(&self) -> bool {
-        match self {
-            Automation::Transform(t) => t.metadata.enabled,
-            Automation::Rule(r) => r.metadata.enabled,
-        }
+        self.metadata.enabled
     }
 
     /// Get the execution count
     pub fn execution_count(&self) -> u64 {
-        match self {
-            Automation::Transform(t) => t.metadata.execution_count,
-            Automation::Rule(r) => r.metadata.execution_count,
-        }
+        self.metadata.execution_count
     }
 
     /// Get complexity score (1-5)
     pub fn complexity_score(&self) -> u8 {
-        match self {
-            Automation::Transform(t) => t.complexity_score(),
-            Automation::Rule(_) => 1, // Rules are always simple
-        }
+        TransformAutomation::complexity_score(self)
     }
 
     /// Get the last executed timestamp
     pub fn last_executed(&self) -> Option<i64> {
-        match self {
-            Automation::Transform(t) => t.metadata.last_executed,
-            Automation::Rule(r) => r.metadata.last_executed,
-        }
+        self.metadata.last_executed
     }
 }
 
@@ -867,19 +856,7 @@ impl TransformAutomation {
     }
 }
 
-/// Rule-based automation (simple if-then)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RuleAutomation {
-    /// Shared metadata
-    #[serde(flatten)]
-    pub metadata: AutomationMetadata,
-    /// Trigger for this rule
-    pub trigger: Trigger,
-    /// Condition to evaluate
-    pub condition: Condition,
-    /// Actions to execute when condition is met
-    pub actions: Vec<Action>,
-}
+
 
 impl RuleAutomation {
     /// Create a new rule automation
@@ -1019,24 +996,7 @@ impl RuleAutomation {
     }
 }
 
-/// Trigger definition for automations
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Trigger {
-    /// Trigger type
-    #[serde(rename = "type")]
-    pub r#type: TriggerType,
-    /// Device ID (for device_state triggers)
-    pub device_id: Option<String>,
-    /// Metric name (for device_state triggers)
-    pub metric: Option<String>,
-    /// Event type (for event triggers)
-    pub event_type: Option<String>,
-    /// Cron schedule (for schedule triggers)
-    pub cron_schedule: Option<String>,
-    /// Trigger configuration (extensible)
-    #[serde(default)]
-    pub config: HashMap<String, serde_json::Value>,
-}
+
 
 impl Default for Trigger {
     fn default() -> Self {
@@ -1094,19 +1054,7 @@ impl Trigger {
     }
 }
 
-/// Trigger types
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TriggerType {
-    /// Manual execution only
-    Manual,
-    /// Device state change
-    DeviceState,
-    /// Scheduled execution (cron)
-    Schedule,
-    /// Event-based trigger
-    Event,
-}
+
 
 impl TriggerType {
     pub fn as_str(&self) -> &'static str {
@@ -1119,18 +1067,7 @@ impl TriggerType {
     }
 }
 
-/// Condition for rule evaluation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Condition {
-    /// Device ID to check
-    pub device_id: String,
-    /// Metric name
-    pub metric: String,
-    /// Comparison operator
-    pub operator: ComparisonOperator,
-    /// Threshold value
-    pub threshold: f64,
-}
+
 
 impl Default for Condition {
     fn default() -> Self {
@@ -1165,23 +1102,7 @@ impl Condition {
     }
 }
 
-/// Comparison operators
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ComparisonOperator {
-    /// Greater than
-    GreaterThan,
-    /// Greater than or equal
-    GreaterThanOrEqual,
-    /// Less than
-    LessThan,
-    /// Less than or equal
-    LessThanOrEqual,
-    /// Equal
-    Equal,
-    /// Not equal
-    NotEqual,
-}
+
 
 impl ComparisonOperator {
     pub fn as_str(&self) -> &'static str {
@@ -1207,53 +1128,9 @@ impl ComparisonOperator {
     }
 }
 
-/// Actions that can be executed
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "action", rename_all = "snake_case")]
-pub enum Action {
-    /// Send a notification
-    Notify { message: String },
-    /// Execute a device command
-    ExecuteCommand {
-        device_id: String,
-        command: String,
-        #[serde(default)]
-        parameters: HashMap<String, String>,
-    },
-    /// Log a message
-    Log {
-        #[serde(default)]
-        level: LogLevel,
-        message: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        severity: Option<String>,
-    },
-    /// Create an alert
-    CreateAlert {
-        #[serde(default)]
-        severity: AlertSeverity,
-        title: String,
-        message: String,
-    },
-    /// Delay execution
-    Delay { duration: u64 },
-    /// Set a variable
-    SetVariable {
-        name: String,
-        value: serde_json::Value,
-    },
-}
 
-/// Log levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum LogLevel {
-    #[default]
-    Info,
-    Warning,
-    Error,
-    Debug,
-}
+
+
 
 impl std::fmt::Display for LogLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1272,15 +1149,7 @@ impl LogLevel {
     }
 }
 
-/// Alert severity levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum AlertSeverity {
-    #[default]
-    Info,
-    Warning,
-    Critical,
-}
+
 
 impl std::fmt::Display for AlertSeverity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
