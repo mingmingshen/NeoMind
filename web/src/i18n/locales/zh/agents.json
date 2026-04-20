@@ -438,6 +438,17 @@
       "chatModeDesc": "单次 LLM 分析，快速响应，不使用工具调用。",
       "reactMode": "ReAct 模式",
       "reactModeDesc": "多轮推理 + 工具调用。规划行动、执行工具、分析结果。",
+      "focusedMode": "精准模式",
+      "focusedModeDescription": "绑定特定资源和操作，快速精准分析。适合监控、告警、数据分析。",
+      "freeMode": "自由模式",
+      "freeModeDescription": "LLM 自主探索和决策，支持多轮工具调用。适合复杂自动化和设备控制。",
+      "focusedModeRequiresResources": "精准模式需要至少绑定一个资源",
+      "saveToken": "省 Token",
+      "dataCollection": "数据采集",
+      "timeRange": "时间范围",
+      "includeHistory": "包含历史数据",
+      "includeTrend": "包含趋势分析",
+      "includeBaseline": "包含基线对比",
       "recommended": "推荐"
     },
     "dataCollection": {

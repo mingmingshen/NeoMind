@@ -1993,8 +1993,8 @@ export interface AiAgentDetail extends AiAgent {
     enabled: boolean
     allowed_tools?: string[]
   }
-  /** Execution mode: "chat" for single-pass, "react" for multi-round tool calling */
-  execution_mode?: 'chat' | 'react'
+  /** Execution mode: "focused" for single-pass, "free" for multi-round tool calling, "chat"/"react" for backward compatibility */
+  execution_mode?: 'focused' | 'free' | 'chat' | 'react'
 }
 
 /**
@@ -2263,8 +2263,8 @@ export interface CreateAgentRequest {
   priority?: number
   /** Context window size (default: 10) */
   context_window_size?: number
-  /** Execution mode: "chat" for single-pass, "react" for multi-round tool calling */
-  execution_mode?: 'chat' | 'react'
+  /** Execution mode: "focused" for single-pass, "free" for multi-round tool calling, "chat"/"react" for backward compatibility */
+  execution_mode?: 'focused' | 'free' | 'chat' | 'react'
 }
 
 /**

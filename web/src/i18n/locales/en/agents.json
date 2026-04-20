@@ -438,6 +438,17 @@
       "chatModeDesc": "Single-pass LLM analysis. Fast responses, no tool calling.",
       "reactMode": "ReAct Mode",
       "reactModeDesc": "Multi-round reasoning + tool calling. Plans actions, executes tools, analyzes results.",
+      "focusedMode": "Focused Mode",
+      "focusedModeDescription": "Bind specific resources and actions for fast, precise analysis. Best for monitoring, alerts, data analysis.",
+      "freeMode": "Free Mode",
+      "freeModeDescription": "LLM freely explores and decides with multi-round tool calling. Best for complex automation and device control.",
+      "focusedModeRequiresResources": "Focused Mode requires at least one resource binding",
+      "saveToken": "Save Tokens",
+      "dataCollection": "Data Collection",
+      "timeRange": "Time Range",
+      "includeHistory": "Include History",
+      "includeTrend": "Include Trend",
+      "includeBaseline": "Include Baseline",
       "recommended": "Recommended"
     },
     "dataCollection": {

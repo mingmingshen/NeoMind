@@ -303,7 +303,7 @@ export function AgentEditorFullScreen({
   const [activeBackendId, setActiveBackendId] = useState<string | null>(null)
 
   // Advanced configuration state
-  const [executionMode, setExecutionMode] = useState<'chat' | 'react'>('chat')
+  const [executionMode, setExecutionMode] = useState<'focused' | 'free' | 'chat' | 'react'>('chat')
   const [enableToolChaining, setEnableToolChaining] = useState(false)
   const [maxChainDepth, setMaxChainDepth] = useState(3)
   const [priority, setPriority] = useState(5)
