@@ -31,6 +31,7 @@
 
 use std::sync::Arc;
 
+pub mod ai_metric;
 pub mod aggregated;
 pub mod error;
 pub mod extension_tools;
@@ -70,6 +71,8 @@ pub use extension_tools::{
 };
 
 pub use session_search::SessionSearchTool;
+
+pub use ai_metric::{AiMetricMeta, AiMetricTool, AiMetricsRegistry};
 
 pub use shell::{ShellConfig, ShellTool};
 
