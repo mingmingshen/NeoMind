@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agent Execution Mode Redesign** — Renamed Chat Mode → **Focused Mode** and React Mode → **Free Mode** with clear differentiation across all layers (backend, API, frontend, LLM tools).
+  - **Focused Mode**: User binds resources (required), LLM works within defined scope using structured data tables and decision templates. Single-pass, token-efficient. Best for monitoring, alerts, data analysis.
+  - **Free Mode**: LLM freely explores with all 8 tools (device, agent, rule, message, extension, transform, skill, shell), no resource binding needed. Multi-round reasoning. Best for complex automation and device control.
+- **Structured Prompt for Focused Mode** — Focused Mode prompt now uses structured Markdown tables (data table + command table + decision template) instead of loose text, improving LLM reliability for command execution.
+- **Scope Validation** — Focused Mode command execution validates that commands are within bound resources, rejecting out-of-scope commands with warning logs.
+- **Data Collection Config UI** — Focused Mode metric resources now show configurable data collection settings (time range, include history, trend analysis, baseline comparison) in the agent editor.
+- **Notification/Alert in Focused Mode** — Focused Mode can send notifications and alerts without binding, as inherent agent capabilities.
+- **Focused Mode API Validation** — Create/update agent API returns 400 error if Focused Mode has no resource binding.
+
+### Changed
+
+- **ExecutionMode Enum** — `Chat`/`React` renamed to `Focused`/`Free` with serde aliases for backward compatibility. Old values (`"chat"`, `"react"`) still accepted via deserialization.
+- **Frontend Mode Cards** — Agent editor mode selection updated with new names, icons, descriptions, and "Required" badge for Focused Mode.
+- **Free Mode Resource Binding Removed** — Free Mode no longer shows resource binding section. Resources cleared when switching to Free Mode.
+- **LLM Tool Descriptions** — Agent tool parameter descriptions (`execution_mode`, `resources`, `enable_tool_chaining`) in both `aggregated.rs` and `simplified.rs` updated to reflect Focused/Free semantics and resource binding rules.
+- **Internal Naming Unified** — `AnalysisResult` enum variants, all doc comments, tracing messages, and log strings updated from Chat/React to Focused/Free across `neomind-agent`, `neomind-storage`, and `neomind-api`.
+
 - **Shell Tool** — New `shell` tool enables AI agents to execute system commands on the host. Features: login shell (`$SHELL -l -c`) for full user environment (PATH, aliases), cross-platform support (Unix/macOS/Windows), configurable timeout (max 600s), output truncation (10K chars), UTF-8 safe truncation, process group isolation for clean timeout kill. Parameters: `command` (required), `timeout`, `working_dir`, `description` (audit log).
 - **Agent Skill System** — User-defined skill management via the `skill` tool. Actions: `search`, `list`, `get`, `create`, `update`, `delete`. Skills are YAML frontmatter + Markdown files that provide scenario-driven operation guides for the AI agent. Includes keyword matching, token budget injection, and persistence.
 - **Skills Panel UI** — Frontend panel in agent settings for creating, editing, and deleting user skills with a code editor. Supports YAML frontmatter syntax highlighting.
