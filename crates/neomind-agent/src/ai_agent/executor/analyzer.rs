@@ -391,13 +391,16 @@ impl AgentExecutor {
         }
 
         // --- Decision Template ---
+        sections.push(String::new());
+        sections.push("## Decision Format".to_string());
         if !commands.is_empty() {
-            sections.push(String::new());
-            sections.push("### Decision Format".to_string());
-            sections.push("If you need to execute a command:".to_string());
-            sections.push("`\"decisions\": [{\"decision_type\": \"command\", \"action\": \"<copy Action Value>\", \"description\": \"<reason>\"}]`".to_string());
-            sections.push("If no action needed: `\"decisions\": []`".to_string());
+            sections.push("Execute a command:".to_string());
+            sections.push("`{\"decision_type\": \"command\", \"action\": \"<copy Action Value>\", \"description\": \"<reason>\"}`".to_string());
         }
+        sections.push("Send a notification:".to_string());
+        sections.push("`{\"decision_type\": \"alert\", \"description\": \"<message>\"}` or `\"warning\"` / `\"critical\"`".to_string());
+        sections.push("No action needed:".to_string());
+        sections.push("`\"decisions\": []`".to_string());
 
         sections.join("\n")
     }
