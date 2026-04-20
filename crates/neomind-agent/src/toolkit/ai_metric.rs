@@ -362,17 +362,25 @@ impl Tool for AiMetricTool {
     }
 
     fn description(&self) -> &str {
-        r#"AI metric tool for writing and reading custom agent-generated metrics.
+        r#"Create and query custom time-series metrics that appear in the Data Explorer.
 
-Actions:
-- write: Create or update an AI metric data point. Requires group, field, value.
-  Optionally provide unit, description, and timestamp.
-  The metric is stored as device_id="ai:{group}" with metric=field.
-- read: Query AI metrics. Use query=list to see all metrics with latest values,
-  or query=data with group and field to get time-series data.
+WRITE a metric (action="write"):
+  Required: group, field, value. The value must be a number, boolean, or string.
+  Optional: unit, description, timestamp (defaults to current time).
+  Each call appends a new data point. Use the same group+field to update the same metric.
 
-Use this tool to persist analysis results, scores, derived indicators, or any
-computed data that should be tracked over time."#
+  Example — write an anomaly score:
+    {"action":"write", "group":"anomaly", "field":"score", "value": 0.85, "unit":"0-1", "description":"Anomaly score"}
+  Example — write a temperature prediction:
+    {"action":"write", "group":"prediction", "field":"temperature", "value": 23.5, "unit":"celsius"}
+
+READ metrics (action="read"):
+  query="list": Returns all AI metrics with their latest values.
+    {"action":"read", "query":"list"}
+  query="data": Returns time-series data for one metric (default: last 24 hours).
+    {"action":"read", "query":"data", "group":"anomaly", "field":"score"}
+
+Common use cases: analysis scores, predictions, derived indicators, computed statistics."#
     }
 
     fn parameters(&self) -> Value {
@@ -381,18 +389,18 @@ computed data that should be tracked over time."#
                 "action": {
                     "type": "string",
                     "enum": ["write", "read"],
-                    "description": "Operation: 'write' to create/update a metric, 'read' to query metrics"
+                    "description": "'write' to record a metric value, 'read' to query existing metrics"
                 },
                 "group": {
                     "type": "string",
-                    "description": "Metric group name (alphanumeric, hyphens, underscores). Used as device_id: 'ai:{group}'"
+                    "description": "Logical grouping for the metric, e.g. 'anomaly', 'prediction', 'system'"
                 },
                 "field": {
                     "type": "string",
-                    "description": "Metric field name (alphanumeric, hyphens, underscores)"
+                    "description": "Metric name within the group, e.g. 'score', 'temperature', 'cpu_usage'"
                 },
                 "value": {
-                    "description": "Value to write (write action). Can be number, string, boolean, null, or array."
+                    "description": "REQUIRED for write. The metric value — use a number (e.g. 0.85, 42), boolean, or string."
                 },
                 "unit": {
                     "type": "string",
@@ -495,7 +503,7 @@ mod tests {
 
     #[test]
     fn test_registry_basic() {
-        let reg = AiMetricsRegistry::new();
+        let reg = AiMetricsRegistry::new(std::env::temp_dir().as_path());
         reg.register(
             "analysis",
             "score",
@@ -516,7 +524,7 @@ mod tests {
 
     #[test]
     fn test_registry_missing() {
-        let reg = AiMetricsRegistry::new();
+        let reg = AiMetricsRegistry::new(std::env::temp_dir().as_path());
         assert!(reg.get("nope", "nope").is_none());
     }
 }
