@@ -490,7 +490,51 @@ impl AgentExecutor {
         let mut actions_executed = Vec::new();
         let mut notifications_sent = Vec::new();
 
+        // Pre-build allowed actions for Focused mode scope validation
+        let allowed_command_ids: Vec<String> = if agent.execution_mode == neomind_storage::agents::ExecutionMode::Focused {
+            agent.resources.iter()
+                .filter(|r| matches!(r.resource_type, neomind_storage::ResourceType::Command | neomind_storage::ResourceType::ExtensionTool))
+                .map(|r| r.resource_id.clone())
+                .collect()
+        } else {
+            Vec::new() // Empty = no scope restriction for Free mode
+        };
+
         for decision in decisions {
+            // Scope validation for Focused mode
+            if !allowed_command_ids.is_empty() && decision.decision_type == "command" {
+                let action = &decision.action;
+                let is_allowed = allowed_command_ids.iter().any(|rid| {
+                    // 1. Exact match (most reliable)
+                    if action == rid { return true; }
+                    // 2. Suffix match: action "turn_on" matches rid "light_living:turn_on"
+                    if let Some(cmd_suffix) = rid.split(':').last() {
+                        if action == cmd_suffix { return true; }
+                        if action.ends_with(&format!(":{}", cmd_suffix)) { return true; }
+                    }
+                    // 3. Extension tool format: action contains the full rid
+                    if action.contains(rid.as_str()) { return true; }
+                    false
+                });
+
+                if !is_allowed {
+                    tracing::warn!(
+                        action = %decision.action,
+                        allowed = ?allowed_command_ids,
+                        "Focused Mode: rejecting out-of-scope command"
+                    );
+                    actions_executed.push(neomind_storage::ActionExecuted {
+                        action_type: "command".to_string(),
+                        description: format!("Rejected: command '{}' not in bound resources", decision.action),
+                        target: String::new(),
+                        parameters: serde_json::json!({}),
+                        success: false,
+                        result: Some("Rejected: command not in bound resources".to_string()),
+                    });
+                    continue;
+                }
+            }
+
             // Handle query decisions (e.g., "query:device_id:metric:time_range")
             if decision.action.starts_with("query:") {
                 Self::handle_query_decision(agent, decision, &mut actions_executed).await;
