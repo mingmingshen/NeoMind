@@ -15,6 +15,7 @@ import { useDataSource } from '@/hooks/useDataSource'
 import ComponentRenderer from '@/components/dashboard/registry/ComponentRenderer'
 import { getComponentMeta } from '@/components/dashboard/registry/registry'
 import type { DashboardComponent, DataSource, ImplementedComponentType } from '@/types/dashboard'
+import { getSourceId } from '@/types/dashboard'
 
 // Helper function to create stable key for comparison
 function createStableKey(obj: any): string {
@@ -30,7 +31,7 @@ function createStableKey(obj: any): string {
  */
 function createDataSourceKey(ds: DataSource | undefined): string {
   if (!ds) return 'no-ds'
-  return `${ds.type}:${ds.deviceId || ''}:${ds.metricId || ds.property || ds.infoProperty || ''}:${ds.command || ''}`
+  return `${ds.type}:${getSourceId(ds) || ''}:${ds.metricId || ds.property || ds.infoProperty || ''}:${ds.command || ''}`
 }
 
 export interface ComponentPreviewProps {

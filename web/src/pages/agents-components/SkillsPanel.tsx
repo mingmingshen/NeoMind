@@ -101,7 +101,7 @@ export const SkillsPanel = forwardRef<SkillsPanelHandle>(function SkillsPanel(
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(10)
 
   // Unified dialog state
   const [dialogOpen, setDialogOpen] = useState(false)

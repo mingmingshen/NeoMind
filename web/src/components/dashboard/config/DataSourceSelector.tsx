@@ -20,7 +20,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useStore } from '@/store'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
-import { normalizeDataSource } from '@/types/dashboard'
+import { normalizeDataSource, getSourceId } from '@/types/dashboard'
 import type { MetricDefinition, CommandDefinition, ExtensionDataSourceInfo } from '@/types'
 import { cn } from '@/lib/utils'
 
@@ -170,12 +170,13 @@ export function DataSourceSelector({
 
       for (const ds of currentDataSources) {
         // Handle metric type (new) or device type with property (legacy)
-        if ((ds.type === 'metric' || ds.type === 'device') && ds.deviceId && ds.property) {
-          newSelectedItems.add(`device-metric:${ds.deviceId}:${ds.property}`)
-        } else if (ds.type === 'command' && ds.deviceId && ds.command) {
-          newSelectedItems.add(`device-command:${ds.deviceId}:${ds.command}`)
-        } else if (ds.type === 'device-info' && ds.deviceId && ds.infoProperty) {
-          newSelectedItems.add(`device-info:${ds.deviceId}:${ds.infoProperty}`)
+        const dsSourceId = getSourceId(ds)
+        if ((ds.type === 'metric' || ds.type === 'device') && dsSourceId && ds.property) {
+          newSelectedItems.add(`device-metric:${dsSourceId}:${ds.property}`)
+        } else if (ds.type === 'command' && dsSourceId && ds.command) {
+          newSelectedItems.add(`device-command:${dsSourceId}:${ds.command}`)
+        } else if (ds.type === 'device-info' && dsSourceId && ds.infoProperty) {
+          newSelectedItems.add(`device-info:${dsSourceId}:${ds.infoProperty}`)
         } else if (ds.type === 'system' && ds.systemMetric) {
           newSelectedItems.add(`system:${ds.systemMetric}`)
         }
@@ -336,6 +337,7 @@ export function DataSourceSelector({
         return {
           type: 'metric',
           deviceId,
+          sourceId: deviceId,
           metricId: property,
           property,
           refresh: 5,
@@ -345,6 +347,7 @@ export function DataSourceSelector({
         return {
           type: 'command',
           deviceId,
+          sourceId: deviceId,
           command,
           property: 'state',
           valueMapping: { on: true, off: false },
@@ -354,6 +357,7 @@ export function DataSourceSelector({
         return {
           type: 'device-info',
           deviceId,
+          sourceId: deviceId,
           infoProperty: infoProperty as any,
           refresh: 10,
         }

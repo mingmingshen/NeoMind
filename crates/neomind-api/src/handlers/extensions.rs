@@ -682,7 +682,7 @@ pub async fn unregister_extension_handler(
     }
 
     // Clean up extension metrics data from telemetry.redb
-    // Extension metrics are stored with device_part = "extension:{extension_id}"
+    // Extension metrics are stored with source_part = "extension:{extension_id}"
     cleanup_extension_metrics(&state, &id).await;
 
     ok(serde_json::json!({
@@ -696,11 +696,11 @@ async fn cleanup_extension_metrics(state: &ServerState, extension_id: &str) {
     // Get the metrics storage from ExtensionState
     let metrics_storage = &state.extensions.metrics_storage;
 
-    // Extension metrics are stored with device_part = "extension:{extension_id}"
-    let device_part = format!("extension:{}", extension_id);
+    // Extension metrics are stored with source_part = "extension:{extension_id}"
+    let source_part = format!("extension:{}", extension_id);
 
     // List all metrics for this extension
-    match metrics_storage.list_metrics(&device_part).await {
+    match metrics_storage.list_metrics(&source_part).await {
         Ok(metrics) => {
             if !metrics.is_empty() {
                 tracing::info!(
@@ -1131,7 +1131,7 @@ pub async fn query_extension_metric_data_handler(
         .extensions
         .metrics_storage
         .query(
-            &source_id.device_part(),
+            &source_id.source_part(),
             source_id.metric_part(),
             start,
             end,

@@ -10,7 +10,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import type { DataSourceOrList, DataSource, TelemetryAggregate } from '@/types/dashboard'
-import { normalizeDataSource } from '@/types/dashboard'
+import { normalizeDataSource, getSourceId } from '@/types/dashboard'
 import type { Device } from '@/types'
 import type { NeoMindStore } from '@/store'
 import { useEvents } from '@/hooks/useEvents'
@@ -946,7 +946,7 @@ export function useDataSource<T = unknown>(
       dataSources
         .map((ds) =>
           ds.type === 'device' || ds.type === 'command' || ds.type === 'telemetry' || ds.type === 'device-info'
-            ? ds.deviceId
+            ? getSourceId(ds)
             : null
         )
         .filter(Boolean) as string[]
@@ -965,7 +965,7 @@ export function useDataSource<T = unknown>(
     return new Set(
       dataSources
         .filter((ds) => ds.type === 'device-info')
-        .map((ds) => ds.deviceId)
+        .map((ds) => getSourceId(ds))
         .filter(Boolean) as string[]
     )
   }, [dataSources])
@@ -1015,7 +1015,7 @@ export function useDataSource<T = unknown>(
     setError(null)
 
     try {
-      const deviceId = commandSource.deviceId
+      const deviceId = getSourceId(commandSource)
       const command = commandSource.command || 'setValue'
 
       let params: Record<string, unknown> = { value }
@@ -1076,7 +1076,7 @@ export function useDataSource<T = unknown>(
 
         switch (ds.type) {
           case 'device': {
-            const deviceId = ds.deviceId!
+            const deviceId = getSourceId(ds)!
             const property = ds.property as string | undefined
             const device = currentDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
 
@@ -1161,7 +1161,7 @@ export function useDataSource<T = unknown>(
           }
 
           case 'command': {
-            const deviceId = ds.deviceId
+            const deviceId = getSourceId(ds)
             const property = ds.property || 'state'
             const device = currentDevices.find((d: Device) => d.id === deviceId)
 
@@ -1177,7 +1177,7 @@ export function useDataSource<T = unknown>(
           }
 
           case 'device-info': {
-            const deviceId = ds.deviceId
+            const deviceId = getSourceId(ds)
             const infoProperty = ds.infoProperty || 'name'
             const device = currentDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
 
@@ -1413,7 +1413,7 @@ export function useDataSource<T = unknown>(
 
           const results = currentDataSources.map((ds, index) => {
             if (ds.type !== 'telemetry') return undefined
-            const deviceId = ds.deviceId!
+            const deviceId = getSourceId(ds)!
             const metricId = ds.metricId || ds.property || 'value'
 
             // CRITICAL FIX: Skip this telemetry source if its device didn't actually change
@@ -1676,7 +1676,7 @@ export function useDataSource<T = unknown>(
       // Check if event matches data sources
       // IMPORTANT: Use dataSourcesRef.current to always get latest data source configuration
       for (const ds of dataSourcesRef.current) {
-        if (ds.type === 'device' && hasDeviceId && eventData.device_id === ds.deviceId && isDeviceMetricEvent) {
+        if (ds.type === 'device' && hasDeviceId && eventData.device_id === getSourceId(ds) && isDeviceMetricEvent) {
           shouldUpdate = true
           break
         } else if (ds.type === 'metric' && (isDeviceMetricEvent || eventType === 'metric.update')) {
@@ -1685,7 +1685,7 @@ export function useDataSource<T = unknown>(
         } else if (
           ds.type === 'command' &&
           hasDeviceId &&
-          eventData.device_id === ds.deviceId &&
+          eventData.device_id === getSourceId(ds) &&
           (isDeviceMetricEvent || eventType === 'device.command_result')
         ) {
           shouldUpdate = true
@@ -1696,7 +1696,7 @@ export function useDataSource<T = unknown>(
           // BUT: If event has no explicit metric field, allow update (legacy compatibility)
           ds.type === 'telemetry' &&
           hasDeviceId &&
-          eventData.device_id === ds.deviceId &&
+          eventData.device_id === getSourceId(ds) &&
           isDeviceMetricEvent &&
           (!eventMetric || eventMetricMatches(eventMetric, ds.metricId || ds.property || 'value'))
         ) {
@@ -1706,7 +1706,7 @@ export function useDataSource<T = unknown>(
           // Device-info sources: trigger update when device status changes (online/offline events)
           ds.type === 'device-info' &&
           hasDeviceId &&
-          eventData.device_id === ds.deviceId &&
+          eventData.device_id === getSourceId(ds) &&
           (isDeviceMetricEvent || eventType === 'DeviceOnline' || eventType === 'DeviceOffline')
         ) {
           shouldUpdate = true
@@ -1727,7 +1727,7 @@ export function useDataSource<T = unknown>(
         // Filter telemetry sources by both device_id AND metric to prevent cross-metric interference
         // If event has no explicit metric, include all telemetry sources for this device (legacy)
         const matchingTelemetrySources = currentDataSourcesForTelemetry.filter((ds) => {
-          if (ds.type !== 'telemetry' || ds.deviceId !== eventDeviceId) return false
+          if (ds.type !== 'telemetry' || getSourceId(ds) !== eventDeviceId) return false
           // If event has no explicit metric, include this source (legacy compatibility)
           if (!eventMetric) return true
           // Otherwise, only include if metric matches
@@ -1760,7 +1760,7 @@ export function useDataSource<T = unknown>(
 
           // Merge event value into each matching telemetry source
           const updatedResults = currentDataSources.map((ds, index) => {
-            if (ds.type !== 'telemetry' || ds.deviceId !== eventDeviceId) {
+            if (ds.type !== 'telemetry' || getSourceId(ds) !== eventDeviceId) {
               return undefined
             }
 
@@ -1873,7 +1873,7 @@ export function useDataSource<T = unknown>(
           // This prevents excessive API calls while ensuring data freshness
           const refreshDelay = 2000 // 2 seconds delay
           matchingTelemetrySources.forEach((ds) => {
-            const cacheKey = `${ds.deviceId}|${ds.metricId}|${ds.timeRange ?? 1}|${ds.limit ?? 50}|${ds.aggregate ?? ds.aggregateExt ?? 'raw'}`
+            const cacheKey = `${getSourceId(ds)}|${ds.metricId}|${ds.timeRange ?? 1}|${ds.limit ?? 50}|${ds.aggregate ?? ds.aggregateExt ?? 'raw'}`
             const cached = telemetryCache.get(cacheKey)
 
             // Only schedule refresh if cache exists and isn't being refreshed
@@ -1921,7 +1921,7 @@ export function useDataSource<T = unknown>(
 
           switch (ds.type) {
             case 'device': {
-              const deviceId = ds.deviceId!
+              const deviceId = getSourceId(ds)!
               const property = ds.property as string | undefined
 
               // If no property specified, return full device object
@@ -2004,7 +2004,7 @@ export function useDataSource<T = unknown>(
             }
 
             case 'command': {
-              const deviceId = ds.deviceId
+              const deviceId = getSourceId(ds)
               const property = ds.property || 'state'
 
               if (isDeviceMetricEvent && eventData.device_id === deviceId) {
@@ -2040,7 +2040,7 @@ export function useDataSource<T = unknown>(
             }
 
             case 'device-info': {
-              const deviceId = ds.deviceId
+              const deviceId = getSourceId(ds)
               const infoProperty = ds.infoProperty || 'name'
               const device = currentDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
 
@@ -2080,7 +2080,7 @@ export function useDataSource<T = unknown>(
             case 'telemetry': {
               // When event matches this telemetry source, merge event value into data immediately
               // so image/history components update without waiting for fetch or device in store.
-              if (isDeviceMetricEvent && hasDeviceId && eventData.device_id === ds.deviceId) {
+              if (isDeviceMetricEvent && hasDeviceId && eventData.device_id === getSourceId(ds)) {
                 const metricId = ds.metricId || ds.property || 'value'
                 let eventValue: unknown
                 const eventMetric = typeof (eventData as any).metric === 'string' ? (eventData as any).metric : ''
@@ -2336,7 +2336,7 @@ export function useDataSource<T = unknown>(
         const actualAggregate = ds.aggregate ?? ds.aggregateExt ?? 'raw'
 
         return createStableKey({
-          deviceId: ds.deviceId,
+          deviceId: getSourceId(ds),
           metricId: ds.metricId,
           timeRange: actualTimeRange,
           limit: actualLimit,
@@ -2388,7 +2388,7 @@ export function useDataSource<T = unknown>(
         const results = await Promise.race([
           Promise.all(
             telemetryDataSources.map(async (ds) => {
-            if (!ds.deviceId || !ds.metricId) {
+            if (!getSourceId(ds) || !ds.metricId) {
               return { data: [], raw: undefined }
             }
 
@@ -2412,7 +2412,7 @@ export function useDataSource<T = unknown>(
             const actualAggregate = ds.aggregate ?? ds.aggregateExt ?? 'raw'
 
             const response = await fetchHistoricalTelemetry(
-              ds.deviceId,
+              getSourceId(ds)!,
               ds.metricId,
               actualTimeRange,
               actualLimit,
@@ -2555,7 +2555,7 @@ export function useDataSource<T = unknown>(
         }
 
         const telemetryDataSourcesWithStore = telemetryDataSources.map((ds) => {
-          const device = storeState.devices.find((d: Device) => d.id === ds.deviceId || d.device_id === ds.deviceId)
+          const device = storeState.devices.find((d: Device) => d.id === getSourceId(ds) || d.device_id === getSourceId(ds))
           if (!device?.current_values) return { dataSource: ds, latestValue: undefined }
 
           // Get the latest value for this metric from store with fuzzy matching
@@ -2563,7 +2563,7 @@ export function useDataSource<T = unknown>(
           const matchResult = findMetricValue(device.current_values as Record<string, unknown>, metricId)
           const latestValue = matchResult?.value
 
-          return { dataSource: ds, latestValue, deviceId: ds.deviceId, metricId, matchedKey: matchResult?.matchedKey }
+          return { dataSource: ds, latestValue, deviceId: getSourceId(ds), metricId, matchedKey: matchResult?.matchedKey }
         })
 
         // CRITICAL FIX: Add store value if it exists

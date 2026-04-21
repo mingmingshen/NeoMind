@@ -112,7 +112,7 @@ pub use message_channels::{
     update_channel_filter_handler, update_channel_handler,
 };
 // Unified Data API
-pub use data::list_all_data_sources_handler;
+pub use data::{list_all_data_sources_handler, query_telemetry_handler};
 // Tools API
 pub use tools::{get_tool_handler, list_tools_handler};
 // System Memory API

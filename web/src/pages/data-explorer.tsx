@@ -20,7 +20,9 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { Search, Database, RefreshCw, Cpu, Puzzle, Workflow, Brain } from 'lucide-react'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Search, Database, RefreshCw, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { UnifiedDataSourceInfo } from '@/types'
 import { useIsMobile } from '@/hooks/useMobile'
@@ -49,7 +51,6 @@ function SourceTypeBadge({ type }: { type: string }) {
 
 function formatTime(timestamp?: number): string {
   if (!timestamp) return '-'
-  // Backend telemetry timestamps are in seconds, normalize to ms
   const ms = timestamp < 1e12 ? timestamp * 1000 : timestamp
   const d = new Date(ms)
   const now = new Date()
@@ -60,40 +61,80 @@ function formatTime(timestamp?: number): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${time}`
 }
 
+function formatDateTime(timestamp: number): string {
+  const ms = timestamp < 1e12 ? timestamp * 1000 : timestamp
+  const d = new Date(ms)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
 export function DataExplorerPage() {
   const { t } = useTranslation(['common', 'data'])
   const isMobile = useIsMobile()
 
-  const [sources, setSources] = useState<UnifiedDataSourceInfo[]>([])
+  // Server-side paginated state
+  const [pageData, setPageData] = useState<UnifiedDataSourceInfo[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [sourceOptions, setSourceOptions] = useState<[string, string][]>([])
   const [loading, setLoading] = useState(true)
+
+  // Filters
   const [search, setSearch] = useState('')
   const [activeType, setActiveType] = useState<SourceType>('all')
   const [selectedSourceName, setSelectedSourceName] = useState<string>('__all__')
   const [page, setPage] = useState(1)
-  const [selectedSource, setSelectedSource] = useState<UnifiedDataSourceInfo | null>(null)
-  const pageSize = 15
-  const fetchRef = useRef(false)
+  const pageSize = 10
 
+  // Debounced search value
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>()
+
+  // Detail dialog
+  const [selectedSource, setSelectedSource] = useState<UnifiedDataSourceInfo | null>(null)
+  const [historyRange, setHistoryRange] = useState<string>('1h')
+  const [historyData, setHistoryData] = useState<Array<{ timestamp: number; value: unknown; quality: number | null }>>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+
+  // Fetch page from server
   const fetchDataSources = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await api.listUnifiedDataSources()
-      setSources(data)
+      const params: Record<string, string | number> = {
+        offset: (page - 1) * pageSize,
+        limit: pageSize,
+      }
+      if (activeType !== 'all') params.source_type = activeType
+      if (selectedSourceName !== '__all__') params.source = selectedSourceName
+      if (debouncedSearch.trim()) params.search = debouncedSearch.trim()
+
+      const res = await api.listUnifiedDataSources(params)
+      setPageData(res.data)
+      setTotalCount(res.total)
+      setSourceOptions(res.source_options)
     } catch (err) {
       console.error('[DataExplorer] Failed to fetch data sources:', err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [page, activeType, selectedSourceName, debouncedSearch, pageSize])
 
+  // Fetch on mount and when filters/page change
   useEffect(() => {
-    if (!fetchRef.current) {
-      fetchRef.current = true
-      fetchDataSources()
-    }
+    fetchDataSources()
   }, [fetchDataSources])
 
-  // Real-time updates via events
+  // Reset page when filters change
+  useEffect(() => { setPage(1) }, [debouncedSearch, activeType, selectedSourceName])
+  useEffect(() => { setSelectedSourceName('__all__') }, [activeType])
+
+  // Debounce search input
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
+  }, [search])
+
+  // Refresh on device events
   useEvents({
     enabled: true,
     category: 'device',
@@ -102,56 +143,41 @@ export function DataExplorerPage() {
     },
   })
 
-  // Unique source names for the current type tab
-  const sourceOptions = useMemo(() => {
-    const filtered = activeType === 'all'
-      ? sources
-      : sources.filter(s => s.source_type === activeType)
-    const map = new Map<string, string>()
-    filtered.forEach(s => {
-      if (!map.has(s.source_name)) {
-        map.set(s.source_name, s.source_display_name)
-      }
+  // Fetch historical telemetry when a source is selected or range changes
+  useEffect(() => {
+    if (!selectedSource) {
+      setHistoryData([])
+      return
+    }
+    const rangeSeconds: Record<string, number> = {
+      '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800,
+    }
+    const now = Math.floor(Date.now() / 1000)
+    const start = now - (rangeSeconds[historyRange] || 3600)
+
+    const parts = selectedSource.id.split(':')
+    if (parts.length < 3) return
+    const source = `${parts[0]}:${parts[1]}`
+    const metric = parts.slice(2).join(':')
+
+    let cancelled = false
+    setHistoryLoading(true)
+    api.queryTelemetry(source, metric, start, now, 500).then(res => {
+      if (cancelled) return
+      setHistoryData(res.data.map(p => ({
+        timestamp: p.timestamp,
+        value: p.value,
+        quality: p.quality,
+      })))
+    }).catch(err => {
+      console.error('[DataExplorer] Failed to fetch history:', err)
+      if (!cancelled) setHistoryData([])
+    }).finally(() => {
+      if (!cancelled) setHistoryLoading(false)
     })
-    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]))
-  }, [sources, activeType])
+    return () => { cancelled = true }
+  }, [selectedSource, historyRange])
 
-  // Filter and search
-  const filteredSources = useMemo(() => {
-    let result = sources
-    if (activeType !== 'all') {
-      result = result.filter(s => s.source_type === activeType)
-    }
-    if (selectedSourceName !== '__all__') {
-      result = result.filter(s => s.source_name === selectedSourceName)
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      result = result.filter(s =>
-        s.id.toLowerCase().includes(q) ||
-        s.source_display_name.toLowerCase().includes(q) ||
-        s.field_display_name.toLowerCase().includes(q) ||
-        s.source_name.toLowerCase().includes(q) ||
-        (s.description && s.description.toLowerCase().includes(q))
-      )
-    }
-    return result
-  }, [sources, activeType, selectedSourceName, search])
-
-  // Pagination
-  const paginatedSources = useMemo(() => {
-    if (isMobile) {
-      return filteredSources.slice(0, page * pageSize)
-    }
-    return filteredSources.slice((page - 1) * pageSize, page * pageSize)
-  }, [filteredSources, page, pageSize, isMobile])
-
-  // Reset page when filters change; reset source filter when type changes
-  useEffect(() => { setPage(1) }, [search, activeType, selectedSourceName])
-  useEffect(() => { setSelectedSourceName('__all__') }, [activeType])
-
-  // Tabs config for PageTabsBar / PageTabsBottomNav
-  // Fixed tabs - always shown for discoverability, even when empty
   const tabs = useMemo(() => [
     { value: 'all', label: t('data:tabs.all', 'All'), icon: <Database className="h-4 w-4" /> },
     { value: 'device', label: t('data:tabs.device', 'Device'), icon: <Cpu className="h-4 w-4" /> },
@@ -160,29 +186,23 @@ export function DataExplorerPage() {
     { value: 'ai', label: t('data:tabs.ai', 'AI Metrics'), icon: <Brain className="h-4 w-4" /> },
   ], [t])
 
-  // Table columns
   const columns: TableColumn[] = [
-    { key: 'id', label: 'ID', width: '30%' },
-    { key: 'source_type', label: t('data:columns.type', 'Type'), width: '10%' },
     { key: 'source_display_name', label: t('data:columns.source', 'Source'), width: '20%' },
-    { key: 'field_display_name', label: t('data:columns.field', 'Field'), width: '20%' },
+    { key: 'field_display_name', label: t('data:columns.field', 'Field'), width: '22%' },
+    { key: 'id', label: 'ID', width: '18%' },
+    { key: 'source_type', label: t('data:columns.type', 'Type'), width: '10%' },
     { key: 'data_type', label: t('data:columns.dataType', 'Data Type'), width: '10%' },
-    { key: 'last_update', label: t('data:columns.updated', 'Updated'), width: '10%' },
+    { key: 'last_update', label: t('data:columns.updated', 'Updated'), width: '12%' },
+    { key: 'actions', label: '', width: '8%' },
   ]
 
   const renderCell = (columnKey: string, rowData: Record<string, unknown>) => {
     const source = rowData as unknown as UnifiedDataSourceInfo
     switch (columnKey) {
-      case 'id':
-        return (
-          <div className="font-mono text-xs truncate max-w-[300px]" title={source.id}>
-            {source.id}
-          </div>
-        )
-      case 'source_type':
-        return <SourceTypeBadge type={source.source_type} />
       case 'source_display_name':
-        return <span className="text-sm">{source.source_display_name}</span>
+        return (
+          <span className="text-sm font-medium text-foreground/80">{source.source_display_name}</span>
+        )
       case 'field_display_name':
         return (
           <div className="flex flex-col">
@@ -190,20 +210,38 @@ export function DataExplorerPage() {
             {source.unit && <span className="text-xs text-muted-foreground">{source.unit}</span>}
           </div>
         )
+      case 'id':
+        return (
+          <div className="font-mono text-xs truncate max-w-[200px]" title={source.id}>
+            {source.id}
+          </div>
+        )
+      case 'source_type':
+        return <SourceTypeBadge type={source.source_type} />
       case 'data_type':
         return <Badge variant="secondary" className="text-[10px]">{source.data_type}</Badge>
       case 'last_update':
         return <span className="text-xs text-muted-foreground">{formatTime(source.last_update)}</span>
+      case 'actions':
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2"
+            onClick={(e) => { e.stopPropagation(); setSelectedSource(source) }}
+          >
+            <Eye className="h-3.5 w-3.5" />
+          </Button>
+        )
       default:
         return String(rowData[columnKey] ?? '')
     }
   }
 
-  // Shared table component for all tabs
   const dataTable = (
     <ResponsiveTable
       columns={columns}
-      data={paginatedSources as unknown as Record<string, unknown>[]}
+      data={pageData as unknown as Record<string, unknown>[]}
       renderCell={renderCell}
       rowKey={(row) => (row as unknown as UnifiedDataSourceInfo).id}
       onRowClick={(row) => setSelectedSource(row as unknown as UnifiedDataSourceInfo)}
@@ -220,7 +258,6 @@ export function DataExplorerPage() {
     />
   )
 
-  // Source filter dropdown
   const sourceFilter = sourceOptions.length > 1 ? (
     <Select value={selectedSourceName} onValueChange={setSelectedSourceName}>
       <SelectTrigger className="w-[160px] md:w-[200px] h-9 text-sm">
@@ -234,6 +271,12 @@ export function DataExplorerPage() {
       </SelectContent>
     </Select>
   ) : null
+
+  const formatHistoryValue = (val: unknown): string => {
+    if (val === null || val === undefined) return '-'
+    if (typeof val === 'object') return JSON.stringify(val)
+    return String(val)
+  }
 
   return (
     <>
@@ -272,9 +315,9 @@ export function DataExplorerPage() {
           />
         }
         footer={
-          filteredSources.length > pageSize ? (
+          totalCount > pageSize ? (
             <Pagination
-              total={filteredSources.length}
+              total={totalCount}
               pageSize={pageSize}
               currentPage={page}
               onPageChange={setPage}
@@ -287,16 +330,14 @@ export function DataExplorerPage() {
         </PageTabsContent>
       </PageLayout>
 
-      {/* Mobile: Bottom navigation bar */}
       <PageTabsBottomNav
         tabs={tabs}
         activeTab={activeType}
         onTabChange={(v) => setActiveType(v)}
       />
 
-      {/* Detail dialog */}
       <Dialog open={!!selectedSource} onOpenChange={(open) => !open && setSelectedSource(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {selectedSource && <SourceTypeBadge type={selectedSource.source_type} />}
@@ -307,42 +348,108 @@ export function DataExplorerPage() {
             </DialogDescription>
           </DialogHeader>
           {selectedSource && (
-            <div className="space-y-4 py-2">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Field</p>
-                  <p className="text-sm font-medium">{selectedSource.field_display_name}</p>
+            <Tabs defaultValue="latest" className="w-full">
+              <TabsList className="w-full">
+                <TabsTrigger value="latest" className="flex-1">Latest Data</TabsTrigger>
+                <TabsTrigger value="history" className="flex-1 gap-1">
+                  <History className="h-3.5 w-3.5" />
+                  History
+                </TabsTrigger>
+              </TabsList>
+
+              {/* Latest Data Tab */}
+              <TabsContent value="latest" className="mt-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Field</p>
+                    <p className="text-sm font-medium">{selectedSource.field_display_name}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Data Type</p>
+                    <Badge variant="secondary">{selectedSource.data_type}</Badge>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Unit</p>
+                    <p className="text-sm">{selectedSource.unit || '-'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Last Update</p>
+                    <p className="text-sm">{formatTime(selectedSource.last_update)}</p>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Data Type</p>
-                  <Badge variant="secondary">{selectedSource.data_type}</Badge>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Unit</p>
-                  <p className="text-sm">{selectedSource.unit || '-'}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Last Update</p>
-                  <p className="text-sm">{formatTime(selectedSource.last_update)}</p>
-                </div>
-              </div>
-              {selectedSource.description && (
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Description</p>
-                  <p className="text-sm">{selectedSource.description}</p>
-                </div>
-              )}
-              {selectedSource.current_value !== undefined && selectedSource.current_value !== null && (
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Current Value</p>
-                  <p className="text-sm font-mono bg-muted p-2 rounded break-all overflow-hidden max-h-32">
-                    {typeof selectedSource.current_value === 'object'
-                      ? JSON.stringify(selectedSource.current_value, null, 2)
-                      : String(selectedSource.current_value)}
+                {selectedSource.description && (
+                  <div className="space-y-1 mt-3">
+                    <p className="text-xs text-muted-foreground">Description</p>
+                    <p className="text-sm">{selectedSource.description}</p>
+                  </div>
+                )}
+                {selectedSource.current_value !== undefined && selectedSource.current_value !== null && (
+                  <div className="space-y-1 mt-3">
+                    <p className="text-xs text-muted-foreground">Current Value</p>
+                    <p className="text-sm font-mono bg-muted p-2 rounded break-all overflow-hidden max-h-32">
+                      {typeof selectedSource.current_value === 'object'
+                        ? JSON.stringify(selectedSource.current_value, null, 2)
+                        : String(selectedSource.current_value)}
+                    </p>
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* History Tab */}
+              <TabsContent value="history" className="mt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm text-muted-foreground">
+                    {selectedSource.field_display_name}
+                    {selectedSource.unit && ` (${selectedSource.unit})`}
                   </p>
+                  <Select value={historyRange} onValueChange={setHistoryRange}>
+                    <SelectTrigger className="w-[100px] h-7 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1h">1 Hour</SelectItem>
+                      <SelectItem value="6h">6 Hours</SelectItem>
+                      <SelectItem value="24h">24 Hours</SelectItem>
+                      <SelectItem value="7d">7 Days</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
-            </div>
+
+                {historyLoading ? (
+                  <div className="flex items-center justify-center h-32 text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                    <span className="text-sm">Loading...</span>
+                  </div>
+                ) : historyData.length > 0 ? (
+                  <ScrollArea className="h-[280px] rounded border">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-background">
+                        <tr className="border-b">
+                          <th className="text-left text-xs font-medium text-muted-foreground px-3 py-1.5">Timestamp</th>
+                          <th className="text-left text-xs font-medium text-muted-foreground px-3 py-1.5">Value</th>
+                          <th className="text-left text-xs font-medium text-muted-foreground px-3 py-1.5">Quality</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {historyData.map((point, i) => (
+                          <tr key={i} className="border-b last:border-0 hover:bg-muted/50">
+                            <td className="px-3 py-1.5 font-mono text-xs">{formatDateTime(point.timestamp)}</td>
+                            <td className="px-3 py-1.5 font-mono text-xs">{formatHistoryValue(point.value)}</td>
+                            <td className="px-3 py-1.5 text-xs text-muted-foreground">
+                              {point.quality !== null ? (point.quality * 100).toFixed(0) + '%' : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </ScrollArea>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-8">
+                    No historical data available for this period
+                  </p>
+                )}
+              </TabsContent>
+            </Tabs>
           )}
         </DialogContent>
       </Dialog>

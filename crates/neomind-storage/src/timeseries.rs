@@ -23,7 +23,7 @@ use tokio::sync::{RwLock, Semaphore};
 
 use crate::Error;
 
-// redb table definition: key = (device_id, metric, timestamp), value = DataPoint (serialized)
+// redb table definition: key = (source_id, metric, timestamp), value = DataPoint (serialized)
 const TIMESERIES_TABLE: TableDefinition<(&str, &str, i64), &[u8]> =
     TableDefinition::new("timeseries");
 
@@ -176,7 +176,7 @@ impl TimeSeriesBucket {
 #[derive(Debug, Clone)]
 pub struct TimeSeriesResult {
     /// Device ID.
-    pub device_id: String,
+    pub source_id: String,
     /// Metric name.
     pub metric: String,
     /// Data points returned.
@@ -336,7 +336,7 @@ impl PerformanceStats {
 #[derive(Debug, Clone)]
 pub struct BatchWriteRequest {
     /// Device ID
-    pub device_id: String,
+    pub source_id: String,
     /// Device type (for retention policy)
     pub device_type: Option<String>,
     /// Metrics and their data points
@@ -345,9 +345,9 @@ pub struct BatchWriteRequest {
 
 impl BatchWriteRequest {
     /// Create a new batch write request.
-    pub fn new(device_id: String) -> Self {
+    pub fn new(source_id: String) -> Self {
         Self {
-            device_id,
+            source_id,
             device_type: None,
             metrics: std::collections::HashMap::with_capacity(4), // Pre-allocate for typical batch size
         }
@@ -378,9 +378,9 @@ impl BatchWriteRequest {
 /// Time series storage using redb.
 pub struct TimeSeriesStore {
     db: Arc<Database>,
-    /// Metrics info: (device_id:metric) -> MetricInfo - using DashMap for concurrent access
+    /// Metrics info: (source_id:metric) -> MetricInfo - using DashMap for concurrent access
     metrics_info: DashMap<String, MetricInfo>,
-    /// Latest value cache: (device_id, metric) -> CacheEntry - using DashMap for concurrent access
+    /// Latest value cache: (source_id, metric) -> CacheEntry - using DashMap for concurrent access
     latest_cache: DashMap<(String, String), CacheEntry>,
     /// Retention policy
     retention_policy: RwLock<RetentionPolicy>,
@@ -499,7 +499,7 @@ impl TimeSeriesStore {
     /// Write a data point.
     pub async fn write(
         &self,
-        device_id: &str,
+        source_id: &str,
         metric: &str,
         point: DataPoint,
     ) -> Result<(), Error> {
@@ -510,7 +510,7 @@ impl TimeSeriesStore {
             .await
             .map_err(|_| Error::Storage("Write semaphore closed".to_string()))?;
 
-        let key = (device_id, metric, point.timestamp);
+        let key = (source_id, metric, point.timestamp);
         let value = serde_json::to_vec(&point)?;
 
         let write_txn = self.db.begin_write()?;
@@ -521,10 +521,10 @@ impl TimeSeriesStore {
         write_txn.commit()?;
 
         // Update cache - DashMap is lock-free
-        self.update_cache(device_id, metric, point.clone()).await;
+        self.update_cache(source_id, metric, point.clone()).await;
 
         // Update metrics info - DashMap entry API is lock-free
-        let metric_key = format!("{}:{}", device_id, metric);
+        let metric_key = format!("{}:{}", source_id, metric);
         self.metrics_info
             .entry(metric_key)
             .and_modify(|entry| {
@@ -544,8 +544,8 @@ impl TimeSeriesStore {
     }
 
     /// Update the latest value cache.
-    async fn update_cache(&self, device_id: &str, metric: &str, point: DataPoint) {
-        let key = (device_id.to_string(), metric.to_string());
+    async fn update_cache(&self, source_id: &str, metric: &str, point: DataPoint) {
+        let key = (source_id.to_string(), metric.to_string());
 
         // Evict if at capacity
         if self.latest_cache.len() >= self.max_cache_size {
@@ -584,7 +584,7 @@ impl TimeSeriesStore {
     /// Write multiple data points in batch.
     pub async fn write_batch(
         &self,
-        device_id: &str,
+        source_id: &str,
         metric: &str,
         points: Vec<DataPoint>,
     ) -> Result<(), Error> {
@@ -592,7 +592,7 @@ impl TimeSeriesStore {
         {
             let mut table = write_txn.open_table(TIMESERIES_TABLE)?;
             for point in &points {
-                let key = (device_id, metric, point.timestamp);
+                let key = (source_id, metric, point.timestamp);
                 let value = serde_json::to_vec(point)?;
                 table.insert(key, value.as_slice())?;
             }
@@ -600,7 +600,7 @@ impl TimeSeriesStore {
         write_txn.commit()?;
 
         // Update metrics info - DashMap entry API is lock-free
-        let metric_key = format!("{}:{}", device_id, metric);
+        let metric_key = format!("{}:{}", source_id, metric);
         let now = Utc::now().timestamp();
         let last_ts = points.last().map(|p| p.timestamp).unwrap_or(now);
 
@@ -626,7 +626,7 @@ impl TimeSeriesStore {
     /// is `None` (backward compatible).
     pub async fn query_range(
         &self,
-        device_id: &str,
+        source_id: &str,
         metric: &str,
         start: i64,
         end: i64,
@@ -639,12 +639,12 @@ impl TimeSeriesStore {
             Ok(t) => t,
             Err(redb::TableError::TableDoesNotExist(_)) => {
                 tracing::debug!(
-                    "query_range: table 'timeseries' does not exist yet, returning empty result for device_id={}, metric={}",
-                    device_id,
+                    "query_range: table 'timeseries' does not exist yet, returning empty result for source_id={}, metric={}",
+                    source_id,
                     metric
                 );
                 return Ok(TimeSeriesResult {
-                    device_id: device_id.to_string(),
+                    source_id: source_id.to_string(),
                     metric: metric.to_string(),
                     points: Vec::new(),
                     total_count: None,
@@ -653,12 +653,12 @@ impl TimeSeriesStore {
             Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
         };
 
-        let start_key = (device_id, metric, start);
-        let end_key = (device_id, metric, end);
+        let start_key = (source_id, metric, start);
+        let end_key = (source_id, metric, end);
 
         tracing::debug!(
-            "query_range: device_id={}, metric={}, start={}, end={}, limit={:?}, start_key={:?}, end_key={:?}",
-            device_id,
+            "query_range: source_id={}, metric={}, start={}, end={}, limit={:?}, start_key={:?}, end_key={:?}",
+            source_id,
             metric,
             start,
             end,
@@ -694,8 +694,8 @@ impl TimeSeriesStore {
         }
 
         tracing::debug!(
-            "query_range: device_id={}, metric={}, start={}, end={}, found {} points (total_count={})",
-            device_id,
+            "query_range: source_id={}, metric={}, start={}, end={}, found {} points (total_count={})",
+            source_id,
             metric,
             start,
             end,
@@ -704,7 +704,7 @@ impl TimeSeriesStore {
         );
 
         Ok(TimeSeriesResult {
-            device_id: device_id.to_string(),
+            source_id: source_id.to_string(),
             metric: metric.to_string(),
             points,
             total_count: limit.map(|_| total_count as usize),
@@ -714,7 +714,7 @@ impl TimeSeriesStore {
     /// Query a single metric - helper for parallel batch queries.
     async fn query_single_metric(
         db: Arc<Database>,
-        device_id: &str,
+        source_id: &str,
         metric: &str,
         start: i64,
         end: i64,
@@ -725,7 +725,7 @@ impl TimeSeriesStore {
             Ok(t) => t,
             Err(redb::TableError::TableDoesNotExist(_)) => {
                 return Ok(TimeSeriesResult {
-                    device_id: device_id.to_string(),
+                    source_id: source_id.to_string(),
                     metric: metric.to_string(),
                     points: Vec::new(),
                     total_count: None,
@@ -734,8 +734,8 @@ impl TimeSeriesStore {
             Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
         };
 
-        let start_key = (device_id, metric, start);
-        let end_key = (device_id, metric, end);
+        let start_key = (source_id, metric, start);
+        let end_key = (source_id, metric, end);
 
         let cap = limit.map(|n| n.min(1000)).unwrap_or(0);
         let mut points = Vec::with_capacity(cap);
@@ -763,8 +763,8 @@ impl TimeSeriesStore {
         }
 
         tracing::debug!(
-            "query_single_metric: device_id={}, metric={}, start={}, end={}, found {} points (total_count={})",
-            device_id,
+            "query_single_metric: source_id={}, metric={}, start={}, end={}, found {} points (total_count={})",
+            source_id,
             metric,
             start,
             end,
@@ -773,7 +773,7 @@ impl TimeSeriesStore {
         );
 
         Ok(TimeSeriesResult {
-            device_id: device_id.to_string(),
+            source_id: source_id.to_string(),
             metric: metric.to_string(),
             points,
             total_count: limit.map(|_| total_count as usize),
@@ -784,7 +784,7 @@ impl TimeSeriesStore {
     /// Performance optimization: uses parallel queries to reduce latency when querying multiple metrics.
     ///
     /// # Arguments
-    /// * `device_id` - The device ID
+    /// * `source_id` - The device ID
     /// * `metrics` - Slice of metric names to query
     /// * `start` - Start timestamp (inclusive)
     /// * `end` - End timestamp (inclusive)
@@ -793,7 +793,7 @@ impl TimeSeriesStore {
     /// A map of metric name to TimeSeriesResult
     pub async fn query_range_batch(
         &self,
-        device_id: &str,
+        source_id: &str,
         metrics: &[&str],
         start: i64,
         end: i64,
@@ -809,8 +809,8 @@ impl TimeSeriesStore {
 
         if !table_exists {
             tracing::debug!(
-                "query_range_batch: table 'timeseries' does not exist yet, returning empty results for device_id={}, metrics={:?}",
-                device_id,
+                "query_range_batch: table 'timeseries' does not exist yet, returning empty results for source_id={}, metrics={:?}",
+                source_id,
                 metrics
             );
             // Return empty results for all metrics
@@ -819,7 +819,7 @@ impl TimeSeriesStore {
                 results.insert(
                     metric.to_string(),
                     TimeSeriesResult {
-                        device_id: device_id.to_string(),
+                        source_id: source_id.to_string(),
                         metric: metric.to_string(),
                         points: Vec::new(),
                         total_count: None,
@@ -831,18 +831,18 @@ impl TimeSeriesStore {
 
         // Create parallel query tasks for each metric
         let db = Arc::clone(&self.db);
-        let device_id = device_id.to_string();
+        let source_id = source_id.to_string();
         let metrics: Vec<String> = metrics.iter().map(|s| s.to_string()).collect();
 
         let query_tasks: Vec<_> = metrics
             .iter()
             .map(|metric| {
                 let db = Arc::clone(&db);
-                let device_id = device_id.clone();
+                let source_id = source_id.clone();
                 let metric = metric.clone();
 
                 tokio::spawn(async move {
-                    Self::query_single_metric(db, &device_id, &metric, start, end, None).await
+                    Self::query_single_metric(db, &source_id, &metric, start, end, None).await
                 })
             })
             .collect();
@@ -864,8 +864,8 @@ impl TimeSeriesStore {
         }
 
         tracing::debug!(
-            "query_range_batch: device_id={}, metrics={:?}, start={}, end={}, returned results for {} metrics",
-            device_id,
+            "query_range_batch: source_id={}, metrics={:?}, start={}, end={}, returned results for {} metrics",
+            source_id,
             metrics,
             start,
             end,
@@ -878,11 +878,11 @@ impl TimeSeriesStore {
     /// Query the latest data point.
     pub async fn query_latest(
         &self,
-        device_id: &str,
+        source_id: &str,
         metric: &str,
     ) -> Result<Option<DataPoint>, Error> {
         let start = Instant::now();
-        let cache_key = (device_id.to_string(), metric.to_string());
+        let cache_key = (source_id.to_string(), metric.to_string());
 
         // Check cache first
         {
@@ -904,8 +904,8 @@ impl TimeSeriesStore {
             Ok(t) => t,
             Err(redb::TableError::TableDoesNotExist(_)) => {
                 tracing::debug!(
-                    "query_latest: table 'timeseries' does not exist yet, returning None for device_id={}, metric={}",
-                    device_id,
+                    "query_latest: table 'timeseries' does not exist yet, returning None for source_id={}, metric={}",
+                    source_id,
                     metric
                 );
                 return Ok(None);
@@ -913,8 +913,8 @@ impl TimeSeriesStore {
             Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
         };
 
-        let start_key = (device_id, metric, i64::MIN);
-        let end_key = (device_id, metric, i64::MAX);
+        let start_key = (source_id, metric, i64::MIN);
+        let end_key = (source_id, metric, i64::MAX);
 
         // Get the latest data point (most recent timestamp)
         let latest: Option<DataPoint> = table
@@ -928,7 +928,7 @@ impl TimeSeriesStore {
 
         // Update cache with result
         if let Some(ref point) = latest {
-            self.update_cache(device_id, metric, point.clone()).await;
+            self.update_cache(source_id, metric, point.clone()).await;
         }
 
         // Record stats
@@ -942,13 +942,13 @@ impl TimeSeriesStore {
     /// Query data points aggregated into time buckets.
     pub async fn query_aggregated(
         &self,
-        device_id: &str,
+        source_id: &str,
         metric: &str,
         start: i64,
         end: i64,
         bucket_size_secs: i64,
     ) -> Result<Vec<TimeSeriesBucket>, Error> {
-        let result = self.query_range(device_id, metric, start, end, None).await?;
+        let result = self.query_range(source_id, metric, start, end, None).await?;
 
         let mut buckets: std::collections::HashMap<i64, TimeSeriesBucket> =
             std::collections::HashMap::new();
@@ -971,7 +971,7 @@ impl TimeSeriesStore {
     /// Delete data points in a time range.
     pub async fn delete_range(
         &self,
-        device_id: &str,
+        source_id: &str,
         metric: &str,
         start: i64,
         end: i64,
@@ -981,8 +981,8 @@ impl TimeSeriesStore {
 
         {
             let mut table = write_txn.open_table(TIMESERIES_TABLE)?;
-            let start_key = (device_id, metric, start);
-            let end_key = (device_id, metric, end);
+            let start_key = (source_id, metric, start);
+            let end_key = (source_id, metric, end);
 
             // Collect keys as owned tuples
             let mut keys_to_delete: Vec<(String, String, i64)> = Vec::new();
@@ -1013,7 +1013,7 @@ impl TimeSeriesStore {
     }
 
     /// Get all metrics for a device.
-    pub async fn list_metrics(&self, device_id: &str) -> Result<Vec<String>, Error> {
+    pub async fn list_metrics(&self, source_id: &str) -> Result<Vec<String>, Error> {
         let read_txn = self.db.begin_read()?;
 
         // Handle case where table doesn't exist yet (no data has been written)
@@ -1021,16 +1021,16 @@ impl TimeSeriesStore {
             Ok(t) => t,
             Err(redb::TableError::TableDoesNotExist(_)) => {
                 tracing::debug!(
-                    "list_metrics: table 'timeseries' does not exist yet, returning empty list for device_id={}",
-                    device_id
+                    "list_metrics: table 'timeseries' does not exist yet, returning empty list for source_id={}",
+                    source_id
                 );
                 return Ok(Vec::new());
             }
             Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
         };
 
-        let start_key = (device_id, "", i64::MIN);
-        let end_key = (device_id, "\u{FF}", i64::MAX);
+        let start_key = (source_id, "", i64::MIN);
+        let end_key = (source_id, "\u{FF}", i64::MAX);
 
         let mut metrics = std::collections::HashSet::new();
         for result in table.range(start_key..=end_key)? {
@@ -1043,8 +1043,8 @@ impl TimeSeriesStore {
     }
 
     /// Delete all data for a specific metric.
-    pub async fn delete_metric(&self, device_id: &str, metric: &str) -> Result<usize, Error> {
-        self.delete_range(device_id, metric, i64::MIN, i64::MAX)
+    pub async fn delete_metric(&self, source_id: &str, metric: &str) -> Result<usize, Error> {
+        self.delete_range(source_id, metric, i64::MIN, i64::MAX)
             .await
     }
 
@@ -1064,7 +1064,7 @@ impl TimeSeriesStore {
             let stats = Arc::clone(&self.stats);
             let max_cache_size = self.max_cache_size;
 
-            let device_id = request.device_id.clone();
+            let source_id = request.source_id.clone();
             let _device_type = request.device_type.clone().unwrap_or_default();
             let metrics = request.metrics.clone();
 
@@ -1082,7 +1082,7 @@ impl TimeSeriesStore {
 
                     for (metric, points) in &metrics {
                         for point in points {
-                            let key = (&*device_id, &**metric, point.timestamp);
+                            let key = (&*source_id, &**metric, point.timestamp);
                             let value = serde_json::to_vec(point)?;
                             table.insert(key, &*value)?;
                             written += 1;
@@ -1094,7 +1094,7 @@ impl TimeSeriesStore {
                 // Update cache for latest values - DashMap is lock-free
                 for (metric, points) in &metrics {
                     if let Some(last) = points.last() {
-                        let key = (device_id.clone(), metric.clone());
+                        let key = (source_id.clone(), metric.clone());
                         if cache.len() >= max_cache_size {
                             // Evict LRU entry
                             let lru_key = cache
@@ -1167,7 +1167,7 @@ impl TimeSeriesStore {
             Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
         };
 
-        // Collect all (device_id, metric) pairs
+        // Collect all (source_id, metric) pairs
         let mut metric_pairs: std::collections::HashSet<(String, String)> =
             std::collections::HashSet::new();
         let start_key = ("", "", i64::MIN);
@@ -1175,8 +1175,8 @@ impl TimeSeriesStore {
 
         for result in table.range(start_key..=end_key)? {
             let (key, _) = result?;
-            let (device_id, metric, _) = key.value();
-            metric_pairs.insert((device_id.to_string(), metric.to_string()));
+            let (source_id, metric, _) = key.value();
+            metric_pairs.insert((source_id.to_string(), metric.to_string()));
         }
         drop(read_txn);
         drop(table);
@@ -1184,15 +1184,15 @@ impl TimeSeriesStore {
         let now = Utc::now().timestamp();
 
         // Process each metric pair
-        for (device_id, metric) in &metric_pairs {
+        for (source_id, metric) in &metric_pairs {
             // Get device type from metrics_info if available
-            let metric_key = format!("{}:{}", device_id, metric);
+            let metric_key = format!("{}:{}", source_id, metric);
             let device_type = ""; // Could be enhanced to look up device type
 
             if let Some(cutoff) = policy.cutoff_timestamp(device_type, metric) {
                 if cutoff < now {
                     let removed = self
-                        .delete_range(device_id, metric, i64::MIN, cutoff)
+                        .delete_range(source_id, metric, i64::MIN, cutoff)
                         .await?;
                     if removed > 0 {
                         total_removed += removed as u64;

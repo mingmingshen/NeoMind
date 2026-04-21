@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { useState, useCallback, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import type { DataSource } from '@/types/dashboard'
+import { getSourceId } from '@/types/dashboard'
 import type { ParameterDefinition } from '@/types'
 import { api } from '@/lib/api'
 import {
@@ -87,7 +88,7 @@ export function ToggleSwitch({
   const isExtensionCommand = dataSource?.type === 'extension-command'
   const hasCommand = isDeviceCommand || isExtensionCommand
 
-  const deviceId = isDeviceCommand ? dataSource?.deviceId : undefined
+  const deviceId = isDeviceCommand ? getSourceId(dataSource!) : undefined
   const commandName = isDeviceCommand ? (dataSource?.command || 'setValue') : undefined
 
   const extensionId = isExtensionCommand ? dataSource?.extensionId : undefined

@@ -486,7 +486,7 @@ impl TelemetryCapabilityProvider {
     }
 
     async fn handle_telemetry_history(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let device_id = params
+        let source_id = params
             .get("device_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_id".to_string()))?;
@@ -511,7 +511,7 @@ impl TelemetryCapabilityProvider {
             ))?;
 
         let points = telemetry_storage
-            .query(device_id, metric, start, end)
+            .query(source_id, metric, start, end)
             .await
             .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
 
@@ -527,7 +527,7 @@ impl TelemetryCapabilityProvider {
             .collect();
 
         Ok(json!({
-            "device_id": device_id,
+            "device_id": source_id,
             "metric": metric,
             "start": start,
             "end": end,
@@ -537,7 +537,7 @@ impl TelemetryCapabilityProvider {
     }
 
     async fn handle_metrics_aggregate(&self, params: &Value) -> Result<Value, CapabilityError> {
-        let device_id = params
+        let source_id = params
             .get("device_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| CapabilityError::InvalidParameters("Missing device_id".to_string()))?;
@@ -567,7 +567,7 @@ impl TelemetryCapabilityProvider {
             ))?;
 
         let aggregated = telemetry_storage
-            .aggregate(device_id, metric, start, end)
+            .aggregate(source_id, metric, start, end)
             .await
             .map_err(|e| CapabilityError::ProviderError(e.to_string()))?;
 
@@ -581,7 +581,7 @@ impl TelemetryCapabilityProvider {
         };
 
         Ok(json!({
-            "device_id": device_id,
+            "device_id": source_id,
             "metric": metric,
             "aggregation": aggregation,
             "value": value,

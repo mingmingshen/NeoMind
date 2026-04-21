@@ -38,6 +38,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
+import { getSourceId } from '@/types/dashboard'
 import { useStore } from '@/store'
 
 // ============================================================================
@@ -801,8 +802,8 @@ export function CustomLayer({
         ? { x: 50, y: 50 }
         : binding.position
 
-      const ds = binding.dataSource as any
-      const deviceId = ds?.deviceId
+      const ds = binding.dataSource
+      const deviceId = getSourceId(ds)
 
       const item: LayerItem = {
         id: binding.id,
@@ -822,13 +823,13 @@ export function CustomLayer({
 
       if (binding.type === 'metric') {
         item.deviceId = deviceId
-        item.metricId = ds?.metricId || ds?.property
+        item.metricId = ds.metricId || ds.property
         item.deviceName = getDeviceName(deviceId || '')
-        item.metricName = ds?.metricId || ds?.property
+        item.metricName = ds.metricId || ds.property
         const metricValue = getDeviceMetricValue(deviceId || '', item.metricId || '')
         item.value = metricValue !== undefined ? metricValue : '-'
       } else if (binding.type === 'command') {
-        item.command = ds?.command
+        item.command = ds.command
         item.deviceId = deviceId
         item.deviceName = getDeviceName(deviceId || '')
       } else if (binding.type === 'device') {
@@ -836,9 +837,9 @@ export function CustomLayer({
         item.deviceName = getDeviceName(deviceId || '')
         item.status = getDeviceStatus(deviceId || '')
       } else if (binding.type === 'text') {
-        item.value = ds?.text || ''
+        item.value = (ds as any)?.text || ''
       } else if (binding.type === 'icon') {
-        item.icon = ds?.icon || ''
+        item.icon = (ds as any)?.icon || ''
       }
 
       return item
@@ -939,11 +940,11 @@ export function CustomLayer({
 
     // Update items with fresh data from store
     const updateItemFromDevice = (binding: LayerBinding) => {
-      const ds = binding.dataSource as any
-      const deviceId = ds?.deviceId
+      const ds = binding.dataSource
+      const deviceId = getSourceId(ds)
 
       if (binding.type === 'metric' && deviceId) {
-        const metricId = ds?.metricId || ds?.property
+        const metricId = ds.metricId || ds.property
         const device = devices.find(d => d.id === deviceId)
         const metricValue = device?.current_values ? findMetricValue(device.current_values, metricId || '') : undefined
 

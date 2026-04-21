@@ -290,11 +290,11 @@ impl ExtensionMetricsCollector {
                 let _value_for_event = value.clone();
                 let data_point = neomind_devices::telemetry::DataPoint::new(timestamp, value);
 
-                // Use DataSourceId device_part() and metric_part() for storage API
+                // Use DataSourceId source_part() and metric_part() for storage API
                 match self
                     .metrics_storage
                     .write(
-                        &source_id.device_part(),
+                        &source_id.source_part(),
                         source_id.metric_part(),
                         data_point,
                     )

@@ -51,6 +51,15 @@ NeoMind/
 - Frontend: ES modules, functional components, Zustand slices pattern
 - Always run type checks after code changes
 
+### Frontend UI Standards
+
+- **Loading States**: All page-level loading must use **skeleton screens** (not spinners)
+  - `ResponsiveTable`: built-in skeleton rows matching column structure (auto when `loading={true}`)
+  - `LoadingState variant="page"`: card grid skeleton for non-table pages
+  - Spinner (`Loader2`) only for inline/button/dialog-level loading, never for page content
+- **Pagination**: Default page size is **10** across all pages (devices, agents, messages, data explorer, etc.)
+- **Page Layout**: Use `PageLayout` with `PageTabsBar`/`PageTabsContent` pattern. Content grows naturally; `PageLayout`'s scroll container handles scrolling via `overflow-auto`
+
 ## Documentation
 
 For detailed information, see:

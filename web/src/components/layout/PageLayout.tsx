@@ -94,11 +94,11 @@ export function PageLayout({
         <div
           className={cn(
             'flex-1 flex flex-col overflow-auto px-4 sm:px-6 md:px-8',
-            showFooter ? 'pb-20' : 'pb-4 sm:pb-6'
+            showFooter ? 'pb-24 sm:pb-28' : 'pb-4 sm:pb-6'
           )}
           data-page-scroll-container
         >
-          <div className={cn('mx-auto w-full h-full', maxWidthClass[maxWidth])}>
+          <div className={cn('mx-auto w-full', maxWidthClass[maxWidth])}>
             {children}
           </div>
         </div>

@@ -17,6 +17,7 @@ import {
   getValueStateColor,
 } from '@/design-system/tokens/indicator'
 import type { DataSourceOrList, TelemetryAggregate, TimeWindowType } from '@/types/dashboard'
+import { getSourceId } from '@/types/dashboard'
 import { EmptyState, ErrorState } from '../shared'
 import type { SingleValueMappingConfig } from '@/lib/dataMapping'
 import { normalizeDataSource } from '@/types/dashboard'
@@ -331,10 +332,12 @@ export function Sparkline({
 
       // Convert device type to telemetry for historical data
       // Note: metric type without deviceId should NOT be converted as it won't match events
-      if (ds.type === 'device' && ds.deviceId) {
+      const sourceId = getSourceId(ds)
+      if (ds.type === 'device' && sourceId) {
         return {
           type: 'telemetry' as const,
-          deviceId: ds.deviceId,
+          deviceId: sourceId,
+          sourceId: sourceId,
           metricId: ds.metricId ?? ds.property ?? 'value',
           timeRange: timeRange,
           limit: ds.limit ?? 50,

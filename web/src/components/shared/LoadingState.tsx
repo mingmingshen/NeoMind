@@ -1,5 +1,6 @@
 import { Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export interface LoadingStateProps {
   size?: 'sm' | 'md' | 'lg'
@@ -9,12 +10,12 @@ export interface LoadingStateProps {
 }
 
 /**
- * Loading state component with spinner
+ * Loading state component with spinner or skeleton
  *
  * @example
- * <LoadingState /> // Default size, no text
+ * <LoadingState /> // Default spinner
  * <LoadingState size="lg" text="加载中..." />
- * <LoadingState variant="page" text="加载中..." /> // Full page centered loading
+ * <LoadingState variant="page" /> // Full page skeleton
  */
 export function LoadingState({ size = 'md', variant = 'default', text, className }: LoadingStateProps) {
   const sizeClasses = {
@@ -31,11 +32,37 @@ export function LoadingState({ size = 'md', variant = 'default', text, className
 
   if (variant === 'page') {
     return (
-      <div className={cn('flex flex-col items-center justify-center gap-4 h-full min-h-[200px]', className)}>
-        <Loader2 className={cn('animate-spin text-muted-foreground', 'w-10 h-10')} />
-        {text && (
-          <p className="text-sm text-muted-foreground">{text}</p>
-        )}
+      <div className={cn('space-y-4', className)}>
+        {/* Header skeleton */}
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-4 w-72" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-9 w-24" />
+            <Skeleton className="h-9 w-24" />
+          </div>
+        </div>
+        {/* Content skeleton - cards grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="border rounded-xl p-5 space-y-4">
+              <div className="flex items-start gap-3">
+                <Skeleton className="h-10 w-10 rounded-lg" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-3 w-1/2" />
+                </div>
+              </div>
+              <Skeleton className="h-16 w-full" />
+              <div className="flex gap-2">
+                <Skeleton className="h-6 w-16 rounded-full" />
+                <Skeleton className="h-6 w-20 rounded-full" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
@@ -55,38 +82,4 @@ export function LoadingState({ size = 'md', variant = 'default', text, className
  */
 export function LoadingSpinner({ className }: { className?: string }) {
   return <Loader2 className={cn('h-4 w-4 animate-spin', className)} />
-}
-
-/**
- * Skeleton loader for cards
- */
-export function CardSkeleton({ count = 1 }: { count?: number }) {
-  return (
-    <>
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="animate-pulse">
-          <div className="h-24 rounded-lg bg-muted/50" />
-        </div>
-      ))}
-    </>
-  )
-}
-
-/**
- * Table row skeleton loader
- */
-export function TableRowSkeleton({ cells = 4, rows = 3 }: { cells?: number; rows?: number }) {
-  return (
-    <>
-      {Array.from({ length: rows }).map((_, i) => (
-        <tr key={i}>
-          {Array.from({ length: cells }).map((_, j) => (
-            <td key={j} className="p-4">
-              <div className="h-4 animate-pulse rounded bg-muted/50" />
-            </td>
-          ))}
-        </tr>
-      ))}
-    </>
-  )
 }

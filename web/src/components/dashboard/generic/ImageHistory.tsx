@@ -12,6 +12,7 @@ import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { ImageOff, AlertTriangle, RefreshCw, Images } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
+import { getSourceId } from '@/types/dashboard'
 
 type ImageFormatType = 'png' | 'jpeg' | 'jpg' | 'gif' | 'webp' | 'bmp' | 'svg' | 'tiff' | 'ico' | 'unknown'
 
@@ -349,9 +350,11 @@ function normalizeDataSourceForImages(
 
   // If it's a device type, convert to telemetry for historical data
   if (ds.type === 'device') {
+    const sourceId = getSourceId(ds)
     return {
       type: 'telemetry',
-      deviceId: ds.deviceId,
+      deviceId: sourceId,
+      sourceId: sourceId,
       metricId: ds.metricId ?? ds.property ?? 'image',
       timeRange: timeRange,
       limit: limit,

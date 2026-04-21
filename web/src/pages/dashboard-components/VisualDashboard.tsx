@@ -181,6 +181,7 @@ import {
 import { DashboardListSidebar } from '@/components/dashboard/DashboardListSidebar'
 import { MobileEditBar } from '@/components/dashboard/MobileEditBar'
 import type { DashboardComponent, DataSourceOrList, DataSource, GenericComponent } from '@/types/dashboard'
+import { getSourceId } from '@/types/dashboard'
 import type { Device, AiAgent } from '@/types'
 import { COMPONENT_SIZE_CONSTRAINTS } from '@/types/dashboard'
 import { dynamicRegistry, dtoToComponentMeta } from '@/components/dashboard/registry/DynamicRegistry'
@@ -241,10 +242,11 @@ function getTelemetryDataSource(dataSource: DataSourceOrList | undefined): DataS
     if (ds.type === 'telemetry') return ds
 
     // Convert device type to telemetry for Sparkline
-    if (ds.type === 'device' && ds.deviceId && ds.property) {
+    if (ds.type === 'device' && getSourceId(ds) && ds.property) {
       return {
         type: 'telemetry',
-        deviceId: ds.deviceId,
+        deviceId: getSourceId(ds),
+        sourceId: getSourceId(ds),
         metricId: ds.property,
         timeRange: ds.timeRange ?? 1,
         limit: ds.limit ?? 50,
@@ -810,11 +812,11 @@ function renderDashboardComponent(
         const ds = binding.dataSource as any
 
         // Get the device for this binding (used for status, metric values, names)
-        const device = ds?.deviceId ? storeDevices.find(d => d.id === ds.deviceId || d.device_id === ds.deviceId) : undefined
+        const device = getSourceId(ds) ? storeDevices.find(d => d.id === getSourceId(ds) || d.device_id === getSourceId(ds)) : undefined
 
         // Get metric value for metric bindings
         let metricValue: string | undefined = undefined
-        if (binding.type === 'metric' && ds?.deviceId) {
+        if (binding.type === 'metric' && getSourceId(ds)) {
           const metricKey = ds.metricId || ds.property
           if (device?.current_values && metricKey) {
             const rawValue = device.current_values[metricKey]
@@ -837,14 +839,15 @@ function renderDashboardComponent(
           label: binding.name,
           markerType,
           // Device-specific fields - use actual device status
-          deviceId: ds?.deviceId,
-          status: binding.type === 'device' ? getDeviceStatus(ds.deviceId) : undefined,
+          deviceId: getSourceId(ds),
+          sourceId: getSourceId(ds),
+          status: binding.type === 'device' ? getDeviceStatus(getSourceId(ds)!) : undefined,
           // Metric-specific fields
           metricValue: binding.type === 'metric' ? (metricValue || '-') : undefined,
           // Command-specific fields
           command: binding.type === 'command' ? ds?.command : undefined,
           // Names for display
-          deviceName: ds?.deviceId ? getDeviceName(ds.deviceId) : undefined,
+          deviceName: getSourceId(ds) ? getDeviceName(getSourceId(ds)!) : undefined,
           metricName: ds?.metricId || ds?.property,
           commandName: binding.type === 'command' ? ds?.command : undefined,
         }
@@ -1275,16 +1278,16 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       for (const component of dashboard.components) {
         const genericComponent = component as GenericComponent
         const dataSource = genericComponent.dataSource
-        if (dataSource?.deviceId) {
-          deviceIds.add(dataSource.deviceId)
+        if (dataSource && getSourceId(dataSource)) {
+          deviceIds.add(getSourceId(dataSource)!)
         }
         // Also check for devices in map-display bindings
         if (genericComponent.type === 'map-display') {
           const bindings = (genericComponent.config as any)?.bindings as MapBinding[] || []
           for (const binding of bindings) {
-            const ds = binding.dataSource as any
-            if (ds?.deviceId) {
-              deviceIds.add(ds.deviceId)
+            const ds = binding.dataSource as DataSource | undefined
+            if (ds && getSourceId(ds)) {
+              deviceIds.add(getSourceId(ds)!)
             }
           }
         }
@@ -1990,11 +1993,11 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       if (idCount.get(currentId)! > 1) {
         let newId: string
         if (binding.type === 'metric' || ds?.type === 'telemetry') {
-          newId = `metric-${ds?.deviceId}-${ds?.metricId || ds?.property || index}`
+          newId = `metric-${getSourceId(ds)}-${ds?.metricId || ds?.property || index}`
         } else if (binding.type === 'command') {
-          newId = `command-${ds?.deviceId}-${ds?.command}`
+          newId = `command-${getSourceId(ds)}-${ds?.command}`
         } else {
-          newId = `device-${ds?.deviceId}-${index}`
+          newId = `device-${getSourceId(ds)}-${index}`
         }
         return { ...binding, id: newId }
       }
@@ -3891,7 +3894,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                       // Use metricId for metrics/telemetry, deviceId for devices/commands
                       const identifier = (ds.type === 'metric' || ds.type === 'telemetry')
                         ? (ds.metricId || ds.property || 'unknown')
-                        : (ds.deviceId || ds.command || 'unknown')
+                        : (getSourceId(ds) || ds.command || 'unknown')
 
                       
                       // Look for existing binding - match by dataSource content
@@ -3902,7 +3905,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
                         // Match by deviceId+metricId/property for metric/telemetry
                         if (bindingType === 'metric' || ds.type === 'telemetry') {
-                          return (bDs.deviceId === ds.deviceId) && (
+                          return (getSourceId(bDs) === getSourceId(ds)) && (
                             bDs.metricId === ds.metricId ||
                             bDs.property === ds.metricId ||
                             bDs.property === ds.property
@@ -3910,21 +3913,21 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                         }
                         // Match by deviceId+command for command
                         if (bindingType === 'command') {
-                          return (bDs.deviceId === ds.deviceId) && (bDs.command === ds.command)
+                          return (getSourceId(bDs) === getSourceId(ds)) && (bDs.command === ds.command)
                         }
                         // Match by deviceId for device
-                        return bDs.deviceId === ds.deviceId && !ds.metricId && !ds.property && !ds.command
+                        return getSourceId(bDs) === getSourceId(ds) && !ds.metricId && !ds.property && !ds.command
                       })
 
                       // Create or update binding - update type if changed
                       // Generate unique ID: type-deviceId-metricId/command or type-deviceId-index
                       const generateBindingId = () => {
                         if (ds.type === 'metric' || ds.type === 'telemetry') {
-                          return `${bindingType}-${ds.deviceId}-${ds.metricId || ds.property || index}`
+                          return `${bindingType}-${getSourceId(ds)}-${ds.metricId || ds.property || index}`
                         } else if (ds.type === 'command') {
-                          return `${bindingType}-${ds.deviceId}-${ds.command}`
+                          return `${bindingType}-${getSourceId(ds)}-${ds.command}`
                         } else {
-                          return `${bindingType}-${ds.deviceId}-${index}`
+                          return `${bindingType}-${getSourceId(ds)}-${index}`
                         }
                       }
 
@@ -3941,8 +3944,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                         name: (ds.type === 'metric' || ds.type === 'telemetry')
                           ? (ds.metricId || ds.property || t('visualDashboard.metricIndex', { index: index + 1 }))
                           : ds.type === 'command'
-                            ? `${ds.deviceId || ''} → ${ds.command || ''}`
-                            : (ds.deviceId || t('visualDashboard.deviceIndex', { index: index + 1 })),
+                            ? `${getSourceId(ds) || ''} → ${ds.command || ''}`
+                            : (getSourceId(ds) || t('visualDashboard.deviceIndex', { index: index + 1 })),
                         dataSource: ds,
                         // Preserve position if existing
                         position: existingBinding?.position || baseBinding.position,
@@ -4163,11 +4166,11 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                             // Generate unique ID based on type and data
                             let newId: string
                             if (binding.type === 'metric' || ds?.type === 'telemetry') {
-                              newId = `metric-${ds?.deviceId}-${ds?.metricId || ds?.property || index}`
+                              newId = `metric-${getSourceId(ds)}-${ds?.metricId || ds?.property || index}`
                             } else if (binding.type === 'command') {
-                              newId = `command-${ds?.deviceId}-${ds?.command}`
+                              newId = `command-${getSourceId(ds)}-${ds?.command}`
                             } else {
-                              newId = `device-${ds?.deviceId}-${index}`
+                              newId = `device-${getSourceId(ds)}-${index}`
                             }
                                                         return { ...binding, id: newId }
                           }
@@ -4210,11 +4213,11 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                           }
 
                           if (newType === 'metric' || ds?.type === 'telemetry') {
-                            newId = `metric-${ds?.deviceId}-${ds?.metricId || ds?.property || index}`
+                            newId = `metric-${getSourceId(ds)}-${ds?.metricId || ds?.property || index}`
                           } else if (newType === 'command') {
-                            newId = `command-${ds?.deviceId}-${ds?.command}`
+                            newId = `command-${getSourceId(ds)}-${ds?.command}`
                           } else {
-                            newId = `device-${ds?.deviceId}-${index}`
+                            newId = `device-${getSourceId(ds)}-${index}`
                           }
                                                     return { ...binding, id: newId, type: newType as any, icon: newType as any }
                         }
@@ -4307,7 +4310,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                                   : t('visualDashboard.autoLocation')
 
                                 // Get device/metric info from dataSource
-                                const deviceId = (binding.dataSource as any)?.deviceId
+                                const deviceId = getSourceId((binding.dataSource as DataSource))
                                 const metricId = (binding.dataSource as any)?.metricId
                                 const command = (binding.dataSource as any)?.command
 
@@ -4407,7 +4410,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                     const existingBinding = (config.bindings as LayerBinding[])?.find(b => {
                       if (!b.dataSource) return false
                       const bDs = b.dataSource as any
-                      return bDs.deviceId === ds.deviceId &&
+                      return getSourceId(bDs) === getSourceId(ds) &&
                         bDs.metricId === ds.metricId &&
                         bDs.property === ds.property &&
                         bDs.command === ds.command
@@ -4416,11 +4419,11 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                     // Generate unique ID
                     const generateBindingId = () => {
                       if (ds.type === 'metric' || ds.type === 'telemetry') {
-                        return `${bindingType}-${ds.deviceId}-${ds.metricId || ds.property || index}`
+                        return `${bindingType}-${getSourceId(ds)}-${ds.metricId || ds.property || index}`
                       } else if (ds.type === 'command') {
-                        return `${bindingType}-${ds.deviceId}-${ds.command}`
+                        return `${bindingType}-${getSourceId(ds)}-${ds.command}`
                       } else {
-                        return `${bindingType}-${ds.deviceId}-${index}`
+                        return `${bindingType}-${getSourceId(ds)}-${index}`
                       }
                     }
 
@@ -4437,8 +4440,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                       name: (ds.type === 'metric' || ds.type === 'telemetry')
                         ? (ds.metricId || ds.property || t('visualDashboard.metricIndex', { index: index + 1 }))
                         : ds.type === 'command'
-                          ? `${ds.deviceId || ''} → ${ds.command || ''}`
-                          : (ds.deviceId || t('visualDashboard.deviceIndex', { index: index + 1 })),
+                          ? `${getSourceId(ds) || ''} → ${ds.command || ''}`
+                          : (getSourceId(ds) || t('visualDashboard.deviceIndex', { index: index + 1 })),
                       dataSource: ds,
                       position: existingBinding?.position || baseBinding.position,
                     } as LayerBinding
@@ -4449,8 +4452,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                     if (b.type === 'text' || b.type === 'icon') return true
                     // Also check if this binding is from a dataSource that's no longer present
                     const ds = b.dataSource as any
-                    if (ds && ds.deviceId) {
-                      return !sourcesArray.some((s: any) => s.deviceId === ds.deviceId)
+                    if (ds && getSourceId(ds)) {
+                      return !sourcesArray.some((s: any) => getSourceId(s) === getSourceId(ds))
                     }
                     return false
                   }) || []
@@ -4725,7 +4728,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                                   : t('visualDashboard.center')
 
                                 const ds = binding.dataSource as any
-                                const deviceId = ds?.deviceId
+                                const deviceId = getSourceId(ds)
                                 const metricId = ds?.metricId || ds?.property
                                 const command = ds?.command
 

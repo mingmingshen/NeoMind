@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { MoreVertical, Loader2 } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
 export interface TableColumn {
@@ -80,14 +81,70 @@ export function ResponsiveTable({
   const showEmptyState = data.length === 0 && !loading
 
   if (loading) {
+    const skeletonRows = 8
     return (
-      <div className={cn(
-        'flex flex-col items-center justify-center px-4',
-        flexHeight ? 'h-full' : 'py-16'
-      )}>
-        <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
-        <p className="text-sm text-muted-foreground font-medium">Loading data...</p>
-      </div>
+      <>
+        {/* Desktop skeleton */}
+        <div className="hidden md:block rounded-xl border bg-card overflow-hidden">
+          <table className={cn("w-full caption-bottom text-sm", className)}>
+            <thead className="[&_tr]:border-b">
+              <tr className="bg-muted/30 rounded-t-xl">
+                {columns.map((column) => (
+                  <th
+                    key={column.key}
+                    className={cn(
+                      "h-12 px-4 align-middle text-xs font-semibold text-muted-foreground",
+                      column.align === 'center' && 'text-center',
+                      column.align === 'right' && 'text-right',
+                      !column.align && 'text-left',
+                      column.width
+                    )}
+                  >
+                    {renderColumnLabel(column.label)}
+                  </th>
+                ))}
+                {actions && actions.length > 0 && (
+                  <th className="w-[60px]"></th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="[&_tr:last-child]:border-0">
+              {Array.from({ length: skeletonRows }).map((_, i) => (
+                <tr key={i} className="border-b">
+                  {columns.map((column) => (
+                    <td key={column.key} className="px-4 py-3">
+                      <Skeleton className="h-4 w-full" />
+                    </td>
+                  ))}
+                  {actions && actions.length > 0 && (
+                    <td className="px-4 py-3">
+                      <Skeleton className="h-4 w-6" />
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {/* Mobile skeleton */}
+        <div className="md:hidden space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-xl border bg-card overflow-hidden">
+              <div className="bg-muted/30 px-4 py-3 border-b">
+                <Skeleton className="h-4 w-1/3" />
+              </div>
+              <div className="p-4 space-y-3">
+                {columns.slice(1).map((column) => (
+                  <div key={column.key} className="flex items-center justify-between gap-3">
+                    <Skeleton className="h-3 w-24 shrink-0" />
+                    <Skeleton className="h-4 flex-1 max-w-[60%]" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </>
     )
   }
 

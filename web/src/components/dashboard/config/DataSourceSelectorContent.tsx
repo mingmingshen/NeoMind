@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useStore } from '@/store'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
-import { normalizeDataSource } from '@/types/dashboard'
+import { normalizeDataSource, getSourceId } from '@/types/dashboard'
 import type { MetricDefinition, CommandDefinition } from '@/types'
 import { api } from '@/lib/api'
 import type { Extension, ExtensionDataSourceInfo, TransformDataSourceInfo } from '@/types'
@@ -115,6 +115,7 @@ function selectedItemsToDataSource(
         return {
           type: 'telemetry',
           deviceId: parts[1],
+          sourceId: parts[1],
           metricId: parts.slice(2).join(':'),
           timeRange: 1, // Default 1 hour
           limit: 50,    // Default 50 points
@@ -129,6 +130,7 @@ function selectedItemsToDataSource(
         return {
           type: 'command',
           deviceId: parts[1],
+          sourceId: parts[1],
           command: parts.slice(2).join(':'),
         }
       case 'device-info':
@@ -136,6 +138,7 @@ function selectedItemsToDataSource(
         return {
           type: 'device-info',
           deviceId: parts[1],
+          sourceId: parts[1],
           property: parts.slice(2).join(':'),
         }
       case 'system':
@@ -170,6 +173,7 @@ function selectedItemsToDataSource(
         result.push({
           type: 'telemetry',
           deviceId: parts[1],
+          sourceId: parts[1],
           metricId: parts.slice(2).join(':'),
           timeRange: 1,
           limit: 50,
@@ -185,6 +189,7 @@ function selectedItemsToDataSource(
         result.push({
           type: 'command',
           deviceId: parts[1],
+          sourceId: parts[1],
           command: parts.slice(2).join(':'),
         })
         break
@@ -193,6 +198,7 @@ function selectedItemsToDataSource(
         result.push({
           type: 'device-info',
           deviceId: parts[1],
+          sourceId: parts[1],
           property: parts.slice(2).join(':'),
         })
         break
@@ -229,19 +235,20 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
   const dataSources = normalizeDataSource(ds)
 
   for (const dataSource of dataSources) {
+    const sourceId = getSourceId(dataSource)
     switch (dataSource.type) {
       case 'device':
-        items.add(`device-metric:${dataSource.deviceId}:${dataSource.property}` as SelectedItem)
+        items.add(`device-metric:${sourceId}:${dataSource.property}` as SelectedItem)
         break
       case 'telemetry':
         // Telemetry type is used for historical device metric data
-        items.add(`device-metric:${dataSource.deviceId}:${dataSource.metricId}` as SelectedItem)
+        items.add(`device-metric:${sourceId}:${dataSource.metricId}` as SelectedItem)
         break
       case 'command':
-        items.add(`device-command:${dataSource.deviceId}:${dataSource.command}` as SelectedItem)
+        items.add(`device-command:${sourceId}:${dataSource.command}` as SelectedItem)
         break
       case 'device-info':
-        items.add(`device-info:${dataSource.deviceId}:${dataSource.property}` as SelectedItem)
+        items.add(`device-info:${sourceId}:${dataSource.property}` as SelectedItem)
         break
       case 'system':
         items.add(`system:${dataSource.systemMetric}` as SelectedItem)
@@ -341,7 +348,7 @@ export function DataSourceSelectorContent({
       if (s.type === 'extension') {
         return `${s.type}:${s.extensionId || ''}:${s.extensionMetric || ''}`
       }
-      return `${s.type}:${s.deviceId || ''}:${s.metricId || s.property || s.infoProperty || ''}:${s.command || ''}`
+      return `${s.type}:${getSourceId(s) || ''}:${s.metricId || s.property || s.infoProperty || ''}:${s.command || ''}`
     }).sort().join('|')
   }
 

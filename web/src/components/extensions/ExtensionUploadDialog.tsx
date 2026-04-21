@@ -194,6 +194,16 @@ export function ExtensionUploadDialog({
 
       await fetchExtensions()
 
+      // Clear old caches for this extension to ensure fresh bundle loading
+      if (extensionId) {
+        try {
+          const { dynamicRegistry } = await import('@/components/dashboard/registry/DynamicRegistry')
+          dynamicRegistry.unregisterExtension(extensionId)
+        } catch (e) {
+          console.warn('Failed to clear extension component caches:', e)
+        }
+      }
+
       // Sync extension components to dashboard registry
       try {
         const { syncExtensionComponents } = await import('@/hooks/useExtensionComponents')
@@ -227,7 +237,7 @@ export function ExtensionUploadDialog({
     }
   }, [uploading, onOpenChange])
 
-  const UploadContent = () => (
+  const uploadContent = (
     <div className="space-y-4">
       {/* File Upload */}
       <div
@@ -332,7 +342,7 @@ export function ExtensionUploadDialog({
             {/* Content */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden">
               <div className="p-4">
-                <UploadContent />
+                {uploadContent}
               </div>
             </div>
 
@@ -416,7 +426,7 @@ export function ExtensionUploadDialog({
 
           {/* Content */}
           <div className="px-6 py-4">
-            <UploadContent />
+            {uploadContent}
           </div>
 
           {/* Footer */}

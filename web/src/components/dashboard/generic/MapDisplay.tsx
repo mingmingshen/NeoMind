@@ -28,6 +28,7 @@ import {
   Monitor,
 } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
+import { getSourceId } from '@/types/dashboard'
 import { EmptyState } from '../shared'
 import type { MapBinding } from './MapEditorDialog'
 import { useStore } from '@/store'
@@ -41,7 +42,9 @@ const useSendCommand = () => useStore(state => state.sendCommand)
 
 export interface MapMarker {
   id: string
+  /** @deprecated Use sourceId instead */
   deviceId?: string
+  sourceId?: string
   latitude: number
   longitude: number
   label?: string
@@ -220,10 +223,11 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
               className="h-7 text-xs bg-blue-500 hover:bg-blue-600 text-white"
               onClick={async (e) => {
                 e.stopPropagation()
-                if (marker.deviceId && marker.command) {
+                const markerSourceId = marker.sourceId ?? marker.deviceId
+                if (markerSourceId && marker.command) {
                   const sendCommand = useStore.getState().sendCommand
                   try {
-                    await sendCommand(marker.deviceId, marker.command)
+                    await sendCommand(markerSourceId, marker.command)
                   } catch (error) {
                     console.error('Failed to execute command:', error)
                   }
@@ -768,12 +772,13 @@ export function MapDisplay({
         ? center
         : binding.position
 
-      const ds = binding.dataSource as any
-      const deviceId = ds?.deviceId
+      const ds = binding.dataSource
+      const deviceId = getSourceId(ds)
 
       const marker: MapMarker = {
         id: binding.id,
         deviceId,
+        sourceId: deviceId,
         latitude: position.lat,
         longitude: position.lng,
         label: binding.name,
@@ -835,6 +840,7 @@ export function MapDisplay({
         markers.push({
           id: String(label || deviceId || 'marker'),
           deviceId: deviceId ? String(deviceId) : undefined,
+          sourceId: deviceId ? String(deviceId) : undefined,
           latitude: Number(lat),
           longitude: Number(lng),
           label: String(label || ''),
@@ -865,6 +871,7 @@ export function MapDisplay({
             return [{
               id: String(label || deviceId || `marker-${Math.random()}`),
               deviceId: deviceId ? String(deviceId) : undefined,
+              sourceId: deviceId ? String(deviceId) : undefined,
               latitude: Number(lat),
               longitude: Number(lng),
               label: String(label || ''),

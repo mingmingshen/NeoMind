@@ -6,10 +6,10 @@
 //! - Transform outputs
 //! - System metrics (future)
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use serde::{Deserialize, Serialize};
 
-use crate::handlers::common::HandlerResult;
+use crate::handlers::common::{ok, HandlerResult};
 use crate::server::types::ServerState;
 use neomind_core::datasource::DataSourceId;
 
@@ -53,14 +53,30 @@ pub struct ListDataSourcesQuery {
     pub source: Option<String>,
     /// Search term for filtering
     pub search: Option<String>,
+    /// Pagination offset (0-based)
+    pub offset: Option<usize>,
+    /// Page size (default 15, max 100)
+    pub limit: Option<usize>,
+}
+
+/// Paginated response for data sources
+#[derive(Debug, Serialize)]
+pub struct ListDataSourcesResponse {
+    pub data: Vec<UnifiedDataSourceInfo>,
+    pub total: usize,
+    /// Available source name options for the current source_type filter,
+    /// as pairs of [source_name, source_display_name].
+    pub source_options: Vec<[String; 2]>,
 }
 
 /// GET /api/data/sources
 ///
 /// List all data sources across devices, extensions, and transforms.
+/// Supports server-side filtering, search, and pagination.
 pub async fn list_all_data_sources_handler(
     State(state): State<ServerState>,
-) -> HandlerResult<Vec<UnifiedDataSourceInfo>> {
+    Query(params): Query<ListDataSourcesQuery>,
+) -> HandlerResult<ListDataSourcesResponse> {
     let mut sources = Vec::new();
 
     // 1. Collect device metrics
@@ -75,13 +91,63 @@ pub async fn list_all_data_sources_handler(
     // 4. Collect AI agent metrics
     collect_ai_sources(&state, &mut sources).await;
 
-    // 5. Populate latest telemetry values
-    populate_latest_values(&state, &mut sources).await;
-
     // Sort by id for consistent ordering
     sources.sort_by(|a, b| a.id.cmp(&b.id));
 
-    crate::handlers::common::ok(sources)
+    // Build source_options before filtering (only filtered by source_type)
+    let source_options = build_source_options(&sources, params.source_type.as_deref());
+
+    // Apply filters
+    if let Some(ref st) = params.source_type {
+        sources.retain(|s| &s.source_type == st);
+    }
+    if let Some(ref src) = params.source {
+        sources.retain(|s| &s.source_name == src);
+    }
+    if let Some(ref q) = params.search {
+        let q_lower = q.to_lowercase();
+        sources.retain(|s| {
+            s.id.to_lowercase().contains(&q_lower)
+                || s.source_display_name.to_lowercase().contains(&q_lower)
+                || s.field_display_name.to_lowercase().contains(&q_lower)
+                || s.source_name.to_lowercase().contains(&q_lower)
+                || s.description.as_ref().map_or(false, |d| d.to_lowercase().contains(&q_lower))
+        });
+    }
+
+    let total = sources.len();
+
+    // 5. Populate latest telemetry values only for the paginated subset
+    let limit = params.limit.unwrap_or(15).min(100);
+    let offset = params.offset.unwrap_or(0).min(total);
+    let page_sources: Vec<_> = sources.into_iter().skip(offset).take(limit).collect();
+
+    let mut page_sources = page_sources;
+    populate_latest_values(&state, &mut page_sources).await;
+
+    crate::handlers::common::ok(ListDataSourcesResponse {
+        data: page_sources,
+        total,
+        source_options,
+    })
+}
+
+/// Build source name options, optionally filtered by source_type.
+fn build_source_options(sources: &[UnifiedDataSourceInfo], source_type: Option<&str>) -> Vec<[String; 2]> {
+    let mut seen = std::collections::HashSet::new();
+    let mut options = Vec::new();
+    for s in sources {
+        if let Some(st) = source_type {
+            if s.source_type != st {
+                continue;
+            }
+        }
+        if seen.insert(s.source_name.clone()) {
+            options.push([s.source_name.clone(), s.source_display_name.clone()]);
+        }
+    }
+    options.sort_by(|a, b| a[1].cmp(&b[1]));
+    options
 }
 
 /// Fetch latest telemetry values for all collected data sources.
@@ -94,10 +160,10 @@ async fn populate_latest_values(state: &ServerState, sources: &mut Vec<UnifiedDa
             None => continue,
         };
 
-        let device_part = ds_id.device_part();
+        let source_part = ds_id.source_part();
         let metric_part = ds_id.metric_part();
 
-        if let Ok(Some(data_point)) = telemetry.latest(&device_part, metric_part).await {
+        if let Ok(Some(data_point)) = telemetry.latest(&source_part, metric_part).await {
             source.last_update = Some(data_point.timestamp);
             source.quality = data_point.quality;
 
@@ -249,28 +315,82 @@ async fn collect_extension_sources(state: &ServerState, sources: &mut Vec<Unifie
 
 /// Collect data sources from all registered transforms.
 async fn collect_transform_sources(state: &ServerState, sources: &mut Vec<UnifiedDataSourceInfo>) {
-    let Some(transform_engine) = &state.automation.transform_engine else {
+    // 1. First, collect from the in-memory output registry (transforms that have executed)
+    let mut registered_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    if let Some(transform_engine) = &state.automation.transform_engine {
+        let registry = transform_engine.output_registry();
+        let transform_sources = registry.list_as_data_sources().await;
+
+        for ts in &transform_sources {
+            registered_ids.insert(ts.id.clone());
+        }
+
+        for ts in transform_sources {
+            sources.push(UnifiedDataSourceInfo {
+                id: ts.id,
+                source_type: "transform".to_string(),
+                source_name: ts.transform_id,
+                source_display_name: ts.transform_name,
+                field: ts.metric_name.clone(),
+                field_display_name: ts.display_name,
+                data_type: ts.data_type,
+                unit: ts.unit,
+                description: Some(ts.description),
+                current_value: None,
+                last_update: ts.last_update,
+                quality: None,
+            });
+        }
+    }
+
+    // 2. Then, load all enabled transforms from persistent storage and register
+    //    any that haven't been seen in the in-memory registry yet.
+    //    This ensures transforms appear in Data Explorer immediately after restart,
+    //    even before they execute.
+    let Some(store) = &state.automation.automation_store else {
         return;
     };
 
-    let registry = transform_engine.output_registry();
-    let transform_sources = registry.list_as_data_sources().await;
+    let automations = match store.list_automations().await {
+        Ok(all) => all,
+        Err(e) => {
+            tracing::warn!("Failed to load automations for transform sources: {}", e);
+            return;
+        }
+    };
 
-    for ts in transform_sources {
-        sources.push(UnifiedDataSourceInfo {
-            id: ts.id,
-            source_type: "transform".to_string(),
-            source_name: ts.transform_id,
-            source_display_name: ts.transform_name,
-            field: ts.metric_name,
-            field_display_name: ts.display_name,
-            data_type: ts.data_type,
-            unit: ts.unit,
-            description: Some(ts.description),
-            current_value: None,
-            last_update: ts.last_update,
-            quality: None,
-        });
+    for automation in automations {
+        if !automation.metadata.enabled {
+            continue;
+        }
+
+        let output_metrics = automation.output_metrics();
+        for metric_name in output_metrics {
+            let data_source_id = format!("transform:{}:{}", automation.metadata.id, metric_name);
+
+            // Skip if already registered from execution
+            if registered_ids.contains(&data_source_id) {
+                continue;
+            }
+
+            sources.push(UnifiedDataSourceInfo {
+                id: data_source_id.clone(),
+                source_type: "transform".to_string(),
+                source_name: automation.metadata.id.clone(),
+                source_display_name: automation.metadata.name.clone(),
+                field: metric_name.clone(),
+                field_display_name: format!("{}: {}", automation.metadata.name, metric_name),
+                data_type: "float".to_string(),
+                unit: None,
+                description: Some(format!("Output from Transform: {}", automation.metadata.name)),
+                current_value: None,
+                last_update: None,
+                quality: None,
+            });
+
+            registered_ids.insert(data_source_id);
+        }
     }
 }
 
@@ -319,4 +439,134 @@ fn title_case(s: &str) -> String {
         }
     }
     result
+}
+
+// ============================================================================
+// Generic Telemetry Query API
+// ============================================================================
+
+/// Query parameters for the generic telemetry endpoint.
+#[derive(Debug, Deserialize)]
+pub struct TelemetryQueryParams {
+    /// Source identifier (e.g. "device:sensor1", "extension:weather", "ai:demo", "transform:proc")
+    /// Required.
+    pub source: String,
+    /// Metric name (e.g. "temperature", "score"). Required.
+    pub metric: String,
+    /// Start timestamp in seconds (default: 24 hours ago)
+    pub start: Option<i64>,
+    /// End timestamp in seconds (default: now)
+    pub end: Option<i64>,
+    /// Maximum number of data points to return (default: 100, max: 1000)
+    pub limit: Option<usize>,
+    /// Aggregation function: "avg", "min", "max", "sum", "count", "last"
+    pub aggregate: Option<String>,
+}
+
+/// GET /api/telemetry
+///
+/// Generic telemetry query endpoint for any source type.
+///
+/// Examples:
+/// - `GET /api/telemetry?source=device:sensor1&metric=temperature&start=1713360000`
+/// - `GET /api/telemetry?source=ai:demo&metric=score&start=1713360000&end=1713446400`
+/// - `GET /api/telemetry?source=extension:weather&metric=temp_c&limit=50`
+/// - `GET /api/telemetry?source=transform:converter&metric=output&aggregate=avg`
+pub async fn query_telemetry_handler(
+    State(state): State<ServerState>,
+    Query(params): Query<TelemetryQueryParams>,
+) -> HandlerResult<serde_json::Value> {
+    let now = chrono::Utc::now().timestamp();
+    let start = params.start.unwrap_or(now - 86400);
+    let end = params.end.unwrap_or(now);
+    let limit = params.limit.unwrap_or(100).min(1000);
+
+    // Parse source into a DataSourceId to extract the storage key
+    let ds_id = DataSourceId::parse(&format!("{}:{}", params.source, params.metric))
+        .or_else(|| {
+            // Try treating source as a raw storage prefix (e.g. "device:sensor1" → device)
+            let parts: Vec<&str> = params.source.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                match parts[0] {
+                    "device" => Some(DataSourceId::device(parts[1], &params.metric)),
+                    "extension" => Some(DataSourceId::extension(parts[1], &params.metric)),
+                    "transform" => Some(DataSourceId::transform(parts[1], &params.metric)),
+                    "ai" => Some(DataSourceId::ai(parts[1], &params.metric)),
+                    _ => None,
+                }
+            } else {
+                // Bare device ID
+                Some(DataSourceId::device(&params.source, &params.metric))
+            }
+        });
+
+    let ds_id = match ds_id {
+        Some(id) => id,
+        None => {
+            return Err(crate::models::error::ErrorResponse::bad_request(
+                format!("Invalid source format: '{}'. Use 'type:id' (e.g. 'device:sensor1') or full DataSourceId.", params.source),
+            ));
+        }
+    };
+
+    let source_part = ds_id.source_part();
+    let metric_part = ds_id.metric_part();
+
+    let telemetry = &state.devices.telemetry;
+
+    // Handle aggregation
+    if let Some(ref agg) = params.aggregate {
+        let aggregated = telemetry
+            .aggregate(&source_part, metric_part, start, end)
+            .await
+            .map_err(|e| crate::models::error::ErrorResponse::internal(&e.to_string()))?;
+
+        let value = match agg.as_str() {
+            "avg" => aggregated.avg,
+            "min" => aggregated.min,
+            "max" => aggregated.max,
+            "sum" => aggregated.sum,
+            "count" => Some(aggregated.count as f64),
+            _ => aggregated.avg,
+        };
+
+        return ok(serde_json::json!({
+            "source_id": ds_id.storage_key(),
+            "source": params.source,
+            "metric": params.metric,
+            "start": start,
+            "end": end,
+            "aggregation": agg,
+            "value": value,
+            "count": aggregated.count,
+        }));
+    }
+
+    // Regular query
+    let (points, total_count) = telemetry
+        .query_with_limit(&source_part, metric_part, start, end, Some(limit))
+        .await
+        .map_err(|e| crate::models::error::ErrorResponse::internal(&e.to_string()))?;
+
+    let data: Vec<serde_json::Value> = points
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "timestamp": p.timestamp,
+                "value": p.value.to_json_value(),
+                "quality": p.quality,
+            })
+        })
+        .collect();
+
+    ok(serde_json::json!({
+        "source_id": ds_id.storage_key(),
+        "source": params.source,
+        "metric": params.metric,
+        "start": start,
+        "end": end,
+        "count": data.len(),
+        "total_count": total_count,
+        "data": data,
+    }))
 }

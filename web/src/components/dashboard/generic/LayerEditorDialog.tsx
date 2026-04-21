@@ -30,6 +30,7 @@ import {
   X,
 } from 'lucide-react'
 import { CustomLayer, type LayerBinding, type LayerItem } from './CustomLayer'
+import { getSourceId } from '@/types/dashboard'
 import { useStore } from '@/store'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
@@ -187,8 +188,8 @@ export function LayerEditorDialog({
         ? { x: 50, y: 50 }
         : binding.position
 
-      const ds = binding.dataSource as any
-      const deviceId = ds?.deviceId
+      const ds = binding.dataSource
+      const deviceId = getSourceId(ds)
 
       const item: LayerItem = {
         id: binding.id,
@@ -209,13 +210,13 @@ export function LayerEditorDialog({
       // Set type-specific fields
       if (binding.type === 'metric') {
         item.deviceId = deviceId
-        item.metricId = ds?.metricId || ds?.property
+        item.metricId = ds.metricId || ds.property
         item.deviceName = getDeviceName(deviceId || '')
-        item.metricName = ds?.metricId || ds?.property
+        item.metricName = ds.metricId || ds.property
         const metricValue = getDeviceMetricValue(deviceId || '', item.metricId || '')
         item.value = metricValue !== undefined ? metricValue : '-'
       } else if (binding.type === 'command') {
-        item.command = ds?.command
+        item.command = ds.command
         item.deviceId = deviceId
         item.deviceName = getDeviceName(deviceId || '')
       } else if (binding.type === 'device') {
@@ -223,9 +224,9 @@ export function LayerEditorDialog({
         item.deviceName = getDeviceName(deviceId || '')
         item.status = getDeviceStatus(deviceId || '')
       } else if (binding.type === 'text') {
-        item.value = ds?.text || ''
+        item.value = (ds as any)?.text || ''
       } else if (binding.type === 'icon') {
-        item.icon = ds?.icon || ''
+        item.icon = (ds as any)?.icon || ''
       }
 
       return item

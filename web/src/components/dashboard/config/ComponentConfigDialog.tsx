@@ -39,7 +39,7 @@ import { UnifiedDataSourceConfig } from './UnifiedDataSourceConfig'
 import { DataTransformConfig } from './DataTransformConfig'
 import type { ComponentConfigSchema } from './ComponentConfigBuilder'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
-import { normalizeDataSource } from '@/types/dashboard'
+import { normalizeDataSource, getSourceId } from '@/types/dashboard'
 import { cn } from '@/lib/utils'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
@@ -149,7 +149,7 @@ export function ComponentConfigDialog({
   const coreIdentifier = useMemo(() => {
     if (!previewDataSource) return 'preview-no-ds'
     const sources = normalizeDataSource(previewDataSource)
-    return sources.map(s => `${s.type}:${s.deviceId || ''}:${s.metricId || s.property || s.infoProperty || ''}:${s.command || ''}`).join('|')
+    return sources.map(s => `${s.type}:${getSourceId(s) || ''}:${s.metricId || s.property || s.infoProperty || ''}:${s.command || ''}`).join('|')
   }, [previewDataSource])
 
   useEffect(() => {

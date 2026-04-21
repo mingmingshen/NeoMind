@@ -70,12 +70,12 @@ impl ExtensionMetricsStorage {
     /// Write a metric value to storage.
     pub async fn write(
         &self,
-        device_id: &str,
+        source_id: &str,
         metric: &str,
         data_point: neomind_devices::telemetry::DataPoint,
     ) -> Result<(), String> {
         self.inner
-            .write(device_id, metric, data_point)
+            .write(source_id, metric, data_point)
             .await
             .map_err(|e| format!("Storage write failed: {}", e))
     }
@@ -83,13 +83,13 @@ impl ExtensionMetricsStorage {
     /// Query metric data from storage.
     pub async fn query(
         &self,
-        device_id: &str,
+        source_id: &str,
         metric: &str,
         start: i64,
         end: i64,
     ) -> Result<Vec<neomind_devices::telemetry::DataPoint>, String> {
         self.inner
-            .query(device_id, metric, start, end)
+            .query(source_id, metric, start, end)
             .await
             .map_err(|e| format!("Storage query failed: {}", e))
     }
@@ -97,29 +97,29 @@ impl ExtensionMetricsStorage {
     /// Query the latest value for a metric.
     pub async fn query_latest(
         &self,
-        device_id: &str,
+        source_id: &str,
         metric: &str,
     ) -> Result<Option<neomind_devices::telemetry::DataPoint>, String> {
         self.inner
-            .latest(device_id, metric)
+            .latest(source_id, metric)
             .await
             .map_err(|e| format!("Storage query latest failed: {}", e))
     }
 
     /// Get available metrics for a device/extension.
-    pub async fn list_metrics(&self, device_id: &str) -> Result<Vec<String>, String> {
+    pub async fn list_metrics(&self, source_id: &str) -> Result<Vec<String>, String> {
         self.inner
-            .list_metrics(device_id)
+            .list_metrics(source_id)
             .await
             .map_err(|e| format!("Failed to list metrics: {}", e))
     }
 
-    /// Get all device IDs in storage.
-    pub async fn list_devices(&self) -> Result<Vec<String>, String> {
+    /// Get all source IDs in storage.
+    pub async fn list_sources(&self) -> Result<Vec<String>, String> {
         self.inner
-            .list_devices()
+            .list_sources()
             .await
-            .map_err(|e| format!("Failed to list devices: {}", e))
+            .map_err(|e| format!("Failed to list sources: {}", e))
     }
 }
 
@@ -542,8 +542,8 @@ impl ExtensionMetricsStorageAdapter {
 impl neomind_rules::ExtensionStorageLike for ExtensionMetricsStorageAdapter {
     async fn query_latest(&self, extension_id: &str, metric: &str) -> Option<f64> {
         // Extension metrics are stored with "extension:" prefix
-        let device_id = format!("extension:{}", extension_id);
-        match self.storage.query_latest(&device_id, metric).await {
+        let source_id = format!("extension:{}", extension_id);
+        match self.storage.query_latest(&source_id, metric).await {
             Ok(Some(dp)) => match &dp.value {
                 neomind_devices::MetricValue::Float(f) => Some(*f),
                 neomind_devices::MetricValue::Integer(i) => Some(*i as f64),

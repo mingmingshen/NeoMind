@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { ConfigSection } from './ConfigSection'
 import { Database, Zap, Settings } from 'lucide-react'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
-import { normalizeDataSource as normalizeDs } from '@/types/dashboard'
+import { normalizeDataSource as normalizeDs, getSourceId } from '@/types/dashboard'
 
 export interface DataSourceConfigSectionProps {
   dataSource?: DataSourceOrList
@@ -38,9 +38,10 @@ export function DataSourceConfigSection({
     if (dataSources.length === 0) return 'Data Source'
     if (dataSources.length === 1) {
       const ds = dataSources[0]
-      if (ds.type === 'device') return `Device: ${ds.deviceId}${ds.property ? `.${ds.property}` : ''}`
+      const sourceId = getSourceId(ds)
+      if (ds.type === 'device') return `Device: ${sourceId}${ds.property ? `.${ds.property}` : ''}`
       if (ds.type === 'metric') return `Metric: ${ds.metricId}`
-      if (ds.type === 'command') return `Command: ${ds.deviceId} → ${ds.command}`
+      if (ds.type === 'command') return `Command: ${sourceId} → ${ds.command}`
       return 'Data Source'
     }
     return `${dataSources.length} Data Sources`
@@ -51,6 +52,7 @@ export function DataSourceConfigSection({
     const newDataSource = {
       type: 'device',
       deviceId: 'device-1',
+      sourceId: 'device-1',
       property: 'temperature',
     } as unknown as DataSource
     onChange(newDataSource)
@@ -70,6 +72,7 @@ export function DataSourceConfigSection({
     const newDataSource = {
       type: 'command',
       deviceId: 'device-1',
+      sourceId: 'device-1',
       command: 'toggle',
     } as unknown as DataSource
     onChange(newDataSource)

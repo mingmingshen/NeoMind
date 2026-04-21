@@ -190,6 +190,11 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/data/sources",
             get(data::list_all_data_sources_handler),
         )
+        // Generic Telemetry Query API (query any source type)
+        .route(
+            "/api/telemetry",
+            get(data::query_telemetry_handler),
+        )
         // Suggestions API (public - provides intelligent input suggestions)
         .route(
             "/api/suggestions",

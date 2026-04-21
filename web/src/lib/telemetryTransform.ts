@@ -24,7 +24,9 @@ export interface TimePoint {
 
 export interface TimeSeriesData {
   points: TimePoint[]
+  /** @deprecated Use sourceId */
   deviceId?: string
+  sourceId?: string
   metricName?: string
 }
 
@@ -183,7 +185,7 @@ export function aggregateMultiSeries(
   const result: Record<string, number> = {}
 
   for (const s of series) {
-    const key = s.deviceId ?? s.metricName ?? 'unknown'
+    const key = s.sourceId ?? s.deviceId ?? s.metricName ?? 'unknown'
     const aggregated = aggregateData(s.points, method)
     if (aggregated !== null) {
       result[key] = aggregated
@@ -369,7 +371,7 @@ export function transformToPieData(
 
     if (aggregated !== null) {
       result.push({
-        name: s.deviceId ?? s.metricName ?? `Series ${i + 1}`,
+        name: s.sourceId ?? s.deviceId ?? s.metricName ?? `Series ${i + 1}`,
         value: aggregated,
       })
     }
@@ -418,7 +420,7 @@ export function transformToBarData(
 
     if (aggregated !== null) {
       result.push({
-        name: s.deviceId ?? s.metricName ?? `Series ${i + 1}`,
+        name: s.sourceId ?? s.deviceId ?? s.metricName ?? `Series ${i + 1}`,
         value: aggregated,
       })
     }

@@ -12,6 +12,7 @@ import { useLocation, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabsBar, PageTabsContent, PageTabsBottomNav } from "@/components/shared"
+import { LoadingState } from "@/components/shared/LoadingState"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
@@ -504,9 +505,7 @@ export function AgentsPage() {
     >
       <PageTabsContent value="agents" activeTab={activeTab}>
         {loading ? (
-          <div className="h-full flex items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
+          <LoadingState variant="page" />
         ) : agents.length === 0 ? (
           <div className="flex min-h-[500px] items-center justify-center">
             <EmptyState

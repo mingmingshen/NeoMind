@@ -316,7 +316,7 @@ export function PageTabs({
         )}
 
         {/* Content area - add bottom padding on mobile for bottom nav */}
-        <div className="md:mb-0 mb-16">
+        <div className="md:pb-0 pb-16">
           {children}
         </div>
 
@@ -416,7 +416,7 @@ export function PageTabsContent({ value, activeTab, children, className }: PageT
   if (value !== activeTab) return null
 
   return (
-    <div className={cn('mt-3 h-full', className)}>
+    <div className={cn('mt-3', className)}>
       {children}
     </div>
   )

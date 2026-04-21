@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.6.11] - 2026-04-21
+
+### Added
+
+- **Generic Telemetry API** — New `GET /api/telemetry` endpoint for querying time-series data from any source type (devices, AI metrics, transforms, extensions) using a unified interface. Accepts `source`, `metric`, `start`, `end`, `limit`, and `aggregate` (avg/min/max/sum/count) parameters. Returns data in a consistent format with `"source_id"` key. Independent of the device-specific `/api/devices/:id/telemetry` routes.
+- **Server-side Pagination for Data Sources** — `GET /api/data/sources` now supports `offset`, `limit`, `source_type`, `source`, and `search` query parameters. `populate_latest_values` runs only on the paginated subset, significantly reducing DB queries for large deployments.
+- **Data Explorer Redesign** — Frontend Data Explorer rewritten with server-side pagination, filtering by source type and source name, and search. Replaced client-side filtering with API-driven filtering for better performance.
+
+### Changed
+
+- **`device_id` → `source_id` Telemetry Renaming** — Renamed the first-level key in the telemetry time-series storage from `device_id` to `source_id` across the entire stack. This reflects the actual usage where telemetry stores data from multiple source types (devices, AI agents, transforms, extensions), not just devices. The rename covers 5 Rust crates and 20+ frontend files.
+  - **Storage Layer** (`neomind-storage`): All `TimeSeriesStore` method parameters (`write`, `query_range`, `query_latest`, `delete_range`, `list_metrics`, etc.), struct fields (`BatchWriteRequest`, `TimeSeriesResult`), and internal DashMap keys renamed.
+  - **Devices Wrapper** (`neomind-devices/telemetry`): `TimeSeriesStorage` and `MetricCache` methods updated. Method renames: `list_devices()` → `list_sources()`, `get_device()` → `get_source()`, `clear_device()` → `clear_source()`, `device_count()` → `source_count()`.
+  - **Core Bridge** (`neomind-core/datasource`): `DataSourceId::device_part()` → `source_part()`, `from_storage_parts(device_id, ...)` → `from_storage_parts(source_id, ...)`. All internal tests updated.
+  - **API Layer** (`neomind-api`): Extension metrics handlers, data source handlers, capability providers updated. Internal variable names aligned with new terminology.
+  - **Agent Layer** (`neomind-agent`): AI metrics tool uses `source_id = format!("ai:{}", group)`. Tool output JSON key changed to `"source_id"`. Data collector uses `source_part()`.
+  - **Extension State** (`extension_state`): `ExtensionMetricsStorage` method parameters and `ExtensionMetricsStorageAdapter` local variables renamed.
+  - **Frontend Gradual Migration**: Added `sourceId` field to `DataSource` and `MapMarker` types (with `deviceId` deprecated). Introduced `getSourceId()` helper that prefers `sourceId` with `deviceId` fallback. All 20+ dashboard and config components updated to read via `getSourceId()` and write both fields.
+
+### Fixed
+
+- **Extension Upload Dialog Animation** — Fixed Loader2 spinner jittering during upload by converting inline component function to a JSX variable, preventing React unmount/remount cycles on every progress update.
+- **Extension Bundle Cache Stale Issue** — Fixed browser loading old UMD bundles after extension reinstall/update. Three fixes applied:
+  - Store's `unregisterExtension` now clears `DynamicRegistry` caches and global variables.
+  - Upload dialog clears extension caches before re-syncing component registry.
+  - `syncComponents` detects `bundle_url`/`global_name`/`export_name` changes and clears stale module caches.
+- **Loading State Improvements** — Skeleton screen patterns improved across `LoadingState` and `ResponsiveTable` components.
+
+### Preserved (Not Changed)
+
+- **Extension SDK Wire Protocol**: JSON parameter key `"device_id"` unchanged — avoids breaking external extensions.
+- **Device Management Code**: Device register/unregister/status/config/command handlers use `device_id` semantically and correctly.
+- **API URL Routes**: All existing HTTP routes (`/api/devices/:id/telemetry`, etc.) unchanged.
+- **redb File Format**: Binary storage format unaffected — only variable names changed.
+- **`device_type` Fields**: Retention policy fields in storage layer correctly preserved as a separate concept.
+
+---
+
 ## [v0.6.10] - 2026-04-20
 
 ### Added

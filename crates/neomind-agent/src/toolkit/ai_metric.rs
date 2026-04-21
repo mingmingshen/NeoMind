@@ -5,7 +5,7 @@
 //!
 //! ## Storage convention
 //!
-//! - `device_id` in telemetry: `"ai:{group}"`
+//! - `source_id` in telemetry: `"ai:{group}"`
 //! - metric name: the field name
 //!
 //! ## Actions
@@ -230,9 +230,9 @@ impl AiMetricTool {
             quality: Some(1.0),
         };
 
-        let device_id = format!("ai:{}", group);
+        let source_id = format!("ai:{}", group);
         self.storage
-            .write(&device_id, field, point)
+            .write(&source_id, field, point)
             .await
             .map_err(|e| ToolError::Execution(format!("Failed to write AI metric: {}", e)))?;
 
@@ -254,7 +254,7 @@ impl AiMetricTool {
         self.registry.register(group, field, meta);
 
         Ok(ToolOutput::success(serde_json::json!({
-            "device_id": device_id,
+            "source_id": source_id,
             "metric": field,
             "status": "written"
         })))
@@ -282,7 +282,7 @@ impl AiMetricTool {
         let mut metrics = Vec::new();
 
         for (group, field) in keys {
-            let device_id = format!("ai:{}", group);
+            let source_id = format!("ai:{}", group);
             let meta = self.registry.get(&group, &field);
 
             let mut entry = serde_json::json!({
@@ -301,7 +301,7 @@ impl AiMetricTool {
             }
 
             // Try to fetch latest value
-            match self.storage.latest(&device_id, &field).await {
+            match self.storage.latest(&source_id, &field).await {
                 Ok(Some(dp)) => {
                     entry["value"] = dp.value.to_json_value();
                     entry["timestamp"] = serde_json::json!(dp.timestamp);
@@ -310,7 +310,7 @@ impl AiMetricTool {
                     entry["value"] = Value::Null;
                 }
                 Err(e) => {
-                    tracing::debug!("Failed to fetch latest for {}/{}: {}", device_id, field, e);
+                    tracing::debug!("Failed to fetch latest for {}/{}: {}", source_id, field, e);
                     entry["value"] = Value::Null;
                 }
             }
@@ -338,10 +338,10 @@ impl AiMetricTool {
         let start = args["start_time"].as_i64().map(|ts| if ts > 1e12 as i64 { ts / 1000 } else { ts }).unwrap_or(now - 86400); // default: 24h ago
         let end = args["end_time"].as_i64().map(|ts| if ts > 1e12 as i64 { ts / 1000 } else { ts }).unwrap_or(now);
 
-        let device_id = format!("ai:{}", group);
+        let source_id = format!("ai:{}", group);
         let points = self
             .storage
-            .query(&device_id, field, start, end)
+            .query(&source_id, field, start, end)
             .await
             .map_err(|e| ToolError::Execution(format!("Failed to query AI metric: {}", e)))?;
 

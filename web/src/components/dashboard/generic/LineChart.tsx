@@ -33,7 +33,7 @@ import { dashboardCardBase, dashboardComponentSize } from '@/design-system/token
 import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors } from '@/design-system/tokens/color'
 import type { DataSource, DataSourceOrList, TelemetryAggregate, ChartViewMode } from '@/types/dashboard'
-import { normalizeDataSource } from '@/types/dashboard'
+import { normalizeDataSource, getSourceId } from '@/types/dashboard'
 import { EmptyState, ErrorState } from '../shared'
 import {
   getEffectiveAggregate,
@@ -86,10 +86,12 @@ function toTelemetrySource(
   }
 
   // Convert device type to telemetry for historical data
-  if (dataSource.type === 'device' && dataSource.deviceId) {
+  const sourceId = getSourceId(dataSource)
+  if (dataSource.type === 'device' && sourceId) {
     return {
       type: 'telemetry',
-      deviceId: dataSource.deviceId,
+      deviceId: sourceId,
+      sourceId: sourceId,
       metricId: dataSource.metricId ?? dataSource.property ?? 'value',
       timeRange: timeWindowToHours(effectiveTimeWindow.type),
       limit: limit,
@@ -103,10 +105,11 @@ function toTelemetrySource(
 
   // Convert metric type with deviceId to telemetry
   // Metric type without deviceId will be handled by useDataSource's dynamic lookup
-  if (dataSource.type === 'metric' && dataSource.deviceId) {
+  if (dataSource.type === 'metric' && sourceId) {
     return {
       type: 'telemetry',
-      deviceId: dataSource.deviceId,
+      deviceId: sourceId,
+      sourceId: sourceId,
       metricId: dataSource.metricId ?? dataSource.property ?? 'value',
       timeRange: timeWindowToHours(effectiveTimeWindow.type),
       limit: limit,
@@ -357,8 +360,9 @@ const LineChartInner = function LineChart({
     }
     // Standard data sources
     const metricName = ds.metricId || ds.property
-    if (ds.deviceId) {
-      return `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
+    const deviceId = getSourceId(ds)
+    if (deviceId) {
+      return `${getDeviceName(deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
     }
     if (metricName) {
       return getPropertyDisplayName(metricName.includes(':') ? metricName.split(':').pop()! : metricName)
@@ -726,8 +730,9 @@ export function AreaChart({
       return t('chart.series', { count: idx + 1 })
     }
     const metricName = ds.metricId || ds.property
-    if (ds.deviceId) {
-      return `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.property)}`
+    const deviceId = getSourceId(ds)
+    if (deviceId) {
+      return `${getDeviceName(deviceId)} · ${getPropertyDisplayName(ds.property)}`
     }
     if (metricName) {
       return getPropertyDisplayName(metricName.includes(':') ? metricName.split(':').pop()! : metricName)

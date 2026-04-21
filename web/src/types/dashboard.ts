@@ -109,7 +109,9 @@ export interface DataSource {
   params?: Record<string, unknown>
   staticValue?: unknown
   // Device-specific fields (for reading device telemetry)
+  /** @deprecated Use sourceId instead */
   deviceId?: string
+  sourceId?: string
   property?: string
   // Metric-specific fields
   metricId?: string
@@ -181,6 +183,11 @@ export function isDataSourceList(value: unknown): value is DataSource[] {
 export function normalizeDataSource(dataSource: DataSourceOrList | undefined): DataSource[] {
   if (!dataSource) return []
   return isDataSourceList(dataSource) ? dataSource : [dataSource]
+}
+
+/** Get the source identifier from a DataSource, preferring sourceId over deprecated deviceId */
+export function getSourceId(ds: DataSource): string | undefined {
+  return ds.sourceId ?? ds.deviceId
 }
 
 // ============================================================================

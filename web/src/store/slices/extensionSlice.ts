@@ -24,6 +24,7 @@ import type {
 } from '@/types'
 import { api } from '@/lib/api'
 import { logError } from '@/lib/errors'
+import { dynamicRegistry } from '@/components/dashboard/registry/DynamicRegistry'
 
 export interface ExtensionState {
   // Unified Extension State
@@ -129,6 +130,8 @@ export const createExtensionSlice: StateCreator<
   unregisterExtension: async (id) => {
     try {
       await api.unregisterExtension(id)
+      // Clear dynamic registry caches and global variables for this extension
+      dynamicRegistry.unregisterExtension(id)
       // Remove from list and clear stats
       set((state) => ({
         extensions: state.extensions.filter((e) => e.id !== id),

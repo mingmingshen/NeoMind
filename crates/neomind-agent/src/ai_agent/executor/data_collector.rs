@@ -725,7 +725,7 @@ impl AgentExecutor {
                     );
 
                     // Query storage parts for historical data
-                    let device_part = ds_id.device_part();
+                    let source_part = ds_id.source_part();
                     let metric_part = ds_id.metric_part();
 
                     // First, try to get current value from registry (most up-to-date)
@@ -745,7 +745,7 @@ impl AgentExecutor {
 
                     let historical_result = tokio::time::timeout(
                         std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
-                        storage_clone.query_range(&device_part, metric_part, start_time, end_time, None)
+                        storage_clone.query_range(&source_part, metric_part, start_time, end_time, None)
                     ).await;
 
                     let points_count = match &historical_result {

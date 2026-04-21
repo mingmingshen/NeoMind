@@ -154,12 +154,12 @@ impl DataSourceId {
         self.field_path.split('.').collect()
     }
 
-    /// Get the device_id part for TimeSeriesStorage API
+    /// Get the source_id part for TimeSeriesStorage API
     ///
     /// For extensions, returns "extension:{extension_id}"
     /// For devices, returns "{device_id}"
     /// For transforms, returns "transform:{transform_id}"
-    pub fn device_part(&self) -> String {
+    pub fn source_part(&self) -> String {
         match &self.source_type {
             DataSourceType::Device => self.source_id.clone(),
             DataSourceType::Extension => format!("extension:{}", self.source_id),
@@ -175,17 +175,17 @@ impl DataSourceId {
         &self.field_path
     }
 
-    /// Create DataSourceId from device_id and metric (TimeSeriesStorage format)
+    /// Create DataSourceId from source_id and metric (TimeSeriesStorage format)
     ///
-    /// This is the inverse of device_part() and metric_part()
+    /// This is the inverse of source_part() and metric_part()
     /// Handles parsing both "device:id" and "extension:id" formats
-    pub fn from_storage_parts(device_id: &str, metric: &str) -> Option<Self> {
-        match device_id.split_once(':') {
+    pub fn from_storage_parts(source_id: &str, metric: &str) -> Option<Self> {
+        match source_id.split_once(':') {
             Some(("extension", id)) => Some(Self::extension(id, metric)),
             Some(("transform", id)) => Some(Self::transform(id, metric)),
             Some(("ai", id))        => Some(Self::ai(id, metric)),
             Some(("device", id))    => Some(Self::device(id, metric)),
-            _                       => Some(Self::device(device_id, metric)),
+            _                       => Some(Self::device(source_id, metric)),
         }
     }
 
@@ -585,20 +585,20 @@ mod tests {
     }
 
     #[test]
-    fn test_device_part() {
+    fn test_source_part() {
         // Device: no prefix
         let id = DataSourceId::device("sensor1", "temperature");
-        assert_eq!(id.device_part(), "sensor1");
+        assert_eq!(id.source_part(), "sensor1");
         assert_eq!(id.metric_part(), "temperature");
 
         // Extension: "extension:" prefix
         let id = DataSourceId::extension("weather", "temperature");
-        assert_eq!(id.device_part(), "extension:weather");
+        assert_eq!(id.source_part(), "extension:weather");
         assert_eq!(id.metric_part(), "temperature");
 
         // Transform: "transform:" prefix
         let id = DataSourceId::transform("processor", "output");
-        assert_eq!(id.device_part(), "transform:processor");
+        assert_eq!(id.source_part(), "transform:processor");
         assert_eq!(id.metric_part(), "output");
     }
 
@@ -625,10 +625,10 @@ mod tests {
 
     #[test]
     fn test_round_trip_storage_parts() {
-        // Test that device_part() + metric_part() round-trips through from_storage_parts()
+        // Test that source_part() + metric_part() round-trips through from_storage_parts()
         let original = DataSourceId::extension("weather", "temperature");
         let reconstructed =
-            DataSourceId::from_storage_parts(&original.device_part(), original.metric_part())
+            DataSourceId::from_storage_parts(&original.source_part(), original.metric_part())
                 .unwrap();
         assert_eq!(original.source_type, reconstructed.source_type);
         assert_eq!(original.source_id, reconstructed.source_id);
@@ -772,15 +772,15 @@ mod tests {
     fn test_extension_command_storage_parts() {
         let id = DataSourceId::extension_command("weather", "get_current_weather", "temperature_c");
 
-        // device_part() should include "extension:" prefix
-        assert_eq!(id.device_part(), "extension:weather");
+        // source_part() should include "extension:" prefix
+        assert_eq!(id.source_part(), "extension:weather");
 
         // metric_part() should be the full nested field path
         assert_eq!(id.metric_part(), "get_current_weather.temperature_c");
 
         // Should round-trip correctly
         let reconstructed =
-            DataSourceId::from_storage_parts(&id.device_part(), id.metric_part()).unwrap();
+            DataSourceId::from_storage_parts(&id.source_part(), id.metric_part()).unwrap();
         assert_eq!(reconstructed.source_type, id.source_type);
         assert_eq!(reconstructed.source_id, id.source_id);
         assert_eq!(reconstructed.field_path, id.field_path);

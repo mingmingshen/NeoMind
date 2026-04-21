@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { MapDisplay, type MapMarker } from './MapDisplay'
 import type { DataSource } from '@/types/dashboard'
+import { getSourceId } from '@/types/dashboard'
 import { useStore } from '@/store'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
@@ -169,7 +170,8 @@ export function MapEditorDialog({
 
     const markers = bindings.map((binding): MapMarker => {
       const itemConfig = typeConfig[binding.icon || binding.type]
-      const ds = binding.dataSource as any
+      const ds = binding.dataSource
+      const sourceId = getSourceId(ds)
       const lat = binding.position === 'auto' || !binding.position
         ? center.lat
         : binding.position.lat
@@ -177,10 +179,10 @@ export function MapEditorDialog({
         ? center.lng
         : binding.position.lng
 
-      const device = ds?.deviceId ? storeDevices.find(d => d.id === ds.deviceId || d.device_id === ds.deviceId) : undefined
+      const device = sourceId ? storeDevices.find(d => d.id === sourceId || d.device_id === sourceId) : undefined
 
       let metricValue: string | undefined = undefined
-      if (binding.type === 'metric' && ds?.deviceId) {
+      if (binding.type === 'metric' && sourceId) {
         const metricKey = ds.metricId || ds.property
         if (device?.current_values && metricKey) {
           const rawValue = findMetricValue(device.current_values, metricKey)
@@ -198,13 +200,14 @@ export function MapEditorDialog({
         longitude: lng,
         label: binding.name,
         markerType: binding.icon || binding.type,
-        status: binding.type === 'device' ? getDeviceStatus(ds.deviceId) : undefined,
+        status: binding.type === 'device' ? getDeviceStatus(sourceId || '') : undefined,
         metricValue: binding.type === 'metric' ? (metricValue || '-') : undefined,
-        deviceId: ds?.deviceId,
-        deviceName: ds?.deviceId ? getDeviceName(ds.deviceId) : undefined,
-        metricName: ds?.metricId || ds?.property,
-        command: binding.type === 'command' ? ds?.command : undefined,
-        commandName: binding.type === 'command' ? ds?.command : undefined,
+        deviceId: sourceId,
+        sourceId,
+        deviceName: sourceId ? getDeviceName(sourceId) : undefined,
+        metricName: ds.metricId || ds.property,
+        command: binding.type === 'command' ? ds.command : undefined,
+        commandName: binding.type === 'command' ? ds.command : undefined,
       }
     })
     return markers

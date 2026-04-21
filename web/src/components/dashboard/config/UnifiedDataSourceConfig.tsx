@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useStore } from '@/store'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
-import { normalizeDataSource } from '@/types/dashboard'
+import { normalizeDataSource, getSourceId } from '@/types/dashboard'
 import type { MetricDefinition, CommandDefinition } from '@/types'
 import { useDataAvailability } from '@/hooks/useDataAvailability'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
@@ -142,11 +142,13 @@ function selectedItemsToDataSource(
         return {
           type: 'device',
           deviceId: parts[1],
+          sourceId: parts[1],
         }
       case 'device-metric':
         return {
           type: 'telemetry',
           deviceId: parts[1],
+          sourceId: parts[1],
           metricId: parts.slice(2).join(':'),
           timeRange: 1,  // 1 hour for real-time dashboards (was 24, too large)
           limit: 50,     // Reduced from 100 for better performance
@@ -158,12 +160,14 @@ function selectedItemsToDataSource(
         return {
           type: 'command',
           deviceId: parts[1],
+          sourceId: parts[1],
           command: parts.slice(2).join(':'),
         }
       case 'device-info':
         return {
           type: 'device-info',
           deviceId: parts[1],
+          sourceId: parts[1],
           infoProperty: parts.slice(2).join(':') as any,
         }
       case 'system':
@@ -199,6 +203,7 @@ function selectedItemsToDataSource(
         return {
           type: 'transform',
           deviceId: `transform:${parts[1]}`,
+          sourceId: `transform:${parts[1]}`,
           metricId: parts.slice(2).join(':'),
           transformId: parts[1],
           timeRange: 1,
@@ -212,6 +217,7 @@ function selectedItemsToDataSource(
         return {
           type: 'ai-metric',
           deviceId: `ai:${parts[1]}`,
+          sourceId: `ai:${parts[1]}`,
           metricId: parts.slice(2).join(':'),
           aiGroup: parts[1],
           timeRange: 1,
@@ -236,12 +242,14 @@ function selectedItemsToDataSource(
         result.push({
           type: 'device',
           deviceId: parts[1],
+          sourceId: parts[1],
         })
         break
       case 'device-metric':
         result.push({
           type: 'telemetry',
           deviceId: parts[1],
+          sourceId: parts[1],
           metricId: parts.slice(2).join(':'),
           timeRange: 1,  // 1 hour for real-time dashboards (was 24, too large)
           limit: 50,     // Reduced from 100 for better performance
@@ -254,6 +262,7 @@ function selectedItemsToDataSource(
         result.push({
           type: 'command',
           deviceId: parts[1],
+          sourceId: parts[1],
           command: parts.slice(2).join(':'),
         })
         break
@@ -261,6 +270,7 @@ function selectedItemsToDataSource(
         result.push({
           type: 'device-info',
           deviceId: parts[1],
+          sourceId: parts[1],
           infoProperty: parts.slice(2).join(':') as any,
         })
         break
@@ -296,6 +306,7 @@ function selectedItemsToDataSource(
         result.push({
           type: 'transform',
           deviceId: `transform:${parts[1]}`,
+          sourceId: `transform:${parts[1]}`,
           metricId: parts.slice(2).join(':'),
           transformId: parts[1],
           timeRange: 1,
@@ -309,6 +320,7 @@ function selectedItemsToDataSource(
         result.push({
           type: 'ai-metric',
           deviceId: `ai:${parts[1]}`,
+          sourceId: `ai:${parts[1]}`,
           metricId: parts.slice(2).join(':'),
           aiGroup: parts[1],
           timeRange: 1,
@@ -337,16 +349,16 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
     switch (dataSource.type) {
       case 'device':
         // Plain device reference (for map markers) - no property/metric
-        items.add(`device:${dataSource.deviceId}` as SelectedItem)
+        items.add(`device:${getSourceId(dataSource)}` as SelectedItem)
         break
       case 'telemetry':
-        items.add(`device-metric:${dataSource.deviceId}:${dataSource.metricId}` as SelectedItem)
+        items.add(`device-metric:${getSourceId(dataSource)}:${dataSource.metricId}` as SelectedItem)
         break
       case 'command':
-        items.add(`device-command:${dataSource.deviceId}:${dataSource.command}` as SelectedItem)
+        items.add(`device-command:${getSourceId(dataSource)}:${dataSource.command}` as SelectedItem)
         break
       case 'device-info':
-        items.add(`device-info:${dataSource.deviceId}:${dataSource.infoProperty}` as SelectedItem)
+        items.add(`device-info:${getSourceId(dataSource)}:${dataSource.infoProperty}` as SelectedItem)
         break
       case 'system':
         items.add(`system:${dataSource.systemMetric}` as SelectedItem)
@@ -370,8 +382,8 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
         // For transform type, parse from transformId or deviceId prefix
         if (dataSource.transformId) {
           items.add(`transform:${dataSource.transformId}:${dataSource.metricId || 'value'}` as SelectedItem)
-        } else if (dataSource.deviceId?.startsWith('transform:')) {
-          const id = dataSource.deviceId.slice(10) // Remove "transform:" prefix
+        } else if (getSourceId(dataSource)?.startsWith('transform:')) {
+          const id = getSourceId(dataSource)!.slice(10) // Remove "transform:" prefix
           items.add(`transform:${id}:${dataSource.metricId || 'value'}` as SelectedItem)
         }
         break
@@ -379,8 +391,8 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
         // For ai-metric type, parse from aiGroup or deviceId prefix
         if ((dataSource as any).aiGroup) {
           items.add(`ai-metric:${(dataSource as any).aiGroup}:${dataSource.metricId || 'value'}` as SelectedItem)
-        } else if (dataSource.deviceId?.startsWith('ai:')) {
-          const group = dataSource.deviceId.slice(3) // Remove "ai:" prefix
+        } else if (getSourceId(dataSource)?.startsWith('ai:')) {
+          const group = getSourceId(dataSource)!.slice(3) // Remove "ai:" prefix
           items.add(`ai-metric:${group}:${dataSource.metricId || 'value'}` as SelectedItem)
         }
         break
@@ -510,7 +522,7 @@ export function UnifiedDataSourceConfig({
     return sources.map(s => {
       // Only include fields that identify the selection, not transform settings
       // Exclude: timeRange, limit, aggregate, aggregateExt, transform, params, timeWindow
-      return `${s.type}:${s.deviceId || ''}:${s.metricId || s.property || s.infoProperty || ''}:${s.command || ''}`
+      return `${s.type}:${getSourceId(s) || ''}:${s.metricId || s.property || s.infoProperty || ''}:${s.command || ''}`
     }).sort().join('|')
   }
 
@@ -645,7 +657,7 @@ export function UnifiedDataSourceConfig({
       setUnifiedSourcesLoading(true)
       try {
         const sources = await api.listUnifiedDataSources()
-        setUnifiedDataSources(sources)
+        setUnifiedDataSources(sources.data)
         hasFetchedUnifiedSources.current = true
       } catch (err) {
         console.error('[UnifiedDataSourceConfig] Error fetching unified data sources:', err)

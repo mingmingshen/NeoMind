@@ -466,6 +466,21 @@ export class DynamicComponentRegistry {
     for (const comp of newComponents) {
       const exists = currentTypes.has(comp.type)
 
+      // If component already exists and key fields changed, clear caches for fresh reload
+      if (exists) {
+        const oldDef = this.state.components[comp.type]
+        const changed = oldDef?.bundle_url !== comp.bundle_url
+          || oldDef?.global_name !== comp.global_name
+          || oldDef?.export_name !== comp.export_name
+        if (changed) {
+          if (oldDef?.global_name) {
+            try { delete (window as any)[oldDef.global_name] } catch {}
+          }
+          delete this.state.loadedModules[comp.type]
+          delete this.state.loadingPromises[comp.type]
+        }
+      }
+
       // Register component definition
       this.state.components[comp.type] = comp
 

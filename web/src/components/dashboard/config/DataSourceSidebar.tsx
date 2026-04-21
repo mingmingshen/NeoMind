@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useStore } from '@/store'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
-import { normalizeDataSource } from '@/types/dashboard'
+import { normalizeDataSource, getSourceId } from '@/types/dashboard'
 import type { MetricDefinition, CommandDefinition } from '@/types'
 
 export interface DataSourceSidebarProps {
@@ -93,11 +93,11 @@ function selectedItemsToDataSource(
     const [type, ...parts] = item.split(':')
 
     if (type === 'device-metric' && parts.length >= 2) {
-      return { type: 'metric', deviceId: parts[0], metricId: parts[1], property: parts[1] }
+      return { type: 'metric', deviceId: parts[0], sourceId: parts[0], metricId: parts[1], property: parts[1] }
     } else if (type === 'device-command' && parts.length >= 2) {
-      return { type: 'command', deviceId: parts[0], command: parts[1] }
+      return { type: 'command', deviceId: parts[0], sourceId: parts[0], command: parts[1] }
     } else if (type === 'device-info' && parts.length >= 2) {
-      return { type: 'device-info', deviceId: parts[0], infoProperty: parts[1] as any }
+      return { type: 'device-info', deviceId: parts[0], sourceId: parts[0], infoProperty: parts[1] as any }
     }
   }
 
@@ -108,11 +108,11 @@ function selectedItemsToDataSource(
     const [type, ...parts] = item.split(':')
 
     if (type === 'device-metric' && parts.length >= 2) {
-      sources.push({ type: 'metric', deviceId: parts[0], metricId: parts[1], property: parts[1] })
+      sources.push({ type: 'metric', deviceId: parts[0], sourceId: parts[0], metricId: parts[1], property: parts[1] })
     } else if (type === 'device-command' && parts.length >= 2) {
-      sources.push({ type: 'command', deviceId: parts[0], command: parts[1] })
+      sources.push({ type: 'command', deviceId: parts[0], sourceId: parts[0], command: parts[1] })
     } else if (type === 'device-info' && parts.length >= 2) {
-      sources.push({ type: 'device-info', deviceId: parts[0], infoProperty: parts[1] as any })
+      sources.push({ type: 'device-info', deviceId: parts[0], sourceId: parts[0], infoProperty: parts[1] as any })
     }
   }
 
@@ -175,13 +175,14 @@ export function DataSourceSidebar({
 
       for (const ds of currentDataSources) {
         // Handle metric type (new) or device type with property (legacy)
-        if ((ds.type === 'metric' || ds.type === 'device') && ds.deviceId && (ds.metricId || ds.property)) {
+        const dsSourceId = getSourceId(ds)
+        if ((ds.type === 'metric' || ds.type === 'device') && dsSourceId && (ds.metricId || ds.property)) {
           const property = ds.metricId || ds.property
-          newSelectedItems.add(`device-metric:${ds.deviceId}:${property}`)
-        } else if (ds.type === 'command' && ds.deviceId && ds.command) {
-          newSelectedItems.add(`device-command:${ds.deviceId}:${ds.command}`)
-        } else if (ds.type === 'device-info' && ds.deviceId && ds.infoProperty) {
-          newSelectedItems.add(`device-info:${ds.deviceId}:${ds.infoProperty}`)
+          newSelectedItems.add(`device-metric:${dsSourceId}:${property}`)
+        } else if (ds.type === 'command' && dsSourceId && ds.command) {
+          newSelectedItems.add(`device-command:${dsSourceId}:${ds.command}`)
+        } else if (ds.type === 'device-info' && dsSourceId && ds.infoProperty) {
+          newSelectedItems.add(`device-info:${dsSourceId}:${ds.infoProperty}`)
         }
       }
 
