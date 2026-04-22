@@ -139,6 +139,15 @@ struct TrayState {
 }
 
 fn start_axum_server(state: tauri::State<ServerState>) -> Result<(), String> {
+    // Initialize tracing with RUST_LOG env var support
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .compact()
+        .init();
+
     // Clone the Arc before moving into the closure
     let runtime_arc = Arc::clone(&state.runtime);
     let server_thread = Arc::clone(&state.server_thread);
