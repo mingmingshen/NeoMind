@@ -28,8 +28,8 @@ use std::ffi::CStr;
 use std::io::{Read, Write};
 use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use clap::Parser;
 use serde_json::json;
@@ -54,194 +54,25 @@ use resource_limits::{setup_resource_limits, ResourceLimitsConfig};
 mod dylib_validation;
 use dylib_validation::validate_library;
 
+// Event handler module
+mod event_handler;
+use event_handler::get_global_event_state;
+
+// IPC routing module
+mod ipc_routing;
+use ipc_routing::{
+    safe_ffi_call, STDOUT_WRITE_MUTEX, create_event_channel,
+    register_pending_request, complete_pending_request, get_pending_requests,
+    start_stdin_reader,
+};
+
 // ============================================================================
 // Message routing for capability invocation
 // ============================================================================
 
-// Resource limits module
-// A background thread reads all stdin messages and routes them to:
-// 1. Pending capability requests (via PENDING_REQUESTS)
-// 2. Main event queue (via EVENT_QUEUE)
-
-use std::sync::mpsc::{channel, Receiver, Sender};
-
-type ResponseSender = Sender<IpcResponse>;
-
-/// Pending capability requests: request_id -> response sender
-static PENDING_REQUESTS: std::sync::OnceLock<Mutex<HashMap<u64, ResponseSender>>> =
-    std::sync::OnceLock::new();
-
-/// Channel-based event queue for main loop (replaces polling)
-static EVENT_TX: std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<IpcMessage>> =
-    std::sync::OnceLock::new();
-
-fn get_pending_requests() -> &'static Mutex<HashMap<u64, ResponseSender>> {
-    PENDING_REQUESTS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Create the event channel and return the receiver (call once at startup)
-fn create_event_channel() -> tokio::sync::mpsc::UnboundedReceiver<IpcMessage> {
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    EVENT_TX.set(tx).expect("event channel already initialized");
-    rx
-}
-
-/// Register a pending request and return the response receiver
-fn register_pending_request(request_id: u64) -> Receiver<IpcResponse> {
-    let (tx, rx) = channel();
-    get_pending_requests()
-        .lock()
-        .unwrap()
-        .insert(request_id, tx);
-    rx
-}
-
-/// Complete a pending request with the response
-fn complete_pending_request(request_id: u64, response: IpcResponse) {
-    if let Some(tx) = get_pending_requests().lock().unwrap().remove(&request_id) {
-        let _ = tx.send(response);
-    }
-}
-
-/// Push an event to the channel for main loop processing
-fn push_event(message: IpcMessage) {
-    if let Some(tx) = EVENT_TX.get() {
-        let _ = tx.send(message);
-    }
-}
-
-/// Start the stdin reader thread
-/// This thread reads all messages from stdin and routes them appropriately
-fn start_stdin_reader() -> std::thread::JoinHandle<()> {
-    std::thread::spawn(|| {
-        eprintln!("[StdinReader] Started");
-
-        loop {
-            // Read length prefix
-            let mut len_bytes = [0u8; 4];
-            match std::io::stdin().read_exact(&mut len_bytes) {
-                Ok(_) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                    eprintln!("[StdinReader] stdin closed");
-                    break;
-                }
-                Err(e) => {
-                    eprintln!("[StdinReader] Error reading length: {}", e);
-                    break;
-                }
-            }
-
-            let len = u32::from_le_bytes(len_bytes) as usize;
-            if len > 10 * 1024 * 1024 {
-                eprintln!("[StdinReader] Message too large: {}", len);
-                continue;
-            }
-
-            // Read payload
-            let mut payload = vec![0u8; len];
-            if let Err(e) = std::io::stdin().read_exact(&mut payload) {
-                eprintln!("[StdinReader] Error reading payload: {}", e);
-                continue;
-            }
-
-            // Parse message
-            let message: IpcMessage = match IpcMessage::from_bytes(&payload) {
-                Ok(m) => m,
-                Err(e) => {
-                    eprintln!("[StdinReader] Failed to parse message: {}", e);
-                    continue;
-                }
-            };
-
-            // Route message
-            match &message {
-                IpcMessage::CapabilityResult { request_id, .. } => {
-                    // Convert to IpcResponse and route to waiting invoke()
-                    let response = IpcResponse::CapabilityResult {
-                        request_id: *request_id,
-                        result: match message {
-                            IpcMessage::CapabilityResult { ref result, .. } => result.clone(),
-                            _ => json!({}),
-                        },
-                        error: match message {
-                            IpcMessage::CapabilityResult { ref error, .. } => error.clone(),
-                            _ => None,
-                        },
-                    };
-                    complete_pending_request(*request_id, response);
-                    eprintln!(
-                        "[StdinReader] Routed CapabilityResult to request_id={}",
-                        request_id
-                    );
-                }
-                _ => {
-                    // Push to event queue for main loop
-                    push_event(message);
-                }
-            }
-        }
-
-        eprintln!("[StdinReader] Exiting");
-    })
-}
+// IPC routing and event handling now live in their own modules
 
 /// Global event state for WASM extensions
-struct GlobalEventState {
-    subscriptions: parking_lot::RwLock<HashMap<i64, String>>,
-    queues: parking_lot::RwLock<HashMap<i64, Vec<serde_json::Value>>>,
-    next_id: std::sync::atomic::AtomicI64,
-}
-
-impl GlobalEventState {
-    fn new() -> Self {
-        Self {
-            subscriptions: parking_lot::RwLock::new(HashMap::new()),
-            queues: parking_lot::RwLock::new(HashMap::new()),
-            next_id: std::sync::atomic::AtomicI64::new(1),
-        }
-    }
-
-    fn subscribe(&self, event_type: String) -> i64 {
-        let id = self
-            .next_id
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        self.subscriptions.write().insert(id, event_type);
-        id
-    }
-
-    fn unsubscribe(&self, id: i64) -> bool {
-        self.subscriptions.write().remove(&id).is_some()
-    }
-
-    fn push_event(&self, event_type: &str, payload: serde_json::Value) {
-        let subscriptions = self.subscriptions.read();
-        let mut queues = self.queues.write();
-
-        for (id, sub_type) in subscriptions.iter() {
-            if sub_type == "all"
-                || sub_type == event_type
-                || event_type.starts_with(&format!("{}::", sub_type))
-            {
-                let event = json!({
-                    "event_type": event_type,
-                    "payload": payload,
-                });
-                queues.entry(*id).or_default().push(event);
-            }
-        }
-    }
-
-    fn take_events(&self, id: i64) -> Vec<serde_json::Value> {
-        self.queues.write().remove(&id).unwrap_or_default()
-    }
-}
-
-static GLOBAL_EVENT_STATE: std::sync::OnceLock<GlobalEventState> = std::sync::OnceLock::new();
-
-fn get_global_event_state() -> &'static GlobalEventState {
-    GLOBAL_EVENT_STATE.get_or_init(GlobalEventState::new)
-}
-
 /// Extension type detected from file
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ExtensionType {
@@ -304,10 +135,6 @@ struct Runner {
     running: bool,
     /// IPC client for WASM capability forwarding
     ipc_client: Option<Arc<SyncIpcClient>>,
-    /// IPC request receiver (for forwarding to main process) - no longer used
-    ipc_request_rx: Option<std::sync::mpsc::Receiver<SyncIpcRequest>>,
-    /// IPC response sender (for returning results to WASM) - no longer used
-    ipc_response_tx: Option<std::sync::mpsc::SyncSender<SyncIpcResponse>>,
 }
 
 type JsonFn0 = unsafe extern "C" fn() -> *mut c_char;
@@ -319,6 +146,22 @@ type HostCapabilityFreeFn = unsafe extern "C" fn(*mut c_char);
 
 static GLOBAL_NATIVE_IPC_CLIENT: std::sync::OnceLock<Arc<SyncIpcClient>> =
     std::sync::OnceLock::new();
+
+/// Allowed capability names that can be invoked through the native bridge.
+/// Unknown names are rejected before reaching the host process.
+const ALLOWED_CAPABILITIES: &[&str] = &[
+    cap::DEVICE_METRICS_READ,
+    cap::DEVICE_METRICS_WRITE,
+    cap::DEVICE_CONTROL,
+    cap::STORAGE_QUERY,
+    cap::EVENT_PUBLISH,
+    cap::EVENT_SUBSCRIBE,
+    cap::TELEMETRY_HISTORY,
+    cap::METRICS_AGGREGATE,
+    cap::EXTENSION_CALL,
+    cap::AGENT_TRIGGER,
+    cap::RULE_TRIGGER,
+];
 
 unsafe extern "C" fn runner_native_capability_invoke(
     input_ptr: *const u8,
@@ -343,6 +186,15 @@ unsafe extern "C" fn runner_native_capability_invoke(
         return error_json("empty native capability bridge input".to_string());
     }
 
+    // Cap input size to prevent OOM from malicious extensions (1 MB)
+    const MAX_CAPABILITY_INPUT: usize = 1024 * 1024;
+    if input_len > MAX_CAPABILITY_INPUT {
+        return error_json(format!(
+            "capability input too large: {} bytes (max {})",
+            input_len, MAX_CAPABILITY_INPUT
+        ));
+    }
+
     let input_bytes = std::slice::from_raw_parts(input_ptr, input_len);
     let input = match serde_json::from_slice::<serde_json::Value>(input_bytes) {
         Ok(value) => value,
@@ -356,6 +208,15 @@ unsafe extern "C" fn runner_native_capability_invoke(
         .and_then(|value| value.as_str())
         .unwrap_or_default();
     let params = input.get("params").cloned().unwrap_or_else(|| json!({}));
+
+    // Validate capability name against allowlist
+    if !ALLOWED_CAPABILITIES.contains(&capability) {
+        error!(
+            capability = %capability,
+            "Rejected capability invocation: name not in allowlist"
+        );
+        return error_json(format!("capability not allowed: {}", capability));
+    }
 
     let Some(ipc_client) = GLOBAL_NATIVE_IPC_CLIENT.get() else {
         return error_json("native capability IPC client is not initialized".to_string());
@@ -378,11 +239,72 @@ unsafe extern "C" fn runner_native_capability_free(ptr: *mut c_char) {
     }
 }
 
+/// Push-output writer callback — called by the extension via FFI to push data.
+/// Serialises a PushOutputMessage → IpcResponse::PushOutput → stdout frame.
+unsafe extern "C" fn push_output_writer(data: *const u8, len: usize) -> i32 {
+    if data.is_null() || len == 0 {
+        warn!("PushOutputWriter: null/empty data");
+        return -1;
+    }
+
+    let bytes = std::slice::from_raw_parts(data, len);
+    let msg: serde_json::Value = match serde_json::from_slice(bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("PushOutputWriter: invalid JSON: {e}");
+            return -2;
+        }
+    };
+
+    // Build IpcResponse::PushOutput from the JSON fields
+    let response = IpcResponse::PushOutput {
+        session_id: msg.get("session_id").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        sequence: msg.get("sequence").and_then(|v| v.as_u64()).unwrap_or(0),
+        data: msg.get("data")
+            .and_then(|v| v.as_str())
+            .map(|s| {
+                use base64::Engine as _;
+                base64::engine::general_purpose::STANDARD.decode(s)
+                    .unwrap_or_else(|_| s.as_bytes().to_vec())
+            })
+            .unwrap_or_default(),
+        data_type: msg.get("data_type").and_then(|v| v.as_str()).unwrap_or("application/octet-stream").to_string(),
+        timestamp: msg.get("timestamp").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+        metadata: msg.get("metadata").cloned(),
+    };
+
+    let payload = match response.to_bytes() {
+        Ok(p) => p,
+        Err(e) => {
+            error!("PushOutputWriter: serialise error: {e}");
+            return -3;
+        }
+    };
+
+    let frame = IpcFrame::new(payload);
+    let encoded = frame.encode();
+
+    let _guard = STDOUT_WRITE_MUTEX.lock().unwrap();
+    let mut stdout = std::io::stdout();
+    if let Err(e) = stdout.write_all(&encoded) {
+        error!("PushOutputWriter: write error: {e}");
+        return -4;
+    }
+    if let Err(e) = stdout.flush() {
+        error!("PushOutputWriter: flush error: {e}");
+        return -5;
+    }
+    0
+}
+
+type RegisterPushWriterFn = unsafe extern "C" fn(neomind_extension_sdk::PushOutputWriterFn) -> i32;
+
 struct NativeExtensionBridge {
     _library: Arc<libloading::Library>,
     free_string: FreeStringFn,
     descriptor_json: JsonFn0,
     set_capability_bridge: Option<SetCapabilityBridgeFn>,
+    register_push_writer: Option<RegisterPushWriterFn>,
     execute_command_json: JsonFn1,
     configure_json: Option<JsonFn1>,
     produce_metrics_json: JsonFn0,
@@ -424,6 +346,10 @@ impl NativeExtensionBridge {
             set_capability_bridge: Self::load_optional_symbol(
                 &library,
                 b"neomind_extension_set_capability_bridge\0",
+            ),
+            register_push_writer: Self::load_optional_symbol(
+                &library,
+                b"neomind_extension_register_push_writer\0",
             ),
             execute_command_json: Self::load_symbol(
                 &library,
@@ -502,11 +428,28 @@ impl NativeExtensionBridge {
     fn install_capability_bridge(&self, ipc_client: Arc<SyncIpcClient>) {
         let _ = GLOBAL_NATIVE_IPC_CLIENT.set(ipc_client);
         if let Some(set_bridge) = self.set_capability_bridge {
-            unsafe {
-                set_bridge(
-                    runner_native_capability_invoke,
-                    runner_native_capability_free,
-                );
+            if let Err(e) = safe_ffi_call(
+                "install_capability_bridge",
+                AssertUnwindSafe(|| unsafe {
+                    set_bridge(
+                        runner_native_capability_invoke,
+                        runner_native_capability_free,
+                    );
+                }),
+            ) {
+                error!(error = %e, "Failed to install capability bridge");
+            }
+        }
+
+        // Register push-output writer so extension can push data to host
+        if let Some(register) = self.register_push_writer {
+            if let Err(e) = safe_ffi_call(
+                "register_push_writer",
+                AssertUnwindSafe(|| unsafe { register(push_output_writer) }),
+            ) {
+                error!(error = %e, "Failed to register push output writer");
+            } else {
+                debug!("Push output writer registered successfully");
             }
         }
     }
@@ -719,7 +662,8 @@ impl NativeExtensionBridge {
     }
 
     fn call_json0(&self, func: JsonFn0) -> Result<serde_json::Value, String> {
-        self.read_json_ptr(unsafe { func() })
+        let ptr = safe_ffi_call("call_json0", AssertUnwindSafe(|| unsafe { func() }))?;
+        self.read_json_ptr(ptr)
     }
 
     fn call_json1(
@@ -729,7 +673,11 @@ impl NativeExtensionBridge {
     ) -> Result<serde_json::Value, String> {
         let bytes = serde_json::to_vec(input)
             .map_err(|e| format!("Failed to serialize native bridge input: {}", e))?;
-        self.read_json_ptr(unsafe { func(bytes.as_ptr(), bytes.len()) })
+        let ptr = safe_ffi_call(
+            "call_json1",
+            AssertUnwindSafe(|| unsafe { func(bytes.as_ptr(), bytes.len()) }),
+        )?;
+        self.read_json_ptr(ptr)
     }
 
     fn read_json_ptr(&self, ptr: *mut c_char) -> Result<serde_json::Value, String> {
@@ -737,7 +685,10 @@ impl NativeExtensionBridge {
             return Err("Native extension returned a null JSON pointer".to_string());
         }
         let json_string = unsafe { CStr::from_ptr(ptr) }.to_string_lossy().to_string();
-        unsafe { (self.free_string)(ptr) };
+        safe_ffi_call(
+            "free_string",
+            AssertUnwindSafe(|| unsafe { (self.free_string)(ptr) }),
+        )?;
         serde_json::from_str(&json_string)
             .map_err(|e| format!("Failed to parse native extension JSON response: {}", e))
     }
@@ -804,8 +755,33 @@ impl WasmRuntime {
         config.consume_fuel(true);
         config.async_stack_size(8 * 1024 * 1024);
 
+        // Limit WASM linear memory growth (default 256MB, configurable via env)
+        let wasm_memory_limit = std::env::var("NEOMIND_WASM_MEMORY_MB")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(256);
+        config.static_memory_maximum_size(wasm_memory_limit * 1024 * 1024);
+
         let engine =
             Engine::new(&config).map_err(|e| format!("Failed to create WASM engine: {}", e))?;
+
+        // Check WASM file size before loading (default 50 MB max, configurable)
+        let max_wasm_size = std::env::var("NEOMIND_WASM_MAX_SIZE_MB")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(50) * 1024 * 1024;
+        match std::fs::metadata(path) {
+            Ok(meta) => {
+                let size = meta.len();
+                if size > max_wasm_size {
+                    return Err(format!(
+                        "WASM module too large: {} bytes (max {} bytes)",
+                        size, max_wasm_size
+                    ));
+                }
+            }
+            Err(e) => return Err(format!("Cannot read WASM file metadata: {}", e)),
+        }
 
         // Load module
         let module = Module::from_file(&engine, path)
@@ -850,8 +826,10 @@ impl WasmRuntime {
         let host_state = HostState::new(wasi);
 
         let mut store = Store::new(engine, host_state);
-        store
-            .set_fuel(1_000_000)
+        store.set_fuel(std::env::var("NEOMIND_WASM_FUEL")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(1_000_000))
             .map_err(|e| format!("Failed to set fuel: {}", e))?;
 
         // Instantiate module
@@ -1119,8 +1097,10 @@ impl WasmRuntime {
             let host_state = HostState::with_ipc(wasi, ipc_client);
 
             let mut store = Store::new(&engine, host_state);
-            store
-                .set_fuel(1_000_000)
+            store.set_fuel(std::env::var("NEOMIND_WASM_FUEL")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(1_000_000))
                 .map_err(|e| format!("Failed to set fuel: {}", e))?;
 
             let instance = linker
@@ -1191,6 +1171,7 @@ impl WasmRuntime {
         &self,
         function_name: &str,
         args: &serde_json::Value,
+        ipc_client: Option<Arc<SyncIpcClient>>,
     ) -> Result<serde_json::Value, String> {
         let args_str =
             serde_json::to_string(args).map_err(|e| format!("Failed to serialize args: {}", e))?;
@@ -1217,12 +1198,14 @@ impl WasmRuntime {
             // Build WASI context
             let wasi = WasiCtxBuilder::new().inherit_stdio().build_p1();
 
-            let host_state = HostState::new(wasi);
+            let host_state = HostState::with_ipc(wasi, ipc_client);
 
             // Create store with fuel
             let mut store = Store::new(&engine, host_state);
-            store
-                .set_fuel(1_000_000)
+            store.set_fuel(std::env::var("NEOMIND_WASM_FUEL")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(1_000_000))
                 .map_err(|e| format!("Failed to set fuel: {}", e))?;
 
             // Instantiate module
@@ -1326,7 +1309,7 @@ impl WasmRuntime {
     }
 
     async fn health_check(&self) -> bool {
-        match self.execute("health", &json!({})).await {
+        match self.execute("health", &json!({}), None).await {
             Ok(result) => result.as_bool().unwrap_or(true),
             Err(_) => true, // Assume healthy if function not found
         }
@@ -1387,22 +1370,6 @@ struct HostState {
     ipc_client: Option<Arc<SyncIpcClient>>,
 }
 
-/// Synchronous IPC request (for compatibility with existing code)
-#[derive(Debug, Clone)]
-pub struct SyncIpcRequest {
-    pub request_id: u64,
-    pub capability: String,
-    pub params: serde_json::Value,
-}
-
-/// Synchronous IPC response (for compatibility with existing code)
-#[derive(Debug, Clone)]
-pub struct SyncIpcResponse {
-    pub request_id: u64,
-    pub result: serde_json::Value,
-    pub error: Option<String>,
-}
-
 /// Synchronous IPC client for capability invocation
 ///
 /// This client sends CapabilityRequest messages via stdout and waits for
@@ -1411,20 +1378,8 @@ pub struct SyncIpcClient {}
 
 impl SyncIpcClient {
     /// Create a new sync IPC client
-    pub fn new() -> (
-        Self,
-        std::sync::mpsc::Receiver<SyncIpcRequest>,
-        std::sync::mpsc::SyncSender<SyncIpcResponse>,
-    ) {
-        // Return dummy channels for compatibility with existing code
-        let (request_tx, request_rx) = std::sync::mpsc::sync_channel(16);
-        let (response_tx, response_rx) = std::sync::mpsc::sync_channel(16);
-
-        // Drop the channels we don't need
-        drop(request_tx);
-        drop(response_rx);
-
-        (Self {}, request_rx, response_tx)
+    pub fn new() -> Self {
+        Self {}
     }
 
     /// Invoke a capability synchronously
@@ -1437,10 +1392,7 @@ impl SyncIpcClient {
         static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
         let request_id = REQUEST_ID_COUNTER.fetch_add(1, AtomicOrdering::SeqCst);
 
-        eprintln!(
-            "[SyncIpcClient] invoke called: capability={}, request_id={}",
-            capability, request_id
-        );
+        debug!(capability, request_id, "SyncIpcClient invoke");
 
         // Register pending request BEFORE sending
         let response_rx = register_pending_request(request_id);
@@ -1455,7 +1407,7 @@ impl SyncIpcClient {
         let payload = match request.to_bytes() {
             Ok(p) => p,
             Err(e) => {
-                eprintln!("[SyncIpcClient] Failed to serialize request: {}", e);
+                error!("SyncIpcClient: failed to serialize request: {e}");
                 // Remove pending request on error
                 get_pending_requests().lock().unwrap().remove(&request_id);
                 return json!({"success": false, "error": format!("Failed to serialize request: {}", e)});
@@ -1465,27 +1417,30 @@ impl SyncIpcClient {
         let frame = IpcFrame::new(payload);
         let bytes = frame.encode();
 
-        // Write to stdout
+        // Write to stdout (protected by global mutex)
         {
+            let _guard = STDOUT_WRITE_MUTEX.lock().unwrap();
             let mut stdout = std::io::stdout();
             if let Err(e) = stdout.write_all(&bytes) {
-                eprintln!("[SyncIpcClient] Failed to write request: {}", e);
+                drop(_guard);
+                error!("SyncIpcClient: failed to write request: {e}");
                 get_pending_requests().lock().unwrap().remove(&request_id);
                 return json!({"success": false, "error": format!("Failed to write request: {}", e)});
             }
             if let Err(e) = stdout.flush() {
-                eprintln!("[SyncIpcClient] Failed to flush request: {}", e);
+                drop(_guard);
+                error!("SyncIpcClient: failed to flush request: {e}");
                 get_pending_requests().lock().unwrap().remove(&request_id);
                 return json!({"success": false, "error": format!("Failed to flush request: {}", e)});
             }
         }
 
-        eprintln!("[SyncIpcClient] Request sent, waiting for response via queue...");
+        debug!("SyncIpcClient: request sent, waiting for response");
 
         // Wait for response from the pending requests queue (with timeout)
         match response_rx.recv_timeout(std::time::Duration::from_secs(30)) {
             Ok(response) => {
-                eprintln!("[SyncIpcClient] Received response: {:?}", response);
+                debug!("SyncIpcClient: received response");
                 match response {
                     IpcResponse::CapabilityResult {
                         request_id: resp_id,
@@ -1493,10 +1448,7 @@ impl SyncIpcClient {
                         error,
                     } => {
                         if resp_id != request_id {
-                            eprintln!(
-                                "[SyncIpcClient] Request ID mismatch: expected {}, got {}",
-                                request_id, resp_id
-                            );
+                            warn!(expected = request_id, got = resp_id, "Request ID mismatch");
                             return json!({"success": false, "error": "Request ID mismatch"});
                         }
                         if let Some(err) = error {
@@ -1506,18 +1458,18 @@ impl SyncIpcClient {
                         }
                     }
                     _ => {
-                        eprintln!("[SyncIpcClient] Unexpected response type: {:?}", response);
+                        warn!("SyncIpcClient: unexpected response type");
                         json!({"success": false, "error": format!("Unexpected response type")})
                     }
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                eprintln!("[SyncIpcClient] Timeout waiting for response");
+                error!("SyncIpcClient: timeout waiting for response");
                 get_pending_requests().lock().unwrap().remove(&request_id);
                 json!({"success": false, "error": "Timeout waiting for response"})
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                eprintln!("[SyncIpcClient] Response channel disconnected");
+                error!("SyncIpcClient: response channel disconnected");
                 get_pending_requests().lock().unwrap().remove(&request_id);
                 json!({"success": false, "error": "Response channel disconnected"})
             }
@@ -1775,12 +1727,24 @@ fn add_neomind_to_linker(linker: &mut Linker<HostState>) -> Result<(), String> {
     Ok(())
 }
 
+/// Maximum size for a single WASM memory read (1 MB)
+const WASM_MAX_MEMORY_READ: usize = 1024 * 1024;
+
 /// Helper function to read a string from WASM memory
 fn read_string_from_memory(
     caller: &mut wasmtime::Caller<'_, HostState>,
     offset: usize,
     len: usize,
 ) -> Result<String, String> {
+    if len == 0 {
+        return Ok(String::new());
+    }
+    if len > WASM_MAX_MEMORY_READ {
+        return Err(format!(
+            "Memory read too large: {} bytes (max {})",
+            len, WASM_MAX_MEMORY_READ
+        ));
+    }
     let memory = caller.data().memory.ok_or("Memory not set")?;
     let mut buffer = vec![0u8; len];
     memory
@@ -2011,6 +1975,14 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
             })
         }
 
+        // System capabilities
+        "system_timestamp" => {
+            json!({
+                "success": true,
+                "timestamp_ms": chrono::Utc::now().timestamp_millis(),
+            })
+        }
+
         // Unknown capability
         _ => json!({
             "success": false,
@@ -2022,7 +1994,7 @@ fn handle_capability_invocation(capability: &str, params: &serde_json::Value) ->
 impl Runner {
     /// Load extension and create runner
     async fn load(extension_path: &PathBuf) -> Result<Self, String> {
-        eprintln!("[Extension Runner] Runner::load called");
+        debug!("Runner::load called");
         let extension_type = ExtensionType::from_path(extension_path);
         debug!(
             path = %extension_path.display(),
@@ -2033,9 +2005,7 @@ impl Runner {
         // Load the extension based on type
         let (extension, wasm_runtime, descriptor) = match extension_type {
             ExtensionType::Native => {
-                eprintln!("[Extension Runner] Calling load_native");
                 let (ext, desc) = Self::load_native(extension_path).await?;
-                eprintln!("[Extension Runner] load_native returned successfully");
                 (Some(ext), None, desc)
             }
             ExtensionType::Wasm => {
@@ -2044,10 +2014,7 @@ impl Runner {
             }
         };
 
-        eprintln!(
-            "[Extension Runner] Extension loaded, commands_count={}",
-            descriptor.commands.len()
-        );
+        debug!(commands_count = descriptor.commands.len(), "Extension loaded");
 
         debug!(
             extension_id = %descriptor.metadata.id,
@@ -2063,10 +2030,9 @@ impl Runner {
             .map_err(|e| format!("Failed to get current runtime handle: {}", e))?;
 
         // Create IPC client for capability forwarding (both Native and WASM)
-        let (ipc_client, ipc_request_rx, ipc_response_tx) = {
-            let (client, request_rx, response_tx) = SyncIpcClient::new();
-            let client_arc = Arc::new(client);
-            (Some(client_arc), Some(request_rx), Some(response_tx))
+        let ipc_client = {
+            let client = SyncIpcClient::new();
+            Some(Arc::new(client))
         };
 
         if let (Some(extension), Some(ipc_client)) = (extension.as_ref(), ipc_client.as_ref()) {
@@ -2081,8 +2047,6 @@ impl Runner {
             runtime: runtime_handle,
             running: true,
             ipc_client,
-            ipc_request_rx,
-            ipc_response_tx,
         })
     }
 
@@ -2090,7 +2054,7 @@ impl Runner {
     async fn load_native(
         extension_path: &Path,
     ) -> Result<(NativeExtensionBridge, ExtensionDescriptor), String> {
-        eprintln!("[Extension Runner] load_native called");
+        debug!("load_native called");
 
         // Pre-load validation: check dylib headers before loading
         // This catches issues like incorrect LC_ID_DYLIB on macOS
@@ -2272,15 +2236,7 @@ impl Runner {
 
         // Start stdin reader thread (reads all stdin messages and routes them)
         let _stdin_reader_handle = start_stdin_reader();
-        eprintln!("[Runner] Stdin reader thread started");
-
-        // Start IPC capability forwarder thread for WASM extensions
-        // Native extensions don't need this since they don't make capability requests during initialization
-        let ipc_forwarder_handle = if self.extension_type == ExtensionType::Wasm {
-            self.start_ipc_forwarder()
-        } else {
-            None
-        };
+        debug!("Stdin reader thread started");
 
         // Create event channel for efficient notification (replaces polling)
         let mut event_rx = create_event_channel();
@@ -2302,178 +2258,19 @@ impl Runner {
             }
         }
 
-        // Wait for IPC forwarder thread to finish
-        if let Some(handle) = ipc_forwarder_handle {
-            debug!("Waiting for IPC forwarder thread to finish");
-            // The thread will exit when the channels are dropped
-            drop(handle);
-        }
 
         debug!("Extension runner shutting down");
     }
 
     /// Start the IPC capability forwarder thread
     ///
-    /// This thread forwards capability requests from WASM extensions to the main process
-    /// via IPC, and returns the results back to the WASM extension.
-    fn start_ipc_forwarder(&mut self) -> Option<std::thread::JoinHandle<()>> {
-        let request_rx = self.ipc_request_rx.take()?;
-        let response_tx = self.ipc_response_tx.take()?;
-
-        debug!("Starting IPC capability forwarder thread");
-
-        Some(std::thread::spawn(move || {
-            debug!("IPC forwarder thread started");
-
-            while let Ok(request) = request_rx.recv() {
-                debug!(
-                    request_id = request.request_id,
-                    capability = %request.capability,
-                    "Forwarding capability request to main process"
-                );
-
-                // Send CapabilityRequest to main process via stdout
-                let ipc_request = IpcResponse::CapabilityRequest {
-                    request_id: request.request_id,
-                    capability: request.capability.clone(),
-                    params: request.params.clone(),
-                };
-
-                // Serialize and send via stdout
-                let result = match ipc_request.to_bytes() {
-                    Ok(bytes) => {
-                        let frame = IpcFrame::new(bytes);
-                        let encoded = frame.encode();
-
-                        // Write to stdout (synchronized with main message loop)
-                        // Note: We use a simple approach here - in production,
-                        // we might need a dedicated stdout mutex
-                        let mut stdout = std::io::stdout().lock();
-                        if let Err(e) = stdout.write_all(&encoded) {
-                            error!(error = %e, "Failed to write CapabilityRequest to stdout");
-                            SyncIpcResponse {
-                                request_id: request.request_id,
-                                result: json!({}),
-                                error: Some(format!("Failed to write to stdout: {}", e)),
-                            }
-                        } else if let Err(e) = stdout.flush() {
-                            error!(error = %e, "Failed to flush stdout");
-                            SyncIpcResponse {
-                                request_id: request.request_id,
-                                result: json!({}),
-                                error: Some(format!("Failed to flush stdout: {}", e)),
-                            }
-                        } else {
-                            // Wait for response from main process via stdin
-                            // Read length prefix
-                            let mut len_bytes = [0u8; 4];
-                            let mut stdin = std::io::stdin().lock();
-                            match stdin.read_exact(&mut len_bytes) {
-                                Ok(_) => {
-                                    let len = u32::from_le_bytes(len_bytes) as usize;
-                                    if len > 10 * 1024 * 1024 {
-                                        SyncIpcResponse {
-                                            request_id: request.request_id,
-                                            result: json!({}),
-                                            error: Some("Response too large".to_string()),
-                                        }
-                                    } else {
-                                        let mut payload = vec![0u8; len];
-                                        match stdin.read_exact(&mut payload) {
-                                            Ok(_) => match IpcResponse::from_bytes(&payload) {
-                                                Ok(IpcResponse::CapabilityResult {
-                                                    request_id: resp_id,
-                                                    result,
-                                                    error,
-                                                }) => {
-                                                    if resp_id != request.request_id {
-                                                        warn!(
-                                                            expected = request.request_id,
-                                                            got = resp_id,
-                                                            "Request ID mismatch"
-                                                        );
-                                                    }
-                                                    SyncIpcResponse {
-                                                        request_id: request.request_id,
-                                                        result,
-                                                        error,
-                                                    }
-                                                }
-                                                Ok(other) => {
-                                                    error!(
-                                                        "Unexpected response type: {:?}",
-                                                        std::mem::discriminant(&other)
-                                                    );
-                                                    SyncIpcResponse {
-                                                        request_id: request.request_id,
-                                                        result: json!({}),
-                                                        error: Some(
-                                                            "Unexpected response type".to_string(),
-                                                        ),
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    error!(error = %e, "Failed to parse response");
-                                                    SyncIpcResponse {
-                                                        request_id: request.request_id,
-                                                        result: json!({}),
-                                                        error: Some(format!(
-                                                            "Failed to parse response: {}",
-                                                            e
-                                                        )),
-                                                    }
-                                                }
-                                            },
-                                            Err(e) => {
-                                                error!(error = %e, "Failed to read response payload");
-                                                SyncIpcResponse {
-                                                    request_id: request.request_id,
-                                                    result: json!({}),
-                                                    error: Some(format!(
-                                                        "Failed to read response: {}",
-                                                        e
-                                                    )),
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    error!(error = %e, "Failed to read response length");
-                                    SyncIpcResponse {
-                                        request_id: request.request_id,
-                                        result: json!({}),
-                                        error: Some(format!(
-                                            "Failed to read response length: {}",
-                                            e
-                                        )),
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!(error = %e, "Failed to serialize CapabilityRequest");
-                        SyncIpcResponse {
-                            request_id: request.request_id,
-                            result: json!({}),
-                            error: Some(format!("Failed to serialize request: {}", e)),
-                        }
-                    }
-                };
-
-                if response_tx.send(result).is_err() {
-                    debug!("Response channel closed, exiting forwarder thread");
-                    break;
-                }
-            }
-
-            debug!("IPC forwarder thread exiting");
-        }))
-    }
-
     fn send_response(&mut self, response: IpcResponse) {
         debug!(response_type = ?std::mem::discriminant(&response), "Sending IPC response");
+
+        // Debug: log StreamSessionInit responses specifically
+        if let IpcResponse::StreamSessionInit { request_id, session_id, success, .. } = &response {
+            debug!(request_id, session_id, success, "Sending StreamSessionInit response");
+        }
 
         let payload = match response.to_bytes() {
             Ok(p) => {
@@ -2491,23 +2288,18 @@ impl Runner {
 
         debug!(frame_len = bytes.len(), "Frame encoded");
 
-        match std::io::stdout().write_all(&bytes) {
-            Ok(_) => {
-                debug!("Response written to stdout");
-            }
-            Err(e) => {
-                error!(error = %e, "Failed to write response");
-                return;
-            }
+        let _guard = STDOUT_WRITE_MUTEX.lock().unwrap();
+        if let Err(e) = std::io::stdout().write_all(&bytes) {
+            error!(error = %e, "Failed to write response");
+            return;
+        }
+        if let Err(e) = std::io::stdout().flush() {
+            error!(error = %e, "Failed to flush stdout");
         }
 
-        match std::io::stdout().flush() {
-            Ok(_) => {
-                debug!("Stdout flushed successfully");
-            }
-            Err(e) => {
-                error!(error = %e, "Failed to flush stdout");
-            }
+        // Debug: confirm StreamSessionInit was sent
+        if let IpcResponse::StreamSessionInit { request_id, session_id, .. } = &response {
+            debug!(request_id, session_id, "StreamSessionInit response sent");
         }
     }
 
@@ -2547,14 +2339,18 @@ impl Runner {
         let frame = IpcFrame::new(payload);
         let bytes = frame.encode();
 
-        if let Err(e) = std::io::stdout().write_all(&bytes) {
-            error!(error = %e, "Failed to write CapabilityRequest");
-            return json!({"success": false, "error": "Failed to write request"});
-        }
-
-        if let Err(e) = std::io::stdout().flush() {
-            error!(error = %e, "Failed to flush CapabilityRequest");
-            return json!({"success": false, "error": "Failed to flush request"});
+        {
+            let _guard = STDOUT_WRITE_MUTEX.lock().unwrap();
+            if let Err(e) = std::io::stdout().write_all(&bytes) {
+                drop(_guard);
+                error!(error = %e, "Failed to write CapabilityRequest");
+                return json!({"success": false, "error": "Failed to write request"});
+            }
+            if let Err(e) = std::io::stdout().flush() {
+                drop(_guard);
+                error!(error = %e, "Failed to flush CapabilityRequest");
+                return json!({"success": false, "error": "Failed to flush request"});
+            }
         }
 
         debug!(request_id, "CapabilityRequest sent, waiting for response");
@@ -2714,7 +2510,37 @@ impl Runner {
 
             IpcMessage::Shutdown => {
                 debug!("Received shutdown command");
+                self.send_response(IpcResponse::ShutdownAck);
                 self.running = false;
+            }
+
+            IpcMessage::ConfigUpdate { config } => {
+                debug!("Received config hot-reload update");
+                let result = match self.extension.as_ref() {
+                    Some(ext) => {
+                        match ext.configure(&config) {
+                            Ok(()) => {
+                                debug!("Config hot-reload applied successfully");
+                                IpcResponse::ConfigUpdated {
+                                    success: true,
+                                    error: None,
+                                }
+                            }
+                            Err(e) => {
+                                warn!(error = %e, "Config hot-reload failed");
+                                IpcResponse::ConfigUpdated {
+                                    success: false,
+                                    error: Some(e.to_string()),
+                                }
+                            }
+                        }
+                    }
+                    None => IpcResponse::ConfigUpdated {
+                        success: false,
+                        error: Some("Extension not loaded".to_string()),
+                    },
+                };
+                self.send_response(result);
             }
 
             IpcMessage::Ping { timestamp } => {
@@ -2727,12 +2553,13 @@ impl Runner {
             }
 
             IpcMessage::InitStreamSession {
+                request_id,
                 session_id,
                 extension_id: _,
                 config,
                 client_info: _,
             } => {
-                self.handle_init_stream_session(session_id, config).await;
+                self.handle_init_stream_session(request_id, session_id, config).await;
             }
 
             IpcMessage::ProcessStreamChunk {
@@ -2743,8 +2570,11 @@ impl Runner {
                 self.handle_process_stream_chunk(request_id, session_id, chunk);
             }
 
-            IpcMessage::CloseStreamSession { session_id } => {
-                self.handle_close_stream_session(session_id);
+            IpcMessage::CloseStreamSession {
+                request_id,
+                session_id,
+            } => {
+                self.handle_close_stream_session(request_id, session_id);
             }
 
             // Stateless mode support
@@ -2987,7 +2817,7 @@ impl Runner {
         tokio::task::block_in_place(|| {
             runtime_handle.block_on(async {
                 // Try new execute_command API first
-                match runtime.execute_command(command, args, ipc_client).await {
+                match runtime.execute_command(command, args, ipc_client.clone()).await {
                     Ok(result) => {
                         // Extract the actual result from the response
                         if result
@@ -3006,7 +2836,7 @@ impl Runner {
                     }
                     Err(_) => {
                         // Fallback to legacy execute function
-                        runtime.execute(command, args).await
+                        runtime.execute(command, args, ipc_client.clone()).await
                     }
                 }
             })
@@ -3208,8 +3038,8 @@ impl Runner {
         ext.get_stream_capability()
     }
 
-    async fn handle_init_stream_session(&mut self, session_id: String, config: serde_json::Value) {
-        debug!(session_id = %session_id, "Initializing stream session");
+    async fn handle_init_stream_session(&mut self, request_id: u64, session_id: String, config: serde_json::Value) {
+        debug!(session_id = %session_id, request_id, "Initializing stream session");
 
         let result = match self.extension_type {
             ExtensionType::Native => self.init_native_stream_session(&session_id, config).await,
@@ -3219,6 +3049,7 @@ impl Runner {
         match result {
             Ok(_) => {
                 self.send_response(IpcResponse::StreamSessionInit {
+                    request_id,
                     session_id,
                     success: true,
                     error: None,
@@ -3226,6 +3057,7 @@ impl Runner {
             }
             Err(e) => {
                 self.send_response(IpcResponse::StreamSessionInit {
+                    request_id,
                     session_id,
                     success: false,
                     error: Some(e),
@@ -3291,8 +3123,8 @@ impl Runner {
         ext.process_session_chunk(session_id, chunk)
     }
 
-    fn handle_close_stream_session(&mut self, session_id: String) {
-        debug!(session_id = %session_id, "Closing stream session");
+    fn handle_close_stream_session(&mut self, request_id: u64, session_id: String) {
+        debug!(session_id = %session_id, request_id, "Closing stream session");
 
         let result = match self.extension_type {
             ExtensionType::Native => self.close_native_stream_session(&session_id),
@@ -3302,16 +3134,17 @@ impl Runner {
         match result {
             Ok(stats) => {
                 self.send_response(IpcResponse::StreamSessionClosed {
+                    request_id,
                     session_id,
                     total_frames: stats.input_chunks,
                     duration_ms: 0, // We don't track this in runner
                 });
             }
             Err(e) => {
-                self.send_response(IpcResponse::StreamError {
-                    session_id,
-                    code: "CLOSE_ERROR".to_string(),
-                    message: e,
+                self.send_response(IpcResponse::Error {
+                    request_id,
+                    error: e,
+                    kind: ErrorKind::ExecutionFailed,
                 });
             }
         }
@@ -3440,16 +3273,15 @@ impl Runner {
                 });
             }
             Err(e) => {
-                // Log but still return success - extension might have already stopped
                 warn!(
                     session_id = %session_id,
                     error = %e,
-                    "Error stopping push mode (may already be stopped)"
+                    "Error stopping push mode"
                 );
                 self.send_response(IpcResponse::PushStopped {
                     request_id,
                     session_id,
-                    success: true,
+                    success: false,
                 });
             }
         }
@@ -3505,7 +3337,6 @@ async fn main() {
         .init();
 
     debug!("NeoMind Extension Runner starting");
-    eprintln!("[Extension Runner] main function called");
     let _ = std::io::stderr().flush();
     debug!(extension_path = %args.extension_path.display(), "Extension path");
 
@@ -3537,19 +3368,15 @@ async fn main() {
         std::process::exit(1);
     }
 
-    eprintln!("[Extension Runner] calling Runner::load");
     let mut runner = match Runner::load(&args.extension_path).await {
-        Ok(r) => {
-            eprintln!("[Extension Runner] Runner::load returned successfully");
-            r
-        }
+        Ok(r) => r,
         Err(e) => {
             error!(error = %e, "Failed to load extension");
             std::process::exit(1);
         }
     };
 
-    eprintln!("[Extension Runner] calling runner.run()");
+    debug!("Starting runner main loop");
     runner.run().await;
 
     debug!("Extension runner exiting normally");

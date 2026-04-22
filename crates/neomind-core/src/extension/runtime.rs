@@ -153,6 +153,18 @@ impl ExtensionRuntime {
             .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))
     }
 
+    /// Send config hot-reload update to a running extension.
+    pub async fn send_config_update(
+        &self,
+        id: &str,
+        config: &serde_json::Value,
+    ) -> Result<(), ExtensionError> {
+        self.isolated_manager
+            .send_config_update(id, config)
+            .await
+            .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))
+    }
+
     /// Get extension statistics.
     pub async fn get_stats(
         &self,
@@ -162,6 +174,22 @@ impl ExtensionRuntime {
             .get_stats(id)
             .await
             .map_err(|e| ExtensionError::ExecutionFailed(e.to_string()))
+    }
+
+    /// Get active stream sessions for an extension.
+    pub async fn get_active_sessions(&self, id: &str) -> Vec<String> {
+        self.isolated_manager
+            .get_active_sessions(id)
+            .await
+            .unwrap_or_default()
+    }
+
+    /// Get event subscriptions for an extension.
+    pub async fn get_event_subscriptions(&self, id: &str) -> Vec<String> {
+        self.isolated_manager
+            .get_event_subscriptions(id)
+            .await
+            .unwrap_or_default()
     }
 
     /// Check if an extension is loaded.

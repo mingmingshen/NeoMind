@@ -194,7 +194,6 @@ async fn test_register_provider_multiple_capabilities() {
 async fn test_invoke_capability_success() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -225,7 +224,6 @@ async fn test_invoke_capability_success() {
 async fn test_invoke_capability_multiple_times() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -262,7 +260,6 @@ async fn test_invoke_capability_multiple_times() {
 async fn test_capability_allowed_when_required() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -287,10 +284,9 @@ async fn test_capability_allowed_when_required() {
 }
 
 #[tokio::test]
-async fn test_capability_denied_when_not_required() {
+async fn test_all_registered_capabilities_accessible() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -307,7 +303,15 @@ async fn test_capability_denied_when_not_required() {
         .register_provider("test-provider".to_string(), provider)
         .await;
 
-    // EventPublish is not in required_capabilities
+    // Both capabilities should work since provider is registered
+    let result = context
+        .invoke_capability(
+            ExtensionCapability::DeviceMetricsRead,
+            &json!({"device_id": "device-1"}),
+        )
+        .await;
+    assert!(result.is_ok());
+
     let result = context
         .invoke_capability(
             ExtensionCapability::EventPublish,
@@ -315,18 +319,13 @@ async fn test_capability_denied_when_not_required() {
         )
         .await;
 
-    assert!(result.is_err());
-    match result {
-        Err(CapabilityError::PermissionDenied(_)) => {}
-        _ => panic!("Expected PermissionDenied error"),
-    }
+    assert!(result.is_ok());
 }
 
 #[tokio::test]
 async fn test_capability_denied_when_no_provider() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -350,7 +349,6 @@ async fn test_capability_denied_when_no_provider() {
 async fn test_invalid_parameters_error() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -382,7 +380,6 @@ async fn test_invalid_parameters_error() {
 async fn test_capability_not_available_error() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
-        required_capabilities: vec![ExtensionCapability::TelemetryHistory],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -582,7 +579,6 @@ fn test_all_capabilities() {
 async fn test_concurrent_capability_invocation() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = Arc::new(ExtensionContext::new(config, providers));

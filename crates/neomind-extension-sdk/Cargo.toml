@@ -22,6 +22,9 @@ crate-type = ["rlib", "cdylib"]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+# Base64 encoding for PushOutputMessage.data
+base64 = "0.22"
+
 # Error handling
 thiserror = "2.0"
 
@@ -40,7 +43,6 @@ num_cpus = { version = "1", optional = true }
 
 # WASM-only dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-base64 = "0.22"
 # Use pollster for WASM-compatible block_on - it's lightweight and works on wasm32-unknown-unknown
 pollster = "0.4"
 

@@ -74,7 +74,6 @@ fn test_extension_context_config_default() {
 
     assert!(config.api_base_url.is_empty());
     assert_eq!(config.api_version, "v1");
-    assert!(config.required_capabilities.is_empty());
     assert!(config.rate_limit.is_none());
 }
 
@@ -83,17 +82,12 @@ fn test_extension_context_config_custom() {
     let config = ExtensionContextConfig {
         api_base_url: "http://localhost:8080".to_string(),
         api_version: "v2".to_string(),
-        required_capabilities: vec![
-            ExtensionCapability::DeviceMetricsRead,
-            ExtensionCapability::EventPublish,
-        ],
         rate_limit: Some(100),
         extension_id: "test-extension".to_string(),
     };
 
     assert_eq!(config.api_base_url, "http://localhost:8080");
     assert_eq!(config.api_version, "v2");
-    assert_eq!(config.required_capabilities.len(), 2);
     assert_eq!(config.rate_limit, Some(100));
 }
 
@@ -116,7 +110,6 @@ async fn test_context_with_config() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
         extension_id: "test-ext".to_string(),
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -205,7 +198,6 @@ async fn test_register_provider_multiple_capabilities() {
 async fn test_invoke_capability() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -248,7 +240,6 @@ async fn test_invoke_capability_not_registered() {
 async fn test_invoke_capability_not_in_required() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -265,16 +256,12 @@ async fn test_invoke_capability_not_in_required() {
         .register_provider("test-provider".to_string(), provider)
         .await;
 
-    // EventPublish is not in required_capabilities
+    // EventPublish is registered, should succeed
     let result = context
         .invoke_capability(ExtensionCapability::EventPublish, &json!({}))
         .await;
 
-    assert!(result.is_err());
-    match result {
-        Err(CapabilityError::PermissionDenied(_)) => {}
-        _ => panic!("Expected PermissionDenied error"),
-    }
+    assert!(result.is_ok());
 }
 
 // ============================================================================
@@ -491,9 +478,6 @@ fn test_capability_error_display() {
     let err = CapabilityError::NotAvailable(ExtensionCapability::DeviceMetricsRead);
     assert!(err.to_string().contains("not available"));
 
-    let err = CapabilityError::PermissionDenied("test".to_string());
-    assert!(err.to_string().contains("Permission denied"));
-
     let err = CapabilityError::ProviderError("test".to_string());
     assert!(err.to_string().contains("Provider error"));
 }
@@ -538,7 +522,6 @@ async fn test_concurrent_capability_check() {
 async fn test_concurrent_invoke() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = Arc::new(ExtensionContext::new(config, providers));

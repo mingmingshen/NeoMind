@@ -439,6 +439,7 @@ fn test_ipc_error_responses() {
 
     // Test StreamError response
     let stream_error = IpcResponse::StreamError {
+        request_id: 0,
         session_id: "session-001".to_string(),
         code: "PROCESSING_ERROR".to_string(),
         message: "Failed to process frame".to_string(),
@@ -449,6 +450,7 @@ fn test_ipc_error_responses() {
 
     match decoded {
         IpcResponse::StreamError {
+            request_id: _,
             session_id,
             code,
             message,

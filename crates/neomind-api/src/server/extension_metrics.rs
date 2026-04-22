@@ -309,9 +309,6 @@ impl ExtensionMetricsCollector {
                             "Stored metric value"
                         );
                         total_metrics += 1;
-
-                        // DISABLED: Event publishing causes runtime crashes
-                        // ExtensionOutput events are no longer published to WebSocket streams
                     }
                     Err(e) => {
                         warn!(

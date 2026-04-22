@@ -1550,10 +1550,32 @@ export const api = {
 
   /**
    * Get unified data sources from the /api/data/sources endpoint
-   * Aggregates all data sources (devices, extensions, transforms) in a single call
+   * Aggregates all data sources (devices, extensions, transforms, AI metrics) in a single call.
+   * Supports server-side filtering and pagination.
    */
-  listUnifiedDataSources: () =>
-    fetchAPI<UnifiedDataSourceInfo[]>('/data/sources'),
+  listUnifiedDataSources: (params?: Record<string, string | number>) => {
+    if (params && Object.keys(params).length > 0) {
+      const qs = new URLSearchParams(
+        Object.entries(params).map(([k, v]) => [k, String(v)])
+      ).toString()
+      return fetchAPI<{ data: UnifiedDataSourceInfo[]; total: number; source_options: [string, string][] }>(`/data/sources?${qs}`)
+    }
+    return fetchAPI<{ data: UnifiedDataSourceInfo[]; total: number; source_options: [string, string][] }>('/data/sources')
+  },
+
+  /**
+   * Query telemetry time-series data for any source type
+   * GET /api/telemetry?source=...&metric=...&start=...&end=...&limit=...
+   */
+  queryTelemetry: (source: string, metric: string, start: number, end: number, limit?: number) => {
+    const qs = new URLSearchParams({
+      source, metric,
+      start: String(start),
+      end: String(end),
+      ...(limit ? { limit: String(limit) } : {}),
+    }).toString()
+    return fetchAPI<{ source_id: string; data: Array<{ timestamp: number; value: number; quality: number }>; count: number }>(`/telemetry?${qs}`)
+  },
 
   // ========== Bulk Operations API ==========
   bulkCreateMessages: (messages: Array<{ title: string; message: string; severity?: string; category?: string }>) =>

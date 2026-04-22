@@ -132,7 +132,7 @@ export function useExtensionStream(
     if (autoConnect) {
       clientRef.current?.connect(config)
     }
-  }, [autoConnect])
+  }, [autoConnect, extensionId, config])
 
   // Cleanup on unmount
   React.useEffect(() => {
@@ -482,7 +482,7 @@ export function withExtensionStream<P extends Record<string, unknown>>(
  * @example
  * ```tsx
  * function BatchProcessor() {
- *   const { streams, connectAll, disconnectAll } = useExtensionStreamBatch([
+ *   const { streamStates, connectAll, disconnectAll } = useExtensionStreamBatch([
  *     'camera-1',
  *     'camera-2',
  *     'camera-3'
@@ -492,7 +492,7 @@ export function withExtensionStream<P extends Record<string, unknown>>(
  *     <div>
  *       <button onClick={connectAll}>Connect All</button>
  *       <button onClick={disconnectAll}>Disconnect All</button>
- *       {streams.map(s => (
+ *       {streamStates.map(s => (
  *         <div key={s.extensionId}>
  *           {s.extensionId}: {s.state.status}
  *         </div>
@@ -506,34 +506,83 @@ export function useExtensionStreamBatch(
   extensionIds: string[],
   options?: UseExtensionStreamOptions
 ) {
-  const streams = React.useMemo(
-    () =>
-      extensionIds.map(id => ({
-        extensionId: id,
-        ...useExtensionStream(id, options),
-      })),
-    [extensionIds, options]
+  // Use a single hook per extension ID — cannot call hooks in loops/memo
+  // Instead, manage a map of client instances manually
+  const [streamStates, setStreamStates] = React.useState<
+    Array<{
+      extensionId: string
+      state: ExtensionStreamConnectionState
+      isConnected: boolean
+      connect: () => void
+      disconnect: () => void
+    }>
+  >(() =>
+    extensionIds.map(id => ({
+      extensionId: id,
+      state: { status: 'disconnected' as const, sessionId: null, capability: null },
+      isConnected: false,
+      connect: () => {
+        const client = getExtensionStreamClient(id)
+        client.connect(options?.config)
+      },
+      disconnect: () => {
+        const client = getExtensionStreamClient(id)
+        client.disconnect()
+      },
+    }))
   )
 
+  // Subscribe to connection state changes for each extension
+  React.useEffect(() => {
+    const unsubscribes: Array<() => void> = []
+
+    const clients = extensionIds.map(id => getExtensionStreamClient(id))
+
+    clients.forEach((client, idx) => {
+      const unsub = client.onConnection((newState) => {
+        setStreamStates(prev => {
+          const next = [...prev]
+          next[idx] = {
+            ...next[idx],
+            state: newState,
+            isConnected: newState.status === 'connected',
+          }
+          return next
+        })
+      })
+      unsubscribes.push(unsub)
+    })
+
+    return () => {
+      unsubscribes.forEach(unsub => unsub())
+    }
+  }, [extensionIds])
+
   const connectAll = React.useCallback(() => {
-    streams.forEach(s => s.connect())
-  }, [streams])
+    extensionIds.forEach(id => {
+      const client = getExtensionStreamClient(id)
+      client.connect(options?.config)
+    })
+  }, [extensionIds, options])
 
   const disconnectAll = React.useCallback(() => {
-    streams.forEach(s => s.disconnect())
-  }, [streams])
+    extensionIds.forEach(id => {
+      const client = getExtensionStreamClient(id)
+      client.disconnect()
+    })
+  }, [extensionIds])
 
   const connectedCount = React.useMemo(
-    () => streams.filter(s => s.isConnected).length,
-    [streams]
+    () => streamStates.filter(s => s.isConnected).length,
+    [streamStates]
   )
 
   return {
-    streams,
+    streamStates,
     connectAll,
     disconnectAll,
     connectedCount,
-    totalCount: streams.length,
-    allConnected: connectedCount === streams.length,
+    totalCount: extensionIds.length,
+    allConnected: connectedCount === extensionIds.length,
   }
 }

@@ -304,7 +304,14 @@ impl SdkExtensionMetricValue {
                 }
                 #[cfg(target_arch = "wasm32")]
                 {
-                    0
+                    // Request timestamp from host via capability invocation
+                    crate::wasm::bindings::invoke_capability_raw(
+                        "system_timestamp",
+                        &serde_json::json!({}),
+                    )
+                    .ok()
+                    .and_then(|v| v.get("timestamp_ms").and_then(|t| t.as_i64()))
+                    .unwrap_or(0)
                 }
             },
         }

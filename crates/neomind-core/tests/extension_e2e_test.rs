@@ -653,10 +653,6 @@ async fn test_extension_with_capabilities() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
         extension_id: "test-extension".to_string(),
-        required_capabilities: vec![
-            ExtensionCapability::DeviceMetricsRead,
-            ExtensionCapability::EventPublish,
-        ],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);

@@ -238,25 +238,29 @@ pub fn device_write(
 
 /// Store a metric value from WASM (backward compatible)
 pub fn store_metric(name: &str, value: &serde_json::Value) {
-    let _ = invoke_capability_raw(
+    match invoke_capability_raw(
         "device_metrics_write",
         &serde_json::json!({
             "metric": name,
             "value": value,
             "is_virtual": true,
         }),
-    );
-}
-
-/// Make an HTTP request from WASM (backward compatible)
-pub fn http_request(method: &str, url: &str) -> Result<serde_json::Value, String> {
-    invoke_capability_raw(
-        "http_request",
-        &serde_json::json!({
-            "method": method,
-            "url": url,
-        }),
-    )
+    ) {
+        Ok(result) => {
+            if let Some(success) = result.get("success").and_then(|v| v.as_bool()) {
+                if !success {
+                    eprintln!(
+                        "[Extension SDK] store_metric '{}' failed: {:?}",
+                        name,
+                        result.get("error")
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[Extension SDK] store_metric '{}' error: {}", name, e);
+        }
+    }
 }
 
 // ============================================================================
@@ -318,17 +322,6 @@ mod tests {
         assert_eq!(params["metric"], "calculated_value");
         assert_eq!(params["value"], 42.5);
         assert_eq!(params["is_virtual"], true);
-    }
-
-    #[test]
-    fn test_http_request_params() {
-        let params = json!({
-            "method": "GET",
-            "url": "https://api.example.com/data",
-        });
-
-        assert_eq!(params["method"], "GET");
-        assert_eq!(params["url"], "https://api.example.com/data");
     }
 
     #[test]

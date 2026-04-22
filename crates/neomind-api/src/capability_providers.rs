@@ -1412,3 +1412,6 @@ fn capability_to_provider(capability: &ExtensionCapability) -> &'static str {
         ExtensionCapability::Custom(_) => "neomind-api::custom",
     }
 }
+
+// ============================================================================
+// HTTP Capability Provider

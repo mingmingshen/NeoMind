@@ -180,14 +180,14 @@ pub type MetricDefinition = MetricDescriptor;
 // Re-exports from host (Extension trait + capabilities)
 // ============================================================================
 
-#[cfg(not(target_arch = "wasm32"))]
 pub use host::Extension;
 
 pub use host::{
     set_native_capability_bridge,
+    set_push_output_writer,
+    send_push_output,
 
     AvailableCapabilities,
-    CapabilityContext,
     CapabilityError,
     CapabilityManifest,
     ClientInfo,
@@ -202,6 +202,8 @@ pub use host::{
     ExtensionContext,
     ExtensionContextConfig,
     FlowControl,
+    // Push mode
+    PushOutputWriterFn,
     SessionStats,
     StreamCapability,
     StreamDataType,
@@ -212,6 +214,10 @@ pub use host::{
     StreamResult,
     StreamSession,
 };
+
+// CapabilityContext requires tokio (not available on wasm32)
+#[cfg(not(target_arch = "wasm32"))]
+pub use host::CapabilityContext;
 
 /// Capability name constants - re-exported from host module
 pub mod capability_constants {
@@ -284,48 +290,6 @@ mod wasm_types {
 
 #[cfg(target_arch = "wasm32")]
 pub use wasm_types::*;
-
-// Extension trait for WASM
-#[cfg(target_arch = "wasm32")]
-mod wasm_extension {
-    use super::*;
-
-    #[async_trait::async_trait]
-    pub trait Extension: Send + Sync {
-        fn metadata(&self) -> &ExtensionMetadata;
-        fn metrics(&self) -> Vec<MetricDescriptor> {
-            Vec::new()
-        }
-        fn commands(&self) -> Vec<ExtensionCommand> {
-            Vec::new()
-        }
-
-        async fn execute_command(
-            &self,
-            command: &str,
-            args: &serde_json::Value,
-        ) -> Result<serde_json::Value>;
-
-        fn produce_metrics(&self) -> Result<Vec<ExtensionMetricValue>> {
-            Ok(Vec::new())
-        }
-
-        async fn health_check(&self) -> Result<bool> {
-            Ok(true)
-        }
-
-        fn get_stats(&self) -> super::extension::ExtensionStats {
-            super::extension::ExtensionStats::default()
-        }
-
-        fn stream_capability(&self) -> Option<StreamCapability> {
-            None
-        }
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-pub use wasm_extension::Extension;
 
 // Re-export pollster for WASM target (used by macros)
 #[cfg(target_arch = "wasm32")]

@@ -381,6 +381,22 @@ export class ExtensionStreamClient {
         })
         break
 
+      case 'push_output': {
+        // Push mode: extension-initiated data
+        const pushData = this.base64ToUint8Array(message.data)
+        this.outputSequence = message.sequence
+
+        // Notify result handlers (same path as stateless/stateful results)
+        this.resultHandlers.forEach(handler => {
+          try {
+            handler(pushData, message.data_type, message.sequence)
+          } catch (err) {
+            console.error('[ExtensionStream] Push output handler error:', err)
+          }
+        })
+        break
+      }
+
       case 'heartbeat':
         // Just keep-alive, no action needed
         break

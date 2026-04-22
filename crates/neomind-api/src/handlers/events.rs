@@ -9,6 +9,7 @@ use axum::{
     extract::{Query, State, WebSocketUpgrade},
     http::StatusCode,
     response::{sse::Event, Sse},
+    Json,
 };
 use chrono;
 use futures::stream::Stream;
@@ -16,7 +17,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
 
+use crate::handlers::common::{ok, HandlerResult};
 use crate::handlers::ServerState;
+use crate::models::error::ErrorResponse;
 use neomind_core::event::EventMetadata;
 use neomind_core::eventbus::{EventBus, EventBusReceiver, FilteredReceiver};
 use neomind_core::NeoMindEvent;
@@ -253,6 +256,73 @@ pub struct EventStreamParams {
     /// JWT authentication token
     #[serde(default)]
     pub token: Option<String>,
+}
+
+/// POST /api/events
+///
+/// Publish a custom event to the event bus.
+/// Requires authentication (API key or JWT).
+#[derive(Debug, Deserialize)]
+pub struct PublishEventRequest {
+    /// Event type identifier (e.g., "my_extension.my_event")
+    pub event_type: String,
+    /// Event payload as JSON
+    #[serde(default)]
+    pub data: serde_json::Value,
+    /// Optional source identifier
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+pub async fn publish_event_handler(
+    State(state): State<ServerState>,
+    Json(req): Json<PublishEventRequest>,
+) -> HandlerResult<serde_json::Value> {
+    // Validate event type
+    if req.event_type.is_empty() || req.event_type.len() > 256 {
+        return Err(ErrorResponse::bad_request(
+            "event_type must be 1-256 characters",
+        ));
+    }
+    if req.event_type.chars().any(|c| c.is_control()) {
+        return Err(ErrorResponse::bad_request(
+            "event_type contains invalid characters",
+        ));
+    }
+
+    // Validate payload size (max 1 MB)
+    if let Ok(size) = serde_json::to_string(&req.data).map(|s| s.len()) {
+        if size > 1024 * 1024 {
+            return Err(ErrorResponse::bad_request(
+                "Event payload too large (max 1 MB)",
+            ));
+        }
+    }
+
+    let event_bus = state
+        .event_bus()
+        .ok_or_else(|| ErrorResponse::internal("Event bus not available"))?;
+
+    let event = NeoMindEvent::Custom {
+        event_type: req.event_type.clone(),
+        data: req.data,
+    };
+
+    let source = req.source.unwrap_or_else(|| "api".to_string());
+
+    let published = event_bus.publish_with_source(event, &source).await;
+    if !published {
+        tracing::warn!(
+            event_type = %req.event_type,
+            "Event was not delivered (no active subscribers)"
+        );
+    }
+
+    ok(serde_json::json!({
+        "success": true,
+        "event_type": req.event_type,
+        "source": source,
+    }))
 }
 
 /// SSE endpoint for streaming events.

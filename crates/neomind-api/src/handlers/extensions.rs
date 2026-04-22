@@ -888,6 +888,27 @@ pub async fn execute_extension_command_handler(
         )));
     }
 
+    // Validate command name (non-empty, max 256 chars, no control characters)
+    if req.command.is_empty() || req.command.len() > 256 {
+        return Err(ErrorResponse::bad_request(
+            "Command name must be 1-256 characters",
+        ));
+    }
+    if req.command.chars().any(|c| c.is_control()) {
+        return Err(ErrorResponse::bad_request(
+            "Command name contains invalid characters",
+        ));
+    }
+
+    // Validate args payload size (max 1 MB)
+    if let Ok(size) = serde_json::to_string(&req.args).map(|s| s.len()) {
+        if size > 1024 * 1024 {
+            return Err(ErrorResponse::bad_request(
+                "Command arguments too large (max 1 MB)",
+            ));
+        }
+    }
+
     // Execute command with panic protection
     let result = match runtime.execute_command(&id, &req.command, &req.args).await {
         Ok(r) => r,
@@ -965,6 +986,27 @@ pub async fn invoke_extension_handler(
         return Err(ErrorResponse::not_found(format!("Extension {}", id)));
     }
 
+    // Validate command name
+    if req.command.is_empty() || req.command.len() > 256 {
+        return Err(ErrorResponse::bad_request(
+            "Command name must be 1-256 characters",
+        ));
+    }
+    if req.command.chars().any(|c| c.is_control()) {
+        return Err(ErrorResponse::bad_request(
+            "Command name contains invalid characters",
+        ));
+    }
+
+    // Validate params payload size (max 1 MB)
+    if let Ok(size) = serde_json::to_string(&req.params).map(|s| s.len()) {
+        if size > 1024 * 1024 {
+            return Err(ErrorResponse::bad_request(
+                "Invoke parameters too large (max 1 MB)",
+            ));
+        }
+    }
+
     // Execute command with proper error logging
     let result = match runtime
         .execute_command(&id, &req.command, &req.params)
@@ -1005,19 +1047,25 @@ pub async fn stream_extension_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    // Check if extension exists using unified service
-    let exists = state.extensions.runtime.contains(&id).await;
-    if !exists {
+    // Check if extension exists and get its info
+    let info = state.extensions.runtime.get_info(&id).await;
+    let Some(info) = info else {
         return Err(ErrorResponse::not_found(format!("Extension {}", id)));
-    }
+    };
 
-    // V2: Commands don't declare streaming capability in config
-    // Default to no streaming support
+    // Isolated extensions support streaming via WebSocket
+    let has_streaming = info.is_isolated && info.is_running;
+    let stream_url = if has_streaming {
+        format!("/api/extensions/{}/stream", id)
+    } else {
+        String::new()
+    };
+
     ok(serde_json::json!({
         "extension_id": id,
-        "supports_streaming": false,
-        "stream_url": "",
-        "output_mode": "once",
+        "supports_streaming": has_streaming,
+        "stream_url": stream_url,
+        "output_mode": if has_streaming { "stream" } else { "once" },
     }))
 }
 
@@ -1106,6 +1154,55 @@ pub async fn list_extension_commands_handler(
         .collect();
 
     ok(result)
+}
+
+/// GET /api/extensions/:id/event-subscriptions
+///
+/// Get event subscriptions for an extension.
+pub async fn get_event_subscriptions_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<serde_json::Value> {
+    if !state.extensions.runtime.contains(&id).await {
+        return Err(ErrorResponse::not_found(format!("Extension {}", id)));
+    }
+
+    let subscriptions = state.extensions.runtime.get_event_subscriptions(&id).await;
+
+    ok(serde_json::json!({
+        "extension_id": id,
+        "subscriptions": subscriptions,
+    }))
+}
+
+/// GET /api/extensions/:id/descriptor
+///
+/// Get the full extension descriptor (metadata, commands, metrics, capabilities).
+pub async fn get_extension_descriptor_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<serde_json::Value> {
+    let info = state
+        .extensions
+        .runtime
+        .get(&id)
+        .await
+        .ok_or_else(|| ErrorResponse::not_found(format!("Extension {}", id)))?;
+
+    // Build descriptor response from ExtensionRuntimeInfo
+    ok(serde_json::json!({
+        "metadata": {
+            "id": info.metadata.id,
+            "name": info.metadata.name,
+            "version": info.metadata.version,
+            "description": info.metadata.description,
+            "author": info.metadata.author,
+        },
+        "commands": info.commands,
+        "metrics": info.metrics,
+        "is_isolated": info.is_isolated,
+        "is_running": info.is_running,
+    }))
 }
 
 /// GET /api/extensions/:id/metrics/:metric/data
@@ -2464,10 +2561,30 @@ pub async fn update_extension_config_handler(
         }
     }
 
+    // Attempt hot-reload: notify running extension without restart
+    let hot_reload_result = state
+        .extensions
+        .runtime
+        .send_config_update(&id, &config)
+        .await;
+
+    let message = match &hot_reload_result {
+        Ok(()) => "Configuration updated and hot-reloaded to running extension.".to_string(),
+        Err(e) => {
+            tracing::warn!(
+                extension_id = %id,
+                error = %e,
+                "Config hot-reload failed (config saved for next restart)"
+            );
+            "Configuration saved. Hot-reload failed — reload the extension for changes to take effect.".to_string()
+        }
+    };
+
     ok(json!({
         "extension_id": id,
         "config": config,
-        "message": "Configuration updated. Reload the extension for changes to take effect.",
+        "hot_reloaded": hot_reload_result.is_ok(),
+        "message": message,
     }))
 }
 

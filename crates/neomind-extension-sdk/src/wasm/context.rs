@@ -28,8 +28,6 @@ pub mod capabilities {
 pub struct ExtensionContext {
     /// Extension ID
     pub extension_id: String,
-    /// Required capabilities (for permission checks)
-    pub required_capabilities: Vec<String>,
 }
 
 impl ExtensionContext {
@@ -37,15 +35,6 @@ impl ExtensionContext {
     pub fn new(extension_id: String) -> Self {
         Self {
             extension_id,
-            required_capabilities: Vec::new(),
-        }
-    }
-
-    /// Create context with capabilities
-    pub fn with_capabilities(extension_id: String, capabilities: Vec<String>) -> Self {
-        Self {
-            extension_id,
-            required_capabilities: capabilities,
         }
     }
 
@@ -64,11 +53,6 @@ impl ExtensionContext {
     /// let result = ctx.invoke_capability("device_metrics_read", json!({"device_id": "sensor-1"}))?;
     /// ```
     pub fn invoke_capability(&self, capability: &str, params: &Value) -> Result<Value, String> {
-        // Check permission (optional, host also checks)
-        if !self.required_capabilities.contains(&capability.to_string()) {
-            // Still allow the call, host will deny if not permitted
-        }
-
         // Call host through bindings
         crate::wasm::bindings::invoke_capability_raw(capability, params)
     }
@@ -270,25 +254,6 @@ mod tests {
     fn test_context_creation() {
         let ctx = ExtensionContext::new("test-extension".to_string());
         assert_eq!(ctx.extension_id(), "test-extension");
-        assert!(ctx.required_capabilities.is_empty());
-    }
-
-    #[test]
-    fn test_context_with_capabilities() {
-        let caps = vec![
-            capabilities::DEVICE_METRICS_READ.to_string(),
-            capabilities::DEVICE_CONTROL.to_string(),
-        ];
-        let ctx = ExtensionContext::with_capabilities("test-ext".to_string(), caps.clone());
-
-        assert_eq!(ctx.extension_id(), "test-ext");
-        assert_eq!(ctx.required_capabilities.len(), 2);
-        assert!(ctx
-            .required_capabilities
-            .contains(&capabilities::DEVICE_METRICS_READ.to_string()));
-        assert!(ctx
-            .required_capabilities
-            .contains(&capabilities::DEVICE_CONTROL.to_string()));
     }
 
     #[test]

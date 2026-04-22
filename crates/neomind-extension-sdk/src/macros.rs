@@ -107,26 +107,66 @@ macro_rules! neomind_export_with_constructor {
                 }
             }
 
-            static EXTENSION_INSTANCE: std::sync::OnceLock<
-                std::sync::Arc<tokio::sync::RwLock<std::boxed::Box<dyn $crate::Extension>>>,
-            > = std::sync::OnceLock::new();
+            static EXTENSION_INSTANCE: std::sync::RwLock<
+                Option<std::sync::Arc<tokio::sync::RwLock<std::boxed::Box<dyn $crate::Extension>>>>
+            > = std::sync::RwLock::new(None);
 
             fn extension_instance(
-            ) -> &'static std::sync::Arc<tokio::sync::RwLock<std::boxed::Box<dyn $crate::Extension>>> {
-                EXTENSION_INSTANCE.get_or_init(|| {
-                    let extension: $extension_type = <$extension_type>::$constructor();
-                    let boxed: Box<dyn $crate::Extension> = Box::new(extension);
-                    std::sync::Arc::new(tokio::sync::RwLock::new(boxed))
-                })
+            ) -> std::sync::Arc<tokio::sync::RwLock<std::boxed::Box<dyn $crate::Extension>>> {
+                // Fast path: read lock
+                {
+                    let guard = EXTENSION_INSTANCE.read().unwrap();
+                    if let Some(ref instance) = *guard {
+                        return instance.clone();
+                    }
+                }
+                // Slow path: write lock with double-check
+                let mut guard = EXTENSION_INSTANCE.write().unwrap();
+                if let Some(ref instance) = *guard {
+                    return instance.clone();
+                }
+                let extension: $extension_type = <$extension_type>::$constructor();
+                let boxed: Box<dyn $crate::Extension> = Box::new(extension);
+                let instance = std::sync::Arc::new(tokio::sync::RwLock::new(boxed));
+                *guard = Some(instance.clone());
+                instance
+            }
+
+            /// Reset the extension instance, allowing re-initialization.
+            /// Called by the runner when re-initializing an extension.
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_reset_instance() {
+                let mut guard = EXTENSION_INSTANCE.write().unwrap();
+                *guard = None;
+            }
+
+            /// Thread-local buffer tracking recent CString allocations as a safety net.
+            /// If `free_string` is never called by the host, the last 4 allocations
+            /// per thread are automatically freed on rotation.
+            thread_local! {
+                static LAST_STRINGS: std::cell::RefCell<Vec<*mut std::os::raw::c_char>> = std::cell::RefCell::new(Vec::with_capacity(4));
             }
 
             fn json_ptr(value: serde_json::Value) -> *mut std::os::raw::c_char {
                 let json = serde_json::to_string(&value).unwrap_or_else(|_| {
                     "{\"success\":false,\"error\":\"failed to serialize native response\"}".to_string()
                 });
-                std::ffi::CString::new(json)
+                let ptr = std::ffi::CString::new(json)
                     .unwrap_or_else(|_| std::ffi::CString::new("{}").unwrap())
-                    .into_raw()
+                    .into_raw();
+
+                // Track allocation; free oldest if buffer is full
+                LAST_STRINGS.with(|buf| {
+                    let mut buf = buf.borrow_mut();
+                    if buf.len() >= 4 {
+                        // Free the oldest tracked allocation
+                        let old = buf.remove(0);
+                        unsafe { drop(std::ffi::CString::from_raw(old)); }
+                    }
+                    buf.push(ptr);
+                });
+
+                ptr
             }
 
             fn error_ptr(message: impl Into<String>) -> *mut std::os::raw::c_char {
@@ -187,6 +227,13 @@ macro_rules! neomind_export_with_constructor {
             #[no_mangle]
             pub extern "C" fn neomind_extension_free_string(ptr: *mut std::os::raw::c_char) {
                 if !ptr.is_null() {
+                    // Remove from tracking buffer to avoid double-free
+                    LAST_STRINGS.with(|buf| {
+                        let mut buf = buf.borrow_mut();
+                        if let Some(pos) = buf.iter().position(|&p| p == ptr) {
+                            buf.remove(pos);
+                        }
+                    });
                     unsafe {
                         let _ = std::ffi::CString::from_raw(ptr);
                     }
@@ -517,6 +564,16 @@ macro_rules! neomind_export_with_constructor {
                     Ok(value) => json_ptr(value),
                     Err(e) => error_ptr(e),
                 }
+            }
+
+            /// Called by the runner at init time to register a push-output callback
+            /// so the extension can send data without JSON FFI overhead.
+            #[no_mangle]
+            pub extern "C" fn neomind_extension_register_push_writer(
+                writer: $crate::PushOutputWriterFn,
+            ) -> i32 {
+                $crate::set_push_output_writer(writer);
+                0
             }
         }
 

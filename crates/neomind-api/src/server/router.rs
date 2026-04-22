@@ -183,6 +183,16 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/extensions/:id/reload",
             post(extensions::reload_extension_handler),
         )
+        // Extension event subscriptions
+        .route(
+            "/api/extensions/:id/event-subscriptions",
+            get(extensions::get_event_subscriptions_handler),
+        )
+        // Extension full descriptor
+        .route(
+            "/api/extensions/:id/descriptor",
+            get(extensions::get_extension_descriptor_handler),
+        )
         // Stats API (public - system stats for dashboard components)
         .route("/api/stats/system", get(stats::get_system_stats_handler))
         // Unified Data Sources API (public - browse all data sources)
@@ -271,6 +281,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
 
     // Protected routes (require API key or JWT via Authorization header)
     let protected_routes = Router::new()
+        // Event publishing (requires auth)
+        .route("/api/events", post(events::publish_event_handler))
         // Session management
         .route("/api/sessions", post(sessions::create_session_handler))
         .route("/api/sessions", get(sessions::list_sessions_handler))

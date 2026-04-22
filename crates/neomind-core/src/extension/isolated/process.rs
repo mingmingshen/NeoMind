@@ -23,7 +23,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use tokio::sync::broadcast;
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use super::in_flight::InFlightRequests;
 use super::{ErrorKind, IpcFrame, IpcMessage, IpcResponse, IsolatedExtensionError, IsolatedResult};
@@ -338,8 +338,9 @@ pub struct IsolatedExtension {
     event_push_tx: Mutex<Option<tokio::sync::mpsc::Sender<(String, Value)>>>,
     /// Push output channel for receiving PushOutput messages from extension
     /// Uses std::sync::Mutex for thread safety in receiver thread
+    /// Bounded (256) to provide backpressure when WebSocket clients are slow
     push_output_tx:
-        Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<super::PushOutputData>>>>,
+        Arc<std::sync::Mutex<Option<tokio::sync::mpsc::Sender<super::PushOutputData>>>>,
     /// ✨ FIX: Tiered IPC buffer pool for optimal memory management
     ipc_buffer_pool: Arc<TieredBufferPool>,
     /// ✨ FIX: Active stream sessions - used to notify clients when extension restarts
@@ -596,7 +597,7 @@ impl IsolatedExtension {
             let reader = BufReader::new(stderr);
             for line in reader.lines().map_while(Result::ok) {
                 // Use eprintln to output directly, or tracing::info for structured logging
-                eprintln!("[Extension:{}] {}", extension_id, line);
+                trace!(extension_id = %extension_id, "{}", line);
             }
         });
 
@@ -657,7 +658,7 @@ impl IsolatedExtension {
         // The extension will respond with Ready message using request_id=0
 
         // Register the request first
-        let rx = self.in_flight.register_with_id(0).await;
+        let rx = self.in_flight.register_with_id(0);
 
         // Then send the Init message
         self.send_message(&IpcMessage::Init {
@@ -783,17 +784,21 @@ impl IsolatedExtension {
 
                 let len = u32::from_le_bytes(len_bytes) as usize;
 
-                // Sanity check
+                // Sanity check — drain oversized payload to keep stream aligned
                 if len > IPC_MAX_BUFFER_SIZE {
-                    error!(extension_id = %extension_id, len, "Response too large");
-                    running.store(false, Ordering::SeqCst);
-                    // Send death notification to manager
-                    if let Ok(tx_guard) = death_tx.try_lock() {
-                        if let Some(sender) = tx_guard.as_ref() {
-                            let _ = sender.send(());
+                    error!(extension_id = %extension_id, len, max = IPC_MAX_BUFFER_SIZE, "Response too large, draining payload");
+                    let mut remaining = len;
+                    let mut drain_buf = [0u8; 4096];
+                    while remaining > 0 {
+                        let to_read = remaining.min(drain_buf.len());
+                        if let Err(e) = stdout.read_exact(&mut drain_buf[..to_read]) {
+                            error!(extension_id = %extension_id, error = %e, "Failed to drain oversized response");
+                            running.store(false, Ordering::SeqCst);
+                            break;
                         }
+                        remaining -= to_read;
                     }
-                    break;
+                    continue;
                 }
 
                 // ✨ FIX: Get buffer from tiered pool instead of allocating
@@ -809,7 +814,13 @@ impl IsolatedExtension {
 
                 // Parse response
                 let response = match IpcResponse::from_bytes(payload.as_ref()) {
-                    Ok(r) => r,
+                    Ok(r) => {
+                        // Debug: log StreamSessionInit responses specifically
+                        if let IpcResponse::StreamSessionInit { request_id, session_id, success, .. } = &r {
+                            debug!(request_id, session_id, success, "Received StreamSessionInit response");
+                        }
+                        r
+                    }
                     Err(e) => {
                         warn!(extension_id = %extension_id, error = %e, "Failed to parse response");
                         // Buffer automatically returned to pool when dropped
@@ -856,26 +867,28 @@ impl IsolatedExtension {
                                 }
                             };
 
-                            // Invoke capability using the runtime handle
-                            // This thread is not in a Tokio runtime, so block_on is safe here
-                            let result = rt_handle
-                                .block_on(async { provider.invoke_capability(cap, &params).await });
+                            // Spawn capability invocation onto the runtime so the receiver
+                            // thread is NOT blocked while the capability runs.
+                            let stdin_clone = stdin.clone();
+                            let ext_id = extension_id.clone();
+                            rt_handle.spawn(async move {
+                                let result = provider.invoke_capability(cap, &params).await;
 
-                            // Send response back to extension as IpcMessage
-                            let message = match result {
-                                Ok(value) => IpcMessage::CapabilityResult {
-                                    request_id,
-                                    result: value,
-                                    error: None,
-                                },
-                                Err(e) => IpcMessage::CapabilityResult {
-                                    request_id,
-                                    result: serde_json::json!({}),
-                                    error: Some(e.to_string()),
-                                },
-                            };
+                                let message = match result {
+                                    Ok(value) => IpcMessage::CapabilityResult {
+                                        request_id,
+                                        result: value,
+                                        error: None,
+                                    },
+                                    Err(e) => IpcMessage::CapabilityResult {
+                                        request_id,
+                                        result: serde_json::json!({}),
+                                        error: Some(e.to_string()),
+                                    },
+                                };
 
-                            send_message_to_extension(&stdin, &extension_id, message);
+                                send_message_to_extension(&stdin_clone, &ext_id, message);
+                            });
                         } else {
                             // No capability provider configured
                             warn!(
@@ -897,10 +910,8 @@ impl IsolatedExtension {
                         "Routing response"
                     );
 
-                    // Use the passed runtime handle to complete async operations
-                    rt_handle.block_on(async {
-                        in_flight.complete(request_id, response).await;
-                    });
+                    // complete() is sync (uses std::sync::Mutex), no block_on needed
+                    in_flight.complete(request_id, response);
                 } else if response.is_push_output() {
                     // Handle PushOutput messages (extension-initiated)
                     debug!(
@@ -911,12 +922,19 @@ impl IsolatedExtension {
                     // Extract push output data and forward to channel
                     if let Some(push_data) = Option::<super::PushOutputData>::from(response) {
                         if let Some(tx) = push_output_tx.lock().unwrap().as_ref() {
-                            if let Err(e) = tx.send(push_data) {
-                                warn!(
-                                    extension_id = %extension_id,
-                                    error = %e,
-                                    "Failed to forward PushOutput"
-                                );
+                            if let Err(e) = tx.try_send(push_data) {
+                                if matches!(e, tokio::sync::mpsc::error::TrySendError::Full(_)) {
+                                    warn!(
+                                        extension_id = %extension_id,
+                                        "PushOutput channel full (256), dropping message — backpressure"
+                                    );
+                                } else {
+                                    warn!(
+                                        extension_id = %extension_id,
+                                        error = %e,
+                                        "Failed to forward PushOutput"
+                                    );
+                                }
                             }
                         }
                     }
@@ -927,20 +945,16 @@ impl IsolatedExtension {
                         extension_id = %extension_id,
                         "Routing response without request_id to request_id=0"
                     );
-                    rt_handle.block_on(async {
-                        in_flight.complete(0, response).await;
-                    });
+                    in_flight.complete(0, response);
                 }
                 // Note: payload is automatically returned to pool when dropped (RAII)
             }
 
-            // Cancel any pending requests on exit
-            rt_handle.block_on(async {
-                let count = in_flight.cancel_all().await;
-                if count > 0 {
-                    debug!(extension_id = %extension_id, count, "Cancelled pending requests");
-                }
-            });
+            // Cancel any pending requests on exit (sync — no block_on needed)
+            let count = in_flight.cancel_all();
+            if count > 0 {
+                debug!(extension_id = %extension_id, count, "Cancelled pending requests");
+            }
 
             debug!(extension_id = %extension_id, "Receiver thread exiting");
         });
@@ -954,13 +968,29 @@ impl IsolatedExtension {
             return Err(IsolatedExtensionError::NotRunning);
         }
 
-        // Send shutdown signal to receiver thread
+        // Register for ShutdownAck before sending Shutdown message.
+        // The runner should respond with IpcResponse::ShutdownAck.
+        let rx = self.in_flight.register_with_id(0);
+
+        // Send shutdown message to extension FIRST (before killing receiver thread)
+        // The runner will respond with ShutdownAck and then exit
+        let _ = self.send_message(&IpcMessage::Shutdown).await;
+
+        // Wait for ShutdownAck with a 2-second timeout (instead of blind sleep).
+        // This gives the extension time to flush state via its stop() lifecycle.
+        match self.in_flight.wait_with_timeout(0, rx, std::time::Duration::from_secs(2)).await {
+            Ok(_) => {
+                debug!(extension_id = %self.extension_id, "Received ShutdownAck from extension");
+            }
+            Err(_) => {
+                warn!(extension_id = %self.extension_id, "Timeout waiting for ShutdownAck, proceeding with shutdown");
+            }
+        }
+
+        // Now send shutdown signal to receiver thread
         if let Some(tx) = self.shutdown_tx.lock().await.take() {
             let _ = tx.send(());
         }
-
-        // Send shutdown message to extension
-        let _ = self.send_message(&IpcMessage::Shutdown).await;
 
         // ✅ FIX: Wait for process to exit with timeout
         // If graceful shutdown fails, force kill after 5 seconds
@@ -998,7 +1028,7 @@ impl IsolatedExtension {
         self.running.store(false, Ordering::SeqCst);
 
         // Cancel any pending requests
-        self.in_flight.cancel_all().await;
+        self.in_flight.cancel_all();
 
         // ✅ FIX: Close all active stream sessions to prevent state inconsistency
         let _ = self.close_all_stream_sessions().await;
@@ -1017,24 +1047,34 @@ impl IsolatedExtension {
             return Err(IsolatedExtensionError::NotRunning);
         }
 
-        // Check concurrent request limit (if configured)
+        // Check concurrent request limit using atomic CAS to avoid TOCTOU race
         if self.config.max_concurrent_requests > 0 {
-            let active = self.active_requests.load(Ordering::SeqCst);
-            if active >= self.config.max_concurrent_requests {
-                warn!(
-                    extension_id = %self.extension_id,
-                    active,
-                    limit = self.config.max_concurrent_requests,
-                    "Concurrent request limit reached"
-                );
-                return Err(IsolatedExtensionError::TooManyRequests(
-                    self.config.max_concurrent_requests,
-                ));
+            let limit = self.config.max_concurrent_requests;
+            loop {
+                let current = self.active_requests.load(Ordering::SeqCst);
+                if current >= limit {
+                    warn!(
+                        extension_id = %self.extension_id,
+                        active = current,
+                        limit,
+                        "Concurrent request limit reached"
+                    );
+                    return Err(IsolatedExtensionError::TooManyRequests(limit));
+                }
+                if self.active_requests.compare_exchange(
+                    current,
+                    current + 1,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                ).is_ok() {
+                    break;
+                }
+                // CAS failed, another thread modified the counter — retry
             }
+        } else {
+            // No limit configured, just increment
+            self.active_requests.fetch_add(1, Ordering::SeqCst);
         }
-
-        // Increment active requests counter
-        self.active_requests.fetch_add(1, Ordering::SeqCst);
 
         // Use scopeguard to ensure counter is decremented on exit
         let _guard = scopeguard::guard(&self.active_requests, |counter| {
@@ -1042,7 +1082,7 @@ impl IsolatedExtension {
         });
 
         // Register the request and get a receiver
-        let (request_id, rx) = self.in_flight.register().await;
+        let (request_id, rx) = self.in_flight.register();
 
         debug!(
             extension_id = %self.extension_id,
@@ -1098,9 +1138,9 @@ impl IsolatedExtension {
             return Err(IsolatedExtensionError::NotRunning);
         }
 
-        let (request_id, rx) = self.in_flight.register().await;
+        let (request_id, rx) = self.in_flight.register();
 
-        self.send_message(&IpcMessage::ProduceMetrics { request_id })
+        self.send_message_with_retry(&IpcMessage::ProduceMetrics { request_id })
             .await?;
 
         let response = self
@@ -1129,9 +1169,9 @@ impl IsolatedExtension {
             return Err(IsolatedExtensionError::NotRunning);
         }
 
-        let (request_id, rx) = self.in_flight.register().await;
+        let (request_id, rx) = self.in_flight.register();
 
-        self.send_message(&IpcMessage::GetStats { request_id })
+        self.send_message_with_retry(&IpcMessage::GetStats { request_id })
             .await?;
 
         let response = self
@@ -1243,7 +1283,7 @@ impl IsolatedExtension {
         });
 
         // Register the request and get a receiver
-        let (request_id, rx) = self.in_flight.register().await;
+        let (request_id, rx) = self.in_flight.register();
 
         let _start = Instant::now();
 
@@ -1321,7 +1361,7 @@ impl IsolatedExtension {
             return Ok(false);
         }
 
-        let (request_id, rx) = self.in_flight.register().await;
+        let (request_id, rx) = self.in_flight.register();
 
         if self
             .send_message(&IpcMessage::HealthCheck { request_id })
@@ -1405,9 +1445,9 @@ impl IsolatedExtension {
             return Err(IsolatedExtensionError::NotRunning);
         }
 
-        let (request_id, rx) = self.in_flight.register().await;
+        let (request_id, rx) = self.in_flight.register();
 
-        self.send_message(&IpcMessage::GetStreamCapability { request_id })
+        self.send_message_with_retry(&IpcMessage::GetStreamCapability { request_id })
             .await?;
 
         let response = self
@@ -1457,7 +1497,11 @@ impl IsolatedExtension {
             user_agent: None,
         };
 
+        // Register request and get receiver for response
+        let (request_id, rx) = self.in_flight.register();
+
         self.send_message(&IpcMessage::InitStreamSession {
+            request_id,
             session_id: session_id.to_string(),
             extension_id: self.extension_id.clone(),
             config,
@@ -1465,10 +1509,35 @@ impl IsolatedExtension {
         })
         .await?;
 
-        // Wait for StreamSessionInit response
-        // Note: InitStreamSession doesn't have a request_id, so we need to handle it specially
-        // For now, just return Ok - the runner will send the response asynchronously
-        Ok(())
+        // Wait for StreamSessionInit response with timeout
+        let response = tokio::time::timeout(Duration::from_secs(10), rx)
+            .await
+            .map_err(|_| IsolatedExtensionError::Timeout(10000))?
+            .map_err(|_| IsolatedExtensionError::ChannelClosed)?;
+
+        match response {
+            IpcResponse::StreamSessionInit {
+                success: true, ..
+            } => Ok(()),
+            IpcResponse::StreamSessionInit {
+                success: false,
+                error: Some(e),
+                ..
+            } => Err(IsolatedExtensionError::ExecutionFailed(e)),
+            IpcResponse::StreamSessionInit {
+                success: false,
+                error: None,
+                ..
+            } => Err(IsolatedExtensionError::ExecutionFailed(
+                "Stream session init failed".to_string(),
+            )),
+            IpcResponse::Error { error, .. } => {
+                Err(IsolatedExtensionError::ExecutionFailed(error))
+            }
+            _ => Err(IsolatedExtensionError::IpcError(
+                "Unexpected response to InitStreamSession".to_string(),
+            )),
+        }
     }
 
     /// Process a stream chunk via IPC
@@ -1493,7 +1562,7 @@ impl IsolatedExtension {
         };
 
         // Register request and get receiver for response
-        let (request_id, rx) = self.in_flight.register().await;
+        let (request_id, rx) = self.in_flight.register();
 
         // Send message with request_id
         self.send_message(&IpcMessage::ProcessStreamChunk {
@@ -1562,12 +1631,38 @@ impl IsolatedExtension {
             return Err(IsolatedExtensionError::NotRunning);
         }
 
+        // Register request and get receiver for response
+        let (request_id, rx) = self.in_flight.register();
+
         self.send_message(&IpcMessage::CloseStreamSession {
+            request_id,
             session_id: session_id.to_string(),
         })
         .await?;
 
-        Ok(super::super::stream::SessionStats::default())
+        // Wait for StreamSessionClosed response with timeout
+        let response = tokio::time::timeout(Duration::from_secs(10), rx)
+            .await
+            .map_err(|_| IsolatedExtensionError::Timeout(10000))?
+            .map_err(|_| IsolatedExtensionError::ChannelClosed)?;
+
+        match response {
+            IpcResponse::StreamSessionClosed {
+                total_frames,
+                duration_ms,
+                ..
+            } => Ok(super::super::stream::SessionStats {
+                output_chunks: total_frames,
+                last_activity: duration_ms as i64,
+                ..Default::default()
+            }),
+            IpcResponse::Error { error, .. } => {
+                Err(IsolatedExtensionError::ExecutionFailed(error))
+            }
+            _ => Err(IsolatedExtensionError::IpcError(
+                "Unexpected response to CloseStreamSession".to_string(),
+            )),
+        }
     }
 
     /// ✨ FIX: Close all active stream sessions before restart
@@ -1619,6 +1714,7 @@ impl IsolatedExtension {
             for session_id in &sessions {
                 let _ = self
                     .send_message(&IpcMessage::CloseStreamSession {
+                        request_id: 0,
                         session_id: session_id.clone(),
                     })
                     .await;
@@ -1652,6 +1748,12 @@ impl IsolatedExtension {
                 "Session unregistered"
             );
         }
+    }
+
+    /// Get all active stream session IDs
+    pub async fn get_active_sessions(&self) -> Vec<String> {
+        let sessions = self.active_sessions.read().await;
+        sessions.iter().cloned().collect()
     }
 
     /// ✨ FIX: Set session invalidation callback
@@ -1698,7 +1800,7 @@ impl IsolatedExtension {
         };
 
         // Register request and get receiver for response
-        let (request_id, rx) = self.in_flight.register().await;
+        let (request_id, rx) = self.in_flight.register();
 
         debug!(
             extension_id = %self.extension_id,
@@ -1775,7 +1877,7 @@ impl IsolatedExtension {
         }
 
         // Register request and get receiver for response
-        let (request_id, rx) = self.in_flight.register().await;
+        let (request_id, rx) = self.in_flight.register();
 
         debug!(
             extension_id = %self.extension_id,
@@ -1840,7 +1942,7 @@ impl IsolatedExtension {
         }
 
         // Register request and get receiver for response
-        let (request_id, rx) = self.in_flight.register().await;
+        let (request_id, rx) = self.in_flight.register();
 
         debug!(
             extension_id = %self.extension_id,
@@ -1874,13 +1976,21 @@ impl IsolatedExtension {
 
         match response {
             IpcResponse::PushStopped { success, .. } => {
-                debug!(
-                    extension_id = %self.extension_id,
-                    session_id = %session_id,
-                    success,
-                    "Push mode stopped"
-                );
-                Ok(())
+                if success {
+                    debug!(
+                        extension_id = %self.extension_id,
+                        session_id = %session_id,
+                        "Push mode stopped"
+                    );
+                    Ok(())
+                } else {
+                    warn!(
+                        extension_id = %self.extension_id,
+                        session_id = %session_id,
+                        "Extension reported push stop failure"
+                    );
+                    Ok(()) // Still return Ok — caller should clean up regardless
+                }
             }
             IpcResponse::Error { error, .. } => {
                 // Log but don't fail - extension might have already stopped
@@ -1904,7 +2014,7 @@ impl IsolatedExtension {
     /// The host should set this before starting a Push mode session.
     pub async fn set_push_output_channel(
         &self,
-        tx: tokio::sync::mpsc::UnboundedSender<super::PushOutputData>,
+        tx: tokio::sync::mpsc::Sender<super::PushOutputData>,
     ) {
         *self.push_output_tx.lock().unwrap() = Some(tx);
     }
@@ -1912,7 +2022,7 @@ impl IsolatedExtension {
     /// Get a clone of the push output channel sender
     pub async fn get_push_output_channel(
         &self,
-    ) -> Option<tokio::sync::mpsc::UnboundedSender<super::PushOutputData>> {
+    ) -> Option<tokio::sync::mpsc::Sender<super::PushOutputData>> {
         self.push_output_tx.lock().unwrap().clone()
     }
 
@@ -2046,6 +2156,24 @@ impl IsolatedExtension {
         .await
     }
 
+    /// Send a config hot-reload update to the running extension.
+    ///
+    /// This sends a ConfigUpdate IPC message (fire-and-forget).
+    /// The extension's `configure()` method will be called in the runner process.
+    pub async fn send_config_update(
+        &self,
+        config: &serde_json::Value,
+    ) -> IsolatedResult<()> {
+        if !self.running.load(Ordering::SeqCst) {
+            return Err(IsolatedExtensionError::NotRunning);
+        }
+
+        self.send_message_with_retry(&IpcMessage::ConfigUpdate {
+            config: config.clone(),
+        })
+        .await
+    }
+
     async fn kill_internal(&self, process_guard: &mut Option<Child>) {
         // Send shutdown signal to receiver thread
         if let Some(tx) = self.shutdown_tx.lock().await.take() {
@@ -2061,7 +2189,7 @@ impl IsolatedExtension {
 
         // ✨ FIX: Cancel all in-flight requests immediately on kill
         // This prevents requests from waiting until timeout (30s)
-        let cancelled_count = self.in_flight.cancel_all().await;
+        let cancelled_count = self.in_flight.cancel_all();
         if cancelled_count > 0 {
             tracing::warn!(
                 extension_id = %self.extension_id,
@@ -2313,10 +2441,10 @@ impl IsolatedExtension {
     /// via the GetEventSubscriptions IPC message.
     pub async fn get_event_subscriptions(&self) -> IsolatedResult<Vec<String>> {
         // Register a new request
-        let (request_id, rx) = self.in_flight.register().await;
+        let (request_id, rx) = self.in_flight.register();
 
         // Send GetEventSubscriptions message
-        self.send_message(&IpcMessage::GetEventSubscriptions { request_id })
+        self.send_message_with_retry(&IpcMessage::GetEventSubscriptions { request_id })
             .await?;
 
         // Wait for response with timeout
@@ -2412,25 +2540,57 @@ impl Drop for IsolatedExtension {
     fn drop(&mut self) {
         if let Ok(mut child) = self.process.try_lock() {
             if let Some(mut proc) = child.take() {
-                // Send SIGKILL to ensure process terminates
-                let _ = proc.kill();
-
-                // Spawn background thread to handle blocking wait
                 let extension_id = self.extension_id.clone();
-                std::thread::spawn(move || {
-                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
 
+                // Spawn background thread for graceful-then-forceful shutdown
+                std::thread::spawn(move || {
+                    // Phase 1: Try graceful shutdown via stdin close
+                    // Closing stdin signals the runner to exit its event loop
+                    drop(proc.stdin.take());
+
+                    let graceful_deadline =
+                        std::time::Instant::now() + std::time::Duration::from_secs(3);
+
+                    // Wait for process to exit gracefully
                     loop {
                         match proc.try_wait() {
                             Ok(Some(_)) => {
                                 tracing::debug!(
                                     extension_id = %extension_id,
-                                    "Extension process reaped successfully"
+                                    "Extension process exited gracefully"
                                 );
                                 return;
                             }
                             Ok(None) => {
-                                if std::time::Instant::now() >= deadline {
+                                if std::time::Instant::now() >= graceful_deadline {
+                                    break; // Proceed to SIGKILL
+                                }
+                                std::thread::sleep(std::time::Duration::from_millis(50));
+                            }
+                            Err(_) => return, // Already reaped
+                        }
+                    }
+
+                    // Phase 2: Force kill after graceful timeout
+                    tracing::warn!(
+                        extension_id = %extension_id,
+                        "Extension did not exit gracefully, sending SIGKILL"
+                    );
+                    let _ = proc.kill();
+
+                    let kill_deadline =
+                        std::time::Instant::now() + std::time::Duration::from_secs(5);
+                    loop {
+                        match proc.try_wait() {
+                            Ok(Some(_)) => {
+                                tracing::debug!(
+                                    extension_id = %extension_id,
+                                    "Extension process reaped after SIGKILL"
+                                );
+                                return;
+                            }
+                            Ok(None) => {
+                                if std::time::Instant::now() >= kill_deadline {
                                     tracing::error!(
                                         extension_id = %extension_id,
                                         "Process did not exit after SIGKILL, may become zombie"
@@ -2439,7 +2599,7 @@ impl Drop for IsolatedExtension {
                                 }
                                 std::thread::sleep(std::time::Duration::from_millis(100));
                             }
-                            Err(_) => return, // Already reaped
+                            Err(_) => return,
                         }
                     }
                 });

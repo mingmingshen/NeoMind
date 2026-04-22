@@ -281,13 +281,7 @@ export const createExtensionSlice: StateCreator<
       return response
     } catch (error) {
       logError(error, { operation: 'Execute command' })
-      return {
-        success: false,
-        output: {},
-        outputs: [],
-        duration_ms: 0,
-        error: 'Command execution failed',
-      }
+      return { error: 'Command execution failed' }
     }
   },
 

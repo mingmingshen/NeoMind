@@ -481,6 +481,7 @@ fn test_stream_data_chunk_last() {
 #[test]
 fn test_ipc_message_init_stream_session() {
     let msg = IpcMessage::InitStreamSession {
+        request_id: 42,
         session_id: "session-123".to_string(),
         extension_id: "test.extension".to_string(),
         config: json!({"mode": "push"}),
@@ -496,11 +497,13 @@ fn test_ipc_message_init_stream_session() {
 
     match parsed {
         IpcMessage::InitStreamSession {
+            request_id,
             session_id,
             extension_id,
             config,
             client_info,
         } => {
+            assert_eq!(request_id, 42);
             assert_eq!(session_id, "session-123");
             assert_eq!(extension_id, "test.extension");
             assert_eq!(config["mode"], "push");
@@ -513,6 +516,7 @@ fn test_ipc_message_init_stream_session() {
 #[test]
 fn test_ipc_message_close_stream_session() {
     let msg = IpcMessage::CloseStreamSession {
+        request_id: 43,
         session_id: "session-123".to_string(),
     };
 
@@ -520,7 +524,8 @@ fn test_ipc_message_close_stream_session() {
     let parsed: IpcMessage = serde_json::from_str(&json).unwrap();
 
     match parsed {
-        IpcMessage::CloseStreamSession { session_id } => {
+        IpcMessage::CloseStreamSession { request_id, session_id } => {
+            assert_eq!(request_id, 43);
             assert_eq!(session_id, "session-123");
         }
         _ => panic!("Expected CloseStreamSession"),
@@ -530,6 +535,7 @@ fn test_ipc_message_close_stream_session() {
 #[test]
 fn test_ipc_response_stream_session_init() {
     let resp = IpcResponse::StreamSessionInit {
+        request_id: 42,
         session_id: "session-123".to_string(),
         success: true,
         error: None,
@@ -540,10 +546,12 @@ fn test_ipc_response_stream_session_init() {
 
     match parsed {
         IpcResponse::StreamSessionInit {
+            request_id,
             session_id,
             success,
             error,
         } => {
+            assert_eq!(request_id, 42);
             assert_eq!(session_id, "session-123");
             assert!(success);
             assert!(error.is_none());
@@ -555,6 +563,7 @@ fn test_ipc_response_stream_session_init() {
 #[test]
 fn test_ipc_response_stream_session_init_error() {
     let resp = IpcResponse::StreamSessionInit {
+        request_id: 43,
         session_id: "session-456".to_string(),
         success: false,
         error: Some("Failed to initialize".to_string()),
@@ -575,6 +584,7 @@ fn test_ipc_response_stream_session_init_error() {
 #[test]
 fn test_ipc_response_stream_session_closed() {
     let resp = IpcResponse::StreamSessionClosed {
+        request_id: 44,
         session_id: "session-123".to_string(),
         total_frames: 100,
         duration_ms: 5000,
@@ -585,10 +595,12 @@ fn test_ipc_response_stream_session_closed() {
 
     match parsed {
         IpcResponse::StreamSessionClosed {
+            request_id,
             session_id,
             total_frames,
             duration_ms,
         } => {
+            assert_eq!(request_id, 44);
             assert_eq!(session_id, "session-123");
             assert_eq!(total_frames, 100);
             assert_eq!(duration_ms, 5000);

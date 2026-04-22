@@ -1017,22 +1017,12 @@ export interface Event {
 /**
  * Extension type enumeration - matches backend ExtensionType
  */
-export enum ExtensionTypeEnum {
-  LlmProvider = 'llm_provider',
-  DeviceProtocol = 'device_protocol',
-  AlertChannelType = 'alert_channel_type',
-  Tool = 'tool',
-  Generic = 'generic',
-}
-
 /**
  * Extension state enumeration - matches backend ExtensionState
  */
 export enum ExtensionStateEnum {
-  Discovered = 'Discovered',
-  Loaded = 'Loaded',
-  Initialized = 'Initialized',
   Running = 'Running',
+  RunningIsolated = 'Running (Isolated)',
   Stopped = 'Stopped',
   Error = 'Error',
 }
@@ -1205,6 +1195,18 @@ export interface ExtensionMetricDto {
   required: boolean
 }
 
+export interface ExtensionConfigParam {
+  name: string
+  display_name: string
+  data_type: string
+  unit: string
+  description?: string
+  min?: number
+  max?: number
+  required: boolean
+  default_value?: unknown
+}
+
 /**
  * Command descriptor
  * Matches backend ExtensionCommand struct
@@ -1233,6 +1235,10 @@ export interface Extension {
   metrics: ExtensionMetricDto[]
   file_path?: string
   loaded_at?: number
+  health_status: string
+  last_error?: string
+  last_error_at?: number
+  config_parameters?: ExtensionConfigParam[]
 }
 
 /**
@@ -1245,19 +1251,9 @@ export interface ExtensionExecuteRequest {
 
 /**
  * Extension command execution response
+ * Backend returns the extension's raw JSON result directly.
  */
-export interface ExtensionExecuteResponse {
-  success: boolean
-  output: Record<string, unknown>
-  outputs: Array<{
-    name: string
-    value: unknown
-    unit?: string
-    quality?: number
-  }>
-  duration_ms: number
-  error?: string
-}
+export type ExtensionExecuteResponse = Record<string, unknown>
 
 /**
  * Extension configuration parameter definition
@@ -2712,12 +2708,22 @@ export interface ExtensionServerMessageSessionClosed {
   stats: ExtensionSessionStats
 }
 
+export interface ExtensionServerMessagePushOutput {
+  type: 'push_output'
+  session_id: string
+  sequence: number
+  data: string // base64 encoded
+  data_type: string
+  timestamp: number
+  metadata?: Record<string, unknown> | null
+}
+
 export interface ExtensionServerMessageHeartbeat {
   type: 'heartbeat'
   timestamp: number
 }
 
-export type ExtensionServerMessage = ExtensionServerMessageCapability | ExtensionServerMessageSessionCreated | ExtensionServerMessageResult | ExtensionServerMessageError | ExtensionServerMessageSessionClosed | ExtensionServerMessageHeartbeat
+export type ExtensionServerMessage = ExtensionServerMessageCapability | ExtensionServerMessageSessionCreated | ExtensionServerMessageResult | ExtensionServerMessageError | ExtensionServerMessageSessionClosed | ExtensionServerMessagePushOutput | ExtensionServerMessageHeartbeat
 
 /**
  * Session statistics - matches backend SessionStats struct

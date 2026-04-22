@@ -643,10 +643,6 @@ fn test_capability_error_display() {
     let msg = err.to_string();
     assert!(msg.contains("Invalid parameters"));
 
-    let err = CapabilityError::PermissionDenied("test".to_string());
-    let msg = err.to_string();
-    assert!(msg.contains("Permission denied"));
-
     let err = CapabilityError::ProviderError("test".to_string());
     let msg = err.to_string();
     assert!(msg.contains("Provider error"));

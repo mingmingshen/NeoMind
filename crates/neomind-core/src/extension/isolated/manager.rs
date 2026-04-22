@@ -386,7 +386,12 @@ impl IsolatedExtensionManager {
             }
 
             // Now safe to spawn - we hold the lock and extension is not loaded
-            return self.load_internal(path).await;
+            let result = self.load_internal(path).await;
+            if result.is_err() {
+                // Clean up loading lock on failure to prevent memory leak
+                self.loading_locks.write().await.remove(id);
+            }
+            return result;
         }
 
         // Fallback: couldn't read ID from manifest, load directly (legacy behavior)
@@ -517,6 +522,9 @@ impl IsolatedExtensionManager {
             );
         }
 
+        // Clean up loading lock for this extension to prevent memory leak
+        self.loading_locks.write().await.remove(id);
+
         Ok(())
     }
 
@@ -558,6 +566,21 @@ impl IsolatedExtensionManager {
         isolated.health_check().await
     }
 
+    /// Send config hot-reload update to a running extension
+    pub async fn send_config_update(
+        &self,
+        id: &str,
+        config: &serde_json::Value,
+    ) -> IsolatedResult<()> {
+        let extensions = self.extensions.read().await;
+
+        let isolated = extensions.get(id).ok_or_else(|| {
+            IsolatedExtensionError::IpcError(format!("Extension {} not found", id))
+        })?;
+
+        isolated.send_config_update(config).await
+    }
+
     /// Get statistics from an isolated extension
     pub async fn get_stats(
         &self,
@@ -570,6 +593,26 @@ impl IsolatedExtensionManager {
         })?;
 
         isolated.get_stats().await
+    }
+
+    /// Get active stream sessions for an extension
+    pub async fn get_active_sessions(&self, id: &str) -> IsolatedResult<Vec<String>> {
+        let extensions = self.extensions.read().await;
+
+        let isolated = extensions.get(id).ok_or_else(|| {
+            IsolatedExtensionError::IpcError(format!("Extension {} not found", id))
+        })?;
+
+        Ok(isolated.get_active_sessions().await)
+    }
+
+    /// Get event subscriptions for an extension
+    pub async fn get_event_subscriptions(&self, id: &str) -> IsolatedResult<Vec<String>> {
+        let extensions = self.extensions.read().await;
+        let isolated = extensions.get(id).ok_or_else(|| {
+            IsolatedExtensionError::IpcError(format!("Extension {} not found", id))
+        })?;
+        isolated.get_event_subscriptions().await
     }
 
     /// Check if an extension is registered

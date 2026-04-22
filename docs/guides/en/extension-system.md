@@ -1,8 +1,8 @@
 # NeoMind Extension System Complete Guide
 
-**Version**: 2.1.0  
-**SDK Version**: 2.0.0  
-**ABI Version**: 3  
+**Version**: 2.2.0
+**SDK Version**: 0.6.1
+**ABI Version**: 3
 **Last Updated**: 2026-03-12
 
 ---
@@ -1505,6 +1505,7 @@ Refer to [NeoMind-Extensions](https://github.com/camthink-ai/NeoMind-Extensions)
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.2.0 | 2026-04-22 | Push mode, instance reset, CString safety, removed HTTP/KV capabilities, unified Extension trait, IPC logging cleanup |
 | 2.1.0 | 2026-03-12 | Added complete capability system documentation |
 | 2.0.0 | 2026-03-09 | V2 unified SDK, ABI version 3 |
 | 1.0.0 | 2025-12-01 | Initial version |

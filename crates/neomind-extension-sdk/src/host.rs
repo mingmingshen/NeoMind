@@ -10,6 +10,7 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::sync::Arc;
 use std::sync::OnceLock;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::sync::RwLock;
 
 use crate::ipc_types::{
@@ -163,8 +164,6 @@ pub enum CapabilityError {
     NotAvailable(ExtensionCapability),
     #[error("Provider error: {0}")]
     ProviderError(String),
-    #[error("Permission denied: {0}")]
-    PermissionDenied(String),
     #[error("Invalid parameters: {0}")]
     InvalidParameters(String),
     #[error("Provider not found for capability: {0:?}")]
@@ -193,8 +192,6 @@ pub struct ExtensionContextConfig {
     #[serde(default)]
     pub api_base_url: String,
     pub api_version: String,
-    #[serde(default)]
-    pub required_capabilities: Vec<ExtensionCapability>,
     pub extension_id: String,
     #[serde(default)]
     pub rate_limit: Option<usize>,
@@ -205,7 +202,6 @@ impl Default for ExtensionContextConfig {
         Self {
             api_base_url: String::new(),
             api_version: "v1".to_string(),
-            required_capabilities: Vec::new(),
             extension_id: String::new(),
             rate_limit: None,
         }
@@ -313,13 +309,6 @@ impl ExtensionContext {
         capability: ExtensionCapability,
         params: &serde_json::Value,
     ) -> std::result::Result<serde_json::Value, CapabilityError> {
-        if !self.config.required_capabilities.contains(&capability) {
-            return Err(CapabilityError::PermissionDenied(format!(
-                "Extension '{}' does not have capability '{:?}'",
-                self.config.extension_id, capability
-            )));
-        }
-
         let available = self.available_capabilities.read().await;
         let (package_name, _) = available
             .get_provider(&capability)
@@ -345,10 +334,6 @@ impl ExtensionContext {
 
     pub fn config(&self) -> &ExtensionContextConfig {
         &self.config
-    }
-
-    pub fn has_capability_granted(&self, capability: &ExtensionCapability) -> bool {
-        self.config.required_capabilities.contains(capability)
     }
 }
 
@@ -1030,6 +1015,44 @@ pub fn set_native_capability_bridge(
     let _ = NATIVE_CAPABILITY_BRIDGE.set(NativeCapabilityBridge { invoke, free });
 }
 
+// ============================================================================
+// Push Output Writer (for Push mode data flow)
+// ============================================================================
+
+/// Function pointer type for writing push output from extension → runner.
+/// The runner registers this callback so the extension can push data
+/// without going through the JSON FFI round-trip.
+pub type PushOutputWriterFn = unsafe extern "C" fn(*const u8, usize) -> i32;
+
+static PUSH_WRITER: OnceLock<PushOutputWriterFn> = OnceLock::new();
+
+/// Called by the generated FFI registration function to install the
+/// push-output writer callback. Returns 0 on success.
+pub fn set_push_output_writer(writer: PushOutputWriterFn) {
+    let _ = PUSH_WRITER.set(writer);
+}
+
+/// Send a push-output message from the extension to the host.
+///
+/// The extension calls this during Push mode to emit data chunks.
+/// Returns `Ok(())` on success or an error if no writer is registered.
+pub fn send_push_output(msg: &PushOutputMessage) -> crate::ipc_types::Result<()> {
+    let writer = PUSH_WRITER
+        .get()
+        .ok_or_else(|| crate::ipc_types::ExtensionError::InternalError("push output writer not registered".into()))?;
+    let json = serde_json::to_vec(msg)
+        .map_err(|e| crate::ipc_types::ExtensionError::InternalError(format!("failed to serialize PushOutputMessage: {}", e)))?;
+    let rc = unsafe { writer(json.as_ptr(), json.len()) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(crate::ipc_types::ExtensionError::InternalError(format!("push_output_writer returned {}", rc)))
+    }
+}
+
+/// Block on an async future synchronously.
+/// Only available on native targets (requires tokio runtime).
+#[cfg(not(target_arch = "wasm32"))]
 fn block_on_sync<F, T>(future: F) -> std::result::Result<T, CapabilityError>
 where
     F: std::future::Future<Output = std::result::Result<T, CapabilityError>>,
@@ -1046,11 +1069,14 @@ where
 }
 
 /// Capability context for invoking capabilities from extensions.
+/// Only available on native targets (requires tokio runtime).
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone)]
 pub struct CapabilityContext {
     ctx: Arc<RwLock<Option<ExtensionContext>>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Default for CapabilityContext {
     fn default() -> Self {
         Self {
@@ -1059,6 +1085,7 @@ impl Default for CapabilityContext {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl CapabilityContext {
     pub fn from_context(context: ExtensionContext) -> Self {
         Self {
@@ -1269,6 +1296,8 @@ pub trait Extension: Send + Sync {
     }
 
     /// Set output sender for push mode.
+    /// Not available on WASM target (requires tokio).
+    #[cfg(not(target_arch = "wasm32"))]
     fn set_output_sender(&self, _sender: Arc<tokio::sync::mpsc::Sender<PushOutputMessage>>) {}
 
     /// Get event subscriptions.

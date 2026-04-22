@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Generic Telemetry API** — New `GET /api/telemetry` endpoint for querying time-series data from any source type (devices, AI metrics, transforms, extensions) using a unified interface. Accepts `source`, `metric`, `start`, `end`, `limit`, and `aggregate` (avg/min/max/sum/count) parameters. Returns data in a consistent format with `"source_id"` key. Independent of the device-specific `/api/devices/:id/telemetry` routes.
 - **Server-side Pagination for Data Sources** — `GET /api/data/sources` now supports `offset`, `limit`, `source_type`, `source`, and `search` query parameters. `populate_latest_values` runs only on the paginated subset, significantly reducing DB queries for large deployments.
 - **Data Explorer Redesign** — Frontend Data Explorer rewritten with server-side pagination, filtering by source type and source name, and search. Replaced client-side filtering with API-driven filtering for better performance.
+- **Extension Push Mode** — Extensions can now push data to the host via a native FFI callback (`PushOutputWriterFn`), bypassing the JSON FFI round-trip. New `send_push_output()` SDK function and `neomind_extension_register_push_writer` FFI export.
+- **Extension Instance Reset** — New `neomind_extension_reset_instance()` FFI export allows the runner to re-initialize extensions without restarting the process. Extension instance storage changed from `OnceLock` to `RwLock<Option<...>>` with double-checked locking.
+- **CString Memory Safety** — `json_ptr()` now tracks the last 4 allocations per thread, automatically freeing the oldest when the buffer is full. Prevents memory leaks when the host doesn't call `free_string`.
+- **IPC Event Subscription** — Extension runner now supports event subscription via IPC. New `event_handler.rs` and `ipc_routing.rs` modules provide channel-based stdin message routing and event state management.
+- **IPC ConfigUpdate Message** — New `ConfigUpdate` IpcMessage and `ConfigUpdated` IpcResponse support hot-reloading extension configuration.
+- **Extension Health & Config Metadata** — Extensions now expose `health_status`, `last_error`, `last_error_at`, and `config_parameters` fields. Frontend types updated accordingly.
 
 ### Changed
 
@@ -25,15 +31,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Agent Layer** (`neomind-agent`): AI metrics tool uses `source_id = format!("ai:{}", group)`. Tool output JSON key changed to `"source_id"`. Data collector uses `source_part()`.
   - **Extension State** (`extension_state`): `ExtensionMetricsStorage` method parameters and `ExtensionMetricsStorageAdapter` local variables renamed.
   - **Frontend Gradual Migration**: Added `sourceId` field to `DataSource` and `MapMarker` types (with `deviceId` deprecated). Introduced `getSourceId()` helper that prefers `sourceId` with `deviceId` fallback. All 20+ dashboard and config components updated to read via `getSourceId()` and write both fields.
+- **Extension SDK Unified Trait** — Removed `wasm_extension` module. The `Extension` trait is now identical across native and WASM targets, simplifying cross-platform extension development.
+- **IPC InFlightRequests: Sync Mutex** — Replaced `tokio::sync::Mutex` with `std::sync::Mutex` in `InFlightRequests` so `complete()`, `cancel()`, etc. can be called from synchronous contexts (receiver thread) without `block_on`.
+- **Extension State Enum Simplified** — `ExtensionStateEnum` reduced to 4 states: `Running`, `RunningIsolated`, `Stopped`, `Error`. Removed unused `Discovered`, `Loaded`, `Initialized` states and `ExtensionTypeEnum`.
+- **Extension Execute Response Simplified** — `ExtensionExecuteResponse` changed from a structured interface to `Record<string, unknown>` — the raw JSON result from the extension is returned directly.
+- **SDK Version Bumped** — `neomind-extension-sdk` updated to v0.6.1.
+
+### Removed
+
+- **HTTP_REQUEST & KV_STORAGE Capabilities** — Removed `HttpRequest` and `KvStorage` from `ExtensionCapability` enum, SDK bindings, API providers (`HttpCapabilityProvider`, `KvCapabilityProvider`), and storage layer (`ExtensionKvStore`). Extensions can make HTTP calls and manage key-value data natively.
+- **PermissionDenied Error** — Removed `CapabilityError::PermissionDenied` and `required_capabilities` from `ExtensionContextConfig`. Capability access is now determined solely by provider registration.
+- **Dead IPC Forwarder** — Removed `start_ipc_forwarder` thread (~150 lines) and `SyncIpcRequest`/`SyncIpcResponse` types. The stdin reader thread handles all IPC routing.
 
 ### Fixed
 
+- **SDK Macro Compilation Error** — Fixed `expected *mut i8, found Option<_>` in `neomind_export!` macro. `Vec::remove()` returns `T`, not `Option<T>` — changed `if let Some(old) = buf.remove(0)` to `let old = buf.remove(0)`.
+- **Debug Logging Cleanup** — Converted 47 `eprintln!` calls to structured `tracing` macros across extension runner (`main.rs`, `ipc_routing.rs`) and core (`process.rs`). Only the panic handler retains `eprintln!` for safety.
 - **Extension Upload Dialog Animation** — Fixed Loader2 spinner jittering during upload by converting inline component function to a JSX variable, preventing React unmount/remount cycles on every progress update.
 - **Extension Bundle Cache Stale Issue** — Fixed browser loading old UMD bundles after extension reinstall/update. Three fixes applied:
   - Store's `unregisterExtension` now clears `DynamicRegistry` caches and global variables.
   - Upload dialog clears extension caches before re-syncing component registry.
   - `syncComponents` detects `bundle_url`/`global_name`/`export_name` changes and clears stale module caches.
 - **Loading State Improvements** — Skeleton screen patterns improved across `LoadingState` and `ResponsiveTable` components.
+- **Tauri Version Mismatch** — Fixed `tauri.conf.json` showing stale version while Cargo.toml was already updated.
 
 ### Preserved (Not Changed)
 

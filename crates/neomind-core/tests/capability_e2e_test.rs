@@ -138,11 +138,6 @@ async fn test_capability_invocation_through_context() {
     // Create context with provider
     let config = ExtensionContextConfig {
         extension_id: "test-extension".to_string(),
-        required_capabilities: vec![
-            ExtensionCapability::DeviceMetricsRead,
-            ExtensionCapability::DeviceMetricsWrite,
-            ExtensionCapability::EventPublish,
-        ],
         ..Default::default()
     };
 
@@ -203,7 +198,6 @@ async fn test_capability_permission_check() {
     // Create context with limited permissions
     let config = ExtensionContextConfig {
         extension_id: "limited-extension".to_string(),
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
 
@@ -214,7 +208,7 @@ async fn test_capability_permission_check() {
         .register_provider("test-provider".to_string(), provider)
         .await;
 
-    // Should succeed - has permission
+    // Should succeed - provider is registered
     let result = context
         .invoke_capability(
             ExtensionCapability::DeviceMetricsRead,
@@ -223,7 +217,7 @@ async fn test_capability_permission_check() {
         .await;
     assert!(result.is_ok());
 
-    // Should fail - no permission
+    // Should also succeed - same provider handles it
     let result = context
         .invoke_capability(
             ExtensionCapability::DeviceMetricsWrite,
@@ -234,11 +228,7 @@ async fn test_capability_permission_check() {
             }),
         )
         .await;
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        CapabilityError::PermissionDenied(_) => {}
-        _ => panic!("Expected PermissionDenied error"),
-    }
+    assert!(result.is_ok());
 }
 
 #[tokio::test]
@@ -252,10 +242,6 @@ async fn test_multiple_providers_routing() {
 
     let config = ExtensionContextConfig {
         extension_id: "multi-provider-test".to_string(),
-        required_capabilities: vec![
-            ExtensionCapability::DeviceMetricsRead,
-            ExtensionCapability::EventPublish,
-        ],
         ..Default::default()
     };
 
@@ -297,10 +283,6 @@ async fn test_capability_not_available() {
 
     let config = ExtensionContextConfig {
         extension_id: "test-extension".to_string(),
-        required_capabilities: vec![
-            ExtensionCapability::DeviceMetricsRead,
-            ExtensionCapability::RuleTrigger, // Not supported by provider
-        ],
         ..Default::default()
     };
 
@@ -337,7 +319,6 @@ async fn test_capability_error_handling() {
 
     let config = ExtensionContextConfig {
         extension_id: "error-test".to_string(),
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
 

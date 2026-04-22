@@ -19,8 +19,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogContentBody,
 } from '@/components/ui/dialog'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Search, Database, RefreshCw, Cpu, Puzzle, Workflow, Brain, History, Loader2, Eye } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -348,60 +348,54 @@ export function DataExplorerPage() {
             </DialogDescription>
           </DialogHeader>
           {selectedSource && (
-            <Tabs defaultValue="latest" className="w-full">
-              <TabsList className="w-full">
-                <TabsTrigger value="latest" className="flex-1">Latest Data</TabsTrigger>
-                <TabsTrigger value="history" className="flex-1 gap-1">
-                  <History className="h-3.5 w-3.5" />
-                  History
-                </TabsTrigger>
-              </TabsList>
-
-              {/* Latest Data Tab */}
-              <TabsContent value="latest" className="mt-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">Field</p>
-                    <p className="text-sm font-medium">{selectedSource.field_display_name}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">Data Type</p>
-                    <Badge variant="secondary">{selectedSource.data_type}</Badge>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">Unit</p>
-                    <p className="text-sm">{selectedSource.unit || '-'}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">Last Update</p>
-                    <p className="text-sm">{formatTime(selectedSource.last_update)}</p>
-                  </div>
-                </div>
-                {selectedSource.description && (
-                  <div className="space-y-1 mt-3">
-                    <p className="text-xs text-muted-foreground">Description</p>
-                    <p className="text-sm">{selectedSource.description}</p>
-                  </div>
-                )}
-                {selectedSource.current_value !== undefined && selectedSource.current_value !== null && (
-                  <div className="space-y-1 mt-3">
-                    <p className="text-xs text-muted-foreground">Current Value</p>
-                    <p className="text-sm font-mono bg-muted p-2 rounded break-all overflow-hidden max-h-32">
-                      {typeof selectedSource.current_value === 'object'
-                        ? JSON.stringify(selectedSource.current_value, null, 2)
-                        : String(selectedSource.current_value)}
-                    </p>
-                  </div>
-                )}
-              </TabsContent>
-
-              {/* History Tab */}
-              <TabsContent value="history" className="mt-4">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm text-muted-foreground">
-                    {selectedSource.field_display_name}
-                    {selectedSource.unit && ` (${selectedSource.unit})`}
+            <DialogContentBody className="space-y-4 py-4">
+              {/* Current Value */}
+              {selectedSource.current_value !== undefined && selectedSource.current_value !== null && (
+                <div className="bg-muted/30 rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground mb-1">Current Value</p>
+                  <p className="text-sm font-medium font-mono break-all overflow-hidden max-h-40">
+                    {typeof selectedSource.current_value === 'object'
+                      ? JSON.stringify(selectedSource.current_value, null, 2)
+                      : String(selectedSource.current_value)}
+                    {selectedSource.unit && <span className="font-normal text-muted-foreground ml-1">{selectedSource.unit}</span>}
                   </p>
+                </div>
+              )}
+
+              {/* Metadata Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">Field</p>
+                  <p className="text-sm font-medium">{selectedSource.field_display_name}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Data Type</p>
+                  <Badge variant="secondary" className="text-[10px] mt-0.5">{selectedSource.data_type}</Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Unit</p>
+                  <p className="text-sm">{selectedSource.unit || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Last Update</p>
+                  <p className="text-sm">{formatTime(selectedSource.last_update)}</p>
+                </div>
+              </div>
+
+              {selectedSource.description && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Description</p>
+                  <p className="text-sm">{selectedSource.description}</p>
+                </div>
+              )}
+
+              {/* History Section */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5 text-sm font-medium">
+                    <History className="h-3.5 w-3.5" />
+                    History
+                  </div>
                   <Select value={historyRange} onValueChange={setHistoryRange}>
                     <SelectTrigger className="w-[100px] h-7 text-xs">
                       <SelectValue />
@@ -416,12 +410,12 @@ export function DataExplorerPage() {
                 </div>
 
                 {historyLoading ? (
-                  <div className="flex items-center justify-center h-32 text-muted-foreground">
-                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                    <span className="text-sm">Loading...</span>
+                  <div className="flex items-center justify-center h-24 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <span className="text-xs">Loading...</span>
                   </div>
                 ) : historyData.length > 0 ? (
-                  <ScrollArea className="h-[280px] rounded border">
+                  <ScrollArea className="h-[240px] rounded border">
                     <table className="w-full text-sm">
                       <thead className="sticky top-0 bg-background">
                         <tr className="border-b">
@@ -444,12 +438,12 @@ export function DataExplorerPage() {
                     </table>
                   </ScrollArea>
                 ) : (
-                  <p className="text-xs text-muted-foreground text-center py-8">
+                  <p className="text-xs text-muted-foreground text-center py-6">
                     No historical data available for this period
                   </p>
                 )}
-              </TabsContent>
-            </Tabs>
+              </div>
+            </DialogContentBody>
           )}
         </DialogContent>
       </Dialog>

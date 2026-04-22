@@ -277,7 +277,6 @@ async fn test_capability_invocation() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
         extension_id: "test-extension".to_string(),
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -359,10 +358,6 @@ async fn test_capability_write() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
         extension_id: "test-extension".to_string(),
-        required_capabilities: vec![
-            ExtensionCapability::DeviceMetricsRead,
-            ExtensionCapability::DeviceMetricsWrite,
-        ],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -407,7 +402,6 @@ async fn test_capability_control() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
         extension_id: "test-extension".to_string(),
-        required_capabilities: vec![ExtensionCapability::DeviceControl],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -438,7 +432,6 @@ async fn test_event_publish() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
         extension_id: "test-extension".to_string(),
-        required_capabilities: vec![ExtensionCapability::EventPublish],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -476,7 +469,6 @@ async fn test_capability_error_handling() {
     let providers = Arc::new(RwLock::new(HashMap::new()));
     let config = ExtensionContextConfig {
         extension_id: "test-extension".to_string(),
-        required_capabilities: vec![ExtensionCapability::DeviceMetricsRead],
         ..Default::default()
     };
     let context = ExtensionContext::new(config, providers);
@@ -529,11 +521,10 @@ async fn test_capability_error_handling() {
 
     assert!(result.is_err());
     match result {
-        Err(CapabilityError::PermissionDenied(_)) => {
-            // Expected - this capability is not in required_capabilities
-            // or no provider registered for this capability
+        Err(CapabilityError::ProviderNotFound(_)) => {
+            // Expected - no provider registered for this capability
         }
-        _ => panic!("Expected PermissionDenied error"),
+        other => panic!("Expected ProviderNotFound error, got {:?}", other),
     }
 }
 
@@ -663,6 +654,5 @@ async fn test_extension_context_config_default() {
 
     assert_eq!(config.api_base_url, String::new());
     assert_eq!(config.api_version, "v1");
-    assert_eq!(config.required_capabilities.len(), 0);
     assert_eq!(config.rate_limit, None);
 }

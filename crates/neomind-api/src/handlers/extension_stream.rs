@@ -44,7 +44,7 @@
 
 use axum::{
     extract::ws::{Message as WsMessage, WebSocket},
-    extract::{Path, State, WebSocketUpgrade},
+    extract::{Path, Query, State, WebSocketUpgrade},
     response::IntoResponse,
 };
 use base64::prelude::*;
@@ -246,16 +246,28 @@ impl PushOutputRouter {
         );
     }
 
-    /// Route a push output message to the appropriate session
+    /// Route a push output message to the appropriate session.
+    ///
+    /// Uses `try_send()` instead of `send().await` so that the caller (receiver
+    /// thread) is never blocked when the WebSocket consumer is slow. Dropped
+    /// messages are logged as a warning.
     pub async fn route(&self, output: PushOutputMessage) -> bool {
         let senders: tokio::sync::RwLockReadGuard<
             '_,
             HashMap<String, mpsc::Sender<PushOutputMessage>>,
         > = self.senders.read().await;
         if let Some(sender) = senders.get(&output.session_id) {
-            match sender.send(output).await {
+            match sender.try_send(output) {
                 Ok(_) => true,
-                Err(_) => {
+                Err(mpsc::error::TrySendError::Full(output)) => {
+                    tracing::warn!(
+                        session_id = %output.session_id,
+                        sequence = output.sequence,
+                        "Push output dropped: WebSocket consumer too slow"
+                    );
+                    false
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => {
                     tracing::warn!("Failed to route push output: channel closed");
                     false
                 }
@@ -313,7 +325,27 @@ pub async fn extension_stream_ws(
     Path(extension_id): Path<String>,
     ws: WebSocketUpgrade,
     State(state): State<ServerState>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
+    // Authenticate via ?token= query parameter
+    if let Some(token) = params.get("token") {
+        let is_valid = state.auth.api_key_state.validate_key(token)
+            || state.auth.user_state.validate_token(token).is_ok();
+        if !is_valid {
+            return (
+                axum::http::StatusCode::UNAUTHORIZED,
+                "Invalid or expired token",
+            )
+                .into_response();
+        }
+    } else {
+        return (
+            axum::http::StatusCode::UNAUTHORIZED,
+            "Authentication required. Provide ?token= query parameter.",
+        )
+            .into_response();
+    }
+
     ws.on_upgrade(move |socket| handle_stream_socket(socket, extension_id, state))
 }
 
@@ -381,6 +413,8 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
     // For Push mode: channel to receive push outputs from extension
     let mut push_rx: Option<mpsc::Receiver<PushOutputMessage>> = None;
     let push_router = get_push_router();
+    // Abort handle for the IPC→router forwarder task (Push mode)
+    let mut push_forwarder_handle: Option<tokio::task::JoinHandle<()>> = None;
 
     // Message loop
     loop {
@@ -470,7 +504,7 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
 
                                         // For Push mode: bridge runner PushOutput IPC into the websocket router.
                                         if cap.mode == StreamMode::Push {
-                                            // Create channel for push outputs
+                                            // Create per-session channel for push outputs
                                             let (tx, rx) = mpsc::channel::<PushOutputMessage>(32);
                                             push_rx = Some(rx);
 
@@ -490,13 +524,17 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                 continue;
                                             };
 
+                                            // Create IPC→router channel and forwarder task.
+                                            // NOTE: Each session gets its own forwarder. The shared
+                                            // push_output_channel is overwritten, but that's OK because
+                                            // the router routes by session_id — only messages for
+                                            // registered sessions are forwarded.
                                             let (push_tx, mut push_rx_ipc) =
-                                                mpsc::unbounded_channel();
+                                                mpsc::channel(256);
                                             isolated.set_push_output_channel(push_tx).await;
 
                                             let router = push_router.clone();
-                                            let session_id_for_task = sid.clone();
-                                            tokio::spawn(async move {
+                                            let handle = tokio::spawn(async move {
                                                 while let Some(output) = push_rx_ipc.recv().await {
                                                     let _ = router
                                                         .route(PushOutputMessage {
@@ -510,10 +548,10 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                         .await;
                                                 }
                                                 tracing::debug!(
-                                                    "Push IPC forwarder stopped for session: {}",
-                                                    session_id_for_task
+                                                    "Push IPC forwarder stopped"
                                                 );
                                             });
+                                            push_forwarder_handle = Some(handle);
 
                                             // Start pushing
                                             if let Err(e) = ext.start_push(&sid).await {
@@ -719,13 +757,23 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
 
     // Cleanup session
     if let Some(sid) = session_id {
-        // For Push mode: stop pushing
+        // For Push mode: stop pushing and clean up routing
         if cap.mode == StreamMode::Push {
+            // Abort the IPC→router forwarder for this session
+            if let Some(handle) = push_forwarder_handle.take() {
+                handle.abort();
+                tracing::debug!("Aborted push forwarder task for session: {}", sid);
+            }
+
             let ext = extension.read().await;
             if let Err(e) = ext.stop_push(&sid).await {
                 tracing::warn!("Failed to stop push for session {}: {}", sid, e);
             }
             push_router.unregister(&sid).await;
+
+            // Do NOT replace push_output_channel with a dummy channel.
+            // Other active sessions' forwarders may still be reading from it.
+            // The router.unregister above ensures this session's messages are dropped.
         }
 
         let ext = extension.read().await;
@@ -803,7 +851,16 @@ pub async fn get_stream_capability_handler(
     match capability {
         Some(cap) => {
             let cap_dto = StreamCapabilityDto::from(&cap);
-            ok(serde_json::to_value(cap_dto).unwrap())
+            match serde_json::to_value(cap_dto) {
+                Ok(v) => ok(v),
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to serialize stream capability");
+                    ok(serde_json::json!({
+                        "error": "INTERNAL_ERROR",
+                        "message": "Failed to serialize stream capability"
+                    }))
+                }
+            }
         }
         None => ok(serde_json::json!({
             "error": "NOT_SUPPORTED",
@@ -816,12 +873,27 @@ pub async fn get_stream_capability_handler(
 ///
 /// List active stream sessions for an extension.
 pub async fn list_stream_sessions_handler(
-    State(_state): State<ServerState>,
-    Path(_extension_id): Path<String>,
+    State(state): State<ServerState>,
+    Path(extension_id): Path<String>,
 ) -> HandlerResult<Vec<serde_json::Value>> {
-    // Return empty array for now
-    // In production, you'd query the session manager
-    ok(vec![])
+    let sessions = state
+        .extensions
+        .runtime
+        .get_active_sessions(&extension_id)
+        .await;
+
+    let result: Vec<serde_json::Value> = sessions
+        .into_iter()
+        .map(|session_id| {
+            serde_json::json!({
+                "session_id": session_id,
+                "extension_id": extension_id,
+                "status": "active",
+            })
+        })
+        .collect();
+
+    ok(result)
 }
 
 #[cfg(test)]
