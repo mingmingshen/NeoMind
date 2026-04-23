@@ -1943,23 +1943,45 @@ impl ServerState {
             tracing::info!("Agent event listener started - monitoring for event-triggered agents");
 
             while let Some((event, _metadata)) = rx.recv().await {
-                // Check if any agent should be triggered by this event
-                if let neomind_core::NeoMindEvent::DeviceMetric {
-                    device_id,
-                    metric,
-                    value,
-                    timestamp: _,
-                    quality: _,
-                    ..
-                } = event
-                {
-                    // Trigger agents that have this device/metric in their event filter
-                    if let Err(e) = executor
-                        .check_and_trigger_event(device_id, &metric, &value)
-                        .await
-                    {
-                        tracing::debug!("No agent triggered for event: {}", e);
+                // Unified data source event handling for agent triggers
+                match event {
+                    neomind_core::NeoMindEvent::DeviceMetric {
+                        device_id,
+                        metric,
+                        value,
+                        ..
+                    } => {
+                        if let Err(e) = executor
+                            .check_and_trigger_data_event(
+                                "device",
+                                device_id,
+                                metric,
+                                &value,
+                            )
+                            .await
+                        {
+                            tracing::debug!("No agent triggered for device event: {}", e);
+                        }
                     }
+                    neomind_core::NeoMindEvent::ExtensionOutput {
+                        extension_id,
+                        output_name,
+                        value,
+                        ..
+                    } => {
+                        if let Err(e) = executor
+                            .check_and_trigger_data_event(
+                                "extension",
+                                extension_id,
+                                output_name,
+                                &value,
+                            )
+                            .await
+                        {
+                            tracing::debug!("No agent triggered for extension event: {}", e);
+                        }
+                    }
+                    _ => {} // Ignore other events
                 }
             }
         });
