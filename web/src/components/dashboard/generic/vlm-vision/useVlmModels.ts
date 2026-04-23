@@ -27,11 +27,11 @@ export function useVlmModels() {
         const backendName = backend.name || backendId
 
         // Check backend-level multimodal support
-        if (backend.capabilities?.multimodal || backend.supports_multimodal) {
-          if (backend.model || backend.default_model) {
+        if (backend.capabilities?.supports_multimodal) {
+          if (backend.model) {
             visionModels.push({
-              id: backend.model || backend.default_model,
-              name: backend.model || backend.default_model,
+              id: backend.model,
+              name: backend.model,
               backendId,
               backendName,
             })
@@ -39,15 +39,15 @@ export function useVlmModels() {
         }
 
         // For Ollama backends, try to list models and filter by vision capability
-        if (backend.type === 'ollama' || backend.backend_type === 'ollama') {
+        if (backend.backend_type === 'ollama') {
           try {
-            const modelsResp = await api.listOllamaModels()
+            const modelsResp = await api.listOllamaModels(backend.endpoint)
             const modelList = modelsResp.models || []
             for (const m of modelList) {
-              if (isVisionModel(m.name || m.model || '')) {
+              if (isVisionModel(m.name || '')) {
                 visionModels.push({
-                  id: m.name || m.model,
-                  name: m.name || m.model,
+                  id: m.name,
+                  name: m.name,
                   backendId,
                   backendName,
                 })
