@@ -1401,23 +1401,19 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           const resp = await api.listLlmBackends({ active_only: true })
           const backends = resp.backends || resp || []
           const models: { id: string; name: string; backendId: string; backendName: string }[] = []
-          const VISION_PATTERNS = ['vl', 'vision', 'llava', 'bakllava', 'qwen-vl']
           for (const backend of Array.isArray(backends) ? backends : []) {
             const backendId = backend.id
             const backendName = backend.name || backendId
-            if (backend.capabilities?.supports_multimodal) {
-              if (backend.model) {
-                models.push({ id: backend.model, name: backend.model, backendId, backendName })
-              }
+            // For backends with a configured model, show that model
+            if (backend.model) {
+              models.push({ id: backend.model, name: `${backendName} / ${backend.model}`, backendId, backendName })
             }
+            // For Ollama backends, list all available models
             if (backend.backend_type === 'ollama') {
               try {
                 const modelsResp = await api.listOllamaModels(backend.endpoint)
                 for (const m of (modelsResp.models || [])) {
-                  const lower = (m.name || '').toLowerCase()
-                  if (VISION_PATTERNS.some((p) => lower.includes(p))) {
-                    models.push({ id: m.name, name: m.name, backendId, backendName })
-                  }
+                  models.push({ id: `${backendId}::${m.name}`, name: `${backendName} / ${m.name}`, backendId, backendName })
                 }
               } catch { /* skip */ }
             }
@@ -4914,17 +4910,14 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                     </Field>
                     <Field>
                       <Label>{t('dashboardComponents:vlmVision.contextWindow')}</Label>
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="range"
-                          min={1}
-                          max={20}
-                          value={config.contextWindowSize || 10}
-                          onChange={(e) => updateConfig('contextWindowSize')(Number(e.target.value))}
-                          className="flex-1"
-                        />
-                        <span className="text-sm text-muted-foreground w-8 text-right">{config.contextWindowSize || 10}</span>
-                      </div>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={config.contextWindowSize || 10}
+                        onChange={(e) => updateConfig('contextWindowSize')(Number(e.target.value) || 10)}
+                        className="h-9"
+                      />
                     </Field>
                   </div>
                 )
