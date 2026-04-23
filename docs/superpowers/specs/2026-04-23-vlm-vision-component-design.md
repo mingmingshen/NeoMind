@@ -21,20 +21,24 @@ A new Dashboard business component that binds to image data sources (devices or 
 
 All required APIs already exist:
 
-| Capability | Endpoint | Notes |
-|---|---|---|
-| Create Agent | `POST /api/agents` | System prompt + model selection |
-| Create Session | `POST /api/sessions` | Independent conversation per component instance |
-| Send Image Message | `POST /api/sessions/{id}/chat` | `images` field in `ChatRequest` |
-| Stream Response | `GET /api/chat` (WebSocket) | Real-time streaming |
-| List Vision Models | `GET /api/llm-backends` | Filter by `supports_multimodal` |
-| Session History | `GET /api/sessions/{id}/history` | For context window |
+| Capability | Frontend API Method | Backend Endpoint | Notes |
+|---|---|---|---|
+| Create Agent | `api.createAgent()` | `POST /api/agents` | Body: `{ name, user_prompt, llm_backend_id }` |
+| Create Session | `api.createSession()` | `POST /api/sessions` | Returns `{ sessionId }` |
+| Send Image Message | `ws.sendMessage(text, images)` | `WS /api/chat` | WebSocket, `ChatRequest` with `images: [{data, mimeType}]` |
+| Send Text Message | `ws.sendMessage(text)` | `WS /api/chat` | Same WebSocket, text-only |
+| Stream Response | WebSocket `onmessage` | `WS /api/chat` | ServerMessage events: Content, Thinking, end |
+| List Backends | `api.getLlmBackends()` | `GET /api/llm-backends` | Filter client-side by vision capability |
+| Session History | `api.getSessionHistory(id)` | `GET /api/sessions/{id}/history` | For context window and message rendering |
+| Delete Session | `api.deleteSession(id)` | `DELETE /api/sessions/{id}` | Cleanup on component removal |
 
 **Integration flow:**
-1. On component config save: `POST /api/agents` creates a VLM agent (with user's system prompt + model), `POST /api/sessions` creates a session
-2. On image data update: `POST /api/sessions/{id}/chat` with `{ message, images: [base64], selected_skills: [] }`
-3. On user follow-up: Same endpoint, text-only message
-4. Context window managed client-side: fetch history via `GET /api/sessions/{id}/history`, trim to N pairs before sending
+1. On component config save: `api.createAgent()` creates a VLM agent, `api.createSession()` creates a session
+2. Establish WebSocket via `new ChatWebSocket(sessionId)` — existing `web/src/lib/websocket.ts`
+3. On image data update: `ws.sendMessage('', [ChatImage])` where `ChatImage = { data: base64DataUrl }`
+4. On user follow-up: `ws.sendMessage(text)`
+5. Stream responses arrive via WebSocket `onmessage` callback as `ServerMessage` events
+6. Context window: Backend session manages history automatically; no client-side trimming needed — session `getSessionHistory()` is for UI rendering only
 
 ### Frontend: New Component
 
@@ -47,18 +51,17 @@ All required APIs already exist:
   description: 'Image analysis with Vision Language Model — auto-analyze data source images and display results in a timeline chat',
   category: 'business',
   icon: Camera,  // lucide-react
-  sizeConstraints: { minW: 2, minH: 2, defaultW: 3, defaultH: 3, maxW: 6, maxH: 6 },
+  sizeConstraints: getSizeConstraints('vlm-vision'),  // Follow existing pattern
   hasDataSource: true,
   hasDisplayConfig: false,
   hasActions: true,
-  acceptsProp: (prop) => ['systemPrompt', 'modelId', 'contextWindowSize', 'agentId', 'sessionId', 'className', 'editMode'].includes(prop),
-  defaultProps: {
-    systemPrompt: 'You are a professional image analysis assistant. Carefully observe the image content, describe the scene, and point out any notable changes or anomalies.',
-    contextWindowSize: 10,
-  },
+  acceptsProp: (prop) => ['agentId', 'sessionId', 'className', 'editMode'].includes(prop),
+  defaultProps: { agentId: undefined },
   variants: ['default'],
 }
 ```
+
+**Config persistence:** The VLM-specific config (systemPrompt, modelId, contextWindowSize, agentId, sessionId) is stored in `vlmVisionSlice` keyed by `componentId`. The dashboard component props only store `agentId` and `sessionId` (via `acceptsProp`). This matches how `AgentMonitorWidget` stores `agentId` in its props.
 
 ## File Structure
 
@@ -170,17 +173,23 @@ interface UseVlmSessionReturn {
 ```
 
 **Lifecycle:**
-1. On mount or config change: if no `agentId`/`sessionId` in component props, call `initSession()` → `POST /api/agents` + `POST /api/sessions`
-2. Store `agentId` and `sessionId` in component state (persisted via dashboard layout props)
-3. On data source image update: `sendMessage('', [base64Image])`
-4. On user follow-up: `sendMessage(text)`
-5. Streaming via WebSocket `GET /api/chat` with session context
-6. On unmount: no explicit destroy — agent/session persist for resume
+1. On mount or config change: if no `sessionId` in Zustand store for this `componentId`, call `initSession()`:
+   - `api.createAgent({ name: 'vlm-vision-{componentId}', user_prompt: config.systemPrompt, llm_backend_id: config.modelId })`
+   - `api.createSession()` → get `sessionId`
+   - Store both in `vlmVisionSlice` keyed by `componentId`
+   - Create `new ChatWebSocket(sessionId)` from `web/src/lib/websocket.ts`
+2. On data source image update: `ws.sendMessage('', [{ data: base64DataUrl }])`
+3. On user follow-up: `ws.sendMessage(text)`
+4. Stream responses: WebSocket `onMessage` callback receives `ServerMessage` events:
+   - `Content` event → append to streaming text
+   - `end` event → finalize message, mark streaming complete
+5. Persist `sessionId` in Zustand store so session survives component remounts
+6. On unmount: keep WebSocket connected (or reconnect on next mount using same `sessionId`)
 
-**Context window implementation:**
-- Before sending, fetch `GET /api/sessions/{id}/history`
-- Take last N message pairs (image + AI response)
-- Backend handles context assembly via session management
+**Context window:**
+- Backend session manager maintains full conversation history automatically
+- `contextWindowSize` config controls how many messages to render in the timeline UI (visual truncation, not API-level)
+- History loaded via `api.getSessionHistory(sessionId)` on mount for rendering existing messages
 
 ### useVlmQueue(onProcess, isProcessing)
 
@@ -198,7 +207,8 @@ interface UseVlmQueueReturn {
 - `isProcessing = true` while VLM inference is running
 - New image arrives → if `isProcessing`, replace pending image (only keep latest)
 - When inference completes → if pending image exists, process it immediately
-- Exposes `pending` count for UI status display
+- Timeout: if `isProcessing` exceeds 120s (matching backend timeout), reset `isProcessing` to false and process pending image
+- Exposes `pending` count (0 or 1) for UI queue status display
 
 ### useVlmModels()
 
@@ -256,46 +266,80 @@ Device/Extension
        │
        ▼
   useDataSource hook → detects image data
-       │
+       │  (uses isBase64Image/normalizeToDataUrl from AgentMonitorWidget pattern)
        ▼
   useVlmQueue.enqueue(image)
        │
        ▼ (when not processing)
-  useVlmSession.sendMessage('', [image])
-       │
-       ├──► POST /api/sessions/{id}/chat { message, images }
+  ws.sendMessage('', [ChatImage]) via ChatWebSocket
        │
        ▼
-  WebSocket stream response
+  WebSocket onMessage → ServerMessage.Content events
        │
        ▼
-  VlmTimeline renders new messages
+  VlmTimeline renders: [image bubble] → [streaming AI response bubble]
        │
        ▼
-  User sees: [image] → [streaming AI analysis]
+  ServerMessage "end" → finalize, mark streaming complete
+       │
+       ▼
+  If queue has pending image → process immediately
 
 --- Manual follow-up path ---
 
-  User types in VlmInputBar
+  User types in VlmInputBar → Enter
        │
        ▼
-  useVlmSession.sendMessage(text)
+  ws.sendMessage(text) via ChatWebSocket
        │
        ▼
-  POST /api/sessions/{id}/chat { message }
-       │
-       ▼
-  WebSocket stream response
+  Same streaming flow as above
 ```
+
+**Image data detection:**
+- Reuse `isBase64Image()` and `normalizeToDataUrl()` utilities (already in `AgentMonitorWidget.tsx`, should be extracted to shared utils)
+- Accept: raw base64, `data:image/...;base64,...` data URLs
+- Supported formats: png, jpeg, gif, webp, bmp (detected via magic bytes)
+- Large images (>10MB base64) show a warning but still process
 
 ## Error Handling
 
-- **Agent creation failure**: Show error state, retry button
+- **Agent creation failure**: Show error state in component, retry button in header
 - **Session creation failure**: Show error state, retry button
-- **Model not available**: Warning badge, prompt to reconfigure
-- **Streaming error**: Show error message inline in timeline, allow retry
-- **Data source not sending images**: Show informational empty state ("Waiting for image data...")
-- **Network disconnected**: Show connection lost indicator, auto-reconnect via existing WebSocket mechanism
+- **Model not available**: Warning badge in config panel, prompt to select another model
+- **WebSocket disconnected**: `ChatWebSocket` has built-in reconnection with exponential backoff. Show connection status indicator in header (green dot = connected, red dot = disconnected)
+- **Streaming error**: Show error message inline in timeline as a special error bubble, auto-retry up to 2 times
+- **Data source not sending images**: Show informational empty state ("Waiting for image data from {dataSourceId}...")
+- **Image too large**: Show warning inline, still attempt to process
+- **Component unmount during streaming**: WebSocket message completes server-side; result available in session history on next mount
+
+## WebSocket Integration
+
+Uses the existing `ChatWebSocket` class from `web/src/lib/websocket.ts`:
+
+```typescript
+// In useVlmSession hook:
+const ws = useRef<ChatWebSocket | null>(null)
+
+// Initialize:
+ws.current = new ChatWebSocket(sessionId)
+ws.current.onMessage((msg: ServerMessage) => {
+  switch (msg.type) {
+    case 'Content': appendToStreamingContent(msg.content); break
+    case 'Thinking': // optionally show thinking state; break
+    case 'end': finalizeMessage(); break
+    case 'Error': handleError(msg); break
+  }
+})
+
+// Send image:
+ws.current.sendMessage('', [{ data: base64DataUrl }], [])
+
+// Send text:
+ws.current.sendMessage(text, [], [])
+```
+
+The `ChatWebSocket` handles reconnection, heartbeat, and pending message queuing internally.
 
 ## Accessibility & UX
 
