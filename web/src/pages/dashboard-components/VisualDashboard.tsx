@@ -4805,8 +4805,17 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
       // ========== VLM Vision ==========
       case 'vlm-vision':
-        // VLM Vision has its own config panel (Settings2 icon in header)
         return {
+          dataSourceSections: [
+            {
+              type: 'data-source' as const,
+              props: {
+                dataSource: config.dataSource,
+                onChange: updateDataSource,
+                allowedTypes: ['device-metric', 'extension', 'ai-metric'],
+              },
+            },
+          ],
           displaySections: [],
         }
 
