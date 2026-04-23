@@ -39,6 +39,8 @@ interface VlmVisionProps {
   agentId?: string
   sessionId?: string
   dataSource?: any
+  systemPrompt?: string
+  contextWindowSize?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -89,6 +91,8 @@ export function VlmVision({
   agentId,
   sessionId: sessionIdProp,
   dataSource: dataSourceProp,
+  systemPrompt: systemPromptProp,
+  contextWindowSize: contextWindowSizeProp,
 }: VlmVisionProps) {
   // ---- Config from Zustand store ----
   const componentId = agentId || sessionIdProp || 'vlm-default'
@@ -99,11 +103,11 @@ export function VlmVision({
   const config: VlmVisionConfig = useMemo(
     () =>
       storeConfig ?? {
-        systemPrompt:
+        systemPrompt: systemPromptProp ||
           'You are a professional image analysis assistant. Carefully observe the image content, describe the scene, and point out any notable changes or anomalies.',
-        contextWindowSize: 10,
+        contextWindowSize: contextWindowSizeProp || 10,
       },
-    [storeConfig],
+    [storeConfig, systemPromptProp, contextWindowSizeProp],
   )
 
   // ---- Config panel ----

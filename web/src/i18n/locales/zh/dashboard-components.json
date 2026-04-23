@@ -378,6 +378,11 @@
     "noAgentConfigured": "未配置智能体",
     "agentNotFound": "智能体不存在"
   },
+  "vlmVision": {
+    "systemPrompt": "系统提示词",
+    "systemPromptPlaceholder": "描述 VLM 应如何分析图像...",
+    "contextWindow": "上下文窗口大小"
+  },
   "ledIndicator": {
     "on": "开启",
     "off": "关闭",

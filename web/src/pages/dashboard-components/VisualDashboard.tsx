@@ -4816,7 +4816,38 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               },
             },
           ],
-          displaySections: [],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
+                  <Field>
+                    <Label>{t('dashboardComponents:vlmVision.systemPrompt', 'System Prompt')}</Label>
+                    <textarea
+                      className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                      value={config.systemPrompt || ''}
+                      onChange={(e) => updateConfig('systemPrompt')(e.target.value)}
+                      placeholder={t('dashboardComponents:vlmVision.systemPromptPlaceholder', 'Describe how the VLM should analyze images...')}
+                    />
+                  </Field>
+                  <Field>
+                    <Label>{t('dashboardComponents:vlmVision.contextWindow', 'Context Window Size')}</Label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min={1}
+                        max={20}
+                        value={config.contextWindowSize || 10}
+                        onChange={(e) => updateConfig('contextWindowSize')(Number(e.target.value))}
+                        className="flex-1"
+                      />
+                      <span className="text-sm text-muted-foreground w-8 text-right">{config.contextWindowSize || 10}</span>
+                    </div>
+                  </Field>
+                </div>
+              ),
+            },
+          ],
         }
 
       default:

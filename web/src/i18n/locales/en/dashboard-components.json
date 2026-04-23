@@ -414,6 +414,11 @@
     "noAgentConfigured": "No agent configured",
     "agentNotFound": "Agent not found"
   },
+  "vlmVision": {
+    "systemPrompt": "System Prompt",
+    "systemPromptPlaceholder": "Describe how the VLM should analyze images...",
+    "contextWindow": "Context Window Size"
+  },
   "ledIndicator": {
     "on": "On",
     "off": "Off",
