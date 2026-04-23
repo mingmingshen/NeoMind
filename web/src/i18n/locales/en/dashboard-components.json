@@ -417,7 +417,10 @@
   "vlmVision": {
     "systemPrompt": "System Prompt",
     "systemPromptPlaceholder": "Describe how the VLM should analyze images...",
-    "contextWindow": "Context Window Size"
+    "contextWindow": "Context Window Size",
+    "selectModel": "Vision Model",
+    "selectModelPlaceholder": "Select a vision language model",
+    "noModels": "No vision models available"
   },
   "ledIndicator": {
     "on": "On",

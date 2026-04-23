@@ -381,7 +381,10 @@
   "vlmVision": {
     "systemPrompt": "系统提示词",
     "systemPromptPlaceholder": "描述 VLM 应如何分析图像...",
-    "contextWindow": "上下文窗口大小"
+    "contextWindow": "上下文窗口大小",
+    "selectModel": "视觉模型",
+    "selectModelPlaceholder": "选择视觉语言模型",
+    "noModels": "暂无可用的视觉模型"
   },
   "ledIndicator": {
     "on": "开启",

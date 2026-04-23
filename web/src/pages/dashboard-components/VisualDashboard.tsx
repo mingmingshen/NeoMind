@@ -1108,6 +1108,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const [agents, setAgents] = useState<AiAgent[]>([])
   const [agentsLoading, setAgentsLoading] = useState(false)
 
+  // Vision models for vlm-vision config
+  const [visionModels, setVisionModels] = useState<{ id: string; name: string; backendId: string; backendName: string }[]>([])
+  const [visionModelsLoading, setVisionModelsLoading] = useState(false)
+
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -1387,6 +1391,55 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       setComponentConfig(prev => ({ ...prev, _agentsList: agents }))
     }
   }, [agents, agentsLoading, configOpen, selectedComponent?.type])
+
+  // Load vision models when config opens for vlm-vision
+  useEffect(() => {
+    const loadVisionModels = async () => {
+      if (configOpen && selectedComponent?.type === 'vlm-vision') {
+        setVisionModelsLoading(true)
+        try {
+          const resp = await api.listLlmBackends({ active_only: true })
+          const backends = resp.backends || resp || []
+          const models: { id: string; name: string; backendId: string; backendName: string }[] = []
+          const VISION_PATTERNS = ['vl', 'vision', 'llava', 'bakllava', 'qwen-vl']
+          for (const backend of Array.isArray(backends) ? backends : []) {
+            const backendId = backend.id
+            const backendName = backend.name || backendId
+            if (backend.capabilities?.supports_multimodal) {
+              if (backend.model) {
+                models.push({ id: backend.model, name: backend.model, backendId, backendName })
+              }
+            }
+            if (backend.backend_type === 'ollama') {
+              try {
+                const modelsResp = await api.listOllamaModels(backend.endpoint)
+                for (const m of (modelsResp.models || [])) {
+                  const lower = (m.name || '').toLowerCase()
+                  if (VISION_PATTERNS.some((p) => lower.includes(p))) {
+                    models.push({ id: m.name, name: m.name, backendId, backendName })
+                  }
+                }
+              } catch { /* skip */ }
+            }
+          }
+          setVisionModels(models)
+        } catch (error) {
+          handleError(error, { operation: 'Load vision models for dashboard', showToast: false })
+          setVisionModels([])
+        } finally {
+          setVisionModelsLoading(false)
+        }
+      }
+    }
+    loadVisionModels()
+  }, [configOpen, selectedComponent?.type, selectedComponent?.id])
+
+  // For vlm-vision: update componentConfig with models when loaded
+  useEffect(() => {
+    if (configOpen && selectedComponent?.type === 'vlm-vision' && !visionModelsLoading) {
+      setComponentConfig(prev => ({ ...prev, _visionModelsList: visionModels }))
+    }
+  }, [visionModels, visionModelsLoading, configOpen, selectedComponent?.type])
 
   // Note: Removed auto-create dashboard logic
   // Users should explicitly create dashboards via the UI
@@ -4819,33 +4872,63 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           displaySections: [
             {
               type: 'custom' as const,
-              render: () => (
-                <div className="space-y-3">
-                  <Field>
-                    <Label>{t('dashboardComponents:vlmVision.systemPrompt', 'System Prompt')}</Label>
-                    <textarea
-                      className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
-                      value={config.systemPrompt || ''}
-                      onChange={(e) => updateConfig('systemPrompt')(e.target.value)}
-                      placeholder={t('dashboardComponents:vlmVision.systemPromptPlaceholder', 'Describe how the VLM should analyze images...')}
-                    />
-                  </Field>
-                  <Field>
-                    <Label>{t('dashboardComponents:vlmVision.contextWindow', 'Context Window Size')}</Label>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="range"
-                        min={1}
-                        max={20}
-                        value={config.contextWindowSize || 10}
-                        onChange={(e) => updateConfig('contextWindowSize')(Number(e.target.value))}
-                        className="flex-1"
+              render: () => {
+                const modelsList = (config as any)._visionModelsList || visionModels
+                return (
+                  <div className="space-y-3">
+                    <Field>
+                      <Label>{t('dashboardComponents:vlmVision.selectModel')}</Label>
+                      <Select
+                        value={config.modelId || ''}
+                        onValueChange={(value) => updateConfig('modelId')(value)}
+                        disabled={visionModelsLoading}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder={visionModelsLoading ? t('common:loading') : t('dashboardComponents:vlmVision.selectModelPlaceholder')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {modelsList.map((model: any) => (
+                            <SelectItem key={model.id} value={model.id}>
+                              <div className="flex items-center gap-2">
+                                <span>{model.name}</span>
+                                <span className="text-xs text-muted-foreground">({model.backendName})</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                          {modelsList.length === 0 && !visionModelsLoading && (
+                            <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                              {t('dashboardComponents:vlmVision.noModels')}
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field>
+                      <Label>{t('dashboardComponents:vlmVision.systemPrompt')}</Label>
+                      <textarea
+                        className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                        value={config.systemPrompt || ''}
+                        onChange={(e) => updateConfig('systemPrompt')(e.target.value)}
+                        placeholder={t('dashboardComponents:vlmVision.systemPromptPlaceholder')}
                       />
-                      <span className="text-sm text-muted-foreground w-8 text-right">{config.contextWindowSize || 10}</span>
-                    </div>
-                  </Field>
-                </div>
-              ),
+                    </Field>
+                    <Field>
+                      <Label>{t('dashboardComponents:vlmVision.contextWindow')}</Label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min={1}
+                          max={20}
+                          value={config.contextWindowSize || 10}
+                          onChange={(e) => updateConfig('contextWindowSize')(Number(e.target.value))}
+                          className="flex-1"
+                        />
+                        <span className="text-sm text-muted-foreground w-8 text-right">{config.contextWindowSize || 10}</span>
+                      </div>
+                    </Field>
+                  </div>
+                )
+              },
             },
           ],
         }
