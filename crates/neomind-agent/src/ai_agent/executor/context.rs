@@ -1,11 +1,24 @@
 use super::*;
 
+/// Identifies the data source that triggered an agent execution.
+#[derive(Clone, Debug)]
+pub struct DataSourceRef {
+    /// Source type: "device", "extension", "transform", "ai"
+    pub source_type: String,
+    /// Source entity ID (device_id, extension_id, transform_id, ai group)
+    pub source_id: String,
+    /// Specific field/metric name within the source
+    pub field: String,
+}
+
 /// Event data for triggering agent execution.
 #[derive(Clone, Debug)]
 pub struct EventTriggerData {
-    pub device_id: String,
-    pub metric: String,
+    /// What data source triggered this event
+    pub source: DataSourceRef,
+    /// The value that triggered the event
     pub value: MetricValue,
+    /// When the event occurred
     pub timestamp: i64,
 }
 

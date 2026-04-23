@@ -939,7 +939,7 @@ impl AgentExecutor {
         let event_value_json = serde_json::to_value(&event_data.value).unwrap_or_default();
 
         // Check if the event value is an image
-        let is_image = is_image_metric(&event_data.metric, &event_value_json);
+        let is_image = is_image_metric(&event_data.source.field, &event_value_json);
         let (image_url, image_base64, image_mime) = if is_image {
             extract_image_data(&event_value_json)
         } else {
@@ -966,8 +966,8 @@ impl AgentExecutor {
             }
 
             tracing::info!(
-                device_id = %event_data.device_id,
-                metric = %event_data.metric,
+                source_id = %event_data.source.source_id,
+                field = %event_data.source.field,
                 has_url = image_url.is_some(),
                 has_base64 = image_base64.is_some(),
                 mime = ?image_mime,
@@ -976,8 +976,8 @@ impl AgentExecutor {
         }
 
         data.push(DataCollected {
-            source: format!("{}:{}", event_data.device_id, event_data.metric),
-            data_type: event_data.metric.clone(),
+            source: format!("{}:{}", event_data.source.source_id, event_data.source.field),
+            data_type: event_data.source.field.clone(),
             values: event_values,
             timestamp: event_data.timestamp,
         });
@@ -992,7 +992,7 @@ impl AgentExecutor {
                 continue;
             }
             // Skip if it's the same event we already added
-            if item.source == format!("{}:{}", event_data.device_id, event_data.metric) {
+            if item.source == format!("{}:{}", event_data.source.source_id, event_data.source.field) {
                 continue;
             }
             data.push(item);
@@ -1000,8 +1000,8 @@ impl AgentExecutor {
 
         tracing::debug!(
             agent_id = %agent.id,
-            event_device = %event_data.device_id,
-            event_metric = %event_data.metric,
+            event_source = %event_data.source.source_id,
+            event_field = %event_data.source.field,
             total_data_count = data.len(),
             event_is_image = is_image,
             "Collected data including event trigger"

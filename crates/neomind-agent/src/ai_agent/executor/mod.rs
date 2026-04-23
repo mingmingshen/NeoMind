@@ -92,7 +92,7 @@ mod memory;
 mod intent;
 
 // Re-export public types
-pub use context::{EventTriggerData, ChainState, ChainResult};
+pub use context::{EventTriggerData, DataSourceRef, ChainState, ChainResult};
 pub(crate) use analyzer::AnalysisResult;
 
 // Re-export functions needed by sibling modules (via use super::*)
@@ -1508,7 +1508,7 @@ impl AgentExecutor {
             ) {
                 // Check if agent's event filter matches this event
                 if self
-                    .matches_event_filter(agent, &device_id, metric, value)
+                    .matches_data_source_filter(agent, "device", &device_id, metric)
                     .await
                 {
                     // Check for duplicate execution within the last 5 seconds
@@ -1592,8 +1592,11 @@ impl AgentExecutor {
 
                         // Create event trigger data
                         let event_trigger_data = EventTriggerData {
-                            device_id: device_id_for_task,
-                            metric: metric_clone,
+                            source: DataSourceRef {
+                                source_type: "device".to_string(),
+                                source_id: device_id_for_task,
+                                field: metric_clone,
+                            },
                             value: value_clone,
                             timestamp,
                         };
@@ -1618,8 +1621,8 @@ impl AgentExecutor {
                             Ok(executor) => {
                                 tracing::debug!(
                                     agent_id = %agent_id_for_log,
-                                    trigger_device = %event_trigger_data.device_id,
-                                    trigger_metric = %event_trigger_data.metric,
+                                    trigger_device = %event_trigger_data.source.source_id,
+                                    trigger_metric = %event_trigger_data.source.field,
                                     "Executing event-triggered agent with event data"
                                 );
 
@@ -1661,39 +1664,273 @@ impl AgentExecutor {
         Ok(())
     }
 
-    /// Check if an event matches the agent's event filter.
-    async fn matches_event_filter(
+    /// Unified entry point for triggering agents on any data source update.
+    /// Called from the EventBus listener when any data source produces new values.
+    pub async fn check_and_trigger_data_event(
+        &self,
+        source_type: &str,
+        source_id: String,
+        field: String,
+        value: &MetricValue,
+    ) -> AgentResult<()> {
+        // Refresh event-triggered agents cache
+        self.refresh_event_agents().await;
+
+        let event_agents = self.event_agents.read().await;
+
+        tracing::debug!(
+            source_type = %source_type,
+            source_id = %source_id,
+            field = %field,
+            event_agent_count = event_agents.len(),
+            "[DATA_EVENT] Checking data event against {} event-triggered agents",
+            event_agents.len()
+        );
+
+        let source_id_for_spawn = source_id.clone();
+
+        // Clean up old entries from recent_executions (older than 60 seconds)
+        let now = chrono::Utc::now().timestamp();
+        let mut recent = self.recent_executions.write().await;
+        recent.retain(|_, &mut timestamp| now - timestamp < 60);
+        drop(recent);
+
+        for (_agent_id, agent) in event_agents.iter() {
+            // Check if this agent has event-based schedule
+            if !matches!(
+                agent.schedule.schedule_type,
+                neomind_storage::ScheduleType::Event
+            ) {
+                continue;
+            }
+
+            // Check if agent's data source filter matches this event
+            if !self
+                .matches_data_source_filter(agent, source_type, &source_id, &field)
+                .await
+            {
+                continue;
+            }
+
+            // Deduplicate by (agent_id, source_id)
+            let dedup_key = (agent.id.clone(), source_id.clone());
+            let recent = self.recent_executions.read().await;
+            let is_duplicate = recent
+                .get(&dedup_key)
+                .map(|&timestamp| now - timestamp < 5)
+                .unwrap_or(false);
+            drop(recent);
+
+            if is_duplicate {
+                tracing::debug!(
+                    agent_name = %agent.name,
+                    source_type = %source_type,
+                    source_id = %source_id,
+                    field = %field,
+                    "Skipping duplicate data event-triggered execution (within 5 seconds)"
+                );
+                continue;
+            }
+
+            // Mark this execution as recent
+            {
+                let mut recent = self.recent_executions.write().await;
+                recent.insert(dedup_key, now);
+            }
+
+            tracing::debug!(
+                agent_name = %agent.name,
+                source_type = %source_type,
+                source_id = %source_id,
+                field = %field,
+                "Data event-triggered agent execution"
+            );
+
+            // Clone the agent and event data for execution
+            let agent_clone = agent.clone();
+            let field_clone = field.clone();
+            let value_clone = value.clone();
+            let source_id_for_task = source_id_for_spawn.clone();
+            let source_type_for_task = source_type.to_string();
+            let timestamp = chrono::Utc::now().timestamp();
+
+            // Spawn full agent execution in background
+            let executor_store = self.store.clone();
+            let executor_time_series = self.time_series_storage.clone();
+            let executor_device = self.device_service.clone();
+            let executor_event_bus = self.event_bus.clone();
+            let executor_message_manager = self.message_manager.clone();
+            let executor_llm = self.llm_runtime.clone();
+            let executor_llm_store = self.llm_backend_store.clone();
+            let agent_id_for_log = agent.id.clone();
+            let backend_sems = self.backend_semaphores.clone();
+            let executor_skill_registry = self._config.skill_registry.clone();
+            let executor_tool_registry = self.tool_registry.clone();
+            let executor_extension_registry = self.extension_registry.clone();
+            let executor_memory_store = self.memory_store.clone();
+            let backend_id = agent.llm_backend_id
+                .clone()
+                .unwrap_or_else(|| "default".to_string());
+
+            tokio::spawn(async move {
+                // Acquire per-backend semaphore (WAIT, not fail)
+                if let Some(ref sems) = backend_sems {
+                    let backend_sem = sems.get(&backend_id).await;
+                    let available = backend_sem.available_permits();
+                    if available == 0 {
+                        tracing::debug!(
+                            agent_id = %agent_id_for_log,
+                            backend_id = %backend_id,
+                            "Data event agent waiting for backend permit"
+                        );
+                    }
+                    let _backend_permit = backend_sem.acquire().await.unwrap();
+                    tracing::debug!(
+                        agent_id = %agent_id_for_log,
+                        backend_id = %backend_id,
+                        "Data event agent acquired backend permit"
+                    );
+                }
+
+                // Create event trigger data with unified DataSourceRef
+                let event_trigger_data = EventTriggerData {
+                    source: DataSourceRef {
+                        source_type: source_type_for_task,
+                        source_id: source_id_for_task,
+                        field: field_clone,
+                    },
+                    value: value_clone,
+                    timestamp,
+                };
+
+                // Create a new executor for this event-triggered execution
+                let executor_config = AgentExecutorConfig {
+                    store: executor_store.clone(),
+                    time_series_storage: executor_time_series.clone(),
+                    device_service: executor_device.clone(),
+                    event_bus: executor_event_bus.clone(),
+                    message_manager: executor_message_manager,
+                    llm_runtime: executor_llm,
+                    llm_backend_store: executor_llm_store,
+                    extension_registry: executor_extension_registry,
+                    tool_registry: executor_tool_registry,
+                    memory_store: executor_memory_store,
+                    backend_semaphores: backend_sems,
+                    skill_registry: executor_skill_registry,
+                };
+
+                match AgentExecutor::new(executor_config).await {
+                    Ok(executor) => {
+                        tracing::debug!(
+                            agent_id = %agent_id_for_log,
+                            trigger_source_type = %event_trigger_data.source.source_type,
+                            trigger_source_id = %event_trigger_data.source.source_id,
+                            trigger_field = %event_trigger_data.source.field,
+                            "Executing data event-triggered agent with event data"
+                        );
+
+                        // Execute the agent with event data
+                        match executor
+                            .execute_agent(agent_clone, Some(event_trigger_data))
+                            .await
+                        {
+                            Ok(record) => {
+                                tracing::debug!(
+                                    agent_id = %agent_id_for_log,
+                                    execution_id = %record.id,
+                                    status = ?record.status,
+                                    "Data event-triggered agent execution completed"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    agent_id = %agent_id_for_log,
+                                    error = %e,
+                                    "Data event-triggered agent execution failed"
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            agent_id = %agent_id_for_log,
+                            error = %e,
+                            "Failed to create executor for data event-triggered agent"
+                        );
+                    }
+                }
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Check if a data source update matches an agent's resource bindings.
+    /// Works uniformly for all source types (device, extension, transform, ai).
+    async fn matches_data_source_filter(
         &self,
         agent: &AiAgent,
-        device_id: &str,
-        metric: &str,
-        _value: &MetricValue,
+        source_type: &str,
+        source_id: &str,
+        field: &str,
     ) -> bool {
-        // Build the expected resource IDs for this event
-        let device_metric_id = format!("{}:{}", device_id, metric);
+        // Build the expected compound resource ID
+        let compound_id = format!("{}:{}", source_id, field);
 
-        // Check each resource to see if it matches this event
+        // Check resource bindings
         let has_matching_resource = agent.resources.iter().any(|r| {
             match r.resource_type {
                 ResourceType::Device => {
-                    // Device resource matches if device_id matches exactly
-                    r.resource_id == device_id
+                    // Device resource matches if source is device and source_id matches
+                    source_type == "device" && r.resource_id == source_id
                 }
                 ResourceType::Metric => {
-                    // Metric resource matches if:
+                    // Metric resource matches if source is device:
                     // 1. Exact "device_id:metric" match, OR
-                    // 2. Metric-only resource (no colon) matches metric name exactly
-                    if r.resource_id.contains(':') {
-                        // Resource has device prefix - require exact match
-                        r.resource_id == device_metric_id
+                    // 2. Metric-only resource (no colon) matches field name exactly
+                    if source_type == "device" {
+                        if r.resource_id.contains(':') {
+                            r.resource_id == compound_id
+                        } else {
+                            r.resource_id == field
+                        }
                     } else {
-                        // Resource is metric-only - match if metric name matches exactly
-                        r.resource_id == metric
+                        false
                     }
+                }
+                ResourceType::ExtensionMetric => {
+                    // Extension metric matches if source is extension:
+                    // "*", extension_id, or "extension_id:field"
+                    if source_type == "extension" {
+                        let ext_metric_id = format!("{}:{}", source_id, field);
+                        r.resource_id == "*" || r.resource_id == source_id || r.resource_id == ext_metric_id
+                    } else {
+                        false
+                    }
+                }
+                ResourceType::ExtensionTool => {
+                    // Extension tool matches if source is extension and source_id matches
+                    source_type == "extension" && r.resource_id == source_id
                 }
                 _ => false,
             }
         });
+
+        // Also check event_filter JSON for backward compat
+        if let Some(ref filter_json) = agent.schedule.event_filter {
+            if let Ok(filter) = serde_json::from_str::<serde_json::Value>(filter_json) {
+                // Legacy device.metric filter
+                if let Some(event_type) = filter.get("event_type").and_then(|v| v.as_str()) {
+                    if event_type == "device.metric" {
+                        if let Some(filter_device) = filter.get("device_id").and_then(|v| v.as_str()) {
+                            if filter_device != "all" && filter_device != source_id {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Agent matches if:
         // 1. It has a matching resource, OR
@@ -1702,12 +1939,13 @@ impl AgentExecutor {
 
         tracing::trace!(
             agent_name = %agent.name,
-            device_id = %device_id,
-            metric = %metric,
+            source_type = %source_type,
+            source_id = %source_id,
+            field = %field,
             has_matching_resource = has_matching_resource,
             resources_empty = agent.resources.is_empty(),
             matches = matches,
-            "[EVENT] Agent {} event filter check: has_matching_resource={}, matches={}",
+            "[EVENT] Agent {} data source filter check: has_matching_resource={}, matches={}",
             agent.name,
             has_matching_resource,
             matches
@@ -1833,14 +2071,15 @@ impl AgentExecutor {
 
         // Determine trigger type and context event_data based on whether we have event trigger
         let trigger_type = match &event_data {
-            Some(ed) => format!("event:{}", ed.metric),
+            Some(ed) => format!("event:{}", ed.source.field),
             None => "manual".to_string(),
         };
 
         let context_event_data = event_data.as_ref().map(|ed| {
             serde_json::json!({
-                "device_id": ed.device_id,
-                "metric": ed.metric,
+                "source_type": ed.source.source_type,
+                "source_id": ed.source.source_id,
+                "field": ed.source.field,
                 "value": serde_json::to_value(&ed.value).unwrap_or_default(),
                 "timestamp": ed.timestamp,
             })
@@ -1967,8 +2206,9 @@ impl AgentExecutor {
             // Extract event info for conversation turn if available
             let turn_event_data = event_data.as_ref().map(|ed| {
                 serde_json::json!({
-                    "device_id": ed.device_id,
-                    "metric": ed.metric,
+                    "source_type": ed.source.source_type,
+                    "source_id": ed.source.source_id,
+                    "field": ed.source.field,
                     "value": serde_json::to_value(&ed.value).unwrap_or_default(),
                 })
             });
@@ -2282,8 +2522,8 @@ impl AgentExecutor {
                 agent_id = %agent.id,
                 enable_chaining = agent.enable_tool_chaining,
                 max_depth = max_depth,
-                event_device = %ed.device_id,
-                event_metric = %ed.metric,
+                event_source = %ed.source.source_id,
+                event_field = %ed.source.field,
                 "Starting event-triggered agent execution"
             );
         } else {
