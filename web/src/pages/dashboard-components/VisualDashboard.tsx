@@ -1399,27 +1399,30 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         setVisionModelsLoading(true)
         try {
           const resp = await api.listLlmBackends({ active_only: true })
-          const backends = resp.backends || resp || []
+          const backends = resp?.backends || []
           const models: { id: string; name: string; backendId: string; backendName: string }[] = []
-          for (const backend of Array.isArray(backends) ? backends : []) {
+          for (const backend of backends) {
+            if (!backend.model) continue
             const backendId = backend.id
             const backendName = backend.name || backendId
-            // For backends with a configured model, show that model
-            if (backend.model) {
-              models.push({ id: backend.model, name: `${backendName} / ${backend.model}`, backendId, backendName })
-            }
-            // For Ollama backends, list all available models
-            if (backend.backend_type === 'ollama') {
+            // Each backend has a model — show it directly
+            models.push({ id: backendId, name: `${backendName} / ${backend.model}`, backendId, backendName })
+            // For Ollama backends, also list individual models
+            if (backend.backend_type === 'ollama' && backend.endpoint) {
               try {
                 const modelsResp = await api.listOllamaModels(backend.endpoint)
-                for (const m of (modelsResp.models || [])) {
-                  models.push({ id: `${backendId}::${m.name}`, name: `${backendName} / ${m.name}`, backendId, backendName })
+                for (const m of (modelsResp?.models || [])) {
+                  if (m.name) {
+                    models.push({ id: `${backendId}::${m.name}`, name: `${backendName} / ${m.name}`, backendId, backendName })
+                  }
                 }
               } catch { /* skip */ }
             }
           }
+          console.log('[VLM Vision] Loaded models:', models.length, models)
           setVisionModels(models)
         } catch (error) {
+          console.error('[VLM Vision] Failed to load models:', error)
           handleError(error, { operation: 'Load vision models for dashboard', showToast: false })
           setVisionModels([])
         } finally {
