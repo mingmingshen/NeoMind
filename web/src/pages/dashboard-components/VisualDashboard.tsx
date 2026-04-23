@@ -1398,14 +1398,14 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       if (configOpen && selectedComponent?.type === 'vlm-vision') {
         setVisionModelsLoading(true)
         try {
-          const resp = await api.listLlmBackends({ active_only: true })
+          // Load without active_only filter — same as chat page
+          const resp = await api.listLlmBackends()
           const backends = resp?.backends || []
           const models: { id: string; name: string; backendId: string; backendName: string }[] = []
           for (const backend of backends) {
             if (!backend.model) continue
             const backendId = backend.id
             const backendName = backend.name || backendId
-            // Each backend has a model — show it directly
             models.push({ id: backendId, name: `${backendName} / ${backend.model}`, backendId, backendName })
             // For Ollama backends, also list individual models
             if (backend.backend_type === 'ollama' && backend.endpoint) {
@@ -1419,10 +1419,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               } catch { /* skip */ }
             }
           }
-          console.log('[VLM Vision] Loaded models:', models.length, models)
           setVisionModels(models)
         } catch (error) {
-          console.error('[VLM Vision] Failed to load models:', error)
           handleError(error, { operation: 'Load vision models for dashboard', showToast: false })
           setVisionModels([])
         } finally {
