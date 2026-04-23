@@ -413,8 +413,10 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
     // For Push mode: channel to receive push outputs from extension
     let mut push_rx: Option<mpsc::Receiver<PushOutputMessage>> = None;
     let push_router = get_push_router();
-    // Abort handle for the IPC→router forwarder task (Push mode)
-    let mut push_forwarder_handle: Option<tokio::task::JoinHandle<()>> = None;
+    // Handle for the shared IPC→router forwarder task (Push mode).
+    // Stored to keep the task alive; NOT used for cancellation (the forwarder
+    // is shared across all sessions and must outlive any single connection).
+    let mut _push_forwarder_handle: Option<tokio::task::JoinHandle<()>> = None;
 
     // Message loop
     loop {
@@ -524,36 +526,37 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
                                                 continue;
                                             };
 
-                                            // Create IPC→router channel and forwarder task.
-                                            // NOTE: Each session gets its own forwarder. The shared
-                                            // push_output_channel is overwritten, but that's OK because
-                                            // the router routes by session_id — only messages for
-                                            // registered sessions are forwarded.
-                                            let (push_tx, mut push_rx_ipc) =
-                                                mpsc::channel(256);
-                                            isolated.set_push_output_channel(push_tx).await;
+                                            // Set up the IPC→router channel if not already set.
+                                            // The same shared channel is used for ALL sessions.
+                                            // The router dispatches by session_id, so all sessions
+                                            // share one forwarder and one IPC channel safely.
+                                            if isolated.get_push_output_channel().await.is_none() {
+                                                let (push_tx, mut push_rx_ipc) =
+                                                    mpsc::channel(256);
+                                                isolated.set_push_output_channel(push_tx).await;
 
-                                            let router = push_router.clone();
-                                            let handle = tokio::spawn(async move {
-                                                while let Some(output) = push_rx_ipc.recv().await {
-                                                    let _ = router
-                                                        .route(PushOutputMessage {
-                                                            session_id: output.session_id,
-                                                            sequence: output.sequence,
-                                                            data: output.data,
-                                                            data_type: output.data_type,
-                                                            timestamp: output.timestamp,
-                                                            metadata: output.metadata,
-                                                        })
-                                                        .await;
-                                                }
-                                                tracing::debug!(
-                                                    "Push IPC forwarder stopped"
-                                                );
-                                            });
-                                            push_forwarder_handle = Some(handle);
+                                                let router = push_router.clone();
+                                                let handle = tokio::spawn(async move {
+                                                    while let Some(output) = push_rx_ipc.recv().await {
+                                                        let _ = router
+                                                            .route(PushOutputMessage {
+                                                                session_id: output.session_id,
+                                                                sequence: output.sequence,
+                                                                data: output.data,
+                                                                data_type: output.data_type,
+                                                                timestamp: output.timestamp,
+                                                                metadata: output.metadata,
+                                                            })
+                                                            .await;
+                                                    }
+                                                    tracing::debug!(
+                                                        "Push IPC forwarder stopped"
+                                                    );
+                                                });
+                                                _push_forwarder_handle = Some(handle);
+                                            }
 
-                                            // Start pushing
+                                            // Start pushing for this session
                                             if let Err(e) = ext.start_push(&sid).await {
                                                 send_error(
                                                     &mut socket,
@@ -759,11 +762,9 @@ async fn handle_stream_socket(mut socket: WebSocket, extension_id: String, state
     if let Some(sid) = session_id {
         // For Push mode: stop pushing and clean up routing
         if cap.mode == StreamMode::Push {
-            // Abort the IPC→router forwarder for this session
-            if let Some(handle) = push_forwarder_handle.take() {
-                handle.abort();
-                tracing::debug!("Aborted push forwarder task for session: {}", sid);
-            }
+            // Do NOT abort the shared IPC→router forwarder task.
+            // It serves all sessions — only unregister this session from the router.
+            // The forwarder will naturally stop when the extension process exits.
 
             let ext = extension.read().await;
             if let Err(e) = ext.stop_push(&sid).await {

@@ -82,6 +82,12 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     });
     startup.service("Extension metrics collector", ServiceStatus::Started);
 
+    // Kill orphaned extension runner processes from a previous session.
+    // MUST run before init_extensions() to avoid killing newly spawned runners.
+    // Orphaned runners hold dylib files open and cause dlopen() hangs.
+    neomind_core::extension::isolated::IsolatedExtensionManager::cleanup_orphaned_runners();
+    startup.service("Extension orphan cleanup", ServiceStatus::Started);
+
     // Initialize extensions from persistent storage
     // This loads all extensions marked with auto_start=true
     state.init_extensions().await;

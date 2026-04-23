@@ -153,6 +153,83 @@ impl IsolatedExtensionManager {
         Self::new(IsolatedManagerConfig::default())
     }
 
+    /// Kill orphaned extension runner processes left over from a previous session.
+    ///
+    /// When NeoMind crashes or is force-killed, child `neomind-extension-runner`
+    /// processes become orphans. They keep dylib files open, which can cause
+    /// `dlopen()` hangs in newly spawned runners. This must be called **before**
+    /// loading any extensions.
+    pub fn cleanup_orphaned_runners() {
+        // Find the extension runner binary name to search for
+        let runner_name = if cfg!(windows) {
+            "neomind-extension-runner.exe"
+        } else {
+            "neomind-extension-runner"
+        };
+
+        #[cfg(unix)]
+        {
+            use std::process::Command as StdCommand;
+
+            // Use pkill to kill all matching processes.
+            // `-f` matches against the full command line so we catch
+            // `/path/to/neomind-extension-runner --extension-path ...`
+            let output = StdCommand::new("pkill")
+                .arg("-f")
+                .arg(runner_name)
+                .output();
+
+            match output {
+                Ok(o) if o.status.success() => {
+                    tracing::info!(
+                        "Cleaned up orphaned extension runner processes from previous session"
+                    );
+                    // Give processes time to fully exit and release dylib handles
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
+                Ok(_) => {
+                    // pkill returns exit code 1 when no processes matched — that's fine
+                    tracing::debug!("No orphaned extension runner processes found");
+                }
+                Err(e) => {
+                    // pkill not available (unlikely on macOS/Linux, but handle gracefully)
+                    tracing::debug!(
+                        error = %e,
+                        "pkill not available, skipping orphan cleanup"
+                    );
+                }
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            use std::process::Command as StdCommand;
+
+            // On Windows, use `taskkill /F /IM` to kill by image name
+            let output = StdCommand::new("taskkill")
+                .args(["/F", "/IM", runner_name])
+                .output();
+
+            match output {
+                Ok(o) if o.status.success() => {
+                    tracing::info!(
+                        "Cleaned up orphaned extension runner processes from previous session"
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
+                Ok(_) => {
+                    tracing::debug!("No orphaned extension runner processes found");
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        error = %e,
+                        "taskkill not available, skipping orphan cleanup"
+                    );
+                }
+            }
+        }
+    }
+
     /// Start the background task that monitors extension crashes and auto-restarts them
     ///
     /// This should be called once when the manager is created, in an async context.

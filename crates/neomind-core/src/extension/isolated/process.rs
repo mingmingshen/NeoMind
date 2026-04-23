@@ -588,7 +588,7 @@ impl IsolatedExtension {
 
         // Get the current tokio runtime handle to pass to the receiver thread
         let rt_handle = tokio::runtime::Handle::current();
-        self.spawn_receiver_thread(stdout, shutdown_rx, rt_handle);
+        self.spawn_receiver_thread(stdout, shutdown_rx, rt_handle, pid);
 
         // Spawn stderr reader to prevent pipe buffer from filling up
         let extension_id = self.extension_id.clone();
@@ -708,6 +708,7 @@ impl IsolatedExtension {
         mut stdout: BufReader<std::process::ChildStdout>,
         shutdown_rx: std::sync::mpsc::Receiver<()>,
         rt_handle: tokio::runtime::Handle,
+        child_pid: u32,
     ) {
         let extension_id = self.extension_id.clone();
         let in_flight = self.in_flight.clone();
@@ -772,6 +773,27 @@ impl IsolatedExtension {
                         );
 
                         running.store(false, Ordering::SeqCst);
+
+                        // 🔧 FIX: Immediately reap the child process to prevent zombies.
+                        // On Unix, a dead child stays as a zombie until waitpid() is called.
+                        // The `Child` handle in `self.process` is behind a tokio async mutex
+                        // which this std thread cannot lock, so we use the raw PID instead.
+                        #[cfg(unix)]
+                        {
+                            let pid = child_pid as libc::pid_t;
+                            let mut status: libc::c_int = 0;
+                            let ret = unsafe {
+                                libc::waitpid(pid, &mut status, libc::WNOHANG)
+                            };
+                            if ret > 0 {
+                                debug!(
+                                    extension_id = %extension_id,
+                                    pid = child_pid,
+                                    "Reaped crashed extension process (waitpid)"
+                                );
+                            }
+                        }
+
                         // Send death notification to manager
                         if let Ok(tx_guard) = death_tx.try_lock() {
                             if let Some(sender) = tx_guard.as_ref() {
