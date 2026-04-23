@@ -61,6 +61,7 @@ import { createExtensionSlice } from './slices/extensionSlice'
 import { createLlmBackendSlice } from './slices/llmBackendSlice'
 import { createDashboardSlice } from './slices/dashboardSlice'
 import { createUpdateSlice } from './slices/updateSlice'
+import { createVlmVisionSlice } from './slices/vlmVisionSlice'
 
 // Import types
 import type { AuthSlice } from './slices/authSlice'
@@ -73,6 +74,7 @@ import type { ExtensionSlice } from './slices/extensionSlice'
 import type { LlmBackendSlice } from './slices/llmBackendSlice'
 import type { DashboardState } from './slices/dashboardSlice'
 import type { UpdateSlice } from './slices/updateSlice'
+import type { VlmVisionSlice } from './slices/vlmVisionSlice'
 
 // ============================================================================
 // Combined Store Type
@@ -88,6 +90,7 @@ export type NeoMindStore = AuthSlice
   & LlmBackendSlice
   & DashboardState
   & UpdateSlice
+  & VlmVisionSlice
 
 // ============================================================================
 // Create Store
@@ -108,6 +111,7 @@ export const useStore = create<NeoMindStore>()(
         ...createLlmBackendSlice(set, get, api),
         ...createDashboardSlice(set, get, api),
         ...createUpdateSlice(set, get, api),
+        ...createVlmVisionSlice(set, get, api),
       }),
       {
         name: 'neomind-store',
