@@ -5,7 +5,7 @@
 # =============================================================================
 target/
 Cargo.lock
-docs/superpowers/
+docs/superpowers/.superpowers/
 # Extension binaries (compiled libraries)
 # Extensions are loaded at runtime, not part of source code
 extensions/
