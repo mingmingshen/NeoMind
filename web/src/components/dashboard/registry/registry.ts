@@ -46,6 +46,8 @@ import {
   Map,
   Webcam,
   Square as SquareIcon,
+  // Business
+  Camera,
 } from 'lucide-react'
 
 // ============================================================================
@@ -512,6 +514,21 @@ export const componentRegistry: ComponentRegistry = {
     defaultProps: {
       agentId: undefined,
     },
+    variants: ['default'],
+  },
+
+  'vlm-vision': {
+    type: 'vlm-vision',
+    name: 'VLM Vision',
+    description: 'Image analysis with Vision Language Model — auto-analyze data source images in a timeline chat',
+    category: 'business',
+    icon: Camera,
+    sizeConstraints: getSizeConstraints('vlm-vision'),
+    hasDataSource: true,
+    hasDisplayConfig: false,
+    hasActions: true,
+    acceptsProp: (prop) => ['agentId', 'sessionId', 'className', 'editMode'].includes(prop),
+    defaultProps: { agentId: undefined },
     variants: ['default'],
   },
 } as const

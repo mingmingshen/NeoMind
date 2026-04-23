@@ -228,6 +228,7 @@ export type GenericComponentType =
  */
 export type BusinessComponentType =
   | 'agent-monitor-widget'
+  | 'vlm-vision'
 
 /**
  * All Implemented Component Types
@@ -372,6 +373,7 @@ export const COMPONENT_SIZE_CONSTRAINTS: Partial<Record<ImplementedComponentType
 
   // Business Components
   'agent-monitor-widget': { minW: 4, minH: 4, defaultW: 6, defaultH: 5, maxW: 12, maxH: 8 },
+  'vlm-vision': { minW: 2, minH: 2, defaultW: 3, defaultH: 3, maxW: 6, maxH: 6 },
 }
 
 // ============================================================================
