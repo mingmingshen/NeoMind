@@ -228,6 +228,102 @@ impl EventDispatcher {
         }
     }
 
+    /// Dispatch an event to all subscribed extensions, excluding one specific extension.
+    ///
+    /// This is the same as `dispatch_event` but skips the specified extension ID.
+    /// Used for feedback loop prevention — e.g., when dispatching ExtensionOutput events,
+    /// the extension that produced the output should not receive its own event back.
+    pub async fn dispatch_event_excluding(
+        &self,
+        event_type: &str,
+        payload: Value,
+        exclude_extension_id: &str,
+    ) {
+        // Clone necessary data to avoid holding locks across await points
+        let subscriptions = self.subscriptions.read().clone();
+        let isolated_event_senders = self.isolated_event_senders.read().clone();
+
+        // Find all extensions that have subscribed to this event type
+        for (extension_id, event_types) in subscriptions.iter() {
+            // Skip the excluded extension (feedback loop prevention)
+            if extension_id == exclude_extension_id {
+                continue;
+            }
+
+            // Check if this extension should receive this event
+            let should_receive = event_types.iter().any(|et| {
+                // Wildcard: subscribe to all events
+                if et == "all" {
+                    return true;
+                }
+                // Exact match
+                if et == event_type {
+                    return true;
+                }
+                // Prefix match with separator (e.g., "Device" matches "Device::Metric")
+                if event_type.starts_with(&format!("{}::", et)) {
+                    return true;
+                }
+                // Prefix match without separator (e.g., "Device" matches "DeviceMetric")
+                if event_type.len() > et.len() && event_type.starts_with(et) {
+                    return true;
+                }
+                false
+            });
+
+            if should_receive {
+                // IMPORTANT: Check isolated extensions FIRST
+                // Isolated extensions have priority over in-process proxies
+                // This ensures events go to the actual extension process, not the proxy
+                if let Some(sender) = isolated_event_senders.get(extension_id) {
+                    // Send event to isolated extension via channel
+                    match sender.send((event_type.to_string(), payload.clone())).await {
+                        Ok(_) => {
+                            trace!(
+                                extension_id = %extension_id,
+                                event_type = %event_type,
+                                "Event sent to isolated extension"
+                            );
+                        }
+                        Err(e) => {
+                            error!(
+                                extension_id = %extension_id,
+                                error = %e,
+                                "Failed to send event to isolated extension"
+                            );
+                        }
+                    }
+                    continue; // Skip in-process check for isolated extensions
+                }
+
+                // Try in-process extensions (only if no isolated sender found)
+                let extension_opt = {
+                    let in_process_extensions = self.in_process_extensions.read();
+                    in_process_extensions.get(extension_id).cloned()
+                };
+
+                if let Some(extension) = extension_opt {
+                    trace!(
+                        extension_id = %extension_id,
+                        event_type = %event_type,
+                        "Dispatching event to in-process extension"
+                    );
+
+                    // Call the extension's handle_event method (async)
+                    let ext_guard = extension.read().await;
+                    if let Err(e) = ext_guard.handle_event(event_type, &payload) {
+                        error!(
+                            extension_id = %extension_id,
+                            event_type = %event_type,
+                            error = %e,
+                            "Failed to handle event in extension"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /// Get all event subscriptions
     ///
     /// Returns a map of extension_id -> event_types

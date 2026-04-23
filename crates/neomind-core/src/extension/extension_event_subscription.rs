@@ -129,6 +129,21 @@ impl ExtensionEventSubscriptionService {
             return;
         }
 
+        // Prevent feedback loops: skip dispatching ExtensionOutput events back to
+        // the extension that produced them. Extensions subscribing to "all" or "Extension"
+        // prefix would receive their own output events, potentially causing infinite loops.
+        if let NeoMindEvent::ExtensionOutput { ref extension_id, .. } = event {
+            trace!(
+                extension_id = %extension_id,
+                "Dispatching ExtensionOutput event, excluding source extension"
+            );
+            let (event_type, payload) = Self::convert_to_extension_format(&event);
+            event_dispatcher
+                .dispatch_event_excluding(&event_type, payload, extension_id)
+                .await;
+            return;
+        }
+
         // Convert NeoMindEvent to extension format (automatic)
         let (event_type, payload) = Self::convert_to_extension_format(&event);
 
