@@ -6,12 +6,11 @@
  * binding together useVlmSession, useVlmQueue, and useDataSource.
  */
 
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   Camera,
   Loader2,
   AlertCircle,
-  Settings2,
   Activity,
   Clock,
   MessageSquare,
@@ -24,7 +23,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { VlmTimeline } from './vlm-vision/VlmTimeline'
 import { VlmInputBar } from './vlm-vision/VlmInputBar'
-import { VlmConfigPanel } from './vlm-vision/VlmConfigPanel'
 import { useVlmSession } from './vlm-vision/useVlmSession'
 import { useVlmQueue } from './vlm-vision/useVlmQueue'
 import type { VlmVisionConfig } from './vlm-vision/types'
@@ -113,9 +111,6 @@ export function VlmVision({
     [storeConfig, modelIdProp, systemPromptProp, contextWindowSizeProp],
   )
 
-  // ---- Config panel ----
-  const [configOpen, setConfigOpen] = useState(false)
-
   // ---- Session lifecycle ----
   const handleConfigUpdate = useCallback(
     (updates: Partial<VlmVisionConfig>) => {
@@ -138,6 +133,7 @@ export function VlmVision({
   } = useVlmSession({
     componentId,
     config,
+    dataSource: dataSourceProp,
     onConfigUpdate: handleConfigUpdate,
   })
 
@@ -183,28 +179,25 @@ export function VlmVision({
   const hasSession = !!(config.sessionId || sessionIdProp)
 
   useEffect(() => {
-    if (hasDataSource && !hasSession && !initializing && !sessionError) {
+    // Only auto-init in non-edit mode with a data source and no existing session
+    if (!editMode && hasDataSource && !hasSession && !initializing && !sessionError) {
       initSession()
     }
-  }, [hasDataSource, hasSession, initializing, sessionError, initSession])
+  }, [editMode, hasDataSource, hasSession, initializing, sessionError, initSession])
 
-  // ---- Config save handler ----
-  const handleConfigSave = useCallback(
-    (updates: Partial<VlmVisionConfig>) => {
-      const needsReinit =
-        updates.modelId !== config.modelId ||
-        updates.systemPrompt !== config.systemPrompt
-
-      setVlmConfig(componentId, updates)
-      setConfigOpen(false)
-
-      if (needsReinit) {
-        // Small delay to let store update before re-init
-        setTimeout(() => initSession(), 100)
+  // ---- Cleanup agent on unmount ----
+  useEffect(() => {
+    return () => {
+      // If we created an agent, clean it up when component unmounts
+      const agentId = useStore.getState().vlmConfigs[componentId]?.agentId
+      if (agentId) {
+        import('@/lib/api').then(({ api }) => {
+          api.deleteAgent(agentId).catch(() => {})
+        })
       }
-    },
-    [componentId, config.modelId, config.systemPrompt, setVlmConfig, initSession],
-  )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [componentId])
 
   // ---- Stats ----
   const aiMessages = messages.filter((m) => m.type === 'ai')
@@ -275,115 +268,96 @@ export function VlmVision({
 
   // ---- Render: Active layout ----
   return (
-    <>
-      <div
-        className={cn(
-          'bg-card rounded-xl border shadow-sm overflow-hidden flex flex-col w-full h-full',
-          className,
-        )}
-      >
-        {/* Header */}
-        <div className="shrink-0 px-4 py-3 border-b border-border/50">
-          <div className="flex items-start gap-3">
-            {/* Avatar */}
-            <div
-              className={cn(
-                'w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
-                isStreaming ? 'bg-blue-500/20' : 'bg-primary/10',
-              )}
-            >
+    <div
+      className={cn(
+        'bg-card rounded-xl border shadow-sm overflow-hidden flex flex-col w-full h-full',
+        className,
+      )}
+    >
+      {/* Header */}
+      <div className="shrink-0 px-4 py-3 border-b border-border/50">
+        <div className="flex items-start gap-3">
+          {/* Avatar */}
+          <div
+            className={cn(
+              'w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
+              isStreaming ? 'bg-blue-500/20' : 'bg-primary/10',
+            )}
+          >
+            {isStreaming ? (
+              <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
+            ) : (
+              <Camera className="h-5 w-5 text-primary" />
+            )}
+          </div>
+
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="font-semibold text-sm truncate">VLM Vision</h3>
               {isStreaming ? (
-                <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
+                <Badge
+                  variant="default"
+                  className="text-[10px] h-5 gap-0.5 px-1.5"
+                >
+                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                  Analyzing
+                </Badge>
+              ) : isConnected ? (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] h-5 text-green-600 border-green-200"
+                >
+                  Live
+                </Badge>
               ) : (
-                <Camera className="h-5 w-5 text-primary" />
+                <Badge variant="secondary" className="text-[10px] h-5">
+                  Offline
+                </Badge>
               )}
             </div>
 
-            {/* Info */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-semibold text-sm truncate">VLM Vision</h3>
-                {isStreaming ? (
-                  <Badge
-                    variant="default"
-                    className="text-[10px] h-5 gap-0.5 px-1.5"
-                  >
-                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                    Analyzing
-                  </Badge>
-                ) : isConnected ? (
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] h-5 text-green-600 border-green-200"
-                  >
-                    Live
-                  </Badge>
-                ) : (
-                  <Badge variant="secondary" className="text-[10px] h-5">
-                    Offline
-                  </Badge>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 ml-auto shrink-0"
-                  onClick={() => setConfigOpen(true)}
-                >
-                  <Settings2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-
-              {/* Stats row */}
-              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+            {/* Stats row */}
+            <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <MessageSquare className="h-3 w-3" />
+                {messageCount} msgs
+              </span>
+              {avgDuration > 0 && (
                 <span className="flex items-center gap-1">
-                  <MessageSquare className="h-3 w-3" />
-                  {messageCount} msgs
+                  <Clock className="h-3 w-3" />
+                  {avgDuration}s avg
                 </span>
-                {avgDuration > 0 && (
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {avgDuration}s avg
-                  </span>
-                )}
-                {config.modelName && (
-                  <span className="flex items-center gap-1">
-                    <Activity className="h-3 w-3" />
-                    {config.modelName}
-                  </span>
-                )}
-                {(pending > 0 || isProcessing) && (
-                  <span className="flex items-center gap-1 text-blue-500">
-                    <ListOrdered className="h-3 w-3" />
-                    {pending > 0 ? `${pending} queued` : 'Processing'}
-                  </span>
-                )}
-              </div>
+              )}
+              {config.modelName && (
+                <span className="flex items-center gap-1">
+                  <Activity className="h-3 w-3" />
+                  {config.modelName}
+                </span>
+              )}
+              {(pending > 0 || isProcessing) && (
+                <span className="flex items-center gap-1 text-blue-500">
+                  <ListOrdered className="h-3 w-3" />
+                  {pending > 0 ? `${pending} queued` : 'Processing'}
+                </span>
+              )}
             </div>
           </div>
         </div>
-
-        {/* Content: Timeline */}
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <VlmTimeline
-            messages={messages}
-            streamingContent={streamingContent}
-            streamingMsgId={streamingMsgId}
-            contextWindowSize={config.contextWindowSize}
-          />
-        </div>
-
-        {/* Footer: Input Bar */}
-        <VlmInputBar onSend={sendText} disabled={isStreaming || !isConnected} />
       </div>
 
-      {/* Config Panel */}
-      <VlmConfigPanel
-        open={configOpen}
-        onOpenChange={setConfigOpen}
-        config={config}
-        onSave={handleConfigSave}
-        dataSource={dataSourceProp?.id || dataSourceProp?.source_id}
-      />
-    </>
+      {/* Content: Timeline */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <VlmTimeline
+          messages={messages}
+          streamingContent={streamingContent}
+          streamingMsgId={streamingMsgId}
+          contextWindowSize={config.contextWindowSize}
+        />
+      </div>
+
+      {/* Footer: Input Bar */}
+      <VlmInputBar onSend={sendText} disabled={isStreaming || !isConnected} />
+    </div>
   )
 }

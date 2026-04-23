@@ -279,17 +279,47 @@ impl AiAgentManager {
             .await?)
     }
 
-    /// Update agent status.
+    /// Update agent status and sync with scheduler.
+    ///
+    /// When pausing: unschedules the agent so it stops executing.
+    /// When activating: reschedules the agent if it has a non-Event schedule.
     pub async fn update_agent_status(
         &self,
         id: &str,
         status: AgentStatus,
     ) -> Result<(), crate::error::NeoMindError> {
-        Ok(self
-            .executor
+        use neomind_storage::ScheduleType;
+
+        // Persist the status change
+        self.executor
             .store()
             .update_agent_status(id, status, None)
-            .await?)
+            .await?;
+
+        match status {
+            AgentStatus::Paused | AgentStatus::Stopped => {
+                // Remove from scheduler so it stops running
+                self.scheduler.unschedule_agent(id).await?;
+                tracing::info!(agent_id = %id, status = ?status, "Agent unscheduled");
+            }
+            AgentStatus::Active => {
+                // Reschedule: load the agent and re-register with the scheduler
+                if let Some(agent) = self
+                    .executor
+                    .store()
+                    .get_agent(id)
+                    .await?
+                {
+                    if agent.schedule.schedule_type != ScheduleType::Event {
+                        self.scheduler.schedule_agent(agent).await?;
+                        tracing::info!(agent_id = %id, "Agent reactivated and rescheduled");
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
     }
 
     /// Delete an agent.

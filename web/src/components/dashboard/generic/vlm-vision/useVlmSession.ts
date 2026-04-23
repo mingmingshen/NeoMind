@@ -2,11 +2,14 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { ChatWebSocket } from '@/lib/websocket'
 import { api } from '@/lib/api'
 import type { ServerMessage } from '@/types'
+import type { DataSource } from '@/types/dashboard'
+import { getSourceId } from '@/types/dashboard'
 import type { VlmVisionConfig, VlmMessage } from './types'
 
 interface UseVlmSessionParams {
   componentId: string
   config: VlmVisionConfig
+  dataSource?: DataSource
   onConfigUpdate: (updates: Partial<VlmVisionConfig>) => void
 }
 
@@ -31,6 +34,7 @@ function nextId(): string {
 export function useVlmSession({
   componentId,
   config,
+  dataSource,
   onConfigUpdate,
 }: UseVlmSessionParams): UseVlmSessionReturn {
   const [messages, setMessages] = useState<VlmMessage[]>([])
@@ -238,7 +242,35 @@ export function useVlmSession({
       setError(null)
       cleanup()
 
-      // 1. Create agent
+      // 1. Create agent with data source as resource binding
+      let resources: any[] | undefined
+      if (dataSource) {
+        const sourceId = getSourceId(dataSource)
+        if (dataSource.type === 'extension' && dataSource.extensionId && dataSource.extensionMetric) {
+          // Extension metric: extension:ext_id:metric_name
+          resources = [{
+            resource_id: `extension:${dataSource.extensionId}:${dataSource.extensionMetric}`,
+            resource_type: 'extension_metric',
+            name: dataSource.extensionDisplayName || dataSource.extensionMetric,
+            config: {
+              extension_id: dataSource.extensionId,
+              metric_name: dataSource.extensionMetric,
+            },
+          }]
+        } else if (sourceId) {
+          // Device or other: source_id:property
+          resources = [{
+            resource_id: `${sourceId}:${dataSource.property || 'image'}`,
+            resource_type: dataSource.type === 'extension-metric' ? 'extension_metric' : 'metric',
+            name: dataSource.property || sourceId,
+            config: {
+              device_id: sourceId,
+              metric_name: dataSource.property || 'image',
+            },
+          }]
+        }
+      }
+
       const agent = await api.createAgent({
         name: `VLM Vision - ${componentId}`,
         user_prompt: config.systemPrompt,
@@ -246,6 +278,7 @@ export function useVlmSession({
         schedule: { schedule_type: 'event' },
         execution_mode: 'chat',
         context_window_size: config.contextWindowSize,
+        resources,
       })
 
       // 2. Create session
@@ -282,6 +315,7 @@ export function useVlmSession({
     config.systemPrompt,
     config.modelId,
     config.contextWindowSize,
+    dataSource,
     initializing,
     cleanup,
     onConfigUpdate,

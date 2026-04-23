@@ -1456,9 +1456,16 @@ pub async fn set_agent_status(
         }
     };
 
-    let store = &state.agents.agent_store;
-    store
-        .update_agent_status(&id, new_status, None)
+    // Use the agent manager (not raw store) so the scheduler is synced:
+    // - Paused/Stopped → unscheduled
+    // - Active → rescheduled
+    let manager = state
+        .get_or_init_agent_manager()
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("Agent manager not available: {}", e)))?;
+
+    manager
+        .update_agent_status(&id, new_status)
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update status: {}", e)))?;
 

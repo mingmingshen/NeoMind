@@ -1398,25 +1398,17 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       if (configOpen && selectedComponent?.type === 'vlm-vision') {
         setVisionModelsLoading(true)
         try {
-          // Load without active_only filter — same as chat page
           const resp = await api.listLlmBackends()
           const backends = resp?.backends || []
           const models: { id: string; name: string; backendId: string; backendName: string }[] = []
           for (const backend of backends) {
-            if (!backend.model) continue
-            const backendId = backend.id
-            const backendName = backend.name || backendId
-            models.push({ id: backendId, name: `${backendName} / ${backend.model}`, backendId, backendName })
-            // For Ollama backends, also list individual models
-            if (backend.backend_type === 'ollama' && backend.endpoint) {
-              try {
-                const modelsResp = await api.listOllamaModels(backend.endpoint)
-                for (const m of (modelsResp?.models || [])) {
-                  if (m.name) {
-                    models.push({ id: `${backendId}::${m.name}`, name: `${backendName} / ${m.name}`, backendId, backendName })
-                  }
-                }
-              } catch { /* skip */ }
+            if (backend.capabilities?.supports_multimodal) {
+              models.push({
+                id: backend.id,
+                name: backend.name || backend.model,
+                backendId: backend.id,
+                backendName: backend.name || backend.id,
+              })
             }
           }
           setVisionModels(models)

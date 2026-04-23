@@ -5,7 +5,7 @@
 # =============================================================================
 target/
 Cargo.lock
-
+docs/superpowers/
 # Extension binaries (compiled libraries)
 # Extensions are loaded at runtime, not part of source code
 extensions/
@@ -134,3 +134,4 @@ tarpaulin-report.html
 .serena
 .playwright-mcp
 CLAUDE.md*.backup2
+.superpowers
