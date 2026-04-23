@@ -926,9 +926,8 @@ pub async fn execute_extension_command_handler(
         }
     };
 
-    // DISABLED: Publish ExtensionOutput events - causes "no reactor running" crashes
-    // Event publishing will be re-enabled after fixing the Tokio runtime issue
-    // publish_extension_metrics_safe(&state, &id, &result).await;
+    // Publish ExtensionOutput events for agent triggers and dashboard subscriptions
+    publish_extension_metrics_safe(&state, &id, &result).await;
 
     ok(result)
 }
