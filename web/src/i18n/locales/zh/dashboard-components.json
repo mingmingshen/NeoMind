@@ -879,7 +879,9 @@
     "ruleStatusGrid": "规则状态",
     "ruleStatusGridDesc": "显示规则启用和触发状态",
     "transformList": "转换列表",
-    "transformListDesc": "显示数据处理转换流水线"
+    "transformListDesc": "显示数据处理转换流水线",
+    "vlmVision": "VLM 视觉分析",
+    "vlmVisionDesc": "绑定图像数据源，自动触发视觉语言模型推理，以对话形式展示分析结果"
   },
   "common": {
     "cancel": "取消",

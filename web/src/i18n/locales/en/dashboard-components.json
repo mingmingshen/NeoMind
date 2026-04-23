@@ -931,7 +931,9 @@
     "ruleStatusGrid": "Rule Status Grid",
     "ruleStatusGridDesc": "Display rule execution status",
     "transformList": "Transform List",
-    "transformListDesc": "Show data transformation rules"
+    "transformListDesc": "Show data transformation rules",
+    "vlmVision": "VLM Vision",
+    "vlmVisionDesc": "Bind image data sources, auto-trigger VLM inference, and display analysis in a timeline chat"
   },
   "common": {
     "cancel": "Cancel",

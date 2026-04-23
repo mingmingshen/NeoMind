@@ -185,6 +185,7 @@ import { getSourceId } from '@/types/dashboard'
 import type { Device, AiAgent } from '@/types'
 import { COMPONENT_SIZE_CONSTRAINTS } from '@/types/dashboard'
 import { dynamicRegistry, dtoToComponentMeta } from '@/components/dashboard/registry/DynamicRegistry'
+import { componentRegistry, groupComponentsByCategory, getCategoryInfo } from '@/components/dashboard/registry/registry'
 import * as lucideReact from 'lucide-react'
 import { api } from '@/lib/api'
 import { confirm } from '@/hooks/use-confirm'
@@ -304,115 +305,85 @@ interface ComponentCategory {
 
 // Factory function to get component library with translations
 function getComponentLibrary(t: (key: string) => string): ComponentCategory[] {
-  // Get extension components from dynamic registry
-  const extensionDtos = dynamicRegistry.getAllMetas()
+  // Get all components grouped by category from the registry
+  const grouped = groupComponentsByCategory()
 
-  // Debug logging
-  console.log('[getComponentLibrary] Extension components from registry:', {
-    count: extensionDtos.length,
-    types: extensionDtos.map(d => d.type),
-  })
-
-  // Map extension DTOs to ComponentItem format
-  const extensionItems: ComponentItem[] = extensionDtos.map(dto => {
-    // Get icon component from lucide-react
-    const iconName = dto.icon || 'Box'
-    const lucideRecord: any = lucideReact
-    const IconComponent = lucideRecord[iconName] || Box
-
-    return {
-      id: dto.type,
-      name: dto.name,
-      description: dto.description,
-      icon: IconComponent,
-    }
-  })
-
-  // Group extension components by category
-  const extensionCategories: ComponentCategory[] = []
-  const customComponents = extensionItems.filter(item => {
-    const dto = extensionDtos.find(d => d.type === item.id)
-    return dto?.category === 'custom'
-  })
-
-  if (customComponents.length > 0) {
-    extensionCategories.push({
-      category: 'custom',
-      categoryLabel: t('componentLibrary.custom'),
-      categoryIcon: Layers,
-      items: customComponents,
-    })
+  // i18n key mapping: component type → translation key
+  const nameKeys: Record<string, string> = {
+    'value-card': 'valueCard',
+    'led-indicator': 'ledIndicator',
+    'sparkline': 'sparkline',
+    'progress-bar': 'progressBar',
+    'line-chart': 'lineChart',
+    'area-chart': 'areaChart',
+    'bar-chart': 'barChart',
+    'pie-chart': 'pieChart',
+    'image-display': 'imageDisplay',
+    'image-history': 'imageHistory',
+    'web-display': 'webDisplay',
+    'markdown-display': 'markdownDisplay',
+    'map-display': 'mapDisplay',
+    'video-display': 'videoDisplay',
+    'custom-layer': 'customLayer',
+    'toggle-switch': 'toggleSwitch',
+    'agent-monitor-widget': 'agentMonitor',
+    'vlm-vision': 'vlmVision',
+  }
+  const descKeys: Record<string, string> = {
+    'value-card': 'valueCardDesc',
+    'led-indicator': 'ledIndicatorDesc',
+    'sparkline': 'sparklineDesc',
+    'progress-bar': 'progressBarDesc',
+    'line-chart': 'lineChartDesc',
+    'area-chart': 'areaChartDesc',
+    'bar-chart': 'barChartDesc',
+    'pie-chart': 'pieChartDesc',
+    'image-display': 'imageDisplayDesc',
+    'image-history': 'imageHistoryDesc',
+    'web-display': 'webDisplayDesc',
+    'markdown-display': 'markdownDisplayDesc',
+    'map-display': 'mapDisplayDesc',
+    'video-display': 'videoDisplayDesc',
+    'custom-layer': 'customLayerDesc',
+    'toggle-switch': 'toggleSwitchDesc',
+    'agent-monitor-widget': 'agentMonitorDesc',
+    'vlm-vision': 'vlmVisionDesc',
+  }
+  // Category i18n keys
+  const categoryLabelKeys: Record<string, string> = {
+    indicators: 'indicators',
+    charts: 'charts',
+    display: 'display',
+    spatial: 'spatial',
+    controls: 'controls',
+    business: 'business',
+    custom: 'custom',
   }
 
-  return [
-    // Indicators & Metrics
-    {
-      category: 'indicators',
-      categoryLabel: t('componentLibrary.indicators'),
-      categoryIcon: Hash,
-      items: [
-        { id: 'value-card', name: t('componentLibrary.valueCard'), description: t('componentLibrary.valueCardDesc'), icon: Hash },
-        { id: 'led-indicator', name: t('componentLibrary.ledIndicator'), description: t('componentLibrary.ledIndicatorDesc'), icon: Circle },
-        { id: 'sparkline', name: t('componentLibrary.sparkline'), description: t('componentLibrary.sparklineDesc'), icon: TrendingUp },
-        { id: 'progress-bar', name: t('componentLibrary.progressBar'), description: t('componentLibrary.progressBarDesc'), icon: Layers },
-      ],
-    },
-    // Charts
-    {
-      category: 'charts',
-      categoryLabel: t('componentLibrary.charts'),
-      categoryIcon: LineChartIcon,
-      items: [
-        { id: 'line-chart', name: t('componentLibrary.lineChart'), description: t('componentLibrary.lineChartDesc'), icon: LineChartIcon },
-        { id: 'area-chart', name: t('componentLibrary.areaChart'), description: t('componentLibrary.areaChartDesc'), icon: LineChartIcon },
-        { id: 'bar-chart', name: t('componentLibrary.barChart'), description: t('componentLibrary.barChartDesc'), icon: BarChart3 },
-        { id: 'pie-chart', name: t('componentLibrary.pieChart'), description: t('componentLibrary.pieChartDesc'), icon: PieChartIcon },
-      ],
-    },
-    // Display & Content
-    {
-      category: 'display',
-      categoryLabel: t('componentLibrary.display'),
-      categoryIcon: ImageIcon,
-      items: [
-        { id: 'image-display', name: t('componentLibrary.imageDisplay'), description: t('componentLibrary.imageDisplayDesc'), icon: ImageIcon },
-        { id: 'image-history', name: t('componentLibrary.imageHistory'), description: t('componentLibrary.imageHistoryDesc'), icon: Play },
-        { id: 'web-display', name: t('componentLibrary.webDisplay'), description: t('componentLibrary.webDisplayDesc'), icon: Globe },
-        { id: 'markdown-display', name: t('componentLibrary.markdownDisplay'), description: t('componentLibrary.markdownDisplayDesc'), icon: FileText },
-      ],
-    },
-    // Spatial & Media
-    {
-      category: 'spatial',
-      categoryLabel: t('componentLibrary.spatial'),
-      categoryIcon: MapPin,
-      items: [
-        { id: 'map-display', name: t('componentLibrary.mapDisplay'), description: t('componentLibrary.mapDisplayDesc'), icon: MapIcon },
-        { id: 'video-display', name: t('componentLibrary.videoDisplay'), description: t('componentLibrary.videoDisplayDesc'), icon: Camera },
-        { id: 'custom-layer', name: t('componentLibrary.customLayer'), description: t('componentLibrary.customLayerDesc'), icon: SquareIcon },
-      ],
-    },
-    // Controls
-    {
-      category: 'controls',
-      categoryLabel: t('componentLibrary.controls'),
-      categoryIcon: SlidersHorizontal,
-      items: [
-        { id: 'toggle-switch', name: t('componentLibrary.toggleSwitch'), description: t('componentLibrary.toggleSwitchDesc'), icon: ToggleLeft },
-      ],
-    },
-    // Business Components
-    {
-      category: 'business',
-      categoryLabel: t('componentLibrary.business'),
-      categoryIcon: Bot,
-      items: [
-        { id: 'agent-monitor-widget', name: t('componentLibrary.agentMonitor'), description: t('componentLibrary.agentMonitorDesc'), icon: Bot },
-      ],
-    },
-    // Extension Components (from dynamic registry)
-    ...extensionCategories,
-  ]
+  return grouped.map((group) => {
+    const catInfo = getCategoryInfo(group.category as any)
+    const labelKey = categoryLabelKeys[group.category]
+    const lucideRecord: any = lucideReact
+
+    return {
+      category: group.category,
+      categoryLabel: labelKey ? t(`componentLibrary.${labelKey}`) : catInfo.name,
+      categoryIcon: catInfo.icon,
+      items: group.components.map((comp) => {
+        const iconName = (comp.icon as any)?.displayName || 'Box'
+        const IconComponent = typeof comp.icon === 'function' ? comp.icon : (lucideRecord[iconName] || Box)
+        const nKey = nameKeys[comp.type]
+        const dKey = descKeys[comp.type]
+
+        return {
+          id: comp.type,
+          name: nKey ? t(`componentLibrary.${nKey}`) : comp.name,
+          description: dKey ? t(`componentLibrary.${dKey}`) : comp.description,
+          icon: IconComponent,
+        }
+      }),
+    }
+  })
 }
 
 // ============================================================================
@@ -461,6 +432,7 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
     'led-indicator', 'toggle-switch',
     'heading', 'alert-banner',
     'agent-status-card', 'agent-monitor-widget',
+    'vlm-vision',
   ]
 
   // Components that don't support showCard
@@ -469,6 +441,7 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
     'toggle-switch',
     'heading', 'alert-banner',
     'agent-status-card', 'agent-monitor-widget',
+    'vlm-vision',
     'tabs',
   ]
 
@@ -479,6 +452,7 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
     'heading', 'alert-banner',
     'tabs',
     'agent-status-card', 'agent-monitor-widget',
+    'vlm-vision',
   ]
 
   const result: Record<string, unknown> = {}
@@ -897,6 +871,16 @@ function renderDashboardComponent(
           agentId={widgetAgentId}
           editMode={editMode}
           className="w-full h-full"
+        />
+      )
+    }
+    case 'vlm-vision': {
+      return (
+        <ComponentRenderer
+          component={component}
+          className="w-full h-full"
+          onDataSourceChange={onDataSourceChange}
+          onConfigChange={onConfigChange}
         />
       )
     }
@@ -1566,6 +1550,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         break
       // Business Components
       case 'agent-monitor-widget':
+      case 'vlm-vision':
         defaultConfig = {}
         break
       default:
@@ -4816,6 +4801,13 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               },
             },
           ],
+        }
+
+      // ========== VLM Vision ==========
+      case 'vlm-vision':
+        // VLM Vision has its own config panel (Settings2 icon in header)
+        return {
+          displaySections: [],
         }
 
       default:
