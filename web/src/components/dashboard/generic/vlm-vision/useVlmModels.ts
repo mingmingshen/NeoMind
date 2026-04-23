@@ -18,7 +18,7 @@ export function useVlmModels() {
     setLoading(true)
     setError(null)
     try {
-      const resp = await api.listLlmBackends({ active_only: true })
+      const resp = await api.listLlmBackends()
       const backends = resp.backends || resp || []
       const visionModels: VisionModel[] = []
 
