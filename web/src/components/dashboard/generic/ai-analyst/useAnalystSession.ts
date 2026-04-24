@@ -33,6 +33,38 @@ function nextId(): string {
   return `analyst-${Date.now()}-${++msgCounter}`
 }
 
+/** Build a compact display string: key names + data range summary */
+function summarizeData(value: unknown): string {
+  if (value === null || value === undefined) return '(empty)'
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (typeof value === 'string') {
+    return (value as string).length > 100 ? (value as string).slice(0, 100) + '...' : value as string
+  }
+  if (typeof value === 'object') {
+    try {
+      if (Array.isArray(value)) {
+        // Show key names from first item + count
+        if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
+          const keys = Object.keys(value[0] as Record<string, unknown>)
+          return `${keys.join(', ')} (${value.length} records)`
+        }
+        return `(${value.length} values)`
+      }
+      // Object: show key: value summary for each field
+      const obj = value as Record<string, unknown>
+      return Object.entries(obj).slice(0, 6).map(([k, v]) => {
+        const vs = typeof v === 'object' && v !== null
+          ? `(${Array.isArray(v) ? v.length + ' items' : Object.keys(v).length + ' keys'})`
+          : String(v)
+        return `${k}: ${vs.length > 30 ? vs.slice(0, 30) + '...' : vs}`
+      }).join('\n')
+    } catch {
+      return String(value)
+    }
+  }
+  return String(value)
+}
+
 /**
  * Resolve the metric field name from a DataSource.
  * Dashboard picker uses different property names depending on the source type:
@@ -352,66 +384,51 @@ export function useAnalystSession({
     [],
   )
 
-  // Send non-image data to timeline as a compact summary
+  // Send non-image data to timeline — merges into a single data block.
+  // All non-image data updates are appended to the latest "data" message
+  // so the timeline shows one consolidated data block above the AI response.
   const sendData = useCallback(
     (value: unknown, ds?: string) => {
-      // Build a compact display string — show actual values, not just counts
-      let summary: string
-      if (value === null || value === undefined) {
-        summary = '(empty)'
-      } else if (typeof value === 'number') {
-        summary = String(value)
-      } else if (typeof value === 'boolean') {
-        summary = value ? 'true' : 'false'
-      } else if (typeof value === 'string') {
-        const s = value as string
-        if (s.length > 200) {
-          summary = s.slice(0, 200) + '...'
-        } else {
-          summary = s
-        }
-      } else if (typeof value === 'object') {
-        try {
-          if (Array.isArray(value)) {
-            // Show each item truncated on one line
-            const items = value.slice(0, 8).map((v) =>
-              typeof v === 'object' && v !== null
-                ? JSON.stringify(v).slice(0, 60)
-                : String(v)
-            )
-            summary = items.length < value.length
-              ? items.join(', ') + `, ... (+${value.length - items.length})`
-              : items.join(', ')
-          } else {
-            const obj = value as Record<string, unknown>
-            const entries = Object.entries(obj).slice(0, 8).map(([k, v]) => {
-              const vs = typeof v === 'object' && v !== null
-                ? JSON.stringify(v).slice(0, 40)
-                : String(v)
-              return `${k}: ${vs.length > 40 ? vs.slice(0, 40) + '...' : vs}`
-            })
-            const remaining = Object.keys(obj).length - entries.length
-            summary = entries.join(', ') + (remaining > 0 ? `, ... (+${remaining})` : '')
-          }
-          // Final truncation for very large summaries
-          if (summary.length > 300) {
-            summary = summary.slice(0, 300) + '...'
-          }
-        } catch {
-          summary = String(value)
-        }
-      } else {
-        summary = String(value)
-      }
+      const summary = summarizeData(value)
 
-      const dataMsg: AnalystMessage = {
-        id: nextId(),
-        type: 'data',
-        content: summary,
-        timestamp: Date.now(),
-        dataSource: ds,
-      }
-      setMessages((prev) => [...prev, dataMsg])
+      setMessages((prev) => {
+        // Find the last data message that is NOT followed by an AI/user message
+        // (i.e. the current "pending" data block before LLM responds)
+        const lastNonDataIdx = [...prev]
+          .reverse()
+          .findIndex((m) => m.type === 'ai' || m.type === 'user')
+        const hasAIMsg = lastNonDataIdx !== -1
+
+        if (!hasAIMsg) {
+          // No AI message yet — update the last data message or create one
+          let lastDataIdx = -1
+          for (let i = prev.length - 1; i >= 0; i--) {
+            if (prev[i].type === 'data') { lastDataIdx = i; break }
+          }
+          if (lastDataIdx !== -1) {
+            // Append to existing data block
+            const updated = [...prev]
+            const existing = updated[lastDataIdx]
+            updated[lastDataIdx] = {
+              ...existing,
+              content: existing.content + '\n' + summary,
+              timestamp: Date.now(),
+              dataSource: ds || existing.dataSource,
+            }
+            return updated
+          }
+        }
+
+        // Create a new data message (first data, or data arrived after AI msg)
+        const dataMsg: AnalystMessage = {
+          id: nextId(),
+          type: 'data',
+          content: summary,
+          timestamp: Date.now(),
+          dataSource: ds,
+        }
+        return [...prev, dataMsg]
+      })
     },
     [],
   )

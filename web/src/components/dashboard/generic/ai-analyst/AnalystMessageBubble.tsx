@@ -70,8 +70,9 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
     )
   }
 
-  // Data event (non-image metric value)
+  // Data event (non-image metric value) — single merged block
   if (message.type === 'data') {
+    const lines = message.content.split('\n')
     return (
       <div className="flex items-start gap-2">
         <div className="w-6 h-6 rounded-md bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
@@ -85,9 +86,17 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
             <span className="text-[10px] text-muted-foreground">{formatTime(message.timestamp)}</span>
           </div>
           <div className="mt-1 rounded-lg px-3 py-1.5 bg-amber-500/6 border border-amber-500/15 max-w-[260px]">
-            <p className="text-xs text-foreground/90 font-mono truncate">
-              {message.content}
-            </p>
+            {lines.map((line, i) => (
+              <p key={i} className="text-xs text-foreground/80 font-mono leading-relaxed">
+                {line.includes(':')
+                  ? <>
+                      <span className="text-foreground/50">{line.split(':').slice(0, -1).join(':')}:</span>
+                      <span className="text-foreground/90">{line.split(':').slice(-1)[0]}</span>
+                    </>
+                  : line
+                }
+              </p>
+            ))}
           </div>
         </div>
       </div>
