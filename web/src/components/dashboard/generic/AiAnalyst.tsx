@@ -194,10 +194,13 @@ export function AiAnalyst({
   // ---- Auto-init agent when dataSource is set but no agentId ----
   const hasDataSource = dataSourceProp !== undefined && dataSourceProp !== null
   const hasAgent = !!config.agentId
+  const initCalledRef = useRef(false)
 
   useEffect(() => {
     // Only auto-init in non-edit mode with a data source and no existing agent
-    if (!editMode && hasDataSource && !hasAgent && !sessionError) {
+    // Use ref guard to prevent double-call from StrictMode or state cascading
+    if (!editMode && hasDataSource && !hasAgent && !sessionError && !initCalledRef.current) {
+      initCalledRef.current = true
       initSession()
     }
   }, [editMode, hasDataSource, hasAgent, sessionError, initSession])
