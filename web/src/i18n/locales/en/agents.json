@@ -326,16 +326,24 @@
       },
       "reactive": {
         "description": "Trigger on data source updates",
+        "preview": "Triggers: {{names}}",
         "hint": "Select the data sources to monitor. The agent will execute automatically when any selected source receives new data.",
         "deviceTrigger": "Device Sources",
         "extensionTrigger": "Extension Sources",
-        "noDevices": "No devices available",
+        "noDevices": "No data sources available",
         "noExtensions": "No extensions available",
         "emptyWarning": "No trigger sources selected. The agent will not run automatically.",
         "fallbackToResources": "No explicit trigger sources configured. Will trigger based on Resources bindings (legacy mode).",
         "allMetrics": "All",
         "selectSource": "Select a source to configure",
-        "noMetrics": "No metrics available"
+        "noMetrics": "No metrics available",
+        "sourceGroups": {
+          "device": "Devices",
+          "extension": "Extensions",
+          "ai": "AI Metrics",
+          "transform": "Transforms",
+          "system": "System"
+        }
       },
       "interval": {
         "every": "Every",
@@ -489,15 +497,15 @@
       "includeTrend": "Include Trend",
       "includeBaseline": "Include Baseline",
       "recommended": "Recommended",
-      "enableToolChaining": "Enable Tool Chaining",
-      "toolChainingHint": "Allow the agent to chain multiple tool calls for complex tasks",
-      "toolChainingHintFocused": "Allow the agent to call tools during analysis (query data, control devices, send notifications, etc.)",
+      "enableToolChaining": "Multi-round Tool Calls",
+      "toolChainingHint": "Allow the agent to make multiple rounds of tool calls in a single execution",
+      "toolChainingHintFocused": "Allow the agent to make multiple rounds of tool calls during analysis (query data, control devices, send notifications, etc.)",
       "maxChainDepth": "Max Chain Depth",
       "focusedHint": "Focused mode: single-pass analysis with pre-collected data. Tool calling supported when enabled.",
       "agentPriority": "Agent Priority",
       "priorityHint": "Execution priority (1=lowest, 10=highest)",
-      "contextWindow": "Context Window Size",
-      "contextHint": "Maximum context size for the LLM"
+      "contextWindow": "Recent Conversation Turns",
+      "contextHint": "Number of recent conversation turns to load for execution context"
     },
     "dataCollection": {
       "title": "Data Collection Config",

@@ -1949,6 +1949,14 @@ impl ServerState {
     /// Start the AI Agent manager scheduler.
     pub async fn start_agent_manager(&self) -> Result<(), crate::models::ErrorResponse> {
         let manager = self.get_or_init_agent_manager().await?;
+
+        // Inject the latest tool registry into the executor.
+        // init_tools() may have triggered get_or_init_agent_manager() before the registry was built,
+        // so the executor's tool_registry was None. Now the registry is ready, update it.
+        if let Some(registry) = self.agents.session_manager.get_tool_registry().await {
+            manager.update_tool_registry(registry);
+        }
+
         manager.start().await.map_err(|e| {
             crate::models::ErrorResponse::internal(format!("Failed to start agent manager: {}", e))
         })?;

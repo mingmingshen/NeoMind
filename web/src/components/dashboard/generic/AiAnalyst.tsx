@@ -1,9 +1,12 @@
 /**
- * VLM Vision — Main Dashboard Widget
+ * AI Analyst — Main Dashboard Widget
  *
- * The top-level component that assembles the VLM Vision dashboard widget.
+ * The top-level component that assembles the AI Analyst dashboard widget.
  * It integrates the header, timeline, input bar, and config panel,
- * binding together useVlmSession, useVlmQueue, and useDataSource.
+ * binding together useAnalystSession and useDataSource.
+ *
+ * Backend handles agent execution via event triggers (schedule_type: 'event').
+ * Frontend listens for WebSocket events to display results in the timeline.
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
@@ -14,23 +17,21 @@ import {
   Activity,
   Clock,
   MessageSquare,
-  ListOrdered,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useDataSource } from '@/hooks/useDataSource'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { VlmTimeline } from './vlm-vision/VlmTimeline'
-import { VlmInputBar } from './vlm-vision/VlmInputBar'
-import { useVlmSession } from './vlm-vision/useVlmSession'
-import { useVlmQueue } from './vlm-vision/useVlmQueue'
-import type { VlmVisionConfig } from './vlm-vision/types'
+import { AnalystTimeline } from './ai-analyst/AnalystTimeline'
+import { AnalystInputBar } from './ai-analyst/AnalystInputBar'
+import { useAnalystSession } from './ai-analyst/useAnalystSession'
+import type { AiAnalystConfig } from './ai-analyst/types'
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
-interface VlmVisionProps {
+interface AiAnalystProps {
   className?: string
   editMode?: boolean
   agentId?: string
@@ -85,7 +86,7 @@ function normalizeToDataUrl(str: string): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export function VlmVision({
+export function AiAnalyst({
   className,
   editMode = false,
   agentId,
@@ -95,22 +96,22 @@ export function VlmVision({
   systemPrompt: systemPromptProp,
   contextWindowSize: contextWindowSizeProp,
   onConfigChange,
-}: VlmVisionProps) {
+}: AiAnalystProps) {
   // Stable component ID — locked on first render so it doesn't change
   // when agentId is saved back as a prop (which would trigger cleanup and delete the agent)
   const componentIdRef = useRef<string | null>(null)
   if (!componentIdRef.current) {
-    componentIdRef.current = agentId || sessionIdProp || `vlm-${Date.now()}`
+    componentIdRef.current = agentId || sessionIdProp || `analyst-${Date.now()}`
   }
   const componentId = componentIdRef.current
 
   // Config from props (persisted in dashboard store/localStorage), not Zustand memory
-  const config: VlmVisionConfig = useMemo(
+  const config: AiAnalystConfig = useMemo(
     () => ({
       agentId,
       modelId: modelIdProp,
       systemPrompt: systemPromptProp ||
-        'You are a professional image analysis assistant. Carefully observe the image content, describe the scene, and point out any notable changes or anomalies.',
+        'You are a professional data analysis assistant. Analyze the provided data — images, metrics, or structured data — describe what you observe, and point out any notable patterns, changes, or anomalies.',
       contextWindowSize: contextWindowSizeProp || 10,
     }),
     [agentId, modelIdProp, systemPromptProp, contextWindowSizeProp],
@@ -118,14 +119,19 @@ export function VlmVision({
 
   // Persist config back to dashboard via onConfigChange (survives page refresh)
   const handleConfigUpdate = useCallback(
-    (updates: Partial<VlmVisionConfig>) => {
+    (updates: Partial<AiAnalystConfig>) => {
       if (onConfigChange) {
-        onConfigChange({
-          modelId: updates.modelId ?? modelIdProp,
-          systemPrompt: updates.systemPrompt ?? systemPromptProp,
-          contextWindowSize: updates.contextWindowSize ?? contextWindowSizeProp,
-          agentId: updates.agentId ?? agentId,
-        })
+        const newConfig: Record<string, any> = {}
+        // Only include fields that have actual values (skip undefined)
+        const agentIdVal = updates.agentId ?? agentId
+        if (agentIdVal) newConfig.agentId = agentIdVal
+        const modelIdVal = updates.modelId ?? modelIdProp
+        if (modelIdVal) newConfig.modelId = modelIdVal
+        const promptVal = updates.systemPrompt ?? systemPromptProp
+        if (promptVal) newConfig.systemPrompt = promptVal
+        const cwVal = updates.contextWindowSize ?? contextWindowSizeProp
+        if (cwVal) newConfig.contextWindowSize = cwVal
+        onConfigChange(newConfig)
       }
     },
     [onConfigChange, modelIdProp, systemPromptProp, contextWindowSizeProp, agentId],
@@ -142,49 +148,48 @@ export function VlmVision({
     sendImage,
     sendText,
     isConnected,
-  } = useVlmSession({
+  } = useAnalystSession({
     componentId,
     config,
     dataSource: dataSourceProp,
     onConfigUpdate: handleConfigUpdate,
   })
 
-  // ---- Image queue ----
-  const handleQueueProcess = useCallback(
-    (image: string) => {
-      sendImage(image, dataSourceProp?.id)
-    },
-    [sendImage, dataSourceProp],
-  )
-
-  const { enqueue, completeProcessing, pending, isProcessing } =
-    useVlmQueue(handleQueueProcess)
-
-  // Complete queue processing when streaming ends
-  const prevStreamingRef = useRef(isStreaming)
-  useEffect(() => {
-    if (prevStreamingRef.current && !isStreaming) {
-      completeProcessing()
-    }
-    prevStreamingRef.current = isStreaming
-  }, [isStreaming, completeProcessing])
-
   // ---- Data source binding ----
   const { data: dsData } = useDataSource<string>(dataSourceProp)
 
-  // Detect and enqueue incoming images
+  // Only process data in live mode (not edit mode).
+  // Only images go into the timeline as thumbnails.
+  // Non-image data is handled entirely by the backend event system —
+  // AI results arrive through WebSocket events (onExecutionCompleted).
   const lastEnqueuedRef = useRef<string | null>(null)
-  useEffect(() => {
-    if (!dsData || !isConnected) return
 
+  useEffect(() => {
+    if (editMode || !dsData || !isConnected) return
     const strVal = typeof dsData === 'string' ? dsData : String(dsData)
-    if (!isBase64Image(strVal)) return
     if (strVal === lastEnqueuedRef.current) return
 
-    const dataUrl = normalizeToDataUrl(strVal)
     lastEnqueuedRef.current = strVal
-    enqueue(dataUrl)
-  }, [dsData, isConnected, enqueue])
+    if (isBase64Image(strVal)) {
+      sendImage(normalizeToDataUrl(strVal), dataSourceProp?.id)
+    }
+  }, [editMode, dsData, isConnected, sendImage, dataSourceProp])
+
+  // Also handle when connection becomes ready (timing: dsData arrived before isConnected)
+  const prevConnectedRef = useRef(false)
+  useEffect(() => {
+    if (editMode) return
+    if (!prevConnectedRef.current && isConnected && dsData) {
+      const strVal = typeof dsData === 'string' ? dsData : String(dsData)
+      if (strVal !== lastEnqueuedRef.current) {
+        lastEnqueuedRef.current = strVal
+        if (isBase64Image(strVal)) {
+          sendImage(normalizeToDataUrl(strVal), dataSourceProp?.id)
+        }
+      }
+    }
+    prevConnectedRef.current = isConnected
+  }, [editMode, isConnected, dsData, sendImage, dataSourceProp])
 
   // ---- Auto-init agent when dataSource is set but no agentId ----
   const hasDataSource = dataSourceProp !== undefined && dataSourceProp !== null
@@ -292,7 +297,7 @@ export function VlmVision({
           {/* Info */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-semibold text-sm truncate">VLM Vision</h3>
+              <h3 className="font-semibold text-sm truncate">AI Analyst</h3>
               {isStreaming ? (
                 <Badge
                   variant="default"
@@ -333,12 +338,6 @@ export function VlmVision({
                   {config.modelName}
                 </span>
               )}
-              {(pending > 0 || isProcessing) && (
-                <span className="flex items-center gap-1 text-blue-500">
-                  <ListOrdered className="h-3 w-3" />
-                  {pending > 0 ? `${pending} queued` : 'Processing'}
-                </span>
-              )}
             </div>
           </div>
         </div>
@@ -346,7 +345,7 @@ export function VlmVision({
 
       {/* Content: Timeline */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        <VlmTimeline
+        <AnalystTimeline
           messages={messages}
           streamingContent={streamingContent}
           streamingMsgId={streamingMsgId}
@@ -355,7 +354,7 @@ export function VlmVision({
       </div>
 
       {/* Footer: Input Bar */}
-      <VlmInputBar onSend={sendText} disabled={isStreaming || !isConnected} />
+      <AnalystInputBar onSend={sendText} disabled={isStreaming || !isConnected} />
     </div>
   )
 }

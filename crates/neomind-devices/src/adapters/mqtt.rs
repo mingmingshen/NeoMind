@@ -1726,7 +1726,7 @@ impl MqttAdapter {
                 let topic = publish.topic.to_string();
                 let payload = publish.payload.to_vec();
 
-                info!(
+                debug!(
                     "Received MQTT message on topic: {}, payload length: {}",
                     topic,
                     payload.len()
@@ -1764,7 +1764,7 @@ impl MqttAdapter {
                                 // Use UnifiedExtractor to extract metrics
                                 let result = extractor.extract(&device_id, dt, &json_value).await;
 
-                                info!(
+                                debug!(
                                     "Extraction result for device '{}': mode={:?}, metrics={}",
                                     device_id,
                                     result.mode,
@@ -1942,7 +1942,7 @@ impl MqttAdapter {
                     };
 
                     if let Some(ref device_id) = device_id_opt {
-                        info!(
+                        debug!(
                             "Routing message for registered device {} from topic {}",
                             device_id, topic
                         );
@@ -1953,19 +1953,19 @@ impl MqttAdapter {
                             types.get(device_id).cloned()
                         };
 
-                        info!("Device type for {}: {:?}", device_id, device_type_opt);
+                        debug!("Device type for {}: {:?}", device_id, device_type_opt);
 
                         // Parse payload and process for the registered device
                         if let Ok(json_data) = serde_json::from_slice::<serde_json::Value>(&payload)
                         {
-                            info!("Successfully parsed JSON payload for device {}", device_id);
+                            debug!("Successfully parsed JSON payload for device {}", device_id);
 
                             // Use UnifiedExtractor with the full JSON data
                             // The extractor handles dot-notation paths including "data.field" prefixes
                             // DO NOT pre-extract the "data" field - it causes double-extraction issues
                             if let Some(dt) = device_type_opt {
                                 let result = extractor.extract(device_id, &dt, &json_data).await;
-                                info!(
+                                debug!(
                                     "Extraction result for device {}: mode={:?}, metrics={}",
                                     device_id,
                                     result.mode,

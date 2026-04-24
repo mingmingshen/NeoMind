@@ -1,4 +1,4 @@
-export interface VlmVisionConfig {
+export interface AiAnalystConfig {
   agentId?: string
   sessionId?: string
   modelId?: string
@@ -7,11 +7,11 @@ export interface VlmVisionConfig {
   contextWindowSize: number
 }
 
-export type VlmMessageType = 'image' | 'ai' | 'user' | 'error'
+export type AnalystMessageType = 'image' | 'data' | 'ai' | 'user' | 'error'
 
-export interface VlmMessage {
+export interface AnalystMessage {
   id: string
-  type: VlmMessageType
+  type: AnalystMessageType
   content: string
   timestamp: number
   dataSource?: string
@@ -28,4 +28,4 @@ export interface VisionModel {
 }
 
 export const DEFAULT_SYSTEM_PROMPT =
-  'You are a professional image analysis assistant. Carefully observe the image content, describe the scene, and point out any notable changes or anomalies.'
+  'You are a professional data analysis assistant. Analyze the provided data — images, metrics, or structured data — describe what you observe, and point out any notable patterns, changes, or anomalies.'

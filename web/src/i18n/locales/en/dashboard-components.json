@@ -414,13 +414,13 @@
     "noAgentConfigured": "No agent configured",
     "agentNotFound": "Agent not found"
   },
-  "vlmVision": {
+  "aiAnalyst": {
     "systemPrompt": "System Prompt",
-    "systemPromptPlaceholder": "Describe how the VLM should analyze images...",
+    "systemPromptPlaceholder": "Describe how the AI should analyze the data...",
     "contextWindow": "Context Window Size",
-    "selectModel": "Vision Model",
-    "selectModelPlaceholder": "Select a vision language model",
-    "noModels": "No vision models available"
+    "selectModel": "Analysis Model",
+    "selectModelPlaceholder": "Select an analysis model",
+    "noModels": "No analysis models available"
   },
   "ledIndicator": {
     "on": "On",
@@ -940,8 +940,8 @@
     "ruleStatusGridDesc": "Display rule execution status",
     "transformList": "Transform List",
     "transformListDesc": "Show data transformation rules",
-    "vlmVision": "VLM Vision",
-    "vlmVisionDesc": "Bind image data sources, auto-trigger VLM inference, and display analysis in a timeline chat"
+    "aiAnalyst": "AI Analyst",
+    "aiAnalystDesc": "Bind data sources, auto-trigger AI analysis, and display results in a timeline chat"
   },
   "common": {
     "cancel": "Cancel",

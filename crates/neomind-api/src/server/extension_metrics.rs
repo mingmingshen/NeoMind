@@ -101,7 +101,7 @@ impl ExtensionMetricsCollector {
 
         // First loop iteration - wait before collecting
         tokio::time::sleep(self.default_interval).await;
-        info!(
+        debug!(
             category = "extensions",
             "About to collect metrics for first time"
         );
@@ -325,8 +325,13 @@ impl ExtensionMetricsCollector {
             }
         }
 
-        if total_metrics > 0 || total_errors > 0 {
+        if total_errors > 0 {
             info!(
+                category = "extensions",
+                total_metrics, total_errors, "Extension metrics collection completed with errors"
+            );
+        } else {
+            debug!(
                 category = "extensions",
                 total_metrics, total_errors, "Extension metrics collection completed"
             );

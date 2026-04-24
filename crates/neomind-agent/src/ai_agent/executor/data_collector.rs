@@ -965,6 +965,16 @@ impl AgentExecutor {
                 event_values["image_mime_type"] = serde_json::json!(mime);
             }
 
+            // Remove the raw `value` field — it may contain raw bytes with
+            // control characters that break JSON serialization when the
+            // execution record is later returned via the API.  The image is
+            // already available as `image_base64` or `image_url`.
+            if image_base64.is_some() || image_url.is_some() {
+                event_values
+                    .as_object_mut()
+                    .map(|o| o.remove("value"));
+            }
+
             tracing::info!(
                 source_id = %event_data.source.source_id,
                 field = %event_data.source.field,

@@ -3,12 +3,12 @@ import { Send, Loader2 } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 
-interface VlmInputBarProps {
+interface AnalystInputBarProps {
   onSend: (text: string) => void
   disabled?: boolean
 }
 
-export function VlmInputBar({ onSend, disabled }: VlmInputBarProps) {
+export function AnalystInputBar({ onSend, disabled }: AnalystInputBarProps) {
   const [text, setText] = useState('')
 
   const handleSend = useCallback(() => {

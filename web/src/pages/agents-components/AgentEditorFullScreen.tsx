@@ -71,6 +71,7 @@ import {
   Database,
   Workflow,
   MousePointerClick,
+  GitBranch,
 } from "lucide-react"
 import type {
   AiAgentDetail,
@@ -80,6 +81,7 @@ import type {
   Extension,
   ExtensionDataSourceInfo,
   ExtensionCommandDescriptor,
+  UnifiedDataSourceInfo,
 } from "@/types"
 // Unified dialog components
 import {
@@ -98,6 +100,7 @@ interface AgentEditorFullScreenProps {
   deviceTypes: DeviceType[]
   extensions?: Extension[]
   extensionDataSources?: ExtensionDataSourceInfo[]
+  unifiedDataSources?: UnifiedDataSourceInfo[]
   onSave: (data: CreateAgentRequest | Partial<AiAgentDetail>) => Promise<void>
 }
 
@@ -271,6 +274,7 @@ export function AgentEditorFullScreen({
   deviceTypes,
   extensions = [],
   extensionDataSources = [],
+  unifiedDataSources = [],
   onSave,
 }: AgentEditorFullScreenProps) {
   const { t: tCommon } = useTranslation('common')
@@ -319,7 +323,7 @@ export function AgentEditorFullScreen({
 
   // Advanced configuration state
   const [executionMode, setExecutionMode] = useState<'focused' | 'free' | 'chat' | 'react'>('focused')
-  const [enableToolChaining, setEnableToolChaining] = useState(false)
+  const [enableToolChaining, setEnableToolChaining] = useState(true)
   const [maxChainDepth, setMaxChainDepth] = useState(3)
   const [priority, setPriority] = useState(5)
   const [contextWindowSize, setContextWindowSize] = useState(10)
@@ -350,6 +354,80 @@ export function AgentEditorFullScreen({
     const ext = (extensions || []).find(e => e.id === extId)
     return ext?.metrics?.map(m => ({ name: m.name, display_name: m.display_name })) || []
   }, [extensions])
+
+  // Build unified trigger entities from UnifiedDataSourceInfo
+  const triggerEntities = useMemo(() => {
+    const entityMap = new Map<string, {
+      type: string
+      id: string
+      name: string
+      metrics: Array<{ name: string; display_name: string }>
+    }>()
+
+    for (const ds of unifiedDataSources) {
+      const key = `${ds.source_type}:${ds.source_name}`
+      if (!entityMap.has(key)) {
+        entityMap.set(key, {
+          type: ds.source_type,
+          id: ds.source_name,
+          name: ds.source_display_name || ds.source_name,
+          metrics: [],
+        })
+      }
+      entityMap.get(key)!.metrics.push({
+        name: ds.field,
+        display_name: ds.field_display_name || ds.field,
+      })
+    }
+
+    // Sort: device first, then extension, then ai, then others
+    const typeOrder = ['device', 'extension', 'ai', 'transform', 'system']
+    return Array.from(entityMap.values()).sort((a, b) => {
+      const ai = typeOrder.indexOf(a.type) ?? 99
+      const bi = typeOrder.indexOf(b.type) ?? 99
+      return ai - bi
+    })
+  }, [unifiedDataSources])
+
+  // Icon helper for source type
+  const getSourceIcon = (type: string, className: string) => {
+    switch (type) {
+      case 'device': return <Database className={className} />
+      case 'extension': return <Puzzle className={className} />
+      case 'ai': return <Brain className={className} />
+      case 'transform': return <GitBranch className={className} />
+      default: return <Database className={className} />
+    }
+  }
+
+  // Map frontend source type to backend event_filter source type for saving
+  const mapToBackendSourceType = (frontendType: string, id: string): { type: string; id: string } => {
+    switch (frontendType) {
+      case 'device': return { type: 'device', id }
+      case 'extension': return { type: 'extension', id }
+      case 'ai': return { type: 'extension', id: `ai:${id}` }
+      default: return { type: frontendType, id }
+    }
+  }
+
+  // Restore frontend source type from saved event_filter source
+  const restoreFromBackendSourceType = (s: { type: string; id: string; name?: string; field?: string }) => {
+    // Detect AI sources stored as type=extension, id=ai:xxx
+    if (s.type === 'extension' && s.id.startsWith('ai:')) {
+      return {
+        type: 'ai',
+        id: s.id.replace('ai:', ''),
+        name: s.name || s.id.replace('ai:', ''),
+        ...(s.field ? { field: s.field } : {}),
+      }
+    }
+    return {
+      type: s.type,
+      id: s.id,
+      name: s.name || s.id,
+      ...(s.field ? { field: s.field } : {}),
+    }
+  }
 
   // ========================================================================
   // Effects
@@ -397,7 +475,7 @@ export function AgentEditorFullScreen({
         setLlmBackendId(null)
         // Reset to defaults
         setExecutionMode('focused')
-        setEnableToolChaining(false)
+        setEnableToolChaining(true)
         setMaxChainDepth(3)
         setPriority(5)
         setContextWindowSize(10)
@@ -492,12 +570,14 @@ export function AgentEditorFullScreen({
       try {
         const filter = JSON.parse(schedule.event_filter || '{}')
         if (filter.sources && Array.isArray(filter.sources)) {
-          const sources = filter.sources.map((s: any) => ({
-            type: s.type || 'device',
-            id: s.id || '',
-            name: s.name || s.id || '',
-            ...(s.field ? { field: s.field } : {}),
-          })).filter((s: any) => s.id)
+          const sources = filter.sources.map((s: any) =>
+            restoreFromBackendSourceType({
+              type: s.type || 'device',
+              id: s.id || '',
+              name: s.name || s.id || '',
+              ...(s.field ? { field: s.field } : {}),
+            })
+          ).filter((s: any) => s.id)
           setTriggerSources(sources)
         }
       } catch {
@@ -987,9 +1067,12 @@ export function AgentEditorFullScreen({
         }
       } else if (scheduleType === 'reactive') {
         finalScheduleType = 'event'
-        // Save trigger sources to event_filter
+        // Save trigger sources to event_filter with backend type mapping
         const eventFilterObj: any = {
-          sources: triggerSources.map(s => ({ type: s.type, id: s.id, name: s.name, ...(s.field ? { field: s.field } : {}) })),
+          sources: triggerSources.map(s => {
+            const mapped = mapToBackendSourceType(s.type, s.id)
+            return { type: mapped.type, id: mapped.id, name: s.name, ...(s.field ? { field: s.field } : {}) }
+          }),
         }
         eventFilter = JSON.stringify(eventFilterObj)
       } else { // on-demand
@@ -1113,9 +1196,9 @@ export function AgentEditorFullScreen({
           cron_expression: cronExpression,
           event_filter: eventFilter,
         },
-        // Advanced configuration
-        enable_tool_chaining: enableToolChaining || undefined,
-        max_chain_depth: enableToolChaining ? maxChainDepth : undefined,
+        // Advanced configuration (tool chaining only for Free mode)
+        enable_tool_chaining: !isFocusedMode && enableToolChaining ? true : undefined,
+        max_chain_depth: !isFocusedMode && enableToolChaining ? maxChainDepth : undefined,
         priority: priority !== 5 ? priority : undefined,
         context_window_size: contextWindowSize !== 10 ? contextWindowSize : undefined,
         execution_mode: isFocusedMode ? 'focused' : 'free',
@@ -1411,16 +1494,14 @@ export function AgentEditorFullScreen({
 
               {showAdvanced && (
                 <div className="bg-muted/50 rounded-xl p-4 border space-y-4">
-                  {/* Tool Chaining — both modes, Focused defaults to off */}
+                  {/* Tool Chaining — Free mode only */}
+                  {!isFocusedMode && (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5 max-w-[75%]">
-                        <Label className="text-sm font-medium">{tAgent('creator.advanced.enableToolChaining', 'Enable Tool Chaining')}</Label>
+                        <Label className="text-sm font-medium">{tAgent('creator.advanced.enableToolChaining', 'Multi-round Tool Calls')}</Label>
                         <p className="text-xs text-muted-foreground">
-                          {isFocusedMode
-                            ? tAgent('creator.advanced.toolChainingHintFocused', 'Allow the agent to make tool calls during single-pass analysis')
-                            : tAgent('creator.advanced.toolChainingHint', 'Allow the agent to chain multiple tool calls for complex tasks')
-                          }
+                          {tAgent('creator.advanced.toolChainingHint', 'Allow the agent to chain multiple tool calls for complex tasks')}
                         </p>
                       </div>
                       <Switch
@@ -1445,8 +1526,9 @@ export function AgentEditorFullScreen({
                       </div>
                     )}
                   </div>
+                  )}
 
-                  <div className="h-px bg-border" />
+                  {!isFocusedMode && <div className="h-px bg-border" />}
 
                   {/* Agent Priority */}
                   <div className="space-y-2">
@@ -1517,7 +1599,14 @@ export function AgentEditorFullScreen({
                 <ScheduleCard
                   icon={<Activity className="h-5 w-5" />}
                   label={tAgent('creator.schedule.strategies.reactive')}
-                  description={tAgent('creator.schedule.reactive.description')}
+                  description={scheduleType === 'reactive' && triggerSources.length > 0
+                    ? tAgent('creator.schedule.reactive.preview', {
+                        names: (() => {
+                          const unique = [...new Set(triggerSources.map(s => s.name))]
+                          return unique.slice(0, 3).join(', ') + (unique.length > 3 ? '…' : '')
+                        })(),
+                      })
+                    : tAgent('creator.schedule.reactive.description')}
                   active={scheduleType === 'reactive'}
                   onClick={() => setScheduleType('reactive')}
                   isMobile={isMobile}
@@ -1676,8 +1765,18 @@ export function AgentEditorFullScreen({
                 )}
 
                 {scheduleType === 'reactive' && (() => {
-                  // Build unified entity list for left panel
-                  const entities = [
+                  // Build entity list: all entities from unifiedDataSources,
+                  // supplemented with devices/extensions from props for richer metric info
+                  const unifiedEntityMap = new Map<string, {
+                    type: string; id: string; name: string
+                    metrics: Array<{ name: string; display_name: string }>
+                  }>()
+                  for (const e of triggerEntities) {
+                    unifiedEntityMap.set(`${e.type}:${e.id}`, e)
+                  }
+
+                  // Start with props-based entities (devices/extensions with full metric info)
+                  const propsEntities = [
                     ...devices.map(d => ({
                       type: 'device' as const,
                       id: d.id,
@@ -1692,6 +1791,11 @@ export function AgentEditorFullScreen({
                     })),
                   ]
 
+                  // Merge: props entities first (they have richer info), then unified-only entities
+                  const propsKeys = new Set(propsEntities.map(e => `${e.type}:${e.id}`))
+                  const extraEntities = triggerEntities.filter(e => !propsKeys.has(`${e.type}:${e.id}`))
+                  const entities = [...propsEntities, ...extraEntities]
+
                   const active = activeTriggerEntity
                     ? entities.find(e => e.type === activeTriggerEntity.type && e.id === activeTriggerEntity.id)
                     : null
@@ -1700,7 +1804,9 @@ export function AgentEditorFullScreen({
                     ? triggerSources.filter(s => s.type === active.type && s.id === active.id)
                     : []
                   const activeAllSelected = activeSources.some(s => s.field === undefined)
-                  const activeSelectedFields = activeSources.filter(s => s.field !== undefined).map(s => s.field!)
+                  const activeSelectedFields = activeSources
+                    .filter(s => s.field !== undefined)
+                    .map(s => s.field!)
 
                   const isEntityActive = (type: string, id: string) =>
                     triggerSources.some(s => s.type === type && s.id === id)
@@ -1709,25 +1815,109 @@ export function AgentEditorFullScreen({
                     triggerSources.filter(s => s.type === type && s.id === id).length
 
                   const toggleEntity = (type: string, id: string, name: string) => {
+                    const wasActive = isEntityActive(type, id)
+                    let newSources: typeof triggerSources
                     setTriggerSources(prev => {
                       const filtered = prev.filter(s => !(s.type === type && s.id === id))
-                      if (isEntityActive(type, id)) return filtered
-                      return [...filtered, { type, id, name }]
+                      if (wasActive) { newSources = filtered; return filtered }
+                      newSources = [...filtered, { type, id, name }]
+                      return newSources
                     })
+                    syncResourceMetrics(type, id, name, newSources!, entities)
                   }
 
                   const toggleMetric = (type: string, id: string, name: string, field: string) => {
+                    let newSources: typeof triggerSources
                     setTriggerSources(prev => {
                       const entitySources = prev.filter(s => s.type === type && s.id === id)
                       const selectedFields = entitySources.filter(s => s.field !== undefined).map(s => s.field!)
                       const filtered = prev.filter(s => !(s.type === type && s.id === id))
                       if (selectedFields.includes(field)) {
                         const remaining = selectedFields.filter(f => f !== field)
-                        if (remaining.length === 0) return filtered
-                        return [...filtered, ...remaining.map(f => ({ type, id, name, field: f }))]
+                        if (remaining.length === 0) { newSources = filtered; return filtered }
+                        newSources = [...filtered, ...remaining.map(f => ({ type, id, name, field: f }))]
+                        return newSources
                       }
-                      return [...filtered, ...selectedFields.map(f => ({ type, id, name, field: f })), { type, id, name, field }]
+                      newSources = [...filtered, ...selectedFields.map(f => ({ type, id, name, field: f })), { type, id, name, field }]
+                      return newSources
                     })
+                    syncResourceMetrics(type, id, name, newSources!, entities)
+                  }
+
+                  // Sync trigger selections to resources: create if missing, update selectedMetrics
+                  const syncResourceMetrics = (
+                    type: string, id: string, name: string,
+                    sources: typeof triggerSources,
+                    ents: typeof entities
+                  ) => {
+                    if (type !== 'device' && type !== 'extension') return
+                    setSelectedResources(prev => {
+                      const resourceKey = type === 'extension' ? `extension:${id}` : id
+                      const hasAnyTrigger = sources.some(s => s.type === type && s.id === id)
+                      const existing = prev.find(r => r.id === resourceKey)
+
+                      // No trigger source for this entity → remove the resource
+                      if (!hasAnyTrigger && existing) {
+                        return prev.filter(r => r.id !== resourceKey)
+                      }
+
+                      const allSelected = sources.some(s => s.type === type && s.id === id && s.field === undefined)
+                      const selectedFields = sources
+                        .filter(s => s.type === type && s.id === id && s.field !== undefined)
+                        .map(s => s.field!)
+
+                      if (existing) {
+                        const newMetrics = allSelected
+                          ? new Set(existing.allMetrics.map(m => m.name))
+                          : new Set(selectedFields)
+                        if (setsEqual(newMetrics, existing.selectedMetrics)) return prev
+                        return prev.map(r => r.id === resourceKey ? { ...r, selectedMetrics: newMetrics } : r)
+                      }
+
+                      // No trigger → don't create resource
+                      if (!hasAnyTrigger) return prev
+
+                      const entity = ents.find(e => e.type === type && e.id === id)
+                      const allMetrics: MetricInfo[] = (entity?.metrics || []).map(m => ({
+                        name: m.name,
+                        display_name: m.display_name,
+                        source: type as 'device' | 'extension',
+                        ...(type === 'extension' ? { extensionId: id } : {}),
+                      }))
+                      const initialMetrics = allSelected
+                        ? new Set(allMetrics.map(m => m.name))
+                        : new Set(selectedFields)
+                      return [...prev, {
+                        id: resourceKey,
+                        name,
+                        type: type as 'device' | 'extension',
+                        allMetrics,
+                        allCommands: [],
+                        selectedMetrics: initialMetrics,
+                        selectedCommands: new Set<string>(),
+                      }]
+                    })
+                  }
+
+                  const setsEqual = (a: Set<string>, b: Set<string>) => {
+                    if (a.size !== b.size) return false
+                    for (const v of a) if (!b.has(v)) return false
+                    return true
+                  }
+
+                  // Remove a specific field from trigger sources and sync resources
+                  const removeTriggerField = (type: string, id: string, field?: string) => {
+                    let newSources: typeof triggerSources
+                    setTriggerSources(prev => {
+                      if (field === undefined) {
+                        newSources = prev.filter(s => !(s.type === type && s.id === id && s.field === undefined))
+                      } else {
+                        newSources = prev.filter(s => !(s.type === type && s.id === id && s.field === field))
+                      }
+                      return newSources
+                    })
+                    const entityName = (entities.find(e => e.type === type && e.id === id))?.name || id
+                    syncResourceMetrics(type, id, entityName, newSources!, entities)
                   }
 
                   return (
@@ -1739,14 +1929,14 @@ export function AgentEditorFullScreen({
 
                     {/* Two-panel selector */}
                     <div className={cn(
-                      "border rounded-lg overflow-hidden",
+                      "border rounded-lg",
                       isMobile ? "flex flex-col" : "flex",
-                      isMobile ? "" : "h-[180px]"
+                      isMobile ? "" : "h-[240px]"
                     )}>
                       {/* Left: entity list */}
                       <div className={cn(
                         "overflow-y-auto shrink-0",
-                        isMobile ? "w-full border-b" : "w-[160px] border-r"
+                        isMobile ? "w-full border-b max-h-[120px]" : "w-[180px] border-r"
                       )}>
                         {entities.length === 0 ? (
                           <div className="p-3 text-xs text-muted-foreground text-center">
@@ -1769,13 +1959,10 @@ export function AgentEditorFullScreen({
                                   !hasTrigger && "border-l-2 border-transparent",
                                   isViewing && hasTrigger && "bg-primary/5",
                                   isViewing && !hasTrigger && "bg-muted/50",
-                                  !isViewing && "hover:bg-muted/30"
+                                  "hover:bg-muted/60"
                                 )}
                               >
-                                {e.type === 'device'
-                                  ? <Database className="h-3 w-3 shrink-0 text-muted-foreground" />
-                                  : <Puzzle className="h-3 w-3 shrink-0 text-muted-foreground" />
-                                }
+                                {getSourceIcon(e.type, "h-3 w-3 shrink-0 text-muted-foreground")}
                                 <span className="truncate flex-1">{e.name}</span>
                                 {hasTrigger && (
                                   <Badge variant="secondary" className="h-4 min-w-[18px] text-[10px] px-1 rounded-full">
@@ -1815,26 +2002,83 @@ export function AgentEditorFullScreen({
                               {tAgent('creator.schedule.reactive.allMetrics')}
                             </button>
                             {/* Individual metric chips */}
-                            {!activeAllSelected && active.metrics.map(m => (
-                              <button
-                                key={m.name}
-                                type="button"
-                                onClick={() => toggleMetric(active.type, active.id, active.name, m.name)}
-                                className={cn(
-                                  "inline-flex items-center rounded-md transition-colors",
-                                  isMobile ? "px-3 py-1.5 text-sm" : "px-2.5 py-1 text-xs",
-                                  activeSelectedFields.includes(m.name)
-                                    ? "bg-primary/15 text-primary font-medium ring-1 ring-primary/30"
-                                    : "bg-muted/60 hover:bg-muted text-muted-foreground"
-                                )}
-                              >
-                                {m.display_name}
-                              </button>
-                            ))}
+                            {!activeAllSelected && active.metrics.map(m => {
+                              const isSelected = activeSelectedFields.includes(m.name)
+                              return (
+                                <button
+                                  key={m.name}
+                                  type="button"
+                                  onClick={() => toggleMetric(active.type, active.id, active.name, m.name)}
+                                  className={cn(
+                                    "inline-flex items-center rounded-md transition-colors",
+                                    isMobile ? "px-3 py-1.5 text-sm" : "px-2.5 py-1 text-xs",
+                                    isSelected
+                                      ? "bg-primary/15 text-primary font-medium ring-1 ring-primary/30"
+                                      : "bg-muted/60 hover:bg-muted text-muted-foreground"
+                                  )}
+                                >
+                                  {m.display_name}
+                                </button>
+                              )
+                            })}
                           </div>
                         )}
                       </div>
                     </div>
+
+                    {/* Selected trigger sources summary */}
+                    {triggerSources.length > 0 && (() => {
+                      const grouped = new Map<string, { type: string; id: string; name: string; fields: (string | undefined)[] }>()
+                      for (const s of triggerSources) {
+                        const key = `${s.type}:${s.id}`
+                        if (!grouped.has(key)) grouped.set(key, { type: s.type, id: s.id, name: s.name, fields: [] })
+                        grouped.get(key)!.fields.push(s.field)
+                      }
+                      return (
+                        <div className="space-y-1">
+                          {[...grouped.values()].map(g => {
+                            const hasAll = g.fields.includes(undefined)
+                            const specificFields = g.fields.filter((f): f is string => f !== undefined)
+                            const removeEntity = () => {
+                              setTriggerSources(prev => prev.filter(s => !(s.type === g.type && s.id === g.id)))
+                              // Remove corresponding resource
+                              if (g.type === 'device' || g.type === 'extension') {
+                                const resourceKey = g.type === 'extension' ? `extension:${g.id}` : g.id
+                                setSelectedResources(prev => prev.filter(r => r.id !== resourceKey))
+                              }
+                            }
+                            return (
+                              <div key={`${g.type}-${g.id}`} className="flex items-center gap-1.5 flex-wrap">
+                                {getSourceIcon(g.type, "h-3 w-3 shrink-0 text-muted-foreground")}
+                                <span className="text-xs font-medium truncate max-w-[100px]">{g.name}</span>
+                                {hasAll ? (
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-[10px] h-5 px-1.5 gap-0.5 cursor-pointer hover:bg-destructive/20 transition-colors"
+                                    onClick={removeEntity}
+                                  >
+                                    {tAgent('creator.schedule.reactive.allMetrics')}
+                                    <X className="h-2.5 w-2.5" />
+                                  </Badge>
+                                ) : (
+                                  specificFields.map(f => (
+                                    <Badge
+                                      key={f}
+                                      variant="outline"
+                                      className="text-[10px] h-5 px-1.5 gap-0.5 font-normal cursor-pointer hover:bg-destructive/10 transition-colors"
+                                      onClick={() => removeTriggerField(g.type, g.id, f)}
+                                    >
+                                      {f}
+                                      <X className="h-2.5 w-2.5" />
+                                    </Badge>
+                                  ))
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()}
 
                     {/* Warning when no sources selected */}
                     {triggerSources.length === 0 && (

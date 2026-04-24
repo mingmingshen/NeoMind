@@ -7,16 +7,17 @@ import {
   Loader2,
   Clock,
   Cpu,
+  Database,
 } from 'lucide-react'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
-import type { VlmMessage } from './types'
+import type { AnalystMessage } from './types'
 
-interface VlmMessageBubbleProps {
-  message: VlmMessage
+interface AnalystMessageBubbleProps {
+  message: AnalystMessage
   streamingContent?: string
 }
 
-export function VlmMessageBubble({ message, streamingContent }: VlmMessageBubbleProps) {
+export function AnalystMessageBubble({ message, streamingContent }: AnalystMessageBubbleProps) {
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null)
   const isStreaming = message.isStreaming || !!streamingContent
   const displayContent = streamingContent || message.content
@@ -69,6 +70,30 @@ export function VlmMessageBubble({ message, streamingContent }: VlmMessageBubble
     )
   }
 
+  // Data event (non-image metric value)
+  if (message.type === 'data') {
+    return (
+      <div className="flex items-start gap-2">
+        <div className="w-6 h-6 rounded-md bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
+          <Database className="h-3 w-3 text-amber-500" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] text-muted-foreground truncate">
+              {message.dataSource || 'Data source'}
+            </span>
+            <span className="text-[10px] text-muted-foreground">{formatTime(message.timestamp)}</span>
+          </div>
+          <div className="mt-1 rounded-lg px-3 py-1.5 bg-amber-500/6 border border-amber-500/15 max-w-[260px]">
+            <p className="text-xs text-foreground/90 font-mono truncate">
+              {message.content}
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // AI response
   if (message.type === 'ai') {
     return (
@@ -80,7 +105,7 @@ export function VlmMessageBubble({ message, streamingContent }: VlmMessageBubble
           <div className="flex justify-between items-center">
             <span className="text-[10px] text-purple-500 flex items-center gap-1">
               <Cpu className="h-2.5 w-2.5" />
-              {message.modelName || 'VLM'}
+              {message.modelName || 'AI'}
             </span>
             {isStreaming ? (
               <span className="text-[10px] text-purple-500 flex items-center gap-1">

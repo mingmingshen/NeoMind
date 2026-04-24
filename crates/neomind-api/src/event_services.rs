@@ -224,7 +224,7 @@ impl TransformEventService {
                             tokio::time::sleep(tokio::time::Duration::from_millis(DEBOUNCE_MS))
                                 .await;
 
-                            tracing::info!(
+                            tracing::debug!(
                                 device_id = %device_id_clone,
                                 "Debounce timer expired, processing device data"
                             );

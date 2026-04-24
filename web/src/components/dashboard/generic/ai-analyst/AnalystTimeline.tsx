@@ -1,17 +1,17 @@
 import { useRef, useEffect } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { CircleDot } from 'lucide-react'
-import { VlmMessageBubble } from './VlmMessageBubble'
-import type { VlmMessage } from './types'
+import { AnalystMessageBubble } from './AnalystMessageBubble'
+import type { AnalystMessage } from './types'
 
-interface VlmTimelineProps {
-  messages: VlmMessage[]
+interface AnalystTimelineProps {
+  messages: AnalystMessage[]
   streamingContent: string
   streamingMsgId: string | null
   contextWindowSize: number
 }
 
-export function VlmTimeline({ messages, streamingContent, streamingMsgId, contextWindowSize }: VlmTimelineProps) {
+export function AnalystTimeline({ messages, streamingContent, streamingMsgId, contextWindowSize }: AnalystTimelineProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
@@ -42,14 +42,14 @@ export function VlmTimeline({ messages, streamingContent, streamingMsgId, contex
     <ScrollArea className="h-full" ref={scrollAreaRef}>
       <div className="p-3 space-y-2">
         {visibleMessages.map((msg) => (
-          <VlmMessageBubble
+          <AnalystMessageBubble
             key={msg.id}
             message={msg}
             streamingContent={msg.id === streamingMsgId ? streamingContent : undefined}
           />
         ))}
         {streamingMsgId && !messages.find((m) => m.id === streamingMsgId) && streamingContent && (
-          <VlmMessageBubble
+          <AnalystMessageBubble
             message={{
               id: streamingMsgId,
               type: 'ai',

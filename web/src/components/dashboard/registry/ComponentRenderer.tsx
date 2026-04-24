@@ -83,11 +83,11 @@ const componentMap: Record<GenericComponentType, React.ComponentType<any>> = {
 // ============================================================================
 
 const AgentMonitorWidget = lazy(() => import('../generic/AgentMonitorWidget').then(m => ({ default: m.AgentMonitorWidget })))
-const VlmVision = lazy(() => import('../generic/VlmVision').then(m => ({ default: m.VlmVision })))
+const AiAnalyst = lazy(() => import('../generic/AiAnalyst').then(m => ({ default: m.AiAnalyst })))
 
 const businessComponentMap: Record<string, React.ComponentType<any>> = {
   'agent-monitor-widget': AgentMonitorWidget,
-  'vlm-vision': VlmVision,
+  'ai-analyst': AiAnalyst,
 } as const
 
 // ============================================================================
@@ -376,7 +376,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
       builtProps.agentId = componentDataSource.agentId
     }
 
-    // vlm-vision: agentId comes from config (restConfig), no special handling needed
+    // ai-analyst: agentId comes from config (restConfig), no special handling needed
 
     return builtProps
   }, [componentId, componentType, componentTitle, componentConfig, componentDataSource, componentDisplay, className, style, onDataSourceChange, onConfigChange])

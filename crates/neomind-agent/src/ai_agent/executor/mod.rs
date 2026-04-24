@@ -243,8 +243,8 @@ pub struct AgentExecutor {
         Arc<RwLock<HashMap<String, Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>>>>,
     /// Phase 3.3: Extension registry for dynamic tool loading
     extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
-    /// Tool registry for function calling mode
-    tool_registry: Option<Arc<crate::toolkit::ToolRegistry>>,
+    /// Tool registry for function calling mode (wrapped for late initialization)
+    tool_registry: std::sync::RwLock<Option<Arc<crate::toolkit::ToolRegistry>>>,
     /// Memory store for extracting learned patterns
     memory_store: Option<Arc<MarkdownMemoryStore>>,
     /// Per-LLM-backend semaphores for concurrency limiting (shared with scheduler)
@@ -293,7 +293,7 @@ impl AgentExecutor {
             recent_executions: Arc::new(RwLock::new(HashMap::new())),
             llm_runtime_cache: Arc::new(RwLock::new(HashMap::new())),
             extension_registry,
-            tool_registry: config.tool_registry.clone(),
+            tool_registry: std::sync::RwLock::new(config.tool_registry.clone()),
             memory_store: config.memory_store.clone(),
             backend_semaphores: config.backend_semaphores.clone(),
         })
@@ -308,13 +308,25 @@ impl AgentExecutor {
     }
 
     /// Check whether tool mode should be used for this agent execution.
+    /// Only Free mode agents use tool calling; Focused mode always uses
+    /// structured LLM analysis.
     fn should_use_tools(
         &self,
         agent: &AiAgent,
         llm_runtime: &Arc<dyn LlmRuntime + Send + Sync>,
     ) -> bool {
+        // Focused mode never uses tools
+        if agent.execution_mode != neomind_storage::agents::ExecutionMode::Free {
+            tracing::debug!(
+                agent_id = %agent.id,
+                execution_mode = ?agent.execution_mode,
+                "Tool mode skipped — agent is not in Free execution mode"
+            );
+            return false;
+        }
+
         let llm_supports_tools = llm_runtime.capabilities().function_calling;
-        let registry_available = self.tool_registry.is_some();
+        let registry_available = self.tool_registry.read().unwrap().is_some();
         let result = llm_supports_tools && registry_available;
         if !result {
             tracing::warn!(
@@ -1119,15 +1131,17 @@ impl AgentExecutor {
     ) -> AgentResult<(DecisionProcess, neomind_storage::ExecutionResult)> {
         let registry = self
             .tool_registry
-            .as_ref()
+            .read()
+            .unwrap()
+            .clone()
             .ok_or_else(|| NeoMindError::Tool("Tool registry not available".to_string()))?;
 
-        let filtered_tools = Self::filter_tools(registry, &agent.tool_config);
+        let filtered_tools = Self::filter_tools(&registry, &agent.tool_config);
         let system_prompt = Self::build_tool_system_prompt(agent, data_collected, invocation_input);
         let mut messages = Self::build_tool_messages(&system_prompt, data_collected);
 
         let loop_output = self
-            .run_tool_loop(agent, registry, &llm_runtime, &filtered_tools, &mut messages, execution_id)
+            .run_tool_loop(agent, &registry, &llm_runtime, &filtered_tools, &mut messages, execution_id)
             .await;
 
         let (decision_process, execution_result) =
@@ -1139,6 +1153,11 @@ impl AgentExecutor {
     /// Get the agent store.
     pub fn store(&self) -> Arc<AgentStore> {
         self.store.clone()
+    }
+
+    /// Update the tool registry (e.g. after extensions are loaded).
+    pub fn set_tool_registry(&self, registry: Arc<crate::toolkit::ToolRegistry>) {
+        *self.tool_registry.write().unwrap() = Some(registry);
     }
 
     // ========================================================================
@@ -1583,7 +1602,7 @@ impl AgentExecutor {
                     let agent_id_for_log = agent.id.clone();
                     let backend_sems = self.backend_semaphores.clone();
                     let executor_skill_registry = self._config.skill_registry.clone();
-                    let executor_tool_registry = self.tool_registry.clone();
+                    let executor_tool_registry = self.tool_registry.read().unwrap().clone();
                     let executor_extension_registry = self.extension_registry.clone();
                     let executor_memory_store = self.memory_store.clone();
                     let backend_id = agent.llm_backend_id
@@ -1785,7 +1804,7 @@ impl AgentExecutor {
             let agent_id_for_log = agent.id.clone();
             let backend_sems = self.backend_semaphores.clone();
             let executor_skill_registry = self._config.skill_registry.clone();
-            let executor_tool_registry = self.tool_registry.clone();
+            let executor_tool_registry = self.tool_registry.read().unwrap().clone();
             let executor_extension_registry = self.extension_registry.clone();
             let executor_memory_store = self.memory_store.clone();
             let backend_id = agent.llm_backend_id
@@ -1968,9 +1987,22 @@ impl AgentExecutor {
                 ResourceType::Metric => {
                     if source_type == "device" {
                         if r.resource_id.contains(':') {
-                            r.resource_id == compound_id
+                            // Exact match: "device_id:metric" == "device_id:field"
+                            if r.resource_id == compound_id {
+                                return true;
+                            }
+                            // Suffix match: resource "device_id:image" matches field "values.image"
+                            // Split resource_id into (res_device, res_field) and compare
+                            let parts: Vec<&str> = r.resource_id.splitn(2, ':').collect();
+                            if parts.len() == 2 {
+                                let res_device = parts[0];
+                                let res_field = parts[1];
+                                res_device == source_id && (field == res_field || field.ends_with(&format!(".{}", res_field)))
+                            } else {
+                                false
+                            }
                         } else {
-                            r.resource_id == field
+                            r.resource_id == field || field.ends_with(&format!(".{}", r.resource_id))
                         }
                     } else {
                         false
@@ -1996,11 +2028,12 @@ impl AgentExecutor {
         }
 
         // No resources and no matching trigger sources
-        tracing::trace!(
+        tracing::debug!(
             agent_name = %agent.name,
             source_type = %source_type,
             source_id = %source_id,
             field = %field,
+            resources = ?agent.resources.iter().map(|r| &r.resource_id).collect::<Vec<_>>(),
             "[EVENT] Agent {} no matching trigger source",
             agent.name
         );

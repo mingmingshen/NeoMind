@@ -2,7 +2,7 @@ import { useRef, useCallback, useState } from 'react'
 
 const PROCESSING_TIMEOUT_MS = 120_000
 
-export function useVlmQueue(
+export function useAnalystQueue(
   onProcess: (image: string) => void,
 ) {
   const [pending, setPending] = useState(0)

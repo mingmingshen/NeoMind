@@ -10,22 +10,22 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { useVlmModels } from './useVlmModels'
-import type { VlmVisionConfig } from './types'
+import { useAnalystModels } from './useAnalystModels'
+import type { AiAnalystConfig } from './types'
 
-interface VlmConfigPanelProps {
+interface AnalystConfigPanelProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  config: VlmVisionConfig
-  onSave: (config: Partial<VlmVisionConfig>) => void
+  config: AiAnalystConfig
+  onSave: (config: Partial<AiAnalystConfig>) => void
   dataSource?: string
 }
 
-export function VlmConfigPanel({ open, onOpenChange, config, onSave, dataSource }: VlmConfigPanelProps) {
+export function AnalystConfigPanel({ open, onOpenChange, config, onSave, dataSource }: AnalystConfigPanelProps) {
   const [systemPrompt, setSystemPrompt] = useState(config.systemPrompt)
   const [modelId, setModelId] = useState(config.modelId || '')
   const [contextWindowSize, setContextWindowSize] = useState(config.contextWindowSize)
-  const { models, loading } = useVlmModels()
+  const { models, loading } = useAnalystModels()
 
   useEffect(() => {
     setSystemPrompt(config.systemPrompt)
@@ -50,7 +50,7 @@ export function VlmConfigPanel({ open, onOpenChange, config, onSave, dataSource 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <Settings2 className="h-4 w-4" />
-            VLM Vision Configuration
+            AI Analyst Configuration
           </DialogTitle>
         </DialogHeader>
 
@@ -67,12 +67,12 @@ export function VlmConfigPanel({ open, onOpenChange, config, onSave, dataSource 
           <div>
             <label className="text-xs text-muted-foreground flex items-center gap-1">
               <Cpu className="h-3 w-3" />
-              Vision Model
+              Analysis Model
             </label>
             {loading ? (
               <div className="mt-1 text-xs text-muted-foreground">Loading models...</div>
             ) : models.length === 0 ? (
-              <div className="mt-1 text-xs text-yellow-600">No vision models found. Configure an LLM backend with a vision model first.</div>
+              <div className="mt-1 text-xs text-yellow-600">No vision models found. Configure an LLM backend with a vision-capable model first.</div>
             ) : (
               <select
                 value={modelId}
@@ -99,7 +99,7 @@ export function VlmConfigPanel({ open, onOpenChange, config, onSave, dataSource 
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.target.value)}
               className="mt-1 min-h-[80px] text-xs"
-              placeholder="Describe how the VLM should analyze images..."
+              placeholder="Describe how the AI should analyze the data..."
             />
           </div>
 
@@ -124,7 +124,7 @@ export function VlmConfigPanel({ open, onOpenChange, config, onSave, dataSource 
               </Badge>
             </div>
             <p className="text-[10px] text-muted-foreground mt-1">
-              Number of recent image+response pairs to display in timeline
+              Number of recent data+response pairs to display in timeline
             </p>
           </div>
         </div>

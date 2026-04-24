@@ -517,13 +517,13 @@ export const componentRegistry: ComponentRegistry = {
     variants: ['default'],
   },
 
-  'vlm-vision': {
-    type: 'vlm-vision',
-    name: 'VLM Vision',
-    description: 'Image analysis with Vision Language Model — auto-analyze data source images in a timeline chat',
+  'ai-analyst': {
+    type: 'ai-analyst',
+    name: 'AI Analyst',
+    description: 'AI-powered data analysis — auto-analyze images, metrics, and data sources in a timeline chat',
     category: 'business',
     icon: Camera,
-    sizeConstraints: getSizeConstraints('vlm-vision'),
+    sizeConstraints: getSizeConstraints('ai-analyst'),
     hasDataSource: true,
     hasDisplayConfig: false,
     hasActions: true,

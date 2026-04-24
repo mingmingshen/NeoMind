@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/lib/api'
 import type { VisionModel } from './types'
 
-export function useVlmModels() {
+export function useAnalystModels() {
   const [models, setModels] = useState<VisionModel[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)

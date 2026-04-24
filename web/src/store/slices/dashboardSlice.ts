@@ -593,9 +593,9 @@ export const createDashboardSlice: StateCreator<
       const { currentDashboard, dashboards, selectedComponent, configComponentId } = get()
       if (!currentDashboard) return
 
-      // Clean up VLM Vision agent before removing the component
+      // Clean up AI Analyst agent before removing the component
       const removed = currentDashboard.components.find((c) => c.id === id)
-      if (removed?.type === 'vlm-vision') {
+      if (removed?.type === 'ai-analyst') {
         const agentId = removed.config?.agentId as string | undefined
         if (agentId) {
           import('@/lib/api').then(({ api }) => {

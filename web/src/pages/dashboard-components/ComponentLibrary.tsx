@@ -38,7 +38,7 @@ const COMPONENT_TRANSLATION_KEYS: Record<string, { name: string; description: st
   'device-control': { name: 'componentLibrary.deviceControl', description: 'componentLibrary.deviceControlDesc' },
   'rule-status-grid': { name: 'componentLibrary.ruleStatusGrid', description: 'componentLibrary.ruleStatusGridDesc' },
   'transform-list': { name: 'componentLibrary.transformList', description: 'componentLibrary.transformListDesc' },
-  'vlm-vision': { name: 'componentLibrary.vlmVision', description: 'componentLibrary.vlmVisionDesc' },
+  'ai-analyst': { name: 'componentLibrary.aiAnalyst', description: 'componentLibrary.aiAnalystDesc' },
 }
 
 // Translation key mapping for categories

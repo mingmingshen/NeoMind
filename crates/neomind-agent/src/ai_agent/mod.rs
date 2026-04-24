@@ -446,6 +446,11 @@ impl AiAgentManager {
         &self.executor
     }
 
+    /// Update the tool registry in the executor (e.g. after tools are initialized).
+    pub fn update_tool_registry(&self, registry: Arc<crate::toolkit::ToolRegistry>) {
+        self.executor.set_tool_registry(registry);
+    }
+
     /// Get the scheduler for direct access.
     pub fn scheduler(&self) -> &Arc<AgentScheduler> {
         &self.scheduler

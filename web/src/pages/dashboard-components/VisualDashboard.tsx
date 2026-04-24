@@ -328,7 +328,8 @@ function getComponentLibrary(t: (key: string) => string): ComponentCategory[] {
     'custom-layer': 'customLayer',
     'toggle-switch': 'toggleSwitch',
     'agent-monitor-widget': 'agentMonitor',
-    'vlm-vision': 'vlmVision',
+    'vlm-vision': 'aiAnalyst',
+    'ai-analyst': 'aiAnalyst',
   }
   const descKeys: Record<string, string> = {
     'value-card': 'valueCardDesc',
@@ -348,7 +349,8 @@ function getComponentLibrary(t: (key: string) => string): ComponentCategory[] {
     'custom-layer': 'customLayerDesc',
     'toggle-switch': 'toggleSwitchDesc',
     'agent-monitor-widget': 'agentMonitorDesc',
-    'vlm-vision': 'vlmVisionDesc',
+    'vlm-vision': 'aiAnalystDesc',
+    'ai-analyst': 'aiAnalystDesc',
   }
   // Category i18n keys
   const categoryLabelKeys: Record<string, string> = {
@@ -433,7 +435,7 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
     'led-indicator', 'toggle-switch',
     'heading', 'alert-banner',
     'agent-status-card', 'agent-monitor-widget',
-    'vlm-vision',
+    'ai-analyst',
   ]
 
   // Components that don't support showCard
@@ -442,7 +444,7 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
     'toggle-switch',
     'heading', 'alert-banner',
     'agent-status-card', 'agent-monitor-widget',
-    'vlm-vision',
+    'ai-analyst',
     'tabs',
   ]
 
@@ -453,7 +455,7 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
     'heading', 'alert-banner',
     'tabs',
     'agent-status-card', 'agent-monitor-widget',
-    'vlm-vision',
+    'ai-analyst',
   ]
 
   const result: Record<string, unknown> = {}
@@ -875,7 +877,7 @@ function renderDashboardComponent(
         />
       )
     }
-    case 'vlm-vision': {
+    case 'ai-analyst': {
       return (
         <ComponentRenderer
           component={component}
@@ -1109,7 +1111,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const [agents, setAgents] = useState<AiAgent[]>([])
   const [agentsLoading, setAgentsLoading] = useState(false)
 
-  // Vision models for vlm-vision config
+  // Vision models for ai-analyst config
   const [visionModels, setVisionModels] = useState<{ id: string; name: string; backendId: string; backendName: string }[]>([])
   const [visionModelsLoading, setVisionModelsLoading] = useState(false)
 
@@ -1393,10 +1395,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     }
   }, [agents, agentsLoading, configOpen, selectedComponent?.type])
 
-  // Load vision models when config opens for vlm-vision
+  // Load vision models when config opens for ai-analyst
   useEffect(() => {
     const loadVisionModels = async () => {
-      if (configOpen && selectedComponent?.type === 'vlm-vision') {
+      if (configOpen && selectedComponent?.type === 'ai-analyst') {
         setVisionModelsLoading(true)
         try {
           const resp = await api.listLlmBackends()
@@ -1424,9 +1426,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     loadVisionModels()
   }, [configOpen, selectedComponent?.type, selectedComponent?.id])
 
-  // For vlm-vision: update componentConfig with models when loaded
+  // For ai-analyst: update componentConfig with models when loaded
   useEffect(() => {
-    if (configOpen && selectedComponent?.type === 'vlm-vision' && !visionModelsLoading) {
+    if (configOpen && selectedComponent?.type === 'ai-analyst' && !visionModelsLoading) {
       setComponentConfig(prev => ({ ...prev, _visionModelsList: visionModels }))
     }
   }, [visionModels, visionModelsLoading, configOpen, selectedComponent?.type])
@@ -1593,7 +1595,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         break
       // Business Components
       case 'agent-monitor-widget':
-      case 'vlm-vision':
+      case 'ai-analyst':
         defaultConfig = {}
         break
       default:
@@ -1845,11 +1847,13 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
       // Create callbacks for this component to persist configuration changes
       const handleDataSourceChange = (newDataSource: any) => {
-        updateComponent(component.id, { dataSource: newDataSource as DataSource })
+        updateComponent(component.id, { dataSource: newDataSource as DataSource }, false)
+        setConfigVersion(v => v + 1)
       }
 
       const handleConfigChange = (newConfig: Record<string, any>) => {
-        updateComponent(component.id, { config: newConfig })
+        updateComponent(component.id, { config: newConfig }, false)
+        setConfigVersion(v => v + 1)
       }
 
       return {
@@ -4862,8 +4866,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           ],
         }
 
-      // ========== VLM Vision ==========
-      case 'vlm-vision':
+      // ========== AI Analyst ==========
+      case 'ai-analyst':
         return {
           dataSourceSections: [
             {
@@ -4883,14 +4887,14 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 return (
                   <div className="space-y-3">
                     <Field>
-                      <Label>{t('dashboardComponents:vlmVision.selectModel')}</Label>
+                      <Label>{t('dashboardComponents:aiAnalyst.selectModel')}</Label>
                       <Select
                         value={config.modelId || ''}
                         onValueChange={(value) => updateConfig('modelId')(value)}
                         disabled={visionModelsLoading}
                       >
                         <SelectTrigger className="h-9">
-                          <SelectValue placeholder={visionModelsLoading ? t('common:loading') : t('dashboardComponents:vlmVision.selectModelPlaceholder')} />
+                          <SelectValue placeholder={visionModelsLoading ? t('common:loading') : t('dashboardComponents:aiAnalyst.selectModelPlaceholder')} />
                         </SelectTrigger>
                         <SelectContent>
                           {modelsList.map((model: any) => (
@@ -4903,23 +4907,23 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                           ))}
                           {modelsList.length === 0 && !visionModelsLoading && (
                             <div className="px-2 py-4 text-center text-sm text-muted-foreground">
-                              {t('dashboardComponents:vlmVision.noModels')}
+                              {t('dashboardComponents:aiAnalyst.noModels')}
                             </div>
                           )}
                         </SelectContent>
                       </Select>
                     </Field>
                     <Field>
-                      <Label>{t('dashboardComponents:vlmVision.systemPrompt')}</Label>
+                      <Label>{t('dashboardComponents:aiAnalyst.systemPrompt')}</Label>
                       <Textarea
                         value={config.systemPrompt || ''}
                         onChange={(e) => updateConfig('systemPrompt')(e.target.value)}
-                        placeholder={t('dashboardComponents:vlmVision.systemPromptPlaceholder')}
+                        placeholder={t('dashboardComponents:aiAnalyst.systemPromptPlaceholder')}
                         className="resize-y"
                       />
                     </Field>
                     <Field>
-                      <Label>{t('dashboardComponents:vlmVision.contextWindow')}</Label>
+                      <Label>{t('dashboardComponents:aiAnalyst.contextWindow')}</Label>
                       <Input
                         type="number"
                         min={1}

@@ -22,7 +22,7 @@ import { useIsMobile } from "@/hooks/useMobile"
 import { Loader2, Bot, Plus, Brain, Cpu, RefreshCw, Settings, Sparkles, Zap, BookOpen, Edit, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/shared/EmptyState"
-import type { AiAgent, AiAgentDetail, Extension, ExtensionDataSourceInfo, TransformDataSourceInfo } from "@/types"
+import type { AiAgent, AiAgentDetail, Extension, ExtensionDataSourceInfo, TransformDataSourceInfo, UnifiedDataSourceInfo } from "@/types"
 import type { AgentExecutionStartedEvent, AgentExecutionCompletedEvent, AgentThinkingEvent } from "@/lib/events"
 
 // Import components
@@ -105,6 +105,7 @@ export function AgentsPage() {
   const [deviceTypes, setDeviceTypes] = useState<any[]>([])
   const [extensions, setExtensions] = useState<Extension[]>([])
   const [extensionDataSources, setExtensionDataSources] = useState<ExtensionDataSourceInfo[]>([])
+  const [unifiedDataSources, setUnifiedDataSources] = useState<UnifiedDataSourceInfo[]>([])
 
   // Fetch data
   const loadItems = useCallback(async () => {
@@ -124,16 +125,19 @@ export function AgentsPage() {
 
       // Load extensions for agent resources
       try {
-        const [extData, dsData] = await Promise.all([
+        const [extData, dsData, unifiedDsData] = await Promise.all([
           api.listExtensions().catch((): Extension[] => []),
           api.listAllDataSources().catch((): (ExtensionDataSourceInfo | TransformDataSourceInfo)[] => []),
+          api.listUnifiedDataSources().catch((): { data: UnifiedDataSourceInfo[]; total: number; source_options: [string, string][] } => ({ data: [], total: 0, source_options: [] })),
         ])
         setExtensions(extData)
         // Filter only extension data sources (exclude transform data sources)
         setExtensionDataSources(dsData.filter((source): source is ExtensionDataSourceInfo => 'extension_id' in source))
+        setUnifiedDataSources(unifiedDsData.data || [])
       } catch {
         setExtensions([])
         setExtensionDataSources([])
+        setUnifiedDataSources([])
       }
 
       // Load agents
@@ -566,6 +570,7 @@ export function AgentsPage() {
         deviceTypes={deviceTypes}
         extensions={extensions}
         extensionDataSources={extensionDataSources}
+        unifiedDataSources={unifiedDataSources}
         onSave={handleSave}
       />
 
