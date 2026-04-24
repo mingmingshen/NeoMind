@@ -272,8 +272,12 @@
       "runOn": "执行于",
       "triggerWhen": "触发条件",
       "metricUpdates": "指标更新",
+      "extensionOutput": "扩展输出",
+      "aiMetric": "AI 指标",
       "manualTrigger": "手动触发",
       "fromDevice": "来自设备",
+      "fromExtension": "来自扩展",
+      "fromAiGroup": "AI 分组名称",
       "manualHint": "智能体仅在通过 API 或 UI 手动触发时运行"
     },
     "promptTemplates": {
@@ -306,15 +310,33 @@
     "schedule": {
       "selectStrategy": "选择执行策略",
       "strategies": {
-        "interval": "间隔",
-        "daily": "每天",
-        "weekly": "每周",
-        "monthly": "每月",
-        "event": "事件",
-        "once": "单次"
+        "timer": "定时执行",
+        "reactive": "数据驱动",
+        "onDemand": "按需调用"
       },
       "config": "执行配置",
       "onceDescription": "智能体将在保存后立即执行一次，执行后不会自动再次触发。",
+      "timer": {
+        "description": "定时自动执行",
+        "subTypes": {
+          "interval": "间隔执行",
+          "daily": "每天",
+          "weekly": "每周"
+        }
+      },
+      "reactive": {
+        "description": "数据源更新时自动执行",
+        "hint": "选择要监控的数据源，当任意选定源收到新数据时，Agent 将自动执行。",
+        "deviceTrigger": "设备触发源",
+        "extensionTrigger": "扩展触发源",
+        "noDevices": "暂无可用设备",
+        "noExtensions": "暂无可用扩展",
+        "emptyWarning": "未选择触发源。Agent 将不会自动执行。",
+        "fallbackToResources": "未配置显式触发源。将根据已绑定的 Resources 触发（兼容模式）。",
+        "allMetrics": "全部",
+        "selectSource": "选择一个源进行配置",
+        "noMetrics": "暂无可用指标"
+      },
       "interval": {
         "every": "每",
         "minutes": "分钟",
@@ -348,16 +370,27 @@
         "manualHint": "当选择的设备指标更新时触发。后端根据配置的资源进行过滤。",
         "events": {
           "device.metric": "指标更新",
+          "extension.output": "扩展输出",
+          "ai.metric": "AI 指标",
           "manual": "手动触发"
         },
         "descriptions": {
           "device.metric": "当设备指标更新时触发。可选择特定设备或监控全部设备。",
+          "extension.output": "当扩展发布输出数据时触发。",
+          "ai.metric": "当 AI 指标被写入时触发。",
           "manual": "仅通过API或UI手动触发"
         },
-        "allDevices": "全部设备"
+        "allDevices": "全部设备",
+        "allExtensions": "全部扩展",
+        "extensionHint": "当此扩展发布输出数据时触发智能体。",
+        "aiGroupPlaceholder": "例如 anomaly、prediction"
       },
       "once": {
         "preview": "立即执行一次"
+      },
+      "onDemand": {
+        "description": "仅在被显式调用时运行（API 或规则引擎触发）",
+        "hint": "此智能体不会自动运行。通过 Invoke API 或规则引擎按需触发。"
       },
       "timezone": "时区"
     },
@@ -391,6 +424,12 @@
     },
     "resources": {
       "title": "资源",
+      "optional": "可选",
+      "hintFocused": "配置 Agent 关注的数据源，执行时将自动收集这些数据用于分析。",
+      "hintFree": "配置预加载数据源。不配置时 Agent 将通过工具自行查询所需数据。",
+      "preloadTitle": "预加载数据源",
+      "supplementalTitle": "补充数据源",
+      "hintReactive": "触发源数据将自动收集。如需关联分析其他设备或指标，可在此补充。",
       "searchPlaceholder": "搜索资源名称或类型...",
       "selectedCount": "已选 {{count}} 项",
       "noResourcesFound": "暂无可用资源",
@@ -435,7 +474,7 @@
       "selectMetricsFirst": "请先选择指标",
       "executionMode": "执行模式",
       "chatMode": "对话模式",
-      "chatModeDesc": "单次 LLM 分析，快速响应，不使用工具调用。",
+      "chatModeDesc": "基于绑定资源的单次 LLM 分析。启用工具链后可调用工具。",
       "reactMode": "ReAct 模式",
       "reactModeDesc": "多轮推理 + 工具调用。规划行动、执行工具、分析结果。",
       "focusedMode": "精准模式",
@@ -449,7 +488,16 @@
       "includeHistory": "包含历史数据",
       "includeTrend": "包含趋势分析",
       "includeBaseline": "包含基线对比",
-      "recommended": "推荐"
+      "recommended": "推荐",
+      "enableToolChaining": "启用工具链",
+      "toolChainingHint": "允许 Agent 串联多个工具调用以完成复杂任务",
+      "toolChainingHintFocused": "允许 Agent 在分析过程中调用工具（查询数据、控制设备、发送通知等）",
+      "maxChainDepth": "最大链深度",
+      "focusedHint": "精准模式：基于预收集数据进行单次分析。启用工具链后可调用工具。",
+      "agentPriority": "优先级",
+      "priorityHint": "执行优先级（1=最低，10=最高）",
+      "contextWindow": "上下文窗口大小",
+      "contextHint": "LLM 的最大上下文长度"
     },
     "dataCollection": {
       "title": "数据收集配置",

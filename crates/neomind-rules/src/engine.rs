@@ -7,6 +7,7 @@ use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::RwLock as StdRwLock;
+use std::pin::Pin;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
@@ -32,6 +33,17 @@ type OptionDeviceActionExecutor = Arc<tokio::sync::RwLock<Option<Arc<DeviceActio
 
 /// Optional extension action executor for executing extension commands.
 type OptionExtensionActionExecutor = Arc<tokio::sync::RwLock<Option<Arc<ExtensionActionExecutor>>>>;
+
+/// Callback type for triggering agents from rules.
+/// Takes (agent_id, input_text, data) and returns Ok(()) on success.
+type AgentTriggerCallback = Arc<
+    dyn Fn(String, Option<String>, Option<serde_json::Value>) -> Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// Optional agent trigger callback wrapper.
+type OptionAgentTriggerCallback = Arc<tokio::sync::RwLock<Option<AgentTriggerCallback>>>;
 
 /// Scheduler task handle for managing the rule evaluation loop.
 type SchedulerHandle = Arc<StdRwLock<Option<JoinHandle<()>>>>;
@@ -372,6 +384,8 @@ pub struct RuleEngine {
     device_action_executor: OptionDeviceActionExecutor,
     /// Optional extension action executor for executing extension commands.
     extension_action_executor: OptionExtensionActionExecutor,
+    /// Optional agent trigger callback for invoking agents from rules.
+    agent_trigger: OptionAgentTriggerCallback,
     /// Scheduler task handle.
     scheduler_handle: SchedulerHandle,
     /// Scheduler interval (how often to evaluate rules).
@@ -394,6 +408,7 @@ impl RuleEngine {
             message_manager: Arc::new(tokio::sync::RwLock::new(None)),
             device_action_executor: Arc::new(tokio::sync::RwLock::new(None)),
             extension_action_executor: Arc::new(tokio::sync::RwLock::new(None)),
+            agent_trigger: Arc::new(tokio::sync::RwLock::new(None)),
             scheduler_handle: Arc::new(StdRwLock::new(None)),
             scheduler_interval: Arc::new(StdRwLock::new(Duration::from_secs(5))),
             scheduler_running: Arc::new(StdRwLock::new(false)),
@@ -444,6 +459,11 @@ impl RuleEngine {
     pub async fn get_extension_action_executor(&self) -> Option<Arc<ExtensionActionExecutor>> {
         let guard = self.extension_action_executor.read().await;
         guard.as_ref().map(Arc::clone)
+    }
+
+    /// Set the agent trigger callback for invoking agents from rule actions.
+    pub async fn set_agent_trigger_callback(&self, callback: AgentTriggerCallback) {
+        *self.agent_trigger.write().await = Some(callback);
     }
 
     /// Start the automatic rule scheduler.
@@ -1233,6 +1253,34 @@ impl RuleEngine {
                         tracing::error!("HTTP request failed: {} {} - {}", method_str, url, e);
                         Err(format!("HTTP request failed: {}", e))
                     }
+                }
+            }
+            RuleAction::TriggerAgent {
+                agent_id,
+                input,
+                data,
+            } => {
+                let trigger = self.agent_trigger.read().await;
+                if let Some(callback) = trigger.as_ref() {
+                    match callback(agent_id.clone(), input.clone(), data.clone()).await {
+                        Ok(()) => {
+                            tracing::debug!(
+                                "TRIGGER_AGENT: {} triggered successfully",
+                                agent_id
+                            );
+                            Ok(format!("TRIGGER_AGENT: {} (triggered)", agent_id))
+                        }
+                        Err(e) => {
+                            tracing::error!("TRIGGER_AGENT: {} failed: {}", agent_id, e);
+                            Err(format!("TRIGGER_AGENT failed: {}", e))
+                        }
+                    }
+                } else {
+                    tracing::warn!(
+                        "TRIGGER_AGENT: {} (no agent trigger callback - logged only)",
+                        agent_id
+                    );
+                    Ok(format!("TRIGGER_AGENT: {} (logged only)", agent_id))
                 }
             }
         }

@@ -74,16 +74,18 @@ Benefits:
 - Cleaner tool organization
 
 ### Execution Mode
-Agents now support different execution modes:
+Agents support two execution modes:
 
 ```rust
 pub enum ExecutionMode {
-    /// Single-step execution (default)
-    Single,
-    /// Multi-step with planning
-    MultiStep,
-    /// Autonomous continuous execution
-    Autonomous,
+    /// Focused mode — user-defined scope, single-pass analysis with bound resources.
+    /// Supports tool calling when enable_tool_chaining is set.
+    #[serde(rename = "focused", alias = "chat")]
+    Focused,
+    /// Free mode — LLM freely explores with full tool access, multi-round reasoning.
+    /// Supports tool chaining up to max_chain_depth rounds.
+    #[serde(rename = "free", alias = "react")]
+    Free,
 }
 ```
 

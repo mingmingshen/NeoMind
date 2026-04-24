@@ -593,6 +593,17 @@ export const createDashboardSlice: StateCreator<
       const { currentDashboard, dashboards, selectedComponent, configComponentId } = get()
       if (!currentDashboard) return
 
+      // Clean up VLM Vision agent before removing the component
+      const removed = currentDashboard.components.find((c) => c.id === id)
+      if (removed?.type === 'vlm-vision') {
+        const agentId = removed.config?.agentId as string | undefined
+        if (agentId) {
+          import('@/lib/api').then(({ api }) => {
+            api.deleteAgent(agentId).catch(() => {})
+          })
+        }
+      }
+
       const updatedDashboard = {
         ...currentDashboard,
         components: currentDashboard.components.filter((c) => c.id !== id),

@@ -294,6 +294,7 @@ impl ToolRegistryBuilder {
         device_service: Arc<neomind_devices::DeviceService>,
         storage: Arc<neomind_devices::TimeSeriesStorage>,
         agent_store: Arc<neomind_storage::AgentStore>,
+        agent_invoker: Option<Arc<dyn super::aggregated::AgentInvoker>>,
         rule_engine: Arc<neomind_rules::RuleEngine>,
         rule_history: Option<Arc<neomind_rules::RuleHistoryStorage>>,
         message_manager: Option<Arc<neomind_messages::MessageManager>>,
@@ -301,6 +302,7 @@ impl ToolRegistryBuilder {
         skill_registry: Option<crate::skills::SharedSkillRegistry>,
         data_dir: Option<std::path::PathBuf>,
         ai_metrics_registry: Option<Arc<crate::toolkit::ai_metric::AiMetricsRegistry>>,
+        event_bus: Option<Arc<neomind_core::EventBus>>,
     ) -> Self {
         use super::aggregated::AggregatedToolsBuilder;
 
@@ -309,6 +311,10 @@ impl ToolRegistryBuilder {
             .with_time_series_storage(storage)
             .with_agent_store(agent_store)
             .with_rule_engine(rule_engine);
+
+        if let Some(invoker) = agent_invoker {
+            builder = builder.with_agent_invoker(invoker);
+        }
 
         if let Some(history) = rule_history {
             builder = builder.with_rule_history(history);
@@ -336,6 +342,10 @@ impl ToolRegistryBuilder {
 
         if let Some(ext_reg) = self.extension_registry.clone() {
             builder = builder.with_extension_registry(ext_reg);
+        }
+
+        if let Some(bus) = event_bus {
+            builder = builder.with_event_bus(bus);
         }
 
         let tools = builder.build();

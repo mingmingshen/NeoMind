@@ -90,6 +90,17 @@ pub struct CommandSelection {
     pub parameters: serde_json::Value,
 }
 
+/// Input passed when invoking an agent (from API, Rule, or another Agent).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentInput {
+    /// Text content from the caller
+    pub content: Option<String>,
+    /// Structured data from the caller
+    pub data: Option<serde_json::Value>,
+    /// Source of the invocation (e.g., "api", "rule:{id}", "agent:{id}")
+    pub source: Option<String>,
+}
+
 /// Agent execution summary for display.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentExecutionSummary {
@@ -187,6 +198,7 @@ impl AiAgentManager {
     pub async fn execute_agent_now(
         &self,
         agent_id: &str,
+        invocation_input: Option<AgentInput>,
     ) -> Result<AgentExecutionSummary, crate::error::NeoMindError> {
         let start_time = std::time::Instant::now();
         let timestamp = chrono::Utc::now().timestamp();
@@ -205,8 +217,8 @@ impl AiAgentManager {
             .update_agent_status(agent_id, AgentStatus::Executing, None)
             .await?;
 
-        // Execute the agent
-        let result = self.executor.execute_agent(agent.clone(), None).await;
+        // Execute the agent with optional invocation input
+        let result = self.executor.execute_agent(agent.clone(), None, invocation_input).await;
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 

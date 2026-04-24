@@ -200,6 +200,8 @@ pub struct ExecutionContext {
     pub llm_backend: Option<LlmBackend>,
     /// Execution ID for event tracking
     pub execution_id: String,
+    /// Invocation input from API/Rule/Agent caller
+    pub invocation_input: Option<super::AgentInput>,
 }
 
 /// Result of agent execution.
@@ -234,7 +236,7 @@ pub struct AgentExecutor {
     event_agents: Arc<RwLock<HashMap<String, AiAgent>>>,
     /// Track recent executions to prevent duplicates (agent_id, device_id -> timestamp)
     /// Deduplicates by device only, not by individual metrics
-    recent_executions: Arc<RwLock<HashMap<(String, String), i64>>>,
+    recent_executions: Arc<RwLock<HashMap<String, i64>>>,
     /// LLM runtime cache: backend_id -> runtime
     /// Key format: "{backend_type}:{endpoint}:{model}" for cache invalidation
     llm_runtime_cache:
@@ -311,17 +313,6 @@ impl AgentExecutor {
         agent: &AiAgent,
         llm_runtime: &Arc<dyn LlmRuntime + Send + Sync>,
     ) -> bool {
-        use neomind_storage::agents::ExecutionMode;
-
-        // If execution_mode is explicitly set to Focused, skip tool mode
-        if agent.execution_mode == ExecutionMode::Focused {
-            tracing::info!(
-                agent_id = %agent.id,
-                "Execution mode is Focused - using direct LLM analysis"
-            );
-            return false;
-        }
-
         let llm_supports_tools = llm_runtime.capabilities().function_calling;
         let registry_available = self.tool_registry.is_some();
         let result = llm_supports_tools && registry_available;
@@ -383,7 +374,7 @@ impl AgentExecutor {
     /// (learned patterns, baselines, recent conclusions, user messages) so the
     /// agent can leverage accumulated experience and make progressively better
     /// decisions.
-    fn build_tool_system_prompt(agent: &AiAgent, data_collected: &[DataCollected]) -> String {
+    fn build_tool_system_prompt(agent: &AiAgent, data_collected: &[DataCollected], invocation_input: Option<&super::AgentInput>) -> String {
         let time_ctx = get_time_context();
 
         // Collect non-image, non-placeholder data.
@@ -498,10 +489,33 @@ impl AgentExecutor {
             format!("\n## Historical Context (learn from past experience)\n{}\n", history_parts.join("\n\n"))
         };
 
+        // Build invocation input section
+        let invocation_section = match invocation_input {
+            Some(input) => {
+                let mut parts = Vec::new();
+                if let Some(ref source) = input.source {
+                    parts.push(format!("来源/Source: {}", source));
+                }
+                if let Some(ref content) = input.content {
+                    parts.push(format!("内容/Content: {}", content));
+                }
+                if let Some(ref data) = input.data {
+                    let data_str = serde_json::to_string_pretty(data).unwrap_or_default();
+                    parts.push(format!("附加数据/Data:\n{}", data_str));
+                }
+                if parts.is_empty() {
+                    String::new()
+                } else {
+                    format!("\n## Caller Input (invoked by external request)\n{}\n", parts.join("\n"))
+                }
+            }
+            None => String::new(),
+        };
+
         format!(
             "You are an intelligent IoT agent named '{}' monitoring edge devices.\n\
              Current time: {}\n\
-             Your task: {}\n{}{}{}\
+             Your task: {}\n{}{}{}{}\
              You have access to tools for querying metrics, executing commands, and sending notifications.\n\
              Always use tools to fetch the latest data before making conclusions.\n\n\
              Guidelines:\n\
@@ -514,7 +528,7 @@ impl AgentExecutor {
              Keep your conclusion concise and structured (2-5 sentences). \
              State key findings first, then anomalies or recommendations. Avoid filler words.\n\
              Reply in the SAME language as the task description.",
-            agent.name, time_ctx, agent.user_prompt, resource_info, current_data_section, history_section,
+            agent.name, time_ctx, agent.user_prompt, resource_info, current_data_section, history_section, invocation_section,
         )
     }
 
@@ -577,7 +591,13 @@ impl AgentExecutor {
         use crate::agent::tool_parser::parse_tool_calls;
         use neomind_core::llm::backend::{GenerationParams, LlmInput};
 
-        let max_rounds = 3;
+        // Focused mode or tool chaining disabled: single round only.
+        // Free mode with chaining: use max_chain_depth.
+        let max_rounds = if agent.enable_tool_chaining {
+            agent.max_chain_depth.max(1)
+        } else {
+            1
+        };
         let mut all_tool_results: Vec<crate::toolkit::ToolResult> = Vec::new();
         let mut round_data_list: Vec<RoundData> = Vec::new();
         let mut all_reasoning_texts: Vec<String> = Vec::new();
@@ -1095,6 +1115,7 @@ impl AgentExecutor {
         data_collected: &[DataCollected],
         llm_runtime: Arc<dyn LlmRuntime + Send + Sync>,
         execution_id: &str,
+        invocation_input: Option<&super::AgentInput>,
     ) -> AgentResult<(DecisionProcess, neomind_storage::ExecutionResult)> {
         let registry = self
             .tool_registry
@@ -1102,7 +1123,7 @@ impl AgentExecutor {
             .ok_or_else(|| NeoMindError::Tool("Tool registry not available".to_string()))?;
 
         let filtered_tools = Self::filter_tools(registry, &agent.tool_config);
-        let system_prompt = Self::build_tool_system_prompt(agent, data_collected);
+        let system_prompt = Self::build_tool_system_prompt(agent, data_collected, invocation_input);
         let mut messages = Self::build_tool_messages(&system_prompt, data_collected);
 
         let loop_output = self
@@ -1512,9 +1533,8 @@ impl AgentExecutor {
                     .await
                 {
                     // Check for duplicate execution within the last 5 seconds
-                    // Deduplicate by (agent_id, device_id) - only trigger once per device
-                    // regardless of how many metrics changed
-                    let dedup_key = (agent.id.clone(), device_id.clone());
+                    // Deduplicate by agent_id - one execution per agent per window
+                    let dedup_key = agent.id.clone();
                     let recent = self.recent_executions.read().await;
                     let is_duplicate = recent
                         .get(&dedup_key)
@@ -1628,7 +1648,7 @@ impl AgentExecutor {
 
                                 // Execute the agent with event data (includes the triggering metric value directly)
                                 match executor
-                                    .execute_agent(agent_clone, Some(event_trigger_data))
+                                    .execute_agent(agent_clone, Some(event_trigger_data), None)
                                     .await
                                 {
                                     Ok(record) => {
@@ -1712,8 +1732,8 @@ impl AgentExecutor {
                 continue;
             }
 
-            // Deduplicate by (agent_id, source_id)
-            let dedup_key = (agent.id.clone(), source_id.clone());
+            // Deduplicate by agent_id — one execution per agent per 5-second window
+            let dedup_key = agent.id.clone();
             let recent = self.recent_executions.read().await;
             let is_duplicate = recent
                 .get(&dedup_key)
@@ -1831,7 +1851,7 @@ impl AgentExecutor {
 
                         // Execute the agent with event data
                         match executor
-                            .execute_agent(agent_clone, Some(event_trigger_data))
+                            .execute_agent(agent_clone, Some(event_trigger_data), None)
                             .await
                         {
                             Ok(record) => {
@@ -1865,8 +1885,9 @@ impl AgentExecutor {
         Ok(())
     }
 
-    /// Check if a data source update matches an agent's resource bindings.
-    /// Works uniformly for all source types (device, extension, transform, ai).
+    /// Check if a data source update matches an agent's trigger conditions.
+    /// For event-type agents: prefers event_filter.sources, falls back to resource bindings.
+    /// Agents without any trigger source will NOT be triggered by data events.
     async fn matches_data_source_filter(
         &self,
         agent: &AiAgent,
@@ -1877,17 +1898,74 @@ impl AgentExecutor {
         // Build the expected compound resource ID
         let compound_id = format!("{}:{}", source_id, field);
 
-        // Check resource bindings
+        // 1. Check event_filter.sources — explicit trigger configuration
+        // Format: {"sources": [{"type": "device", "id": "sensor-01"}, {"type": "extension", "id": "weather"}]}
+        if let Some(ref filter_json) = agent.schedule.event_filter {
+            if let Ok(filter) = serde_json::from_str::<serde_json::Value>(filter_json) {
+                // New sources-based matching
+                if let Some(sources) = filter.get("sources").and_then(|v| v.as_array()) {
+                    if !sources.is_empty() {
+                        let matches_source = sources.iter().any(|s| {
+                            let s_type = s.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                            let s_id = s.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                            let s_field = s.get("field").and_then(|v| v.as_str());
+
+                            if s_type != source_type {
+                                return false;
+                            }
+                            // If id is empty/"all", match any source of this type
+                            if s_id.is_empty() || s_id == "all" {
+                                return true;
+                            }
+                            if s_id != source_id {
+                                return false;
+                            }
+                            // If field specified, must match exactly
+                            if let Some(f) = s_field {
+                                if !f.is_empty() && f != field {
+                                    return false;
+                                }
+                            }
+                            true
+                        });
+
+                        // When explicit sources are configured, ONLY use them —
+                        // do NOT fall through to resource bindings.
+                        return matches_source;
+                    }
+                }
+
+                // Legacy event_type-based matching (backward compat)
+                if let Some(event_type) = filter.get("event_type").and_then(|v| v.as_str()) {
+                    if event_type == "device.metric" {
+                        if let Some(filter_device) = filter.get("device_id").and_then(|v| v.as_str()) {
+                            if filter_device == "all" || filter_device == source_id {
+                                if source_type == "device" {
+                                    return true;
+                                }
+                            }
+                        }
+                    } else if event_type == "extension.output" {
+                        if let Some(filter_ext) = filter.get("extension_id").and_then(|v| v.as_str()) {
+                            if filter_ext == "all" || filter_ext == source_id {
+                                if source_type == "extension" {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback: check resource bindings (backward compat for agents
+        //    without explicit event_filter.sources)
         let has_matching_resource = agent.resources.iter().any(|r| {
             match r.resource_type {
                 ResourceType::Device => {
-                    // Device resource matches if source is device and source_id matches
                     source_type == "device" && r.resource_id == source_id
                 }
                 ResourceType::Metric => {
-                    // Metric resource matches if source is device:
-                    // 1. Exact "device_id:metric" match, OR
-                    // 2. Metric-only resource (no colon) matches field name exactly
                     if source_type == "device" {
                         if r.resource_id.contains(':') {
                             r.resource_id == compound_id
@@ -1899,59 +1977,34 @@ impl AgentExecutor {
                     }
                 }
                 ResourceType::ExtensionMetric => {
-                    // Extension metric matches if source is extension:
-                    // "*", extension_id, or "extension_id:field"
                     if source_type == "extension" {
                         let ext_metric_id = format!("{}:{}", source_id, field);
-                        r.resource_id == "*" || r.resource_id == source_id || r.resource_id == ext_metric_id
+                        r.resource_id == source_id || r.resource_id == ext_metric_id
                     } else {
                         false
                     }
                 }
                 ResourceType::ExtensionTool => {
-                    // Extension tool matches if source is extension and source_id matches
                     source_type == "extension" && r.resource_id == source_id
                 }
                 _ => false,
             }
         });
 
-        // Also check event_filter JSON for backward compat
-        if let Some(ref filter_json) = agent.schedule.event_filter {
-            if let Ok(filter) = serde_json::from_str::<serde_json::Value>(filter_json) {
-                // Legacy device.metric filter
-                if let Some(event_type) = filter.get("event_type").and_then(|v| v.as_str()) {
-                    if event_type == "device.metric" {
-                        if let Some(filter_device) = filter.get("device_id").and_then(|v| v.as_str()) {
-                            if filter_device != "all" && filter_device != source_id {
-                                return false;
-                            }
-                        }
-                    }
-                }
-            }
+        if has_matching_resource {
+            return true;
         }
 
-        // Agent matches if:
-        // 1. It has a matching resource, OR
-        // 2. Resources are empty (trigger on all events)
-        let matches = has_matching_resource || agent.resources.is_empty();
-
+        // No resources and no matching trigger sources
         tracing::trace!(
             agent_name = %agent.name,
             source_type = %source_type,
             source_id = %source_id,
             field = %field,
-            has_matching_resource = has_matching_resource,
-            resources_empty = agent.resources.is_empty(),
-            matches = matches,
-            "[EVENT] Agent {} data source filter check: has_matching_resource={}, matches={}",
-            agent.name,
-            has_matching_resource,
-            matches
+            "[EVENT] Agent {} no matching trigger source",
+            agent.name
         );
-
-        matches
+        false
     }
 
     /// Refresh the cache of event-triggered agents.
@@ -2019,6 +2072,7 @@ impl AgentExecutor {
         &self,
         agent: AiAgent,
         event_data: Option<EventTriggerData>,
+        invocation_input: Option<super::AgentInput>,
     ) -> AgentResult<AgentExecutionRecord> {
         let agent_id = agent.id.clone();
         let agent_name = agent.name.clone();
@@ -2092,6 +2146,7 @@ impl AgentExecutor {
             event_data: context_event_data,
             llm_backend: None,
             execution_id: execution_id.clone(),
+            invocation_input: invocation_input.clone(),
         };
 
         // Emit agent execution started event
@@ -2342,7 +2397,7 @@ impl AgentExecutor {
         let executor_ref = self;
         let futures: Vec<_> = sorted_agents
             .into_iter()
-            .map(|agent| executor_ref.execute_agent(agent, None))
+            .map(|agent| executor_ref.execute_agent(agent, None, None))
             .collect();
 
         let results = join_all(futures).await;
@@ -2843,6 +2898,7 @@ impl AgentExecutor {
                 &data_collected,
                 parsed_intent.as_ref(),
                 &context.execution_id,
+                context.invocation_input.as_ref(),
             )
             .await?;
 

@@ -99,6 +99,7 @@ import { Button } from '@/components/ui/button'
 import { Field } from '@/components/ui/field'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -1882,8 +1883,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const initialConfigRef = useRef<any>(null)
   const isInitialLoad = useRef(false)
   const lastSyncedConfigRef = useRef<string>('')
+  const livePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Live preview: update component in real-time as config changes
+  // Schema regenerates immediately for responsive input, but store updates are debounced
   useEffect(() => {
     if (configOpen && selectedComponent) {
       // Skip initial load - don't update store with same config
@@ -1898,24 +1901,33 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       // Check if config actually changed since last sync
       const currentJSON = JSON.stringify(componentConfig)
       if (currentJSON !== lastSyncedConfigRef.current) {
-        // Separate dataSource from config for proper update
-        const { dataSource, ...configOnly } = componentConfig
-        const currentDS = (selectedComponent as any).dataSource
-        const updateData: any = { config: configOnly }
-        // Include dataSource if:
-        // 1. It's defined (has a value), OR
-        // 2. It's undefined but the component previously had a dataSource (need to clear it)
-        if (dataSource !== undefined || currentDS !== undefined) {
-          updateData.dataSource = dataSource
+        // Regenerate schema immediately so input values update
+        setConfigSchema(generateConfigSchema(selectedComponent.type, componentConfig))
+
+        // Debounce the store update to prevent cascading re-renders that break input
+        if (livePreviewTimerRef.current) {
+          clearTimeout(livePreviewTimerRef.current)
         }
-        // Update the component with current config for live preview (don't persist yet)
-        updateComponent(selectedComponent.id, updateData, false)
+        livePreviewTimerRef.current = setTimeout(() => {
+          // Separate dataSource from config for proper update
+          const { dataSource, ...configOnly } = componentConfig
+          const currentDS = (selectedComponent as any).dataSource
+          const updateData: any = { config: configOnly }
+          // Include dataSource if:
+          // 1. It's defined (has a value), OR
+          // 2. It's undefined but the component previously had a dataSource (need to clear it)
+          if (dataSource !== undefined || currentDS !== undefined) {
+            updateData.dataSource = dataSource
+          }
+          // Update the component with current config for live preview (don't persist yet)
+          updateComponent(selectedComponent.id, updateData, false)
+          // Increment version to force re-render
+          setConfigVersion(v => v + 1)
+          livePreviewTimerRef.current = null
+        }, 300)
+
         // Update last synced config
         lastSyncedConfigRef.current = currentJSON
-        // Increment version to force re-render
-        setConfigVersion(v => v + 1)
-        // Regenerate schema with new config values
-        setConfigSchema(generateConfigSchema(selectedComponent.type, componentConfig))
       }
     } else {
       // Reset when dialog closes
@@ -1924,6 +1936,15 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       lastSyncedConfigRef.current = ''
     }
   }, [componentConfig, configOpen, selectedComponent?.id, selectedComponent?.type, updateComponent, setConfigSchema])
+
+  // Clean up live preview timer
+  useEffect(() => {
+    return () => {
+      if (livePreviewTimerRef.current) {
+        clearTimeout(livePreviewTimerRef.current)
+      }
+    }
+  }, [])
 
   // Handle canceling component config - revert to original
   const handleCancelConfig = useCallback(() => {
@@ -2139,13 +2160,9 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     setCenterPickerOpen(false)
   }
 
-  // Handle title change
+  // Handle title change (local state only — store updated via debounced live preview)
   const handleTitleChange = (newTitle: string) => {
     setConfigTitle(newTitle)
-    if (selectedComponent) {
-      // Don't persist during edit - will be persisted on save
-      updateComponent(selectedComponent.id, { title: newTitle }, false)
-    }
   }
 
   // Generate config schema based on component type
@@ -4894,11 +4911,11 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                     </Field>
                     <Field>
                       <Label>{t('dashboardComponents:vlmVision.systemPrompt')}</Label>
-                      <textarea
-                        className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                      <Textarea
                         value={config.systemPrompt || ''}
                         onChange={(e) => updateConfig('systemPrompt')(e.target.value)}
                         placeholder={t('dashboardComponents:vlmVision.systemPromptPlaceholder')}
+                        className="resize-y"
                       />
                     </Field>
                     <Field>

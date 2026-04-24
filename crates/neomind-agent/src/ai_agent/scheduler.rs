@@ -398,7 +398,7 @@ impl AgentScheduler {
                                 let max_retries = agent.max_retries;
                                 let consecutive = agent.consecutive_failures;
 
-                                let result = executor.execute_agent(agent.clone(), None).await;
+                                let result = executor.execute_agent(agent.clone(), None, None).await;
 
                                 match result {
                                     Ok(record) => {
@@ -462,7 +462,7 @@ impl AgentScheduler {
                                             );
                                             tokio::time::sleep(backoff).await;
 
-                                            match executor.execute_agent(agent, None).await {
+                                            match executor.execute_agent(agent, None, None).await {
                                                 Ok(retry_record) => {
                                                     tracing::info!(
                                                         agent_id = %agent_id,

@@ -8,14 +8,11 @@ import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import {
   Bot,
-  Edit,
-  Play,
   Clock,
   Activity,
   Brain,
@@ -25,7 +22,6 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
-  RefreshCw,
   Settings,
   FileText,
   TrendingUp,
@@ -61,14 +57,6 @@ const ROLE_CONFIG: Record<string, { icon: typeof Activity; color: string }> = {
   Monitor: { icon: Activity, color: 'text-blue-600' },
   Executor: { icon: Zap, color: 'text-orange-600' },
   Analyst: { icon: BarChart3, color: 'text-purple-600' },
-}
-
-// Status configuration - labels use i18n
-const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle2 | typeof Loader2 | typeof XCircle; color: string }> = {
-  Active: { icon: CheckCircle2, color: 'text-green-600 bg-green-50 dark:bg-green-950/30' },
-  Paused: { icon: XCircle, color: 'text-muted-foreground bg-muted/50' },
-  Error: { icon: XCircle, color: 'text-red-500 bg-red-50 dark:bg-red-950/30' },
-  Executing: { icon: Loader2, color: 'text-blue-600 bg-blue-50 dark:bg-blue-950/30' },
 }
 
 export function AgentDetailPanel({
@@ -209,14 +197,6 @@ export function AgentDetailPanel({
 
   // Use realtime status from WebSocket if available, otherwise use agent's status
   const currentStatus = realtimeStatus || agent.status
-  const statusConfig = STATUS_CONFIG[currentStatus] || STATUS_CONFIG.Paused
-  const StatusIcon = statusConfig.icon
-
-  // Get status label from i18n
-  const getStatusLabel = (status: string) => {
-    const key = status.toLowerCase() as 'active' | 'paused' | 'error' | 'executing'
-    return t(`agents:status.${key}`)
-  }
 
   // Format duration - handles undefined/null/NaN values
   const formatDuration = (ms: number | undefined | null) => {
@@ -234,75 +214,6 @@ export function AgentDetailPanel({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Unified Header */}
-      <div className="p-4 border-b bg-muted/20">
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              "w-10 h-10 rounded-lg flex items-center justify-center",
-              currentStatus === 'Active' || currentStatus === 'Executing'
-                ? "bg-purple-500/20 text-purple-600"
-                : "bg-muted text-muted-foreground"
-            )}>
-              <Bot className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-semibold">{agent.name}</h2>
-                <Badge className={cn("text-xs gap-1", statusConfig.color)}>
-                  <StatusIcon className={cn("h-3 w-3", currentStatus === 'Executing' && "animate-spin")} />
-                  {getStatusLabel(currentStatus)}
-                </Badge>
-              </div>
-              <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1 max-w-lg">
-                {agent.description || t('agents:card.noDescription')}
-              </p>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center gap-1.5">
-            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={onRefresh}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => onEdit(agent)}>
-              <Edit className="h-3.5 w-3.5 mr-1.5" />
-              {t('agents:detail.edit')}
-            </Button>
-            <Button size="sm" onClick={() => onExecute(agent)} disabled={currentStatus === 'Executing'}>
-              <Play className="h-3.5 w-3.5 mr-1.5" />
-              {t('agents:detail.execute')}
-            </Button>
-          </div>
-        </div>
-
-        {/* Stats - use agent.stats for detailed view, with fallback to inherited fields */}
-        <div className="flex items-center gap-6 text-sm">
-          <div className="flex items-center gap-1.5">
-            <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-muted-foreground">{t('agents:detail.executions')}</span>
-            <span className="font-medium">{formatCount(agent.stats?.total_executions ?? agent.execution_count)}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
-            <span className="font-medium text-green-600">{formatCount(agent.stats?.successful_executions ?? agent.success_count)}</span>
-            <span className="text-muted-foreground">{t('agents:detail.success')}</span>
-          </div>
-          {((agent.stats?.failed_executions ?? agent.error_count ?? 0) > 0) && (
-            <div className="flex items-center gap-1.5">
-              <XCircle className="h-3.5 w-3.5 text-red-500" />
-              <span className="font-medium text-red-500">{formatCount(agent.stats?.failed_executions ?? agent.error_count)}</span>
-              <span className="text-muted-foreground">{t('agents:detail.failed')}</span>
-            </div>
-          )}
-          <div className="flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="font-medium">{formatDuration(agent.stats?.avg_duration_ms ?? agent.avg_duration_ms)}</span>
-            <span className="text-muted-foreground">{t('agents:detail.avgDuration')}</span>
-          </div>
-        </div>
-      </div>
-
       {/* Real-time Thinking Panel - shows during execution */}
       {agent.id && (
         <AgentThinkingPanel

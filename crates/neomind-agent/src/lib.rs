@@ -67,6 +67,7 @@ pub use agent::staged::{IntentCategory, IntentResult};
 // Re-export context selector types for planning tests
 pub use context_selector::ContextBundle;
 pub use ai_agent::IntentParser;
+pub use ai_agent::AgentInput;
 pub use config::{get_default_config, set_default_config, StreamingConfig};
 pub use error::{NeoMindError, Result};
 pub use session::SessionManager;

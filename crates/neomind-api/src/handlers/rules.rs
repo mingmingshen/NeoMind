@@ -255,6 +255,13 @@ fn action_to_json(action: &RuleAction) -> Value {
                 "url": url,
             })
         }
+        RuleAction::TriggerAgent { agent_id, input, data: _ } => {
+            json!({
+                "type": "TriggerAgent",
+                "agent_id": agent_id,
+                "input": input,
+            })
+        }
     }
 }
 

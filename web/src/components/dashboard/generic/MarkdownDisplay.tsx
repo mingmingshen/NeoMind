@@ -35,22 +35,23 @@ export interface MarkdownDisplayProps {
 const markdownComponents: Components = {
   // Custom code block rendering
   pre: ({ node, className, children, ...props }) => (
-    <pre className={cn("overflow-x-auto bg-muted p-2 rounded-md my-2", className)} {...(props as any)}>
+    <pre className={cn("overflow-x-auto bg-zinc-100 dark:bg-zinc-800 p-2 rounded-md my-2", className)} {...(props as any)}>
       {children}
     </pre>
   ),
   // Custom inline code
   code: ({ node, className, children, ...props }) => {
-    const inline = (props as any).inline
-    if (inline) {
+    // In react-markdown v9+, inline code has no className while block code inside <pre> has "language-xxx"
+    const isBlock = !!className
+    if (!isBlock) {
       return (
-        <code className={cn("bg-muted px-1 py-0.5 rounded text-xs font-mono", className)} {...(props as any)}>
+        <code className={cn("bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-xs font-mono text-foreground", className)} {...(props as any)}>
           {children}
         </code>
       )
     }
     return (
-      <code className={cn("text-xs font-mono", className)} {...(props as any)}>
+      <code className={cn("text-xs font-mono text-zinc-800 dark:text-zinc-200", className)} {...(props as any)}>
         {children}
       </code>
     )
@@ -79,9 +80,9 @@ const MarkdownContent = memo(({ content, className, maxLines }: { content: strin
       "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
       "prose-strong:font-semibold",
       "prose-em:italic",
-      "prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:font-mono",
-      "prose-pre:bg-muted prose-pre:p-2 prose-pre:rounded-md prose-pre:my-2",
-      "prose-pre:prose-code:bg-transparent prose-pre:prose-code:p-0",
+      "prose-code:rounded prose-code:bg-zinc-100 prose-code:dark:bg-zinc-800 prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:font-mono prose-code:text-foreground",
+      "prose-pre:bg-zinc-100 prose-pre:dark:bg-zinc-800 prose-pre:p-2 prose-pre:rounded-md prose-pre:my-2",
+      "prose-pre:prose-code:bg-transparent prose-pre:prose-code:p-0 prose-pre:prose-code:text-zinc-800 prose-pre:prose-code:dark:text-zinc-200",
       "prose-blockquote:border-l-2 prose-blockquote:border-muted-foreground/30 prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:my-2",
       "prose-ul:my-1 prose-ul:pl-4 prose-ul:list-disc",
       "prose-ol:my-1 prose-ol:pl-4 prose-ol:list-decimal",

@@ -1032,7 +1032,7 @@ impl AgentCapabilityProvider {
 
         if let Some(manager) = agent_manager {
             // Execute the agent using the real agent manager
-            match manager.execute_agent_now(agent_id).await {
+            match manager.execute_agent_now(agent_id, None).await {
                 Ok(summary) => Ok(json!({
                     "success": true,
                     "agent_id": agent_id,

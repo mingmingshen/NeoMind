@@ -1709,6 +1709,27 @@ export const api = {
     }),
 
   /**
+   * Invoke an AI Agent synchronously — waits for completion and returns results
+   * POST /api/agents/:id/invoke
+   */
+  invokeAgent: (id: string, req?: ExecuteAgentRequest) =>
+    fetchAPI<{
+      execution_id: string
+      agent_id: string
+      agent_name: string
+      status: string
+      duration_ms: number
+      conclusion: string
+      confidence: number
+      actions: Array<{ action: string; reasoning: string; description: string }>
+      has_error: boolean
+      error?: string
+    }>(`/agents/${id}/invoke`, {
+      method: 'POST',
+      body: JSON.stringify(req || {}),
+    }),
+
+  /**
    * Update agent status
    * POST /api/agents/:id/status
    */

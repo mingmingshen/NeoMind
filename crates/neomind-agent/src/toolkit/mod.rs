@@ -81,7 +81,7 @@ pub use shell::{ShellConfig, ShellTool};
 // ============================================================================
 
 pub use aggregated::{
-    AgentTool, AggregatedMessageInfo, AggregatedMessageLevel,
+    AgentInvoker, AgentInvokeResult, AgentTool, AggregatedMessageInfo, AggregatedMessageLevel,
     AggregatedToolsBuilder, DeviceTool, ExtensionAggregatedTool, MessageTool, RuleTool,
     TransformStore,
 };

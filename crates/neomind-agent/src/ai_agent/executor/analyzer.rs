@@ -412,6 +412,7 @@ impl AgentExecutor {
         data: &[DataCollected],
         parsed_intent: Option<&neomind_storage::ParsedIntent>,
         execution_id: &str,
+        invocation_input: Option<&super::super::AgentInput>,
     ) -> AgentResult<AnalysisResult> {
         tracing::info!(
             agent_id = %agent.id,
@@ -435,7 +436,7 @@ impl AgentExecutor {
                         "Tool mode enabled - using function calling"
                     );
                     match self
-                        .execute_with_tools(agent, data, llm.clone(), execution_id)
+                        .execute_with_tools(agent, data, llm.clone(), execution_id, invocation_input)
                         .await
                     {
                         Ok((dp, exec_result)) => {

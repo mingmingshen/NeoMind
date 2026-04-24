@@ -27,6 +27,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Slider } from "@/components/ui/slider"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -66,6 +68,9 @@ import {
   Brain,
   Wrench,
   MessageSquare,
+  Database,
+  Workflow,
+  MousePointerClick,
 } from "lucide-react"
 import type {
   AiAgentDetail,
@@ -151,7 +156,8 @@ interface ResourceRecommendation {
   commands?: CommandInfo[]
 }
 
-type ScheduleType = 'interval' | 'daily' | 'weekly' | 'event'
+type ScheduleType = 'timer' | 'reactive' | 'on-demand'
+type TimerSubType = 'interval' | 'daily' | 'weekly'
 
 // ============================================================================
 // Constants
@@ -284,24 +290,22 @@ export function AgentEditorFullScreen({
   const [llmBackendId, setLlmBackendId] = useState<string | null>(null)
 
   // Schedule state
-  const [scheduleType, setScheduleType] = useState<ScheduleType>('interval')
+  const [scheduleType, setScheduleType] = useState<ScheduleType>('timer')
+  const [timerSubType, setTimerSubType] = useState<TimerSubType>('interval')
   const [intervalValue, setIntervalValue] = useState(5)
   const [scheduleHour, setScheduleHour] = useState(9)
   const [scheduleMinute, setScheduleMinute] = useState(0)
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([1])
 
-  // Event trigger state
-  const [eventConfig, setEventConfig] = useState<{
-    type: 'device.metric' | 'manual'
-    deviceId?: string
-  }>({
-    type: 'device.metric',
-    deviceId: 'all',
-  })
-
+  // Trigger sources for reactive mode
+  // When field is undefined → match all fields from this source
+  // When field is specified → match only that field
+  const [triggerSources, setTriggerSources] = useState<Array<{ type: string; id: string; name: string; field?: string }>>([])
+  const [activeTriggerEntity, setActiveTriggerEntity] = useState<{ type: string; id: string } | null>(null)
   // Resource state
   const [selectedResources, setSelectedResources] = useState<SelectedResource[]>([])
   const [resourceDialogOpen, setResourceDialogOpen] = useState(false)
+  const [freeModeResourcesExpanded, setFreeModeResourcesExpanded] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [recommendations, setRecommendations] = useState<ResourceRecommendation[]>([])
   const [generatingRecommendations, setGeneratingRecommendations] = useState(false)
@@ -318,7 +322,7 @@ export function AgentEditorFullScreen({
   const [enableToolChaining, setEnableToolChaining] = useState(false)
   const [maxChainDepth, setMaxChainDepth] = useState(3)
   const [priority, setPriority] = useState(5)
-  const [contextWindowSize, setContextWindowSize] = useState(8192)
+  const [contextWindowSize, setContextWindowSize] = useState(10)
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   // LLM validation state
@@ -332,6 +336,20 @@ export function AgentEditorFullScreen({
 
   const isFocusedMode = executionMode === 'focused' || executionMode === 'chat'
   const isFreeMode = executionMode === 'free' || executionMode === 'react'
+
+  // Helper: get metrics for a device (from deviceTypes)
+  const getDeviceMetrics = useCallback((deviceId: string): Array<{ name: string; display_name: string }> => {
+    const device = devices.find(d => d.id === deviceId)
+    if (!device) return []
+    const dt = deviceTypes.find(t => t.device_type === device.device_type)
+    return dt?.metrics?.map(m => ({ name: m.name, display_name: m.display_name })) || []
+  }, [devices, deviceTypes])
+
+  // Helper: get metrics for an extension
+  const getExtensionMetrics = useCallback((extId: string): Array<{ name: string; display_name: string }> => {
+    const ext = (extensions || []).find(e => e.id === extId)
+    return ext?.metrics?.map(m => ({ name: m.name, display_name: m.display_name })) || []
+  }, [extensions])
 
   // ========================================================================
   // Effects
@@ -368,7 +386,7 @@ export function AgentEditorFullScreen({
         setExecutionMode(agent.execution_mode ?? 'focused')
         setMaxChainDepth(agent.max_chain_depth ?? 3)
         setPriority(agent.priority ?? 5)
-        setContextWindowSize(agent.context_window_size ?? 8192)
+        setContextWindowSize(agent.context_window_size ?? 10)
         parseSchedule(agent.schedule)
         loadAgentResources(agent)
       } else {
@@ -382,14 +400,15 @@ export function AgentEditorFullScreen({
         setEnableToolChaining(false)
         setMaxChainDepth(3)
         setPriority(5)
-        setContextWindowSize(8192)
+        setContextWindowSize(10)
         setShowAdvanced(false)
-        setScheduleType('interval')
+        setScheduleType('timer')
+        setTimerSubType('interval')
         setIntervalValue(5)
         setScheduleHour(9)
         setScheduleMinute(0)
         setSelectedWeekdays([1])
-        setEventConfig({ type: 'device.metric', deviceId: 'all' })
+        setTriggerSources([])
         setSelectedResources([])
         setRecommendations([])
         setSearchQuery("")
@@ -413,18 +432,25 @@ export function AgentEditorFullScreen({
   const parseSchedule = (schedule: any) => {
     if (!schedule) return
     if (schedule.schedule_type === 'interval') {
-      setScheduleType('interval')
-      if (schedule.interval_seconds) {
-        setIntervalValue(Math.floor(schedule.interval_seconds / 60))
+      if (schedule.interval_seconds === 0) {
+        // interval_seconds=0 means on-demand (no auto-trigger)
+        setScheduleType('on-demand')
+      } else {
+        setScheduleType('timer')
+        setTimerSubType('interval')
+        if (schedule.interval_seconds) {
+          setIntervalValue(Math.floor(schedule.interval_seconds / 60))
+        }
       }
     } else if (schedule.schedule_type === 'cron') {
+      setScheduleType('timer')
       if (schedule.cron_expression) {
         const parts = schedule.cron_expression.split(' ')
         if (parts.length === 5) {
           setScheduleMinute(parseInt(parts[0]) || 0)
           setScheduleHour(parseInt(parts[1]) || 9)
           if (parts[4] !== '*') {
-            setScheduleType('weekly')
+            setTimerSubType('weekly')
             const days: number[] = []
             if (parts[4].includes(',')) {
               parts[4].split(',').forEach((d: string) => {
@@ -437,13 +463,13 @@ export function AgentEditorFullScreen({
             }
             if (days.length > 0) setSelectedWeekdays(days)
           } else {
-            setScheduleType('daily')
+            setTimerSubType('daily')
           }
         } else if (parts.length >= 6) {
           setScheduleMinute(parseInt(parts[1]) || 0)
           setScheduleHour(parseInt(parts[2]) || 9)
           if (parts[5] !== '*') {
-            setScheduleType('weekly')
+            setTimerSubType('weekly')
             const days: number[] = []
             if (parts[5].includes(',')) {
               parts[5].split(',').forEach((d: string) => {
@@ -456,25 +482,26 @@ export function AgentEditorFullScreen({
             }
             if (days.length > 0) setSelectedWeekdays(days)
           } else {
-            setScheduleType('daily')
+            setTimerSubType('daily')
           }
         }
       }
     } else if (schedule.schedule_type === 'event') {
-      setScheduleType('event')
+      setScheduleType('reactive')
+      // Parse trigger sources from event_filter
       try {
-        const eventFilter = JSON.parse(schedule.event_filter || '{}')
-        const eventType = eventFilter.event_type || 'device.metric'
-        if (eventType === 'manual') {
-          setEventConfig({ type: 'manual' })
-        } else {
-          setEventConfig({
-            type: 'device.metric',
-            deviceId: eventFilter.device_id || 'all',
-          })
+        const filter = JSON.parse(schedule.event_filter || '{}')
+        if (filter.sources && Array.isArray(filter.sources)) {
+          const sources = filter.sources.map((s: any) => ({
+            type: s.type || 'device',
+            id: s.id || '',
+            name: s.name || s.id || '',
+            ...(s.field ? { field: s.field } : {}),
+          })).filter((s: any) => s.id)
+          setTriggerSources(sources)
         }
       } catch {
-        setEventConfig({ type: 'device.metric', deviceId: 'all' })
+        // Legacy event_filter format - ignore
       }
     }
   }
@@ -873,11 +900,19 @@ export function AgentEditorFullScreen({
 
     const parts = []
     if (name) parts.push(`"${name}"`)
-    if (scheduleType === 'interval') parts.push(`runs every ${intervalValue} minutes`)
-    if (scheduleType === 'daily') parts.push(`runs daily at ${scheduleHour}:${scheduleMinute.toString().padStart(2, '0')}`)
-    if (scheduleType === 'weekly') parts.push(`runs weekly on ${selectedWeekdays.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')} at ${scheduleHour}:${scheduleMinute.toString().padStart(2, '0')}`)
-    if (scheduleType === 'event' && eventConfig.type === 'device.metric') parts.push(`triggers on ${eventConfig.deviceId === 'all' ? 'any' : 'specific'} device metric updates`)
-    if (scheduleType === 'event' && eventConfig.type === 'manual') parts.push(`runs manually`)
+    if (scheduleType === 'timer') {
+      if (timerSubType === 'interval') parts.push(`runs every ${intervalValue} minutes`)
+      else if (timerSubType === 'daily') parts.push(`runs daily at ${scheduleHour}:${scheduleMinute.toString().padStart(2, '0')}`)
+      else if (timerSubType === 'weekly') parts.push(`runs weekly on ${selectedWeekdays.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')} at ${scheduleHour}:${scheduleMinute.toString().padStart(2, '0')}`)
+    }
+    if (scheduleType === 'reactive') {
+      if (triggerSources.length > 0) {
+        parts.push(`triggers on ${triggerSources.map(s => s.name).join(', ')} data updates`)
+      } else {
+        parts.push('triggers on data updates (no sources configured)')
+      }
+    }
+    if (scheduleType === 'on-demand') parts.push('runs on demand only')
 
     const selectedDeviceCount = selectedResources.filter(r => r.type === 'device').length
     const selectedExtCount = selectedResources.filter(r => r.type === 'extension').length
@@ -890,7 +925,7 @@ export function AgentEditorFullScreen({
     }
 
     return parts.join(', ')
-  }, [name, scheduleType, intervalValue, scheduleHour, scheduleMinute, selectedWeekdays, eventConfig, selectedResources])
+  }, [name, scheduleType, timerSubType, intervalValue, scheduleHour, scheduleMinute, selectedWeekdays, triggerSources, selectedResources])
 
   // Validation - name and prompt are required
   // Metric selection is optional for event-triggered agents (device-level deduplication prevents loops)
@@ -932,44 +967,34 @@ export function AgentEditorFullScreen({
   const handleSave = async () => {
     if (!isValid) return
 
-    // Validation: Focused Mode requires at least one resource binding
-    if (isFocusedMode && selectedResources.length === 0) {
-      toast({
-        title: tCommon('error'),
-        description: tAgent('focusedModeRequiresResources'),
-        variant: 'destructive',
-      })
-      return
-    }
-
     setSaving(true)
     try {
       let cronExpression: string | undefined = undefined
       let intervalSeconds: number | undefined = undefined
       let finalScheduleType: 'interval' | 'cron' | 'event' = 'interval'
-      let eventFilter: any = undefined
+      let eventFilter: string | undefined = undefined
 
-      if (scheduleType === 'interval') {
-        intervalSeconds = intervalValue * 60
-      } else if (scheduleType === 'daily') {
-        cronExpression = `0 ${scheduleMinute} ${scheduleHour} * * *`
-        finalScheduleType = 'cron'
-      } else if (scheduleType === 'weekly') {
-        const sortedDays = [...selectedWeekdays].sort((a, b) => a - b)
-        cronExpression = `0 ${scheduleMinute} ${scheduleHour} * * ${sortedDays.join(',')}`
-        finalScheduleType = 'cron'
-      } else if (scheduleType === 'event') {
-        finalScheduleType = 'event'
-        if (eventConfig.type === 'device.metric') {
-          // Device-level event trigger: agent executes when device data updates
-          // Agent will fetch data from Resources configured separately
-          eventFilter = JSON.stringify({
-            event_type: 'device.metric',
-            device_id: eventConfig.deviceId === 'all' ? undefined : eventConfig.deviceId,
-          })
-        } else {
-          eventFilter = JSON.stringify({ event_type: 'manual' })
+      if (scheduleType === 'timer') {
+        if (timerSubType === 'interval') {
+          intervalSeconds = intervalValue * 60
+        } else if (timerSubType === 'daily') {
+          cronExpression = `0 ${scheduleMinute} ${scheduleHour} * * *`
+          finalScheduleType = 'cron'
+        } else { // weekly
+          const sortedDays = [...selectedWeekdays].sort((a, b) => a - b)
+          cronExpression = `0 ${scheduleMinute} ${scheduleHour} * * ${sortedDays.join(',')}`
+          finalScheduleType = 'cron'
         }
+      } else if (scheduleType === 'reactive') {
+        finalScheduleType = 'event'
+        // Save trigger sources to event_filter
+        const eventFilterObj: any = {
+          sources: triggerSources.map(s => ({ type: s.type, id: s.id, name: s.name, ...(s.field ? { field: s.field } : {}) })),
+        }
+        eventFilter = JSON.stringify(eventFilterObj)
+      } else { // on-demand
+        finalScheduleType = 'interval'
+        intervalSeconds = 0  // 0 = no auto-scheduling
       }
 
       // Build resources array in the new format that supports both devices and extensions
@@ -1092,7 +1117,7 @@ export function AgentEditorFullScreen({
         enable_tool_chaining: enableToolChaining || undefined,
         max_chain_depth: enableToolChaining ? maxChainDepth : undefined,
         priority: priority !== 5 ? priority : undefined,
-        context_window_size: contextWindowSize !== 8192 ? contextWindowSize : undefined,
+        context_window_size: contextWindowSize !== 10 ? contextWindowSize : undefined,
         execution_mode: isFocusedMode ? 'focused' : 'free',
       }
 
@@ -1182,7 +1207,7 @@ export function AgentEditorFullScreen({
                   type="button"
                   onClick={() => setExecutionMode('focused')}
                   className={cn(
-                    "relative flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all",
+                    "relative flex flex-col items-start gap-1.5 rounded-xl border-2 p-3 text-left transition-all",
                     isFocusedMode
                       ? "border-primary bg-primary/5 shadow-sm"
                       : "border-border hover:border-primary/30"
@@ -1190,15 +1215,15 @@ export function AgentEditorFullScreen({
                 >
                   <div className="flex items-center gap-2 w-full">
                     <div className={cn(
-                      "h-8 w-8 rounded-lg flex items-center justify-center",
+                      "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
                       isFocusedMode ? "bg-primary text-primary-foreground" : "bg-muted"
                     )}>
                       <Target className="h-4 w-4" />
                     </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-medium">{tAgent('focusedMode', 'Focused Mode')}</div>
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                      <span className="text-sm font-medium">{tAgent('focusedMode', 'Focused Mode')}</span>
                       {isFocusedMode && (
-                        <Badge variant="secondary" className="text-xs h-4 mt-0.5">
+                        <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
                           {tAgent('saveToken', 'Save Tokens')}
                         </Badge>
                       )}
@@ -1213,7 +1238,7 @@ export function AgentEditorFullScreen({
                   type="button"
                   onClick={() => { setExecutionMode('free'); setSelectedResources([]) }}
                   className={cn(
-                    "relative flex flex-col items-start gap-1 rounded-xl border-2 p-3 text-left transition-all",
+                    "relative flex flex-col items-start gap-1.5 rounded-xl border-2 p-3 text-left transition-all",
                     isFreeMode
                       ? "border-primary bg-primary/5 shadow-sm"
                       : "border-border hover:border-primary/30"
@@ -1221,15 +1246,15 @@ export function AgentEditorFullScreen({
                 >
                   <div className="flex items-center gap-2 w-full">
                     <div className={cn(
-                      "h-8 w-8 rounded-lg flex items-center justify-center",
+                      "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
                       isFreeMode ? "bg-primary text-primary-foreground" : "bg-muted"
                     )}>
                       <Zap className="h-4 w-4" />
                     </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-medium">{tAgent('freeMode', 'Free Mode')}</div>
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                      <span className="text-sm font-medium">{tAgent('freeMode', 'Free Mode')}</span>
                       {isFreeMode && (
-                        <Badge variant="secondary" className="text-xs h-4 mt-0.5">
+                        <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
                           {tAgent('recommended', 'Recommended')}
                         </Badge>
                       )}
@@ -1374,7 +1399,7 @@ export function AgentEditorFullScreen({
               >
                 <Label className="text-sm font-medium flex items-center gap-2">
                   <Lightbulb className="h-4 w-4 text-muted-foreground" />
-                  Advanced Configuration
+                  {tAgent('creator.advanced.title', 'Advanced Configuration')}
                 </Label>
                 <ChevronRight
                   className={cn(
@@ -1386,62 +1411,58 @@ export function AgentEditorFullScreen({
 
               {showAdvanced && (
                 <div className="bg-muted/50 rounded-xl p-4 border space-y-4">
-                  {/* Tool Chaining - Only for Free Mode */}
-                  {isFreeMode && (
-                    <>
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="space-y-0.5 max-w-[75%]">
-                            <Label className="text-sm font-medium">Enable Tool Chaining</Label>
-                            <p className="text-xs text-muted-foreground">
-                              Allow the agent to chain multiple tool calls for complex tasks
-                            </p>
-                          </div>
-                          <Switch
-                            checked={enableToolChaining}
-                            onCheckedChange={setEnableToolChaining}
-                          />
-                        </div>
-
-                        {enableToolChaining && (
-                          <div className="space-y-2">
-                            <Label className="text-xs text-muted-foreground">Max Chain Depth</Label>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="range"
-                                min="1"
-                                max="10"
-                                value={maxChainDepth}
-                                onChange={(e) => setMaxChainDepth(parseInt(e.target.value))}
-                                className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer"
-                              />
-                              <span className="text-sm font-medium w-8 text-center">{maxChainDepth}</span>
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              Maximum number of sequential tool calls (1-10)
-                            </p>
-                          </div>
-                        )}
+                  {/* Tool Chaining — both modes, Focused defaults to off */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5 max-w-[75%]">
+                        <Label className="text-sm font-medium">{tAgent('creator.advanced.enableToolChaining', 'Enable Tool Chaining')}</Label>
+                        <p className="text-xs text-muted-foreground">
+                          {isFocusedMode
+                            ? tAgent('creator.advanced.toolChainingHintFocused', 'Allow the agent to make tool calls during single-pass analysis')
+                            : tAgent('creator.advanced.toolChainingHint', 'Allow the agent to chain multiple tool calls for complex tasks')
+                          }
+                        </p>
                       </div>
-                    </>
-                  )}
+                      <Switch
+                        checked={enableToolChaining}
+                        onCheckedChange={setEnableToolChaining}
+                      />
+                    </div>
+
+                    {enableToolChaining && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs text-muted-foreground">{tAgent('creator.advanced.maxChainDepth', 'Max Chain Depth')}</Label>
+                          <span className="text-sm font-medium tabular-nums">{maxChainDepth}</span>
+                        </div>
+                        <Slider
+                          min={1}
+                          max={10}
+                          step={1}
+                          value={[maxChainDepth]}
+                          onValueChange={([v]) => setMaxChainDepth(v)}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="h-px bg-border" />
 
                   {/* Agent Priority */}
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">Agent Priority</Label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="range"
-                        min="1"
-                        max="10"
-                        value={priority}
-                        onChange={(e) => setPriority(parseInt(e.target.value))}
-                        className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer"
-                      />
-                      <span className="text-sm font-medium w-8 text-center">{priority}</span>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium">{tAgent('creator.advanced.agentPriority', 'Agent Priority')}</Label>
+                      <span className="text-sm font-medium tabular-nums">{priority}</span>
                     </div>
+                    <Slider
+                      min={1}
+                      max={10}
+                      step={1}
+                      value={[priority]}
+                      onValueChange={([v]) => setPriority(v)}
+                    />
                     <p className="text-xs text-muted-foreground">
-                      Execution priority (1=lowest, 10=highest)
+                      {tAgent('creator.advanced.priorityHint', 'Execution priority (1=lowest, 10=highest)')}
                     </p>
                   </div>
 
@@ -1449,24 +1470,21 @@ export function AgentEditorFullScreen({
 
                   {/* Context Window Size */}
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">Context Window Size</Label>
-                    <div className="flex items-center gap-2">
-                      <Select value={contextWindowSize.toString()} onValueChange={(v) => setContextWindowSize(parseInt(v))}>
-                        <SelectTrigger className="h-9 flex-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="4096">4,096 tokens</SelectItem>
-                          <SelectItem value="8192">8,192 tokens</SelectItem>
-                          <SelectItem value="16384">16,384 tokens</SelectItem>
-                          <SelectItem value="32768">32,768 tokens</SelectItem>
-                          <SelectItem value="65536">65,536 tokens</SelectItem>
-                          <SelectItem value="131072">131,072 tokens</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <Label className="text-sm font-medium">{tAgent('creator.advanced.contextWindow', 'Context Window Size')}</Label>
+                    <Select value={contextWindowSize.toString()} onValueChange={(v) => setContextWindowSize(parseInt(v))}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="5">5</SelectItem>
+                        <SelectItem value="10">10</SelectItem>
+                        <SelectItem value="20">20</SelectItem>
+                        <SelectItem value="30">30</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <p className="text-xs text-muted-foreground">
-                      Maximum context size for the LLM
+                      {tAgent('creator.advanced.contextHint', 'Number of recent conversation turns to include as context')}
                     </p>
                   </div>
                 </div>
@@ -1477,316 +1495,509 @@ export function AgentEditorFullScreen({
             <div className="space-y-3">
               <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>{tAgent('creator.basicInfo.scheduleLabel')}</Label>
 
-              {/* Strategy Cards */}
+              {/* Strategy Cards - 3 modes */}
               <div className={cn(
                 "gap-2",
-                isMobile ? "grid grid-cols-2" : "grid grid-cols-4"
+                isMobile ? "grid grid-cols-1" : "grid grid-cols-3"
               )}>
                 <ScheduleCard
                   icon={<Clock className="h-5 w-5" />}
-                  label={tAgent('creator.schedule.strategies.interval')}
-                  description={tAgent('creator.schedule.interval.preview', { value: intervalValue, unit: tAgent('creator.schedule.interval.minutes') })}
-                  active={scheduleType === 'interval'}
-                  onClick={() => setScheduleType('interval')}
+                  label={tAgent('creator.schedule.strategies.timer')}
+                  description={scheduleType === 'timer' ? (
+                    timerSubType === 'interval'
+                      ? tAgent('creator.schedule.interval.preview', { value: intervalValue, unit: tAgent('creator.schedule.interval.minutes') })
+                      : timerSubType === 'daily'
+                        ? tAgent('creator.schedule.daily.preview', { hour: scheduleHour, minute: scheduleMinute })
+                        : tAgent('creator.schedule.weekly.preview', { day: selectedWeekdays.length > 0 ? selectedWeekdays[0] : 1, hour: scheduleHour, minute: scheduleMinute })
+                  ) : tAgent('creator.schedule.timer.description')}
+                  active={scheduleType === 'timer'}
+                  onClick={() => setScheduleType('timer')}
                   isMobile={isMobile}
                 />
                 <ScheduleCard
-                  icon={<Zap className="h-5 w-5" />}
-                  label={tAgent('creator.schedule.strategies.daily')}
-                  description={tAgent('creator.schedule.daily.preview', { hour: scheduleHour, minute: scheduleMinute })}
-                  active={scheduleType === 'daily'}
-                  onClick={() => setScheduleType('daily')}
+                  icon={<Activity className="h-5 w-5" />}
+                  label={tAgent('creator.schedule.strategies.reactive')}
+                  description={tAgent('creator.schedule.reactive.description')}
+                  active={scheduleType === 'reactive'}
+                  onClick={() => setScheduleType('reactive')}
                   isMobile={isMobile}
                 />
                 <ScheduleCard
-                  icon={<Bell className="h-5 w-5" />}
-                  label={tAgent('creator.schedule.strategies.weekly')}
-                  description={tAgent('creator.schedule.weekly.preview', { day: selectedWeekdays.length > 0 ? selectedWeekdays[0] : 1, hour: scheduleHour, minute: scheduleMinute })}
-                  active={scheduleType === 'weekly'}
-                  onClick={() => setScheduleType('weekly')}
-                  isMobile={isMobile}
-                />
-                <ScheduleCard
-                  icon={<Target className="h-5 w-5" />}
-                  label={tAgent('creator.schedule.strategies.event')}
-                  description={tAgent('creator.schedule.event.descriptions.device.metric')}
-                  active={scheduleType === 'event'}
-                  onClick={() => setScheduleType('event')}
+                  icon={<MousePointerClick className="h-5 w-5" />}
+                  label={tAgent('creator.schedule.strategies.onDemand')}
+                  description={tAgent('creator.schedule.onDemand.description')}
+                  active={scheduleType === 'on-demand'}
+                  onClick={() => setScheduleType('on-demand')}
                   isMobile={isMobile}
                 />
               </div>
 
               {/* Schedule Configuration */}
               <div className={cn("border rounded-xl", isMobile ? "p-4" : "p-4 bg-muted/50")}>
-                {scheduleType === 'interval' && (
-                  <div className={cn(
-                    "flex items-center gap-3",
-                    isMobile ? "flex-wrap" : ""
-                  )}>
-                    <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.schedule.interval.every')}</span>
+                {scheduleType === 'timer' && (
+                  <div className="space-y-3">
+                    {/* Timer sub-type tabs */}
                     <div className={cn(
                       "flex gap-1",
                       isMobile ? "flex-wrap gap-2" : ""
                     )}>
-                      {INTERVALS.map((mins) => (
+                      {([
+                        { key: 'interval' as TimerSubType, label: tAgent('creator.schedule.timer.subTypes.interval') },
+                        { key: 'daily' as TimerSubType, label: tAgent('creator.schedule.timer.subTypes.daily') },
+                        { key: 'weekly' as TimerSubType, label: tAgent('creator.schedule.timer.subTypes.weekly') },
+                      ]).map(({ key, label }) => (
                         <button
-                          key={mins}
+                          key={key}
                           type="button"
-                          onClick={() => setIntervalValue(mins)}
+                          onClick={() => setTimerSubType(key)}
                           className={cn(
                             "rounded-lg font-medium transition-colors",
                             isMobile
-                              ? "px-4 py-3 text-base min-w-[60px]"
+                              ? "px-4 py-2.5 text-sm flex-1"
                               : "px-3 py-1.5 text-sm",
-                            intervalValue === mins
+                            timerSubType === key
                               ? "bg-primary text-primary-foreground"
                               : "bg-background hover:bg-muted"
                           )}
                         >
-                          {mins}m
+                          {label}
                         </button>
                       ))}
                     </div>
-                  </div>
-                )}
 
-                {scheduleType === 'daily' && (
-                  <div className={cn(
-                    "flex items-center gap-3",
-                    isMobile ? "flex-col items-start gap-4" : ""
-                  )}>
-                    <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.schedule.daily.everyDay')}</span>
-                    <div className="flex items-center gap-1 bg-background rounded-lg p-1">
-                      <Select value={scheduleHour.toString()} onValueChange={(v) => setScheduleHour(parseInt(v))}>
-                        <SelectTrigger className={cn("border-0 bg-transparent", isMobile ? "w-24 h-11 text-base" : "w-20 h-9")}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {HOURS.map((h) => (
-                            <SelectItem key={h} value={h.toString()}>{h.toString().padStart(2, '0')}:00</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                )}
-
-                {scheduleType === 'weekly' && (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.basicInfo.runOn')}</span>
-                    </div>
-                    <div className={cn(
-                      "flex gap-1 flex-wrap",
-                      isMobile ? "gap-2" : ""
-                    )}>
-                      {[0, 1, 2, 3, 4, 5, 6].map((d) => (
-                        <button
-                          key={d}
-                          type="button"
-                          onClick={() => {
-                            const newWeekdays = selectedWeekdays.includes(d)
-                              ? selectedWeekdays.filter(day => day !== d)
-                              : [...selectedWeekdays, d].sort((a, b) => a - b)
-                            setSelectedWeekdays(newWeekdays)
-                          }}
-                          className={cn(
-                            "rounded-lg font-medium transition-colors",
-                            isMobile
-                              ? "w-12 h-12 text-base"
-                              : "w-10 h-10 text-sm",
-                            selectedWeekdays.includes(d)
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-background hover:bg-muted"
-                          )}
-                        >
-                          {tAgent(`creator.weekdays.${d}`)}
-                        </button>
-                      ))}
-                    </div>
-                    <div className={cn(
-                      "flex items-center gap-3",
-                      isMobile ? "flex-col items-start gap-4" : ""
-                    )}>
-                      <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.schedule.daily.at')}</span>
-                      <Select value={scheduleHour.toString()} onValueChange={(v) => setScheduleHour(parseInt(v))}>
-                        <SelectTrigger className={cn(isMobile ? "w-24 h-11 text-base" : "w-20 h-9")}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {HOURS.map((h) => (
-                            <SelectItem key={h} value={h.toString()}>{h.toString().padStart(2, '0')}:00</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                )}
-
-                {scheduleType === 'event' && (
-                  <div className="space-y-3">
-                    <div className={cn(
-                      "flex items-center gap-3",
-                      isMobile ? "flex-col items-start gap-3" : ""
-                    )}>
-                      <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.basicInfo.triggerWhen')}</span>
-                      <div className={cn(
-                        "flex gap-1",
-                        isMobile ? "flex-col w-full gap-2" : ""
-                      )}>
-                        <button
-                          type="button"
-                          onClick={() => setEventConfig({ type: 'device.metric', deviceId: 'all' })}
-                          className={cn(
-                            "flex items-center gap-1.5 rounded-lg transition-colors",
-                            isMobile
-                              ? "px-4 py-3 text-base flex-1 justify-center"
-                              : "px-3 py-1.5 text-sm",
-                            eventConfig.type === 'device.metric' ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
-                          )}
-                        >
-                          <Activity className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5")} />
-                          {tAgent('creator.basicInfo.metricUpdates')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEventConfig({ type: 'manual' })}
-                          className={cn(
-                            "flex items-center gap-1.5 rounded-lg transition-colors",
-                            isMobile
-                              ? "px-4 py-3 text-base flex-1 justify-center"
-                              : "px-3 py-1.5 text-sm",
-                            eventConfig.type === 'manual' ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
-                          )}
-                        >
-                          <Clock className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5")} />
-                          {tAgent('creator.basicInfo.manualTrigger')}
-                        </button>
-                      </div>
-                    </div>
-
-                    {eventConfig.type === 'device.metric' && (
+                    {/* Interval config */}
+                    {timerSubType === 'interval' && (
                       <div className={cn(
                         "flex items-center gap-3",
-                        isMobile ? "flex-col items-start gap-3" : ""
+                        isMobile ? "flex-wrap" : ""
                       )}>
-                        <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.basicInfo.fromDevice')}</span>
-                        <Select
-                          value={eventConfig.deviceId || 'all'}
-                          onValueChange={(value) => setEventConfig({ ...eventConfig, deviceId: value })}
-                        >
-                          <SelectTrigger className={cn(
-                            isMobile ? "flex-1 h-11" : "flex-1 h-9"
-                          )}>
-                            <SelectValue placeholder={tAgent('creator.schedule.event.allDevices')} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">{tAgent('creator.schedule.event.allDevices')}</SelectItem>
-                            {devices.map((d) => (
-                              <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className={cn("text-muted-foreground", isMobile ? "text-xs" : "text-xs")}>
-                          Agent will fetch data from Resources when device updates
-                        </p>
+                        <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.schedule.interval.every')}</span>
+                        <div className={cn(
+                          "flex gap-1",
+                          isMobile ? "flex-wrap gap-2" : ""
+                        )}>
+                          {INTERVALS.map((mins) => (
+                            <button
+                              key={mins}
+                              type="button"
+                              onClick={() => setIntervalValue(mins)}
+                              className={cn(
+                                "rounded-lg font-medium transition-colors",
+                                isMobile
+                                  ? "px-4 py-3 text-base min-w-[60px]"
+                                  : "px-3 py-1.5 text-sm",
+                                intervalValue === mins
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background hover:bg-muted"
+                              )}
+                            >
+                              {mins}m
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
 
-                    {eventConfig.type === 'manual' && (
-                      <p className={cn("text-muted-foreground", isMobile ? "text-xs" : "text-xs")}>
-                        {tAgent('creator.basicInfo.manualHint')}
-                      </p>
+                    {/* Daily config */}
+                    {timerSubType === 'daily' && (
+                      <div className={cn(
+                        "flex items-center gap-3",
+                        isMobile ? "flex-col items-start gap-4" : ""
+                      )}>
+                        <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.schedule.daily.everyDay')}</span>
+                        <div className="flex items-center gap-1 bg-background rounded-lg p-1">
+                          <Select value={scheduleHour.toString()} onValueChange={(v) => setScheduleHour(parseInt(v))}>
+                            <SelectTrigger className={cn("border-0 bg-transparent", isMobile ? "w-24 h-11 text-base" : "w-20 h-9")}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {HOURS.map((h) => (
+                                <SelectItem key={h} value={h.toString()}>{h.toString().padStart(2, '0')}:00</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
                     )}
+
+                    {/* Weekly config */}
+                    {timerSubType === 'weekly' && (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-3">
+                          <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.basicInfo.runOn')}</span>
+                        </div>
+                        <div className={cn(
+                          "flex gap-1 flex-wrap",
+                          isMobile ? "gap-2" : ""
+                        )}>
+                          {[0, 1, 2, 3, 4, 5, 6].map((d) => (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => {
+                                const newWeekdays = selectedWeekdays.includes(d)
+                                  ? selectedWeekdays.filter(day => day !== d)
+                                  : [...selectedWeekdays, d].sort((a, b) => a - b)
+                                setSelectedWeekdays(newWeekdays)
+                              }}
+                              className={cn(
+                                "rounded-lg font-medium transition-colors",
+                                isMobile
+                                  ? "w-12 h-12 text-base"
+                                  : "w-10 h-10 text-sm",
+                                selectedWeekdays.includes(d)
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background hover:bg-muted"
+                              )}
+                            >
+                              {tAgent(`creator.weekdays.${d}`)}
+                            </button>
+                          ))}
+                        </div>
+                        <div className={cn(
+                          "flex items-center gap-3",
+                          isMobile ? "flex-col items-start gap-4" : ""
+                        )}>
+                          <span className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>{tAgent('creator.schedule.daily.at')}</span>
+                          <Select value={scheduleHour.toString()} onValueChange={(v) => setScheduleHour(parseInt(v))}>
+                            <SelectTrigger className={cn(isMobile ? "w-24 h-11 text-base" : "w-20 h-9")}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {HOURS.map((h) => (
+                                <SelectItem key={h} value={h.toString()}>{h.toString().padStart(2, '0')}:00</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {scheduleType === 'reactive' && (() => {
+                  // Build unified entity list for left panel
+                  const entities = [
+                    ...devices.map(d => ({
+                      type: 'device' as const,
+                      id: d.id,
+                      name: d.name,
+                      metrics: getDeviceMetrics(d.id),
+                    })),
+                    ...(extensions || []).map(ext => ({
+                      type: 'extension' as const,
+                      id: ext.id,
+                      name: ext.name || ext.id,
+                      metrics: getExtensionMetrics(ext.id),
+                    })),
+                  ]
+
+                  const active = activeTriggerEntity
+                    ? entities.find(e => e.type === activeTriggerEntity.type && e.id === activeTriggerEntity.id)
+                    : null
+
+                  const activeSources = active
+                    ? triggerSources.filter(s => s.type === active.type && s.id === active.id)
+                    : []
+                  const activeAllSelected = activeSources.some(s => s.field === undefined)
+                  const activeSelectedFields = activeSources.filter(s => s.field !== undefined).map(s => s.field!)
+
+                  const isEntityActive = (type: string, id: string) =>
+                    triggerSources.some(s => s.type === type && s.id === id)
+
+                  const getEntityFieldCount = (type: string, id: string) =>
+                    triggerSources.filter(s => s.type === type && s.id === id).length
+
+                  const toggleEntity = (type: string, id: string, name: string) => {
+                    setTriggerSources(prev => {
+                      const filtered = prev.filter(s => !(s.type === type && s.id === id))
+                      if (isEntityActive(type, id)) return filtered
+                      return [...filtered, { type, id, name }]
+                    })
+                  }
+
+                  const toggleMetric = (type: string, id: string, name: string, field: string) => {
+                    setTriggerSources(prev => {
+                      const entitySources = prev.filter(s => s.type === type && s.id === id)
+                      const selectedFields = entitySources.filter(s => s.field !== undefined).map(s => s.field!)
+                      const filtered = prev.filter(s => !(s.type === type && s.id === id))
+                      if (selectedFields.includes(field)) {
+                        const remaining = selectedFields.filter(f => f !== field)
+                        if (remaining.length === 0) return filtered
+                        return [...filtered, ...remaining.map(f => ({ type, id, name, field: f }))]
+                      }
+                      return [...filtered, ...selectedFields.map(f => ({ type, id, name, field: f })), { type, id, name, field }]
+                    })
+                  }
+
+                  return (
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                      <Info className="h-4 w-4 mt-0.5 shrink-0" />
+                      <p>{tAgent('creator.schedule.reactive.hint')}</p>
+                    </div>
+
+                    {/* Two-panel selector */}
+                    <div className={cn(
+                      "border rounded-lg overflow-hidden",
+                      isMobile ? "flex flex-col" : "flex",
+                      isMobile ? "" : "h-[180px]"
+                    )}>
+                      {/* Left: entity list */}
+                      <div className={cn(
+                        "overflow-y-auto shrink-0",
+                        isMobile ? "w-full border-b" : "w-[160px] border-r"
+                      )}>
+                        {entities.length === 0 ? (
+                          <div className="p-3 text-xs text-muted-foreground text-center">
+                            {tAgent('creator.schedule.reactive.noDevices')}
+                          </div>
+                        ) : (
+                          entities.map(e => {
+                            const isViewing = activeTriggerEntity?.type === e.type && activeTriggerEntity?.id === e.id
+                            const hasTrigger = isEntityActive(e.type, e.id)
+                            const fieldCount = getEntityFieldCount(e.type, e.id)
+                            return (
+                              <button
+                                key={`${e.type}-${e.id}`}
+                                type="button"
+                                onClick={() => setActiveTriggerEntity({ type: e.type, id: e.id })}
+                                className={cn(
+                                  "w-full flex items-center gap-2 text-left transition-colors relative",
+                                  isMobile ? "px-3 py-2 text-sm" : "px-2 py-1.5 text-xs",
+                                  hasTrigger && "border-l-2 border-primary",
+                                  !hasTrigger && "border-l-2 border-transparent",
+                                  isViewing && hasTrigger && "bg-primary/5",
+                                  isViewing && !hasTrigger && "bg-muted/50",
+                                  !isViewing && "hover:bg-muted/30"
+                                )}
+                              >
+                                {e.type === 'device'
+                                  ? <Database className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                  : <Puzzle className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                }
+                                <span className="truncate flex-1">{e.name}</span>
+                                {hasTrigger && (
+                                  <Badge variant="secondary" className="h-4 min-w-[18px] text-[10px] px-1 rounded-full">
+                                    {activeAllSelected && isViewing ? tAgent('creator.schedule.reactive.allMetrics') : fieldCount}
+                                  </Badge>
+                                )}
+                              </button>
+                            )
+                          })
+                        )}
+                      </div>
+
+                      {/* Right: metric chips */}
+                      <div className="flex-1 overflow-y-auto p-2.5">
+                        {!active ? (
+                          <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
+                            {tAgent('creator.schedule.reactive.selectSource')}
+                          </div>
+                        ) : active.metrics.length === 0 ? (
+                          <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
+                            {tAgent('creator.schedule.reactive.noMetrics')}
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5 content-start">
+                            {/* "All" chip */}
+                            <button
+                              type="button"
+                              onClick={() => toggleEntity(active.type, active.id, active.name)}
+                              className={cn(
+                                "inline-flex items-center rounded-md font-medium transition-colors",
+                                isMobile ? "px-3 py-1.5 text-sm" : "px-2.5 py-1 text-xs",
+                                activeAllSelected
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted/60 hover:bg-muted text-muted-foreground"
+                              )}
+                            >
+                              {tAgent('creator.schedule.reactive.allMetrics')}
+                            </button>
+                            {/* Individual metric chips */}
+                            {!activeAllSelected && active.metrics.map(m => (
+                              <button
+                                key={m.name}
+                                type="button"
+                                onClick={() => toggleMetric(active.type, active.id, active.name, m.name)}
+                                className={cn(
+                                  "inline-flex items-center rounded-md transition-colors",
+                                  isMobile ? "px-3 py-1.5 text-sm" : "px-2.5 py-1 text-xs",
+                                  activeSelectedFields.includes(m.name)
+                                    ? "bg-primary/15 text-primary font-medium ring-1 ring-primary/30"
+                                    : "bg-muted/60 hover:bg-muted text-muted-foreground"
+                                )}
+                              >
+                                {m.display_name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Warning when no sources selected */}
+                    {triggerSources.length === 0 && (
+                      <div className="flex items-start gap-2 text-sm text-amber-600 dark:text-amber-400">
+                        <Info className="h-4 w-4 mt-0.5 shrink-0" />
+                        <p>{selectedResources.length > 0
+                          ? tAgent('creator.schedule.reactive.fallbackToResources')
+                          : tAgent('creator.schedule.reactive.emptyWarning')
+                        }</p>
+                      </div>
+                    )}
+                  </div>
+                  )
+                })()}
+
+                {scheduleType === 'on-demand' && (
+                  <div className="space-y-2">
+                    <p className={cn("text-muted-foreground", isMobile ? "text-sm" : "text-sm")}>
+                      {tAgent('creator.schedule.onDemand.hint')}
+                    </p>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Resources Section — only for Focused Mode */}
-            {isFocusedMode && (
-            <div className="space-y-3 bg-primary/5 rounded-lg p-3 -mx-3 border border-primary/20">
-              <div className={cn(
-                "flex items-center justify-between",
-                isMobile ? "flex-col items-start gap-3" : ""
-              )}>
-                <div className="flex items-center gap-2">
-                  <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>{tAgent('creator.resources.title')}</Label>
-                  {isFocusedMode && (
-                    <Badge variant="destructive" className="text-xs h-5">
-                      Required
-                    </Badge>
+            {/* Resources Section */}
+            {(() => {
+              // Determine Resources section style based on schedule type + execution mode
+              // Priority: scheduleType first (Reactive always supplemental), then executionMode
+              const isReactive = scheduleType === 'reactive'
+              const isProminent = !isReactive && isFocusedMode
+              // isCollapsed = Free mode OR Reactive mode
+
+              const sectionTitle = isReactive
+                ? tAgent('creator.resources.supplementalTitle')
+                : isProminent
+                  ? tAgent('creator.resources.title')
+                  : tAgent('creator.resources.preloadTitle')
+
+              const sectionHint = isReactive
+                ? tAgent('creator.resources.hintReactive')
+                : isProminent
+                  ? tAgent('creator.resources.hintFocused')
+                  : tAgent('creator.resources.hintFree')
+
+              if (isProminent) {
+                return (
+                  <div className="space-y-3 bg-primary/5 rounded-lg p-3 -mx-3 border border-primary/20">
+                    <div className={cn(
+                      "flex items-center justify-between",
+                      isMobile ? "flex-col items-start gap-3" : ""
+                    )}>
+                      <div className="flex items-center gap-2">
+                        <Label className={cn("font-medium", isMobile ? "text-base" : "text-sm")}>{sectionTitle}</Label>
+                        {selectedResources.length > 0 && (
+                          <Badge variant="secondary" className="text-xs h-5">
+                            {selectedResources.length}
+                          </Badge>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size={isMobile ? "default" : "sm"}
+                        onClick={() => setResourceDialogOpen(true)}
+                        className={isMobile ? "w-full justify-center h-11" : ""}
+                      >
+                        <Plus className={cn(isMobile ? "h-5 w-5" : "h-4 w-4", "mr-2")} />
+                        {tAgent('creator.resources.addResources')}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{sectionHint}</p>
+                    {selectedResources.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-6 border rounded-lg bg-background">
+                        <Target className="h-7 w-7 text-muted-foreground/40 mb-2" />
+                        <p className="text-xs text-muted-foreground">
+                          {tAgent('creator.resources.dialog.noResourcesHint')}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {selectedResources.map((resource) => (
+                          <SelectedResourceItem
+                            key={resource.id}
+                            resource={resource}
+                            setSelectedResources={setSelectedResources}
+                            onRemove={() => setSelectedResources(prev => prev.filter(r => r.id !== resource.id))}
+                            onToggleMetric={(resourceId, metricName) => {
+                              setSelectedResources((prev) => prev.map(r => r.id === resourceId ? { ...r, selectedMetrics: new Set(r.selectedMetrics.has(metricName) ? Array.from(r.selectedMetrics).filter(n => n !== metricName) : [...r.selectedMetrics, metricName]) } : r))
+                            }}
+                            onToggleCommand={(resourceId, commandName) => {
+                              setSelectedResources((prev) => prev.map(r => r.id === resourceId ? { ...r, selectedCommands: new Set(r.selectedCommands.has(commandName) ? Array.from(r.selectedCommands).filter(n => n !== commandName) : [...r.selectedCommands, commandName]) } : r))
+                            }}
+                            isMobile={isMobile}
+                            isFocusedMode={true}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+
+              // Collapsed style (Reactive / Free / On-demand)
+              return (
+                <div className="rounded-lg -mx-3 border bg-muted/30 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setFreeModeResourcesExpanded(!freeModeResourcesExpanded)}
+                    className="w-full flex items-center justify-between p-3 text-left hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <ChevronRight className={cn("h-4 w-4 transition-transform", freeModeResourcesExpanded && "rotate-90")} />
+                      <Label className="text-sm font-medium">{sectionTitle}</Label>
+                      {selectedResources.length > 0 && (
+                        <Badge variant="secondary" className="text-xs h-5">
+                          {selectedResources.length}
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="text-xs h-5">
+                        {tAgent('creator.resources.optional')}
+                      </Badge>
+                    </div>
+                    <Plus
+                      className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground"
+                      onClick={(e) => { e.stopPropagation(); setResourceDialogOpen(true) }}
+                    />
+                  </button>
+                  {freeModeResourcesExpanded && (
+                    <div className="px-3 pb-3 pt-0 space-y-2 border-t">
+                      <p className="text-xs text-muted-foreground pt-2">{sectionHint}</p>
+                      {selectedResources.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-4 border rounded-lg bg-background">
+                          <Target className="h-6 w-6 text-muted-foreground/30 mb-1" />
+                          <p className="text-xs text-muted-foreground">
+                            {tAgent('creator.resources.dialog.noResourcesHint')}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {selectedResources.map((resource) => (
+                            <SelectedResourceItem
+                              key={resource.id}
+                              resource={resource}
+                              setSelectedResources={setSelectedResources}
+                              onRemove={() => setSelectedResources(prev => prev.filter(r => r.id !== resource.id))}
+                              onToggleMetric={(resourceId, metricName) => {
+                                setSelectedResources((prev) => prev.map(r => r.id === resourceId ? { ...r, selectedMetrics: new Set(r.selectedMetrics.has(metricName) ? Array.from(r.selectedMetrics).filter(n => n !== metricName) : [...r.selectedMetrics, metricName]) } : r))
+                              }}
+                              onToggleCommand={(resourceId, commandName) => {
+                                setSelectedResources((prev) => prev.map(r => r.id === resourceId ? { ...r, selectedCommands: new Set(r.selectedCommands.has(commandName) ? Array.from(r.selectedCommands).filter(n => n !== commandName) : [...r.selectedCommands, commandName]) } : r))
+                              }}
+                              isMobile={isMobile}
+                              isFocusedMode={false}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size={isMobile ? "default" : "sm"}
-                  onClick={() => setResourceDialogOpen(true)}
-                  className={isMobile ? "w-full justify-center h-11" : ""}
-                >
-                  <Plus className={cn(isMobile ? "h-5 w-5" : "h-4 w-4", "mr-2")} />
-                  {tAgent('creator.resources.addResources')}
-                </Button>
-              </div>
-
-              {selectedResources.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 border rounded-lg bg-muted/30">
-                  <Target className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                  <p className="text-sm text-muted-foreground">
-                    {tAgent('creator.resources.dialog.noResourcesHint')}
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {selectedResources.map((resource) => (
-                    <SelectedResourceItem
-                      key={resource.id}
-                      resource={resource}
-                      setSelectedResources={setSelectedResources}
-                      onRemove={() => {
-                        setSelectedResources(prev => prev.filter(r => r.id !== resource.id))
-                      }}
-                      onToggleMetric={(resourceId, metricName) => {
-                        setSelectedResources((prev) =>
-                          prev.map(r =>
-                            r.id === resourceId
-                              ? {
-                                  ...r,
-                                  selectedMetrics: new Set(
-                                    r.selectedMetrics.has(metricName)
-                                      ? Array.from(r.selectedMetrics).filter(n => n !== metricName)
-                                      : [...r.selectedMetrics, metricName]
-                                  ),
-                                }
-                              : r
-                          )
-                        )
-                      }}
-                      onToggleCommand={(resourceId, commandName) => {
-                        setSelectedResources((prev) =>
-                          prev.map(r =>
-                            r.id === resourceId
-                              ? {
-                                  ...r,
-                                  selectedCommands: new Set(
-                                    r.selectedCommands.has(commandName)
-                                      ? Array.from(r.selectedCommands).filter(n => n !== commandName)
-                                      : [...r.selectedCommands, commandName]
-                                  ),
-                                }
-                              : r
-                          )
-                        )
-                      }}
-                      isMobile={isMobile}
-                      isFocusedMode={isFocusedMode}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-            )}
+              )
+            })()}
           </div>
         </div>
         </FullScreenDialogMain>
@@ -2453,7 +2664,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
               </div>
               <div className={cn("gap-1", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
                 {resource.allMetrics.map((metric) => (
-                  <label
+                  <div
                     key={metric.name}
                     className={cn(
                       "flex items-center gap-2 rounded cursor-pointer transition-colors",
@@ -2464,15 +2675,14 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                         ? "bg-primary/10 text-primary"
                         : "hover:bg-muted/50"
                     )}
+                    onClick={() => onToggleMetric(resource.id, metric.name)}
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={resource.selectedMetrics.has(metric.name)}
-                      onChange={() => onToggleMetric(resource.id, metric.name)}
-                      className={cn("rounded", isMobile ? "h-4 w-4" : "h-3 w-3")}
+                      className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5")}
                     />
                     <span className="truncate">{metric.display_name}</span>
-                  </label>
+                  </div>
                 ))}
               </div>
             </div>
@@ -2508,7 +2718,7 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
               </div>
               <div className={cn("gap-1", isMobile ? "grid grid-cols-1" : "grid grid-cols-2")}>
                 {resource.allCommands.map((command) => (
-                  <label
+                  <div
                     key={command.name}
                     className={cn(
                       "flex items-center gap-2 rounded cursor-pointer transition-colors",
@@ -2519,15 +2729,14 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                         ? "bg-primary/10 text-primary"
                         : "hover:bg-muted/50"
                     )}
+                    onClick={() => onToggleCommand(resource.id, command.name)}
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={resource.selectedCommands.has(command.name)}
-                      onChange={() => onToggleCommand(resource.id, command.name)}
-                      className={cn("rounded", isMobile ? "h-4 w-4" : "h-3 w-3")}
+                      className={cn(isMobile ? "h-4 w-4" : "h-3.5 w-3.5")}
                     />
                     <span className="truncate">{command.display_name}</span>
-                  </label>
+                  </div>
                 ))}
               </div>
             </div>
@@ -2549,52 +2758,59 @@ function SelectedResourceItem({ resource, setSelectedResources, onRemove, onTogg
                 {tAgent('creator.advanced.dataCollection', 'Data Collection')}
               </button>
               {dataCollectionExpanded && (
-                <div className="space-y-2 pt-2 pl-4">
+                <div className="space-y-3 pt-2 pl-4">
                   <div className="flex items-center gap-2">
                     <Label className="text-xs whitespace-nowrap">{tAgent('creator.advanced.timeRange', 'Time Range')}</Label>
-                    <select
-                      className="h-7 rounded-md border border-input bg-background px-2 text-xs flex-1 max-w-[120px]"
-                      value={getResourceConfig()?.time_range_minutes ?? 60}
-                      onChange={(e) => updateResourceDataCollection('time_range_minutes', parseInt(e.target.value))}
+                    <Select
+                      value={(getResourceConfig()?.time_range_minutes ?? 60).toString()}
+                      onValueChange={(v) => updateResourceDataCollection('time_range_minutes', parseInt(v))}
                     >
-                      <option value="5">5 min</option>
-                      <option value="15">15 min</option>
-                      <option value="30">30 min</option>
-                      <option value="60">1 hour</option>
-                      <option value="360">6 hours</option>
-                      <option value="720">12 hours</option>
-                      <option value="1440">24 hours</option>
-                      <option value="10080">7 days</option>
-                    </select>
+                      <SelectTrigger className="h-7 text-xs w-[130px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="5">5 min</SelectItem>
+                        <SelectItem value="15">15 min</SelectItem>
+                        <SelectItem value="30">30 min</SelectItem>
+                        <SelectItem value="60">1 hour</SelectItem>
+                        <SelectItem value="360">6 hours</SelectItem>
+                        <SelectItem value="720">12 hours</SelectItem>
+                        <SelectItem value="1440">24 hours</SelectItem>
+                        <SelectItem value="10080">7 days</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="flex flex-wrap gap-3">
-                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="rounded border-input"
+                    <div className="flex items-center gap-1.5">
+                      <Checkbox
                         checked={getResourceConfig()?.include_history ?? false}
-                        onChange={(e) => updateResourceDataCollection('include_history', e.target.checked)}
+                        onCheckedChange={(checked) => updateResourceDataCollection('include_history', !!checked)}
+                        className="h-3.5 w-3.5"
                       />
-                      {tAgent('creator.advanced.includeHistory', 'Include History')}
-                    </label>
-                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="rounded border-input"
+                      <Label className="text-xs text-muted-foreground cursor-pointer">
+                        {tAgent('creator.advanced.includeHistory', 'Include History')}
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Checkbox
                         checked={getResourceConfig()?.include_trend ?? false}
-                        onChange={(e) => updateResourceDataCollection('include_trend', e.target.checked)}
+                        onCheckedChange={(checked) => updateResourceDataCollection('include_trend', !!checked)}
+                        className="h-3.5 w-3.5"
                       />
-                      {tAgent('creator.advanced.includeTrend', 'Include Trend')}
-                    </label>
-                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="rounded border-input"
+                      <Label className="text-xs text-muted-foreground cursor-pointer">
+                        {tAgent('creator.advanced.includeTrend', 'Include Trend')}
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Checkbox
                         checked={getResourceConfig()?.include_baseline ?? false}
-                        onChange={(e) => updateResourceDataCollection('include_baseline', e.target.checked)}
+                        onCheckedChange={(checked) => updateResourceDataCollection('include_baseline', !!checked)}
+                        className="h-3.5 w-3.5"
                       />
-                      {tAgent('creator.advanced.includeBaseline', 'Include Baseline')}
-                    </label>
+                      <Label className="text-xs text-muted-foreground cursor-pointer">
+                        {tAgent('creator.advanced.includeBaseline', 'Include Baseline')}
+                      </Label>
+                    </div>
                   </div>
                 </div>
               )}

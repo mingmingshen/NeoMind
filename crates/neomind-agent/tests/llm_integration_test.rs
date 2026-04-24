@@ -151,7 +151,7 @@ async fn test_llm_monitor_agent() -> anyhow::Result<()> {
 
     // Execute the agent - this will use real LLM
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    let record = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("\n执行结果:");
     println!("  状态: {:?}", record.status);
@@ -216,7 +216,7 @@ async fn test_llm_executor_agent() -> anyhow::Result<()> {
 
     // Execute the agent
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    let record = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("\n执行结果:");
     println!("  状态: {:?}", record.status);
@@ -263,7 +263,7 @@ async fn test_llm_analyst_agent() -> anyhow::Result<()> {
 
     // Execute the agent
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    let record = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("\n执行结果:");
     println!("  状态: {:?}", record.status);
@@ -310,19 +310,19 @@ async fn test_llm_conversation_context() -> anyhow::Result<()> {
     // Execute multiple times - each execution should have access to previous context
     println!("\n--- 第1次执行 ---");
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    let record1 = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record1 = ctx.executor.execute_agent(agent.clone(), None, None).await?;
     println!("  分析: {}", record1.decision_process.situation_analysis);
     println!("  时长: {}ms", record1.duration_ms);
 
     println!("\n--- 第2次执行 ---");
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    let record2 = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record2 = ctx.executor.execute_agent(agent.clone(), None, None).await?;
     println!("  分析: {}", record2.decision_process.situation_analysis);
     println!("  时长: {}ms", record2.duration_ms);
 
     println!("\n--- 第3次执行 ---");
     let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-    let record3 = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record3 = ctx.executor.execute_agent(agent.clone(), None, None).await?;
     println!("  分析: {}", record3.decision_process.situation_analysis);
     println!("  时长: {}ms", record3.duration_ms);
 
@@ -431,7 +431,7 @@ async fn test_llm_agent_comparison() -> anyhow::Result<()> {
         let agent = ctx.create_test_agent(name, prompt).await?;
 
         let agent = ctx.store.get_agent(&agent.id).await?.unwrap();
-        let record = ctx.executor.execute_agent(agent.clone(), None).await?;
+        let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
         println!("  状态: {:?}", record.status);
         println!("  分析: {}", record.decision_process.situation_analysis);

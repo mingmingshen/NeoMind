@@ -526,6 +526,12 @@ pub struct ExecuteAgentRequest {
     pub trigger_type: Option<String>,
     #[serde(default)]
     pub event_data: Option<serde_json::Value>,
+    /// Text input from the caller (e.g., "Analyze temperature", "Identify objects in this image")
+    #[serde(default)]
+    pub input: Option<String>,
+    /// Structured data from the caller (e.g., {"image_base64": "..."})
+    #[serde(default)]
+    pub data: Option<serde_json::Value>,
 }
 
 // ============================================================================
@@ -1314,11 +1320,11 @@ pub async fn delete_agent(
     }))
 }
 
-/// Execute an AI Agent immediately.
+/// Execute an AI Agent immediately (async — returns execution_id right away).
 pub async fn execute_agent(
     State(state): State<ServerState>,
     Path(id): Path<String>,
-    Json(_request): Json<ExecuteAgentRequest>,
+    Json(request): Json<ExecuteAgentRequest>,
 ) -> HandlerResult<Value> {
     // Get or initialize the agent manager
     let agent_manager = state
@@ -1340,6 +1346,17 @@ pub async fn execute_agent(
     let eid_clone = execution_id.clone();
     let aid_clone = id.clone();
 
+    // Build invocation input from request
+    let invocation_input = if request.input.is_some() || request.data.is_some() {
+        Some(neomind_agent::AgentInput {
+            content: request.input.clone(),
+            data: request.data.clone(),
+            source: Some("api".to_string()),
+        })
+    } else {
+        None
+    };
+
     // Spawn execution in background — API returns immediately
     tokio::spawn(async move {
         tracing::info!(
@@ -1347,7 +1364,7 @@ pub async fn execute_agent(
             agent_id = %aid_clone,
             "Background agent execution started"
         );
-        match agent_manager.execute_agent_now(&aid_clone).await {
+        match agent_manager.execute_agent_now(&aid_clone, invocation_input).await {
             Ok(summary) => {
                 tracing::info!(
                     execution_id = %summary.execution_id,
@@ -1374,6 +1391,115 @@ pub async fn execute_agent(
         "agent_name": agent_name,
         "status": "Executing",
     }))
+}
+
+/// Invoke an AI Agent synchronously — waits for execution to complete and returns results.
+pub async fn invoke_agent(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+    Json(request): Json<ExecuteAgentRequest>,
+) -> HandlerResult<Value> {
+    let agent_manager = state
+        .get_or_init_agent_manager()
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get agent manager: {}", e)))?;
+
+    // Verify the agent exists
+    let agent = agent_manager
+        .executor()
+        .store()
+        .get_agent(&id)
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
+
+    let agent_name = agent.name.clone();
+
+    // Build invocation input
+    let invocation_input = if request.input.is_some() || request.data.is_some() {
+        Some(neomind_agent::AgentInput {
+            content: request.input.clone(),
+            data: request.data.clone(),
+            source: Some("api".to_string()),
+        })
+    } else {
+        None
+    };
+
+    // Execute with timeout protection (60s default)
+    let timeout = std::time::Duration::from_secs(60);
+    let result = tokio::time::timeout(
+        timeout,
+        agent_manager.execute_agent_now(&id, invocation_input),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(summary)) => {
+            // Get the latest execution record for full results
+            let execution = agent_manager
+                .executor()
+                .store()
+                .get_latest_execution(&id)
+                .await
+                .map_err(|e| ErrorResponse::internal(format!("Failed to get execution: {}", e)))?;
+
+            let (conclusion, confidence, actions) = match &execution {
+                Some(record) => {
+                    let conclusion = record.decision_process.conclusion.clone();
+                    let confidence = record.decision_process.confidence;
+                    let actions: Vec<serde_json::Value> = record
+                        .decision_process
+                        .decisions
+                        .iter()
+                        .map(|d| {
+                            serde_json::json!({
+                                "action": d.action,
+                                "reasoning": d.rationale,
+                                "description": d.description,
+                            })
+                        })
+                        .collect();
+                    (conclusion, confidence, actions)
+                }
+                None => (
+                    summary.summary.clone(),
+                    0.0,
+                    vec![],
+                ),
+            };
+
+            ok(json!({
+                "execution_id": summary.execution_id,
+                "agent_id": id,
+                "agent_name": agent_name,
+                "status": "Completed",
+                "duration_ms": summary.duration_ms,
+                "conclusion": conclusion,
+                "confidence": confidence,
+                "actions": actions,
+                "has_error": summary.has_error,
+            }))
+        }
+        Ok(Err(e)) => {
+            ok(json!({
+                "execution_id": uuid::Uuid::new_v4().to_string(),
+                "agent_id": id,
+                "agent_name": agent_name,
+                "status": "Failed",
+                "error": e.to_string(),
+            }))
+        }
+        Err(_) => {
+            ok(json!({
+                "execution_id": uuid::Uuid::new_v4().to_string(),
+                "agent_id": id,
+                "agent_name": agent_name,
+                "status": "Timeout",
+                "error": "Execution timed out after 60 seconds",
+            }))
+        }
+    }
 }
 
 /// Get execution history for an agent.

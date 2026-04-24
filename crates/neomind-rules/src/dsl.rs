@@ -256,6 +256,12 @@ pub enum RuleAction {
         headers: Option<HashMap<String, String>>,
         body: Option<String>,
     },
+    /// Trigger an AI Agent with optional input.
+    TriggerAgent {
+        agent_id: String,
+        input: Option<String>,
+        data: Option<serde_json::Value>,
+    },
 }
 
 /// HTTP methods for HttpRequest action.
@@ -1145,6 +1151,36 @@ impl RuleDslParser {
                 message,
                 severity,
             }));
+        }
+
+        // TRIGGER_AGENT agent_id ["input text"] [data_json]
+        if let Some(rest) = line.strip_prefix("TRIGGER_AGENT") {
+            let rest = rest.trim();
+            let parts: Vec<&str> = rest.splitn(2, ' ').collect();
+            if !parts.is_empty() {
+                let agent_id = parts[0].to_string();
+                let input = if parts.len() > 1 {
+                    let remainder = parts[1].trim();
+                    // Try to extract quoted string as input
+                    if remainder.starts_with('"') {
+                        if let Some(input_text) = Self::extract_quoted_string(remainder) {
+                            Some(input_text)
+                        } else {
+                            Some(remainder.to_string())
+                        }
+                    } else {
+                        Some(remainder.to_string())
+                    }
+                } else {
+                    None
+                };
+
+                return Ok(Some(RuleAction::TriggerAgent {
+                    agent_id,
+                    input,
+                    data: None,
+                }));
+            }
         }
 
         Ok(None)

@@ -137,7 +137,7 @@ async fn test_conversation_history_basic() -> anyhow::Result<()> {
         println!("\n--- 执行 #{} ---", i + 1);
 
         let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-        let record = ctx.executor.execute_agent(agent.clone(), None).await?;
+        let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
         println!("状态: {:?}", record.status);
         println!("时长: {}ms", record.duration_ms);
@@ -185,7 +185,7 @@ async fn test_all_agent_roles() -> anyhow::Result<()> {
         println!("创建: {}", agent.name);
 
         // Execute once
-        let record = ctx.executor.execute_agent(agent.clone(), None).await?;
+        let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
         println!("执行状态: {:?}", record.status);
 
         // Reload and check history
@@ -212,7 +212,7 @@ async fn test_conversation_persistence() -> anyhow::Result<()> {
     // Execute multiple times
     for i in 0..5 {
         let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-        let _ = ctx.executor.execute_agent(agent.clone(), None).await?;
+        let _ = ctx.executor.execute_agent(agent.clone(), None, None).await?;
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
@@ -264,7 +264,7 @@ async fn test_context_window_messages() -> anyhow::Result<()> {
     // Execute multiple times
     for i in 0..5 {
         let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-        let _ = ctx.executor.execute_agent(agent.clone(), None).await?;
+        let _ = ctx.executor.execute_agent(agent.clone(), None, None).await?;
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
@@ -307,7 +307,7 @@ async fn test_conversation_turn_structure() -> anyhow::Result<()> {
     let agent = ctx.create_test_agent("结构测试", "分析数据趋势").await?;
 
     // Execute once
-    let record = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("执行状态: {:?}", record.status);
     println!("决策过程:");
@@ -369,7 +369,7 @@ async fn test_multiple_executions_accumulation() -> anyhow::Result<()> {
 
     for i in 0..executions {
         let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-        let _ = ctx.executor.execute_agent(agent.clone(), None).await?;
+        let _ = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
         if i % 3 == 0 {
             let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
@@ -412,7 +412,7 @@ async fn test_conversation_history_ordering() -> anyhow::Result<()> {
         let _before = chrono::Utc::now().timestamp();
 
         let agent = ctx.store.get_agent(&agent_id).await?.unwrap();
-        let _ = ctx.executor.execute_agent(agent.clone(), None).await?;
+        let _ = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
@@ -503,7 +503,7 @@ async fn test_full_lifecycle() -> anyhow::Result<()> {
 
         for i in 0..3 {
             let agent = ctx.store.get_agent(agent_id).await?.unwrap();
-            let record = ctx.executor.execute_agent(agent.clone(), None).await?;
+            let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
             println!("  #{}: {:?}", i + 1, record.status);
 
@@ -550,7 +550,7 @@ async fn test_conversation_turn_fields() -> anyhow::Result<()> {
         .create_test_agent("字段完整性测试", "测试所有字段")
         .await?;
 
-    let _ = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let _ = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     let history = ctx.store.get_conversation_history(&agent.id, None).await?;
 

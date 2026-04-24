@@ -19,7 +19,7 @@ import { confirm } from "@/hooks/use-confirm"
 import { useEvents } from "@/hooks/useEvents"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useIsMobile } from "@/hooks/useMobile"
-import { Loader2, Bot, Plus, Brain, Cpu, RefreshCw, Settings, Sparkles, Zap, BookOpen } from "lucide-react"
+import { Loader2, Bot, Plus, Brain, Cpu, RefreshCw, Settings, Sparkles, Zap, BookOpen, Edit, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/shared/EmptyState"
 import type { AiAgent, AiAgentDetail, Extension, ExtensionDataSourceInfo, TransformDataSourceInfo } from "@/types"
@@ -33,11 +33,11 @@ import { AgentDetailPanel } from "./agents-components/AgentDetailPanel"
 import { MemoryPanel } from "./agents-components/MemoryPanel"
 import { SkillsPanel, type SkillsPanelHandle } from "./agents-components/SkillsPanel"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+  FullScreenDialog,
+  FullScreenDialogHeader,
+  FullScreenDialogContent,
+  FullScreenDialogMain,
+} from "@/components/automation/dialog/FullScreenDialog"
 
 export function AgentsPage() {
   const { t: tCommon } = useTranslation('common')
@@ -426,6 +426,13 @@ export function AgentsPage() {
     }
   }
 
+  // Edit from detail: close detail first to avoid scroll-through bug
+  const handleEditFromDetail = async (agent: AiAgentDetail) => {
+    setDetailDialogOpen(false)
+    setEditingAgent(agent)
+    setShowAgentDialog(true)
+  }
+
   // Refresh detail when sheet is open
   useEffect(() => {
     if (detailDialogOpen && selectedAgent) {
@@ -563,25 +570,42 @@ export function AgentsPage() {
       />
 
       {/* Agent Detail Dialog */}
-      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent className="sm:max-w-5xl sm:max-h-[85vh] flex flex-col overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>{tAgent('detailTitle')}</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto">
+      <FullScreenDialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <FullScreenDialogHeader
+          icon={<Bot className="h-5 w-5" />}
+          iconBg="bg-purple-500/10 dark:bg-purple-500/20"
+          iconColor="text-purple-500"
+          title={selectedAgent?.name || tAgent('detailTitle')}
+          subtitle={selectedAgent?.description}
+          onClose={() => setDetailDialogOpen(false)}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => selectedAgent && handleEditFromDetail(selectedAgent)}>
+                <Edit className="h-3.5 w-3.5 mr-1.5" />
+                {tAgent('detail.edit')}
+              </Button>
+              <Button size="sm" onClick={() => selectedAgent && handleExecute(selectedAgent)} disabled={selectedAgent?.status === 'Executing'}>
+                <Play className="h-3.5 w-3.5 mr-1.5" />
+                {tAgent('detail.execute')}
+              </Button>
+            </>
+          }
+        />
+        <FullScreenDialogContent>
+          <FullScreenDialogMain className="overflow-auto">
             {selectedAgent && (
               <AgentDetailPanel
                 agent={selectedAgent}
-                onEdit={handleEdit}
+                onEdit={handleEditFromDetail}
                 onExecute={handleExecute}
                 onViewExecutionDetail={handleViewExecutionDetail}
                 onRefresh={loadItems}
                 inlineMode
               />
             )}
-          </div>
-        </DialogContent>
-      </Dialog>
+          </FullScreenDialogMain>
+        </FullScreenDialogContent>
+      </FullScreenDialog>
 
       {/* Execution Detail Dialog */}
       <ExecutionDetailDialog

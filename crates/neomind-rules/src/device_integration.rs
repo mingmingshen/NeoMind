@@ -974,6 +974,11 @@ impl DeviceActionExecutor {
                     }
                 }
             }
+            RuleAction::TriggerAgent { agent_id, input, data: _ } => {
+                // TriggerAgent is handled by the rule engine, not device integration
+                actions_executed.push(format!("trigger_agent:{}", agent_id));
+                info!("TRIGGER_AGENT: {} (input: {:?}) - handled by rule engine", agent_id, input);
+            }
         }
 
         let duration = start.elapsed();

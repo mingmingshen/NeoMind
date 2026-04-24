@@ -5,7 +5,21 @@ export interface InputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {}
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => {
+  ({ className, type, value: valueProp, onChange: onChangeProp, onCompositionStart: compStartProp, onCompositionEnd: compEndProp, ...props }, ref) => {
+    // IME-safe: buffer value locally during composition so the controlled
+    // value doesn't interrupt CJK / pinyin input.  This is especially
+    // needed in Tauri (WebKit) where React's built-in composition
+    // suppression doesn't always work.
+    const composingRef = React.useRef(false)
+    const [buffer, setBuffer] = React.useState(valueProp)
+
+    // Sync from parent when value changes externally (and not composing)
+    React.useEffect(() => {
+      if (!composingRef.current) {
+        setBuffer(valueProp)
+      }
+    }, [valueProp])
+
     return (
       <input
         type={type}
@@ -14,6 +28,25 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           className
         )}
         ref={ref}
+        value={buffer}
+        onChange={(e) => {
+          setBuffer(e.target.value)
+          if (!composingRef.current) {
+            onChangeProp?.(e)
+          }
+        }}
+        onCompositionStart={(e) => {
+          composingRef.current = true
+          compStartProp?.(e)
+        }}
+        onCompositionEnd={(e) => {
+          composingRef.current = false
+          const v = (e.target as HTMLInputElement).value
+          setBuffer(v)
+          // Fire parent onChange with final value via a synthetic change event
+          onChangeProp?.({ target: { value: v } } as React.ChangeEvent<HTMLInputElement>)
+          compEndProp?.(e)
+        }}
         {...props}
       />
     )

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.6.12] - 2026-04-24
+
+### Added
+
+- **VLM Vision Dashboard Component** — New `vlm-vision` dashboard component for real-time visual analysis using VLM (Vision Language Model) models. Streams camera/video frames to LLM backends for scene understanding, object detection, and visual Q&A directly on the dashboard.
+  - `useVlmSession` hook with WebSocket streaming for low-latency frame-by-frame analysis
+  - `useVlmQueue` hook with drop-intermediate-frame strategy to keep only the latest frame
+  - `useVlmModels` hook for listing available LLM backends as vision models
+  - `VlmMessageBubble`, `VlmTimeline`, `VlmInputBar`, `VlmConfigPanel` UI components
+  - Full Zustand slice for VLM session state management
+  - Registry-based component library with automatic category grouping
+  - Config dialog with data source binding (device metrics, extensions, AI metrics), model selector, system prompt, and context window settings
+  - i18n support (English/Chinese)
+
+- **Event-Driven Agent Triggers for Extensions** — Agents can now be triggered by extension output events, not just device metrics. This enables agents to react to AI analysis results, external API data, and custom extension outputs.
+  - Unified `DataSourceRef` model (`source_type`, `source_id`, `field`) replaces device-only `EventTriggerData`
+  - `check_and_trigger_data_event()` as unified entry point for all data source types
+  - `matches_data_source_filter()` supporting `Device`, `Metric`, `ExtensionMetric`, `ExtensionTool` resource types
+  - ExtensionOutput feedback loop prevention with source exclusion dispatch
+
+- **Agent Status Sync** — Agent pause/activate actions now properly sync with the scheduler (pause → unschedule, activate → reschedule), ensuring UI state matches backend execution state.
+
+### Changed
+
+- **Dashboard Component Registry** — Replaced hardcoded `getComponentLibrary()` with registry-driven approach using `groupComponentsByCategory()`, making it easier to add new component types.
+- **Tauri Updater Version Comparison** — Version check now normalizes `v` prefix and whitespace before comparison, preventing duplicate update prompts when remote JSON uses `v0.6.12` format.
+
+---
+
 ## [v0.6.11] - 2026-04-21
 
 ### Added

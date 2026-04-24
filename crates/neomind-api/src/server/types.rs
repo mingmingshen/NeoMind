@@ -33,6 +33,71 @@ use crate::server::state::{
 #[cfg(feature = "embedded-broker")]
 use neomind_devices::EmbeddedBroker;
 
+/// Implementation of AgentInvoker that delegates to AiAgentManager.
+struct AgentInvokerImpl {
+    manager: AgentManager,
+}
+
+#[async_trait::async_trait]
+impl neomind_agent::toolkit::aggregated::AgentInvoker for AgentInvokerImpl {
+    async fn invoke_agent(
+        &self,
+        agent_id: &str,
+        input: Option<neomind_agent::AgentInput>,
+    ) -> std::result::Result<neomind_agent::toolkit::aggregated::AgentInvokeResult, String> {
+        let summary = self
+            .manager
+            .execute_agent_now(agent_id, input)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Get the latest execution record for full results
+        let execution = self
+            .manager
+            .executor()
+            .store()
+            .get_latest_execution(agent_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let (conclusion, confidence, actions) = match &execution {
+            Some(record) => {
+                let conclusion = record.decision_process.conclusion.clone();
+                let confidence = record.decision_process.confidence as f64;
+                let actions: Vec<serde_json::Value> = record
+                    .decision_process
+                    .decisions
+                    .iter()
+                    .map(|d| {
+                        serde_json::json!({
+                            "action": d.action,
+                            "reasoning": d.rationale,
+                            "description": d.description,
+                        })
+                    })
+                    .collect();
+                (conclusion, confidence, actions)
+            }
+            None => (summary.summary.clone(), 0.0, vec![]),
+        };
+
+        Ok(neomind_agent::toolkit::aggregated::AgentInvokeResult {
+            execution_id: summary.execution_id,
+            agent_name: summary.agent_name,
+            status: if summary.has_error {
+                "Failed".to_string()
+            } else {
+                "Completed".to_string()
+            },
+            duration_ms: summary.duration_ms,
+            conclusion,
+            confidence,
+            actions,
+            error: None,
+        })
+    }
+}
+
 /// Maximum request body size (10 MB)
 pub const MAX_REQUEST_BODY_SIZE: usize = 10 * 1024 * 1024;
 
@@ -1083,6 +1148,16 @@ impl ServerState {
                 store
             });
 
+        // Try to initialize agent manager for the invoke action
+        let agent_invoker: Option<Arc<dyn neomind_agent::toolkit::aggregated::AgentInvoker>> =
+            match self.get_or_init_agent_manager().await {
+                Ok(manager) => Some(Arc::new(AgentInvokerImpl { manager })),
+                Err(e) => {
+                    tracing::warn!("Agent invoker not available: {}", e);
+                    None
+                }
+            };
+
         // Build tool registry with aggregated tools (action-based design for token efficiency)
         // This consolidates 34+ individual tools into 5 aggregated tools
         let registry = ToolRegistryBuilder::new()
@@ -1093,6 +1168,7 @@ impl ServerState {
                 self.devices.service.clone(),
                 self.devices.telemetry.clone(),
                 self.agents.agent_store.clone(),
+                agent_invoker,
                 self.automation.rule_engine.clone(),
                 None,                                    // rule_history
                 Some(self.core.message_manager.clone()), // message_manager for alert tool
@@ -1100,6 +1176,7 @@ impl ServerState {
                 Some(self.agents.session_manager.skill_registry()), // skill registry
                 Some(self.data_dir.clone()),             // data_dir for skill persistence
                 Some(self.agents.ai_metrics_registry.clone()), // ai_metrics_registry
+                self.core.event_bus.clone(),             // event_bus for AI metric events
             )
             // Shell tool for system command execution (enabled by default for edge scenarios)
             .with_shell_tool(Some(neomind_agent::toolkit::ShellConfig {
@@ -1150,6 +1227,7 @@ impl ServerState {
                 self.devices.service.clone(),
                 self.devices.telemetry.clone(),
                 self.agents.agent_store.clone(),
+                self.get_or_init_agent_manager().await.ok().map(|m| Arc::new(AgentInvokerImpl { manager: m }) as Arc<dyn neomind_agent::toolkit::aggregated::AgentInvoker>),
                 self.automation.rule_engine.clone(),
                 None,
                 Some(self.core.message_manager.clone()),
@@ -1157,6 +1235,7 @@ impl ServerState {
                 Some(self.agents.session_manager.skill_registry()),
                 Some(self.data_dir.clone()),
                 Some(self.agents.ai_metrics_registry.clone()), // ai_metrics_registry
+                self.core.event_bus.clone(),             // event_bus for AI metric events
             )
             .with_shell_tool(Some(neomind_agent::toolkit::ShellConfig {
                 enabled: true,

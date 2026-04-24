@@ -376,10 +376,7 @@ const ComponentRenderer = memo(function ComponentRenderer({
       builtProps.agentId = componentDataSource.agentId
     }
 
-    // Special handling for vlm-vision: extract agentId from dataSource
-    if (componentType === 'vlm-vision' && componentDataSource?.agentId) {
-      builtProps.agentId = componentDataSource.agentId
-    }
+    // vlm-vision: agentId comes from config (restConfig), no special handling needed
 
     return builtProps
   }, [componentId, componentType, componentTitle, componentConfig, componentDataSource, componentDisplay, className, style, onDataSourceChange, onConfigChange])

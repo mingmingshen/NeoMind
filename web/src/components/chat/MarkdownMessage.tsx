@@ -44,16 +44,16 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
     ),
     // Custom inline code
     code: ({ node, className, children, ...props }) => {
-      const inline = (props as any).inline
-      if (inline) {
+      const isBlock = !!className
+      if (!isBlock) {
         return (
-          <code className={cn("bg-muted px-1 py-0.5 rounded text-[12px] font-mono", className)} {...(props as any)}>
+          <code className={cn("bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-[12px] font-mono text-foreground", className)} {...(props as any)}>
             {children}
           </code>
         )
       }
       return (
-        <code className={cn(className)} {...(props as any)}>
+        <code className={cn("text-zinc-800 dark:text-zinc-200", className)} {...(props as any)}>
           {children}
         </code>
       )
@@ -85,11 +85,11 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
           "prose-h1:text-[15px] prose-h2:text-[13px] prose-h3:text-[12px]",
           "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
           "prose-strong:font-semibold",
-          "prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-[12px] prose-code:font-mono",
+          "prose-code:rounded prose-code:bg-zinc-100 prose-code:dark:bg-zinc-800 prose-code:px-1 prose-code:py-0.5 prose-code:text-[12px] prose-code:font-mono",
           "prose-code:break-all prose-code:whitespace-pre-wrap",
-          "prose-pre:bg-muted prose-pre:p-3 prose-pre:rounded-lg prose-pre:my-2",
+          "prose-pre:bg-zinc-100 prose-pre:dark:bg-zinc-800 prose-pre:p-3 prose-pre:rounded-lg prose-pre:my-2",
           "prose-pre:overflow-x-auto prose-pre:max-w-full",
-          "prose-pre:prose-code:bg-transparent prose-pre:prose-code:p-0",
+          "prose-pre:prose-code:bg-transparent prose-pre:prose-code:p-0 prose-pre:prose-code:text-zinc-800 prose-pre:prose-code:dark:text-zinc-200",
           "prose-blockquote:border-l-2 prose-blockquote:border-muted-foreground prose-blockquote:pl-3 prose-blockquote:italic",
           "prose-ul:my-1 prose-ul:pl-4 prose-ul:list-disc",
           "prose-ol:my-1 prose-ol:pl-4 prose-ol:list-decimal",

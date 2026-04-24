@@ -5,7 +5,19 @@ export interface TextareaProps
   extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
 
 const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, ...props }, ref) => {
+  ({ className, value: valueProp, onChange: onChangeProp, onCompositionStart: compStartProp, onCompositionEnd: compEndProp, ...props }, ref) => {
+    // IME-safe: buffer value locally during composition so the controlled
+    // value doesn't interrupt CJK / pinyin input.
+    const composingRef = React.useRef(false)
+    const [buffer, setBuffer] = React.useState(valueProp)
+
+    // Sync from parent when value changes externally (and not composing)
+    React.useEffect(() => {
+      if (!composingRef.current) {
+        setBuffer(valueProp)
+      }
+    }, [valueProp])
+
     return (
       <textarea
         className={cn(
@@ -13,6 +25,24 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           className
         )}
         ref={ref}
+        value={buffer}
+        onChange={(e) => {
+          setBuffer(e.target.value)
+          if (!composingRef.current) {
+            onChangeProp?.(e)
+          }
+        }}
+        onCompositionStart={(e) => {
+          composingRef.current = true
+          compStartProp?.(e)
+        }}
+        onCompositionEnd={(e) => {
+          composingRef.current = false
+          const v = (e.target as HTMLTextAreaElement).value
+          setBuffer(v)
+          onChangeProp?.({ target: { value: v } } as React.ChangeEvent<HTMLTextAreaElement>)
+          compEndProp?.(e)
+        }}
         {...props}
       />
     )

@@ -146,6 +146,7 @@ impl AiMetricsRegistry {
 pub struct AiMetricTool {
     storage: Arc<neomind_devices::TimeSeriesStorage>,
     registry: Arc<AiMetricsRegistry>,
+    event_bus: Option<Arc<neomind_core::EventBus>>,
 }
 
 impl AiMetricTool {
@@ -153,7 +154,13 @@ impl AiMetricTool {
         storage: Arc<neomind_devices::TimeSeriesStorage>,
         registry: Arc<AiMetricsRegistry>,
     ) -> Self {
-        Self { storage, registry }
+        Self { storage, registry, event_bus: None }
+    }
+
+    /// Set the EventBus for publishing AI metric events.
+    pub fn with_event_bus(mut self, event_bus: Arc<neomind_core::EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 
     /// Validate that a name contains only alphanumeric chars, hyphens, and underscores.
@@ -174,6 +181,22 @@ impl AiMetricTool {
             )));
         }
         Ok(())
+    }
+
+    /// Convert `neomind_devices::mdl::MetricValue` → `neomind_core::MetricValue` for event publishing.
+    fn devices_to_core_metric_value(v: &neomind_devices::mdl::MetricValue) -> neomind_core::MetricValue {
+        use neomind_devices::mdl::MetricValue as DV;
+        match v {
+            DV::Integer(i) => neomind_core::MetricValue::Integer(*i),
+            DV::Float(f) => neomind_core::MetricValue::Float(*f),
+            DV::String(s) => neomind_core::MetricValue::String(s.clone()),
+            DV::Boolean(b) => neomind_core::MetricValue::Boolean(*b),
+            DV::Array(arr) => neomind_core::MetricValue::Json(serde_json::json!(
+                arr.iter().map(|v| Self::devices_to_core_metric_value(v)).collect::<Vec<_>>()
+            )),
+            DV::Binary(_) => neomind_core::MetricValue::String("[binary]".to_string()),
+            DV::Null => neomind_core::MetricValue::Json(Value::Null),
+        }
     }
 
     /// Convert a serde_json::Value to a MetricValue.
@@ -224,6 +247,8 @@ impl AiMetricTool {
             .map(|ts| if ts > 1e12 as i64 { ts / 1000 } else { ts }) // normalize ms → s
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
+        let core_value = Self::devices_to_core_metric_value(&metric_value);
+
         let point = neomind_devices::DataPoint {
             timestamp,
             value: metric_value,
@@ -252,6 +277,18 @@ impl AiMetricTool {
                 .or(existing_desc),
         };
         self.registry.register(group, field, meta);
+
+        // Publish event so other agents can trigger on AI metric writes
+        if let Some(ref event_bus) = self.event_bus {
+            let _ = event_bus.publish(neomind_core::NeoMindEvent::ExtensionOutput {
+                extension_id: source_id.clone(),
+                output_name: field.to_string(),
+                value: core_value,
+                timestamp,
+                labels: None,
+                quality: Some(1.0),
+            }).await;
+        }
 
         Ok(ToolOutput::success(serde_json::json!({
             "source_id": source_id,

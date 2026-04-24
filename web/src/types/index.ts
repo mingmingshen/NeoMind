@@ -2320,6 +2320,10 @@ export interface UpdateAgentRequest {
 export interface ExecuteAgentRequest {
   trigger_type?: string
   event_data?: Record<string, unknown>
+  /** Text input from the caller */
+  input?: string
+  /** Structured data from the caller (e.g., images) */
+  data?: Record<string, unknown>
 }
 
 /**

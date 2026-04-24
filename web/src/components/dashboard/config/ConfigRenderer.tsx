@@ -8,6 +8,7 @@
 import { useTranslation } from 'react-i18next'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Field } from '@/components/ui/field'
@@ -281,18 +282,12 @@ const ConfigSectionItem = function ConfigSectionItem({ section }: { section: Con
       return (
         <Field>
           <Label>{props.label}</Label>
-          <textarea
-            className={cn(
-              "flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm",
-              "ring-offset-background placeholder:text-muted-foreground",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-              "resize-none"
-            )}
-            value={props.content}
+          <Textarea
+            value={props.content ?? ''}
             onChange={(e) => props.onChange?.(e.target.value)}
             placeholder={props.placeholder || t('configRenderer.contentPlaceholder')}
             rows={props.rows || 3}
+            className="resize-none"
           />
         </Field>
       )

@@ -581,6 +581,17 @@ impl RuleValidator {
                     });
                 }
             }
+            RuleAction::TriggerAgent { agent_id, .. } => {
+                // Validate agent_id is not empty
+                if agent_id.is_empty() {
+                    issues.push(ValidationIssue {
+                        code: "empty_agent_id".to_string(),
+                        message: "Agent ID cannot be empty for TRIGGER_AGENT action".to_string(),
+                        field: Some("actions.trigger_agent.agent_id".to_string()),
+                        severity: ValidationSeverity::Error,
+                    });
+                }
+            }
         }
 
         Ok(issues)

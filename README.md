@@ -10,7 +10,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 
 [![Build Status](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml/badge.svg)](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Version: 0.6.11](https://img.shields.io/badge/v-0.6.11-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
+[![Version: 0.6.12](https://img.shields.io/badge/v-0.6.12-information.svg)](https://github.com/camthink-ai/NeoMind/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.85+-orange.svg)](https://www.rust-lang.org)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)](https://github.com/camthink-ai/NeoMind/releases)
 
@@ -76,6 +76,12 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 - **LLM Memory**: Category-based memory system (Profile, Knowledge, Tasks, Evolution) with LLM-powered extraction and compression. Agent execution automatically discovers thresholds, baselines, and optimization insights as `system_evolution` memories.
 - **Vector Search**: Semantic search across devices and rules
 - **Data Explorer**: Unified interface for browsing and exploring time-series data
+
+### 🔭 VLM Vision Dashboard Component
+- **Real-time Vision Analysis**: Stream camera/video frames to VLM models for live scene understanding
+- **WebSocket Streaming**: Low-latency frame-by-frame analysis with drop-intermediate-frame queue
+- **Configurable Models**: Select any LLM backend as vision model with custom system prompts and context window
+- **Dashboard Integration**: Registry-based component with data source binding (device metrics, extensions, AI metrics)
 
 ### 🧩 Unified Extension System (V2)
 - **Dynamic Loading**: Runtime extension loading/unloading
@@ -173,7 +179,7 @@ After installation, access `http://your-server:9375` in your browser.
 **Install specific version:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.6.11 sh
+curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/install.sh | VERSION=0.6.12 sh
 ```
 
 **Custom installation:**
@@ -205,7 +211,7 @@ curl -fsSL https://raw.githubusercontent.com/camthink-ai/NeoMind/main/scripts/in
 ```bash
 # 1. Download server binary and frontend (replace VERSION and PLATFORM)
 # PLATFORM: linux-amd64, linux-arm64, darwin-arm64
-VERSION=0.6.11
+VERSION=0.6.12
 
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-server-linux-amd64.tar.gz
 wget https://github.com/camthink-ai/NeoMind/releases/download/v${VERSION}/neomind-web-${VERSION}.tar.gz

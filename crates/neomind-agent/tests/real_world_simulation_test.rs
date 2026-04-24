@@ -342,7 +342,7 @@ async fn scenario_1_smart_building_hvac() -> anyhow::Result<()> {
     ctx.print_subsection("Agent执行分析");
 
     let agent = ctx.store.get_agent(&hvac_monitor.id).await?.unwrap();
-    let record = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("   状态: {:?}", record.status);
     println!(
@@ -400,7 +400,7 @@ async fn scenario_1_smart_building_hvac() -> anyhow::Result<()> {
 
     // 再次执行Agent
     let agent = ctx.store.get_agent(&hvac_monitor.id).await?.unwrap();
-    let record2 = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record2 = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("\n   Agent响应:");
     println!("   分析: {}", record2.decision_process.situation_analysis);
@@ -452,7 +452,7 @@ async fn scenario_1_smart_building_hvac() -> anyhow::Result<()> {
         .await?;
 
     let agent = ctx.store.get_agent(&energy_analyst.id).await?.unwrap();
-    let record3 = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record3 = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("   能耗分析:");
     println!("   分析: {}", record3.decision_process.situation_analysis);
@@ -577,7 +577,7 @@ async fn scenario_2_industrial_predictive_maintenance() -> anyhow::Result<()> {
 
     // 执行监控
     let agent = ctx.store.get_agent(&maintenance_monitor.id).await?.unwrap();
-    let record1 = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record1 = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("\n   正常状态分析:");
     println!("   结论: {}", record1.decision_process.conclusion);
@@ -638,7 +638,7 @@ async fn scenario_2_industrial_predictive_maintenance() -> anyhow::Result<()> {
 
     // 再次执行Agent
     let agent = ctx.store.get_agent(&maintenance_monitor.id).await?.unwrap();
-    let record2 = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record2 = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("\n   故障检测分析:");
     println!(
@@ -691,7 +691,7 @@ async fn scenario_2_industrial_predictive_maintenance() -> anyhow::Result<()> {
         .await?;
 
     let agent = ctx.store.get_agent(&analyst.id).await?.unwrap();
-    let record3 = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record3 = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("   维护建议:");
     println!("   {}", record3.decision_process.conclusion);
@@ -859,7 +859,7 @@ async fn scenario_3_multi_agent_collaboration() -> anyhow::Result<()> {
     // 监控Agent执行
     println!("\n📊 监控Agent执行:");
     let agent = ctx.store.get_agent(&monitor_agent.id).await?.unwrap();
-    let record = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("   状态: {:?}", record.status);
     println!(
@@ -880,7 +880,7 @@ async fn scenario_3_multi_agent_collaboration() -> anyhow::Result<()> {
     println!("⚙️  执行Agent响应:");
 
     let agent = ctx.store.get_agent(&executor_agent.id).await?.unwrap();
-    let record2 = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record2 = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("   状态: {:?}", record2.status);
     println!("   动作执行:");
@@ -930,7 +930,7 @@ async fn scenario_3_multi_agent_collaboration() -> anyhow::Result<()> {
     println!("📈 分析Agent执行:");
 
     let agent = ctx.store.get_agent(&analyst_agent.id).await?.unwrap();
-    let record3 = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record3 = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("   分析报告:");
     println!("   {}", record3.decision_process.conclusion);
@@ -1049,7 +1049,7 @@ async fn scenario_4_long_running_agent() -> anyhow::Result<()> {
         // 执行Agent
         let agent = ctx.store.get_agent(&daily_monitor.id).await?.unwrap();
         let start = Instant::now();
-        let record = ctx.executor.execute_agent(agent.clone(), None).await?;
+        let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
         let elapsed = start.elapsed();
 
         execution_times.push(elapsed.as_millis());
@@ -1128,7 +1128,7 @@ async fn scenario_4_long_running_agent() -> anyhow::Result<()> {
         .await?;
 
     let agent = ctx.store.get_agent(&analyst.id).await?.unwrap();
-    let record = ctx.executor.execute_agent(agent.clone(), None).await?;
+    let record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
 
     println!("   📋 日报告分析:");
     println!("   {}", record.decision_process.conclusion);
@@ -1211,7 +1211,7 @@ async fn scenario_5_stress_multi_agent() -> anyhow::Result<()> {
     for agent_id in &agent_ids {
         let agent = ctx.store.get_agent(agent_id).await?.unwrap();
         let exec_start = Instant::now();
-        let _record = ctx.executor.execute_agent(agent.clone(), None).await?;
+        let _record = ctx.executor.execute_agent(agent.clone(), None, None).await?;
         let elapsed = exec_start.elapsed();
         total_duration += elapsed.as_millis() as u64;
     }

@@ -253,7 +253,7 @@ pub struct Example {
 ///
 /// Tool list (5 aggregated tools replacing 34+ individual tools):
 /// - device: list, get, query, control
-/// - agent: list, get, create, update, control, memory, send_message, executions, conversation, latest_execution
+/// - agent: list, get, create, update, control, memory, send_message, invoke, executions, conversation, latest_execution
 /// - rule: list, get, delete, history
 /// - message: list, send, read/acknowledge (aliases: alert, notification)
 /// - extension: list, get, execute, status
@@ -345,7 +345,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
         },
         LlmToolDefinition {
             name: "agent".to_string(),
-            description: "AI Agent management tool for creating and managing automated monitoring/control agents. Actions: list, get, create, update, control (pause/resume), memory (view learned patterns), send_message (send instruction to agent), executions (execution stats), conversation (conversation log), latest_execution (most recent execution details).".to_string(),
+            description: "AI Agent management tool for creating and managing automated monitoring/control agents. Actions: list, get, create, update, control (pause/resume), memory (view learned patterns), send_message (send instruction to agent), invoke (execute agent now and return results), executions (execution stats), conversation (conversation log), latest_execution (most recent execution details).".to_string(),
             aliases: vec!["agent".to_string(), "automation".to_string(), "monitor".to_string()],
             required: vec!["action".to_string()],
             optional: HashMap::from_iter(vec![
@@ -378,17 +378,17 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     examples: vec!["interval".to_string(), "cron".to_string(), "event".to_string()],
                 }),
                 ("schedule_config".to_string(), ParameterInfo {
-                    description: "Schedule config (create): For cron: 5-field expression ('0 8 * * *'=daily 8am, '*/30 * * * *'=every 30min). For interval: seconds ('300'=5min, '3600'=1hour). For event: comma-separated DataSourceIds to watch ('device:sensor_001:temperature,extension:weather:humidity')".to_string(),
+                    description: "Schedule config (create): For cron: 5-field expression ('0 8 * * *'=daily 8am, '*/30 * * * *'=every 30min). For interval: seconds ('300'=5min, '3600'=1hour). For event: JSON array of trigger sources [{\"type\":\"device\",\"id\":\"sensor_001\",\"field\":\"temperature\"}] or [{\"type\":\"extension\",\"id\":\"weather\"}]. Omit field to trigger on all metrics.".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["0 8 * * *".to_string(), "300".to_string(), "3600".to_string(), "device:sensor_001:temperature".to_string()],
+                    examples: vec!["0 8 * * *".to_string(), "300".to_string(), "3600".to_string(), "[{\"type\":\"device\",\"id\":\"sensor_001\",\"field\":\"temperature\"}]".to_string()],
                 }),
                 ("execution_mode".to_string(), ParameterInfo {
-                    description: "Agent mode (create): 'focused' = must bind resources, LLM works within defined scope. Fast, precise, token-efficient. Best for monitoring, alerts, data analysis. 'free' = LLM freely explores with all tools, multi-round reasoning. Best for complex automation and device control.".to_string(),
+                    description: "Agent mode (create): 'focused' = single-pass analysis with bound resources. Fast, precise, token-efficient. Best for monitoring, alerts, data analysis. Supports tool calling when enable_tool_chaining=true. 'free' = multi-round tool calling with all tools. Best for complex automation and device control.".to_string(),
                     default: serde_json::json!("focused"),
                     examples: vec!["focused".to_string(), "free".to_string()],
                 }),
                 ("resources".to_string(), ParameterInfo {
-                    description: "Resources to bind (create, multi-select). REQUIRED for focused mode (at least 1). Free mode does NOT use resources — it queries live via tools. JSON array: [{\"type\":\"...\",\"id\":\"...\",\"config\":{...}}]. Types: 'device', 'metric' (id='device_id:metric'), 'command' (id='device_id:cmd'), 'extension_metric' (id='extension:ext_id:metric'), 'extension_tool' (id='extension:ext_id:tool'). For metrics in focused mode, config.data_collection controls pre-collection: {\"data_collection\":{\"time_range_minutes\":60,\"include_history\":false,\"include_trend\":false}}".to_string(),
+                    description: "Resources to bind (create, multi-select). Optional for both modes. JSON array: [{\"type\":\"...\",\"id\":\"...\",\"config\":{...}}]. Types: 'device', 'metric' (id='device_id:metric'), 'command' (id='device_id:cmd'), 'extension_metric' (id='extension:ext_id:metric'), 'extension_tool' (id='extension:ext_id:tool'). For metrics, config.data_collection controls pre-collection: {\"data_collection\":{\"time_range_minutes\":60,\"include_history\":false}}".to_string(),
                     default: serde_json::json!(null),
                     examples: vec![
                         "[{\"type\":\"metric\",\"id\":\"sensor_001:temperature\"}]".to_string(),
@@ -397,7 +397,7 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     ],
                 }),
                 ("enable_tool_chaining".to_string(), ParameterInfo {
-                    description: "Allow tool output chaining in free mode (create, optional). Default: false. Set true for complex automation. Only applies to free mode.".to_string(),
+                    description: "Enable tool calling/chaining (create, optional). When true, agent can call tools during execution (query data, control devices, send notifications, etc.). Both modes support this. Default: false.".to_string(),
                     default: serde_json::json!(false),
                     examples: vec!["true".to_string(), "false".to_string()],
                 }),
@@ -425,6 +425,11 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     description: "Optional message type/tag for categorization (send_message action). Example: 'instruction', 'correction', 'update'".to_string(),
                     default: serde_json::json!(null),
                     examples: vec!["instruction".to_string(), "correction".to_string(), "update".to_string()],
+                }),
+                ("input".to_string(), ParameterInfo {
+                    description: "Input text for the agent (invoke action). The agent will receive this as context for immediate execution. Example: 'Check current temperature and alert if above 30C'".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["Check current temperature and alert if above 30C".to_string(), "Analyze the latest security camera detection data".to_string()],
                 }),
                 ("confirm".to_string(), ParameterInfo {
                     description: "Set to true after user confirms (control action). Returns preview without confirmation".to_string(),
@@ -468,6 +473,16 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                     tool_call: r#"agent(action="executions", agent_id="agent_1")"#.to_string(),
                     explanation: "View execution statistics".to_string(),
                 },
+                Example {
+                    user_query: "Run the temperature monitor now and tell me the result".to_string(),
+                    tool_call: r#"agent(action="invoke", agent_id="Temperature Monitor", input="Check current temperature readings and report status")"#.to_string(),
+                    explanation: "Immediately execute an agent and return its analysis results".to_string(),
+                },
+                Example {
+                    user_query: "用安全监控agent分析一下最新的摄像头数据".to_string(),
+                    tool_call: r#"agent(action="invoke", agent_id="Security Monitor", input="分析最新的摄像头检测数据，报告是否有异常")"#.to_string(),
+                    explanation: "Invoke a specialized agent and use its analysis result in the conversation".to_string(),
+                },
             ],
             use_when: vec![
                 "User asks about agents or automations".to_string(),
@@ -475,11 +490,13 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 "User wants to pause/resume agent execution".to_string(),
                 "User wants to send an instruction or message to an agent".to_string(),
                 "User wants to guide, correct, or update an agent's behavior".to_string(),
+                "User wants to run an agent now and get results immediately (invoke)".to_string(),
+                "User asks an agent to analyze something and wants the answer now".to_string(),
                 "User asks about agent execution history or performance".to_string(),
                 "User wants to debug why an agent made a decision".to_string(),
                 "User asks about the latest execution result or whether it succeeded".to_string(),
             ],
-            actions: vec!["list".into(), "get".into(), "create".into(), "update".into(), "control".into(), "memory".into(), "send_message".into(), "executions".into(), "conversation".into(), "latest_execution".into()],
+            actions: vec!["list".into(), "get".into(), "create".into(), "update".into(), "control".into(), "memory".into(), "send_message".into(), "invoke".into(), "executions".into(), "conversation".into(), "latest_execution".into()],
         },
 
         // === Rule Tool (aggregates rule operations) ===
@@ -904,7 +921,7 @@ pub fn format_tools_for_llm() -> String {
     prompt.push_str("### Usage\n\n");
     prompt.push_str("All tools use an `action` parameter to differentiate operations:\n");
     prompt.push_str("- device(action=\"list|latest|get|history|control|write_metric\", ...)\n");
-    prompt.push_str("- agent(action=\"list|get|create|update|control|memory|send_message|executions|conversation|latest_execution\", ...) — use send_message to contact an agent\n");
+    prompt.push_str("- agent(action=\"list|get|create|update|control|memory|send_message|invoke|executions|conversation|latest_execution\", ...) — use send_message to contact an agent, invoke to execute agent and get results\n");
     prompt.push_str("- rule(action=\"list|get|create|update|delete|history\", ...)\n");
     prompt.push_str("- message(action=\"list|send|read\", ...) — for system messages/notifications only, NOT for contacting agents\n");
     prompt.push_str("- extension(action=\"list|get|status\", ...)\n");

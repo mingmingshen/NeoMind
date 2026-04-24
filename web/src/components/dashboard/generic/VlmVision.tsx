@@ -17,7 +17,6 @@ import {
   ListOrdered,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useStore } from '@/store'
 import { useDataSource } from '@/hooks/useDataSource'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -40,6 +39,8 @@ interface VlmVisionProps {
   modelId?: string
   systemPrompt?: string
   contextWindowSize?: number
+  /** Persist config changes back to dashboard component (survives refresh) */
+  onConfigChange?: (config: Record<string, any>) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -93,30 +94,41 @@ export function VlmVision({
   modelId: modelIdProp,
   systemPrompt: systemPromptProp,
   contextWindowSize: contextWindowSizeProp,
+  onConfigChange,
 }: VlmVisionProps) {
-  // ---- Config from Zustand store ----
-  const componentId = agentId || sessionIdProp || 'vlm-default'
+  // Stable component ID — locked on first render so it doesn't change
+  // when agentId is saved back as a prop (which would trigger cleanup and delete the agent)
+  const componentIdRef = useRef<string | null>(null)
+  if (!componentIdRef.current) {
+    componentIdRef.current = agentId || sessionIdProp || `vlm-${Date.now()}`
+  }
+  const componentId = componentIdRef.current
 
-  const storeConfig = useStore((s) => s.vlmConfigs[componentId])
-  const setVlmConfig = useStore((s) => s.setVlmConfig)
-
+  // Config from props (persisted in dashboard store/localStorage), not Zustand memory
   const config: VlmVisionConfig = useMemo(
-    () =>
-      storeConfig ?? {
-        modelId: modelIdProp,
-        systemPrompt: systemPromptProp ||
-          'You are a professional image analysis assistant. Carefully observe the image content, describe the scene, and point out any notable changes or anomalies.',
-        contextWindowSize: contextWindowSizeProp || 10,
-      },
-    [storeConfig, modelIdProp, systemPromptProp, contextWindowSizeProp],
+    () => ({
+      agentId,
+      modelId: modelIdProp,
+      systemPrompt: systemPromptProp ||
+        'You are a professional image analysis assistant. Carefully observe the image content, describe the scene, and point out any notable changes or anomalies.',
+      contextWindowSize: contextWindowSizeProp || 10,
+    }),
+    [agentId, modelIdProp, systemPromptProp, contextWindowSizeProp],
   )
 
-  // ---- Session lifecycle ----
+  // Persist config back to dashboard via onConfigChange (survives page refresh)
   const handleConfigUpdate = useCallback(
     (updates: Partial<VlmVisionConfig>) => {
-      setVlmConfig(componentId, updates)
+      if (onConfigChange) {
+        onConfigChange({
+          modelId: updates.modelId ?? modelIdProp,
+          systemPrompt: updates.systemPrompt ?? systemPromptProp,
+          contextWindowSize: updates.contextWindowSize ?? contextWindowSizeProp,
+          agentId: updates.agentId ?? agentId,
+        })
+      }
     },
-    [componentId, setVlmConfig],
+    [onConfigChange, modelIdProp, systemPromptProp, contextWindowSizeProp, agentId],
   )
 
   const {
@@ -174,30 +186,16 @@ export function VlmVision({
     enqueue(dataUrl)
   }, [dsData, isConnected, enqueue])
 
-  // ---- Auto-init session when dataSource is set but no sessionId ----
+  // ---- Auto-init agent when dataSource is set but no agentId ----
   const hasDataSource = dataSourceProp !== undefined && dataSourceProp !== null
-  const hasSession = !!(config.sessionId || sessionIdProp)
+  const hasAgent = !!config.agentId
 
   useEffect(() => {
-    // Only auto-init in non-edit mode with a data source and no existing session
-    if (!editMode && hasDataSource && !hasSession && !initializing && !sessionError) {
+    // Only auto-init in non-edit mode with a data source and no existing agent
+    if (!editMode && hasDataSource && !hasAgent && !sessionError) {
       initSession()
     }
-  }, [editMode, hasDataSource, hasSession, initializing, sessionError, initSession])
-
-  // ---- Cleanup agent on unmount ----
-  useEffect(() => {
-    return () => {
-      // If we created an agent, clean it up when component unmounts
-      const agentId = useStore.getState().vlmConfigs[componentId]?.agentId
-      if (agentId) {
-        import('@/lib/api').then(({ api }) => {
-          api.deleteAgent(agentId).catch(() => {})
-        })
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [componentId])
+  }, [editMode, hasDataSource, hasAgent, sessionError, initSession])
 
   // ---- Stats ----
   const aiMessages = messages.filter((m) => m.type === 'ai')
@@ -246,8 +244,8 @@ export function VlmVision({
     )
   }
 
-  // ---- Render: Error (no session) ----
-  if (sessionError && !hasSession) {
+  // ---- Render: Error (no agent) ----
+  if (sessionError && !hasAgent) {
     return (
       <div
         className={cn(

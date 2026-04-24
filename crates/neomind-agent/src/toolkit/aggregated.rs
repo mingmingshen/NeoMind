@@ -830,15 +830,64 @@ impl DeviceTool {
 //                          control_agent, agent_memory
 // ============================================================================
 
+/// Trait for invoking an agent and waiting for results.
+///
+/// Implemented by the API layer to connect the tool to AiAgentManager.
+#[async_trait::async_trait]
+pub trait AgentInvoker: Send + Sync {
+    /// Invoke an agent by ID with optional input, wait for completion, and return results.
+    async fn invoke_agent(
+        &self,
+        agent_id: &str,
+        input: Option<crate::ai_agent::AgentInput>,
+    ) -> std::result::Result<AgentInvokeResult, String>;
+}
+
+/// Result of invoking an agent.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AgentInvokeResult {
+    /// Execution ID
+    pub execution_id: String,
+    /// Agent name
+    pub agent_name: String,
+    /// Status: "Completed", "Failed", "Timeout"
+    pub status: String,
+    /// Duration in milliseconds
+    pub duration_ms: u64,
+    /// Agent's conclusion/analysis text
+    pub conclusion: String,
+    /// Confidence score (0.0 - 1.0)
+    pub confidence: f64,
+    /// Actions taken by the agent
+    pub actions: Vec<serde_json::Value>,
+    /// Error message if failed
+    pub error: Option<String>,
+}
+
 /// Aggregated agent tool with action-based routing.
 pub struct AgentTool {
     agent_store: Arc<neomind_storage::AgentStore>,
+    agent_invoker: Option<Arc<dyn AgentInvoker>>,
 }
 
 impl AgentTool {
     /// Create a new agent tool.
     pub fn new(agent_store: Arc<neomind_storage::AgentStore>) -> Self {
-        Self { agent_store }
+        Self {
+            agent_store,
+            agent_invoker: None,
+        }
+    }
+
+    /// Create with agent invoker support (enables the `invoke` action).
+    pub fn with_invoker(
+        agent_store: Arc<neomind_storage::AgentStore>,
+        invoker: Arc<dyn AgentInvoker>,
+    ) -> Self {
+        Self {
+            agent_store,
+            agent_invoker: Some(invoker),
+        }
     }
 }
 
@@ -861,16 +910,19 @@ Actions:
 - control: Pause or resume agent execution (control_action: pause/resume). WARNING: This affects running agents.
 - memory: View agent's learned patterns and intent understanding. Use when debugging agent behavior.
 - send_message: Send a message or instruction to the agent. The agent will see it in its next execution. Use when user wants to guide, correct, or update an agent's behavior through natural language.
+- invoke: Immediately execute an agent and return results (conclusion, confidence, actions). Use when you need an agent's analysis right now and want to use the result in the current conversation. Supports optional input text. Useful for chaining agent capabilities.
 - executions: View agent execution statistics (total runs, success rate, last execution time). Use when user asks about agent performance or reliability.
 - conversation: View agent's conversation history (inputs and outputs from past runs). Use when debugging agent behavior or reviewing what an agent did.
 - latest_execution: View the most recent execution with full details (analysis, reasoning, decisions, conclusion). Use when user asks about execution results or completion status.
 
 When creating agents:
-- schedule_type: 'event' (triggered by device events), 'cron' (cron schedule), 'interval' (periodic, e.g., every 5 minutes)
+- schedule_type: 'event' (triggered by data source changes), 'cron' (cron schedule), 'interval' (periodic, e.g., every 5 minutes)
 - user_prompt should be specific, e.g., 'Check temperature every 5 minutes, alert if above 30C'
 - Use response_format="detailed" to get full agent config including IDs
 
-NOTE: There is NO delete action for agents. Agent deletion is only available through the web UI."#
+When to use send_message vs invoke:
+- send_message: User wants to give instructions for the agent's NEXT scheduled execution. Fire-and-forget, returns immediately.
+- invoke: User wants results RIGHT NOW. Executes the agent synchronously and returns analysis, decisions, and conclusions. Use when you need the agent's output to answer the user's question."#
     }
 
     fn parameters(&self) -> Value {
@@ -878,8 +930,8 @@ NOTE: There is NO delete action for agents. Agent deletion is only available thr
             serde_json::json!({
                 "action": {
                     "type": "string",
-                    "enum": ["list", "get", "create", "update", "control", "memory", "send_message", "executions", "conversation", "latest_execution"],
-                    "description": "Operation type: 'list' (all agents), 'get' (agent details), 'create' (new agent), 'update' (modify agent), 'control' (pause/resume), 'memory' (view learned patterns), 'send_message' (send message to agent), 'executions' (execution stats), 'conversation' (conversation log), 'latest_execution' (most recent execution details)"
+                    "enum": ["list", "get", "create", "update", "control", "memory", "send_message", "invoke", "executions", "conversation", "latest_execution"],
+                    "description": "Operation type: 'list' (all agents), 'get' (agent details), 'create' (new agent), 'update' (modify agent), 'control' (pause/resume), 'memory' (view learned patterns), 'send_message' (send message to agent), 'invoke' (execute agent now and return results), 'executions' (execution stats), 'conversation' (conversation log), 'latest_execution' (most recent execution details)"
                 },
                 "agent_id": {
                     "type": "string",
@@ -892,6 +944,10 @@ NOTE: There is NO delete action for agents. Agent deletion is only available thr
                 "message_type": {
                     "type": "string",
                     "description": "Optional message type/tag for categorization (send_message action). Example: 'instruction', 'correction', 'update'"
+                },
+                "input": {
+                    "type": "string",
+                    "description": "Input text for the agent (invoke action). The agent will receive this as context for its execution. Example: 'Check current temperature and alert if above 30C'"
                 },
                 "name": {
                     "type": "string",
@@ -911,11 +967,11 @@ NOTE: There is NO delete action for agents. Agent deletion is only available thr
                 },
                 "schedule_config": {
                     "type": "string",
-                    "description": "Schedule configuration (create action). For cron: standard 5-field expression (e.g., '0 8 * * *' = daily 8am, '*/30 * * * *' = every 30min). For interval: number of seconds (e.g., '300' = every 5min, '3600' = hourly). For event: comma-separated DataSourceIds to watch, format '{type}:{id}:{field}' (e.g., 'device:sensor_001:temperature,extension:weather:humidity')."
+                    "description": "Schedule configuration (create action). For cron: standard 5-field expression (e.g., '0 8 * * *' = daily 8am, '*/30 * * * *' = every 30min). For interval: number of seconds (e.g., '300' = every 5min, '3600' = hourly). For event: JSON array of trigger sources, format [{\"type\":\"device\",\"id\":\"sensor_001\",\"field\":\"temperature\"}] or [{\"type\":\"extension\",\"id\":\"weather\"}]. Omit field to trigger on all metrics."
                 },
                 "execution_mode": {
                     "type": "string",
-                    "description": "Agent execution mode (create action): 'focused' = must bind resources, single-pass analysis within defined scope. Fast, precise, token-efficient. Best for monitoring, alerts, data analysis. 'free' = multi-round tool calling with all 8 tools (device, agent, rule, message, extension, transform, skill, shell). Best for complex automation needing device control or multi-step actions."
+                    "description": "Agent execution mode (create action): 'focused' = single-pass analysis with bound resources. Fast, precise, token-efficient. Best for monitoring, alerts, data analysis. Supports tool calling when enable_tool_chaining=true. 'free' = multi-round tool calling with all 8 tools (device, agent, rule, message, extension, transform, skill, shell). Best for complex automation needing device control or multi-step actions."
                 },
                 "resources": {
                     "type": "string",
@@ -923,7 +979,7 @@ NOTE: There is NO delete action for agents. Agent deletion is only available thr
                 },
                 "enable_tool_chaining": {
                     "type": "boolean",
-                    "description": "Enable tool chaining for free mode (create action). When true, agent can use output from one tool as input to another. Default: false. Only applies to free mode."
+                    "description": "Enable tool calling/chaining (create action). When true, agent can call tools (query data, control devices, send notifications, etc.) during execution. Both modes support this. Default: false."
                 },
                 "control_action": {
                     "type": "string",
@@ -972,6 +1028,7 @@ NOTE: There is NO delete action for agents. Agent deletion is only available thr
             "control" => self.execute_control(&args).await,
             "memory" => self.execute_memory(&args).await,
             "send_message" => self.execute_send_message(&args).await,
+            "invoke" => self.execute_invoke(&args).await,
             "executions" => self.execute_executions(&args).await,
             "conversation" => self.execute_conversation(&args).await,
             "latest_execution" => self.execute_latest_execution(&args).await,
@@ -1173,20 +1230,50 @@ impl AgentTool {
         let is_cron = matches!(schedule_type, ScheduleType::Cron);
         let is_interval = matches!(schedule_type, ScheduleType::Interval);
         let event_filter = if is_event {
-            args["schedule_config"].as_str().map(|s| s.to_string())
+            if let Some(config_str) = args["schedule_config"].as_str() {
+                // Try parsing as JSON array first: [{"type":"device","id":"sensor_001","field":"temperature"}]
+                if let Ok(sources) = serde_json::from_str::<serde_json::Value>(config_str) {
+                    if sources.is_array() {
+                        Some(serde_json::json!({"sources": sources}).to_string())
+                    } else if sources.is_object() && sources.get("sources").is_some() {
+                        // Already in correct format
+                        Some(sources.to_string())
+                    } else {
+                        Some(config_str.to_string())
+                    }
+                } else {
+                    // Legacy: comma-separated DataSourceIds "device:sensor_001:temperature,extension:weather:humidity"
+                    let sources: Vec<serde_json::Value> = config_str
+                        .split(',')
+                        .filter(|s| !s.trim().is_empty())
+                        .filter_map(|ds_id| {
+                            let parts: Vec<&str> = ds_id.trim().split(':').collect();
+                            if parts.len() >= 2 {
+                                let mut src = serde_json::json!({
+                                    "type": parts[0],
+                                    "id": parts[1],
+                                    "name": parts[1],
+                                });
+                                if parts.len() >= 3 {
+                                    src["field"] = serde_json::json!(parts[2]);
+                                }
+                                Some(src)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    Some(serde_json::json!({"sources": sources}).to_string())
+                }
+            } else {
+                None
+            }
         } else {
             None
         };
 
         // Parse enable_tool_chaining
         let enable_tool_chaining = args["enable_tool_chaining"].as_bool().unwrap_or(false);
-
-        // Validate: Focused mode requires at least one resource
-        if execution_mode == neomind_storage::agents::ExecutionMode::Focused && agent_resources.is_empty() {
-            return Ok(ToolOutput::error(
-                "Focused mode requires at least one resource binding. Provide the 'resources' parameter with metric/command bindings, or use 'free' mode for tool-based exploration."
-            ));
-        }
 
         let agent = AiAgent {
             id: uuid::Uuid::new_v4().to_string(),
@@ -1383,6 +1470,48 @@ impl AgentTool {
             "message_id": user_msg.id,
             "status": "delivered",
             "note": "Message will be included in the agent's next execution context"
+        })))
+    }
+
+    async fn execute_invoke(&self, args: &Value) -> Result<ToolOutput> {
+        let invoker = self.agent_invoker.as_ref().ok_or_else(|| {
+            ToolError::Execution(
+                "Agent invocation is not available in this context".to_string(),
+            )
+        })?;
+
+        let agent_id_input = args["agent_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("agent_id is required".into()))?;
+
+        let agent_id = self.resolve_agent_id(agent_id_input).await?;
+
+        let input_text = args["input"].as_str().map(|s| s.to_string());
+        let invocation_input = if input_text.is_some() {
+            Some(crate::ai_agent::AgentInput {
+                content: input_text,
+                data: None,
+                source: Some("chat".to_string()),
+            })
+        } else {
+            None
+        };
+
+        let result = invoker
+            .invoke_agent(&agent_id, invocation_input)
+            .await
+            .map_err(|e| ToolError::Execution(e))?;
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "execution_id": result.execution_id,
+            "agent_id": agent_id,
+            "agent_name": result.agent_name,
+            "status": result.status,
+            "duration_ms": result.duration_ms,
+            "conclusion": result.conclusion,
+            "confidence": result.confidence,
+            "actions": result.actions,
+            "error": result.error,
         })))
     }
 
@@ -3423,6 +3552,7 @@ pub struct AggregatedToolsBuilder {
     device_service: Option<Arc<neomind_devices::DeviceService>>,
     time_series_storage: Option<Arc<neomind_devices::TimeSeriesStorage>>,
     agent_store: Option<Arc<neomind_storage::AgentStore>>,
+    agent_invoker: Option<Arc<dyn AgentInvoker>>,
     rule_engine: Option<Arc<neomind_rules::RuleEngine>>,
     rule_history: Option<Arc<neomind_rules::RuleHistoryStorage>>,
     message_manager: Option<Arc<neomind_messages::MessageManager>>,
@@ -3432,6 +3562,7 @@ pub struct AggregatedToolsBuilder {
     skill_registry: Option<crate::skills::SharedSkillRegistry>,
     ai_metrics_registry: Option<Arc<super::ai_metric::AiMetricsRegistry>>,
     data_dir: Option<std::path::PathBuf>,
+    event_bus: Option<Arc<neomind_core::EventBus>>,
 }
 
 impl AggregatedToolsBuilder {
@@ -3441,6 +3572,7 @@ impl AggregatedToolsBuilder {
             device_service: None,
             time_series_storage: None,
             agent_store: None,
+            agent_invoker: None,
             rule_engine: None,
             rule_history: None,
             message_manager: None,
@@ -3450,6 +3582,7 @@ impl AggregatedToolsBuilder {
             skill_registry: None,
             ai_metrics_registry: None,
             data_dir: None,
+            event_bus: None,
         }
     }
 
@@ -3471,6 +3604,12 @@ impl AggregatedToolsBuilder {
     /// Set agent store.
     pub fn with_agent_store(mut self, store: Arc<neomind_storage::AgentStore>) -> Self {
         self.agent_store = Some(store);
+        self
+    }
+
+    /// Set agent invoker (enables the `invoke` action on the agent tool).
+    pub fn with_agent_invoker(mut self, invoker: Arc<dyn AgentInvoker>) -> Self {
+        self.agent_invoker = Some(invoker);
         self
     }
 
@@ -3534,6 +3673,12 @@ impl AggregatedToolsBuilder {
         self
     }
 
+    /// Set event bus for AI metric event publishing.
+    pub fn with_event_bus(mut self, bus: Arc<neomind_core::EventBus>) -> Self {
+        self.event_bus = Some(bus);
+        self
+    }
+
     /// Build all aggregated tools as a vector of DynTool.
     pub fn build(self) -> Vec<Arc<dyn Tool>> {
         let mut tools: Vec<Arc<dyn Tool>> = Vec::new();
@@ -3550,7 +3695,12 @@ impl AggregatedToolsBuilder {
 
         // Agent tool (includes history actions: executions, conversation, latest_execution)
         if let Some(store) = self.agent_store.clone() {
-            tools.push(Arc::new(AgentTool::new(store)));
+            let agent_tool = if let Some(invoker) = self.agent_invoker {
+                AgentTool::with_invoker(store, invoker)
+            } else {
+                AgentTool::new(store)
+            };
+            tools.push(Arc::new(agent_tool));
         }
 
         // Rule tool
@@ -3599,10 +3749,14 @@ impl AggregatedToolsBuilder {
         // AI metric tool
         if let (Some(storage), Some(registry)) = (&self.time_series_storage, &self.ai_metrics_registry)
         {
-            tools.push(Arc::new(super::ai_metric::AiMetricTool::new(
+            let mut ai_tool = super::ai_metric::AiMetricTool::new(
                 storage.clone(),
                 registry.clone(),
-            )));
+            );
+            if let Some(bus) = self.event_bus {
+                ai_tool = ai_tool.with_event_bus(bus);
+            }
+            tools.push(Arc::new(ai_tool));
         }
 
         tools

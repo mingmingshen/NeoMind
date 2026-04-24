@@ -272,8 +272,12 @@
       "runOn": "Run on",
       "triggerWhen": "Trigger when",
       "metricUpdates": "Metric updates",
+      "extensionOutput": "Extension output",
+      "aiMetric": "AI Metric",
       "manualTrigger": "Manual trigger",
       "fromDevice": "From device",
+      "fromExtension": "From extension",
+      "fromAiGroup": "AI group name",
       "manualHint": "The agent will only run when manually triggered via API or UI"
     },
     "promptTemplates": {
@@ -306,15 +310,33 @@
     "schedule": {
       "selectStrategy": "Select Execution Strategy",
       "strategies": {
-        "interval": "Interval",
-        "daily": "Daily",
-        "weekly": "Weekly",
-        "monthly": "Monthly",
-        "event": "Event",
-        "once": "Once"
+        "timer": "Timer",
+        "reactive": "Data-driven",
+        "onDemand": "On Demand"
       },
       "config": "Execution Configuration",
       "onceDescription": "The agent will execute once immediately after saving, and will not trigger again automatically.",
+      "timer": {
+        "description": "Schedule automatic execution",
+        "subTypes": {
+          "interval": "Interval",
+          "daily": "Daily",
+          "weekly": "Weekly"
+        }
+      },
+      "reactive": {
+        "description": "Trigger on data source updates",
+        "hint": "Select the data sources to monitor. The agent will execute automatically when any selected source receives new data.",
+        "deviceTrigger": "Device Sources",
+        "extensionTrigger": "Extension Sources",
+        "noDevices": "No devices available",
+        "noExtensions": "No extensions available",
+        "emptyWarning": "No trigger sources selected. The agent will not run automatically.",
+        "fallbackToResources": "No explicit trigger sources configured. Will trigger based on Resources bindings (legacy mode).",
+        "allMetrics": "All",
+        "selectSource": "Select a source to configure",
+        "noMetrics": "No metrics available"
+      },
       "interval": {
         "every": "Every",
         "minutes": "minutes",
@@ -348,16 +370,27 @@
         "manualHint": "Triggered when selected device metrics update. Backend filters by configured resources.",
         "events": {
           "device.metric": "Metric Update",
+          "extension.output": "Extension Output",
+          "ai.metric": "AI Metric",
           "manual": "Manual Trigger"
         },
         "descriptions": {
           "device.metric": "Triggered when a device metric updates. Filter by specific device or monitor all.",
+          "extension.output": "Triggered when an extension publishes output data.",
+          "ai.metric": "Triggered when an AI metric is written.",
           "manual": "Only triggered manually via API or UI"
         },
-        "allDevices": "All Devices"
+        "allDevices": "All Devices",
+        "allExtensions": "All Extensions",
+        "extensionHint": "Agent will trigger when this extension publishes output data.",
+        "aiGroupPlaceholder": "e.g. anomaly, prediction"
       },
       "once": {
         "preview": "Execute once immediately"
+      },
+      "onDemand": {
+        "description": "Only runs when explicitly invoked via API or Rule",
+        "hint": "This agent will not run automatically. Use the Invoke API or Rule Engine to trigger it on demand."
       },
       "timezone": "Timezone"
     },
@@ -391,6 +424,12 @@
     },
     "resources": {
       "title": "Resources",
+      "optional": "Optional",
+      "hintFocused": "Configure data sources for the Agent to focus on. Data will be auto-collected during execution.",
+      "hintFree": "Configure preloaded data sources. If omitted, the Agent will query data via tools as needed.",
+      "preloadTitle": "Preloaded Data Sources",
+      "supplementalTitle": "Additional Data Sources",
+      "hintReactive": "Trigger source data is collected automatically. Add additional sources here for cross-device correlation analysis.",
       "searchPlaceholder": "Search resource name or type...",
       "selectedCount": "{{count}} selected",
       "noResourcesFound": "No resources found",
@@ -430,12 +469,12 @@
       }
     },
     "advanced": {
-      "title": "Advanced",
+      "title": "Advanced Configuration",
       "dataCollection": "Data Collection Config",
       "selectMetricsFirst": "Please select metrics first",
       "executionMode": "Execution Mode",
       "chatMode": "Chat Mode",
-      "chatModeDesc": "Single-pass LLM analysis. Fast responses, no tool calling.",
+      "chatModeDesc": "Single-pass LLM analysis with bound resources. Supports tool calling when enabled.",
       "reactMode": "ReAct Mode",
       "reactModeDesc": "Multi-round reasoning + tool calling. Plans actions, executes tools, analyzes results.",
       "focusedMode": "Focused Mode",
@@ -449,7 +488,16 @@
       "includeHistory": "Include History",
       "includeTrend": "Include Trend",
       "includeBaseline": "Include Baseline",
-      "recommended": "Recommended"
+      "recommended": "Recommended",
+      "enableToolChaining": "Enable Tool Chaining",
+      "toolChainingHint": "Allow the agent to chain multiple tool calls for complex tasks",
+      "toolChainingHintFocused": "Allow the agent to call tools during analysis (query data, control devices, send notifications, etc.)",
+      "maxChainDepth": "Max Chain Depth",
+      "focusedHint": "Focused mode: single-pass analysis with pre-collected data. Tool calling supported when enabled.",
+      "agentPriority": "Agent Priority",
+      "priorityHint": "Execution priority (1=lowest, 10=highest)",
+      "contextWindow": "Context Window Size",
+      "contextHint": "Maximum context size for the LLM"
     },
     "dataCollection": {
       "title": "Data Collection Config",
