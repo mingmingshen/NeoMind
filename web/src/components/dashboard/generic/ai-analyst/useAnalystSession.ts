@@ -392,42 +392,34 @@ export function useAnalystSession({
       const summary = summarizeData(value)
 
       setMessages((prev) => {
-        // Find the last data message that is NOT followed by an AI/user message
-        // (i.e. the current "pending" data block before LLM responds)
-        const lastNonDataIdx = [...prev]
-          .reverse()
-          .findIndex((m) => m.type === 'ai' || m.type === 'user')
-        const hasAIMsg = lastNonDataIdx !== -1
-
-        if (!hasAIMsg) {
-          // No AI message yet — update the last data message or create one
-          let lastDataIdx = -1
-          for (let i = prev.length - 1; i >= 0; i--) {
-            if (prev[i].type === 'data') { lastDataIdx = i; break }
-          }
-          if (lastDataIdx !== -1) {
-            // Append to existing data block
-            const updated = [...prev]
-            const existing = updated[lastDataIdx]
-            updated[lastDataIdx] = {
-              ...existing,
-              content: existing.content + '\n' + summary,
-              timestamp: Date.now(),
-              dataSource: ds || existing.dataSource,
-            }
-            return updated
-          }
+        // Always merge into the last data message if one exists.
+        // This keeps all incoming data in one block regardless of
+        // whether an AI streaming message was inserted between arrivals.
+        let lastDataIdx = -1
+        for (let i = prev.length - 1; i >= 0; i--) {
+          if (prev[i].type === 'data') { lastDataIdx = i; break }
         }
 
-        // Create a new data message (first data, or data arrived after AI msg)
-        const dataMsg: AnalystMessage = {
+        if (lastDataIdx !== -1) {
+          const updated = [...prev]
+          const existing = updated[lastDataIdx]
+          updated[lastDataIdx] = {
+            ...existing,
+            content: existing.content + '\n' + summary,
+            timestamp: Date.now(),
+            dataSource: ds || existing.dataSource,
+          }
+          return updated
+        }
+
+        // No data message yet — create the first one
+        return [...prev, {
           id: nextId(),
-          type: 'data',
+          type: 'data' as const,
           content: summary,
           timestamp: Date.now(),
           dataSource: ds,
-        }
-        return [...prev, dataMsg]
+        }]
       })
     },
     [],
