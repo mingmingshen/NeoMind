@@ -146,6 +146,7 @@ export function AiAnalyst({
     initializing,
     initSession,
     sendImage,
+    sendData,
     sendText,
     isConnected,
   } = useAnalystSession({
@@ -158,38 +159,23 @@ export function AiAnalyst({
   // ---- Data source binding ----
   const { data: dsData } = useDataSource<string>(dataSourceProp)
 
-  // Only process data in live mode (not edit mode).
-  // Only images go into the timeline as thumbnails.
-  // Non-image data is handled entirely by the backend event system —
-  // AI results arrive through WebSocket events (onExecutionCompleted).
+  // Show incoming data immediately in timeline while LLM processes in background.
+  // Images → thumbnail, other data → compact summary.
+  // No dependency on agent connection — display data as soon as it arrives.
   const lastEnqueuedRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (editMode || !dsData || !isConnected) return
+    if (editMode || !dsData) return
     const strVal = typeof dsData === 'string' ? dsData : String(dsData)
     if (strVal === lastEnqueuedRef.current) return
 
     lastEnqueuedRef.current = strVal
     if (isBase64Image(strVal)) {
       sendImage(normalizeToDataUrl(strVal), dataSourceProp?.id)
+    } else {
+      sendData(dsData, dataSourceProp?.id)
     }
-  }, [editMode, dsData, isConnected, sendImage, dataSourceProp])
-
-  // Also handle when connection becomes ready (timing: dsData arrived before isConnected)
-  const prevConnectedRef = useRef(false)
-  useEffect(() => {
-    if (editMode) return
-    if (!prevConnectedRef.current && isConnected && dsData) {
-      const strVal = typeof dsData === 'string' ? dsData : String(dsData)
-      if (strVal !== lastEnqueuedRef.current) {
-        lastEnqueuedRef.current = strVal
-        if (isBase64Image(strVal)) {
-          sendImage(normalizeToDataUrl(strVal), dataSourceProp?.id)
-        }
-      }
-    }
-    prevConnectedRef.current = isConnected
-  }, [editMode, isConnected, dsData, sendImage, dataSourceProp])
+  }, [editMode, dsData, sendImage, sendData, dataSourceProp])
 
   // ---- Auto-init agent when dataSource is set but no agentId ----
   const hasDataSource = dataSourceProp !== undefined && dataSourceProp !== null
