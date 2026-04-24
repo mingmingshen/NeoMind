@@ -355,7 +355,7 @@ export function useAnalystSession({
   // Send non-image data to timeline as a compact summary
   const sendData = useCallback(
     (value: unknown, ds?: string) => {
-      // Build a compact display string — never dump raw large values
+      // Build a compact display string — show actual values, not just counts
       let summary: string
       if (value === null || value === undefined) {
         summary = '(empty)'
@@ -364,7 +364,6 @@ export function useAnalystSession({
       } else if (typeof value === 'boolean') {
         summary = value ? 'true' : 'false'
       } else if (typeof value === 'string') {
-        // Truncate long strings, strip base64 data
         const s = value as string
         if (s.length > 200) {
           summary = s.slice(0, 200) + '...'
@@ -372,19 +371,31 @@ export function useAnalystSession({
           summary = s
         }
       } else if (typeof value === 'object') {
-        // For objects/arrays, show a count-based summary
         try {
-          const json = JSON.stringify(value)
-          if (json.length > 150) {
-            // Summarize: show keys or array length
-            if (Array.isArray(value)) {
-              summary = `[${value.length} items]`
-            } else {
-              const keys = Object.keys(value as Record<string, unknown>)
-              summary = `{${keys.slice(0, 5).join(', ')}${keys.length > 5 ? ', ...' : ''}}`
-            }
+          if (Array.isArray(value)) {
+            // Show each item truncated on one line
+            const items = value.slice(0, 8).map((v) =>
+              typeof v === 'object' && v !== null
+                ? JSON.stringify(v).slice(0, 60)
+                : String(v)
+            )
+            summary = items.length < value.length
+              ? items.join(', ') + `, ... (+${value.length - items.length})`
+              : items.join(', ')
           } else {
-            summary = json
+            const obj = value as Record<string, unknown>
+            const entries = Object.entries(obj).slice(0, 8).map(([k, v]) => {
+              const vs = typeof v === 'object' && v !== null
+                ? JSON.stringify(v).slice(0, 40)
+                : String(v)
+              return `${k}: ${vs.length > 40 ? vs.slice(0, 40) + '...' : vs}`
+            })
+            const remaining = Object.keys(obj).length - entries.length
+            summary = entries.join(', ') + (remaining > 0 ? `, ... (+${remaining})` : '')
+          }
+          // Final truncation for very large summaries
+          if (summary.length > 300) {
+            summary = summary.slice(0, 300) + '...'
           }
         } catch {
           summary = String(value)
