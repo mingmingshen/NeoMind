@@ -159,21 +159,39 @@ export function AiAnalyst({
   // ---- Data source binding ----
   const { data: dsData } = useDataSource<string>(dataSourceProp)
 
-  // Show incoming data immediately in timeline while LLM processes in background.
-  // Images → thumbnail, other data → compact summary.
-  // No dependency on agent connection — display data as soon as it arrives.
+  // Show the latest data point in the timeline while LLM processes in background.
+  // useDataSource returns different shapes depending on source type:
+  //   - telemetry: DataPoint[] like [{timestamp, value}, ...]
+  //   - device property: raw value (string, number, object)
+  // We extract the latest value for display.
   const lastEnqueuedRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (editMode || !dsData) return
-    const strVal = typeof dsData === 'string' ? dsData : String(dsData)
-    if (strVal === lastEnqueuedRef.current) return
+    if (editMode || dsData == null) return
 
+    // Extract the latest value from whatever useDataSource returns
+    let latestValue: unknown = dsData
+
+    // If it's an array of data points (telemetry format), take the first (latest)
+    if (Array.isArray(dsData) && dsData.length > 0) {
+      const point = dsData[0]
+      // DataPoint format: { timestamp, value } or raw value
+      if (point && typeof point === 'object' && 'value' in point) {
+        latestValue = (point as { value: unknown }).value
+      } else {
+        latestValue = point
+      }
+    }
+
+    // Deduplicate: skip if the value hasn't changed
+    const strVal = typeof latestValue === 'string' ? latestValue : JSON.stringify(latestValue)
+    if (strVal === lastEnqueuedRef.current || strVal.length < 1) return
     lastEnqueuedRef.current = strVal
-    if (isBase64Image(strVal)) {
-      sendImage(normalizeToDataUrl(strVal), dataSourceProp?.id)
+
+    if (typeof latestValue === 'string' && isBase64Image(latestValue)) {
+      sendImage(normalizeToDataUrl(latestValue), dataSourceProp?.id)
     } else {
-      sendData(dsData, dataSourceProp?.id)
+      sendData(latestValue, dataSourceProp?.id)
     }
   }, [editMode, dsData, sendImage, sendData, dataSourceProp])
 
