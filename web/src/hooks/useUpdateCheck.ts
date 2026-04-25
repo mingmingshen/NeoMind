@@ -91,6 +91,9 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
       return
     }
 
+    // Skip when not running in Tauri desktop
+    if (!(window as any).__TAURI_INTERNALS__) return
+
     try {
       await invoke('show_update_notification', {
         title: t('settings:newVersionAvailable'),
@@ -109,6 +112,13 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
    */
   const checkUpdate = useCallback(async () => {
     console.log('[Update] checkUpdate called')
+
+    // Skip update checks when not running in Tauri desktop (e.g. browser dev mode)
+    if (!(window as any).__TAURI_INTERNALS__) {
+      console.log('[Update] Skipping — not running in Tauri desktop')
+      return
+    }
+
     try {
       console.log('[Update] Setting status to checking')
       setUpdateStatus('checking')
@@ -161,6 +171,8 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
    * Download and install the available update
    */
   const downloadAndInstall = useCallback(async () => {
+    if (!(window as any).__TAURI_INTERNALS__) return
+
     try {
       setUpdateStatus('downloading')
       setError(null)
@@ -186,6 +198,8 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
    * Get the current app version
    */
   const getAppVersion = useCallback(async (): Promise<string> => {
+    if (!(window as any).__TAURI_INTERNALS__) return 'unknown'
+
     try {
       return await invoke<string>('get_app_version')
     } catch (error) {
@@ -198,6 +212,8 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
    * Relaunch the application
    */
   const relaunchApp = useCallback(async () => {
+    if (!(window as any).__TAURI_INTERNALS__) return
+
     try {
       await invoke('relaunch_app')
     } catch (error) {
@@ -206,8 +222,11 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
     }
   }, [])
 
-  // Set up update progress listener
+  // Set up update progress listener (only in Tauri desktop)
   useEffect(() => {
+    // Skip when not running in Tauri desktop
+    if (!(window as any).__TAURI_INTERNALS__) return
+
     const setupListener = async () => {
       try {
         const unlisten = await listen<UpdateProgress>('update-progress', (event) => {

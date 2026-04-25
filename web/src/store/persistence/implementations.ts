@@ -42,7 +42,12 @@ export class LocalStorageDashboardStorage implements DashboardStorage {
       }
 
       const dashboards = JSON.parse(stored) as Dashboard[]
-      return { data: dashboards, error: null, source: 'local' }
+      // Ensure all dashboards have valid components arrays (defensive against corrupted data)
+      const normalized = dashboards.map(d => ({
+        ...d,
+        components: Array.isArray(d.components) ? d.components : [],
+      }))
+      return { data: normalized, error: null, source: 'local' }
     } catch (error) {
       return {
         data: null,

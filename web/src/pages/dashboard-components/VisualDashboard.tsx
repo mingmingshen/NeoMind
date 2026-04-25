@@ -1841,7 +1841,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   // devices.length is included to ensure re-render when devices are initially loaded
   // IMPORTANT: Use currentDashboard from props (reactive) to ensure updates are reflected
   const gridComponents = useMemo(() => {
-    return currentDashboard?.components.map((component) => {
+    return (currentDashboard?.components ?? []).map((component) => {
       // Get dataSource from component (it should be a separate property, not in config)
       const componentDataSource = (component as any).dataSource
 
@@ -5281,7 +5281,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             </Button>
           )}
 
-          {currentDashboard.components.length === 0 ? (
+          {(currentDashboard.components?.length ?? 0) === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
               <LayoutDashboard className="h-16 w-16 mb-4 opacity-50" />
               <p className="text-lg font-medium">{t('visualDashboard.emptyDashboard')}</p>
