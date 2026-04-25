@@ -48,6 +48,7 @@ import {
   Square as SquareIcon,
   // Business
   Camera,
+  ScanEye,
 } from 'lucide-react'
 
 // ============================================================================
@@ -522,7 +523,7 @@ export const componentRegistry: ComponentRegistry = {
     name: 'AI Analyst',
     description: 'AI-powered data analysis — auto-analyze images, metrics, and data sources in a timeline chat',
     category: 'business',
-    icon: Camera,
+    icon: ScanEye,
     sizeConstraints: getSizeConstraints('ai-analyst'),
     hasDataSource: true,
     hasDisplayConfig: false,

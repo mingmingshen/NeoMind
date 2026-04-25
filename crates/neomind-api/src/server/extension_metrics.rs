@@ -39,6 +39,8 @@ pub struct ExtensionMetricsCollector {
     default_interval: Duration,
     /// Per-extension collection state
     extension_states: RwLock<HashMap<String, ExtensionCollectionState>>,
+    /// Event bus for publishing ExtensionOutput events (triggers event-driven agents)
+    event_bus: Option<Arc<neomind_core::EventBus>>,
 }
 
 impl ExtensionMetricsCollector {
@@ -52,12 +54,19 @@ impl ExtensionMetricsCollector {
             metrics_storage,
             default_interval: Duration::from_secs(60),
             extension_states: RwLock::new(HashMap::new()),
+            event_bus: None,
         }
     }
 
     /// Set the default collection interval.
     pub fn with_interval(mut self, interval: Duration) -> Self {
         self.default_interval = interval;
+        self
+    }
+
+    /// Set the event bus for publishing ExtensionOutput events.
+    pub fn with_event_bus(mut self, event_bus: Arc<neomind_core::EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
         self
     }
 
@@ -287,7 +296,7 @@ impl ExtensionMetricsCollector {
                 };
 
                 // Clone value for event publishing before moving into DataPoint
-                let _value_for_event = value.clone();
+                let value_for_event = value.clone();
                 let data_point = neomind_devices::telemetry::DataPoint::new(timestamp, value);
 
                 // Use DataSourceId source_part() and metric_part() for storage API
@@ -309,6 +318,35 @@ impl ExtensionMetricsCollector {
                             "Stored metric value"
                         );
                         total_metrics += 1;
+
+                        // Publish ExtensionOutput event to trigger event-driven agents
+                        if let Some(ref bus) = self.event_bus {
+                            let core_value = match &value_for_event {
+                                neomind_devices::mdl::MetricValue::Integer(n) => {
+                                    neomind_core::MetricValue::Integer(*n)
+                                }
+                                neomind_devices::mdl::MetricValue::Float(f) => {
+                                    neomind_core::MetricValue::Float(*f)
+                                }
+                                neomind_devices::mdl::MetricValue::String(s) => {
+                                    neomind_core::MetricValue::String(s.clone())
+                                }
+                                neomind_devices::mdl::MetricValue::Boolean(b) => {
+                                    neomind_core::MetricValue::Boolean(*b)
+                                }
+                                other => {
+                                    neomind_core::MetricValue::String(format!("{:?}", other))
+                                }
+                            };
+                            bus.publish_sync(neomind_core::NeoMindEvent::ExtensionOutput {
+                                extension_id: extension_id.clone(),
+                                output_name: metric_value.name.clone(),
+                                value: core_value,
+                                timestamp: chrono::Utc::now().timestamp(),
+                                labels: None,
+                                quality: None,
+                            });
+                        }
                     }
                     Err(e) => {
                         warn!(

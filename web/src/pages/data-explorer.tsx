@@ -108,9 +108,9 @@ export function DataExplorerPage() {
       if (debouncedSearch.trim()) params.search = debouncedSearch.trim()
 
       const res = await api.listUnifiedDataSources(params)
-      setPageData(res.data)
-      setTotalCount(res.total)
-      setSourceOptions(res.source_options)
+      setPageData(res?.data || [])
+      setTotalCount(res?.total || 0)
+      setSourceOptions(res?.source_options || [])
     } catch (err) {
       console.error('[DataExplorer] Failed to fetch data sources:', err)
     } finally {

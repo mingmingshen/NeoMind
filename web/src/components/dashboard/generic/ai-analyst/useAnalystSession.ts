@@ -2,14 +2,14 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { api } from '@/lib/api'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
 import type { ResourceRequest } from '@/types'
-import type { DataSource } from '@/types/dashboard'
-import { getSourceId } from '@/types/dashboard'
+import type { DataSource, DataSourceOrList } from '@/types/dashboard'
+import { getSourceId, normalizeDataSource } from '@/types/dashboard'
 import type { AiAnalystConfig, AnalystMessage } from './types'
 
 interface UseAnalystSessionParams {
   componentId: string
   config: AiAnalystConfig
-  dataSource?: DataSource
+  dataSource?: DataSourceOrList
   onConfigUpdate: (updates: Partial<AiAnalystConfig>) => void
 }
 
@@ -101,34 +101,37 @@ function resolveMetricField(dataSource: DataSource): string {
     || 'image'
 }
 
-function buildResources(dataSource?: DataSource): ResourceRequest[] | undefined {
-  if (!dataSource) return undefined
-  const sourceId = getSourceId(dataSource)
-  const field = resolveMetricField(dataSource)
+function buildResources(dataSources: DataSource[]): ResourceRequest[] | undefined {
+  if (!dataSources.length) return undefined
+  const resources: ResourceRequest[] = dataSources.flatMap((ds): ResourceRequest[] => {
+    const sourceId = getSourceId(ds)
+    const field = resolveMetricField(ds)
 
-  if (dataSource.type === 'extension' && dataSource.extensionId) {
-    return [{
-      resource_id: `extension:${dataSource.extensionId}:${field}`,
-      resource_type: 'extension_metric',
-      name: dataSource.extensionDisplayName || field,
-      config: {
-        extension_id: dataSource.extensionId,
-        metric_name: field,
-      },
-    }]
-  }
-  if (sourceId) {
-    return [{
-      resource_id: `${sourceId}:${field}`,
-      resource_type: dataSource.type === 'extension-metric' ? 'extension_metric' : 'metric',
-      name: field,
-      config: {
-        device_id: sourceId,
-        metric_name: field,
-      },
-    }]
-  }
-  return undefined
+    if (ds.type === 'extension' && ds.extensionId) {
+      return [{
+        resource_id: `extension:${ds.extensionId}:${field}`,
+        resource_type: 'extension_metric',
+        name: ds.extensionDisplayName || field,
+        config: {
+          extension_id: ds.extensionId,
+          metric_name: field,
+        },
+      }]
+    }
+    if (sourceId) {
+      return [{
+        resource_id: `${sourceId}:${field}`,
+        resource_type: ds.type === 'extension-metric' ? 'extension_metric' : 'metric',
+        name: field,
+        config: {
+          device_id: sourceId,
+          metric_name: field,
+        },
+      }]
+    }
+    return []
+  })
+  return resources.length > 0 ? resources : undefined
 }
 
 /**
@@ -136,32 +139,31 @@ function buildResources(dataSource?: DataSource): ResourceRequest[] | undefined 
  * can display the Data-driven trigger sources.
  * Format: {"sources": [{"type": "device"|"extension", "id": "...", "name": "...", "field": "..."}]}
  */
-function buildEventFilter(dataSource?: DataSource): string | undefined {
-  if (!dataSource) return undefined
-  const sourceId = getSourceId(dataSource)
-  const field = resolveMetricField(dataSource)
+function buildEventFilter(dataSources: DataSource[]): string | undefined {
+  if (!dataSources.length) return undefined
+  const sources = dataSources.flatMap((ds) => {
+    const sourceId = getSourceId(ds)
+    const field = resolveMetricField(ds)
 
-  if (dataSource.type === 'extension' && dataSource.extensionId) {
-    return JSON.stringify({
-      sources: [{
+    if (ds.type === 'extension' && ds.extensionId) {
+      return [{
         type: 'extension',
-        id: dataSource.extensionId,
-        name: dataSource.extensionDisplayName || dataSource.extensionId,
+        id: ds.extensionId,
+        name: ds.extensionDisplayName || ds.extensionId,
         field,
-      }],
-    })
-  }
-  if (sourceId) {
-    return JSON.stringify({
-      sources: [{
+      }]
+    }
+    if (sourceId) {
+      return [{
         type: 'device',
         id: sourceId,
         name: sourceId,
         field,
-      }],
-    })
-  }
-  return undefined
+      }]
+    }
+    return []
+  })
+  return sources.length > 0 ? JSON.stringify({ sources }) : undefined
 }
 
 /**
@@ -359,8 +361,9 @@ export function useAnalystSession({
       setInitializing(true)
       setError(null)
 
-      const resources = buildResources(dataSource)
-      const eventFilter = buildEventFilter(dataSource)
+      const dsList = normalizeDataSource(dataSource)
+      const resources = buildResources(dsList)
+      const eventFilter = buildEventFilter(dsList)
 
       const agent = await api.createAgent({
         name: `AI Analyst - ${componentId}`,

@@ -111,39 +111,28 @@ export function AgentsPage() {
   const loadItems = useCallback(async () => {
     setLoading(true)
     try {
-      // Load devices for dialogs
-      const devicesData = await api.getDevices()
-      setDevices(devicesData.devices || [])
-
-      // Load device types
-      try {
-        const typesData = await api.getDeviceTypes()
-        setDeviceTypes(typesData.device_types || [])
-      } catch {
-        setDeviceTypes([])
-      }
-
-      // Load extensions for agent resources
-      try {
-        const [extData, dsData, unifiedDsData] = await Promise.all([
+      // All API calls are independent - run them in parallel
+      const [devicesData, typesResult, extResult, agentsData] = await Promise.all([
+        api.getDevices().catch((e) => { throw e }),
+        api.getDeviceTypes().catch((): any => ({ device_types: [] })),
+        Promise.all([
           api.listExtensions().catch((): Extension[] => []),
           api.listAllDataSources().catch((): (ExtensionDataSourceInfo | TransformDataSourceInfo)[] => []),
           api.listUnifiedDataSources().catch((): { data: UnifiedDataSourceInfo[]; total: number; source_options: [string, string][] } => ({ data: [], total: 0, source_options: [] })),
-        ])
-        setExtensions(extData)
-        // Filter only extension data sources (exclude transform data sources)
-        setExtensionDataSources(dsData.filter((source): source is ExtensionDataSourceInfo => 'extension_id' in source))
-        setUnifiedDataSources(unifiedDsData.data || [])
-      } catch {
-        setExtensions([])
-        setExtensionDataSources([])
-        setUnifiedDataSources([])
-      }
+        ]),
+        api.listAgents(),
+      ])
 
-      // Load agents
-      const data = await api.listAgents()
+      setDevices(devicesData.devices || [])
+      setDeviceTypes(typesResult.device_types || [])
+
+      const [extData, dsData, unifiedDsData] = extResult
+      setExtensions(extData)
+      setExtensionDataSources(dsData.filter((source): source is ExtensionDataSourceInfo => 'extension_id' in source))
+      setUnifiedDataSources(unifiedDsData.data || [])
+
       // Sort by created_at descending (newest first)
-      setAgents((data.agents || []).sort((a, b) =>
+      setAgents((agentsData.agents || []).sort((a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ))
     } catch (error) {

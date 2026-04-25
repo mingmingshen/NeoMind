@@ -79,11 +79,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
       <>
         <div className="flex items-start gap-2">
           <div className="w-6 h-6 rounded-md bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
-            {hasImages ? (
-              <Camera className="h-3 w-3 text-amber-500" />
-            ) : (
-              <Database className="h-3 w-3 text-amber-500" />
-            )}
+            <Database className="h-3 w-3 text-amber-500" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex justify-between items-center">

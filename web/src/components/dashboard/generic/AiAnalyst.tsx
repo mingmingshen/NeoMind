@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
-  Camera,
+  ScanEye,
   Loader2,
   AlertCircle,
   Activity,
@@ -181,8 +181,10 @@ export function AiAnalyst({
     return latestValue
   }, [dsData])
 
+  // Only send data to timeline during active execution rounds.
+  // Data outside of execution is meaningless noise.
   useEffect(() => {
-    if (editMode || dsData == null) return
+    if (editMode || dsData == null || !isStreaming) return
     const latestValue = extractLatestValue()
     if (latestValue == null) return
 
@@ -196,7 +198,7 @@ export function AiAnalyst({
     } else {
       sendData(latestValue, dataSourceProp?.id)
     }
-  }, [editMode, dsData, sendImage, sendData, dataSourceProp, extractLatestValue])
+  }, [editMode, dsData, isStreaming, sendImage, sendData, dataSourceProp, extractLatestValue])
 
   // When a new execution round starts, ensure data appears BEFORE the streaming UI.
   // Reset dedup and force-send current data so it's inserted before the streaming placeholder.
@@ -258,7 +260,9 @@ export function AiAnalyst({
         )}
       >
         <div className="text-center p-6">
-          <Camera className="h-12 w-12 opacity-20 text-muted-foreground mx-auto mb-3" />
+          <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mx-auto mb-3">
+            <ScanEye className="h-6 w-6 text-primary" />
+          </div>
           <p className="text-sm text-muted-foreground">
             Configure a data source to start
           </p>
@@ -325,7 +329,7 @@ export function AiAnalyst({
             {isStreaming ? (
               <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
             ) : (
-              <Camera className="h-5 w-5 text-primary" />
+              <ScanEye className="h-5 w-5 text-primary" />
             )}
           </div>
 

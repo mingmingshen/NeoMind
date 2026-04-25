@@ -373,7 +373,7 @@ export const COMPONENT_SIZE_CONSTRAINTS: Partial<Record<ImplementedComponentType
 
   // Business Components
   'agent-monitor-widget': { minW: 4, minH: 4, defaultW: 6, defaultH: 5, maxW: 12, maxH: 8 },
-  'ai-analyst': { minW: 2, minH: 2, defaultW: 3, defaultH: 3, maxW: 6, maxH: 6 },
+  'ai-analyst': { minW: 3, minH: 3, defaultW: 4, defaultH: 5, maxW: 8, maxH: 8 },
 }
 
 // ============================================================================

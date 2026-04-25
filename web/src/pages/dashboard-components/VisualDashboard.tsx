@@ -4876,6 +4876,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
                 allowedTypes: ['device-metric', 'extension', 'ai-metric'],
+                multiple: true,
               },
             },
           ],
