@@ -351,9 +351,9 @@ Replace all 3 instances with `toast()`.
 
 - [ ] **Step 4: Verify no remaining alert() calls**
 
-Run: `cd /Users/shenmingming/CamThink\ Project/NeoMind/web && grep -rn 'alert(' src/ | grep -v 'alert(' | grep -v node_modules`
+Run: `cd /Users/shenmingming/CamThink\ Project/NeoMind/web && grep -rn "alert(" src/ | grep -v node_modules`
 
-Only legitimate `alert()` calls (if any) should remain (e.g., window.alert in error boundaries).
+Expected: Zero results (or only legitimate non-blocking uses).
 
 - [ ] **Step 5: Build and test**
 

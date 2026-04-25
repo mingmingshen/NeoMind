@@ -55,11 +55,13 @@ Apply to every `self.xxx.read().unwrap()` and `self.xxx.write().unwrap()` in exe
 // BEFORE
 let config = self.config.unwrap();
 
-// AFTER
+// AFTER — use NeoMindError tuple variant constructors
 let config = self.config.as_ref().ok_or_else(|| {
-    AgentError::config_err("Agent config not initialized")
+    NeoMindError::Config("Agent config not initialized".into())
 })?;
 ```
+
+**Important:** `NeoMindError` uses tuple variants (e.g., `NeoMindError::Config(String)`, `NeoMindError::Tool(String)`). Do NOT use helper methods like `llm_err()` — they don't exist. Always use the variant directly: `NeoMindError::VariantName("message".into())`. Verify actual variant names by reading `crates/neomind-core/src/error/mod.rs`.
 
 For fields that are guaranteed to exist after init, use `expect()` with a clear message instead of bare `unwrap()`.
 
@@ -72,7 +74,7 @@ let response = llm_call.await.unwrap();
 // AFTER
 let response = llm_call.await.map_err(|e| {
     tracing::error!("LLM call failed: {}", e);
-    NeoMindError::llm_err(format!("LLM call failed: {}", e))
+    NeoMindError::Llm(format!("LLM call failed: {}", e))
 })?;
 ```
 
@@ -110,7 +112,7 @@ let content = response["choices"][0]["message"]["content"].as_str().unwrap();
 
 // AFTER
 let content = response["choices"][0]["message"]["content"].as_str().ok_or_else(|| {
-    NeoMindError::llm_err("Invalid LLM response: missing content field")
+    NeoMindError::Llm("Invalid LLM response: missing content field".into())
 })?;
 ```
 
@@ -348,10 +350,13 @@ git commit -m "fix(rules): harden rule engine and DSL parser against unwrap pani
 ### Task A8: Devices MQTT Unwrap Hardening (High)
 
 **Files:**
-- Modify: `crates/neomind-devices/src/mqtt/*.rs`
-- Modify: `crates/neomind-devices/src/telemetry/*.rs`
+- Modify: `crates/neomind-devices/src/mqtt.rs` (single file, not a directory)
+- Modify: `crates/neomind-devices/src/telemetry.rs` (single file)
+- Modify: `crates/neomind-devices/src/adapter.rs`
+- Modify: `crates/neomind-devices/src/adapter/*.rs` (sub-modules)
+- Modify: `crates/neomind-devices/src/adapters/*.rs` (protocol adapters)
 
-**Context:** 58 `unwrap()` calls. MQTT module handles real-time device connections — crashes disconnect devices and lose telemetry data.
+**Context:** 58 `unwrap()` calls. MQTT module handles real-time device connections — crashes disconnect devices and lose telemetry data. Note: `mqtt` and `telemetry` are single files (not directories). Adapter code is in `adapter/` and `adapters/` directories.
 
 - [ ] **Step 1: Audit MQTT unwraps**
 
@@ -422,13 +427,21 @@ git commit -m "chore: final unwrap audit and cleanup for v0.7.0 stability harden
 
 ## Track B: API Input Validation
 
-### Task B1: Create Validation Helper Module
+### Task B1: Extend Existing Validation Framework
 
 **Files:**
-- Create: `crates/neomind-api/src/handlers/validation.rs`
+- Modify: `crates/neomind-api/src/validator.rs` (existing 589-line validation framework)
 - Modify: `crates/neomind-api/src/handlers/mod.rs`
 
-- [ ] **Step 1: Create validation module with reusable helpers**
+**Context:** There is already a comprehensive validation framework at `crates/neomind-api/src/validator.rs` with `ValidationError`, `ValidationErrors`, and Axum middleware. This task extends it with handler-level convenience helpers.
+
+- [ ] **Step 1: Read existing validator.rs**
+
+Read `crates/neomind-api/src/validator.rs` to understand the existing validation infrastructure before making changes.
+
+- [ ] **Step 2: Add handler-level convenience helpers**
+
+Add thin wrapper functions that delegate to the existing validation infrastructure:
 
 ```rust
 // crates/neomind-api/src/handlers/validation.rs
@@ -475,12 +488,6 @@ impl Validator {
 }
 ```
 
-- [ ] **Step 2: Register module in mod.rs**
-
-```rust
-pub mod validation;
-```
-
 - [ ] **Step 3: Build and verify**
 
 Run: `cd /Users/shenmingming/CamThink\ Project/NeoMind && cargo build -p neomind-api 2>&1 | tail -10`
@@ -488,8 +495,8 @@ Run: `cd /Users/shenmingming/CamThink\ Project/NeoMind && cargo build -p neomind
 - [ ] **Step 4: Commit**
 
 ```bash
-git add crates/neomind-api/src/handlers/validation.rs crates/neomind-api/src/handlers/mod.rs
-git commit -m "feat(api): add reusable validation helper module"
+git add crates/neomind-api/src/validator.rs
+git commit -m "feat(api): extend validation framework with handler-level helpers"
 ```
 
 ---

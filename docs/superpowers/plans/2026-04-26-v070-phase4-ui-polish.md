@@ -119,13 +119,21 @@ git commit -m "fix: replace page-level spinners with skeleton loading states"
 
 ## Track B: Page-Specific Improvements
 
-### Task B1: Add Empty State Guidance Components
+### Task B1: Extend Empty State Guidance Components
 
 **Files:**
-- Create: `web/src/components/shared/EmptyState.tsx`
+- Modify: `web/src/components/shared/EmptyState.tsx` (ALREADY EXISTS — do not recreate)
 - Modify: relevant page components
 
-- [ ] **Step 1: Create reusable EmptyState component**
+**Context:** `EmptyState.tsx` already exists. This task audits it and ensures it's used consistently across all list pages with appropriate guidance.
+
+- [ ] **Step 1: Read existing EmptyState component**
+
+Read `web/src/components/shared/EmptyState.tsx` to understand its current API and capabilities.
+
+- [ ] **Step 2: Extend if needed**
+
+If the existing component lacks action buttons or icon support, extend it:
 
 ```typescript
 interface EmptyStateProps {
