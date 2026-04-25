@@ -164,7 +164,7 @@ export function DataExplorerPage() {
     setHistoryLoading(true)
     api.queryTelemetry(source, metric, start, now, 500).then(res => {
       if (cancelled) return
-      setHistoryData(res.data.map(p => ({
+      setHistoryData((res?.data || []).map(p => ({
         timestamp: p.timestamp,
         value: p.value,
         quality: p.quality,
