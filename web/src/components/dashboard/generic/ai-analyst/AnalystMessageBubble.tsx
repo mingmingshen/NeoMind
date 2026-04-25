@@ -28,7 +28,9 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
   const formatDuration = (ms: number) =>
     ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
 
-  // Image data source entry
+  const hasImages = message.images && message.images.length > 0
+
+  // Image-only entry (legacy standalone image messages)
   if (message.type === 'image') {
     return (
       <>
@@ -70,36 +72,72 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
     )
   }
 
-  // Data event (non-image metric value) — single merged block
+  // Data entry — unified bubble for images + text
   if (message.type === 'data') {
-    const lines = message.content.split('\n')
+    const lines = message.content ? message.content.split('\n').filter(Boolean) : []
     return (
-      <div className="flex items-start gap-2">
-        <div className="w-6 h-6 rounded-md bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
-          <Database className="h-3 w-3 text-amber-500" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] text-muted-foreground truncate">
-              {message.dataSource || 'Data source'}
-            </span>
-            <span className="text-[10px] text-muted-foreground">{formatTime(message.timestamp)}</span>
+      <>
+        <div className="flex items-start gap-2">
+          <div className="w-6 h-6 rounded-md bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
+            {hasImages ? (
+              <Camera className="h-3 w-3 text-amber-500" />
+            ) : (
+              <Database className="h-3 w-3 text-amber-500" />
+            )}
           </div>
-          <div className="mt-1 rounded-lg px-3 py-1.5 bg-amber-500/6 border border-amber-500/15 max-w-[260px]">
-            {lines.map((line, i) => (
-              <p key={i} className="text-xs text-foreground/80 font-mono leading-relaxed">
-                {line.includes(':')
-                  ? <>
-                      <span className="text-foreground/50">{line.split(':').slice(0, -1).join(':')}:</span>
-                      <span className="text-foreground/90">{line.split(':').slice(-1)[0]}</span>
-                    </>
-                  : line
-                }
-              </p>
-            ))}
+          <div className="flex-1 min-w-0">
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-muted-foreground truncate">
+                {message.dataSource || 'Data source'}
+              </span>
+              <span className="text-[10px] text-muted-foreground">{formatTime(message.timestamp)}</span>
+            </div>
+            <div className="mt-1 rounded-lg px-3 py-1.5 bg-amber-500/6 border border-amber-500/15 max-w-[260px]">
+              {/* Inline images */}
+              {hasImages && (
+                <div className="flex gap-1 mb-1 flex-wrap">
+                  {message.images!.map((img, i) => (
+                    <div
+                      key={i}
+                      className="rounded overflow-hidden border border-border/30 cursor-pointer max-w-[120px]"
+                      onClick={() => setFullscreenImage(img)}
+                    >
+                      <img
+                        src={img}
+                        alt={`Image ${i + 1}`}
+                        className="w-full h-auto max-h-[80px] object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Text data lines */}
+              {lines.map((line, i) => (
+                <p key={i} className="text-xs text-foreground/80 font-mono leading-relaxed">
+                  {line.includes(':')
+                    ? <>
+                        <span className="text-foreground/50">{line.split(':').slice(0, -1).join(':')}:</span>
+                        <span className="text-foreground/90">{line.split(':').slice(-1)[0]}</span>
+                      </>
+                    : line
+                  }
+                </p>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+        {fullscreenImage && (
+          <Dialog open={!!fullscreenImage} onOpenChange={() => setFullscreenImage(null)}>
+            <DialogContent className="max-w-4xl p-2">
+              <img
+                src={fullscreenImage}
+                alt="Fullscreen"
+                className="w-full h-auto max-h-[80vh] object-contain rounded-lg"
+              />
+            </DialogContent>
+          </Dialog>
+        )}
+      </>
     )
   }
 

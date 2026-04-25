@@ -33,9 +33,29 @@ function nextId(): string {
   return `analyst-${Date.now()}-${++msgCounter}`
 }
 
+/** Internal/metadata fields to hide from data display */
+const META_FIELDS = new Set([
+  '_is_event_data', '_is_image', '_is_binary', '_source_type',
+  'image_mime_type', 'mime_type',
+])
+
+/** Check if a field key is internal metadata that should be hidden */
+function isMetaField(key: string): boolean {
+  return META_FIELDS.has(key) || key.startsWith('_')
+}
+
+/** Find index of the last completed (non-streaming) AI/error message */
+function findLastCompletedAi(msgs: AnalystMessage[]): number {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]
+    if ((m.type === 'ai' || m.type === 'error') && !m.isStreaming) return i
+  }
+  return -1
+}
+
 /** Build a compact display string: key names + data range summary */
 function summarizeData(value: unknown): string {
-  if (value === null || value === undefined) return '(empty)'
+  if (value === null || value === undefined) return ''
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
   if (typeof value === 'string') {
     return (value as string).length > 100 ? (value as string).slice(0, 100) + '...' : value as string
@@ -43,16 +63,17 @@ function summarizeData(value: unknown): string {
   if (typeof value === 'object') {
     try {
       if (Array.isArray(value)) {
-        // Show key names from first item + count
         if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
           const keys = Object.keys(value[0] as Record<string, unknown>)
           return `${keys.join(', ')} (${value.length} records)`
         }
         return `(${value.length} values)`
       }
-      // Object: show key: value summary for each field
+      // Object: show key: value summary, filtering out metadata fields
       const obj = value as Record<string, unknown>
-      return Object.entries(obj).slice(0, 6).map(([k, v]) => {
+      const entries = Object.entries(obj).filter(([k]) => !isMetaField(k)).slice(0, 6)
+      if (entries.length === 0) return ''
+      return entries.map(([k, v]) => {
         const vs = typeof v === 'object' && v !== null
           ? `(${Array.isArray(v) ? v.length + ' items' : Object.keys(v).length + ' keys'})`
           : String(v)
@@ -157,28 +178,73 @@ async function loadHistoryMessages(
 
     // Executions come newest-first; reverse to chronological order
     const sorted = [...resp.executions].reverse()
+
+    // Fetch all execution details in parallel
+    const details = await Promise.all(
+      sorted.map(async (exec) => {
+        if (exec.status === 'Running') return null
+        try {
+          const detail = await api.getExecution(agentId, exec.id)
+          return { exec, detail }
+        } catch {
+          return null
+        }
+      })
+    )
+
     const messages: AnalystMessage[] = []
+    for (const entry of details) {
+      if (!entry) continue
+      const { exec, detail } = entry
 
-    for (const exec of sorted) {
-      if (exec.status === 'Running') continue
+      const conclusion = detail?.decision_process?.conclusion
+      if (!conclusion) continue
 
-      // Get full execution detail for conclusion
-      try {
-        const detail = await api.getExecution(agentId, exec.id)
-        const conclusion = detail?.decision_process?.conclusion
-        if (!conclusion) continue
+      const ts = new Date(exec.timestamp).getTime() || Date.now()
 
-        const ts = new Date(exec.timestamp).getTime() || Date.now()
-        messages.push({
-          id: `hist-${exec.id}`,
-          type: exec.status === 'Failed' ? 'error' : 'ai',
-          content: conclusion,
-          timestamp: ts,
-          duration: Math.round(exec.duration_ms / 1000),
-        })
-      } catch {
-        // Skip executions that fail to load detail
+      // Restore ALL data_collected entries as ONE data message before AI response
+      const dataCollected = detail?.decision_process?.data_collected
+      if (dataCollected && dataCollected.length > 0) {
+        const allImages: string[] = []
+        const allLines: string[] = []
+        for (const dc of dataCollected) {
+          const values = dc.values
+          if (values && typeof values === 'object' && !Array.isArray(values)) {
+            const record = values as Record<string, unknown>
+            for (const [key, val] of Object.entries(record)) {
+              if (typeof val === 'string' && val.length > 100 && (
+                val.startsWith('data:image/') || val.startsWith('/9j/') || val.startsWith('iVBOR')
+              )) {
+                allImages.push(val.startsWith('data:') ? val : `data:image/png;base64,${val}`)
+              } else if (!isMetaField(key)) {
+                const s = summarizeData(val)
+                if (s) allLines.push(`${key}: ${s}`)
+              }
+            }
+          } else {
+            const s = summarizeData(values)
+            if (s) allLines.push(s)
+          }
+        }
+        if (allImages.length > 0 || allLines.length > 0) {
+          messages.push({
+            id: `hist-data-${exec.id}`,
+            type: 'data',
+            content: allLines.join('\n'),
+            images: allImages.length > 0 ? allImages : undefined,
+            timestamp: ts,
+          })
+        }
       }
+
+      // AI response after data
+      messages.push({
+        id: `hist-${exec.id}`,
+        type: exec.status === 'Failed' ? 'error' : 'ai',
+        content: conclusion,
+        timestamp: ts,
+        duration: Math.round(exec.duration_ms / 1000),
+      })
     }
 
     return messages
@@ -369,57 +435,79 @@ export function useAnalystSession({
       })
   }, [isConnected, config.contextWindowSize])
 
-  // Send image to timeline only — backend handles execution via event trigger
+  // Send image — merges into current round's data message (shared bubble with text).
+  // If no data message exists yet, creates one with just the image.
   const sendImage = useCallback(
     (imageDataUrl: string, ds?: string) => {
-      const imgMsg: AnalystMessage = {
-        id: nextId(),
-        type: 'image',
-        content: imageDataUrl,
-        timestamp: Date.now(),
-        dataSource: ds,
-      }
-      setMessages((prev) => [...prev, imgMsg])
+      setMessages((prev) => {
+        const lastCompletedAiIdx = findLastCompletedAi(prev)
+        // Look for existing data message in current round to merge into
+        for (let i = prev.length - 1; i > lastCompletedAiIdx; i--) {
+          if (prev[i].type === 'data') {
+            const existing = prev[i]
+            return [
+              ...prev.slice(0, i),
+              { ...existing, images: [...(existing.images || []), imageDataUrl] },
+              ...prev.slice(i + 1),
+            ]
+          }
+        }
+        // No data message in current round — create one with the image
+        const newMsg: AnalystMessage = {
+          id: nextId(),
+          type: 'data',
+          content: '',
+          images: [imageDataUrl],
+          timestamp: Date.now(),
+          dataSource: ds,
+        }
+        const insertIdx = prev.findIndex((m, idx) => idx > lastCompletedAiIdx && (m.type === 'ai' || m.type === 'error'))
+        if (insertIdx === -1) return [...prev, newMsg]
+        return [...prev.slice(0, insertIdx), newMsg, ...prev.slice(insertIdx)]
+      })
     },
     [],
   )
 
-  // Send non-image data to timeline — merges into a single data block.
-  // All non-image data updates are appended to the latest "data" message
-  // so the timeline shows one consolidated data block above the AI response.
+  // Send non-image data — merges into current round's data message (shared bubble with images).
   const sendData = useCallback(
     (value: unknown, ds?: string) => {
       const summary = summarizeData(value)
+      // Skip if nothing meaningful to show after filtering metadata
+      if (!summary) return
 
       setMessages((prev) => {
-        // Always merge into the last data message if one exists.
-        // This keeps all incoming data in one block regardless of
-        // whether an AI streaming message was inserted between arrivals.
-        let lastDataIdx = -1
-        for (let i = prev.length - 1; i >= 0; i--) {
-          if (prev[i].type === 'data') { lastDataIdx = i; break }
-        }
+        const lastCompletedAiIdx = findLastCompletedAi(prev)
 
-        if (lastDataIdx !== -1) {
-          const updated = [...prev]
-          const existing = updated[lastDataIdx]
-          updated[lastDataIdx] = {
-            ...existing,
-            content: existing.content + '\n' + summary,
-            timestamp: Date.now(),
-            dataSource: ds || existing.dataSource,
+        // Look for a data message in the current round to merge into
+        for (let i = prev.length - 1; i > lastCompletedAiIdx; i--) {
+          if (prev[i].type === 'data') {
+            const existing = prev[i]
+            const newContent = existing.content ? existing.content + '\n' + summary : summary
+            return [
+              ...prev.slice(0, i),
+              { ...existing, content: newContent, timestamp: Date.now(), dataSource: ds || existing.dataSource },
+              ...prev.slice(i + 1),
+            ]
           }
-          return updated
         }
 
-        // No data message yet — create the first one
-        return [...prev, {
-          id: nextId(),
-          type: 'data' as const,
-          content: summary,
-          timestamp: Date.now(),
-          dataSource: ds,
-        }]
+        // No data message in current round — insert BEFORE any streaming AI message
+        const insertIdx = prev.findIndex((m, idx) => idx > lastCompletedAiIdx && (m.type === 'ai' || m.type === 'error'))
+        if (insertIdx === -1) {
+          return [...prev, {
+            id: nextId(),
+            type: 'data' as const,
+            content: summary,
+            timestamp: Date.now(),
+            dataSource: ds,
+          }]
+        }
+        return [
+          ...prev.slice(0, insertIdx),
+          { id: nextId(), type: 'data' as const, content: summary, timestamp: Date.now(), dataSource: ds },
+          ...prev.slice(insertIdx),
+        ]
       })
     },
     [],

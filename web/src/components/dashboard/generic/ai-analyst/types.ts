@@ -15,6 +15,8 @@ export interface AnalystMessage {
   content: string
   timestamp: number
   dataSource?: string
+  /** Inline images embedded in this message (for data messages that carry both text + images) */
+  images?: string[]
   modelName?: string
   duration?: number
   isStreaming?: boolean

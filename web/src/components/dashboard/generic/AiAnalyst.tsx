@@ -166,22 +166,25 @@ export function AiAnalyst({
   // We extract the latest value for display.
   const lastEnqueuedRef = useRef<string | null>(null)
 
-  useEffect(() => {
-    if (editMode || dsData == null) return
-
-    // Extract the latest value from whatever useDataSource returns
+  /** Extract the latest value from useDataSource output */
+  const extractLatestValue = useCallback(() => {
+    if (dsData == null) return null
     let latestValue: unknown = dsData
-
-    // If it's an array of data points (telemetry format), take the first (latest)
     if (Array.isArray(dsData) && dsData.length > 0) {
       const point = dsData[0]
-      // DataPoint format: { timestamp, value } or raw value
       if (point && typeof point === 'object' && 'value' in point) {
         latestValue = (point as { value: unknown }).value
       } else {
         latestValue = point
       }
     }
+    return latestValue
+  }, [dsData])
+
+  useEffect(() => {
+    if (editMode || dsData == null) return
+    const latestValue = extractLatestValue()
+    if (latestValue == null) return
 
     // Deduplicate: skip if the value hasn't changed
     const strVal = typeof latestValue === 'string' ? latestValue : JSON.stringify(latestValue)
@@ -193,7 +196,32 @@ export function AiAnalyst({
     } else {
       sendData(latestValue, dataSourceProp?.id)
     }
-  }, [editMode, dsData, sendImage, sendData, dataSourceProp])
+  }, [editMode, dsData, sendImage, sendData, dataSourceProp, extractLatestValue])
+
+  // When a new execution round starts, ensure data appears BEFORE the streaming UI.
+  // Reset dedup and force-send current data so it's inserted before the streaming placeholder.
+  const prevStreamingRef = useRef(false)
+  useEffect(() => {
+    if (!isStreaming || prevStreamingRef.current || editMode || dsData == null) {
+      prevStreamingRef.current = isStreaming
+      return
+    }
+    prevStreamingRef.current = true
+    lastEnqueuedRef.current = null
+
+    const latestValue = extractLatestValue()
+    if (latestValue == null) return
+
+    // Set dedup AFTER force-send so the normal dsData effect won't duplicate
+    const strVal = typeof latestValue === 'string' ? latestValue : JSON.stringify(latestValue)
+
+    if (typeof latestValue === 'string' && isBase64Image(latestValue)) {
+      sendImage(normalizeToDataUrl(latestValue), dataSourceProp?.id)
+    } else {
+      sendData(latestValue, dataSourceProp?.id)
+    }
+    lastEnqueuedRef.current = strVal
+  }, [isStreaming, editMode, dsData, extractLatestValue, sendImage, sendData, dataSourceProp])
 
   // ---- Auto-init agent when dataSource is set but no agentId ----
   const hasDataSource = dataSourceProp !== undefined && dataSourceProp !== null

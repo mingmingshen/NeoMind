@@ -114,68 +114,46 @@ export function AutomationPage() {
   const loadItems = useCallback(async () => {
     setLoading(true)
     try {
-      // Load devices for all tabs (for transforms)
-      const devicesData = await api.getDevices()
-      setDevices(devicesData.devices || [])
-
-      // Load device types
-      try {
-        const typesData = await api.getDeviceTypes()
-        setDeviceTypes(typesData.device_types || [])
-      } catch {
-        setDeviceTypes([])
-      }
-
-      // Load rule resources (for rules - includes metrics)
-      try {
-        const resourcesData = await api.getRuleResources()
-        setRuleDevices(resourcesData.devices || [])
-      } catch (err) {
-        handleError(err, { operation: 'Load rule resources', showToast: false })
-        setRuleDevices([])
-      }
-
-      // Load extensions for rule builder
-      try {
-        const [extData, dsData] = await Promise.all([
+      // All independent API calls run in parallel
+      const [devicesData, typesResult, resourcesResult, extResult, channelsResult, tabData] = await Promise.all([
+        api.getDevices().catch((e) => { throw e }),
+        api.getDeviceTypes().catch((): any => ({ device_types: [] })),
+        api.getRuleResources().catch((): any => ({ devices: [] })),
+        Promise.all([
           api.listExtensions().catch((): Extension[] => []),
           api.listAllDataSources().catch((): (ExtensionDataSourceInfo | TransformDataSourceInfo)[] => []),
-        ])
-        setExtensions(extData)
-        // Filter only extension data sources (exclude transform data sources)
-        setExtensionDataSources(dsData.filter((source): source is ExtensionDataSourceInfo => 'extension_id' in source))
-      } catch (err) {
-        // Extensions are optional, don't show error
-        setExtensions([])
-        setExtensionDataSources([])
-      }
+        ]),
+        api.listMessageChannels().catch((): any => ({ channels: [] })),
+        activeTab === 'rules'
+          ? api.listRules()
+          : activeTab === 'transforms'
+            ? api.listTransforms()
+            : Promise.resolve(null),
+      ])
 
-      // Load message channels for Notify action
-      try {
-        const channelsData = await api.listMessageChannels()
-        setMessageChannels((channelsData.channels || []).map((ch: any) => ({
-          name: ch.name,
-          type: ch.channel_type,
-          enabled: ch.enabled
-        })))
-      } catch {
-        // Channels are optional
-        setMessageChannels([])
-      }
+      setDevices(devicesData.devices || [])
+      setDeviceTypes(typesResult.device_types || [])
+      setRuleDevices(resourcesResult.devices || [])
 
-      // Load tab-specific data
-      if (activeTab === 'rules') {
-        const data = await api.listRules()
-        // Sort by created_at descending (newest first)
-        setRules((data.rules || []).sort((a, b) => {
+      const [extData, dsData] = extResult
+      setExtensions(extData)
+      setExtensionDataSources(dsData.filter((source): source is ExtensionDataSourceInfo => 'extension_id' in source))
+
+      setMessageChannels((channelsResult.channels || []).map((ch: any) => ({
+        name: ch.name,
+        type: ch.channel_type,
+        enabled: ch.enabled
+      })))
+
+      // Set tab-specific data
+      if (activeTab === 'rules' && tabData && 'rules' in tabData) {
+        setRules((tabData.rules || []).sort((a: Rule, b: Rule) => {
           const aTime = typeof a.created_at === 'string' ? new Date(a.created_at).getTime() : a.created_at
           const bTime = typeof b.created_at === 'string' ? new Date(b.created_at).getTime() : b.created_at
           return bTime - aTime
         }))
-      } else if (activeTab === 'transforms') {
-        const data = await api.listTransforms()
-        // Sort by created_at descending (newest first)
-        setTransforms((data.transforms || []).sort((a, b) => b.created_at - a.created_at))
+      } else if (activeTab === 'transforms' && tabData && 'transforms' in tabData) {
+        setTransforms((tabData.transforms || []).sort((a: TransformAutomation, b: TransformAutomation) => b.created_at - a.created_at))
       }
     } catch (error) {
       handleError(error, { operation: `Load ${activeTab}`, showToast: false })
