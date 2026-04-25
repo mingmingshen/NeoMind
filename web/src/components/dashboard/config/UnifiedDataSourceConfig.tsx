@@ -475,10 +475,10 @@ export function UnifiedDataSourceConfig({
 }: UnifiedDataSourceConfigProps) {
   const { t } = useTranslation('dashboardComponents')
   const store = useStore()
-  const devices = store.devices
-  const deviceTypes = store.deviceTypes
-  const extensions = store.extensions
-  const extensionDataSources = store.extensionDataSources
+  const devices = store.devices ?? []
+  const deviceTypes = store.deviceTypes ?? []
+  const extensions = store.extensions ?? []
+  const extensionDataSources = store.extensionDataSources ?? []
   const extensionsLoading = store.extensionsLoading
   const isMobile = useIsMobile()
   const insets = useSafeAreaInsets()
@@ -622,7 +622,7 @@ export function UnifiedDataSourceConfig({
             api.listUnifiedDataSources({ limit: 500, skip_telemetry: 'true' })
               .then((result) => {
                 if (cancelled) return
-                const sources = (result as { data: UnifiedDataSourceInfo[] }).data
+                const sources = (result as { data?: UnifiedDataSourceInfo[] })?.data ?? []
                 setUnifiedDataSources(sources)
                 hasFetchedUnifiedSources.current = true
 
