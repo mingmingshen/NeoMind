@@ -114,7 +114,6 @@ export class DynamicComponentRegistry {
       for (const globalName of extInfo.globalNames) {
         try {
           delete (window as any)[globalName]
-          console.log(`[DynamicRegistry] Cleared global variable: ${globalName}`)
         } catch (e) {
           console.warn(`[DynamicRegistry] Failed to clear global ${globalName}:`, e)
         }
@@ -165,13 +164,6 @@ export class DynamicComponentRegistry {
     try {
       let bundleUrl = def.bundle_url
       const isTauri = isTauriEnv()
-
-      console.log(`[DynamicRegistry] Loading component ${type}:`, {
-        isTauri,
-        bundleUrl,
-        globalName: def.global_name,
-        exportName: def.export_name
-      })
 
       // Handle API URLs - use script tag injection for IIFE bundles
       // This works for both Tauri and web browser environments
@@ -298,8 +290,6 @@ export class DynamicComponentRegistry {
    * Returns the component export from the global variable
    */
   private async loadViaScriptTag(bundleUrl: string, globalName: string, exportName?: string): Promise<unknown> {
-    console.log(`[DynamicRegistry] loadViaScriptTag:`, { bundleUrl, globalName, exportName })
-
     return new Promise((resolve, reject) => {
       // Check if the global variable already exists (bundle already loaded)
       const existingGlobal = (window as any)[globalName]
@@ -334,8 +324,6 @@ export class DynamicComponentRegistry {
         // Access the global variable
         const global = (window as any)[globalName]
 
-        console.log(`[DynamicRegistry] Script loaded, global:`, global ? Object.keys(global) : 'not found')
-
         // Clean up
         document.head.removeChild(script)
 
@@ -346,7 +334,6 @@ export class DynamicComponentRegistry {
           // First try: named export (IIFE with exports: 'named')
           if (exportName && global[exportName]) {
             Component = global[exportName]
-            console.log(`[DynamicRegistry] Found named export "${exportName}":`, typeof Component, Component)
           }
           // Second try: default export
           else if (global.default && typeof global.default === 'function') {
@@ -363,7 +350,6 @@ export class DynamicComponentRegistry {
               if (typeof val === 'function' ||
                   (typeof val === 'object' && val !== null && val.$$typeof)) {
                 Component = val
-                console.log(`[DynamicRegistry] Found component "${key}":`, typeof Component, Component)
                 break
               }
             }
@@ -381,15 +367,7 @@ export class DynamicComponentRegistry {
             (typeofComponent === 'object' && Component !== null &&
              (hasTypeof || hasRender))
 
-          console.log(`[DynamicRegistry] Validating component:`, {
-            typeof: typeofComponent,
-            hasTypeof: !!hasTypeof,
-            hasRender,
-            isValid: isValidComponent
-          })
-
           if (isValidComponent) {
-            console.log(`[DynamicRegistry] Component ${globalName} loaded successfully`)
             resolve(Component)
           } else {
             console.error(`[DynamicRegistry] Component is not a valid React component: ${globalName}`, Component)
@@ -519,7 +497,6 @@ export class DynamicComponentRegistry {
           for (const globalName of extInfo.globalNames) {
             try {
               delete (window as any)[globalName]
-              console.log(`[DynamicRegistry] Cleared global variable: ${globalName}`)
             } catch (e) {
               console.warn(`[DynamicRegistry] Failed to clear global ${globalName}:`, e)
             }

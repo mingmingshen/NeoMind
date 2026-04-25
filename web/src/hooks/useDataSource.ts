@@ -248,7 +248,6 @@ async function fetchHistoricalTelemetry(
         for (const key of Object.keys(dataObj)) {
           if (key.toLowerCase() === lowerMetricId && Array.isArray(dataObj[key])) {
             metricData = dataObj[key] as unknown[]
-            console.log('[ImageHistory Debug] Found metric data with case-insensitive match:', key, '->', metricId)
             break
           }
         }
@@ -1279,9 +1278,14 @@ export function useDataSource<T = unknown>(
     prevStoreStateRef.current = { devices: useStore.getState().devices }
 
     let unsubscribed = false
-    // Zustand subscribe only passes (state); we keep prev state in a ref for comparison
+    // Track last seen devices reference to skip irrelevant store updates
+    let lastDevicesRef = useStore.getState().devices
     const unsubscribe = useStore.subscribe((state: NeoMindStore) => {
       if (unsubscribed) return
+
+      // Skip if devices slice hasn't changed (avoid work from unrelated store updates)
+      if (state.devices === lastDevicesRef) return
+      lastDevicesRef = state.devices
 
       const prev = prevStoreStateRef.current
       if (!prev) return
@@ -1289,17 +1293,6 @@ export function useDataSource<T = unknown>(
       // Fast path: check if devices array reference changed (common case)
       const devicesChanged = state.devices !== prev.devices
       const devicesLengthChanged = state.devices.length !== prev.devices.length
-
-      // DEBUG: Log store subscription triggers
-      if (devicesChanged || devicesLengthChanged) {
-        console.log('[useDataSource] Store changed', {
-          devicesChanged,
-          devicesLengthChanged,
-          prevLength: prev.devices.length,
-          newLength: state.devices.length,
-          relevantDevices: Array.from(relevantDeviceIdsRef.current)
-        })
-      }
 
       let currentValuesChanged = false
       // Track which specific devices had their values changed
@@ -1337,14 +1330,6 @@ export function useDataSource<T = unknown>(
             const valuesChanged = hasCurrentValuesChanged(currentCV, prevCV, true)
 
             if (!refEqual && !valuesChanged) {
-              // DEBUG: Log when reference changed but values are same
-              console.log('[useDataSource] Reference changed but values same', {
-                deviceId,
-                currentRef: currentCV ? 'exists' : 'null',
-                prevRef: prevCV ? 'exists' : 'null',
-                currentKeys: currentCV ? Object.keys(currentCV).slice(0, 3) : [],
-                prevKeys: prevCV ? Object.keys(prevCV).slice(0, 3) : []
-              })
             }
 
             if (valuesChanged) {
@@ -1354,11 +1339,6 @@ export function useDataSource<T = unknown>(
                 // CRITICAL: Track which specific device changed
                 // This prevents adding data points to telemetry sources for unrelated devices
                 changedDeviceIds.add(deviceId)
-                console.log('[useDataSource] Device values changed', {
-                  deviceId,
-                  currentKeys: device.current_values ? Object.keys(device.current_values) : [],
-                  prevKeys: prevDevice.current_values ? Object.keys(prevDevice.current_values) : []
-                })
                 // Don't break - we need to find ALL changed devices
               }
             }
@@ -1577,11 +1557,6 @@ export function useDataSource<T = unknown>(
       } else {
         // Last processed event is gone (array was truncated)
         // Start from beginning and rely on processedEventsRef to skip duplicates
-        console.log('[useDataSource] Last processed event not found, array was truncated', {
-          lastProcessedId,
-          eventsLength: events.length,
-          relevantDevices: Array.from(relevantDeviceIdsRef.current)
-        })
         startIndex = 0
         // Clear processed events set since we're re-scanning from beginning
         // But keep the most recent 50 to avoid re-processing
@@ -1598,14 +1573,6 @@ export function useDataSource<T = unknown>(
 
     const newEvents = events.slice(startIndex)
     if (newEvents.length === 0) return
-
-    console.log('[useDataSource] Processing events', {
-      totalEvents: events.length,
-      startIndex,
-      newEventsCount: newEvents.length,
-      processedSetSize: processedEventsRef.current.size,
-      relevantDevices: Array.from(relevantDeviceIdsRef.current)
-    })
 
     // Update the processed count
     lastProcessedEventCountRef.current = events.length
@@ -1853,20 +1820,8 @@ export function useDataSource<T = unknown>(
             }
 
             const transformedData = transformFn ? transformFn(finalData) : (finalData as T)
-            console.log('[useDataSource] Updating data from event', {
-              dataSourceType: 'telemetry',
-              validResultsCount: validResults.length,
-              dataLength: Array.isArray(transformedData) ? transformedData.length : 'not array',
-              firstValue: Array.isArray(transformedData) && transformedData[0] ? (transformedData[0] as any).value : 'N/A'
-            })
             setData(transformedData)
             setLastUpdate(Date.now())
-          } else {
-            console.log('[useDataSource] No valid results to update', {
-              hasUpdated,
-              validResultsCount: validResults.length,
-              updatedResultsLength: updatedResults.length
-            })
           }
 
           // Schedule cache refresh after short delay to allow multiple rapid events to coalesce

@@ -186,7 +186,7 @@ export function useAgentEvents(
   }, [currentExecution])
 
   // Use global events hook with agent filter
-  const { isConnected, events: allEvents, clearEvents, reconnect } = useEvents({
+  const { isConnected, clearEvents, reconnect } = useEvents({
     enabled,
     onConnected: (connected) => {
       if (!connected && executionRef.current?.status === 'running') {
@@ -201,20 +201,78 @@ export function useAgentEvents(
 
       if (eventTypes && !eventTypes.includes(event.type as any)) return
 
-      // Call specific handlers
+      // Incrementally update execution state
       switch (event.type) {
-        case 'AgentExecutionStarted':
-          onExecutionStarted?.(event.data as AgentExecutionStartedEvent['data'])
+        case 'AgentExecutionStarted': {
+          const data = event.data as AgentExecutionStartedEvent['data']
+          const execution: AgentExecution = {
+            id: data.execution_id,
+            agent_id: data.agent_id,
+            trigger_type: data.trigger_type,
+            started_at: event.timestamp,
+            status: 'running',
+            steps: [],
+            decisions: [],
+          }
+          setCurrentExecution(execution)
+          onExecutionStarted?.(data)
           break
-        case 'AgentExecutionCompleted':
-          onExecutionCompleted?.(event.data as AgentExecutionCompletedEvent['data'])
+        }
+
+        case 'AgentThinking': {
+          const data = event.data as AgentThinkingEvent['data']
+          setCurrentExecution(prev => {
+            if (!prev || prev.id !== data.execution_id) return prev
+            return {
+              ...prev,
+              steps: [...prev.steps, {
+                step_number: data.step_number,
+                step_type: data.step_type,
+                description: data.description,
+                details: data.details,
+                timestamp: event.timestamp,
+                status: 'completed',
+              }],
+            }
+          })
+          onThinking?.(data)
           break
-        case 'AgentThinking':
-          onThinking?.(event.data as AgentThinkingEvent['data'])
+        }
+
+        case 'AgentDecision': {
+          const data = event.data as AgentDecisionEvent['data']
+          setCurrentExecution(prev => {
+            if (!prev || prev.id !== data.execution_id) return prev
+            return {
+              ...prev,
+              decisions: [...prev.decisions, {
+                description: data.description,
+                rationale: data.rationale,
+                action: data.action,
+                confidence: data.confidence,
+                timestamp: event.timestamp,
+              }],
+            }
+          })
+          onDecision?.(data)
           break
-        case 'AgentDecision':
-          onDecision?.(event.data as AgentDecisionEvent['data'])
+        }
+
+        case 'AgentExecutionCompleted': {
+          const data = event.data as AgentExecutionCompletedEvent['data']
+          setCurrentExecution(prev => {
+            if (!prev || prev.id !== data.execution_id) return prev
+            return {
+              ...prev,
+              completed_at: event.timestamp,
+              duration_ms: data.duration_ms,
+              status: data.success ? 'completed' : 'failed',
+            }
+          })
+          onExecutionCompleted?.(data)
           break
+        }
+
         case 'AgentMemoryUpdated':
           onMemoryUpdated?.(event.data as AgentMemoryUpdatedEvent['data'])
           break
@@ -224,80 +282,6 @@ export function useAgentEvents(
     },
   })
 
-  // Filter events for this agent
-  const agentEvents = allEvents.filter((event) => {
-    const eventData = event.data as { agent_id?: string }
-    return eventData.agent_id === agentId
-  })
-
-  // Process agent events to maintain execution state
-  useEffect(() => {
-    let execution: AgentExecution | null = null
-
-    for (const event of agentEvents) {
-      switch (event.type) {
-        case 'AgentExecutionStarted': {
-          const data = event.data as AgentExecutionStartedEvent['data']
-          execution = {
-            id: data.execution_id,
-            agent_id: data.agent_id,
-            trigger_type: data.trigger_type,
-            started_at: event.timestamp,
-            status: 'running',
-            steps: [],
-            decisions: [],
-          }
-          break
-        }
-
-        case 'AgentThinking': {
-          const data = event.data as AgentThinkingEvent['data']
-          if (execution && execution.id === data.execution_id) {
-            const step: AgentThinkingStep = {
-              step_number: data.step_number,
-              step_type: data.step_type,
-              description: data.description,
-              details: data.details,
-              timestamp: event.timestamp,
-              status: 'completed',
-            }
-            execution.steps = [...execution.steps, step]
-          }
-          break
-        }
-
-        case 'AgentDecision': {
-          const data = event.data as AgentDecisionEvent['data']
-          if (execution && execution.id === data.execution_id) {
-            const decision = {
-              description: data.description,
-              rationale: data.rationale,
-              action: data.action,
-              confidence: data.confidence,
-              timestamp: event.timestamp,
-            }
-            execution.decisions = [...execution.decisions, decision]
-          }
-          break
-        }
-
-        case 'AgentExecutionCompleted': {
-          const data = event.data as AgentExecutionCompletedEvent['data']
-          if (execution && execution.id === data.execution_id) {
-            execution.completed_at = event.timestamp
-            execution.duration_ms = data.duration_ms
-            execution.status = data.success ? 'completed' : 'failed'
-          }
-          break
-        }
-      }
-    }
-
-    if (execution) {
-      setCurrentExecution(execution)
-    }
-  }, [agentEvents])
-
   // Extract thinking steps and decisions
   const thinkingSteps = currentExecution?.steps || []
   const decisions = currentExecution?.decisions || []
@@ -305,7 +289,7 @@ export function useAgentEvents(
   return {
     isConnected,
     currentExecution,
-    events: agentEvents,
+    events: [],
     thinkingSteps,
     decisions,
     clearEvents,

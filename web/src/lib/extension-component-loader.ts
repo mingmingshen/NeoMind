@@ -157,8 +157,6 @@ class ExtensionComponentLoaderClass {
           })
       )
     )
-
-    console.log(`[ExtensionLoader] Preloaded ${extInfo.componentTypes.length} components for ${extensionId}`)
   }
 
   /**

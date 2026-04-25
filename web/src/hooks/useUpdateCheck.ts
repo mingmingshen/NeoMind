@@ -111,28 +111,21 @@ export function useUpdateCheck(options: UpdateCheckOptions = {}): UseUpdateCheck
    * Check for available updates
    */
   const checkUpdate = useCallback(async () => {
-    console.log('[Update] checkUpdate called')
-
     // Skip update checks when not running in Tauri desktop (e.g. browser dev mode)
     if (!(window as any).__TAURI_INTERNALS__) {
-      console.log('[Update] Skipping — not running in Tauri desktop')
       return
     }
 
     try {
-      console.log('[Update] Setting status to checking')
       setUpdateStatus('checking')
       setError(null)
 
-      console.log('[Update] Invoking check_update command...')
       const info = await invoke<UpdateInfo>('check_update')
-      console.log('[Update] Got response from backend:', info)
 
       if (info.available) {
         // Skip if this version was just installed (hot update restart scenario)
         const installedVersion = localStorage.getItem('neomind_installed_version')
         if (installedVersion && info.version === installedVersion) {
-          console.log('[Update] Skipping update dialog - version was just installed:', installedVersion)
           localStorage.removeItem('neomind_installed_version')
           setUpdateStatus('up-to-date')
           onUpToDateRef.current?.()

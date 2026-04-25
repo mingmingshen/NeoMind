@@ -33,7 +33,6 @@ export async function syncExtensionComponents(): Promise<number> {
     // Use incremental sync - only update changes
     dynamicRegistry.syncComponents(components)
 
-    console.log(`[syncExtensionComponents] Synced ${components.length} components`)
     return components.length
   } catch (e) {
     console.error('Failed to sync extension components:', e)
@@ -137,9 +136,6 @@ export function useExtensionComponents(options?: {
       setState({ components: newComponents, extensions: newExtensions })
       setInitialized(true)
 
-      if (changes.added > 0 || changes.removed > 0) {
-        console.log(`[useExtensionComponents] Incremental sync: +${changes.added} -${changes.removed}, total ${components.length}`)
-      }
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e)
       setError(errorMessage)

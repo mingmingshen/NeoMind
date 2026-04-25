@@ -22,7 +22,7 @@ import { useIsMobile } from "@/hooks/useMobile"
 import { Loader2, Bot, Plus, Brain, Cpu, RefreshCw, Settings, Sparkles, Zap, BookOpen, Edit, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/shared/EmptyState"
-import type { AiAgent, AiAgentDetail, Extension, ExtensionDataSourceInfo, TransformDataSourceInfo, UnifiedDataSourceInfo } from "@/types"
+import type { AiAgent, AiAgentDetail, Extension, UnifiedDataSourceInfo } from "@/types"
 import type { AgentExecutionStartedEvent, AgentExecutionCompletedEvent, AgentThinkingEvent } from "@/lib/events"
 
 // Import components
@@ -99,37 +99,21 @@ export function AgentsPage() {
   const [executingAgents, setExecutingAgents] = useState<Map<string, number>>(new Map())
   // Track current thinking state per agent
   const [agentThinking, setAgentThinking] = useState<Record<string, string>>({})
+  // Throttle thinking updates to reduce re-renders (200ms interval)
+  const lastThinkingUpdateRef = useRef(0)
+  const pendingThinkingRef = useRef<Record<string, string>>({})
 
   // Resources for dialogs
   const [devices, setDevices] = useState<any[]>([])
   const [deviceTypes, setDeviceTypes] = useState<any[]>([])
   const [extensions, setExtensions] = useState<Extension[]>([])
-  const [extensionDataSources, setExtensionDataSources] = useState<ExtensionDataSourceInfo[]>([])
   const [unifiedDataSources, setUnifiedDataSources] = useState<UnifiedDataSourceInfo[]>([])
 
-  // Fetch data
+  // Fetch agents list only (fast)
   const loadItems = useCallback(async () => {
     setLoading(true)
     try {
-      // All API calls are independent - run them in parallel
-      const [devicesData, typesResult, extResult, agentsData] = await Promise.all([
-        api.getDevices().catch((e) => { throw e }),
-        api.getDeviceTypes().catch((): any => ({ device_types: [] })),
-        Promise.all([
-          api.listExtensions().catch((): Extension[] => []),
-          api.listAllDataSources().catch((): (ExtensionDataSourceInfo | TransformDataSourceInfo)[] => []),
-          api.listUnifiedDataSources().catch((): { data: UnifiedDataSourceInfo[]; total: number; source_options: [string, string][] } => ({ data: [], total: 0, source_options: [] })),
-        ]),
-        api.listAgents(),
-      ])
-
-      setDevices(devicesData.devices || [])
-      setDeviceTypes(typesResult.device_types || [])
-
-      const [extData, dsData, unifiedDsData] = extResult
-      setExtensions(extData)
-      setExtensionDataSources(dsData.filter((source): source is ExtensionDataSourceInfo => 'extension_id' in source))
-      setUnifiedDataSources(unifiedDsData.data || [])
+      const agentsData = await api.listAgents()
 
       // Sort by created_at descending (newest first)
       setAgents((agentsData.agents || []).sort((a, b) =>
@@ -141,6 +125,32 @@ export function AgentsPage() {
       setLoading(false)
     }
   }, [])
+
+  // Lazy-load editor resources (devices, extensions, data sources) when opening editor
+  const [editorResourcesLoaded, setEditorResourcesLoaded] = useState(false)
+  const loadEditorResources = useCallback(async () => {
+    if (editorResourcesLoaded) return
+    try {
+      const [devicesData, typesResult, extResult] = await Promise.all([
+        api.getDevices().catch((): any => ({ devices: [] })),
+        api.getDeviceTypes().catch((): any => ({ device_types: [] })),
+        Promise.all([
+          api.listExtensions().catch((): Extension[] => []),
+          api.listUnifiedDataSources({ limit: 500, skip_telemetry: 'true' }).catch((): { data: UnifiedDataSourceInfo[]; total: number; source_options: [string, string][] } => ({ data: [], total: 0, source_options: [] })),
+        ]),
+      ])
+
+      setDevices(devicesData.devices || [])
+      setDeviceTypes(typesResult.device_types || [])
+
+      const [extData, unifiedDsData] = extResult
+      setExtensions(extData)
+      setUnifiedDataSources(unifiedDsData.data || [])
+      setEditorResourcesLoaded(true)
+    } catch (error) {
+      handleError(error, { operation: 'Load editor resources', showToast: false })
+    }
+  }, [editorResourcesLoaded, handleError])
 
   // Load items on mount
   useEffect(() => {
@@ -155,6 +165,7 @@ export function AgentsPage() {
       if (!connected) {
         // Connection lost - clear all executing states and reset agent statuses
         setExecutingAgents(new Map())
+        pendingThinkingRef.current = {}
         setAgentThinking({})
         // Reset executing status in agents list - will be refreshed when reconnecting
         setAgents(prev => prev.map(agent =>
@@ -232,11 +243,15 @@ export function AgentsPage() {
 
         case 'AgentThinking': {
           const thinkingData = (event as AgentThinkingEvent).data
-          // Update current thinking for this agent
-          setAgentThinking(prev => ({
-            ...prev,
-            [thinkingData.agent_id]: thinkingData.description
-          }))
+          // Buffer thinking update and flush at most every 200ms
+          pendingThinkingRef.current[thinkingData.agent_id] = thinkingData.description
+          const now = Date.now()
+          if (now - lastThinkingUpdateRef.current >= 200) {
+            lastThinkingUpdateRef.current = now
+            const pending = { ...pendingThinkingRef.current }
+            pendingThinkingRef.current = {}
+            setAgentThinking(prev => ({ ...prev, ...pending }))
+          }
           break
         }
       }
@@ -278,14 +293,18 @@ export function AgentsPage() {
   }, [loadItems])
 
   // Handlers
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    await loadEditorResources()
     setEditingAgent(undefined)
     setShowAgentDialog(true)
   }
 
   const handleEdit = async (agent: AiAgent) => {
     try {
-      const detail = await api.getAgent(agent.id)
+      const [detail] = await Promise.all([
+        api.getAgent(agent.id),
+        loadEditorResources(),
+      ])
       setEditingAgent(detail)
       setShowAgentDialog(true)
     } catch (error) {
@@ -422,6 +441,7 @@ export function AgentsPage() {
   // Edit from detail: close detail first to avoid scroll-through bug
   const handleEditFromDetail = async (agent: AiAgentDetail) => {
     setDetailDialogOpen(false)
+    await loadEditorResources()
     setEditingAgent(agent)
     setShowAgentDialog(true)
   }
@@ -558,7 +578,6 @@ export function AgentsPage() {
         devices={devices}
         deviceTypes={deviceTypes}
         extensions={extensions}
-        extensionDataSources={extensionDataSources}
         unifiedDataSources={unifiedDataSources}
         onSave={handleSave}
       />

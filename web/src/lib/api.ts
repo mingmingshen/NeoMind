@@ -242,11 +242,26 @@ export async function fetchAPI<T>(
   // Ensure headers is not undefined for headers as Record<string, string>
   const finalHeaders = headers as Record<string, string>
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  // Auto-retry 5xx errors (backend restart, deployment, etc.)
+  const MAX_RETRIES = 3
+  const RETRY_DELAYS = [1000, 2000, 3000] // 1s, 2s, 3s
+  let response = await fetch(`${API_BASE}${path}`, {
     ...fetchOptions,
     headers: finalHeaders,
     signal,
   })
+
+  if (response.status >= 500 && response.status < 600 && !signal?.aborted) {
+    for (let i = 0; i < MAX_RETRIES; i++) {
+      await new Promise(r => setTimeout(r, RETRY_DELAYS[i]))
+      response = await fetch(`${API_BASE}${path}`, {
+        ...fetchOptions,
+        headers: finalHeaders,
+        signal,
+      })
+      if (response.ok || response.status < 500) break
+    }
+  }
 
   // Parse error response to extract meaningful message
   const parseErrorMessage = async (response: Response): Promise<string> => {
@@ -1513,39 +1528,47 @@ export const api = {
   },
 
   /**
-   * Get all extension data sources (for dashboard, rules, etc.)
-   * Fetches from all extensions and transforms, combining results
+   * Get all extension + transform data sources (for dashboard selectors, rules, etc.)
+   * Single request to unified endpoint — backend collects only needed types.
    */
   listAllDataSources: async () => {
-    const allSources: Array<ExtensionDataSourceInfo | TransformDataSourceInfo> = []
-
-    // Fetch extension data sources
     try {
-      const extensions = await fetchAPI<Extension[]>('/extensions')
+      const result = await fetchAPI<{ data: UnifiedDataSourceInfo[]; total: number; source_options: [string, string][] }>('/data/sources?limit=500&skip_telemetry=true')
+      const mapped: Array<ExtensionDataSourceInfo | TransformDataSourceInfo> = []
 
-      for (const ext of extensions) {
-        try {
-          const sources = await fetchAPI<ExtensionDataSourceInfo[]>(`/extensions/${ext.id}/data-sources`)
-          allSources.push(...sources)
-        } catch (err) {
-          // Log error but continue with other extensions
-          console.error(`[API] Failed to get data sources for extension ${ext.id}:`, err)
+      for (const ds of result.data) {
+        if (ds.source_type === 'extension') {
+          mapped.push({
+            id: ds.id,
+            extension_id: ds.source_name,
+            command: '',
+            field: ds.field,
+            display_name: ds.source_display_name + ': ' + ds.field_display_name,
+            data_type: (ds.data_type as any) || 'float',
+            unit: ds.unit,
+            description: ds.description || ds.field_display_name,
+            aggregatable: true,
+            default_agg_func: 'last' as const,
+          })
+        } else if (ds.source_type === 'transform') {
+          mapped.push({
+            id: ds.id,
+            transform_id: ds.source_name,
+            transform_name: ds.source_display_name,
+            metric_name: ds.field,
+            display_name: ds.field_display_name,
+            data_type: ds.data_type,
+            unit: ds.unit,
+            description: ds.description || '',
+            last_update: ds.last_update ?? undefined,
+          })
         }
       }
-    } catch (err) {
-      console.error('[API] Failed to fetch extensions:', err)
-    }
 
-    // Fetch transform output data sources (auto-registered)
-    try {
-      const transformSources = await fetchAPI<{ data_sources: TransformDataSourceInfo[]; count: number }>('/automations/transforms/data-sources')
-      allSources.push(...transformSources.data_sources)
-    } catch (err) {
-      // Transform data sources may not be available yet
-      console.debug('[API] Transform data sources not available:', err)
+      return mapped
+    } catch {
+      return [] as Array<ExtensionDataSourceInfo | TransformDataSourceInfo>
     }
-
-    return allSources
   },
 
   /**
@@ -1554,13 +1577,12 @@ export const api = {
    * Supports server-side filtering and pagination.
    */
   listUnifiedDataSources: (params?: Record<string, string | number>) => {
-    if (params && Object.keys(params).length > 0) {
-      const qs = new URLSearchParams(
-        Object.entries(params).map(([k, v]) => [k, String(v)])
-      ).toString()
-      return fetchAPI<{ data: UnifiedDataSourceInfo[]; total: number; source_options: [string, string][] }>(`/data/sources?${qs}`)
-    }
-    return fetchAPI<{ data: UnifiedDataSourceInfo[]; total: number; source_options: [string, string][] }>('/data/sources')
+    const qs = params && Object.keys(params).length > 0
+      ? new URLSearchParams(
+          Object.entries(params).map(([k, v]) => [k, String(v)])
+        ).toString()
+      : ''
+    return fetchAPI<{ data: UnifiedDataSourceInfo[]; total: number; source_options: [string, string][] }>(qs ? `/data/sources?${qs}` : '/data/sources')
   },
 
   /**

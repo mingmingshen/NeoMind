@@ -321,7 +321,6 @@ function App() {
           // ✨ FIX: Auto-sync extension components when WebSocket reconnects
           // This ensures extension UI components are available after backend restart
           if (connected && isReconnect) {
-      console.log('[App] User authenticated, syncing extension components...')
             extensionSyncRef.current?.()
           }
         })
@@ -378,7 +377,6 @@ function App() {
   // This ensures components are available right away without waiting for the timer
   useEffect(() => {
     if (isAuthenticated && currentPath !== '/setup') {
-      console.log('[App] User authenticated, syncing extension components...')
       extensionSyncRef.current?.()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -119,22 +119,13 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
   const onErrorRef = useRef(onError)
   const eventTypesRef = useRef(eventTypes)
 
-  // Update refs when callbacks change
+  // Update all refs in a single useEffect to reduce overhead
   useEffect(() => {
     onEventRef.current = onEvent
-  }, [onEvent])
-
-  useEffect(() => {
-    eventTypesRef.current = eventTypes
-  }, [eventTypes])
-
-  useEffect(() => {
     onConnectedRef.current = onConnected
-  }, [onConnected])
-
-  useEffect(() => {
     onErrorRef.current = onError
-  }, [onError])
+    eventTypesRef.current = eventTypes
+  }, [onEvent, onConnected, onError, eventTypes])
 
   const clearEvents = useCallback(() => {
     setEvents([])
@@ -206,11 +197,12 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
             return
           }
           setEvents(prev => {
-            if (prev.length >= maxEvents) {
-              // Drop oldest, add newest - avoids copying entire array twice
-              return [...prev.slice(1), event]
+            const next = [...prev, event]
+            // Trim in bulk when exceeding 150% of max, to amortize copy cost
+            if (next.length > maxEvents * 1.5) {
+              return next.slice(-maxEvents)
             }
-            return [...prev, event]
+            return next
           })
           onEventRef.current?.(event)
         }

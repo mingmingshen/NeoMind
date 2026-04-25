@@ -243,7 +243,9 @@ export function AiAnalyst({
     } else {
       sendData(latestValue, dataSourceLabel)
     }
-  }, [editMode, dsData, isStreaming, sendImage, sendData, dataSourceProp, extractLatestValue])
+    // NOTE: intentionally omits sendImage/sendData from deps to avoid re-triggers
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode, dsData, isStreaming, dataSourceProp])
 
   // When a new execution round starts, ensure data appears BEFORE the streaming UI.
   // Reset dedup and force-send current data so it's inserted before the streaming placeholder.
@@ -268,7 +270,9 @@ export function AiAnalyst({
       sendData(latestValue, dataSourceLabel)
     }
     lastEnqueuedRef.current = strVal
-  }, [isStreaming, editMode, dsData, extractLatestValue, sendImage, sendData, dataSourceProp])
+    // NOTE: only depends on isStreaming — fires once per round start
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStreaming, editMode, dsData])
 
   // ---- Auto-init agent when dataSource is set but no agentId ----
   const hasDataSource = dataSourceProp !== undefined && dataSourceProp !== null

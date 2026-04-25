@@ -262,7 +262,6 @@ const ComponentRenderer = memo(function ComponentRenderer({
 
       // Auto-retry if we haven't exceeded max attempts
       if (attempt < MAX_LOAD_RETRIES) {
-        console.log(`[ComponentRenderer] Scheduling retry ${attempt + 1}/${MAX_LOAD_RETRIES} in ${LOAD_RETRY_DELAY}ms`)
         setTimeout(() => {
           setAttemptCount(attempt + 1)
         }, LOAD_RETRY_DELAY)

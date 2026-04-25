@@ -262,7 +262,6 @@ export function useVideoProcessor(extensionId: string) {
     onData: (data, dataType) => {
       if (dataType === 'video') {
         // Handle processed frame
-        console.log('Received processed frame:', data.length)
       }
     },
     onSessionClosed: (sessionStats) => {

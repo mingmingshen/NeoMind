@@ -223,14 +223,12 @@ pub async fn get_device_telemetry_handler(
                         .await
                     {
                         Ok(all_points) => {
-                            // Sort by timestamp descending (newest first)
-                            let mut sorted_points: Vec<_> = all_points.into_iter().collect();
-                            sorted_points.sort_by(|a, b| b.0.cmp(&a.0));
-
-                            let total = sorted_points.len();
-                            // Apply pagination: skip offset, take limit
-                            let paginated: Vec<_> = sorted_points
+                            // DB returns points in timestamp-asc order.
+                            // For "newest first" pagination, take from the end and reverse.
+                            let total = all_points.len();
+                            let paginated: Vec<_> = all_points
                                 .into_iter()
+                                .rev() // newest first without sorting
                                 .skip(offset)
                                 .take(limit)
                                 .map(|(timestamp, value)| {
@@ -249,14 +247,12 @@ pub async fn get_device_telemetry_handler(
                             let db_limit = if offset == 0 { Some(limit) } else { None };
                             match telemetry.query_with_limit(&device_id, &metric_name, start, end, db_limit).await {
                                 Ok((all_points, total_from_db)) => {
-                                    // Sort by timestamp descending (newest first)
-                                    let mut sorted_points = all_points;
-                                    sorted_points.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-
-                                    let total = total_from_db.unwrap_or_else(|| sorted_points.len());
-                                    // Apply pagination: skip offset, take limit
-                                    let paginated: Vec<_> = sorted_points
+                                    let total = total_from_db.unwrap_or_else(|| all_points.len());
+                                    // DB returns points in timestamp-asc order.
+                                    // Reverse for "newest first" without O(n log n) sort.
+                                    let paginated: Vec<_> = all_points
                                         .into_iter()
+                                        .rev()
                                         .skip(offset)
                                         .take(limit)
                                         .map(|p| {

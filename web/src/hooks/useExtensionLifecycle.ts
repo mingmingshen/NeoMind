@@ -71,8 +71,6 @@ export function useExtensionLifecycle(
           )
         }
 
-        console.log(`[ExtensionLifecycle] Registered ${components.length} components from ${extensionId}`)
-
         // Trigger re-render
         setRefreshVersion(v => v + 1)
       }
@@ -125,15 +123,12 @@ export function useExtensionLifecycle(
             console.warn('[ExtensionLifecycle] Failed to persist dashboard after removing components:', err)
           })
 
-          console.log(`[ExtensionLifecycle] Removed ${componentsToRemove.length} components from dashboard`)
         }
       }
     }
 
     // 3. Unregister from DynamicRegistry (removes component templates)
     dynamicRegistry.unregisterExtension(extensionId)
-
-    console.log(`[ExtensionLifecycle] Extension ${extensionId} unregistered, components removed from registry and dashboard`)
 
     // Trigger re-render
     setRefreshVersion(v => v + 1)
@@ -178,8 +173,6 @@ export function useExtensionLifecycle(
         for (const comp of components) {
           dynamicRegistry.register(comp.extension_id, comp.extension_id, comp)
         }
-
-        console.log(`[ExtensionLifecycle] Synced ${components.length} components`)
 
         // Trigger re-render
         setRefreshVersion(v => v + 1)

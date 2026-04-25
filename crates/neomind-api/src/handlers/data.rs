@@ -57,6 +57,9 @@ pub struct ListDataSourcesQuery {
     pub offset: Option<usize>,
     /// Page size (default 15, max 100)
     pub limit: Option<usize>,
+    /// Skip populating latest telemetry values (for bulk listing)
+    #[serde(default)]
+    pub skip_telemetry: Option<bool>,
 }
 
 /// Paginated response for data sources
@@ -79,17 +82,25 @@ pub async fn list_all_data_sources_handler(
 ) -> HandlerResult<ListDataSourcesResponse> {
     let mut sources = Vec::new();
 
-    // 1. Collect device metrics
-    collect_device_sources(&state, &mut sources).await;
+    // Only collect the source types that are actually needed
+    let filter_type = params.source_type.as_deref();
+    let need_device = filter_type.is_none() || filter_type == Some("device");
+    let need_extension = filter_type.is_none() || filter_type == Some("extension");
+    let need_transform = filter_type.is_none() || filter_type == Some("transform");
+    let need_ai = filter_type.is_none() || filter_type == Some("ai");
 
-    // 2. Collect extension data sources
-    collect_extension_sources(&state, &mut sources).await;
-
-    // 3. Collect transform data sources
-    collect_transform_sources(&state, &mut sources).await;
-
-    // 4. Collect AI agent metrics
-    collect_ai_sources(&state, &mut sources).await;
+    if need_device {
+        collect_device_sources(&state, &mut sources).await;
+    }
+    if need_extension {
+        collect_extension_sources(&state, &mut sources).await;
+    }
+    if need_transform {
+        collect_transform_sources(&state, &mut sources).await;
+    }
+    if need_ai {
+        collect_ai_sources(&state, &mut sources).await;
+    }
 
     // Sort by id for consistent ordering
     sources.sort_by(|a, b| a.id.cmp(&b.id));
@@ -118,12 +129,21 @@ pub async fn list_all_data_sources_handler(
     let total = sources.len();
 
     // 5. Populate latest telemetry values only for the paginated subset
-    let limit = params.limit.unwrap_or(15).min(100);
+    let skip_telemetry = params.skip_telemetry.unwrap_or(false);
+    let limit = if skip_telemetry {
+        // When skipping telemetry, allow large result sets (for selector listings)
+        params.limit.unwrap_or(15).min(5000)
+    } else {
+        // With telemetry, keep limit small to avoid backend overload
+        params.limit.unwrap_or(15).min(100)
+    };
     let offset = params.offset.unwrap_or(0).min(total);
     let page_sources: Vec<_> = sources.into_iter().skip(offset).take(limit).collect();
 
     let mut page_sources = page_sources;
-    populate_latest_values(&state, &mut page_sources).await;
+    if !skip_telemetry {
+        populate_latest_values(&state, &mut page_sources).await;
+    }
 
     crate::handlers::common::ok(ListDataSourcesResponse {
         data: page_sources,

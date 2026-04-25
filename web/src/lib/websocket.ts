@@ -67,9 +67,6 @@ export class ChatWebSocket {
       .slice(0, this.MAX_PENDING_MESSAGES)
       .map(m => m.message)
 
-    if (valid.length > 0) {
-      console.log(`[WebSocket] Restored ${valid.length} pending messages from storage`)
-    }
   }
 
   connect(initialSessionId?: string) {
@@ -181,7 +178,6 @@ export class ChatWebSocket {
           storage.remove(STORAGE_KEY)
         } else if (event.code === 1000) {
           // Normal close - persist messages for next session
-          console.log(`[WebSocket] Normal close, ${this.pendingMessages.length} messages persisted`)
           this.persistPendingMessages()
         }
         this.setState({ status: 'disconnected' })
@@ -401,7 +397,6 @@ export class ChatWebSocket {
 
     // Persist pending messages on manual disconnect (don't clear)
     if (this.pendingMessages.length > 0) {
-      console.log(`[WebSocket] Disconnected. ${this.pendingMessages.length} messages persisted for next session`)
       this.persistPendingMessages()
     }
 

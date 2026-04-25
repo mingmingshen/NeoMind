@@ -890,7 +890,6 @@ function renderDashboardComponent(
     default:
       // Check if this is an extension component
       if (dynamicRegistry.isDynamic(component.type)) {
-        console.log(`[VisualDashboard] Rendering extension component: ${component.type}`)
         return (
           <ComponentRenderer
             component={component}

@@ -37,6 +37,8 @@ function nextId(): string {
 const META_FIELDS = new Set([
   '_is_event_data', '_is_image', '_is_binary', '_source_type',
   'image_mime_type', 'mime_type',
+  // Backend data_collected metadata fields for extension metrics
+  'extension_id', 'timestamp', 'points_count', 'has_history',
 ])
 
 /** Check if a field key is internal metadata that should be hidden */
@@ -53,7 +55,7 @@ function findLastCompletedAi(msgs: AnalystMessage[]): number {
   return -1
 }
 
-/** Build a compact display string: key names + data range summary */
+/** Build a compact display string from data values */
 function summarizeData(value: unknown): string {
   if (value === null || value === undefined) return ''
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
@@ -64,10 +66,35 @@ function summarizeData(value: unknown): string {
     try {
       if (Array.isArray(value)) {
         if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
-          const keys = Object.keys(value[0] as Record<string, unknown>)
-          return `${keys.join(', ')} (${value.length} records)`
+          // Check if these are data_points with {timestamp, value} structure
+          const first = value[0] as Record<string, unknown>
+          if ('value' in first && 'timestamp' in first) {
+            // Extract just the values, show latest first
+            const vals = (value as Array<Record<string, unknown>>)
+              .map(p => p.value)
+              .filter(v => v !== undefined)
+            if (vals.length === 0) return ''
+            if (vals.length === 1) return summarizeData(vals[0])
+            return vals.slice(0, 6).map(v => summarizeData(v)).join(', ') +
+              (vals.length > 6 ? ` ... (+${vals.length - 6})` : '')
+          }
+          // Generic object array: show key: value pairs from first object
+          // (e.g. [{cloud_cover: 100, temp: 23.8, ...}] → "cloud_cover: 100\ntemp: 23.8")
+          const entries = Object.entries(first)
+            .filter(([k]) => !isMetaField(k))
+            .slice(0, 6)
+          if (entries.length === 0) return ''
+          const summary = entries.map(([k, v]) => {
+            const vs = typeof v === 'object' && v !== null
+              ? `(${Array.isArray(v) ? v.length + ' items' : Object.keys(v).length + ' keys'})`
+              : String(v)
+            return `${k}: ${vs.length > 30 ? vs.slice(0, 30) + '...' : vs}`
+          }).join('\n')
+          return value.length > 1 ? summary + `\n(${value.length} records)` : summary
         }
-        return `(${value.length} values)`
+        // Primitive array
+        const strs = value.map(v => String(v)).slice(0, 6)
+        return strs.join(', ') + (value.length > 6 ? ` ... (+${value.length - 6})` : '')
       }
       // Object: show key: value summary, filtering out metadata fields
       const obj = value as Record<string, unknown>
@@ -214,21 +241,43 @@ async function loadHistoryMessages(
         const allLines: string[] = []
         for (const dc of dataCollected) {
           const values = dc.values
+          const dataType = dc.data_type
+
           if (values && typeof values === 'object' && !Array.isArray(values)) {
             const record = values as Record<string, unknown>
-            for (const [key, val] of Object.entries(record)) {
+
+            // Detect backend data_collected format for extension metrics:
+            // { extension_id, value, timestamp, points_count, has_history }
+            // Or event-triggered data: { value, timestamp, _is_event_data }
+            // Only the "value" field is meaningful data; everything else is metadata.
+            const isStructuredData = ('extension_id' in record && 'value' in record)
+              || ('value' in record && '_is_event_data' in record)
+            if (isStructuredData) {
+              const val = record.value
               if (typeof val === 'string' && val.length > 100 && (
                 val.startsWith('data:image/') || val.startsWith('/9j/') || val.startsWith('iVBOR')
               )) {
                 allImages.push(val.startsWith('data:') ? val : `data:image/png;base64,${val}`)
-              } else if (!isMetaField(key)) {
+              } else {
                 const s = summarizeData(val)
-                if (s) allLines.push(`${key}: ${s}`)
+                if (s) allLines.push(dataType ? `${dataType}: ${s}` : s)
+              }
+            } else {
+              // Generic object: iterate entries, filter metadata
+              for (const [key, val] of Object.entries(record)) {
+                if (typeof val === 'string' && val.length > 100 && (
+                  val.startsWith('data:image/') || val.startsWith('/9j/') || val.startsWith('iVBOR')
+                )) {
+                  allImages.push(val.startsWith('data:') ? val : `data:image/png;base64,${val}`)
+                } else if (!isMetaField(key)) {
+                  const s = summarizeData(val)
+                  if (s) allLines.push(`${key}: ${s}`)
+                }
               }
             }
           } else {
             const s = summarizeData(values)
-            if (s) allLines.push(s)
+            if (s) allLines.push(dataType ? `${dataType}: ${s}` : s)
           }
         }
         if (allImages.length > 0 || allLines.length > 0) {
@@ -278,7 +327,11 @@ export function useAnalystSession({
   // Track whether history has been loaded for the current agent
   const historyLoadedRef = useRef(false)
 
-  // Stable ref for onConfigUpdate to avoid initSession recreating on every render
+  // Stable refs for config values — avoids recreating initSession when config changes
+  const configRef = useRef(config)
+  configRef.current = config
+  const dataSourceRef = useRef(dataSource)
+  dataSourceRef.current = dataSource
   const onConfigUpdateRef = useRef(onConfigUpdate)
   onConfigUpdateRef.current = onConfigUpdate
 
@@ -356,6 +409,9 @@ export function useAnalystSession({
   })
 
   // Create agent (once per component lifecycle)
+  // Uses refs for config/dataSource so the callback identity is stable —
+  // this prevents the auto-init useEffect in AiAnalyst.tsx from re-triggering
+  // when config props change (e.g., modelId, systemPrompt updates during editing).
   const initSession = useCallback(async () => {
     if (initGuardRef.current || agentIdRef.current) return
 
@@ -364,17 +420,19 @@ export function useAnalystSession({
       setInitializing(true)
       setError(null)
 
-      const dsList = normalizeDataSource(dataSource)
+      const cfg = configRef.current
+      const ds = dataSourceRef.current
+      const dsList = normalizeDataSource(ds)
       const resources = buildResources(dsList)
       const eventFilter = buildEventFilter(dsList)
 
       const agent = await api.createAgent({
         name: `AI Analyst - ${componentId}`,
-        user_prompt: config.systemPrompt,
-        llm_backend_id: config.modelId,
+        user_prompt: cfg.systemPrompt,
+        llm_backend_id: cfg.modelId,
         schedule: { schedule_type: 'event', event_filter: eventFilter },
         execution_mode: 'chat',
-        context_window_size: config.contextWindowSize,
+        context_window_size: cfg.contextWindowSize,
         resources,
       })
 
@@ -387,14 +445,7 @@ export function useAnalystSession({
       setInitializing(false)
       setError(err instanceof Error ? err.message : 'Failed to create agent')
     }
-  }, [
-    componentId,
-    config.systemPrompt,
-    config.modelId,
-    config.contextWindowSize,
-    dataSource,
-    // onConfigUpdate removed — uses ref to avoid cascading re-creates
-  ])
+  }, [componentId])
 
   // On mount: if config has a saved agentId, verify it still exists.
   // If the agent was deleted, clear the stale ID so a new agent will be created.
@@ -424,19 +475,50 @@ export function useAnalystSession({
     return () => { cancelled = true }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync llm_backend_id when modelId changes after agent creation
+  // Sync llm_backend_id and user_prompt when config changes after agent creation
   const prevModelIdRef = useRef(config.modelId)
+  const prevPromptRef = useRef(config.systemPrompt)
   useEffect(() => {
     const agentId = agentIdRef.current
     if (!agentId || !isConnected) return
-    if (config.modelId === prevModelIdRef.current) return
-    prevModelIdRef.current = config.modelId
-    if (!config.modelId) return
 
-    api.updateAgent(agentId, { llm_backend_id: config.modelId }).catch(() => {
-      // Non-critical: agent will use whatever backend it has
+    const updates: Record<string, unknown> = {}
+    if (config.modelId && config.modelId !== prevModelIdRef.current) {
+      updates.llm_backend_id = config.modelId
+      prevModelIdRef.current = config.modelId
+    }
+    if (config.systemPrompt && config.systemPrompt !== prevPromptRef.current) {
+      updates.user_prompt = config.systemPrompt
+      prevPromptRef.current = config.systemPrompt
+    }
+
+    if (Object.keys(updates).length === 0) return
+    api.updateAgent(agentId, updates).catch(() => {
+      // Non-critical: agent will use whatever configuration it has
     })
-  }, [config.modelId, isConnected])
+  }, [config.modelId, config.systemPrompt, isConnected])
+
+  // Sync event_filter and resources when dataSource changes after agent creation
+  // This handles component editing (changing data source) without creating a new agent
+  const prevDataSourceRef = useRef(dataSource)
+  useEffect(() => {
+    const agentId = agentIdRef.current
+    if (!agentId || !isConnected) return
+    // Skip initial mount — agent was just created with this dataSource
+    if (prevDataSourceRef.current === dataSource) return
+    prevDataSourceRef.current = dataSource
+
+    const dsList = normalizeDataSource(dataSource)
+    const resources = buildResources(dsList)
+    const eventFilter = buildEventFilter(dsList)
+
+    api.updateAgent(agentId, {
+      schedule: { schedule_type: 'event', event_filter: eventFilter },
+      resources,
+    }).catch(() => {
+      // Non-critical: agent will use previous configuration
+    })
+  }, [dataSource, isConnected])
 
   // Load execution history when agent connects (verification or creation)
   useEffect(() => {

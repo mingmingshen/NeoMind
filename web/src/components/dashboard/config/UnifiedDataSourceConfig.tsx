@@ -590,83 +590,68 @@ export function UnifiedDataSourceConfig({
     return map
   }, [devices, deviceTypes, t])
 
-  // Fetch extension data sources when extension category is available
+  // Fetch all non-device data sources in a single pass (extensions, transforms, AI metrics)
   useEffect(() => {
-    const hasExtensionCategory = availableCategories.some(c => c.id === 'extension' || c.id === 'extension-command')
-    if (!hasExtensionCategory) {
-      hasFetchedExtensions.current = false
-      return
-    }
-
-    // Skip if already fetched
-    if (hasFetchedExtensions.current && extensions.length > 0) {
-      return
-    }
-
-    const fetchExtensionData = async () => {
-      setExtensionsLoading(true)
-      setExtensionError(null)
-      try {
-        console.log('[UnifiedDataSourceConfig] Fetching extensions...')
-        const [extData, dsData] = await Promise.all([
-          api.listExtensions().catch((err) => {
-            console.error('[UnifiedDataSourceConfig] listExtensions error:', err)
-            return []
-          }),
-          api.listAllDataSources().catch((err) => {
-            console.error('[UnifiedDataSourceConfig] listAllDataSources error:', err)
-            return []
-          }),
-        ])
-        // Debug logging
-        console.log('[UnifiedDataSourceConfig] Fetched extensions:', {
-          count: extData.length,
-          extensions: extData.map(e => ({
-            id: e.id,
-            name: e.name,
-            commandsCount: e.commands?.length || 0,
-            metricsCount: e.metrics?.length || 0,
-            commands: e.commands
-          }))
-        })
-        setExtensions(extData)
-        // Filter only extension data sources (exclude transform data sources)
-        setExtensionDataSources(dsData.filter((source): source is ExtensionDataSourceInfo => 'extension_id' in source) as ExtensionDataSourceInfo[])
-        hasFetchedExtensions.current = true
-      } catch (err) {
-        console.error('[UnifiedDataSourceConfig] Error fetching extension data:', err)
-        setExtensionError((err as Error).message)
-      } finally {
-        setExtensionsLoading(false)
-      }
-    }
-
-    fetchExtensionData()
-  }, [availableCategories, extensions.length])
-
-  // Fetch unified data sources when transform/ai-metric categories are available
-  useEffect(() => {
+    const needsExt = availableCategories.some(c => c.id === 'extension' || c.id === 'extension-command')
     const needsUnified = availableCategories.some(c => c.id === 'transform' || c.id === 'ai-metric')
-    if (!needsUnified) {
+    if (!needsExt && !needsUnified) {
+      hasFetchedExtensions.current = false
       hasFetchedUnifiedSources.current = false
       return
     }
-    if (hasFetchedUnifiedSources.current && unifiedDataSources.length > 0) return
+    // Skip if all needed data already fetched
+    const extDone = !needsExt || (hasFetchedExtensions.current && extensions.length > 0)
+    const unifiedDone = !needsUnified || (hasFetchedUnifiedSources.current && unifiedDataSources.length > 0)
+    if (extDone && unifiedDone) return
 
-    const fetchUnified = async () => {
+    const fetchData = async () => {
+      setExtensionsLoading(true)
       setUnifiedSourcesLoading(true)
+
       try {
-        const sources = await api.listUnifiedDataSources()
-        setUnifiedDataSources(sources.data)
-        hasFetchedUnifiedSources.current = true
+        // Single request fetches all types; backend skip_telemetry makes it fast
+        const [extData, allSources] = await Promise.all([
+          api.listExtensions().catch(() => [] as Extension[]),
+          api.listUnifiedDataSources({ limit: 500, skip_telemetry: 'true' }),
+        ])
+
+        const sources = (allSources as { data: UnifiedDataSourceInfo[] }).data
+
+        // Always populate both states from the single response
+        if (needsExt && !hasFetchedExtensions.current) {
+          setExtensions(extData as Extension[])
+          setExtensionDataSources(
+            sources
+              .filter(s => s.source_type === 'extension')
+              .map(ds => ({
+                id: ds.id,
+                extension_id: ds.source_name,
+                command: '',
+                field: ds.field,
+                display_name: ds.source_display_name + ': ' + ds.field_display_name,
+                data_type: (ds.data_type as any) || 'float',
+                unit: ds.unit,
+                description: ds.description || ds.field_display_name,
+                aggregatable: true,
+                default_agg_func: 'last' as const,
+              }))
+          )
+          hasFetchedExtensions.current = true
+        }
+
+        if (needsUnified && !hasFetchedUnifiedSources.current) {
+          setUnifiedDataSources(sources)
+          hasFetchedUnifiedSources.current = true
+        }
       } catch (err) {
-        console.error('[UnifiedDataSourceConfig] Error fetching unified data sources:', err)
+        setExtensionError((err as Error).message)
       } finally {
+        setExtensionsLoading(false)
         setUnifiedSourcesLoading(false)
       }
     }
-    fetchUnified()
-  }, [availableCategories, unifiedDataSources.length])
+    fetchData()
+  }, [availableCategories])
 
   // Computed lists for transform and AI metric sources
   const transformSources = useMemo(() =>
@@ -1392,14 +1377,6 @@ export function UnifiedDataSourceConfig({
     if (selectedCategory === 'extension-command') {
       // Show extension commands
       const commands = selectedExtension.commands || []
-      // Debug logging
-      console.log('[UnifiedDataSourceConfig] Extension commands:', {
-        extensionId: selectedExtension.id,
-        extensionName: selectedExtension.name,
-        commandsCount: commands.length,
-        commands: commands,
-        fullExtension: selectedExtension
-      })
 
       if (commands.length === 0) {
         return (

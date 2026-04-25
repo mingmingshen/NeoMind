@@ -208,7 +208,6 @@ function VideoPlayer({
       if (type === 'hls') {
         // Always use hls.js for better compatibility
         if (Hls.isSupported()) {
-          console.log('[HLS] Using hls.js for playback')
           const hls = new Hls(createHlsConfig())
           hlsRef.current = hls
           recoveryAttemptsRef.current = 0
@@ -218,7 +217,6 @@ function VideoPlayer({
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (isCancelled || isDestroyingRef.current) return
-            console.log('[HLS] Manifest parsed, ready to play')
             onLoadingChange(false)
             if (autoplay && video && !video.paused) {
               playPromiseRef.current = video.play().catch((e) => {
@@ -232,35 +230,27 @@ function VideoPlayer({
               return
             }
 
-            console.log('[HLS] Fatal error:', data.type, data.details)
-
             // For bufferAppendError - need special handling
             if (data.details === 'bufferAppendError') {
               recoveryAttemptsRef.current++
-              console.log(`[HLS] Buffer append error, attempt ${recoveryAttemptsRef.current}/3`)
 
               if (recoveryAttemptsRef.current <= 3) {
-                console.log('[HLS] Skipping buffer append error, continuing playback...')
                 return
               }
 
               // Max attempts reached, rebuild HLS instance
-              console.log('[HLS] Max recovery attempts, rebuilding HLS instance...')
               rebuildHls()
               return
             }
 
             switch (data.type) {
               case Hls.ErrorTypes.NETWORK_ERROR:
-                console.log('[HLS] Network error, trying to recover...')
                 hls.startLoad()
                 break
               case Hls.ErrorTypes.MEDIA_ERROR:
-                console.log('[HLS] Media error, trying to recover...')
                 hls.recoverMediaError()
                 break
               default:
-                console.log('[HLS] Unrecoverable error, destroying instance')
                 onError(true, `HLS Error: ${data.details}`)
                 break
             }
@@ -268,7 +258,6 @@ function VideoPlayer({
 
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
           // Fallback to native HLS only if hls.js is not supported
-          console.log('[HLS] Using native HLS (fallback)')
           video.src = src
 
           const handleLoadedMetadata = () => {
@@ -307,8 +296,6 @@ function VideoPlayer({
 
       // Don't reset recoveryAttemptsRef to prevent infinite rebuild loops
       // The counter will be reset only when src changes (via useEffect dependency)
-      console.log('[HLS] Rebuilding HLS instance (recovery attempts preserved)')
-
       const newHls = new Hls(createHlsConfig())
       hlsRef.current = newHls
 
@@ -326,15 +313,10 @@ function VideoPlayer({
           return
         }
 
-        console.log('[HLS] Fatal error on rebuilt instance:', data.type, data.details)
-
         if (data.details === 'bufferAppendError') {
           recoveryAttemptsRef.current++
-          console.log(`[HLS] Buffer append error on rebuilt instance, attempt ${recoveryAttemptsRef.current}`)
 
           if (recoveryAttemptsRef.current > 6) {
-            // Total max attempts (3 initial + 3 after rebuild)
-            console.log('[HLS] Max total recovery attempts reached, giving up')
             onError(true, `HLS Error: ${data.details} (max recovery attempts reached)`)
           }
           return
@@ -378,12 +360,9 @@ function VideoPlayer({
       }
     }
     const handleLoadedMetadata = () => setDuration(video.duration)
-    const handleWaiting = () => console.log('[Video] Waiting for buffer...')
-    const handleStalled = () => console.log('[Video] Stalled')
     const handleEnded = () => {
       // For live streams, try to reconnect
       if (type === 'hls' && hlsRef.current && !isDestroyingRef.current) {
-        console.log('[Video] Stream ended, reconnecting...')
         hlsRef.current.startLoad(-1)
         playPromiseRef.current = video.play().catch(() => {})
       }
@@ -395,8 +374,6 @@ function VideoPlayer({
     video.addEventListener('pause', handlePause)
     video.addEventListener('timeupdate', handleTimeUpdate)
     video.addEventListener('loadedmetadata', handleLoadedMetadata)
-    video.addEventListener('waiting', handleWaiting)
-    video.addEventListener('stalled', handleStalled)
     video.addEventListener('ended', handleEnded)
 
     return () => {
@@ -406,8 +383,6 @@ function VideoPlayer({
       video.removeEventListener('pause', handlePause)
       video.removeEventListener('timeupdate', handleTimeUpdate)
       video.removeEventListener('loadedmetadata', handleLoadedMetadata)
-      video.removeEventListener('waiting', handleWaiting)
-      video.removeEventListener('stalled', handleStalled)
       video.removeEventListener('ended', handleEnded)
     }
   }, [onLoadingChange, isSeeking, type])
@@ -450,11 +425,8 @@ function VideoPlayer({
 
       // Check if we're supposed to be playing but aren't
       if (!video.paused && video.readyState < 3) {
-        console.warn('HLS live stream buffering, checking...')
-
         // If we have a live sync position and we're too far behind, jump forward
         if (hls.liveSyncPosition !== null && hls.liveSyncPosition !== undefined && video.currentTime < hls.liveSyncPosition - 10) {
-          console.log('Too far behind live edge, jumping to:', hls.liveSyncPosition)
           video.currentTime = hls.liveSyncPosition
         }
       }

@@ -312,12 +312,25 @@ impl MqttDevice {
                 ),
             };
 
-            let mut values = self.cached_values.write().await;
-            values.insert(metric_name.to_string(), value);
+            // Update cached value (fast path - lock released immediately)
+            {
+                let mut values = self.cached_values.write().await;
+                values.insert(metric_name.to_string(), value);
+            }
 
-            // Update last seen
-            let mut state = self.state.write().await;
-            state.last_seen = Some(chrono::Utc::now());
+            // Update last_seen only if more than 1 second since last update
+            // to avoid write lock contention on high-frequency messages
+            {
+                let state = self.state.read().await;
+                let should_update = state
+                    .last_seen
+                    .map_or(true, |t| (chrono::Utc::now() - t).num_seconds() >= 1);
+                drop(state); // Release read lock before acquiring write lock
+                if should_update {
+                    let mut state = self.state.write().await;
+                    state.last_seen = Some(chrono::Utc::now());
+                }
+            }
 
             Ok(())
         } else {

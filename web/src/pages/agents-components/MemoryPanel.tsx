@@ -250,15 +250,12 @@ export const MemoryPanel = forwardRef<MemoryPanelRef, MemoryPanelProps>(function
   // Trigger manual extraction
   const handleExtract = async () => {
     setExtracting(true)
-    console.log('[MemoryPanel] Starting memory extraction...')
     toast({
       title: t("systemMemory.extractStarted", "Extraction Started"),
       description: t("systemMemory.extractStartedDesc", "Extracting memories from conversations..."),
     })
     try {
-      console.log('[MemoryPanel] Calling api.triggerMemoryExtract()...')
       const result = await api.triggerMemoryExtract()
-      console.log('[MemoryPanel] Extraction result:', result)
       toast({
         title: t("systemMemory.extractStarted", "Extraction Started"),
         description: result.message || t("systemMemory.extractStartedDesc", "Extraction is running in the background. Check stats after a moment."),

@@ -413,6 +413,12 @@ export const createDashboardSlice: StateCreator<
     deleteDashboard: async (id) => {
       const { dashboards, currentDashboardId } = get()
 
+      // Clean up AI agents for all ai-analyst components in the deleted dashboard
+      const dashboard = dashboards.find((d) => d.id === id)
+      if (dashboard) {
+        dashboard.components.forEach((comp) => cleanupAgentForComponent(comp))
+      }
+
       const updated = dashboards.filter((d) => d.id !== id)
       const newCurrentId = currentDashboardId === id ? (updated[0]?.id || null) : currentDashboardId
 
@@ -456,6 +462,12 @@ export const createDashboardSlice: StateCreator<
     },
 
     clearDashboards: () => {
+      // Clean up AI agents for all ai-analyst components across all dashboards
+      const { dashboards } = get()
+      dashboards.forEach((d) => {
+        d.components.forEach((comp) => cleanupAgentForComponent(comp))
+      })
+
       // Clear storage and reset state
       storage.clear()
       set({
@@ -703,10 +715,6 @@ export const createDashboardSlice: StateCreator<
 
       // Persist changes
       storage.sync(updatedDashboard).catch(() => {})
-
-      console.log(
-        `[DashboardSlice] Removed ${componentsToRemove.length} components from extension ${extensionId}`
-      )
     },
 
     moveComponent(id, position) {
