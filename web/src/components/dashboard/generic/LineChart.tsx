@@ -34,7 +34,7 @@ import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors } from '@/design-system/tokens/color'
 import type { DataSource, DataSourceOrList, TelemetryAggregate, ChartViewMode } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
-import { EmptyState, ErrorState } from '../shared'
+import { ChartContainer, EmptyState, ErrorState } from '../shared'
 import {
   getEffectiveAggregate,
   getEffectiveTimeWindow,
@@ -532,7 +532,7 @@ const LineChartInner = function LineChart({
       {title && (
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
-      <div className={cn('w-full', 'flex-1 min-h-0')}>
+      <ChartContainer>
         <ResponsiveContainer width="100%" height="100%">
           <RechartsLineChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: 0 }} accessibilityLayer>
             <defs>
@@ -592,7 +592,7 @@ const LineChartInner = function LineChart({
             })}
           </RechartsLineChart>
         </ResponsiveContainer>
-      </div>
+      </ChartContainer>
     </div>
   )
 }
@@ -889,7 +889,7 @@ export function AreaChart({
       {title && (
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
-      <div className={cn('w-full', 'flex-1 min-h-0')}>
+      <ChartContainer>
         <ResponsiveContainer width="100%" height="100%">
           <RechartsAreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: 0 }} accessibilityLayer>
             {showGrid && <CartesianGrid vertical={false} strokeDasharray="4 4" className="stroke-muted" />}
@@ -927,7 +927,7 @@ export function AreaChart({
             })}
           </RechartsAreaChart>
         </ResponsiveContainer>
-      </div>
+      </ChartContainer>
     </div>
   )
 }

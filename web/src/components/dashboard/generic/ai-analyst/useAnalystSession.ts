@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { api } from '@/lib/api'
-import { useAgentEvents } from '@/hooks/useAgentEvents'
+import { useEvents } from '@/hooks/useEvents'
 import type { ResourceRequest } from '@/types'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
 import { getSourceId, normalizeDataSource } from '@/types/dashboard'
@@ -31,6 +31,15 @@ interface UseAnalystSessionReturn {
 let msgCounter = 0
 function nextId(): string {
   return `analyst-${Date.now()}-${++msgCounter}`
+}
+
+/** Maximum number of messages to keep in the timeline */
+const MAX_MESSAGES = 40
+
+/** Trim messages to MAX_MESSAGES, keeping the most recent */
+function trimMessages(msgs: AnalystMessage[]): AnalystMessage[] {
+  if (msgs.length <= MAX_MESSAGES) return msgs
+  return msgs.slice(msgs.length - MAX_MESSAGES)
 }
 
 /** Internal/metadata fields to hide from data display */
@@ -137,6 +146,34 @@ function buildResources(dataSources: DataSource[]): ResourceRequest[] | undefine
     const sourceId = getSourceId(ds)
     const field = resolveMetricField(ds)
 
+    // Device commands → same format as AgentEditorFullScreen
+    if (ds.type === 'command' && sourceId && ds.command) {
+      return [{
+        resource_id: `${sourceId}:${ds.command}`,
+        resource_type: 'command',
+        name: ds.command,
+        config: {
+          device_id: sourceId,
+          command_name: ds.command,
+          parameters: ds.commandParams || {},
+        },
+      }]
+    }
+
+    // Extension commands → same format as AgentEditorFullScreen
+    if (ds.type === 'extension-command' && ds.extensionId && ds.extensionCommand) {
+      return [{
+        resource_id: `extension:${ds.extensionId}:${ds.extensionCommand}`,
+        resource_type: 'extension_tool',
+        name: ds.extensionCommand,
+        config: {
+          extension_id: ds.extensionId,
+          command_name: ds.extensionCommand,
+          parameters: ds.commandParams || {},
+        },
+      }]
+    }
+
     if (ds.type === 'extension' && ds.extensionId) {
       return [{
         resource_id: `extension:${ds.extensionId}:${field}`,
@@ -170,8 +207,12 @@ function buildResources(dataSources: DataSource[]): ResourceRequest[] | undefine
  * Format: {"sources": [{"type": "device"|"extension", "id": "...", "name": "...", "field": "..."}]}
  */
 function buildEventFilter(dataSources: DataSource[]): string | undefined {
-  if (!dataSources.length) return undefined
-  const sources = dataSources.flatMap((ds) => {
+  // Commands should not trigger agent execution — only metrics drive events
+  const metricSources = dataSources.filter(ds =>
+    ds.type !== 'command' && ds.type !== 'extension-command'
+  )
+  if (!metricSources.length) return undefined
+  const sources = metricSources.flatMap((ds) => {
     const sourceId = getSourceId(ds)
     const field = resolveMetricField(ds)
 
@@ -262,6 +303,15 @@ async function loadHistoryMessages(
                 const s = summarizeData(val)
                 if (s) allLines.push(dataType ? `${dataType}: ${s}` : s)
               }
+              // Also check image_base64 field for raw base64 image data
+              const b64 = record.image_base64
+              if (typeof b64 === 'string' && b64.length > 100) {
+                const mime = record.image_mime_type || record.mime_type
+                const dataUrl = typeof mime === 'string'
+                  ? `data:${mime};base64,${b64}`
+                  : `data:image/png;base64,${b64}`
+                allImages.push(dataUrl)
+              }
             } else {
               // Generic object: iterate entries, filter metadata
               for (const [key, val] of Object.entries(record)) {
@@ -297,11 +347,28 @@ async function loadHistoryMessages(
         type: exec.status === 'Failed' ? 'error' : 'ai',
         content: conclusion,
         timestamp: ts,
-        duration: Math.round(exec.duration_ms / 1000),
+        duration: exec.duration_ms,
       })
     }
 
-    return messages
+    // Load persisted user messages and interleave by timestamp
+    try {
+      const userMsgs = await api.getAgentUserMessages(agentId)
+      if (userMsgs && userMsgs.length > 0) {
+        for (const um of userMsgs) {
+          messages.push({
+            id: `hist-user-${um.id}`,
+            type: 'user',
+            content: um.content,
+            timestamp: typeof um.timestamp === 'number' ? um.timestamp : new Date(um.timestamp).getTime(),
+          })
+        }
+        // Sort all messages by timestamp
+        messages.sort((a, b) => a.timestamp - b.timestamp)
+      }
+    } catch { /* non-fatal */ }
+
+    return trimMessages(messages)
   } catch {
     return []
   }
@@ -326,9 +393,24 @@ export function useAnalystSession({
   const initGuardRef = useRef(false)
   // Track mount state to avoid state updates after unmount
   const mountedRef = useRef(true)
-  useEffect(() => { return () => { mountedRef.current = false } }, [])
+  // Polling interval: while streaming, check execution status every 10 seconds.
+  // This recovers from lost AgentExecutionCompleted events (WebSocket drops, race conditions, etc.)
+  const streamingPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false
+      // Clean up streaming polling on unmount
+      if (streamingPollRef.current) {
+        clearInterval(streamingPollRef.current)
+        streamingPollRef.current = null
+      }
+    }
+  }, [])
   // Track whether history has been loaded for the current agent
   const historyLoadedRef = useRef(false)
+  // Cross-path dedup: tracks ALL execution IDs added as AI messages (history + live).
+  // Prevents the same execution from appearing twice with different ID prefixes (hist-X vs exec-X).
+  const seenExecIdsRef = useRef<Set<string>>(new Set())
 
   // Stable refs for config values — avoids recreating initSession when config changes
   const configRef = useRef(config)
@@ -341,75 +423,193 @@ export function useAnalystSession({
   // Ref to track streaming msg ID for reliable cleanup in onExecutionCompleted
   const streamingMsgIdRef = useRef<string | null>(null)
 
-  // ---- Agent event listeners ----
-  // Must be called at hook top level. Disabled when no agentId yet.
-  const activeAgentId = config.agentId || agentIdRef.current || ''
-  useAgentEvents(activeAgentId, {
-    enabled: !!activeAgentId,
-    onExecutionStarted: () => {
-      setIsStreaming(true)
-      // Add a streaming placeholder — just shows "Analyzing..." spinner, no raw text
-      const id = `stream-${Date.now()}`
-      setStreamingMsgId(id)
-      streamingMsgIdRef.current = id
-      setStreamingContent('')
-      const analyzingMsg: AnalystMessage = {
-        id,
-        type: 'ai',
-        content: '',
-        timestamp: Date.now(),
-        isStreaming: true,
-      }
-      setMessages((prev) => [...prev, analyzingMsg])
-    },
-    onThinking: () => {
-      // Keep isStreaming active but don't surface raw thinking text
-      // in the timeline — it's too technical for this widget.
-      // The AgentMonitorWidget already shows full thinking steps.
-    },
-    onExecutionCompleted: (data) => {
-      setIsStreaming(false)
-      setStreamingContent('')
-      const placeholderId = streamingMsgIdRef.current
-      setStreamingMsgId(null)
-      streamingMsgIdRef.current = null
 
-      // Fetch the conclusion from the execution detail
-      const agentId = data.agent_id
-      api.getExecution(agentId, data.execution_id)
-        .then((detail) => {
-          if (!mountedRef.current) return
-          const conclusion = detail?.decision_process?.conclusion
-          const aiMsg: AnalystMessage = {
-            id: `exec-${data.execution_id}`,
-            type: data.success ? 'ai' : 'error',
-            content: conclusion || 'No result',
-            timestamp: Date.now(),
-            duration: Math.round(data.duration_ms / 1000),
-          }
-          setMessages((prev) => {
-            // Replace the streaming placeholder with the final result
-            const withoutStreaming = placeholderId
-              ? prev.filter((m) => m.id !== placeholderId)
-              : prev
-            return [...withoutStreaming, aiMsg]
+  const recoverFromStuckStreaming = useCallback(() => {
+    const agentId = agentIdRef.current
+    if (!agentId) return
+
+    api.getAgentExecutions(agentId, 1)
+      .then((resp) => {
+        const exec = resp?.executions?.[0]
+        console.log('[AI Analyst] Recovery poll:', { agentId, status: exec?.status, id: exec?.id })
+        if (!exec || exec.status === 'Running') return
+        // Execution completed but we missed the event — recover
+        console.log('[AI Analyst] Recovery: execution completed, clearing streaming state')
+
+        // Clear the polling interval
+        if (streamingPollRef.current) {
+          clearInterval(streamingPollRef.current)
+          streamingPollRef.current = null
+        }
+
+        setIsStreaming(false)
+        setStreamingContent('')
+        const placeholderId = streamingMsgIdRef.current
+        setStreamingMsgId(null)
+        streamingMsgIdRef.current = null
+
+        api.getExecution(agentId, exec.id)
+          .then((detail) => {
+            const conclusion = detail?.decision_process?.conclusion
+            // Cross-path dedup: skip if this execution was already added (history or live)
+            if (seenExecIdsRef.current.has(exec.id)) {
+              // Still need to clean up the streaming placeholder
+              if (placeholderId) {
+                setMessages((prev) => prev.filter((m) => m.id !== placeholderId))
+              }
+              return
+            }
+            seenExecIdsRef.current.add(exec.id)
+            const dedupKey = `exec-${exec.id}`
+            const aiMsg: AnalystMessage = {
+              id: dedupKey,
+              type: exec.status === 'Failed' ? 'error' : 'ai',
+              content: conclusion || 'No result',
+              timestamp: Date.now(),
+              duration: exec.duration_ms,
+            }
+            setMessages((prev) => {
+              // Skip if live event already added this execution
+              if (prev.some((m) => m.id === dedupKey)) return prev
+              const withoutStreaming = placeholderId
+                ? prev.filter((m) => m.id !== placeholderId)
+                : prev
+              return trimMessages([...withoutStreaming, aiMsg])
+            })
           })
-        })
-        .catch((err) => {
-          if (!mountedRef.current) return
-          const errMsg: AnalystMessage = {
-            id: `exec-err-${data.execution_id}`,
-            type: 'error',
-            content: err instanceof Error ? err.message : 'Failed to fetch execution result',
-            timestamp: Date.now(),
-          }
-          setMessages((prev) => {
-            const withoutStreaming = placeholderId
-              ? prev.filter((m) => m.id !== placeholderId)
-              : prev
-            return [...withoutStreaming, errMsg]
+          .catch(() => {
+            setMessages((prev) => {
+              const withoutStreaming = placeholderId
+                ? prev.filter((m) => m.id !== placeholderId)
+                : prev
+              return trimMessages([...withoutStreaming, {
+                id: `exec-recover-${exec.id}`,
+                type: 'ai' as const,
+                content: 'Analysis completed',
+                timestamp: Date.now(),
+              }])
+            })
           })
-        })
+      })
+      .catch(() => {
+        // Can't recover — clear stuck state
+        if (streamingPollRef.current) {
+          clearInterval(streamingPollRef.current)
+          streamingPollRef.current = null
+        }
+        setIsStreaming(false)
+        setStreamingContent('')
+        setStreamingMsgId(null)
+        streamingMsgIdRef.current = null
+      })
+  }, [])
+
+  // ---- Agent event listeners ----
+  // Use useEvents directly (same pattern as AgentMonitorWidget) to avoid
+  // the intermediate useAgentEvents layer which may miss events when
+  // activeAgentId changes during the component lifecycle.
+  const activeAgentId = config.agentId || agentIdRef.current || ''
+  // Ref-based ID for reliable event filtering — avoids closure staleness where
+  // AgentExecutionStarted matches but AgentExecutionCompleted is silently dropped
+  // because the onEvent callback captured a stale activeAgentId from a prior render.
+  const activeAgentIdRef = useRef(activeAgentId)
+  activeAgentIdRef.current = activeAgentId
+
+  useEvents({
+    enabled: !!activeAgentId,
+    onEvent: (event) => {
+      // Filter events for our agent — use ref for reliable matching
+      const data = event.data as { agent_id?: string }
+      if (data.agent_id !== activeAgentIdRef.current) return
+
+      switch (event.type) {
+        case 'AgentExecutionStarted': {
+          console.log('[AI Analyst] AgentExecutionStarted, agent_id:', data.agent_id, 'seenExecIds:', [...seenExecIdsRef.current])
+          setIsStreaming(true)
+          const id = `stream-${Date.now()}`
+          setStreamingMsgId(id)
+          streamingMsgIdRef.current = id
+          setStreamingContent('')
+          const analyzingMsg: AnalystMessage = {
+            id,
+            type: 'ai',
+            content: '',
+            timestamp: Date.now(),
+            isStreaming: true,
+          }
+          setMessages((prev) => trimMessages([...prev, analyzingMsg]))
+
+          // Start polling — check execution status every 5 seconds while streaming.
+          // This proactively recovers if AgentExecutionCompleted event is lost.
+          if (streamingPollRef.current) clearInterval(streamingPollRef.current)
+          streamingPollRef.current = setInterval(recoverFromStuckStreaming, 5_000)
+          console.log('[AI Analyst] Polling started (5s interval)')
+          break
+        }
+
+        case 'AgentExecutionCompleted': {
+          console.log('[AI Analyst] AgentExecutionCompleted received, agent_id:', data.agent_id)
+          // Stop the polling — event arrived successfully
+          if (streamingPollRef.current) {
+            clearInterval(streamingPollRef.current)
+            streamingPollRef.current = null
+          }
+
+          setIsStreaming(false)
+          setStreamingContent('')
+          const placeholderId = streamingMsgIdRef.current
+          setStreamingMsgId(null)
+          streamingMsgIdRef.current = null
+
+          const completedData = data as { agent_id: string; execution_id: string; success: boolean; duration_ms: number }
+          // Cross-path dedup: skip if this execution was already added (history or recovery)
+          if (seenExecIdsRef.current.has(completedData.execution_id)) {
+            // Already have this execution — just remove streaming placeholder
+            if (placeholderId) {
+              setMessages((prev) => prev.filter((m) => m.id !== placeholderId))
+            }
+            break
+          }
+          seenExecIdsRef.current.add(completedData.execution_id)
+          // Dedup key — prevent recovery polling and live event from adding the same execution twice
+          const dedupKey = `exec-${completedData.execution_id}`
+          console.log('[AI Analyst] Completed event, exec_id:', completedData.execution_id, 'duration_ms:', completedData.duration_ms)
+          api.getExecution(completedData.agent_id, completedData.execution_id)
+            .then((detail) => {
+              const conclusion = detail?.decision_process?.conclusion
+              const aiMsg: AnalystMessage = {
+                id: dedupKey,
+                type: completedData.success ? 'ai' : 'error',
+                content: conclusion || 'No result',
+                timestamp: Date.now(),
+                duration: completedData.duration_ms,
+              }
+              setMessages((prev) => {
+                // Skip if this execution was already added (e.g., by recovery polling)
+                if (prev.some((m) => m.id === dedupKey)) return prev
+                const withoutStreaming = placeholderId
+                  ? prev.filter((m) => m.id !== placeholderId)
+                  : prev
+                return trimMessages([...withoutStreaming, aiMsg])
+              })
+            })
+            .catch((err) => {
+              const errMsg: AnalystMessage = {
+                id: `exec-err-${completedData.execution_id}`,
+                type: 'error',
+                content: err instanceof Error ? err.message : 'Failed to fetch execution result',
+                timestamp: Date.now(),
+              }
+              setMessages((prev) => {
+                const withoutStreaming = placeholderId
+                  ? prev.filter((m) => m.id !== placeholderId)
+                  : prev
+                return trimMessages([...withoutStreaming, errMsg])
+              })
+            })
+          break
+        }
+      }
     },
   })
 
@@ -430,20 +630,56 @@ export function useAnalystSession({
       const dsList = normalizeDataSource(ds)
       const resources = buildResources(dsList)
       const eventFilter = buildEventFilter(dsList)
+      const agentName = `AI Analyst - ${componentId}`
 
-      const agent = await api.createAgent({
-        name: `AI Analyst - ${componentId}`,
-        user_prompt: cfg.systemPrompt,
-        llm_backend_id: cfg.modelId,
-        schedule: { schedule_type: 'event', event_filter: eventFilter },
-        execution_mode: 'chat',
-        context_window_size: cfg.contextWindowSize,
-        resources,
-      })
+      // Search for existing agent by name to avoid duplicates.
+      // componentId may be a timestamp that changes on remount, so match by prefix
+      // "AI Analyst - " to find any previously created analyst agent for this dashboard.
+      let agentId: string
+      try {
+        const list = await api.listAgents()
+        const prefix = 'AI Analyst - '
+        const existing = list.agents?.find(a => a.name === agentName)
+          || list.agents?.find(a => a.name.startsWith(prefix))
+        if (existing) {
+          // Reuse existing agent — update config to match current settings
+          agentId = existing.id
+          await api.updateAgent(agentId, {
+            user_prompt: cfg.systemPrompt,
+            llm_backend_id: cfg.modelId,
+            schedule: { schedule_type: 'event', event_filter: eventFilter },
+            resources,
+            context_window_size: cfg.contextWindowSize,
+          })
+        } else {
+          const agent = await api.createAgent({
+            name: agentName,
+            user_prompt: cfg.systemPrompt,
+            llm_backend_id: cfg.modelId,
+            schedule: { schedule_type: 'event', event_filter: eventFilter },
+            execution_mode: 'chat',
+            context_window_size: cfg.contextWindowSize,
+            resources,
+          })
+          agentId = agent.id
+        }
+      } catch {
+        // listAgents failed — fall through to create
+        const agent = await api.createAgent({
+          name: agentName,
+          user_prompt: cfg.systemPrompt,
+          llm_backend_id: cfg.modelId,
+          schedule: { schedule_type: 'event', event_filter: eventFilter },
+          execution_mode: 'chat',
+          context_window_size: cfg.contextWindowSize,
+          resources,
+        })
+        agentId = agent.id
+      }
 
-      agentIdRef.current = agent.id
+      agentIdRef.current = agentId
       setIsConnected(true)
-      onConfigUpdateRef.current({ agentId: agent.id })
+      onConfigUpdateRef.current({ agentId })
       setInitializing(false)
     } catch (err) {
       initGuardRef.current = false
@@ -467,6 +703,15 @@ export function useAnalystSession({
         agentIdRef.current = savedId
         setIsConnected(true)
         setInitializing(false)
+
+        // Sync current config (model, prompt) to the verified agent
+        const cfg = configRef.current
+        const updates: Record<string, unknown> = {}
+        if (cfg.modelId) updates.llm_backend_id = cfg.modelId
+        if (cfg.systemPrompt) updates.user_prompt = cfg.systemPrompt
+        if (Object.keys(updates).length > 0) {
+          api.updateAgent(savedId, updates).catch(() => {})
+        }
       })
       .catch(() => {
         if (cancelled) return
@@ -534,7 +779,19 @@ export function useAnalystSession({
     loadHistoryMessages(agentId, config.contextWindowSize)
       .then((history) => {
         if (history.length > 0) {
-          setMessages(history)
+          // Register history execution IDs for cross-path dedup
+          for (const m of history) {
+            if (m.id.startsWith('hist-') && !m.id.startsWith('hist-data-') && !m.id.startsWith('hist-user-')) {
+              const execId = m.id.slice(5) // Remove 'hist-' prefix
+              seenExecIdsRef.current.add(execId)
+            }
+          }
+          // Merge: keep any live messages added while history was loading
+          setMessages((prev) => {
+            const liveMsgs = prev.filter(m => !m.id.startsWith('hist-'))
+            if (liveMsgs.length === 0) return history
+            return trimMessages([...history, ...liveMsgs])
+          })
         }
       })
       .catch(() => {
@@ -632,14 +889,17 @@ export function useAnalystSession({
         content: text,
         timestamp: Date.now(),
       }
-      setMessages((prev) => [...prev, userMsg])
+      setMessages((prev) => trimMessages([...prev, userMsg]))
+
+      // Persist user message for history recovery
+      api.addAgentUserMessage(agentId, text).catch(() => {})
 
       setIsStreaming(true)
       const startTime = Date.now()
 
       api.invokeAgent(agentId, { input: text })
         .then((result) => {
-          const duration = Math.round((Date.now() - startTime) / 1000)
+          const duration = Date.now() - startTime
           const aiMsg: AnalystMessage = {
             id: nextId(),
             type: result.has_error ? 'error' : 'ai',
@@ -648,7 +908,7 @@ export function useAnalystSession({
             modelName: config.modelName,
             duration,
           }
-          setMessages((prev) => [...prev, aiMsg])
+          setMessages((prev) => trimMessages([...prev, aiMsg]))
         })
         .catch((err) => {
           const errMsg: AnalystMessage = {
@@ -657,7 +917,7 @@ export function useAnalystSession({
             content: err instanceof Error ? err.message : 'Request failed',
             timestamp: Date.now(),
           }
-          setMessages((prev) => [...prev, errMsg])
+          setMessages((prev) => trimMessages([...prev, errMsg]))
         })
         .finally(() => {
           setIsStreaming(false)

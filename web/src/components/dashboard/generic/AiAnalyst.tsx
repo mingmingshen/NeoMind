@@ -173,7 +173,12 @@ export function AiAnalyst({
   })
 
   // ---- Data source binding ----
-  const { data: dsData } = useDataSource<string>(dataSourceProp)
+  // preserveMultiple keeps each data source separate (nested arrays) so
+  // extractLatestValue can build key:value pairs per metric instead of
+  // returning only the first metric's raw value.
+  const { data: dsData } = useDataSource<string>(dataSourceProp, {
+    preserveMultiple: Array.isArray(dataSourceProp) && dataSourceProp.length > 1,
+  })
 
   // Show the latest data point in the timeline while LLM processes in background.
   // useDataSource returns different shapes depending on source type:
@@ -227,14 +232,25 @@ export function AiAnalyst({
     return dsData
   }, [dsData, dataSourceProp])
 
-  // Only send data to timeline during active execution rounds.
-  // Data outside of execution is meaningless noise.
+  // Send data to timeline during active execution rounds only.
+  // Single effect handles both round-start (isStreaming transition) and
+  // dsData updates, with unified dedup to prevent duplicate entries.
+  const prevStreamingRef = useRef(false)
   useEffect(() => {
-    if (editMode || dsData == null || !isStreaming) return
+    if (editMode || dsData == null || !isStreaming) {
+      prevStreamingRef.current = isStreaming
+      return
+    }
+
+    // New round started — reset dedup so first data is always sent
+    if (!prevStreamingRef.current) {
+      lastEnqueuedRef.current = null
+    }
+    prevStreamingRef.current = true
+
     const latestValue = extractLatestValue()
     if (latestValue == null) return
 
-    // Deduplicate: skip if the value hasn't changed
     const strVal = typeof latestValue === 'string' ? latestValue : JSON.stringify(latestValue)
     if (strVal === lastEnqueuedRef.current || strVal.length < 1) return
     lastEnqueuedRef.current = strVal
@@ -244,36 +260,7 @@ export function AiAnalyst({
     } else {
       sendData(latestValue, dataSourceLabel)
     }
-    // NOTE: intentionally omits sendImage/sendData from deps to avoid re-triggers
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editMode, dsData, isStreaming, dataSourceProp])
-
-  // When a new execution round starts, ensure data appears BEFORE the streaming UI.
-  // Reset dedup and force-send current data so it's inserted before the streaming placeholder.
-  const prevStreamingRef = useRef(false)
-  useEffect(() => {
-    if (!isStreaming || prevStreamingRef.current || editMode || dsData == null) {
-      prevStreamingRef.current = isStreaming
-      return
-    }
-    prevStreamingRef.current = true
-    lastEnqueuedRef.current = null
-
-    const latestValue = extractLatestValue()
-    if (latestValue == null) return
-
-    // Set dedup AFTER force-send so the normal dsData effect won't duplicate
-    const strVal = typeof latestValue === 'string' ? latestValue : JSON.stringify(latestValue)
-
-    if (typeof latestValue === 'string' && isBase64Image(latestValue)) {
-      sendImage(normalizeToDataUrl(latestValue), dataSourceLabel)
-    } else {
-      sendData(latestValue, dataSourceLabel)
-    }
-    lastEnqueuedRef.current = strVal
-    // NOTE: only depends on isStreaming — fires once per round start
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStreaming, editMode, dsData])
 
   // ---- Auto-init agent when dataSource is set but no agentId ----
   const hasDataSource = dataSourceProp !== undefined && dataSourceProp !== null

@@ -9,7 +9,7 @@
 //! GET    /api/messages/stats        - Message statistics
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Json,
 };
 use serde::Deserialize;
@@ -25,15 +25,77 @@ use super::{
 use crate::models::ErrorResponse;
 use serde_json::json;
 
-/// List messages.
-/// GET /api/messages
+/// Query parameters for listing messages.
+#[derive(Debug, Deserialize)]
+pub struct ListMessagesQuery {
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+    pub severity: Option<String>,
+    pub status: Option<String>,
+    pub category: Option<String>,
+    pub message_type: Option<String>,
+}
+
+/// List messages with pagination and filters.
+/// GET /api/messages?limit=10&offset=0&severity=warning&status=active
 pub async fn list_messages_handler(
     State(state): State<ServerState>,
+    Query(params): Query<ListMessagesQuery>,
 ) -> HandlerResult<serde_json::Value> {
+    let limit = params.limit.unwrap_or(50).min(200);
+    let offset = params.offset.unwrap_or(0);
+
     let messages = state.core.message_manager.list_messages().await;
+
+    // Apply filters
+    let filtered: Vec<&Message> = messages
+        .iter()
+        .filter(|m| {
+            if let Some(ref sev) = params.severity {
+                let msg_sev = format!("{:?}", m.severity).to_lowercase();
+                if &msg_sev != sev.to_lowercase().as_str() {
+                    return false;
+                }
+            }
+            if let Some(ref st) = params.status {
+                let msg_st = format!("{:?}", m.status).to_lowercase();
+                if &msg_st != st.to_lowercase().as_str() {
+                    return false;
+                }
+            }
+            if let Some(ref cat) = params.category {
+                if &m.category != cat {
+                    return false;
+                }
+            }
+            if let Some(ref mt) = params.message_type {
+                let msg_mt = format!("{:?}", m.message_type).to_lowercase();
+                if &msg_mt != mt.to_lowercase().as_str() {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    let total = filtered.len();
+
+    // Sort by timestamp descending (newest first)
+    let mut sorted = filtered;
+    sorted.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+    // Apply pagination
+    let paginated: Vec<&Message> = sorted
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect();
+
     ok(json!({
-        "messages": messages,
-        "count": messages.len(),
+        "messages": paginated,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
     }))
 }
 

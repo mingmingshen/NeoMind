@@ -5,8 +5,8 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
-import { PageTabsBar, PageTabsContent, PageTabsBottomNav, EmptyStateInline, Pagination, ResponsiveTable } from '@/components/shared'
-import { MessageSquare, Network, Settings, Filter as FilterIcon } from 'lucide-react'
+import { PageTabsBar, PageTabsContent, PageTabsBottomNav, Pagination, ResponsiveTable } from '@/components/shared'
+import { MessageSquare, Network, Settings, Filter as FilterIcon, Inbox } from 'lucide-react'
 import { api, getApiBase } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { confirm } from '@/hooks/use-confirm'
@@ -600,9 +600,24 @@ export default function MessagesPage() {
   const fetchMessages = useCallback(async () => {
     setLoading(true)
     try {
+      // Build query params for server-side filtering and pagination
+      const params = new URLSearchParams({ limit: '200', offset: '0' })
+      if (selectedSeverities.size === 1) {
+        params.set('severity', [...selectedSeverities][0])
+      }
+      if (selectedStatuses.size === 1) {
+        params.set('status', [...selectedStatuses][0])
+      }
+      if (selectedCategories.size === 1) {
+        params.set('category', [...selectedCategories][0])
+      }
+      if (selectedMessageTypes.size === 1) {
+        params.set('message_type', [...selectedMessageTypes][0])
+      }
+
       // Fetch both notifications and delivery logs in parallel
       const [messagesResponse, deliveryLogsResponse] = await Promise.all([
-        fetch(getApiUrl('/messages'), {
+        fetch(getApiUrl(`/messages?${params.toString()}`), {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
           },
@@ -1410,9 +1425,10 @@ export default function MessagesPage() {
               loading={loading}
               emptyState={
                 !loading && messages.length === 0 ? (
-                  <EmptyStateInline
-                    title={t('messages.empty.title')}
-                  />
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <Inbox className="h-10 w-10 text-muted-foreground/50 mb-2" />
+                    <p className="text-sm text-muted-foreground">{t('messages.empty.title')}</p>
+                  </div>
                 ) : undefined
               }
             />
@@ -1591,7 +1607,10 @@ export default function MessagesPage() {
             loading={loading}
             emptyState={
               !loading && channels.length === 0 ? (
-                <EmptyStateInline title={t('messages.channels.empty.title')} />
+                <div className="flex flex-col items-center justify-center text-center">
+                  <Inbox className="h-10 w-10 text-muted-foreground/50 mb-2" />
+                  <p className="text-sm text-muted-foreground">{t('messages.channels.empty.title')}</p>
+                </div>
               ) : undefined
             }
           />

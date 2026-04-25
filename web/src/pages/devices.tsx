@@ -259,14 +259,14 @@ export function DevicesPage() {
     }
   }, [fetchDevices])
 
-  // Fetch device types when component mounts
+  // Fetch device types lazily when types tab is first accessed
   const hasFetchedTypes = useRef(false)
   useEffect(() => {
-    if (!hasFetchedTypes.current) {
+    if (!hasFetchedTypes.current && activeTab === 'types') {
       hasFetchedTypes.current = true
       fetchDeviceTypes()
     }
-  }, [fetchDeviceTypes])
+  }, [activeTab, fetchDeviceTypes])
 
   // Load device from URL parameter
   useEffect(() => {

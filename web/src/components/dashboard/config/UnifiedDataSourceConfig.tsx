@@ -1798,7 +1798,7 @@ export function UnifiedDataSourceConfig({
       )}
 
       {/* Category tabs */}
-      <div className="flex border-b overflow-x-auto shrink-0">
+      <div className="flex border-b overflow-x-auto shrink-0 scrollbar-none [-webkit-overflow-scrolling:touch]">
         {availableCategories.map(cat => {
           const Icon = cat.icon
           const isActive = selectedCategory === cat.id

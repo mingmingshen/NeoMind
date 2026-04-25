@@ -1774,7 +1774,7 @@ export const api = {
    * GET /api/agents/:id/executions/:execution_id
    */
   getAgentExecution: (id: string, executionId: string) =>
-    fetchAPI<AgentExecution>(`/agents/${id}/executions/${executionId}`),
+    fetchAPI<AgentExecutionDetail>(`/agents/${id}/executions/${executionId}`),
 
   /**
    * Get execution with full details (alias for getAgentExecution)

@@ -2983,17 +2983,9 @@ impl AgentExecutor {
                     .map_err(|e| NeoMindError::Storage(format!("Failed to update memory: {}", e)))?;
 
                 // Extract learned patterns into system memory
-                if !decision_process.decisions.is_empty()
-                    || !decision_process.situation_analysis.is_empty()
-                {
-                    self.extract_to_system_memory(
-                        &agent,
-                        &decision_process.situation_analysis,
-                        &decision_process.conclusion,
-                        &decision_process.decisions,
-                    )
-                    .await;
-                }
+                // DISABLED: The memory scheduler already runs periodic extraction.
+                // Per-execution extraction is redundant, wastes tokens, and uses the wrong model.
+                // See: memory/scheduler.rs for the scheduled extraction path.
 
                 tracing::debug!(
                     agent_id = %agent_id,
@@ -3121,14 +3113,9 @@ impl AgentExecutor {
                     .map_err(|e| NeoMindError::Storage(format!("Failed to update memory: {}", e)))?;
 
                 // Bridge: extract learned patterns into system memory
-                if !decisions.is_empty() || !situation_analysis.is_empty() {
-                    self.extract_to_system_memory(
-                        &agent,
-                        &situation_analysis,
-                        &conclusion,
-                        &decisions,
-                    ).await;
-                }
+                // DISABLED: The memory scheduler already runs periodic extraction.
+                // Per-execution extraction is redundant, wastes tokens, and uses the wrong model.
+                // See: memory/scheduler.rs for the scheduled extraction path.
 
                 // Calculate confidence from reasoning
                 let confidence = if reasoning_steps.is_empty() {

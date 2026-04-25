@@ -121,12 +121,17 @@ function extractImagesFromData(data: DataCollected[]): Array<{ source: string; i
       // Object with image field
       if (typeof value === 'object') {
         const obj = value as Record<string, unknown>
-        for (const key of ['image', 'src', 'url', 'data', 'value', 'base64', 'image_data']) {
+        for (const key of ['image', 'image_base64', 'src', 'url', 'data', 'value', 'base64', 'image_data']) {
           const v = obj[key]
           if (typeof v === 'string' && isBase64Image(v)) {
+            let imgSrc = v
+            if (key === 'image_base64' && !v.startsWith('data:')) {
+              const mime = (obj.image_mime_type || obj.mime_type) as string | undefined
+              imgSrc = mime ? `data:${mime};base64,${v}` : `data:image/png;base64,${v}`
+            }
             images.push({
               source: `${item.source}.${key}`,
-              image: normalizeToDataUrl(v),
+              image: normalizeToDataUrl(imgSrc),
               timestamp: item.timestamp
             })
             break
@@ -629,6 +634,7 @@ export function AgentMonitorWidget({
   const [agent, setAgent] = useState<AiAgent | null>(null)
   const [loading, setLoading] = useState(true)
   const [agentNotFound, setAgentNotFound] = useState(false)
+  const agentNotFoundRef = useRef(false)
   const [executions, setExecutions] = useState<AgentExecution[]>([])
   const [executionDetails, setExecutionDetails] = useState<Record<string, any>>({})
   const [isExecuting, setIsExecuting] = useState(false)
@@ -658,31 +664,33 @@ export function AgentMonitorWidget({
     try {
       const data = await api.getAgent(agentId)
       setAgent(data)
+      agentNotFoundRef.current = false
       setAgentNotFound(false)
     } catch (error) {
-      if (!agentNotFound) {
+      if (!agentNotFoundRef.current) {
         console.warn('Agent not found:', agentId)
       }
+      agentNotFoundRef.current = true
       setAgent(null)
       setAgentNotFound(true)
     } finally {
       setLoading(false)
     }
-  }, [agentId, agentNotFound])
+  }, [agentId])
 
   // Fetch executions
   const loadExecutions = useCallback(async () => {
-    if (!agentId || agentNotFound) return
+    if (!agentId || agentNotFoundRef.current) return
     try {
       const data = await api.getAgentExecutions(agentId, 50)
       setExecutions(data.executions || [])
     } catch (error) {
-      if (!agentNotFound) {
+      if (!agentNotFoundRef.current) {
         console.warn('Failed to load executions:', agentId)
       }
       setExecutions([])
     }
-  }, [agentId, agentNotFound])
+  }, [agentId])
 
   // Fetch user messages
   const loadUserMessages = useCallback(async () => {
@@ -719,6 +727,7 @@ export function AgentMonitorWidget({
     setThinkingSteps([])
     setAgent(null)
     setAgentNotFound(false)
+    agentNotFoundRef.current = false
     setExecutions([])
     setExecutionDetails({})
     loadAgent()

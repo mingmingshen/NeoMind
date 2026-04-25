@@ -19,7 +19,10 @@ interface AnalystMessageBubbleProps {
 
 export function AnalystMessageBubble({ message, streamingContent }: AnalystMessageBubbleProps) {
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null)
-  const isStreaming = message.isStreaming || !!streamingContent
+  // Streaming indicator is controlled by streamingMsgId (via AnalystTimeline),
+  // NOT by message.isStreaming which is never cleared from the messages array.
+  // streamingContent is undefined when this message is not the active streaming target.
+  const isStreaming = streamingContent !== undefined
   const displayContent = streamingContent || message.content
 
   const formatTime = (ts: number) =>
@@ -88,7 +91,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
               </span>
               <span className="text-[10px] text-muted-foreground">{formatTime(message.timestamp)}</span>
             </div>
-            <div className="mt-1 rounded-lg px-3 py-1.5 bg-amber-500/6 border border-amber-500/15 max-w-[260px]">
+            <div className="mt-1 rounded-lg px-3 py-1.5 bg-amber-500/6 border border-amber-500/15 max-w-[280px] overflow-hidden">
               {/* Inline images */}
               {hasImages && (
                 <div className="flex gap-1 mb-1 flex-wrap">
@@ -109,7 +112,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
               )}
               {/* Text data lines */}
               {lines.map((line, i) => (
-                <p key={i} className="text-xs text-foreground/80 font-mono leading-relaxed">
+                <p key={i} className="text-xs text-foreground/80 font-mono leading-relaxed break-all">
                   {line.includes(':')
                     ? <>
                         <span className="text-foreground/50">{line.split(':').slice(0, -1).join(':')}:</span>
@@ -153,7 +156,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
             {isStreaming ? (
               <span className="text-[10px] text-purple-500 flex items-center gap-1">
                 <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                streaming...
+                Analyzing...
               </span>
             ) : (
               <span className="text-[10px] text-muted-foreground flex items-center gap-1">
@@ -162,11 +165,17 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
               </span>
             )}
           </div>
-          <div className="mt-1 rounded-lg px-3 py-2 bg-purple-500/6 border border-purple-500/15">
-            <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
-              {displayContent}
-              {isStreaming && <span className="text-purple-500">|</span>}
-            </p>
+          <div className="mt-1 rounded-lg px-3 py-2 bg-purple-500/6 border border-purple-500/15 max-w-[320px]">
+            {isStreaming ? (
+              <div className="flex items-center gap-1.5">
+                <Loader2 className="h-3 w-3 animate-spin text-purple-500" />
+                <span className="text-xs text-muted-foreground">Waiting for response...</span>
+              </div>
+            ) : (
+              <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">
+                {displayContent}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -201,7 +210,7 @@ export function AnalystMessageBubble({ message, streamingContent }: AnalystMessa
           <AlertCircle className="h-3 w-3 text-red-500" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="rounded-lg px-3 py-2 bg-red-500/10 border border-red-500/20">
+          <div className="rounded-lg px-3 py-2 bg-red-500/10 border border-red-500/20 max-w-[320px]">
             <p className="text-xs text-red-500">{message.content}</p>
           </div>
         </div>

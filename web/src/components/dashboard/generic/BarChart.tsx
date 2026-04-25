@@ -35,7 +35,7 @@ import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors } from '@/design-system/tokens/color'
 import type { DataSource, DataSourceOrList, TelemetryAggregate, ChartViewMode } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
-import { EmptyState } from '../shared'
+import { ChartContainer, EmptyState } from '../shared'
 import {
   getEffectiveAggregate,
   getEffectiveTimeWindow,
@@ -567,7 +567,7 @@ export function BarChart({
       {title && (
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
-      <div className={cn('w-full', 'flex-1 min-h-0')}>
+      <ChartContainer>
         <ResponsiveContainer width="100%" height="100%">
           <RechartsBarChart
             data={chartData}
@@ -622,7 +622,7 @@ export function BarChart({
             )}
           </RechartsBarChart>
         </ResponsiveContainer>
-      </div>
+      </ChartContainer>
     </div>
   )
 }

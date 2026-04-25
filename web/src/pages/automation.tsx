@@ -102,21 +102,47 @@ export function AutomationPage() {
   const [rulesPage, setRulesPage] = useState(1)
   const [transformsPage, setTransformsPage] = useState(1)
 
-  // Resources for dialogs
+  // Resources for dialogs (lazy-loaded)
   const [devices, setDevices] = useState<any[]>([])
   const [deviceTypes, setDeviceTypes] = useState<any[]>([])
   const [ruleDevices, setRuleDevices] = useState<any[]>([])  // Devices with metrics for rules
   const [extensions, setExtensions] = useState<Extension[]>([])
   const [extensionDataSources, setExtensionDataSources] = useState<ExtensionDataSourceInfo[]>([])
   const [messageChannels, setMessageChannels] = useState<Array<{ name: string; type: string; enabled: boolean }>>([])
+  const [resourcesLoaded, setResourcesLoaded] = useState(false)
 
-  // Fetch data
-  const loadItems = useCallback(async () => {
+  // Load tab-specific list only (fast, minimal API calls)
+  const loadTabData = useCallback(async () => {
     setLoading(true)
     try {
-      // All independent API calls run in parallel
-      const [devicesData, typesResult, resourcesResult, extResult, channelsResult, tabData] = await Promise.all([
-        api.getDevices().catch((e) => { throw e }),
+      if (activeTab === 'rules') {
+        const data = await api.listRules()
+        if (data && 'rules' in data) {
+          setRules((data.rules || []).sort((a: Rule, b: Rule) => {
+            const aTime = typeof a.created_at === 'string' ? new Date(a.created_at).getTime() : a.created_at
+            const bTime = typeof b.created_at === 'string' ? new Date(b.created_at).getTime() : b.created_at
+            return bTime - aTime
+          }))
+        }
+      } else if (activeTab === 'transforms') {
+        const data = await api.listTransforms()
+        if (data && 'transforms' in data) {
+          setTransforms((data.transforms || []).sort((a: TransformAutomation, b: TransformAutomation) => b.created_at - a.created_at))
+        }
+      }
+    } catch (error) {
+      handleError(error, { operation: `Load ${activeTab}`, showToast: false })
+    } finally {
+      setLoading(false)
+    }
+  }, [activeTab, handleError])
+
+  // Lazy-load dialog resources only when needed (first dialog open)
+  const loadResources = useCallback(async () => {
+    if (resourcesLoaded) return
+    try {
+      const [devicesData, typesResult, resourcesResult, extResult, channelsResult] = await Promise.all([
+        api.getDevices().catch((): any => ({ devices: [] })),
         api.getDeviceTypes().catch((): any => ({ device_types: [] })),
         api.getRuleResources().catch((): any => ({ devices: [] })),
         Promise.all([
@@ -124,11 +150,6 @@ export function AutomationPage() {
           api.listAllDataSources().catch((): (ExtensionDataSourceInfo | TransformDataSourceInfo)[] => []),
         ]),
         api.listMessageChannels().catch((): any => ({ channels: [] })),
-        activeTab === 'rules'
-          ? api.listRules()
-          : activeTab === 'transforms'
-            ? api.listTransforms()
-            : Promise.resolve(null),
       ])
 
       setDevices(devicesData.devices || [])
@@ -144,28 +165,19 @@ export function AutomationPage() {
         type: ch.channel_type,
         enabled: ch.enabled
       })))
-
-      // Set tab-specific data
-      if (activeTab === 'rules' && tabData && 'rules' in tabData) {
-        setRules((tabData.rules || []).sort((a: Rule, b: Rule) => {
-          const aTime = typeof a.created_at === 'string' ? new Date(a.created_at).getTime() : a.created_at
-          const bTime = typeof b.created_at === 'string' ? new Date(b.created_at).getTime() : b.created_at
-          return bTime - aTime
-        }))
-      } else if (activeTab === 'transforms' && tabData && 'transforms' in tabData) {
-        setTransforms((tabData.transforms || []).sort((a: TransformAutomation, b: TransformAutomation) => b.created_at - a.created_at))
-      }
+      setResourcesLoaded(true)
     } catch (error) {
-      handleError(error, { operation: `Load ${activeTab}`, showToast: false })
-    } finally {
-      setLoading(false)
+      handleError(error, { operation: 'Load resources', showToast: false })
     }
-  }, [activeTab])
+  }, [resourcesLoaded, handleError])
 
-  // Load items when tab changes
+  // Load tab data when tab changes
   useEffect(() => {
-    loadItems()
-  }, [loadItems])
+    loadTabData()
+  }, [loadTabData])
+
+  // Legacy alias for refresh button and import/export handlers
+  const loadItems = loadTabData
 
   // Reset pagination when data changes
   useEffect(() => {
@@ -202,12 +214,14 @@ export function AutomationPage() {
   }, [transforms, transformsPage, TRANSFORMS_ITEMS_PER_PAGE, isMobile])
 
   // Handlers
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (activeTab === 'rules') {
       setEditingRule(undefined)
+      await loadResources()
       setShowRuleDialog(true)
     } else if (activeTab === 'transforms') {
       setEditingTransform(undefined)
+      await loadResources()
       setShowTransformDialog(true)
     }
   }
@@ -217,6 +231,7 @@ export function AutomationPage() {
     try {
       const detail = await api.getRule(rule.id)
       setEditingRule(detail.rule)
+      await loadResources()
       setShowRuleDialog(true)
     } catch (error) {
       handleError(error, { operation: 'Load rule details', showToast: false })
@@ -298,8 +313,9 @@ export function AutomationPage() {
   }
 
   // Transform handlers
-  const handleEditTransform = (transform: TransformAutomation) => {
+  const handleEditTransform = async (transform: TransformAutomation) => {
     setEditingTransform(transform)
+    await loadResources()
     setShowTransformDialog(true)
   }
 

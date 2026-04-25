@@ -29,7 +29,7 @@ import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors } from '@/design-system/tokens/color'
 import type { DataSource, DataSourceOrList, TelemetryAggregate } from '@/types/dashboard'
 import { normalizeDataSource, getSourceId } from '@/types/dashboard'
-import { EmptyState } from '../shared'
+import { ChartContainer, EmptyState } from '../shared'
 import {
   getEffectiveAggregate,
   getEffectiveTimeWindow,
@@ -503,7 +503,7 @@ export function PieChart({
       {title && (
         <div className={cn('mb-3', indicatorFontWeight.title, config.titleText)}>{title}</div>
       )}
-      <div className={cn('w-full', 'flex-1 min-h-0')}>
+      <ChartContainer>
         <ResponsiveContainer width="100%" height="100%">
           <RechartsPieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
             <Pie
@@ -528,7 +528,7 @@ export function PieChart({
             {showLegend && <Legend />}
           </RechartsPieChart>
         </ResponsiveContainer>
-      </div>
+      </ChartContainer>
     </div>
   )
 }

@@ -79,12 +79,15 @@ pub async fn list_devices_handler(
     let limit = pagination.limit.unwrap_or(50).min(1000); // Cap at 1000 items per page
     let offset = (page - 1) * limit;
 
-    // Get all devices
+    // Batch-fetch all data with minimal lock acquisitions
     let configs = state.devices.service.list_devices().await;
-    let _total = configs.len();
+    let all_statuses = state.devices.service.get_all_device_statuses().await;
+    let all_templates = state.devices.service.list_templates().await;
+    let template_map: std::collections::HashMap<&str, _> = all_templates
+        .iter()
+        .map(|t| (t.device_type.as_str(), t))
+        .collect();
 
-    // Performance optimization: Query status once per device and cache for filtering + conversion
-    // This eliminates the N+1 query problem where status was queried twice per device
     struct DeviceWithStatus {
         config: neomind_devices::DeviceConfig,
         device_status: neomind_devices::service::DeviceStatus,
@@ -92,12 +95,11 @@ pub async fn list_devices_handler(
 
     let mut devices_with_status = Vec::new();
     for config in configs {
-        // Query status once per device
-        let device_status = state
-            .devices
-            .service
-            .get_device_status(&config.device_id)
-            .await;
+        // Look up status from batch-fetched map (no per-device lock)
+        let device_status = all_statuses
+            .get(&config.device_id)
+            .cloned()
+            .unwrap_or_default();
 
         // Filter by device_type
         if let Some(ref filter_type) = pagination.device_type {
@@ -174,14 +176,10 @@ pub async fn list_devices_handler(
             chrono::DateTime::from_timestamp(last_seen_ts, 0).unwrap_or_else(chrono::Utc::now);
         let instance = config_to_device_instance(&config, status, last_seen_dt);
 
-        // Get template info for metric/command counts
-        let template = state
-            .devices
-            .service
-            .get_template(&config.device_type)
-            .await;
-        let metric_count = template.as_ref().map(|t| t.metrics.len());
-        let command_count = template.as_ref().map(|t| t.commands.len());
+        // Look up template from batch-fetched map (no per-device lock)
+        let template = template_map.get(config.device_type.as_str());
+        let metric_count = template.map(|t| t.metrics.len());
+        let command_count = template.map(|t| t.commands.len());
 
         dtos.push(DeviceDto {
             id: config.device_id.clone(),
