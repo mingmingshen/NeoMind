@@ -421,8 +421,8 @@ print_post_install() {
         LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 
         if [ "$NO_SERVICE" != "true" ]; then
-            echo "Starting NeoMind service..."
-            $SUDO systemctl start neomind || true
+            echo "Restarting NeoMind service..."
+            $SUDO systemctl restart neomind || true
             sleep 1
 
             # Check if service is running
@@ -456,7 +456,8 @@ print_post_install() {
         fi
     elif [ "$OS" = "darwin" ]; then
         if [ "$NO_SERVICE" != "true" ]; then
-            echo "Starting NeoMind service..."
+            echo "Restarting NeoMind service..."
+            launchctl unload ~/Library/LaunchAgents/com.neomind.server.plist 2>/dev/null || true
             launchctl load ~/Library/LaunchAgents/com.neomind.server.plist 2>/dev/null || true
 
             echo ""
