@@ -17,6 +17,22 @@ import { createDashboardStorage, type DashboardStorage } from '../persistence'
 import { logError } from '@/lib/errors'
 
 // ============================================================================
+// Agent Cleanup Helper
+// ============================================================================
+
+/** Delete the associated AI Agent when an ai-analyst component is removed */
+function cleanupAgentForComponent(component: DashboardComponent | undefined) {
+  if (!component || component.type !== 'ai-analyst') return
+  const agentId = (component as any).config?.agentId as string | undefined
+  if (!agentId) return
+  import('@/lib/api').then(({ api }) => {
+    api.deleteAgent(agentId).catch((err) => {
+      console.warn('[DashboardSlice] Failed to delete agent', agentId, err)
+    })
+  })
+}
+
+// ============================================================================
 // Default Layout
 // ============================================================================
 
@@ -595,14 +611,7 @@ export const createDashboardSlice: StateCreator<
 
       // Clean up AI Analyst agent before removing the component
       const removed = currentDashboard.components.find((c) => c.id === id)
-      if (removed?.type === 'ai-analyst') {
-        const agentId = removed.config?.agentId as string | undefined
-        if (agentId) {
-          import('@/lib/api').then(({ api }) => {
-            api.deleteAgent(agentId).catch(() => {})
-          })
-        }
-      }
+      cleanupAgentForComponent(removed)
 
       const updatedDashboard = {
         ...currentDashboard,
@@ -663,6 +672,9 @@ export const createDashboardSlice: StateCreator<
       )
 
       if (componentsToRemove.length === 0) return
+
+      // Clean up AI agents for any ai-analyst components being removed
+      componentsToRemove.forEach((comp) => cleanupAgentForComponent(comp))
 
       const componentIdsToRemove = new Set(componentsToRemove.map((c) => c.id))
 

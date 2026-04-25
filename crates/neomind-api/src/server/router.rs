@@ -157,6 +157,11 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/extensions/:id/data-sources",
             get(extensions::list_extension_data_sources_handler),
         )
+        // Push metrics from external sources (device/extension-initiated, bypasses polling)
+        .route(
+            "/api/extensions/:id/push-metrics",
+            post(extensions::push_extension_metrics_handler),
+        )
         .route(
             "/api/extensions/:id/metrics/:metric/data",
             get(extensions::query_extension_metric_data_handler),

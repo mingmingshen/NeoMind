@@ -1269,6 +1269,94 @@ pub async fn query_extension_metric_data_handler(
     }))
 }
 
+/// POST /api/extensions/:id/push-metrics
+///
+/// Push metric values from an external source (device, gateway, etc.)
+/// Stores metrics and publishes ExtensionOutput events immediately,
+/// enabling real-time data updates without waiting for the next poll cycle.
+///
+/// Body: `{ "metrics": { "temperature_c": 23.2, "humidity": 80 } }`
+pub async fn push_extension_metrics_handler(
+    State(state): State<ServerState>,
+    Path(extension_id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> HandlerResult<serde_json::Value> {
+    use neomind_devices::mdl::MetricValue;
+
+    let metrics_map = body
+        .get("metrics")
+        .ok_or_else(|| ErrorResponse::bad_request("Missing 'metrics' field".to_string()))?;
+
+    let obj = metrics_map
+        .as_object()
+        .ok_or_else(|| ErrorResponse::bad_request("'metrics' must be an object".to_string()))?;
+
+    if obj.is_empty() {
+        return Err(ErrorResponse::bad_request("'metrics' is empty".to_string()));
+    }
+
+    // Convert JSON values to MetricValues
+    let mut metrics: Vec<(&str, MetricValue)> = Vec::new();
+    for (key, val) in obj {
+        let mv = match val {
+            serde_json::Value::Number(n) if n.is_f64() => MetricValue::Float(n.as_f64().unwrap()),
+            serde_json::Value::Number(n) if n.is_i64() => MetricValue::Integer(n.as_i64().unwrap()),
+            serde_json::Value::String(s) => MetricValue::String(s.clone()),
+            serde_json::Value::Bool(b) => MetricValue::Boolean(*b),
+            other => MetricValue::String(other.to_string()),
+        };
+        metrics.push((key.as_str(), mv));
+    }
+
+    // Store and publish events
+    let source_id = DataSourceId::extension(&extension_id, "_");
+    let source_part = source_id.source_part();
+    let timestamp_ms = chrono::Utc::now().timestamp_millis();
+    let timestamp_secs = timestamp_ms / 1000;
+    let mut stored = 0;
+
+    for (name, value) in &metrics {
+        let dp = neomind_devices::telemetry::DataPoint::new(timestamp_ms, value.clone());
+        if let Err(e) = state.extensions.metrics_storage.write(&source_part, name, dp).await {
+            tracing::warn!(extension_id = %extension_id, metric = %name, error = %e, "[PUSH] Failed to store");
+            continue;
+        }
+        stored += 1;
+
+        // Publish ExtensionOutput event
+        if let Some(bus) = state.core.event_bus.as_ref() {
+            let core_val = match value {
+                MetricValue::Integer(n) => neomind_core::MetricValue::Integer(*n),
+                MetricValue::Float(f) => neomind_core::MetricValue::Float(*f),
+                MetricValue::String(s) => neomind_core::MetricValue::String(s.clone()),
+                MetricValue::Boolean(b) => neomind_core::MetricValue::Boolean(*b),
+                other => neomind_core::MetricValue::String(format!("{:?}", other)),
+            };
+            bus.publish_sync(neomind_core::NeoMindEvent::ExtensionOutput {
+                extension_id: extension_id.clone(),
+                output_name: name.to_string(),
+                value: core_val,
+                timestamp: timestamp_secs,
+                labels: None,
+                quality: None,
+            });
+        }
+    }
+
+    tracing::info!(
+        extension_id = %extension_id,
+        stored,
+        total = metrics.len(),
+        "[PUSH] Metrics pushed"
+    );
+
+    ok(json!({
+        "ok": true,
+        "stored": stored,
+        "total": metrics.len(),
+    }))
+}
+
 /// GET /api/extensions/:id/data-sources
 ///
 /// List data sources (metrics) provided by an extension

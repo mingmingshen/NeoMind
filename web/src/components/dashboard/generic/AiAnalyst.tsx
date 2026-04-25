@@ -105,6 +105,21 @@ export function AiAnalyst({
   }
   const componentId = componentIdRef.current
 
+  /** Get a display label for the data source (handles both single and multi-source) */
+  const dataSourceLabel = useMemo(() => {
+    if (!dataSourceProp) return undefined
+    if (Array.isArray(dataSourceProp)) {
+      const labels = dataSourceProp.map((ds: any) =>
+        ds.extensionMetric?.replace('produce:', '')
+        || ds.metricId
+        || ds.property
+        || ds.extensionId
+      ).filter(Boolean)
+      return labels.length > 0 ? labels.join(', ') : undefined
+    }
+    return (dataSourceProp as any)?.id
+  }, [dataSourceProp])
+
   // Config from props (persisted in dashboard store/localStorage), not Zustand memory
   const config: AiAnalystConfig = useMemo(
     () => ({
@@ -166,20 +181,50 @@ export function AiAnalyst({
   // We extract the latest value for display.
   const lastEnqueuedRef = useRef<string | null>(null)
 
-  /** Extract the latest value from useDataSource output */
+  /** Extract the latest value from useDataSource output.
+   *  Handles multiple shapes:
+   *  - Single source data_points: [{timestamp, value}, ...] → latest .value
+   *  - Multi-source array: [data_points_1, data_points_2, ...] → {metric_0: val, metric_1: val}
+   *  - Raw scalar value (device property) → as-is
+   */
   const extractLatestValue = useCallback(() => {
     if (dsData == null) return null
-    let latestValue: unknown = dsData
+
+    // Multi-source: useDataSource returns [dataForSource1, dataForSource2, ...]
+    // Each entry is either data_points[] or null
+    if (Array.isArray(dsData) && dsData.length > 0 && Array.isArray(dsData[0])) {
+      const summary: Record<string, unknown> = {}
+      const dsList = Array.isArray(dataSourceProp) ? dataSourceProp : [dataSourceProp]
+      dsData.forEach((sourceData: unknown, idx: number) => {
+        const ds = dsList[idx] as any
+        const label = ds?.extensionMetric?.replace('produce:', '')
+          || ds?.metricId
+          || ds?.property
+          || `metric_${idx}`
+        if (Array.isArray(sourceData) && sourceData.length > 0) {
+          const latest = sourceData[0]
+          summary[label] = latest && typeof latest === 'object' && 'value' in latest
+            ? (latest as { value: unknown }).value
+            : latest
+        } else if (sourceData != null) {
+          summary[label] = sourceData
+        }
+      })
+      return Object.keys(summary).length > 0 ? summary : null
+    }
+
+    // Single source: data_points array
     if (Array.isArray(dsData) && dsData.length > 0) {
       const point = dsData[0]
       if (point && typeof point === 'object' && 'value' in point) {
-        latestValue = (point as { value: unknown }).value
-      } else {
-        latestValue = point
+        return (point as { value: unknown }).value
       }
+      return point
     }
-    return latestValue
-  }, [dsData])
+
+    // Raw scalar
+    return dsData
+  }, [dsData, dataSourceProp])
 
   // Only send data to timeline during active execution rounds.
   // Data outside of execution is meaningless noise.
@@ -194,9 +239,9 @@ export function AiAnalyst({
     lastEnqueuedRef.current = strVal
 
     if (typeof latestValue === 'string' && isBase64Image(latestValue)) {
-      sendImage(normalizeToDataUrl(latestValue), dataSourceProp?.id)
+      sendImage(normalizeToDataUrl(latestValue), dataSourceLabel)
     } else {
-      sendData(latestValue, dataSourceProp?.id)
+      sendData(latestValue, dataSourceLabel)
     }
   }, [editMode, dsData, isStreaming, sendImage, sendData, dataSourceProp, extractLatestValue])
 
@@ -218,9 +263,9 @@ export function AiAnalyst({
     const strVal = typeof latestValue === 'string' ? latestValue : JSON.stringify(latestValue)
 
     if (typeof latestValue === 'string' && isBase64Image(latestValue)) {
-      sendImage(normalizeToDataUrl(latestValue), dataSourceProp?.id)
+      sendImage(normalizeToDataUrl(latestValue), dataSourceLabel)
     } else {
-      sendData(latestValue, dataSourceProp?.id)
+      sendData(latestValue, dataSourceLabel)
     }
     lastEnqueuedRef.current = strVal
   }, [isStreaming, editMode, dsData, extractLatestValue, sendImage, sendData, dataSourceProp])

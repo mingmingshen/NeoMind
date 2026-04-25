@@ -1534,10 +1534,10 @@ impl AgentExecutor {
         // Clone device_id for use in spawned tasks
         let device_id_for_spawn = device_id.clone();
 
-        // Clean up old entries from recent_executions (older than 60 seconds)
+        // Clean up old entries from recent_executions (older than cooldown window)
         let now = chrono::Utc::now().timestamp();
         let mut recent = self.recent_executions.write().await;
-        recent.retain(|_, &mut timestamp| now - timestamp < 60);
+        recent.retain(|_, &mut timestamp| now - timestamp < 360);
         drop(recent);
 
         for (_agent_id, agent) in event_agents.iter() {
@@ -1551,22 +1551,23 @@ impl AgentExecutor {
                     .matches_data_source_filter(agent, "device", &device_id, metric)
                     .await
                 {
-                    // Check for duplicate execution within the last 5 seconds
-                    // Deduplicate by agent_id - one execution per agent per window
+                    // Cooldown: one execution per agent per 60s window
+                    const COOLDOWN_SECS: i64 = 60;
                     let dedup_key = agent.id.clone();
                     let recent = self.recent_executions.read().await;
                     let is_duplicate = recent
                         .get(&dedup_key)
-                        .map(|&timestamp| now - timestamp < 5)
+                        .map(|&timestamp| now - timestamp < COOLDOWN_SECS)
                         .unwrap_or(false);
                     drop(recent);
 
                     if is_duplicate {
-                        tracing::debug!(
+                        tracing::info!(
                             agent_name = %agent.name,
                             device_id = %device_id,
                             metric = %metric,
-                            "Skipping duplicate event-triggered execution (within 5 seconds)"
+                            "Skipping event-triggered execution (cooldown: {}s)",
+                            COOLDOWN_SECS
                         );
                         continue;
                     }
@@ -1728,10 +1729,10 @@ impl AgentExecutor {
 
         let source_id_for_spawn = source_id.clone();
 
-        // Clean up old entries from recent_executions (older than 60 seconds)
+        // Clean up old entries from recent_executions (older than cooldown window)
         let now = chrono::Utc::now().timestamp();
         let mut recent = self.recent_executions.write().await;
-        recent.retain(|_, &mut timestamp| now - timestamp < 60);
+        recent.retain(|_, &mut timestamp| now - timestamp < 360);
         drop(recent);
 
         for (_agent_id, agent) in event_agents.iter() {
@@ -1751,22 +1752,24 @@ impl AgentExecutor {
                 continue;
             }
 
-            // Deduplicate by agent_id — one execution per agent per 5-second window
+            // Cooldown: one execution per agent per 60s window
+            const COOLDOWN_SECS: i64 = 60;
             let dedup_key = agent.id.clone();
             let recent = self.recent_executions.read().await;
             let is_duplicate = recent
                 .get(&dedup_key)
-                .map(|&timestamp| now - timestamp < 5)
+                .map(|&timestamp| now - timestamp < COOLDOWN_SECS)
                 .unwrap_or(false);
             drop(recent);
 
             if is_duplicate {
-                tracing::debug!(
+                tracing::info!(
                     agent_name = %agent.name,
                     source_type = %source_type,
                     source_id = %source_id,
                     field = %field,
-                    "Skipping duplicate data event-triggered execution (within 5 seconds)"
+                    "Skipping data event-triggered execution (cooldown: {}s)",
+                    COOLDOWN_SECS
                 );
                 continue;
             }

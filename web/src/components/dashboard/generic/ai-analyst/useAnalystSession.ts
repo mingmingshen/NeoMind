@@ -94,11 +94,14 @@ function summarizeData(value: unknown): string {
  * - Others → property or fallback to "image"
  */
 function resolveMetricField(dataSource: DataSource): string {
-  return dataSource.metricId
+  const raw = dataSource.metricId
     || dataSource.extensionMetric
     || dataSource.property
     || dataSource.infoProperty
     || 'image'
+  // Frontend data source picker uses "produce:" prefix for extension metrics
+  // but backend stores/publishes raw metric names without this prefix
+  return raw.startsWith('produce:') ? raw.slice(8) : raw
 }
 
 function buildResources(dataSources: DataSource[]): ResourceRequest[] | undefined {
@@ -420,6 +423,20 @@ export function useAnalystSession({
 
     return () => { cancelled = true }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync llm_backend_id when modelId changes after agent creation
+  const prevModelIdRef = useRef(config.modelId)
+  useEffect(() => {
+    const agentId = agentIdRef.current
+    if (!agentId || !isConnected) return
+    if (config.modelId === prevModelIdRef.current) return
+    prevModelIdRef.current = config.modelId
+    if (!config.modelId) return
+
+    api.updateAgent(agentId, { llm_backend_id: config.modelId }).catch(() => {
+      // Non-critical: agent will use whatever backend it has
+    })
+  }, [config.modelId, isConnected])
 
   // Load execution history when agent connects (verification or creation)
   useEffect(() => {

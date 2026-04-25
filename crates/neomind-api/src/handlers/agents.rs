@@ -1029,7 +1029,12 @@ pub async fn create_agent(
         }
     }
 
-    tracing::info!("Created AI Agent: {} ({})", agent.name, agent.id);
+    tracing::info!(
+        "Created AI Agent: {} ({}) llm_backend_id={}",
+        agent.name,
+        agent.id,
+        agent.llm_backend_id.as_deref().unwrap_or("default")
+    );
 
     ok(json!({
         "id": agent.id,
