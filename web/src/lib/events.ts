@@ -619,8 +619,8 @@ export class EventsWebSocket {
             typeHandlers.forEach(handler => {
               try {
                 handler(event)
-              } catch {
-                // Silent error handling
+              } catch (err) {
+                console.error('[Events] Type handler error:', err)
               }
             })
           }
@@ -629,7 +629,8 @@ export class EventsWebSocket {
           this.genericHandlers.forEach(handler => {
             try {
               handler(event)
-            } catch {
+            } catch (err) {
+              console.error('[Events] Generic handler error:', err)
               // Silent error handling
             }
           })

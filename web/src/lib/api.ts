@@ -242,7 +242,8 @@ export async function fetchAPI<T>(
   // Ensure headers is not undefined for headers as Record<string, string>
   const finalHeaders = headers as Record<string, string>
 
-  // Auto-retry 5xx errors (backend restart, deployment, etc.)
+  // Auto-retry gateway errors only (502/503/504) — not 500 (application bugs)
+  // This avoids duplicate operations on non-idempotent POST/PUT endpoints
   const MAX_RETRIES = 3
   const RETRY_DELAYS = [1000, 2000, 3000] // 1s, 2s, 3s
   let response = await fetch(`${API_BASE}${path}`, {
@@ -251,7 +252,7 @@ export async function fetchAPI<T>(
     signal,
   })
 
-  if (response.status >= 500 && response.status < 600 && !signal?.aborted) {
+  if ([502, 503, 504].includes(response.status) && !signal?.aborted) {
     for (let i = 0; i < MAX_RETRIES; i++) {
       await new Promise(r => setTimeout(r, RETRY_DELAYS[i]))
       response = await fetch(`${API_BASE}${path}`, {
@@ -259,7 +260,7 @@ export async function fetchAPI<T>(
         headers: finalHeaders,
         signal,
       })
-      if (response.ok || response.status < 500) break
+      if (response.ok || response.status < 500 || response.status === 500) break
     }
   }
 
@@ -1529,11 +1530,11 @@ export const api = {
 
   /**
    * Get all extension + transform data sources (for dashboard selectors, rules, etc.)
-   * Single request to unified endpoint — backend collects only needed types.
+   * Reuses listUnifiedDataSources internally to avoid duplicate API calls.
    */
   listAllDataSources: async () => {
     try {
-      const result = await fetchAPI<{ data: UnifiedDataSourceInfo[]; total: number; source_options: [string, string][] }>('/data/sources?limit=500&skip_telemetry=true')
+      const result = await api.listUnifiedDataSources({ limit: 500, skip_telemetry: 'true' })
       const mapped: Array<ExtensionDataSourceInfo | TransformDataSourceInfo> = []
 
       for (const ds of result.data) {

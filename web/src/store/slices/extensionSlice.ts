@@ -67,6 +67,9 @@ export interface ExtensionSlice extends ExtensionState {
   // Convenience aliases for backward compatibility
   extensionDataSources: ExtensionDataSourceInfo[]
   fetchExtensionDataSources: () => Promise<ExtensionDataSourceInfo[]>
+
+  // Direct setter for extension data sources (used by UnifiedDataSourceConfig to avoid duplicate API calls)
+  setExtensionDataSources: (sources: ExtensionDataSourceInfo[]) => void
 }
 
 export const createExtensionSlice: StateCreator<
@@ -132,6 +135,9 @@ export const createExtensionSlice: StateCreator<
       await api.unregisterExtension(id)
       // Clear dynamic registry caches and global variables for this extension
       dynamicRegistry.unregisterExtension(id)
+      // Close and clean up extension stream client to prevent memory leak
+      const { closeExtensionStreamClient } = await import('@/lib/extension-stream')
+      closeExtensionStreamClient(id)
       // Remove from list and clear stats
       set((state) => ({
         extensions: state.extensions.filter((e) => e.id !== id),
@@ -353,5 +359,21 @@ export const createExtensionSlice: StateCreator<
     // Update the flat array
     set({ extensionDataSources: result })
     return result
+  },
+
+  // Direct setter to populate extension data sources without extra API call
+  setExtensionDataSources: (sources) => {
+    // Group by extension_id for caching
+    const grouped: Record<string, ExtensionDataSourceInfo[]> = {}
+    sources.forEach((ds) => {
+      if (!grouped[ds.extension_id]) {
+        grouped[ds.extension_id] = []
+      }
+      grouped[ds.extension_id].push(ds)
+    })
+    set((state) => ({
+      dataSources: { ...state.dataSources, ...grouped },
+      extensionDataSources: sources,
+    }))
   },
 })

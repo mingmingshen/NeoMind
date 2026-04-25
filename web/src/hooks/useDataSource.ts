@@ -1804,7 +1804,8 @@ export function useDataSource<T = unknown>(
             if (isPreserveMultiple && currentDataSources.length > 1) {
               finalData = updatedResults.map((r, i) => {
                 if (r !== undefined) return r
-                // For undefined results, use empty array (not old data) to prevent stale references
+                // Keep existing data for sources not affected by this event
+                if (Array.isArray(currentData) && currentData[i] !== undefined) return currentData[i]
                 return []
               })
             } else {
@@ -2244,26 +2245,40 @@ export function useDataSource<T = unknown>(
       if (matchingSources.length > 0) {
         // Trigger data refresh for matching sources
         // The current extension fetching logic will pick up the new data
-        const { transform: transformFn } = optionsRef.current
+        const { transform: transformFn, preserveMultiple } = optionsRef.current
         const currentData = dataRef.current as any
+        const extensionDataSources = dataSourcesRef.current.filter((ds) => ds.type === 'extension')
 
         // Update the current data with the new value from the event
-        let newData = currentData
         const eventValue = eventData.value
+        const newPoint = { timestamp: Math.floor(Date.now() / 1000), time: Math.floor(Date.now() / 1000), value: eventValue }
 
-        // Handle both single value and array data formats
-        if (Array.isArray(currentData)) {
-          // Prepend new value to array
-          newData = [{ timestamp: Date.now(), value: eventValue }, ...currentData]
+        let newData: unknown
+        if (preserveMultiple && extensionDataSources.length > 1 && Array.isArray(currentData)) {
+          // preserveMultiple: only update the matching source's sub-array, keep others intact
+          const nested = (currentData as unknown[][]).map((arr, i) => {
+            const ds = extensionDataSources[i]
+            if (!ds) return arr
+            // Check if this data source matches the event
+            const parts = (ds.extensionMetric ?? '').split(':')
+            const metricName = parts.length > 1 ? parts[1] : parts[0]
+            if (ds.extensionId === eventExtensionId && metricName === eventOutputName) {
+              const currentArr = Array.isArray(arr) ? arr : []
+              return [newPoint, ...currentArr]
+            }
+            return arr
+          })
+          newData = nested
+        } else if (Array.isArray(currentData)) {
+          // Single source: prepend new value to flat array
+          newData = [newPoint, ...currentData]
         } else if (typeof currentData === 'object' && currentData !== null) {
-          // Single value update
           newData = eventValue
         } else {
-          // Replace with new value
           newData = eventValue
         }
 
-        const transformedData = transformFn ? transformFn(newData) : newData
+        const transformedData = transformFn ? transformFn(newData) : (newData as T)
         setData(transformedData)
         setLastUpdate(Date.now())
       }
@@ -2540,70 +2555,109 @@ export function useDataSource<T = unknown>(
         }
 
         if (hasStoreValues) {
-          // Start from API data if we have it, otherwise from empty (so image/components get store-only data)
-          let rawDataArray: unknown[] = Array.isArray(finalData) ? [...finalData] : []
+          const isPreserveMultiple = optionsRef.current.preserveMultiple
 
-          for (const storeItem of telemetryDataSourcesWithStore) {
-            if (storeItem.latestValue === undefined) continue
+          if (isPreserveMultiple && telemetryDataSourcesWithStore.length > 1) {
+            // preserveMultiple: keep each source's data in its own nested array
+            const nestedArrays: unknown[][] = Array.isArray(finalData)
+              ? (finalData as unknown[][]).map(arr => Array.isArray(arr) ? [...arr] : [])
+              : telemetryDataSourcesWithStore.map(() => [])
 
-            const latestValue = storeItem.latestValue
-            const maxLimit = telemetryDataSources[0].limit ?? 50
+            for (let i = 0; i < telemetryDataSourcesWithStore.length; i++) {
+              const storeItem = telemetryDataSourcesWithStore[i]
+              if (storeItem.latestValue === undefined) continue
 
-            // Add store value when: no API data, or value differs from first point, or first point is old (>30s)
-            const firstPoint = rawDataArray[0] as { timestamp?: number; time?: number; value?: unknown } | undefined
-            const firstValue = firstPoint?.value
-            const firstTimestamp = (firstPoint?.timestamp ?? firstPoint?.time ?? 0) as number
-            const firstPointAge = now - firstTimestamp
+              const arr = nestedArrays[i] ?? []
+              const firstPoint = arr[0] as { timestamp?: number; time?: number; value?: unknown } | undefined
+              const firstValue = firstPoint?.value
+              const firstTimestamp = (firstPoint?.timestamp ?? firstPoint?.time ?? 0) as number
+              const firstPointAge = now - firstTimestamp
 
-            const shouldAddNewPoint = rawDataArray.length === 0 ||
-                                      !valuesEqual(firstValue, latestValue) ||
-                                      firstPointAge > 30
+              const shouldAddNewPoint = arr.length === 0 ||
+                                        !valuesEqual(firstValue, storeItem.latestValue) ||
+                                        firstPointAge > 30
 
-            if (shouldAddNewPoint) {
-              const newPoint = {
-                timestamp: now,
-                time: now,
-                value: latestValue,
+              if (shouldAddNewPoint) {
+                arr.unshift({ timestamp: now, time: now, value: storeItem.latestValue })
               }
-              rawDataArray.unshift(newPoint)
+              nestedArrays[i] = arr
             }
-          }
+            finalData = nestedArrays
+          } else {
+            // Single source or non-preserveMultiple: flat array merge
+            let rawDataArray: unknown[] = Array.isArray(finalData) ? [...finalData] : []
 
-          finalData = rawDataArray
+            for (const storeItem of telemetryDataSourcesWithStore) {
+              if (storeItem.latestValue === undefined) continue
+
+              const latestValue = storeItem.latestValue
+              const maxLimit = telemetryDataSources[0].limit ?? 50
+
+              const firstPoint = rawDataArray[0] as { timestamp?: number; time?: number; value?: unknown } | undefined
+              const firstValue = firstPoint?.value
+              const firstTimestamp = (firstPoint?.timestamp ?? firstPoint?.time ?? 0) as number
+              const firstPointAge = now - firstTimestamp
+
+              const shouldAddNewPoint = rawDataArray.length === 0 ||
+                                        !valuesEqual(firstValue, latestValue) ||
+                                        firstPointAge > 30
+
+              if (shouldAddNewPoint) {
+                const newPoint = {
+                  timestamp: now,
+                  time: now,
+                  value: latestValue,
+                }
+                rawDataArray.unshift(newPoint)
+              }
+            }
+
+            finalData = rawDataArray
+          }
         }
 
-        // For telemetry (e.g. image history): sort by latest time, dedupe (incl. near-duplicates), then take first N
-        if (Array.isArray(finalData) && telemetryDataSources.length > 0) {
-          const ds = telemetryDataSources[0]
-          // Detect image data sources and use higher limits
-          const isImageDataSource = (ds.params?.includeRawPoints === true || ds.transform === 'raw') ||
-                                   (ds.metricId && (ds.metricId.toLowerCase().includes('image') ||
-                                                     ds.metricId.toLowerCase().includes('img') ||
-                                                     ds.metricId.includes('values.image')))
+        // For telemetry: sort by latest time, dedupe, then take first N
+        if (telemetryDataSources.length > 0) {
+          const isPreserveMultiple = optionsRef.current.preserveMultiple && telemetryDataSources.length > 1
 
-          const maxLimit = ds.limit ?? (isImageDataSource ? 200 : 50)
-          const getTs = (p: unknown): number => {
-            if (p === null || p === undefined) return 0
-            const o = p as Record<string, unknown>
-            return (o.timestamp ?? o.time ?? o.t ?? 0) as number
-          }
-          const sorted = [...finalData].sort((a, b) => getTs(b) - getTs(a))
-
-          // For image data, remove duplicates based on (timestamp + value) combination
-          if (isImageDataSource) {
-            const dedupedPoints: unknown[] = []
-            for (const point of sorted) {
-              const ts = getTs(point)
-              const value = getPointValue(point)
-              if (!isDuplicatePoint(dedupedPoints, ts, value, getTs)) {
-                dedupedPoints.push(point)
-              }
-              if (dedupedPoints.length >= maxLimit) break
+          const sortDedup = (points: unknown[], ds: typeof telemetryDataSources[0]): unknown[] => {
+            if (!Array.isArray(points) || points.length === 0) return points
+            const isImageDataSource = (ds.params?.includeRawPoints === true || ds.transform === 'raw') ||
+                                     (ds.metricId && (ds.metricId.toLowerCase().includes('image') ||
+                                                       ds.metricId.toLowerCase().includes('img') ||
+                                                       ds.metricId.includes('values.image')))
+            const maxLimit = ds.limit ?? (isImageDataSource ? 200 : 50)
+            const getTs = (p: unknown): number => {
+              if (p === null || p === undefined) return 0
+              const o = p as Record<string, unknown>
+              return (o.timestamp ?? o.time ?? o.t ?? 0) as number
             }
-            finalData = dedupedPoints
-          } else {
-            const deduped = dedupeTelemetryPoints(sorted, getTs, maxLimit)
-            finalData = deduped
+            const sorted = [...points].sort((a, b) => getTs(b) - getTs(a))
+
+            if (isImageDataSource) {
+              const dedupedPoints: unknown[] = []
+              for (const point of sorted) {
+                const ts = getTs(point)
+                const value = getPointValue(point)
+                if (!isDuplicatePoint(dedupedPoints, ts, value, getTs)) {
+                  dedupedPoints.push(point)
+                }
+                if (dedupedPoints.length >= maxLimit) break
+              }
+              return dedupedPoints
+            } else {
+              return dedupeTelemetryPoints(sorted, getTs, maxLimit)
+            }
+          }
+
+          if (isPreserveMultiple && Array.isArray(finalData)) {
+            // Apply sort/dedup per-source to preserve nested array structure
+            finalData = telemetryDataSources.map((ds, i) => {
+              const sourceArray = (finalData as unknown[][])[i]
+              return sortDedup(sourceArray, ds)
+            })
+          } else if (Array.isArray(finalData)) {
+            finalData = sortDedup(finalData, telemetryDataSources[0])
           }
         }
 

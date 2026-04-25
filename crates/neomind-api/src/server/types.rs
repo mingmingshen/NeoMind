@@ -51,12 +51,12 @@ impl neomind_agent::toolkit::aggregated::AgentInvoker for AgentInvokerImpl {
             .await
             .map_err(|e| e.to_string())?;
 
-        // Get the latest execution record for full results
+        // Fetch execution by ID to avoid race condition under concurrent load
         let execution = self
             .manager
             .executor()
             .store()
-            .get_latest_execution(agent_id)
+            .get_execution(&summary.execution_id)
             .await
             .map_err(|e| e.to_string())?;
 

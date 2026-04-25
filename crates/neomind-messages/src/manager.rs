@@ -388,7 +388,13 @@ impl MessageManager {
                             // Log successful delivery for DataPush
                             if let Some(mut log) = delivery_log {
                                 log = log.with_status(DeliveryStatus::Success);
-                                self.delivery_logs.write().await.insert(log.id.clone(), log);
+                                let mut logs = self.delivery_logs.write().await;
+                                // Auto-prune if exceeding 1000 entries
+                                if logs.len() > 1000 {
+                                    let cutoff = chrono::Utc::now() - chrono::Duration::hours(24);
+                                    logs.retain(|_, l| l.created_at > cutoff);
+                                }
+                                logs.insert(log.id.clone(), log);
                             }
                         }
                         Err(e) => {
@@ -405,7 +411,12 @@ impl MessageManager {
                                 log = log
                                     .with_status(DeliveryStatus::Failed)
                                     .with_error(error_msg);
-                                self.delivery_logs.write().await.insert(log.id.clone(), log);
+                                let mut logs = self.delivery_logs.write().await;
+                                if logs.len() > 1000 {
+                                    let cutoff = chrono::Utc::now() - chrono::Duration::hours(24);
+                                    logs.retain(|_, l| l.created_at > cutoff);
+                                }
+                                logs.insert(log.id.clone(), log);
                             }
                         }
                     }

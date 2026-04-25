@@ -181,12 +181,6 @@ impl StorageBackend for RedbBackend {
     fn write(&self, table: &str, key: &str, value: &[u8]) -> Result<()> {
         let namespaced = make_key(table, key);
 
-        // Update cache (write-through)
-        {
-            let mut cache = self.cache.write();
-            cache.put(namespaced.clone(), value.to_vec());
-        }
-
         let txn = self
             .db
             .begin_write()
@@ -200,6 +194,13 @@ impl StorageBackend for RedbBackend {
         }
         txn.commit()
             .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        // Update cache only after successful commit to maintain consistency
+        {
+            let mut cache = self.cache.write();
+            cache.put(namespaced, value.to_vec());
+        }
+
         Ok(())
     }
 

@@ -324,6 +324,9 @@ export function useAnalystSession({
   const agentIdRef = useRef<string | null>(null)
   // Ref guard survives StrictMode unmount/remount — prevents double agent creation
   const initGuardRef = useRef(false)
+  // Track mount state to avoid state updates after unmount
+  const mountedRef = useRef(true)
+  useEffect(() => { return () => { mountedRef.current = false } }, [])
   // Track whether history has been loaded for the current agent
   const historyLoadedRef = useRef(false)
 
@@ -375,6 +378,7 @@ export function useAnalystSession({
       const agentId = data.agent_id
       api.getExecution(agentId, data.execution_id)
         .then((detail) => {
+          if (!mountedRef.current) return
           const conclusion = detail?.decision_process?.conclusion
           const aiMsg: AnalystMessage = {
             id: `exec-${data.execution_id}`,
@@ -392,6 +396,7 @@ export function useAnalystSession({
           })
         })
         .catch((err) => {
+          if (!mountedRef.current) return
           const errMsg: AnalystMessage = {
             id: `exec-err-${data.execution_id}`,
             type: 'error',

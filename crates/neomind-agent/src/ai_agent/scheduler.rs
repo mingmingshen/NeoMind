@@ -292,6 +292,7 @@ impl AgentScheduler {
                 let now = Utc::now().timestamp();
                 let (tasks_to_execute, skipped_tasks) = {
                     let mut tasks_guard = tasks.write().await;
+                    let mut running_guard = running_executions.write().await;
                     let mut to_execute = Vec::new();
                     let mut skipped = Vec::new();
 
@@ -301,10 +302,8 @@ impl AgentScheduler {
                         }
 
                         if now >= task.next_execution {
-                            // Check concurrency limit
-                            let running_count = running_executions.read().await.len();
-                            if running_count >= max_concurrent {
-                                // Track which agent was skipped due to concurrency limit
+                            // Atomic check-and-insert to prevent exceeding concurrency limit
+                            if running_guard.len() >= max_concurrent {
                                 skipped.push((
                                     agent_id.clone(),
                                     task.next_execution,
@@ -312,7 +311,7 @@ impl AgentScheduler {
                                 ));
                                 tracing::warn!(
                                     agent_id = %agent_id,
-                                    running_count = running_count,
+                                    running_count = running_guard.len(),
                                     max_concurrent = max_concurrent,
                                     overdue_seconds = now - task.next_execution,
                                     "Scheduler at concurrency limit, skipping agent execution"
@@ -320,10 +319,9 @@ impl AgentScheduler {
                                 continue;
                             }
 
-                            // Mark as running
+                            // Reserve slot BEFORE releasing lock
+                            running_guard.insert(agent_id.clone());
                             to_execute.push((agent_id.clone(), task.cron_schedule.clone()));
-
-                            // Schedule next execution
                             Self::update_next_execution(task, now);
                         }
                     }

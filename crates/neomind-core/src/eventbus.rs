@@ -202,9 +202,10 @@ impl EventBusReceiver {
     pub async fn recv(&mut self) -> Option<(NeoMindEvent, EventMetadata)> {
         match self.rx.recv().await {
             Ok(event) => Some(event),
-            Err(broadcast::error::RecvError::Lagged(_)) => {
-                // We missed some events, but can continue receiving
-                // Try again immediately
+            Err(broadcast::error::RecvError::Lagged(n)) => {
+                tracing::debug!("EventBusReceiver lagged, skipped {} events", n);
+                // Yield to prevent busy-loop when channel stays full
+                tokio::task::yield_now().await;
                 self.rx.try_recv().ok()
             }
             Err(broadcast::error::RecvError::Closed) => None,

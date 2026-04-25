@@ -2,6 +2,7 @@
 
 use axum::{
     extract::{Path, State},
+    http::StatusCode,
     Json,
 };
 use serde_json::{json, Value};
@@ -1420,6 +1421,18 @@ pub async fn invoke_agent(
 
     let agent_name = agent.name.clone();
 
+    // Validate input payload size to prevent resource exhaustion
+    const MAX_INPUT_SIZE: usize = 100_000; // 100KB
+    if let Some(ref input) = request.input {
+        if input.len() > MAX_INPUT_SIZE {
+            return Err(ErrorResponse::bad_request(format!(
+                "Input too large: {} bytes (max {})",
+                input.len(),
+                MAX_INPUT_SIZE
+            )));
+        }
+    }
+
     // Build invocation input
     let invocation_input = if request.input.is_some() || request.data.is_some() {
         Some(neomind_agent::AgentInput {
@@ -1441,11 +1454,11 @@ pub async fn invoke_agent(
 
     match result {
         Ok(Ok(summary)) => {
-            // Get the latest execution record for full results
+            // Fetch execution by ID (not "latest") to avoid race condition under concurrent load
             let execution = agent_manager
                 .executor()
                 .store()
-                .get_latest_execution(&id)
+                .get_execution(&summary.execution_id)
                 .await
                 .map_err(|e| ErrorResponse::internal(format!("Failed to get execution: {}", e)))?;
 
@@ -1487,22 +1500,10 @@ pub async fn invoke_agent(
             }))
         }
         Ok(Err(e)) => {
-            ok(json!({
-                "execution_id": uuid::Uuid::new_v4().to_string(),
-                "agent_id": id,
-                "agent_name": agent_name,
-                "status": "Failed",
-                "error": e.to_string(),
-            }))
+            Err(ErrorResponse::new("AGENT_EXECUTION_FAILED", format!("Agent '{}' execution failed: {}", agent_name, e), StatusCode::INTERNAL_SERVER_ERROR))
         }
         Err(_) => {
-            ok(json!({
-                "execution_id": uuid::Uuid::new_v4().to_string(),
-                "agent_id": id,
-                "agent_name": agent_name,
-                "status": "Timeout",
-                "error": "Execution timed out after 60 seconds",
-            }))
+            Err(ErrorResponse::new("AGENT_EXECUTION_TIMEOUT", format!("Agent '{}' execution timed out after 60 seconds", agent_name), StatusCode::GATEWAY_TIMEOUT))
         }
     }
 }

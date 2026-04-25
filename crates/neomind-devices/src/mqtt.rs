@@ -320,15 +320,14 @@ impl MqttDevice {
 
             // Update last_seen only if more than 1 second since last update
             // to avoid write lock contention on high-frequency messages
-            {
-                let state = self.state.read().await;
+            // Uses try_write to atomically check+update without race condition
+            if let Ok(mut state) = self.state.try_write() {
+                let now = chrono::Utc::now();
                 let should_update = state
                     .last_seen
-                    .map_or(true, |t| (chrono::Utc::now() - t).num_seconds() >= 1);
-                drop(state); // Release read lock before acquiring write lock
+                    .map_or(true, |t| (now - t).num_seconds() >= 1);
                 if should_update {
-                    let mut state = self.state.write().await;
-                    state.last_seen = Some(chrono::Utc::now());
+                    state.last_seen = Some(now);
                 }
             }
 

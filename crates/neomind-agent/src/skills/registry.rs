@@ -238,17 +238,19 @@ impl SkillRegistry {
         Ok(skill)
     }
 
-    /// Remove all indices for a skill ID.
+    /// Remove all indices for a skill ID and clean up empty entries.
     fn remove_indices(&mut self, id: &str) {
-        // Remove from keyword index
-        for ids in self.keyword_index.values_mut() {
+        // Remove from keyword index and clean up empty entries
+        self.keyword_index.retain(|_, ids| {
             ids.retain(|i| i != id);
-        }
+            !ids.is_empty()
+        });
 
-        // Remove from tool-action index
-        for ids in self.tool_action_index.values_mut() {
+        // Remove from tool-action index and clean up empty entries
+        self.tool_action_index.retain(|_, ids| {
             ids.retain(|i| i != id);
-        }
+            !ids.is_empty()
+        });
     }
 
     /// Get total count of skills.

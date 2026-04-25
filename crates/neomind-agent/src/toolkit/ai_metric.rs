@@ -207,8 +207,10 @@ impl AiMetricTool {
             Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
                     neomind_devices::mdl::MetricValue::Integer(i)
+                } else if let Some(f) = n.as_f64() {
+                    neomind_devices::mdl::MetricValue::Float(f)
                 } else {
-                    neomind_devices::mdl::MetricValue::Float(n.as_f64().unwrap_or(0.0))
+                    neomind_devices::mdl::MetricValue::String(n.to_string())
                 }
             }
             Value::String(s) => neomind_devices::mdl::MetricValue::String(s.clone()),
@@ -280,7 +282,7 @@ impl AiMetricTool {
 
         // Publish event so other agents can trigger on AI metric writes
         if let Some(ref event_bus) = self.event_bus {
-            let _ = event_bus.publish(neomind_core::NeoMindEvent::ExtensionOutput {
+            let published = event_bus.publish(neomind_core::NeoMindEvent::ExtensionOutput {
                 extension_id: source_id.clone(),
                 output_name: field.to_string(),
                 value: core_value,
@@ -288,6 +290,9 @@ impl AiMetricTool {
                 labels: None,
                 quality: Some(1.0),
             }).await;
+            if !published {
+                tracing::warn!(source_id = %source_id, field = %field, "No subscribers for AI metric event");
+            }
         }
 
         Ok(ToolOutput::success(serde_json::json!({

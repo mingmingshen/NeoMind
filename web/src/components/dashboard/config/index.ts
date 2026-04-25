@@ -36,12 +36,6 @@ export type { ComponentConfigDialogProps } from './ComponentConfigDialog'
 export { ValueMapEditor } from './ValueMapEditor'
 export type { ValueStateMapping, LEDState } from './ValueMapEditor'
 
-// Legacy exports - consider removing when no longer needed
-export { DataSourceSelectorContent } from './DataSourceSelectorContent'
-export type { DataSourceSelectorContentProps } from './DataSourceSelectorContent'
-export { DataSourceSelector } from './DataSourceSelector'
-export type { DataSourceSelectorProps } from './DataSourceSelector'
-
 export {
   registerComponentConfig,
   getComponentConfig,

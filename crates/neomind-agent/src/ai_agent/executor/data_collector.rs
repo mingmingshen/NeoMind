@@ -316,7 +316,12 @@ impl AgentExecutor {
         // Filter out errors and collect successful results
         let collected: Vec<_> = results
             .into_iter()
-            .filter_map(|r| r.ok())
+            .filter_map(|r| {
+                if let Err(ref e) = r {
+                    tracing::warn!(error = %e, "Metric data collection failed");
+                }
+                r.ok()
+            })
             .flatten()
             .collect();
         Ok(collected)
@@ -502,7 +507,12 @@ impl AgentExecutor {
         let results = join_all(timeout_futures).await;
         let collected: Vec<_> = results
             .into_iter()
-            .filter_map(|r| r.ok())
+            .filter_map(|r| {
+                if let Err(ref e) = r {
+                    tracing::warn!(error = %e, "Data collection task failed");
+                }
+                r.ok()
+            })
             .flat_map(|v| v.into_iter())
             .collect();
         Ok(collected)
@@ -844,7 +854,12 @@ impl AgentExecutor {
         let results = join_all(timeout_futures).await;
         let collected: Vec<_> = results
             .into_iter()
-            .filter_map(|r| r.ok())
+            .filter_map(|r| {
+                if let Err(ref e) = r {
+                    tracing::warn!(error = %e, "Extension metric collection failed");
+                }
+                r.ok()
+            })
             .flatten()
             .collect();
 

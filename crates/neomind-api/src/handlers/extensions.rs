@@ -1235,9 +1235,13 @@ pub async fn query_extension_metric_data_handler(
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to query metric: {:?}", e)))?;
 
+    // Cap the limit to prevent memory exhaustion
+    const MAX_METRIC_QUERY_LIMIT: usize = 10000;
+    let effective_limit = query.limit.unwrap_or(1000).min(MAX_METRIC_QUERY_LIMIT);
+
     let data_points: Vec<serde_json::Value> = points
         .iter()
-        .take(query.limit.unwrap_or(1000))
+        .take(effective_limit)
         .map(|point| {
             let value_json = match &point.value {
                 MetricValue::Integer(n) => serde_json::json!(n),
@@ -1293,6 +1297,16 @@ pub async fn push_extension_metrics_handler(
 
     if obj.is_empty() {
         return Err(ErrorResponse::bad_request("'metrics' is empty".to_string()));
+    }
+
+    // Limit the number of metrics per request to prevent abuse
+    const MAX_METRICS_PER_REQUEST: usize = 100;
+    if obj.len() > MAX_METRICS_PER_REQUEST {
+        return Err(ErrorResponse::bad_request(format!(
+            "Too many metrics: {} (max {})",
+            obj.len(),
+            MAX_METRICS_PER_REQUEST
+        )));
     }
 
     // Convert JSON values to MetricValues

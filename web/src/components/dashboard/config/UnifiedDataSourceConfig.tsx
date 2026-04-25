@@ -20,7 +20,7 @@ import { useDataAvailability } from '@/hooks/useDataAvailability'
 import { useIsMobile, useSafeAreaInsets } from '@/hooks/useMobile'
 import { useMobileBodyScrollLock } from '@/hooks/useBodyScrollLock'
 import { api } from '@/lib/api'
-import type { Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor, TransformDataSourceInfo, UnifiedDataSourceInfo } from '@/types'
+import type { Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor, UnifiedDataSourceInfo } from '@/types'
 
 // ============================================================================
 // Types
@@ -474,7 +474,12 @@ export function UnifiedDataSourceConfig({
   className,
 }: UnifiedDataSourceConfigProps) {
   const { t } = useTranslation('dashboardComponents')
-  const { devices, deviceTypes } = useStore()
+  const store = useStore()
+  const devices = store.devices
+  const deviceTypes = store.deviceTypes
+  const extensions = store.extensions
+  const extensionDataSources = store.extensionDataSources
+  const extensionsLoading = store.extensionsLoading
   const isMobile = useIsMobile()
   const insets = useSafeAreaInsets()
 
@@ -486,16 +491,14 @@ export function UnifiedDataSourceConfig({
   // Mobile: full-screen selector state
   const [showMobileSelector, setShowMobileSelector] = useState(false)
 
-  // Extension state
-  const [extensions, setExtensions] = useState<Extension[]>([])
-  const [extensionDataSources, setExtensionDataSources] = useState<ExtensionDataSourceInfo[]>([])
-  const [extensionsLoading, setExtensionsLoading] = useState(false)
-  const [extensionError, setExtensionError] = useState<string | null>(null)
-
-  // Unified data sources state (for transform/ai-metric tabs)
+  // Unified data sources state (for transform/ai-metric tabs — not available in store)
   const [unifiedDataSources, setUnifiedDataSources] = useState<UnifiedDataSourceInfo[]>([])
   const [unifiedSourcesLoading, setUnifiedSourcesLoading] = useState(false)
   const hasFetchedUnifiedSources = useRef(false)
+
+  // Stable ref to store fetch functions to avoid useEffect dependency issues
+  const storeRef = useRef(store)
+  storeRef.current = store
 
   // Data availability checking - now includes summaries with virtual metrics
   const { availability, summaries, loading: checkingData, checkDevice } = useDataAvailability()
@@ -508,9 +511,6 @@ export function UnifiedDataSourceConfig({
   // Track previous value to detect actual selection changes
   const prevCoreFieldsRef = useRef<string>()
   const prevValueRef = useRef<DataSourceOrList>()
-
-  // Track if we've already fetched extensions to prevent infinite loops
-  const hasFetchedExtensions = useRef(false)
 
   // Track if we've already restored extension selection from value
   const hasRestoredExtensionSelection = useRef(false)
@@ -590,67 +590,71 @@ export function UnifiedDataSourceConfig({
     return map
   }, [devices, deviceTypes, t])
 
-  // Fetch all non-device data sources in a single pass (extensions, transforms, AI metrics)
+  // Fetch extension + unified data sources when needed
   useEffect(() => {
     const needsExt = availableCategories.some(c => c.id === 'extension' || c.id === 'extension-command')
     const needsUnified = availableCategories.some(c => c.id === 'transform' || c.id === 'ai-metric')
     if (!needsExt && !needsUnified) {
-      hasFetchedExtensions.current = false
       hasFetchedUnifiedSources.current = false
       return
     }
-    // Skip if all needed data already fetched
-    const extDone = !needsExt || (hasFetchedExtensions.current && extensions.length > 0)
-    const unifiedDone = !needsUnified || (hasFetchedUnifiedSources.current && unifiedDataSources.length > 0)
-    if (extDone && unifiedDone) return
 
+    // Skip if all needed data already loaded
+    const extAlreadyLoaded = !needsExt || (storeRef.current.extensions.length > 0 && storeRef.current.extensionDataSources.length > 0)
+    const unifiedAlreadyLoaded = !needsUnified || hasFetchedUnifiedSources.current
+    if (extAlreadyLoaded && unifiedAlreadyLoaded) return
+
+    let cancelled = false
     const fetchData = async () => {
-      setExtensionsLoading(true)
       setUnifiedSourcesLoading(true)
 
       try {
-        // Single request fetches all types; backend skip_telemetry makes it fast
-        const [extData, allSources] = await Promise.all([
-          api.listExtensions().catch(() => [] as Extension[]),
-          api.listUnifiedDataSources({ limit: 500, skip_telemetry: 'true' }),
-        ])
+        const promises: Promise<unknown>[] = []
 
-        const sources = (allSources as { data: UnifiedDataSourceInfo[] }).data
+        // Fetch extensions list via store (separate endpoint)
+        if (needsExt && !extAlreadyLoaded) {
+          promises.push(storeRef.current.fetchExtensions())
+        }
 
-        // Always populate both states from the single response
-        if (needsExt && !hasFetchedExtensions.current) {
-          setExtensions(extData as Extension[])
-          setExtensionDataSources(
-            sources
-              .filter(s => s.source_type === 'extension')
-              .map(ds => ({
-                id: ds.id,
-                extension_id: ds.source_name,
-                command: '',
-                field: ds.field,
-                display_name: ds.source_display_name + ': ' + ds.field_display_name,
-                data_type: (ds.data_type as any) || 'float',
-                unit: ds.unit,
-                description: ds.description || ds.field_display_name,
-                aggregatable: true,
-                default_agg_func: 'last' as const,
-              }))
+        // Single unified API call for all data source types (extension metrics, transforms, AI)
+        if (!unifiedAlreadyLoaded) {
+          promises.push(
+            api.listUnifiedDataSources({ limit: 500, skip_telemetry: 'true' })
+              .then((result) => {
+                if (cancelled) return
+                const sources = (result as { data: UnifiedDataSourceInfo[] }).data
+                setUnifiedDataSources(sources)
+                hasFetchedUnifiedSources.current = true
+
+                // Feed extension data into store if needed (same data, no extra request)
+                if (needsExt && !extAlreadyLoaded) {
+                  const extSources = sources
+                    .filter(s => s.source_type === 'extension')
+                    .map(ds => ({
+                      id: ds.id,
+                      extension_id: ds.source_name,
+                      command: '',
+                      field: ds.field,
+                      display_name: ds.source_display_name + ': ' + ds.field_display_name,
+                      data_type: (ds.data_type as any) || 'float',
+                      unit: ds.unit,
+                      description: ds.description || ds.field_display_name,
+                      aggregatable: true,
+                      default_agg_func: 'last' as const,
+                    }))
+                  storeRef.current.setExtensionDataSources(extSources)
+                }
+              })
           )
-          hasFetchedExtensions.current = true
         }
 
-        if (needsUnified && !hasFetchedUnifiedSources.current) {
-          setUnifiedDataSources(sources)
-          hasFetchedUnifiedSources.current = true
-        }
-      } catch (err) {
-        setExtensionError((err as Error).message)
+        await Promise.all(promises)
       } finally {
-        setExtensionsLoading(false)
-        setUnifiedSourcesLoading(false)
+        if (!cancelled) setUnifiedSourcesLoading(false)
       }
     }
     fetchData()
+    return () => { cancelled = true }
   }, [availableCategories])
 
   // Computed lists for transform and AI metric sources
@@ -701,7 +705,7 @@ export function UnifiedDataSourceConfig({
     hasRestoredExtensionSelection.current = true
   }, [value, extensions])
 
-  // Build extension metrics map
+  // Build extension metrics map from store data
   const extensionMetricsMap = useMemo(() => {
     const map = new Map<string, Array<{ name: string; display_name: string; data_type: string; unit?: string }>>()
     extensionDataSources.forEach(ds => {

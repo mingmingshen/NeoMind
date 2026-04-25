@@ -326,7 +326,7 @@ impl AgentExecutor {
         }
 
         let llm_supports_tools = llm_runtime.capabilities().function_calling;
-        let registry_available = self.tool_registry.read().unwrap().is_some();
+        let registry_available = self.tool_registry.read().unwrap_or_else(|e| e.into_inner()).is_some();
         let result = llm_supports_tools && registry_available;
         if !result {
             tracing::warn!(
@@ -1157,7 +1157,7 @@ impl AgentExecutor {
 
     /// Update the tool registry (e.g. after extensions are loaded).
     pub fn set_tool_registry(&self, registry: Arc<crate::toolkit::ToolRegistry>) {
-        *self.tool_registry.write().unwrap() = Some(registry);
+        *self.tool_registry.write().unwrap_or_else(|e| e.into_inner()) = Some(registry);
     }
 
     // ========================================================================
@@ -1551,9 +1551,9 @@ impl AgentExecutor {
                     .matches_data_source_filter(agent, "device", &device_id, metric)
                     .await
                 {
-                    // Cooldown: one execution per agent per 60s window
+                    // Cooldown: one execution per (agent, source) per 60s window
                     const COOLDOWN_SECS: i64 = 60;
-                    let dedup_key = agent.id.clone();
+                    let dedup_key = format!("{}:device:{}", agent.id, device_id);
                     let recent = self.recent_executions.read().await;
                     let is_duplicate = recent
                         .get(&dedup_key)
@@ -1603,7 +1603,7 @@ impl AgentExecutor {
                     let agent_id_for_log = agent.id.clone();
                     let backend_sems = self.backend_semaphores.clone();
                     let executor_skill_registry = self._config.skill_registry.clone();
-                    let executor_tool_registry = self.tool_registry.read().unwrap().clone();
+                    let executor_tool_registry = self.tool_registry.read().unwrap_or_else(|e| e.into_inner()).clone();
                     let executor_extension_registry = self.extension_registry.clone();
                     let executor_memory_store = self.memory_store.clone();
                     let backend_id = agent.llm_backend_id
@@ -1622,7 +1622,13 @@ impl AgentExecutor {
                                     "Event agent waiting for backend permit"
                                 );
                             }
-                            let _backend_permit = backend_sem.acquire().await.unwrap();
+                            let _backend_permit = match backend_sem.acquire().await {
+                                Ok(p) => p,
+                                Err(_) => {
+                                    tracing::warn!(agent_id = %agent_id_for_log, backend_id = %backend_id, "Backend semaphore closed, skipping event-triggered execution");
+                                    return;
+                                }
+                            };
                             tracing::debug!(
                                 agent_id = %agent_id_for_log,
                                 backend_id = %backend_id,
@@ -1752,9 +1758,9 @@ impl AgentExecutor {
                 continue;
             }
 
-            // Cooldown: one execution per agent per 60s window
+            // Cooldown: one execution per (agent, source) per 60s window
             const COOLDOWN_SECS: i64 = 60;
-            let dedup_key = agent.id.clone();
+            let dedup_key = format!("{}:{}:{}", agent.id, source_type, source_id);
             let recent = self.recent_executions.read().await;
             let is_duplicate = recent
                 .get(&dedup_key)

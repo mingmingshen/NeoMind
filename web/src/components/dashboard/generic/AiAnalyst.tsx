@@ -79,7 +79,8 @@ function normalizeToDataUrl(str: string): string {
       }
     }
   } catch {}
-  return `data:image/png;base64,${str}`
+  // Default to JPEG (camera/vision frames are overwhelmingly JPEG)
+  return `data:image/jpeg;base64,${str}`
 }
 
 // ---------------------------------------------------------------------------

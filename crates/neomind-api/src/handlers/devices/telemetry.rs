@@ -10,6 +10,7 @@ use crate::handlers::{
     common::{ok, HandlerResult},
     ServerState,
 };
+use crate::models::ErrorResponse;
 
 /// Transform-generated metric namespaces.
 /// Cached for performance - avoids recreating this array on every request.
@@ -65,6 +66,16 @@ pub async fn get_device_telemetry_handler(
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(0);
     let aggregate = params.get("aggregate").cloned();
+
+    // Enforce maximum time range to prevent resource exhaustion (max 30 days)
+    const MAX_TIME_RANGE_SECS: i64 = 30 * 86400;
+    if end - start > MAX_TIME_RANGE_SECS {
+        return Err(ErrorResponse::bad_request(format!(
+            "Time range too large: {} seconds (max {} days)",
+            end - start,
+            MAX_TIME_RANGE_SECS / 86400
+        )));
+    }
 
     // Query device with template once to avoid duplicate database calls
     let device_with_template = state
@@ -143,6 +154,16 @@ pub async fn get_device_telemetry_handler(
             "start": start,
             "end": end,
         }));
+    }
+
+    // Limit metrics per request to prevent resource exhaustion
+    const MAX_METRICS_PER_REQUEST: usize = 50;
+    if target_metrics.len() > MAX_METRICS_PER_REQUEST {
+        return Err(ErrorResponse::bad_request(format!(
+            "Too many metrics requested: {} (max {})",
+            target_metrics.len(),
+            MAX_METRICS_PER_REQUEST
+        )));
     }
 
     // Query time series data for each metric

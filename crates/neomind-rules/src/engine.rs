@@ -510,26 +510,21 @@ impl RuleEngine {
                     }
                 }
 
-                // Update rule states
-                {
-                    let mut rules_guard = rules.write().await;
-                    for rule in rules_guard.values_mut() {
-                        if rule.status == RuleStatus::Active {
-                            rule.update_state(value_provider.as_ref());
-                        }
-                    }
-                }
-
-                // Evaluate and execute triggered rules
+                // Update rule states and evaluate triggers in a single read lock scope
+                // to avoid holding write lock during evaluation (deadlock prevention)
                 let rules_to_execute: Vec<_> = {
                     let rules_guard = rules.read().await;
                     rules_guard
                         .iter()
-                        .filter(|(_, rule)| {
-                            rule.status == RuleStatus::Active
+                        .filter_map(|(id, rule)| {
+                            if rule.status == RuleStatus::Active
                                 && rule.should_trigger(value_provider.as_ref())
+                            {
+                                Some((id.clone(), rule.clone()))
+                            } else {
+                                None
+                            }
                         })
-                        .map(|(id, rule)| (id.clone(), rule.clone()))
                         .collect()
                 };
 
