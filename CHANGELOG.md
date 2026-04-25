@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v0.6.12] - 2026-04-24
+## [v0.6.12] - 2026-04-26
 
 ### Added
 
@@ -29,10 +29,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Agent Status Sync** — Agent pause/activate actions now properly sync with the scheduler (pause → unschedule, activate → reschedule), ensuring UI state matches backend execution state.
 
+- **Extension Push-Metrics API** — New `POST /api/extensions/:id/push-metrics` endpoint for device-initiated data push that immediately stores telemetry and publishes `ExtensionOutput` events to trigger downstream agents.
+
 ### Changed
 
 - **Dashboard Component Registry** — Replaced hardcoded `getComponentLibrary()` with registry-driven approach using `groupComponentsByCategory()`, making it easier to add new component types.
 - **Tauri Updater Version Comparison** — Version check now normalizes `v` prefix and whitespace before comparison, preventing duplicate update prompts when remote JSON uses `v0.6.12` format.
+- **Data Source Loading Optimization** — Added `skip_telemetry` param to `/api/data/sources` to skip expensive telemetry population for bulk listing; frontend uses server-side `source_type` filtering and parallel requests; eliminated N+1 query pattern.
+- **Event-Triggered Agent Cooldown** — Changed from 5s to 60s to prevent excessive LLM calls while keeping data fresh (collection stays at 60s).
+- **API Retry Policy** — Frontend now retries only gateway errors (502/503/504), not 500 application errors.
+- **Unified Data Source Config** — Migrated `UnifiedDataSourceConfig` from local state to Zustand store for consistency.
+- **AI Analyst Session** — Enhanced `useAnalystSession` with improved data processing, multi-source value extraction, and unmount protection for API calls. Removed `useAnalystQueue` (merged into session hook).
+- **Default Image Format** — Changed default camera frame format from PNG to JPEG for better bandwidth efficiency.
+
+### Fixed
+
+- **Recharts Chart Rendering** — Fixed "width(-1) and height(-1)" console warnings by introducing `ChartContainer` with `ResizeObserver` and explicit pixel-sized inner container, ensuring `ResponsiveContainer` always receives valid dimensions.
+- **Race Condition in Agent Execution** — Fixed `get_latest_execution` querying by ID instead of potentially stale cache. Added atomic check-and-insert for scheduler concurrency. Handled `RwLock` poison gracefully instead of panicking.
+- **MQTT Lock Contention** — Fixed `last_seen` read-write lock race with `try_write`; scoped dual write lock releases to prevent contention.
+- **Event Bus CPU Busy-Loop** — Added `yield_now()` in `EventBusReceiver` to prevent CPU spinning.
+- **Rule Engine Deadlock** — Reduced lock scope in rule engine to prevent potential deadlock.
+- **Storage Consistency** — Cache updates now happen after successful DB commit, not before. LRU cache eviction optimized from O(n) to O(1).
+- **Input Size Limits** — Added limits for push-metrics (100), telemetry metrics (50), extension queries (10K), agent input (100KB), and telemetry time range (30 days max).
+- **Memory Leak Prevention** — Auto-cleanup for delivery logs exceeding 1000 entries. Clean empty skill index entries on removal. Extension stream clients properly cleaned on unregister.
+- **Error Handling** — Return proper HTTP 500/504 for agent execution failures. Log data collection, AI metric event, and WebSocket handler errors instead of silently dropping. Handle closed semaphore gracefully.
+- **AI Analyst Data Display** — Strip "produce:" prefix from extension metric field names for correct backend key matching. Extract per-metric values instead of showing raw arrays for multi-source data.
+- **Data Explorer Crash** — Guard telemetry API response to prevent crash on 502/401 when `res.data` is undefined.
+- **Metric Value Parsing** — Fix fallback from 0.0 to string for non-numeric metric values.
+- **Console Log Cleanup** — Removed 63+ unnecessary `console.log/info/debug` calls across frontend.
+- **Dead Code Removal** — Removed `DataSourceSelector`, `DataSourceSelectorContent` components, and unused system memory extraction code from agent executor.
 
 ---
 
