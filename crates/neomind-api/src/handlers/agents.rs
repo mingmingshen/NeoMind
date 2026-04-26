@@ -2118,3 +2118,78 @@ fn describe_cron_expression(expr: &str) -> Option<String> {
         _ => Some(format!("Custom cron: {}", expr)),
     }
 }
+
+// ============================================================================
+// Available Resources API
+// ============================================================================
+
+/// Get available resources for an agent.
+///
+/// This endpoint returns all devices, metrics, and extensions that an agent
+/// can potentially use for its operations.
+///
+/// GET /api/agents/:id/available-resources
+pub async fn get_available_resources(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<Value> {
+    // Check if agent exists
+    let _agent = state
+        .agents
+        .agent_store
+        .get_agent(&id)
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
+
+    // Collect available devices
+    let devices = state.devices.service.list_devices().await;
+    let device_statuses = state.devices.service.get_all_device_statuses().await;
+
+    let mut device_resources = Vec::new();
+    for device in devices {
+        let status = device_statuses.get(&device.device_id).cloned().unwrap_or_default();
+        let is_connected = status.is_connected();
+
+        device_resources.push(json!({
+            "id": device.device_id,
+            "name": device.name,
+            "type": device.device_type,
+            "status": if is_connected { "connected" } else { "disconnected" },
+        }));
+    }
+
+    // Collect available extensions
+    let loaded_extensions = state.extensions.runtime.list().await;
+    let mut extension_resources = Vec::new();
+
+    for ext in loaded_extensions {
+        // Get extension metadata
+        let metadata = &ext.metadata;
+
+        // Collect metrics from extension
+        let mut metrics = Vec::new();
+        for metric in &ext.metrics {
+            metrics.push(json!({
+                "name": metric.name,
+                "display_name": metric.display_name,
+                "data_type": format!("{:?}", metric.data_type),
+                "unit": metric.unit,
+            }));
+        }
+
+        extension_resources.push(json!({
+            "id": metadata.id,
+            "name": metadata.name,
+            "version": metadata.version,
+            "description": metadata.description,
+            "metrics": metrics,
+            "state": "Loaded",
+        }));
+    }
+
+    ok(json!({
+        "devices": device_resources,
+        "extensions": extension_resources,
+    }))
+}

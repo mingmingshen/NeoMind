@@ -175,9 +175,36 @@ export function AgentDetailPanel({
   }
 
   const loadAvailableResources = async () => {
-    // This endpoint is not implemented yet, skip for now
-    // TODO: Implement /api/agents/{id}/available-resources endpoint
-    return
+    if (!agent?.id) return
+
+    try {
+      const response = await api.get(`/api/agents/${agent.id}/available-resources`) as {
+        data: {
+          devices: Array<{
+            id: string
+            name: string
+            type: string
+            status: string
+          }>
+          extensions: Array<{
+            id: string
+            name: string
+            version: string
+            description: string
+            metrics: Array<{
+              name: string
+              display_name: string
+              data_type: string
+              unit: string
+            }>
+            state: string
+          }>
+        }
+      }
+      setAvailableResources(response.data)
+    } catch (error) {
+      handleError(error, { operation: 'Load available resources', showToast: false })
+    }
   }
 
   // Empty state (only in non-inline mode)

@@ -644,6 +644,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/agents/:id/memory", delete(agents::clear_agent_memory))
         .route("/api/agents/:id/stats", get(agents::get_agent_stats))
         .route(
+            "/api/agents/:id/available-resources",
+            get(agents::get_available_resources),
+        )
+        .route(
             "/api/agents/validate-cron",
             post(agents::validate_cron_expression),
         )
