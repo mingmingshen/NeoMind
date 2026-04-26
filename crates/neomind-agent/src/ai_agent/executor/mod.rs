@@ -1132,7 +1132,10 @@ impl AgentExecutor {
         let registry = self
             .tool_registry
             .read()
-            .unwrap()
+            .unwrap_or_else(|e| {
+                tracing::error!("Tool registry lock poisoned, recovering: {}", e);
+                e.into_inner()
+            })
             .clone()
             .ok_or_else(|| NeoMindError::Tool("Tool registry not available".to_string()))?;
 
@@ -1813,7 +1816,10 @@ impl AgentExecutor {
             let agent_id_for_log = agent.id.clone();
             let backend_sems = self.backend_semaphores.clone();
             let executor_skill_registry = self._config.skill_registry.clone();
-            let executor_tool_registry = self.tool_registry.read().unwrap().clone();
+            let executor_tool_registry = self.tool_registry.read().unwrap_or_else(|e| {
+                tracing::error!("Tool registry lock poisoned in data event spawn, recovering: {}", e);
+                e.into_inner()
+            }).clone();
             let executor_extension_registry = self.extension_registry.clone();
             let executor_memory_store = self.memory_store.clone();
             let backend_id = agent.llm_backend_id
@@ -1832,7 +1838,11 @@ impl AgentExecutor {
                             "Data event agent waiting for backend permit"
                         );
                     }
-                    let _backend_permit = backend_sem.acquire().await.unwrap();
+                    // Use expect with clear message - semaphore acquisition should not fail
+                    // unless the semaphore is closed, which indicates a serious bug
+                    let _backend_permit = backend_sem.acquire().await.expect(
+                        "Backend semaphore acquisition failed - semaphore was closed or is broken"
+                    );
                     tracing::debug!(
                         agent_id = %agent_id_for_log,
                         backend_id = %backend_id,
