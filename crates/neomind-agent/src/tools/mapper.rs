@@ -753,4 +753,480 @@ mod tests {
         assert_eq!(mapped.get("device_type").unwrap(), "sensor");
         assert_eq!(mapped.get("status").unwrap(), "online");
     }
+
+    // ===== Parameter Type Coercion Tests =====
+
+    #[test]
+    fn test_parameter_type_coercion_string_to_int() {
+        // Test that string integers are NOT converted to timestamps (as_i64 requires numeric)
+        let args = serde_json::json!({
+            "device": "sensor_1",
+            "hours": "24"  // String instead of int
+        });
+
+        let mapped = map_tool_parameters("device", &args);
+        // The mapper maps "hours" to "start_time" key, but doesn't convert the value
+        assert_eq!(mapped.get("device_id").unwrap(), "sensor_1");
+        // String hours gets mapped to start_time key (not converted to timestamp)
+        assert_eq!(mapped.get("start_time").unwrap(), "24");
+        assert!(mapped.get("end_time").is_none());
+    }
+
+    #[test]
+    fn test_parameter_type_coercion_numeric_variants() {
+        // Test different numeric representations for hours parameter
+        let args_int = serde_json::json!({"hours": 24});
+        let args_float = serde_json::json!({"hours": 24.0});
+        let args_float_decimal = serde_json::json!({"hours": 24.5});
+        let args_string = serde_json::json!({"hours": "24"});
+
+        let mapped_int = map_tool_parameters("device", &args_int);
+        let mapped_float = map_tool_parameters("device", &args_float);
+        let mapped_float_decimal = map_tool_parameters("device", &args_float_decimal);
+        let mapped_string = map_tool_parameters("device", &args_string);
+
+        // Integer should trigger timestamp conversion
+        assert!(mapped_int.get("start_time").is_some());
+        assert!(mapped_int.get("end_time").is_some());
+
+        // Float that's a whole number (24.0) should also trigger conversion
+        assert!(mapped_float.get("start_time").is_some());
+        assert!(mapped_float.get("end_time").is_some());
+
+        // Float with decimal should NOT trigger conversion (as_i64 returns None for 24.5)
+        // It gets mapped to start_time key but not converted
+        assert_eq!(mapped_float_decimal.get("start_time").unwrap(), 24.5);
+        assert!(mapped_float_decimal.get("end_time").is_none());
+
+        // String should NOT trigger conversion (not a number)
+        assert_eq!(mapped_string.get("start_time").unwrap(), "24");
+        assert!(mapped_string.get("end_time").is_none());
+    }
+
+    #[test]
+    fn test_parameter_null_values() {
+        // Test how null values are handled
+        let args = serde_json::json!({
+            "device": "sensor_1",
+            "type": null,
+            "status": "online"
+        });
+
+        let mapped = map_tool_parameters("device", &args);
+        assert_eq!(mapped.get("device_id").unwrap(), "sensor_1");
+        // Null type should still be mapped (to device_type)
+        assert!(mapped.get("device_type").is_some());
+        assert_eq!(mapped.get("status").unwrap(), "online");
+    }
+
+    #[test]
+    fn test_parameter_missing_optional_fields() {
+        // Test that missing optional fields don't cause errors
+        let args = serde_json::json!({
+            "device": "sensor_1"
+        });
+
+        let mapped = map_tool_parameters("device", &args);
+        assert_eq!(mapped.get("device_id").unwrap(), "sensor_1");
+        // Optional fields should not be present
+        assert!(mapped.get("status").is_none());
+        assert!(mapped.get("device_type").is_none());
+    }
+
+    // ===== Action Inference Tests =====
+
+    #[test]
+    fn test_action_inference_for_device_tool() {
+        // Test action inference when not explicitly provided
+        let args_empty = serde_json::json!({});
+        let mapped_empty = map_tool_parameters("device", &args_empty);
+        // No device_id present -> list
+        assert_eq!(mapped_empty.get("action").unwrap(), "list");
+
+        let args_latest = serde_json::json!({"device": "sensor_1"});
+        let mapped_latest = map_tool_parameters("device", &args_latest);
+        // device_id present -> latest
+        assert_eq!(mapped_latest.get("action").unwrap(), "latest");
+
+        let args_control = serde_json::json!({
+            "device": "lamp_1",
+            "command": "on"
+        });
+        let mapped_control = map_tool_parameters("device", &args_control);
+        assert_eq!(mapped_control.get("action").unwrap(), "control");
+
+        let args_metric = serde_json::json!({
+            "device": "sensor_1",
+            "metric_name": "temperature",
+            "metric_value": 25.5
+        });
+        let mapped_metric = map_tool_parameters("device", &args_metric);
+        assert_eq!(mapped_metric.get("action").unwrap(), "write_metric");
+    }
+
+    #[test]
+    fn test_action_inference_for_rule_tool() {
+        // Test action inference for rule tool
+        let args_create = serde_json::json!({
+            "dsl": "when temperature > 30 then alert()"
+        });
+        let mapped_create = map_tool_parameters("rule", &args_create);
+        assert_eq!(mapped_create.get("action").unwrap(), "create");
+
+        let args_enable = serde_json::json!({
+            "rule": "rule_1",
+            "enabled": true
+        });
+        let mapped_enable = map_tool_parameters("rule", &args_enable);
+        assert_eq!(mapped_enable.get("action").unwrap(), "enable");
+
+        let args_get = serde_json::json!({"rule_id": "rule_1"});
+        let mapped_get = map_tool_parameters("rule", &args_get);
+        assert_eq!(mapped_get.get("action").unwrap(), "get");
+    }
+
+    #[test]
+    fn test_action_inference_for_agent_tool() {
+        // Test action inference for agent tool
+        let args_create = serde_json::json!({
+            "name": "test_agent",
+            "prompt": "You are a helpful assistant"
+        });
+        let mapped_create = map_tool_parameters("agent", &args_create);
+        assert_eq!(mapped_create.get("action").unwrap(), "create");
+
+        let args_message = serde_json::json!({
+            "agent_id": "agent_1",
+            "content": "Hello"
+        });
+        let mapped_message = map_tool_parameters("agent", &args_message);
+        assert_eq!(mapped_message.get("action").unwrap(), "send_message");
+
+        let args_get = serde_json::json!({"agent_id": "agent_1"});
+        let mapped_get = map_tool_parameters("agent", &args_get);
+        assert_eq!(mapped_get.get("action").unwrap(), "get");
+    }
+
+    #[test]
+    fn test_action_inference_for_message_tool() {
+        // Test action inference for message tool
+        let args_send = serde_json::json!({
+            "title": "Alert",
+            "content": "Temperature high!"
+        });
+        let mapped_send = map_tool_parameters("message", &args_send);
+        assert_eq!(mapped_send.get("action").unwrap(), "send");
+
+        let args_read = serde_json::json!({"message_id": "msg_1"});
+        let mapped_read = map_tool_parameters("message", &args_read);
+        assert_eq!(mapped_read.get("action").unwrap(), "read");
+
+        let args_list = serde_json::json!({});
+        let mapped_list = map_tool_parameters("message", &args_list);
+        assert_eq!(mapped_list.get("action").unwrap(), "list");
+    }
+
+    // ===== Action Normalization Tests =====
+
+    #[test]
+    fn test_action_normalization_device() {
+        // Test that action aliases are normalized
+        let args_query = serde_json::json!({
+            "device": "sensor_1",
+            "action": "query"
+        });
+        let mapped_query = map_tool_parameters("device", &args_query);
+        assert_eq!(mapped_query.get("action").unwrap(), "history");
+
+        let args_status = serde_json::json!({
+            "device": "sensor_1",
+            "action": "status"
+        });
+        let mapped_status = map_tool_parameters("device", &args_status);
+        assert_eq!(mapped_status.get("action").unwrap(), "latest");
+
+        let args_discover = serde_json::json!({
+            "action": "discover"
+        });
+        let mapped_discover = map_tool_parameters("device", &args_discover);
+        assert_eq!(mapped_discover.get("action").unwrap(), "list");
+    }
+
+    #[test]
+    fn test_action_normalization_rule() {
+        // Test rule action normalization
+        let args_pause = serde_json::json!({
+            "rule": "rule_1",
+            "action": "pause"
+        });
+        let mapped_pause = map_tool_parameters("rule", &args_pause);
+        assert_eq!(mapped_pause.get("action").unwrap(), "enable");
+        assert_eq!(mapped_pause.get("enabled").unwrap(), false);
+
+        let args_resume = serde_json::json!({
+            "rule": "rule_1",
+            "action": "resume"
+        });
+        let mapped_resume = map_tool_parameters("rule", &args_resume);
+        assert_eq!(mapped_resume.get("action").unwrap(), "enable");
+        assert_eq!(mapped_resume.get("enabled").unwrap(), true);
+
+        let args_add = serde_json::json!({"action": "add"});
+        let mapped_add = map_tool_parameters("rule", &args_add);
+        assert_eq!(mapped_add.get("action").unwrap(), "create");
+    }
+
+    // ===== Command as Action Tests =====
+
+    #[test]
+    fn test_command_as_action_for_device() {
+        // Test that when action looks like a command, it's mapped to command parameter
+        let args_on = serde_json::json!({
+            "device": "lamp_1",
+            "action": "on"
+        });
+        let mapped_on = map_tool_parameters("device", &args_on);
+        assert_eq!(mapped_on.get("command").unwrap(), "on");
+        assert_eq!(mapped_on.get("action").unwrap(), "control");
+
+        let args_off = serde_json::json!({
+            "device": "lamp_1",
+            "action": "off"
+        });
+        let mapped_off = map_tool_parameters("device", &args_off);
+        assert_eq!(mapped_off.get("command").unwrap(), "off");
+        assert_eq!(mapped_off.get("action").unwrap(), "control");
+
+        let args_toggle = serde_json::json!({
+            "device": "lamp_1",
+            "action": "toggle"
+        });
+        let mapped_toggle = map_tool_parameters("device", &args_toggle);
+        assert_eq!(mapped_toggle.get("command").unwrap(), "toggle");
+        assert_eq!(mapped_toggle.get("action").unwrap(), "control");
+    }
+
+    // ===== Extra Fields Tests =====
+
+    #[test]
+    fn test_extra_fields_preserved() {
+        // Test that extra/unknown fields are preserved
+        let args = serde_json::json!({
+            "device": "sensor_1",
+            "unknown_field": "some_value",
+            "custom_param": 123
+        });
+
+        let mapped = map_tool_parameters("device", &args);
+        assert_eq!(mapped.get("device_id").unwrap(), "sensor_1");
+        // Extra fields should be preserved
+        assert_eq!(mapped.get("unknown_field").unwrap(), "some_value");
+        assert_eq!(mapped.get("custom_param").unwrap(), 123);
+    }
+
+    // ===== Nested Objects Tests =====
+
+    #[test]
+    fn test_nested_object_parameters() {
+        // Test handling of nested object parameters
+        let args = serde_json::json!({
+            "device": "sensor_1",
+            "config": {
+                "interval": 60,
+                "enabled": true
+            }
+        });
+
+        let mapped = map_tool_parameters("device", &args);
+        assert_eq!(mapped.get("device_id").unwrap(), "sensor_1");
+        // Nested object should be preserved
+        assert!(mapped.get("config").is_some());
+        let config = mapped.get("config").unwrap().as_object().unwrap();
+        assert_eq!(config.get("interval").unwrap(), 60);
+        assert_eq!(config.get("enabled").unwrap(), true);
+    }
+
+    #[test]
+    fn test_array_parameters() {
+        // Test handling of array parameters
+        let args = serde_json::json!({
+            "device": "sensor_1",
+            "metrics": ["temperature", "humidity", "pressure"]
+        });
+
+        let mapped = map_tool_parameters("device", &args);
+        assert_eq!(mapped.get("device_id").unwrap(), "sensor_1");
+        // Array should be preserved
+        let metrics = mapped.get("metrics").unwrap().as_array().unwrap();
+        assert_eq!(metrics.len(), 3);
+        assert_eq!(metrics[0], "temperature");
+    }
+
+    // ===== Empty and Edge Cases =====
+
+    #[test]
+    fn test_empty_arguments() {
+        // Test empty arguments object
+        let args = serde_json::json!({});
+        let mapped = map_tool_parameters("device", &args);
+        // Should map to list action by default
+        assert_eq!(mapped.get("action").unwrap(), "list");
+    }
+
+    #[test]
+    fn test_non_object_arguments() {
+        // Test non-object arguments (should pass through)
+        let args = serde_json::json!("invalid");
+        let mapped = map_tool_parameters("device", &args);
+        // Should return as-is since it's not an object
+        assert_eq!(mapped, args);
+
+        let args_array = serde_json::json!(["item1", "item2"]);
+        let mapped_array = map_tool_parameters("device", &args_array);
+        assert_eq!(mapped_array, args_array);
+    }
+
+    #[test]
+    fn test_boolean_parameter_values() {
+        // Test boolean parameter values
+        let args = serde_json::json!({
+            "rule": "rule_1",
+            "enabled": true,
+            "dry_run": false
+        });
+
+        let mapped = map_tool_parameters("rule", &args);
+        assert_eq!(mapped.get("rule_id").unwrap(), "rule_1");
+        assert_eq!(mapped.get("enabled").unwrap(), true);
+        assert_eq!(mapped.get("dry_run").unwrap(), false);
+    }
+
+    // ===== Legacy Tool Action Inference =====
+
+    #[test]
+    fn test_legacy_tool_action_inference() {
+        // Test that legacy tool names get correct action inferred
+        let args = serde_json::json!({"device": "sensor_1"});
+
+        let legacy_names = vec![
+            "device_discover", "list_devices", "get_device_data", "device_query"
+        ];
+
+        for legacy_name in legacy_names {
+            let mapped = map_tool_parameters(legacy_name, &args);
+            assert_eq!(mapped.get("action").unwrap(), "list",
+                "Legacy tool {} should infer action=list", legacy_name);
+        }
+
+        let mapped = map_tool_parameters("device_analyze", &args);
+        assert_eq!(mapped.get("action").unwrap(), "latest");
+
+        let mapped = map_tool_parameters("device_control", &args);
+        assert_eq!(mapped.get("action").unwrap(), "control");
+
+        let mapped = map_tool_parameters("query_data", &args);
+        assert_eq!(mapped.get("action").unwrap(), "history");
+    }
+
+    #[test]
+    fn test_legacy_rule_tool_action_inference() {
+        // Test legacy rule tool action inference
+        let args = serde_json::json!({});
+
+        let mapped = map_tool_parameters("list_rules", &args);
+        assert_eq!(mapped.get("action").unwrap(), "list");
+
+        let mapped = map_tool_parameters("get_rule", &args);
+        assert_eq!(mapped.get("action").unwrap(), "list");
+
+        let mapped = map_tool_parameters("create_rule", &args);
+        assert_eq!(mapped.get("action").unwrap(), "create");
+
+        let mapped = map_tool_parameters("delete_rule", &args);
+        assert_eq!(mapped.get("action").unwrap(), "delete");
+    }
+
+    #[test]
+    fn test_legacy_agent_tool_action_inference() {
+        // Test legacy agent tool action inference
+        let args = serde_json::json!({});
+
+        let mapped = map_tool_parameters("list_agents", &args);
+        assert_eq!(mapped.get("action").unwrap(), "list");
+
+        let mapped = map_tool_parameters("get_agent", &args);
+        assert_eq!(mapped.get("action").unwrap(), "list");
+
+        let mapped = map_tool_parameters("create_agent", &args);
+        assert_eq!(mapped.get("action").unwrap(), "create");
+
+        let mapped = map_tool_parameters("execute_agent", &args);
+        assert_eq!(mapped.get("action").unwrap(), "control");
+
+        let mapped = map_tool_parameters("control_agent", &args);
+        assert_eq!(mapped.get("action").unwrap(), "control");
+    }
+
+    #[test]
+    fn test_legacy_alert_tool_action_inference() {
+        // Test legacy alert tool action inference
+        let args = serde_json::json!({});
+
+        let mapped = map_tool_parameters("list_alerts", &args);
+        assert_eq!(mapped.get("action").unwrap(), "list");
+
+        let mapped = map_tool_parameters("create_alert", &args);
+        assert_eq!(mapped.get("action").unwrap(), "send");
+
+        let mapped = map_tool_parameters("acknowledge_alert", &args);
+        assert_eq!(mapped.get("action").unwrap(), "read");
+    }
+
+    #[test]
+    fn test_legacy_transform_tool_action_inference() {
+        // Test legacy transform tool action inference
+        let args = serde_json::json!({});
+
+        let mapped = map_tool_parameters("list_transforms", &args);
+        assert_eq!(mapped.get("action").unwrap(), "list");
+
+        let mapped = map_tool_parameters("data_transforms", &args);
+        assert_eq!(mapped.get("action").unwrap(), "list");
+
+        let mapped = map_tool_parameters("get_transform", &args);
+        assert_eq!(mapped.get("action").unwrap(), "list");
+
+        let mapped = map_tool_parameters("create_transform", &args);
+        assert_eq!(mapped.get("action").unwrap(), "create");
+
+        let mapped = map_tool_parameters("delete_transform", &args);
+        assert_eq!(mapped.get("action").unwrap(), "delete");
+
+        let mapped = map_tool_parameters("update_transform", &args);
+        assert_eq!(mapped.get("action").unwrap(), "update");
+
+        let mapped = map_tool_parameters("test_transform", &args);
+        assert_eq!(mapped.get("action").unwrap(), "test");
+    }
+
+    // ===== Parameter Mapping for Transform Tool =====
+
+    #[test]
+    fn test_transform_tool_action_inference() {
+        // Test transform tool action inference
+        let args_create = serde_json::json!({
+            "js_code": "return input * 2;",
+            "intent": "double the value"
+        });
+        let mapped_create = map_tool_parameters("transform", &args_create);
+        assert_eq!(mapped_create.get("action").unwrap(), "create");
+
+        let args_get = serde_json::json!({"id": "transform_1"});
+        let mapped_get = map_tool_parameters("transform", &args_get);
+        assert_eq!(mapped_get.get("action").unwrap(), "get");
+
+        let args_list = serde_json::json!({});
+        let mapped_list = map_tool_parameters("transform", &args_list);
+        assert_eq!(mapped_list.get("action").unwrap(), "list");
+    }
 }
