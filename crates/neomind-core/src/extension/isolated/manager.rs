@@ -459,7 +459,12 @@ impl IsolatedExtensionManager {
                     "Extension already loaded (loaded by concurrent request while waiting for lock), skipping duplicate load"
                 );
                 let info = self.info_cache.read().get(id).cloned();
-                return Ok(info.map(|i| i.descriptor.metadata).unwrap());
+                return info
+                    .map(|i| i.descriptor.metadata)
+                    .ok_or_else(|| IsolatedExtensionError::IpcError(format!(
+                        "Extension {} metadata not found in cache after load",
+                        id
+                    )));
             }
 
             // Now safe to spawn - we hold the lock and extension is not loaded
@@ -567,7 +572,11 @@ impl IsolatedExtensionManager {
 
         // Return metadata from the info cache
         let info = self.info_cache.read().get(&id).cloned();
-        Ok(info.map(|i| i.descriptor.metadata).unwrap())
+        info.map(|i| Ok(i.descriptor.metadata))
+            .ok_or_else(|| IsolatedExtensionError::IpcError(format!(
+                "Extension {} metadata not found in cache after load",
+                id
+            )))?
     }
 
     /// Unload an extension
@@ -805,10 +814,10 @@ mod tests {
     #[test]
     fn test_manager_creation() {
         let manager = IsolatedExtensionManager::with_defaults();
+        let rt = tokio::runtime::Runtime::new()
+            .expect("Failed to create tokio runtime for test");
         assert_eq!(
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(async { manager.count().await }),
+            rt.block_on(async { manager.count().await }),
             0
         );
     }

@@ -137,7 +137,10 @@ impl TieredBufferPool {
             (&self.large, TIERED_POOL_LARGE_SIZE)
         };
 
-        let mut buffers = pool.lock().unwrap();
+        let mut buffers = pool.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "Buffer pool mutex poisoned, recovering");
+            e.into_inner()
+        });
         let data = buffers
             .pop()
             .unwrap_or_else(|| Vec::with_capacity(capacity));
@@ -176,10 +179,13 @@ impl Drop for ReusableBuffer {
         if !self.data.is_empty() {
             // Clear and return to pool
             self.data.clear();
-            let mut buffers = self.pool.lock().unwrap();
-            if buffers.len() < self.max_size {
-                buffers.push(std::mem::take(&mut self.data));
+            // In Drop, we can't do much if the lock is poisoned - just skip returning to pool
+            if let Ok(mut buffers) = self.pool.lock() {
+                if buffers.len() < self.max_size {
+                    buffers.push(std::mem::take(&mut self.data));
+                }
             }
+            // If lock is poisoned, we lose this buffer but don't panic
         }
     }
 }
@@ -400,7 +406,11 @@ impl IsolatedExtension {
         &self,
         provider: Arc<dyn super::super::context::ExtensionCapabilityProvider>,
     ) {
-        *self.capability_provider.write().unwrap() = Some(provider);
+        let mut cap_provider = self.capability_provider.write().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "CapabilityProvider mutex poisoned, recovering");
+            e.into_inner()
+        });
+        *cap_provider = Some(provider);
     }
 
     /// Find the extension runner binary
@@ -569,9 +579,9 @@ impl IsolatedExtension {
             .spawn()
             .map_err(|e| IsolatedExtensionError::SpawnFailed(e.to_string()))?;
 
-        let stdin = BufWriter::new(child.stdin.take().unwrap());
-        let stdout = BufReader::new(child.stdout.take().unwrap());
-        let stderr = child.stderr.take().unwrap();
+        let stdin = BufWriter::new(child.stdin.take().expect("Child stdin not available"));
+        let stdout = BufReader::new(child.stdout.take().expect("Child stdout not available"));
+        let stderr = child.stderr.take().expect("Child stderr not available");
 
         // Save process ID for resource monitoring
         let pid = child.id();
@@ -869,7 +879,13 @@ impl IsolatedExtension {
                         );
 
                         // Get the capability provider
-                        let provider_opt = capability_provider.read().unwrap().clone();
+                        let provider_opt = capability_provider.read()
+                            .map_err(|e| {
+                                tracing::error!(error = %e, "CapabilityProvider mutex poisoned in receiver thread");
+                                e
+                            })
+                            .ok()
+                            .and_then(|guard| guard.clone());
 
                         if let Some(provider) = provider_opt {
                             // Parse capability
@@ -943,7 +959,12 @@ impl IsolatedExtension {
 
                     // Extract push output data and forward to channel
                     if let Some(push_data) = Option::<super::PushOutputData>::from(response) {
-                        if let Some(tx) = push_output_tx.lock().unwrap().as_ref() {
+                        // Handle push_output_tx gracefully - channel may not be set
+                        let tx_guard = push_output_tx.lock().unwrap_or_else(|e| {
+                            tracing::warn!(error = %e, "PushOutputTx mutex poisoned in receiver thread, recovering");
+                            e.into_inner()
+                        });
+                        if let Some(tx) = tx_guard.as_ref() {
                             if let Err(e) = tx.try_send(push_data) {
                                 if matches!(e, tokio::sync::mpsc::error::TrySendError::Full(_)) {
                                     warn!(
@@ -2038,14 +2059,22 @@ impl IsolatedExtension {
         &self,
         tx: tokio::sync::mpsc::Sender<super::PushOutputData>,
     ) {
-        *self.push_output_tx.lock().unwrap() = Some(tx);
+        let mut push_tx = self.push_output_tx.lock().unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "PushOutputTx mutex poisoned, recovering");
+            e.into_inner()
+        });
+        *push_tx = Some(tx);
     }
 
     /// Get a clone of the push output channel sender
     pub async fn get_push_output_channel(
         &self,
     ) -> Option<tokio::sync::mpsc::Sender<super::PushOutputData>> {
-        self.push_output_tx.lock().unwrap().clone()
+        let push_tx = self.push_output_tx.lock().unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "PushOutputTx mutex poisoned, recovering");
+            e.into_inner()
+        });
+        push_tx.clone()
     }
 
     /// ✨ FIX: Trigger memory cleanup in extension

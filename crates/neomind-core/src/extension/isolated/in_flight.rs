@@ -74,12 +74,18 @@ impl InFlightRequests {
         self.state
             .lock()
             .map(|s| s.next_id.fetch_add(1, Ordering::Relaxed))
-            .unwrap_or_else(|_| {
+            .unwrap_or_else(|e| {
                 // Fallback: use timestamp-based ID if lock is poisoned
-                std::time::SystemTime::now()
+                tracing::error!(error = %e, "InFlightRequests mutex poisoned, using fallback ID");
+                match std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos() as u64
+                {
+                    Ok(duration) => duration.as_nanos() as u64,
+                    Err(err) => {
+                        tracing::error!(error = %err, "SystemTime error, using constant fallback ID");
+                        0
+                    }
+                }
             })
     }
 
@@ -88,7 +94,10 @@ impl InFlightRequests {
     /// Returns the request ID and a oneshot receiver for the response.
     /// The caller should wait on the receiver with a timeout.
     pub fn register(&self) -> (RequestId, oneshot::Receiver<IpcResponse>) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "InFlightRequests mutex poisoned in register, recovering");
+            e.into_inner()
+        });
         let request_id = state.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx): (oneshot::Sender<IpcResponse>, oneshot::Receiver<IpcResponse>) =
             oneshot::channel();
@@ -103,7 +112,10 @@ impl InFlightRequests {
         let (tx, rx): (oneshot::Sender<IpcResponse>, oneshot::Receiver<IpcResponse>) =
             oneshot::channel();
 
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "InFlightRequests mutex poisoned in register_with_id, recovering");
+            e.into_inner()
+        });
         state.pending.insert(request_id, tx);
 
         rx
